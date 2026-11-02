@@ -3,8 +3,9 @@ import { istek, type Ben } from './api';
 import { Bildirimler, Bugun, type BugunVeri } from './Bugun';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
+import { HesapKurtarma } from './Kurtarma';
 
-type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol';
+type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -42,6 +43,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'roller', ad: 'Rol Kataloğu', ik: '▤', izin: 'rol_katalogu.goruntule' },
     { s: 'iz', ad: 'İşlem İzi', ik: '☰', izin: 'denetim_izi.goruntule' },
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
+    { s: 'kurtarma', ad: 'Hesap Kurtarma', ik: '⚿', izin: 'hesap_kurtarma.ac' },
     ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
   ];
@@ -52,6 +54,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     profil: <Profilim />,
     erisim: <ErisimTalebi />,
     erisimrol: <ErisimVeRol />,
+    kurtarma: <HesapKurtarma />,
     mesaj: <Yakinda ad="Mesajlar" adim="Adım 3" />,
     idari: <Yakinda ad="İdari İşlemlerim" adim="Adım 7" />,
     yardim: <Yakinda ad="Yardım" adim="Adım 3" />,

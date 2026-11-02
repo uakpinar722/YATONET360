@@ -33,6 +33,7 @@ const DIS_ROLLER: [string, string, string][] = [ // YG-1030, YG-1025
 const IZINLER: [string, string][] = [
   ['Sistem Yöneticisi', 'rol_katalogu.goruntule'], ['Bilgi İşlem Müdürü', 'rol_katalogu.goruntule'], ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'rol_katalogu.goruntule'],
   ['Sistem Yöneticisi', 'erisim.uygula'], // A33-2
+  ['Bilgi İşlem Destek Sorumlusu', 'hesap_kurtarma.ac'], // A32-3
   ['İç Denetçi', 'denetim_izi.goruntule'], ['İç Denetim Müdürü', 'denetim_izi.goruntule'], ['Bilgi İşlem Müdürü', 'denetim_izi.goruntule'],
 ];
 
@@ -80,6 +81,9 @@ const DENEME: [string, string, string, string, string, string, boolean][] = [
   ['Deneme Sistem Yöneticisi', 'sistem@deneme.yatonet.local', '+905550000002', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'Sistem Yöneticisi', true],
   ['Deneme İç Denetçi', 'denetci@deneme.yatonet.local', '+905550000003', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'İç Denetçi', false],
   ['Deneme Bilgi İşlem Müdürü', 'bimuduru@deneme.yatonet.local', '+905550000005', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'Bilgi İşlem Müdürü', false],
+  ['Deneme Destek Sorumlusu', 'destek@deneme.yatonet.local', '+905550000006', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'Bilgi İşlem Destek Sorumlusu', false],
+  ['Deneme Sicil Sorumlusu', 'sicil@deneme.yatonet.local', '+905550000007', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'Sicil Sorumlusu', false],
+  ['Deneme Firma Yetkilisi', 'firma@deneme.yatonet.local', '+905550000008', 'İş Birliği Firması', 'Doğrulama uygulaması (6 haneli kod)', 'Firma Yetkilisi', false],
   ['Deneme Yat Sahibi', 'yatsahibi@deneme.yatonet.local', '+905550000004', 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)', 'SMS kodu', 'Müşteri Portal Kullanıcısı', false],
 ];
 

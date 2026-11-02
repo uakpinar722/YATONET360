@@ -43,6 +43,8 @@ function KartUst({ k, sayac = true }: { k: Kart; sayac?: boolean }) {
 function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   const [gerekce, setGerekce] = useState(''); const [acik, setAcik] = useState<'iade' | 'ret' | null>(null); const [hata, setHata] = useState(''); const [mesgul, setMesgul] = useState(false);
   const son = k.kademe === k.kademe_sayisi - 1;
+  // YG-1649: dış kullanıcı hesap kurtarmasında makam "Teyit Et" / "Gerekçeyle İade Et" kullanır.
+  const teyit = k.tur === 'Hesap Kurtarma Teyidi';
   const ver = async (karar: string, g?: string) => {
     setHata(''); setMesgul(true);
     try { await istek(`/is/${k.kimlik}/karar`, { karar, gerekce: g }); yenile(); } catch (e) { setHata((e as Error).message); setMesgul(false); }
@@ -66,8 +68,8 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
         <>
           {!son && <div className="not">Gönderilecek: <b className="koyu">{k.sonraki_rol}</b></div>}
           <div className="dugmeler">
-            {son ? <button className="btn evet" disabled={mesgul} onClick={() => void ver('Onayla')}>Onayla</button> : <button className="btn" disabled={mesgul} onClick={() => void ver('Onaya Gönder')}>Onaya Gönder</button>}
-            {son && <button className="btn hayir" onClick={() => setAcik('ret')}>Reddet</button>}
+            {son ? <button className="btn evet" disabled={mesgul} onClick={() => void ver('Onayla')}>{teyit ? 'Teyit Et' : 'Onayla'}</button> : <button className="btn" disabled={mesgul} onClick={() => void ver('Onaya Gönder')}>Onaya Gönder</button>}
+            {son && !teyit && <button className="btn hayir" onClick={() => setAcik('ret')}>Reddet</button>}
             <button className="btn2" onClick={() => setAcik('iade')}>Gerekçeyle İade Et</button>
           </div>
         </>
