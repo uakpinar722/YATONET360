@@ -12,6 +12,11 @@ export interface KartGirdisi {
   sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string;
 }
 
+type KapanisIsleyici = (c: PoolClient, kart: { nesne_kimligi: string | null; ozet: string | null }, karar: string, yapan: string) => Promise<void>;
+const KAPANIS = new Map<string, KapanisIsleyici>();
+/** Modül, kendi kart türünün kararını aynı veritabanı işleminde kendi kaydına işler (YG-1143, YG-1145). */
+export function kapanisKaydet(tur: string, f: KapanisIsleyici) { KAPANIS.set(tur, f); }
+
 export async function rolSahipleri(db: Pool | PoolClient, rol: string): Promise<string[]> {
   const { rows } = await db.query(
     `SELECT DISTINCT a.kullanici_ref k FROM rol_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref
@@ -36,6 +41,8 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
   return id;
 }
 
+/** Görev ayrılığı yalnız son gönderimden sonraki kararlara bakar: iade edilip yeniden gönderilen kayda aynı makam yine karar verir. */
+const SON_GONDERIM = `(SELECT coalesce(max(g.kimlik), 0) FROM is_karti_adim g WHERE g.is_ref = k.kimlik AND g.karar = 'Yeniden Gönder')`;
 const SECIM = `k.kimlik, k.tur, k.kategori, k.baslik, k.ozet, k.oncelik, k.son_zaman, k.kademe, k.durum, k.hazirlayan_ref, cardinality(k.zincir) AS kademe_sayisi`;
 
 export function isYollari(s: FastifyInstance, b: Baglam) {
@@ -50,7 +57,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
          FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.hazirlayan_ref
         WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.zincir[k.kademe + 1] = ANY($1)
           AND k.hazirlayan_ref IS DISTINCT FROM $2
-          AND NOT EXISTS (SELECT 1 FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.yapan_ref = $2 AND a.karar <> 'Yeniden Gönder')
+          AND NOT EXISTS (SELECT 1 FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.yapan_ref = $2 AND a.kimlik > ${SON_GONDERIM})
         ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [roller, kullanici]);
     const islem = await b.db.query(
       `SELECT ${SECIM} FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.kategori IN ('islem','gorev') AND (k.sahip_kullanici_ref = $1 OR k.sahip_rol_ref = ANY($2)) ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [kullanici, roller]);
@@ -104,7 +111,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
         if (k.durum !== 'Bekliyor') return dur(409, 'Bu kayıt üzerinde işlem yapılmıştır.');
         if (k.kategori !== 'onay' || !makam || !roller.includes(makam)) return dur(403, 'Bu işlem için yetkiniz bulunmamaktadır.');
         // YG-1034, YG-990: hazırlayan veya zincirde daha önce karar veren aynı kaydı onaylayamaz.
-        const once = await c.query(`SELECT 1 FROM is_karti_adim WHERE is_ref = $1 AND yapan_ref = $2 AND karar <> 'Yeniden Gönder'`, [id, o.kullanici]);
+        const once = await c.query(`SELECT 1 FROM is_karti_adim a WHERE a.is_ref = $1 AND a.yapan_ref = $2 AND a.kimlik > (SELECT coalesce(max(g.kimlik), 0) FROM is_karti_adim g WHERE g.is_ref = $1 AND g.karar = 'Yeniden Gönder')`, [id, o.kullanici]);
         if (k.hazirlayan_ref === o.kullanici || once.rowCount) return dur(403, 'Kendi hazırladığınız veya daha önce karar verdiğiniz kaydı onaylayamazsınız.');
         if (karar === 'Gerekçeyle İade Et') {
           yeni = { durum: 'İade Edildi', kademe: 0, kapanir: false };
@@ -122,6 +129,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE is_karti SET durum = $2, kademe = $3, kapanma_zamani = CASE WHEN $4 THEN now() END WHERE kimlik = $1`, [id, yeni.durum, yeni.kademe, yeni.kapanir]);
       // Silinmez; kararın tamamı adım kaydında kalır (YG-1183).
       await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [id, k.kademe, karar, g || null, o.kullanici, makam ?? null]);
+      await KAPANIS.get(k.tur)?.(c, k, karar!, o.kullanici);
       if (hedef.length) await bildir(c, hedef.filter((x) => x !== o.kullanici), baslik, g || k.ozet, id);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Kartı: ${karar}`, nesneTuru: k.tur, nesneKimligi: id, eski: { durum: k.durum, kademe: k.kademe }, yeni: { durum: yeni.durum, kademe: yeni.kademe }, gerekce: g || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

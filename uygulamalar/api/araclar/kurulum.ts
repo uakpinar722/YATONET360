@@ -32,6 +32,7 @@ const DIS_ROLLER: [string, string, string][] = [ // YG-1030, YG-1025
 // Yetki matrisinin başlangıcı. İzinler modüller yazıldıkça eklenir (YG-996).
 const IZINLER: [string, string][] = [
   ['Sistem Yöneticisi', 'rol_katalogu.goruntule'], ['Bilgi İşlem Müdürü', 'rol_katalogu.goruntule'], ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'rol_katalogu.goruntule'],
+  ['Sistem Yöneticisi', 'erisim.uygula'], // A33-2
   ['İç Denetçi', 'denetim_izi.goruntule'], ['İç Denetim Müdürü', 'denetim_izi.goruntule'], ['Bilgi İşlem Müdürü', 'denetim_izi.goruntule'],
 ];
 
@@ -57,7 +58,7 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   await c.query('BEGIN');
   for (const d of dl) await c.query(`INSERT INTO deger_listesi VALUES ($1,$2,$3,$4,$5) ON CONFLICT (liste_kodu, deger) DO UPDATE SET aciklama = EXCLUDED.aciklama, kaynak = EXCLUDED.kaynak, sira = EXCLUDED.sira`, [d[0], d[1], d[2] || null, d[3] || null, Number(d[4])]);
   // Roller
-  const ic = readFileSync(join(KOK, 'veri', 'roller.tsv'), 'utf8').split('\n').filter(Boolean).map((l) => l.split('\t') as [string, string]);
+  const ic = readFileSync(join(KOK, 'veri', 'roller.tsv'), 'utf8').split(/\r?\n/).filter(Boolean).map((l) => l.split('\t') as [string, string]);
   let n = 0;
   for (const [adi, birim] of ic) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, ayricalikli_rol) VALUES ($1,$2,$3,$4,'LGM İç Rolü',$5) ON CONFLICT (rol_adi) DO UPDATE SET rol_sahibi_birim = EXCLUDED.rol_sahibi_birim, kademe = EXCLUDED.kademe`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, kademeBul(adi), AYRICALIKLI.has(adi)]);
   for (const [adi, birim, grup] of DIS_ROLLER) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari) VALUES ($1,$2,$3,'Dış Kullanıcı',$4) ON CONFLICT (rol_adi) DO NOTHING`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, grup]);
@@ -78,6 +79,7 @@ const DENEME: [string, string, string, string, string, string, boolean][] = [
   ['Deneme CEO', 'ceo@deneme.yatonet.local', '+905550000001', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'CEO', false],
   ['Deneme Sistem Yöneticisi', 'sistem@deneme.yatonet.local', '+905550000002', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'Sistem Yöneticisi', true],
   ['Deneme İç Denetçi', 'denetci@deneme.yatonet.local', '+905550000003', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'İç Denetçi', false],
+  ['Deneme Bilgi İşlem Müdürü', 'bimuduru@deneme.yatonet.local', '+905550000005', 'LGM İç Rolü', 'Doğrulama uygulaması (6 haneli kod)', 'Bilgi İşlem Müdürü', false],
   ['Deneme Yat Sahibi', 'yatsahibi@deneme.yatonet.local', '+905550000004', 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)', 'SMS kodu', 'Müşteri Portal Kullanıcısı', false],
 ];
 

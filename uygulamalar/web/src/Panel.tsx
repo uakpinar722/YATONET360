@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { Bildirimler, Bugun, type BugunVeri } from './Bugun';
+import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 
-type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim';
+type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -40,6 +41,8 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'ana', ad: lgm ? 'Bugün' : 'Ana Sayfa', ik: '☀' },
     { s: 'roller', ad: 'Rol Kataloğu', ik: '▤', izin: 'rol_katalogu.goruntule' },
     { s: 'iz', ad: 'İşlem İzi', ik: '☰', izin: 'denetim_izi.goruntule' },
+    { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
+    ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
   ];
   const b = veri?.okunmamisBildirim ?? 0;
@@ -47,6 +50,8 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     ana: <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
     profil: <Profilim />,
+    erisim: <ErisimTalebi />,
+    erisimrol: <ErisimVeRol />,
     mesaj: <Yakinda ad="Mesajlar" adim="Adım 3" />,
     idari: <Yakinda ad="İdari İşlemlerim" adim="Adım 7" />,
     yardim: <Yakinda ad="Yardım" adim="Adım 3" />,

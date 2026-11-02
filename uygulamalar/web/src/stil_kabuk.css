@@ -45,7 +45,8 @@
 .btn.evet { background: #1E6B3A; }
 .btn.hayir { background: var(--hata); }
 .btn2.kucuk { display: inline-block; width: auto; padding: 6px 12px; margin-top: 8px; font-size: 14px; }
-.gerekce textarea { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--ciz); border-radius: 8px; resize: vertical; }
+.gerekce textarea, .ozet textarea, .ozet select { width: 100%; font: inherit; padding: 10px; border: 1px solid var(--ciz); border-radius: 8px; background: #fff; }
+.gerekce textarea, .ozet textarea { resize: vertical; }
 .uyari { background: var(--abz); border-left: 4px solid var(--brz); border-radius: 8px; padding: 10px 12px; font-size: 14px; color: var(--lac); margin-top: 8px; }
 .izgara-ust { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 12px; align-items: start; }
 .kur { background: linear-gradient(180deg, #EEF3F9, #E3EBF5); border-left: 4px solid var(--lac); }

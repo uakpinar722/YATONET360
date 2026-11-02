@@ -96,6 +96,8 @@ describe('onay zinciri (YG-1637)', () => {
     expect((await karar(DEN, id, 'Onaya Gönder')).statusCode).toBe(409);
     expect((await karar(CEO, id, 'Yeniden Gönder')).statusCode).toBe(403);
     expect((await karar(SIS, id, 'Yeniden Gönder')).json()).toEqual({ durum: 'Bekliyor', kademe: 0 });
+    expect((await bugun(DEN)).onay.map((x: any) => x.kimlik)).toContain(id);
+    expect((await karar(DEN, id, 'Onaya Gönder')).statusCode).toBe(200);
   });
   it('kapanan kartta karar verilemez; geçmiş silinmez, izlenir', async () => {
     const id = await kartAc(db, { tur: 'Deneme', baslik: 'Tek', hazirlayan: K[SIS], zincir: [R['CEO']!] });
