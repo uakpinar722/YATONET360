@@ -16,7 +16,7 @@ input:focus { outline: 2px solid var(--brz); border-color: var(--brz); }
 
 /* G-1 Üslup B */
 .B { display: flex; min-height: 100%; }
-.B .foto { flex: 1.15; position: relative; background: linear-gradient(160deg, #1d3157, var(--lac)); }
+.B .foto { flex: 1.15; position: relative; background: var(--lac) url(/foto.jpg) center/cover; }
 .B .form { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 36px; background: var(--krem); border-left: 4px solid var(--brz); }
 .B .kart { width: 100%; max-width: 380px; margin: 0 auto; }
 .logolar { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 8px; }
