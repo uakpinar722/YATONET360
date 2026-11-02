@@ -179,6 +179,14 @@ try {
   await p.getByRole('heading', { name: `Arama: ${yatAd}` }).waitFor();
   await p.locator('tbody tr').filter({ hasText: yatAd }).waitFor();
   kontrol('üst arama dosyayı yat adıyla bulur', true);
+  await p.getByRole('button', { name: 'Nöbet ve Acil' }).click();
+  await p.getByRole('button', { name: 'Acil Çağrı Aç' }).waitFor();
+  await p.getByRole('button', { name: 'Acil Çağrı Aç' }).click();
+  await p.getByRole('alert').first().waitFor();
+  kontrol('acil çağrı eksik bilgiyle açılmaz, uyarı verir', await p.getByText('Arayan numara, yat, konum ve olay özeti zorunludur.').isVisible());
+  await p.getByRole('button', { name: 'İdari İşlemlerim' }).click();
+  await p.getByRole('heading', { name: 'İdari İşlemlerim' }).waitFor();
+  kontrol('idari işlemler sayfası telefonda taşmaz', await tasmaYok(p));
   await sup.query(`DELETE FROM rol_atamasi WHERE kullanici_ref = $1 AND rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Dosya Sorumlusu')`, [ka]);
   await p.reload();
   await p.getByRole('heading', { name: /Hoş Geldiniz/ }).waitFor();

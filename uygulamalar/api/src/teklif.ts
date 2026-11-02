@@ -23,6 +23,14 @@ const TICARI = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)';
 /** YG-165: parasal silsile; ara kademeler sırayla geçer, son makam tutara göre belirlenir. */
 const ARA = ['Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Müdürü'];
 
+/** İş günü ekler; hafta sonu ve resmî tatil sayılmaz. */
+export async function isGunuSonu(db: Db, d: Date, gun: number): Promise<Date> {
+  const tatil = new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil`)).rows.map((r) => r.t as string));
+  const x = new Date(d.getTime()); let k = 0;
+  while (k < gun) { x.setUTCDate(x.getUTCDate() + 1); const y = new Date(x.getTime() + 180 * 60_000); const g = y.getUTCDay(); if (g !== 0 && g !== 6 && !tatil.has(y.toISOString().slice(0, 10))) k++; }
+  return x;
+}
+
 export const parametre = async (db: Db, kod: string) => Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0].deger);
 export const yururlukSurumu = async (db: Db) => (await db.query(`SELECT surum FROM kartela_surumu ORDER BY durum = 'Yürürlükte' DESC, surum DESC LIMIT 1`)).rows[0]?.surum as string | undefined;
 
@@ -316,7 +324,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const alan = { ...SIFIRLA_YAT(t), 'bağlantı': b.webAdresi, link: b.webAdresi };
       if (t.teklif_muhatabi === 'Sigorta Şirketi') {
         const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
-        const son = new Date(); son.setUTCDate(son.getUTCDate() + 7); // 5 iş günü sayaç metne yazılır; takvim karşılığı (YG-212).
+        const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu')); // YG-444
+        await c.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = $2 WHERE kimlik = $1`, [t.kimlik, son]);
         if (sg?.eposta) await disGonder(c, { olay: `bld71:${t.kimlik}`, eposta: sg.eposta, konu: `${t.dosya_no} Teklif`, metin: await metinGetir(c, 'BLD-71', 'tr', { 'Dosya No': t.dosya_no, 'Hasar Dosya No': sg.sigorta_hasar_dosya_no ?? '', 'Teknik Raporu ve Fiyat Teklifi': 'Fiyat Teklifi', 'son tarih': son.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' }) }), acil: true });
         if (sahip) await yatTarafinaYaz(c, { olay: `bld37:${t.kimlik}`, kod: 'BLD-37', dil, konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: alan });
         return { durum: 'Gönderildi', gecerlilik: bit };

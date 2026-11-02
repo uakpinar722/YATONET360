@@ -40,6 +40,7 @@ const IZINLER: [string, string][] = [
   ['Operasyon Müdürü', 'dosya.statu'], ['Operasyon Müdür Yardımcısı', 'dosya.statu'], ['Operasyon Yöneticisi', 'dosya.statu'],
   ...['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Ticari İşler Direktörü', 'Hukuk ve Uyum Direktörü', 'Risk ve Kalite Direktörü', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı', 'Teknik Müdür', 'Teknik Müdür Yardımcısı', 'Müşteri ve Paydaş İlişkileri Müdürü', 'İç Denetim Müdürü', 'İç Denetçi', 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Müdürü'].map((r) => [r, 'dosya.tum'] as [string, string]),
   ...['Dosya Sorumlusu', 'Teknik Uzman', 'Teknik Yönetici', 'Operasyon Yöneticisi', 'Teknik Müdür', 'Operasyon Müdürü'].map((r) => [r, 'yat.duzelt'] as [string, string]),
+  ['Operasyon Müdür Yardımcısı', 'nobet.hazirla'], ['Operasyon Müdürü', 'nobet.hazirla'],
   ['Sicil Sorumlusu', 'firma.kayit'], ['Firma Yönetimi Müdürü', 'firma.kayit'], ['Firma Yönetimi Müdürü', 'firma.onay'], ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'firma.onay'],
   ['İç Denetçi', 'denetim_izi.goruntule'], ['İç Denetim Müdürü', 'denetim_izi.goruntule'], ['Bilgi İşlem Müdürü', 'denetim_izi.goruntule'],
 ];

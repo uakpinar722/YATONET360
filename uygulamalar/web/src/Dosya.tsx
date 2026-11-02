@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
+import { TicariBolumu } from './Ticari';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
@@ -39,7 +40,7 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
   };
   useEffect(yukle, [kapsam]);
   useEffect(() => { if (acikDosya) { setDosyaId(acikDosya); setIhbarId(null); acildi(); } }, [acikDosya]);
-  if (dosyaId) return <DosyaEkrani id={dosyaId} geri={() => { setDosyaId(null); yukle(); }} />;
+  if (dosyaId) return <DosyaEkrani id={dosyaId} roller={ben.roller.map((r) => r.rol_adi)} geri={() => { setDosyaId(null); yukle(); }} />;
   if (ihbarId) return <IhbarEkrani id={ihbarId} geri={(d) => { setIhbarId(null); yukle(); if (d) setDosyaId(d); }} />;
   if (form) return <IhbarFormu bitti={(id) => { setForm(false); yukle(); if (id) setIhbarId(id); }} />;
   return (
@@ -200,7 +201,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
   );
 }
 
-function DosyaEkrani({ id, geri }: { id: string; geri: () => void }) {
+function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; roller: string[] }) {
   const [d, setD] = useState<DosyaAyrinti | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
   const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bKanit, setBKanit] = useState('');
@@ -286,6 +287,7 @@ function DosyaEkrani({ id, geri }: { id: string; geri: () => void }) {
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/konu`, { baslik: kBaslik, sahip: kSahip, hedefTarih: kTarih })).then(() => setKBaslik(''))}>Konu Aç</button>
       </Blok>
       <SahaBolumu id={id} d={d} belgeler={belgeler} yenile={() => void yukle()} />
+      <TicariBolumu id={id} rollerim={d.rollerim} roller={roller} asama={d.asama} />
       <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik}>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '—'} · {t.eposta ?? '—'}</div>)}</Blok>
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
     </>
