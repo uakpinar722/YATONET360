@@ -1,0 +1,20 @@
+# Gizli bilgiler ve yerel ayarlar
+.env
+.env.*
+!.env.ornek
+
+# Yerel araçlar ve veritabanı
+.araclar/
+node_modules/
+
+# Derleme çıktıları
+dist/
+build/
+.next/
+.expo/
+coverage/
+*.log
+
+# İşletim sistemi ve açık Office dosyaları
+Thumbs.db
+~$*
