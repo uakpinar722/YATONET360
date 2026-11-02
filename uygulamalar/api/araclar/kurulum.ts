@@ -62,6 +62,12 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   for (const [adi, birim] of ic) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, ayricalikli_rol) VALUES ($1,$2,$3,$4,'LGM İç Rolü',$5) ON CONFLICT (rol_adi) DO UPDATE SET rol_sahibi_birim = EXCLUDED.rol_sahibi_birim, kademe = EXCLUDED.kademe`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, kademeBul(adi), AYRICALIKLI.has(adi)]);
   for (const [adi, birim, grup] of DIS_ROLLER) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari) VALUES ($1,$2,$3,'Dış Kullanıcı',$4) ON CONFLICT (rol_adi) DO NOTHING`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, grup]);
   for (const [adi, izin] of IZINLER) await c.query(`INSERT INTO rol_izni SELECT kimlik, $2 FROM rol WHERE rol_adi = $1 ON CONFLICT DO NOTHING`, [adi, izin]);
+  // Hukuki metinler (R\KVKK onaylı belgelerden aktarılır)
+  const mk = join(KOK, 'veri', 'metinler');
+  for (const f of readdirSync(mk).filter((x) => x.endsWith('.json'))) {
+    const m = JSON.parse(readFileSync(join(mk, f), 'utf8'));
+    await c.query(`INSERT INTO hukuki_metin (kod, dil, surum, baslik, govde) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (kod, dil, surum) DO UPDATE SET baslik = EXCLUDED.baslik, govde = EXCLUDED.govde`, [m.kod, m.dil, m.surum, m.baslik, JSON.stringify(m.govde)]);
+  }
   await c.query('COMMIT');
   console.log(`${dl.length} değer, ${n} rol yüklendi`);
   return c;

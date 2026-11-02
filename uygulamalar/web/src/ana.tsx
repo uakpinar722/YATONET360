@@ -5,6 +5,7 @@ import '@fontsource/source-serif-4/400.css';
 import '@fontsource/source-serif-4/400-italic.css';
 import { createRoot } from 'react-dom/client';
 import './stil.css';
+import './stil_ilk.css';
 import { Uygulama } from './Uygulama';
 
 createRoot(document.getElementById('kok')!).render(<Uygulama />);

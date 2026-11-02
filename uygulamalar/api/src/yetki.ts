@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
+import { dilKodu, eksikAdimlar, rizaBicimi } from './adimlar.js';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 
@@ -35,9 +36,13 @@ export function izinGerekli(b: Baglam, izin: string) {
 }
 
 export function yetkiYollari(s: FastifyInstance, b: Baglam) {
-  s.get('/ben', { preHandler: tamOturumGerekli(b) }, async (i) => {
+  s.get('/ben', { preHandler: tamOturumGerekli(b, true) }, async (i) => {
     const o = i.oturum!;
-    return { kimlik: o.kullanici, adSoyad: o.adSoyad, grup: o.grup, roller: await kullaniciRolleri(b.db, o.kullanici), izinler: await kullaniciIzinleri(b.db, o.kullanici) };
+    const { rows } = await b.db.query(`SELECT tercih_dili FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici]);
+    return {
+      kimlik: o.kullanici, adSoyad: o.adSoyad, grup: o.grup, dil: dilKodu(rows[0].tercih_dili), rizaBicimi: rizaBicimi(o.grup),
+      eksik: await eksikAdimlar(b.db, o.kullanici), roller: await kullaniciRolleri(b.db, o.kullanici), izinler: await kullaniciIzinleri(b.db, o.kullanici),
+    };
   });
 
   s.get('/yetki/roller', { preHandler: izinGerekli(b, 'rol_katalogu.goruntule') }, async () => {

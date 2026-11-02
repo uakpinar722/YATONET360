@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { randomInt } from 'node:crypto';
 import QRCode from 'qrcode';
+import { eksikAdimlar } from './adimlar.js';
 import { COOKIE_ADI, KURAL } from './ayarlar.js';
 import { izYaz } from './denetim.js';
 import { coz, ozet, rastgeleBelirtec, sifrele, totpDogrula, totpGizliUret } from './kripto.js';
@@ -74,11 +75,16 @@ async function oturumCoz(b: Baglam, i: FastifyRequest): Promise<OturumBilgi | nu
   return { oturum: o.kimlik, kullanici: o.kullanici_ref, asama: o.asama, ayricalikli: o.ayricalikli_mi, adSoyad: o.ad_soyad, grup: o.kullanici_grubu, adres: i.ip };
 }
 
-export function tamOturumGerekli(b: Baglam) {
+/** adimSerbest: ilk giriş adımları tamamlanmadan da açık olan yollar. Diğer yollar koşullar ve aydınlatma bitmeden çalışmaz (YG-1205, YG-1217). */
+export function tamOturumGerekli(b: Baglam, adimSerbest = false) {
   return async (i: FastifyRequest, y: FastifyReply) => {
     const o = await oturumCoz(b, i);
     if (!o || o.asama !== 'Tamam') return y.code(401).send({ hata: 'Oturumunuz sona ermiştir; yeniden giriş yapınız.' });
     i.oturum = o;
+    if (!adimSerbest) {
+      const eksik = await eksikAdimlar(b.db, o.kullanici);
+      if (eksik.length) return y.code(428).send({ hata: 'Devam etmeden önce ilk giriş adımlarını tamamlayınız.', eksik });
+    }
   };
 }
 
@@ -199,7 +205,7 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
     return { asama: 'tamam' };
   });
 
-  s.post('/kimlik/cikis', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+  s.post('/kimlik/cikis', { preHandler: tamOturumGerekli(b, true) }, async (i, y) => {
     await oturumKapat(b, i.oturum!.oturum, 'Çıkış');
     await izYaz(b.db, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Çıkış', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     y.clearCookie(COOKIE_ADI, { path: '/' });

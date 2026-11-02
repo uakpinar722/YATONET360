@@ -12,7 +12,8 @@ export async function istek<T>(yol: string, govde?: object): Promise<T> {
 }
 
 export interface Ben {
-  kimlik: string; adSoyad: string; grup: string; izinler: string[];
+  kimlik: string; adSoyad: string; grup: string; izinler: string[]; dil: 'tr' | 'en'; rizaBicimi: 'ozel_gun' | 'pazarlama';
+  eksik: ('kosullar' | 'aydinlatma' | 'izinler')[];
   roller: { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string }[];
 }
 export interface GirisYaniti { asama: 'kod'; yontem: 'uygulama' | 'sms'; kurulumGerekli: boolean; smsAcik: boolean }

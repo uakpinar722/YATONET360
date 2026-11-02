@@ -1,0 +1,27 @@
+/* G-2 ilk giriş */
+.ilk { min-height: 100%; display: flex; justify-content: center; padding: 24px 16px; }
+.ilk-kart { width: 100%; max-width: 560px; background: #fff; border: 1px solid var(--ciz); border-radius: 12px; box-shadow: 0 2px 12px rgba(22, 36, 66, .1); display: flex; flex-direction: column; overflow: hidden; align-self: flex-start; }
+.ilk-bas { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; }
+.ilk-bas img { height: 40px; }
+.ilerleme { display: flex; gap: 4px; padding: 0 20px; }
+.ilerleme i { flex: 1; height: 4px; border-radius: 2px; background: var(--ciz); }
+.ilerleme i.on { background: var(--brz); }
+.ilk-foto { height: 150px; margin-top: 12px; background: var(--lac) url(/foto.jpg) center/cover; }
+.ilk-ic { padding: 8px 20px 16px; }
+.ilk-ic h2 { font-family: 'Source Serif 4', serif; font-weight: 400; color: var(--lac); margin: 10px 0 6px; font-size: 24px; }
+.ilk-ic > .lnk, .ilk-ic form > .lnk { display: inline-block; margin-top: 8px; }
+.ilk-dip { display: flex; flex-direction: column; align-items: center; padding: 8px 16px 16px; }
+.ilk-dip .ayrac { width: 70%; }
+.ilk-dip .ayrac::after { background: #fff; }
+.ilk-dip img { height: 26px; }
+.satir2 { display: flex; gap: 8px; }
+.satir2 .secenek { margin-top: 0; text-align: center; }
+.secenek.orta b { margin-bottom: 0; }
+.liste-not { padding-left: 18px; margin: 6px 0; }
+.kutu { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; color: var(--met); background: #fff; border: 1px solid var(--ciz); border-radius: 10px; padding: 12px; margin: 10px 0 0; font-size: 14.5px; line-height: 1.4; }
+.kutu input { width: 22px; height: 22px; flex: none; margin: 0; }
+.kanallar { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0 8px; }
+.tam-metin { max-height: 320px; overflow: auto; margin-top: 8px; padding: 12px; border: 1px solid var(--ciz); border-radius: 8px; background: var(--krem); font-size: 14px; }
+.tam-metin p { margin: 0 0 8px; overflow-wrap: anywhere; }
+.basari { background: #E8F3EA; color: #1E6B34; border-radius: 12px; padding: 16px; margin-top: 10px; font-size: 15.5px; }
+.ust-bosluk { margin-top: 12px; }

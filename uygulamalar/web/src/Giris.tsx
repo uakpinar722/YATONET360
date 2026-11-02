@@ -31,7 +31,7 @@ const T = {
 type Dil = keyof typeof T;
 type Adim = 'giris' | 'kod' | 'hesap';
 
-function KodKutulari({ deger, degisti }: { deger: string; degisti: (s: string) => void }) {
+export function KodKutulari({ deger, degisti }: { deger: string; degisti: (s: string) => void }) {
   const kutu = useRef<(HTMLInputElement | null)[]>([]);
   const yaz = (i: number, v: string) => {
     const r = v.replace(/\D/g, '').slice(-1);

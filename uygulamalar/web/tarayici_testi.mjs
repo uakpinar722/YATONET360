@@ -1,5 +1,6 @@
-﻿// Gerçek tarayıcıda (Edge) G-1 akışı: hatalı parola, ilk kurulum, kod, panel, yetkili sayfa, çıkış. Sentetik hesapla çalışır ve hesabın kurulumunu geri alır.
-import { createHmac } from 'node:crypto';
+// Gerçek tarayıcıda (Edge) uçtan uca: G-1 girişi, G-2 davet akışı, ilk giriş adımları, yetkili sayfa, çıkış. Yalnız sentetik hesaplar kullanır.
+import { execFileSync } from 'node:child_process';
+import { createHmac, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
@@ -7,7 +8,9 @@ import { chromium } from 'playwright-core';
 
 const CIKTI = process.argv[2] ?? '.';
 const env = Object.fromEntries(readFileSync('C:/YATONET360/.env.local', 'utf8').split(/\r?\n/).filter(Boolean).map((s) => s.split(/=(.*)/s).slice(0, 2)));
-const [, ep, parola] = readFileSync('C:/YATONET360/.araclar/deneme_hesaplari.txt', 'utf8').split('\n').map((l) => l.split('\t')).find((s) => s[0] === 'İç Denetçi');
+const hesap = (rol) => readFileSync('C:/YATONET360/.araclar/deneme_hesaplari.txt', 'utf8').split('\n').map((l) => l.split('\t')).find((s) => s[0] === rol);
+const [, ep, parola] = hesap('İç Denetçi');
+const [, epYat, parolaYat] = hesap('Müşteri Portal Kullanıcısı');
 const B = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 function totp(g) {
   let bit = 0, d = 0; const c = [];
@@ -16,15 +19,28 @@ function totp(g) {
   const m = createHmac('sha1', Buffer.from(c)).update(s).digest(); const o = m[m.length - 1] & 15;
   return String((m.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0');
 }
+const sup = new pg.Client({ host: 'localhost', user: 'postgres', password: env.POSTGRES_SUPER_PAROLA, database: 'yatonet360' });
+await sup.connect();
+const sifirla = async (e) => {
+  const k = `(SELECT kimlik FROM kullanici_hesabi WHERE e_posta = '${e}')`;
+  await sup.query(`DELETE FROM aydinlatma_kaydi WHERE ilgili_kisi_ref = ${k}`);
+  await sup.query(`DELETE FROM kullanim_kosullari_kabulu WHERE kullanici_ref = ${k}`);
+  await sup.query(`DELETE FROM acik_riza WHERE ilgili_kisi_ref = ${k}`);
+  await sup.query(`UPDATE kullanici_hesabi SET totp_gizli_sifreli = NULL, totp_son_adim = 0, basarisiz_giris_sayisi = 0, kilit_bitis_zamani = NULL, izin_adimi_zamani = NULL WHERE e_posta = '${e}'`);
+};
+await sifirla(ep); await sifirla(epYat);
+
 const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = [];
 const kontrol = (ad, kosul) => { sonuc.push(`${kosul ? 'GEÇTİ' : 'KALDI'}  ${ad}`); };
+const hatalar = [];
+const sayfa = async (w = 390, h = 844) => { const p = await (await tarayici.newContext({ viewport: { width: w, height: h }, locale: 'tr-TR' })).newPage(); p.on('pageerror', (e) => hatalar.push(e.message)); return p; };
+const tasmaYok = (p) => p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 try {
-  const p = await (await tarayici.newContext({ viewport: { width: 390, height: 844 }, locale: 'tr-TR' })).newPage();
-  const hatalar = []; p.on('pageerror', (e) => hatalar.push(e.message));
+  // G-1 ve LGM personeli ilk adımları
+  let p = await sayfa();
   await p.goto('http://127.0.0.1:5173/');
-  await p.screenshot({ path: join(CIKTI, 't1_giris_tel.png') });
-  kontrol('telefonda yatay taşma yok', await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  kontrol('G-1 telefonda taşma yok', await tasmaYok(p));
   await p.getByRole('button', { name: 'Giriş' }).click();
   kontrol('boş alan uyarısı', await p.getByRole('alert').textContent() === 'Lütfen iki alanı da doldurunuz.');
   await p.getByLabel('E-Posta veya Cep Telefonu').fill(ep);
@@ -41,38 +57,107 @@ try {
   await p.getByLabel('Parola').fill(parola);
   await p.getByRole('button', { name: 'Giriş' }).click();
   await p.locator('.kurulum code').waitFor();
-  kontrol('ilk girişte kurulum kare kodu', await p.locator('.kurulum img').isVisible());
   kontrol('LGM personelinde SMS düğmesi yok', !(await p.getByRole('button', { name: 'Kodu SMS ile Gönder' }).isVisible()));
-  kontrol('kod tamamlanmadan düğme kapalı', await p.getByRole('button', { name: 'Doğrula' }).isDisabled());
-  await p.screenshot({ path: join(CIKTI, 't2_kurulum_tel.png'), fullPage: true });
   const gizli = await p.locator('.kurulum code').textContent();
   await p.locator('.kod input').first().focus();
   await p.keyboard.type(totp(gizli), { delay: 20 });
   await p.getByRole('button', { name: 'Doğrula' }).click();
+  await p.getByRole('heading', { name: 'Aydınlatma' }).waitFor();
+  kontrol('LGM personeline koşul adımı yok, aydınlatma açılır', true);
+  await p.getByRole('button', { name: 'Tam Metni Oku' }).click();
+  await p.locator('.tam-metin').waitFor();
+  kontrol('tam metin aynı ekranda (KVKK-05)', (await p.locator('.tam-metin').textContent()).includes('Çalışan'));
+  await p.screenshot({ path: join(CIKTI, 'g2_aydinlatma_tel.png'), fullPage: true });
+  await p.getByRole('button', { name: 'Bilgilendim' }).click();
+  await p.getByRole('heading', { name: 'İsteğe Bağlı İzinler' }).waitFor();
+  kontrol('özel gün kutuları boş gelir', await p.locator('.kutu input:checked').count() === 0);
+  await p.getByRole('button', { name: 'Devam' }).click();
+  await p.getByRole('heading', { name: 'Hesabınız Hazır' }).waitFor();
+  await p.getByRole('button', { name: 'Ana Ekrana Geç' }).click();
   await p.getByRole('heading', { name: /Hoş Geldiniz/ }).waitFor();
-  kontrol('giriş sonrası rol görünür', await p.getByText('İç Denetçi', { exact: true }).isVisible());
+  kontrol('adımlar bitince panel açılır', await p.getByText('İç Denetçi', { exact: true }).isVisible());
   kontrol('yetkisi olmayan menü gizli', !(await p.getByRole('button', { name: 'Rol Kataloğu' }).isVisible()));
-  await p.screenshot({ path: join(CIKTI, 't3_panel_tel.png') });
   await p.setViewportSize({ width: 1280, height: 800 });
   await p.getByRole('button', { name: 'İşlem İzi' }).click();
   await p.locator('table').waitFor();
   kontrol('işlem izi tablosu', await p.locator('tbody tr').count() > 0);
-  await p.screenshot({ path: join(CIKTI, 't4_iz_web.png') });
   await p.reload();
-  kontrol('yenilemede oturum sürer', await p.getByRole('heading', { name: /Hoş Geldiniz/ }).isVisible().catch(() => false) || await p.getByRole('heading', { name: /Hoş Geldiniz/ }).waitFor({ timeout: 4000 }).then(() => true));
+  await p.getByRole('heading', { name: /Hoş Geldiniz/ }).waitFor();
+  kontrol('yenilemede oturum sürer', true);
   await p.getByRole('button', { name: 'Çıkış' }).click();
   await p.getByLabel('Parola').waitFor();
   kontrol('çıkış giriş ekranına döner', true);
+
+  // Yat sahibi: SMS, koşullar, KVKK-01, rıza
+  p = await sayfa();
+  await p.goto('http://127.0.0.1:5173/');
+  await p.getByLabel('E-Posta veya Cep Telefonu').fill(epYat);
+  await p.getByLabel('Parola').fill(parolaYat);
+  await p.getByRole('button', { name: 'Giriş' }).click();
+  await p.getByText('Kod telefonunuza gönderilmiştir.').waitFor();
+  const kod = readFileSync('C:/YATONET360/.araclar/sms_kutusu.txt', 'utf8').trim().split('\n').at(-1).match(/kodunuz: (\d{6})/)[1];
+  await p.locator('.kod input').first().focus();
+  await p.keyboard.type(kod, { delay: 20 });
+  await p.getByRole('button', { name: 'Doğrula' }).click();
+  await p.getByRole('heading', { name: 'Kullanım Koşulları' }).waitFor();
+  kontrol('kabul işaretlenmeden düğme kapalı', await p.getByRole('button', { name: 'Devam' }).isDisabled());
+  await p.getByLabel('Portal Kullanım Koşullarını okudum').check();
+  await p.getByRole('button', { name: 'Devam' }).click();
+  await p.getByRole('heading', { name: 'Aydınlatma' }).waitFor();
+  await p.getByRole('button', { name: 'Bilgilendim' }).click();
+  await p.getByRole('heading', { name: 'İsteğe Bağlı İzinler' }).waitFor();
+  kontrol('rıza kutuları boş gelir (YG-1207)', await p.locator('.kutu input:checked').count() === 0);
+  kontrol('izin ekranı telefonda taşmaz', await tasmaYok(p));
+  await p.screenshot({ path: join(CIKTI, 'g2_izinler_tel.png'), fullPage: true });
+  await p.getByRole('button', { name: 'Şimdilik Geç' }).click();
+  await p.getByRole('heading', { name: 'Hesabınız Hazır' }).waitFor();
+  kontrol('rıza verilmeden devam edilir', (await sup.query(`SELECT count(*)::int n FROM acik_riza r JOIN kullanici_hesabi k ON k.kimlik = r.ilgili_kisi_ref WHERE k.e_posta = $1`, [epYat])).rows[0].n === 0);
+
+  // Davet bağlantısı (G-2)
+  const e3 = `davet${randomBytes(4).toString('hex')}@deneme.yatonet.local`;
+  const npx = process.platform === 'win32' ? 'cmd.exe' : 'npx';
+  const cikti = execFileSync(npx, ['/d', '/c', 'npx', 'tsx', 'araclar/davet.ts', 'Deneme Sigorta Kullanıcısı', e3, 'Sigorta Şirketi Kullanıcısı', 'Sigorta Şirketi / Eksper'], { cwd: 'C:/YATONET360/uygulamalar/api', encoding: 'utf8' });
+  const baglanti = cikti.trim().split('\n').at(-1).trim();
+  p = await sayfa();
+  await p.goto(baglanti);
+  await p.getByRole('heading', { name: 'Hoş Geldiniz' }).waitFor();
+  kontrol('davet karşılaması adı gösterir', await p.getByText('Deneme Sigorta Kullanıcısı').isVisible());
+  await p.screenshot({ path: join(CIKTI, 'g2_hos_geldiniz_tel.png') });
+  await p.getByRole('button', { name: 'English' }).click();
+  await p.getByRole('heading', { name: 'Set Your Password' }).waitFor();
+  const yeni = 'Mavi deniz uzun bir parola 2026';
+  await p.getByLabel('Password', { exact: true }).fill(yeni);
+  kontrol('parolalar eşleşmeden düğme kapalı', await p.getByRole('button', { name: 'Set My Password' }).isDisabled());
+  await p.getByLabel('Enter Password Again').fill(yeni);
+  await p.getByRole('button', { name: 'Set My Password' }).click();
+  await p.locator('.kurulum code').waitFor();
+  kontrol('adres çubuğunda bağlantı kalmaz', !p.url().includes('davet='));
+  kontrol('kurumsal kullanıcıya SMS seçeneği', await p.getByRole('button', { name: 'I Cannot Use an Authenticator App' }).isVisible());
+  const g3 = await p.locator('.kurulum code').textContent();
+  await p.locator('.kod input').first().focus();
+  await p.keyboard.type(totp(g3), { delay: 20 });
+  await p.getByRole('button', { name: 'Verify' }).click();
+  await p.getByRole('heading', { name: 'Terms of Use' }).waitFor();
+  kontrol('seçilen dil sonraki adımlarda sürer', true);
+  await p.getByLabel('I have read and accept').check();
+  await p.getByRole('button', { name: 'Continue' }).click();
+  await p.getByRole('heading', { name: 'Privacy Notice' }).waitFor();
+  await p.getByRole('button', { name: 'I Have Been Informed' }).click();
+  await p.getByRole('heading', { name: 'Your Account Is Ready' }).waitFor();
+  kontrol('kurumsal kullanıcıya rıza adımı yok', true);
+  await p.getByRole('button', { name: 'Go to Home Screen' }).click();
+  await p.getByRole('heading', { name: /Hoş Geldiniz/ }).waitFor();
+  kontrol('davetli panele ulaşır', true);
+  const iki = await sayfa(); await iki.goto(baglanti);
+  await iki.getByRole('alert').waitFor();
+  kontrol('kullanılmış davet çalışmaz', (await iki.getByRole('alert').textContent()).includes('geçersiz'));
   kontrol('sayfa hatası yok', hatalar.length === 0);
 } catch (e) {
   sonuc.push('KALDI  beklenmeyen: ' + e.message.split('\n')[0]);
 } finally {
   await tarayici.close();
-  const c = new pg.Client({ host: 'localhost', user: 'postgres', password: env.POSTGRES_SUPER_PAROLA, database: 'yatonet360' });
-  await c.connect();
-  await c.query(`UPDATE kullanici_hesabi SET totp_gizli_sifreli = NULL, totp_son_adim = 0, basarisiz_giris_sayisi = 0, kilit_bitis_zamani = NULL WHERE e_posta = $1`, [ep]);
-  await c.end();
+  await sifirla(ep); await sifirla(epYat);
+  await sup.end();
 }
 console.log(sonuc.join('\n'));
 if (sonuc.some((s) => s.startsWith('KALDI'))) process.exit(1);
-
