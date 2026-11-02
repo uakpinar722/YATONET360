@@ -1,0 +1,15 @@
+{
+  "name": "yatonet360",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["uygulamalar/*"],
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "kurulum": "npm run kurulum -w uygulamalar/api",
+    "api": "npm run gelistir -w uygulamalar/api",
+    "web": "npm run gelistir -w uygulamalar/web",
+    "test": "npm test -w uygulamalar/api",
+    "denetle": "npm run denetle -w uygulamalar/api && npm run denetle -w uygulamalar/web",
+    "lisanslar": "node araclar/lisanslar.mjs"
+  }
+}

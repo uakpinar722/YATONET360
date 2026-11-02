@@ -1,0 +1,24 @@
+import cookie from '@fastify/cookie';
+import Fastify from 'fastify';
+import { randomUUID } from 'node:crypto';
+import { kimlikYollari, type Baglam } from './kimlik.js';
+import { yetkiYollari } from './yetki.js';
+
+export async function sunucuKur(b: Baglam) {
+  // YG-1146: her istek ilişki kimliğiyle izlenir. YG-1147: istek gövdesi günlüğe yazılmaz.
+  const s = Fastify({ logger: process.env.VITEST ? false : { level: 'info' }, genReqId: () => randomUUID(), bodyLimit: 64 * 1024 });
+  await s.register(cookie);
+  s.addHook('onSend', async (i, y) => { y.header('X-Iliski-Kimligi', i.id); });
+  // Çerez SameSite=Strict; ek olarak durum değiştiren istek bu üst bilgiyi taşımalıdır.
+  s.addHook('onRequest', async (i, y) => {
+    if (i.method !== 'GET' && i.method !== 'HEAD' && i.headers['x-yatonet'] !== '1') return y.code(403).send({ hata: 'Geçersiz istek.' });
+  });
+  s.setErrorHandler((e: Error, i, y) => {
+    i.log.error({ hata: e.message, iliski: i.id });
+    const kod = (e as { statusCode?: number }).statusCode;
+    y.code(kod && kod < 500 ? kod : 500).send({ hata: 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
+  });
+  s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
+  await s.register(async (a) => { kimlikYollari(a, b); yetkiYollari(a, b); }, { prefix: '/api' });
+  return s;
+}
