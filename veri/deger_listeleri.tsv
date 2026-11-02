@@ -1798,8 +1798,8 @@ LST_MULKIYET_TURU	Miras (elbirliği)	Mirasçılar elbirliğiyle malik; Yetkili M
 LST_MUSTERI_TURU	Sigorta Şirketi	Kredi limiti uygulanmaz; alacak yaşlandırmayla izlenir; vade en geç 30 gün	Cilt VI ¶1959, ¶1991	1
 LST_MUSTERI_TURU	Kurumsal Müşteri	Açık alacak üst sınırı 20.000 EUR; vade sözleşmeyle	Cilt VI ¶1959, ¶1991	2
 LST_MUSTERI_TURU	Bireysel Müşteri	Kredi açılmaz; bakiye ödenmeden yat teslim edilmez	Cilt VI ¶1991	3
-LST_MUSTERI_UYARI_METNI	Tekne sigortası bildirimi (TR)	Yatınız için geçerli bir tekne sigortası poliçeniz varsa, onarımın başlayacağını sigorta şirketinize veya acentenize bildirmenizi önemle hatırlatırız. Poliçenizdeki bildirim yükümlülükleri ve teminat koşulları sizinle sigorta şirketiniz arasındaki sözleşmeye tabidir.	Cilt VIII ¶282 (K-119)	1
-LST_MUSTERI_UYARI_METNI	Tekne sigortası bildirimi (EN)	If your yacht is covered by a valid hull insurance policy, we kindly remind you to notify your insurer or agent that repairs are about to begin. Notification duties and cover terms under your policy are governed by the contract between you and your insurer.	Cilt VIII ¶282 (K-119)	2
+LST_MUSTERI_UYARI_METNI	Tekne sigortası bildirimi (TR)	Yatınız için geçerli bir tekne sigortası poliçeniz varsa, onarımın başlayacağını sigorta şirketinize veya acentenize bildirmenizi önemle hatırlatırız.	Cilt VIII ¶282 (K-119)	1
+LST_MUSTERI_UYARI_METNI	Tekne sigortası bildirimi (EN)	If your yacht is covered by a valid hull insurance policy, we kindly remind you to notify your insurer or agent that repairs are about to begin.	Cilt VIII ¶282 (K-119)	2
 LST_MUTABAKAT_DURUMU	Eşleşmedi	Sistem kaydıyla eşleşmeyen hareket	Cilt VIII ¶718 (K-117)	1
 LST_MUTABAKAT_DURUMU	Eşleşti		Cilt VIII ¶718 (K-117)	2
 LST_MUTABAKAT_DURUMU	Farklı – incelemede	Tutar veya tarih farkı	Cilt VIII ¶718 (K-117)	3

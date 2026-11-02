@@ -11,6 +11,8 @@ import { coz, totpDogrula } from './kripto.js';
 import { altNumara, sayac } from './sure.js';
 import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID, vergiNoGecerli } from './yat.js';
+import { belgeBagiKaydet } from './belge.js';
+import { ilerlemeEngeli, kabulEngeli, planEngeli } from './kalite.js';
 import { izinGerekli } from './yetki.js';
 
 type Db = Pool | PoolClient;
@@ -61,6 +63,15 @@ async function ilerlemeHesapla(c: Db, dosya: string) {
   await c.query(`UPDATE dosya SET ilerleme_yuzdesi = $2 WHERE kimlik = $1`, [dosya, y]);
   return y;
 }
+
+// Firma kanıtını kendi iş emrine bağlar; LGM kullanıcısı dosya erişimiyle görür.
+belgeBagiKaydet('İş Emri', async (db, k, id) => {
+  if (!UUID.test(id)) return 'yok';
+  const e = (await db.query(`SELECT kurulus_ref, dosya_ref FROM is_emri WHERE kimlik = $1`, [id])).rows[0];
+  if (!e) return 'yok';
+  if ((await db.query(`SELECT 1 FROM kurulus_kullanici WHERE kullanici_ref = $1 AND kurulus_ref = $2`, [k, e.kurulus_ref])).rowCount) return 'tamam';
+  return (await dosyaErisimi(db, k, e.dosya_ref)) ? 'tamam' : 'yetkisiz';
+});
 
 export function firmaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -179,7 +190,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!f || !UUID.test(id)) return undefined;
     return (await b.db.query(`SELECT e.*, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
   };
-  const firmaGorunum = (e: Record<string, any>) => ({ kimlik: e.kimlik, isEmriNo: e.is_emri_no, tur: e.is_emri_turu, statu: e.statu, anaIsEmri: e.ana_is_emri_ref, dosyaNo: e.dosya_no, oncelik: e.oncelik, yat: e.yat_adi, yatTuru: e.yat_turu, boy: e.tam_boy_m, govde: e.govde_malzemesi, yer: e.uygulama_yeri, kapsam: e.kapsam, bedel: e.firma_bedeli_eur, baslangic: e.baslangic_tarihi, bitis: e.hedef_bitis_tarihi, yanitSon: e.yanit_son, yanit: e.firma_yaniti, tehlikeliAtik: e.tehlikeli_atik });
+  const firmaGorunum = (e: Record<string, any>) => ({ kimlik: e.kimlik, dosya: e.dosya_ref, isEmriNo: e.is_emri_no, tur: e.is_emri_turu, statu: e.statu, anaIsEmri: e.ana_is_emri_ref, dosyaNo: e.dosya_no, oncelik: e.oncelik, yat: e.yat_adi, yatTuru: e.yat_turu, boy: e.tam_boy_m, govde: e.govde_malzemesi, yer: e.uygulama_yeri, kapsam: e.kapsam, bedel: e.firma_bedeli_eur, baslangic: e.baslangic_tarihi, bitis: e.hedef_bitis_tarihi, yanitSon: e.yanit_son, yanit: e.firma_yaniti, tehlikeliAtik: e.tehlikeli_atik });
 
   s.get('/firma-portal/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const f = await firmam(o.kullanici);
@@ -254,6 +265,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.kalem || !(Number(g.miktar) > 0)) return y.code(400).send({ hata: 'Kalem ve miktar zorunludur.' });
     if (!(await b.db.query(`SELECT 1 FROM is_emri_kalemi WHERE is_emri_ref = $1 AND aciklama = $2`, [e.kimlik, g.kalem])).rowCount) return y.code(400).send({ hata: 'Kalem bu iş emrinde değildir.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Kanıt yüklemeden ilerleme girilemez.' });
+    const ie = await ilerlemeEngeli(b.db, e, g.kalem); if (ie) return y.code(409).send({ hata: ie });
     const r = await b.db.query(`INSERT INTO is_emri_ilerleme (is_emri_ref, aciklama, miktar, belge_ref, giren_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [e.kimlik, g.kalem, g.miktar, g.belge, o.kullanici]);
     return { kimlik: r.rows[0].kimlik };
   });
@@ -273,6 +285,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const e = await firmaIsEmri((i.params as { id: string }).id, o.kullanici);
     if (!e) return yok(y);
     if (e.statu !== 'Aktif') return y.code(409).send({ hata: 'İş emri aktif değildir.' });
+    const te = await ilerlemeEngeli(b.db, { ...e, calisma_izni_gerekli: false }, null); if (te) return y.code(409).send({ hata: te });
     await b.db.query(`UPDATE is_emri SET statu = 'Tamamlandı', guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]); // YG-386: firma bildirimi teknik kabul değildir.
     return { statu: 'Tamamlandı' };
   });
@@ -292,6 +305,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, TEKNIK))) return y.code(403).send({ hata: 'Başlangıç kontrolünü Saha Sorumlusu veya Teknik Uzman yapar.' });
     if (e.statu !== 'Başlangıç Kontrolünde') return y.code(409).send({ hata: 'İş emri başlangıç kontrolünde değildir.' });
     if (!['Başlanabilir', 'Koşullu Başlanabilir', 'Bekletilir'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (sonuc !== 'Bekletilir') { const pe = await planEngeli(b.db, e.dosya_ref, e.is_emri_turu); if (pe) return y.code(409).send({ hata: pe }); }
     return islem(async (c) => {
       await c.query(`UPDATE is_emri SET baslangic_sonucu = $2, statu = CASE WHEN $2 = 'Bekletilir' THEN statu ELSE 'Aktif' END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc]);
       if (sonuc !== 'Bekletilir' && e.is_emri_turu !== 'KN') {
@@ -303,6 +317,11 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-378: LGM doğrular; doğrulanan miktar ilerlemeye girer. YG-386: uygulayıcı kendi işini kabul edemez (ayrı hesap ve portal).
+  s.get('/is-emri/:id/ilerlemeler', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici);
+    if (!e) return yok(y);
+    return (await b.db.query(`SELECT kimlik, aciklama, miktar, dogrulandi FROM is_emri_ilerleme WHERE is_emri_ref = $1 ORDER BY zaman`, [e.kimlik])).rows;
+  });
   s.post('/is-emri/:id/ilerleme/:no/dogrula', oturumlu, async (i, y) => {
     const o = i.oturum!; const p = i.params as { id: string; no: string }; const e = await lgmIsEmri(p.id, o.kullanici);
     if (!e) return yok(y);
@@ -322,6 +341,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']))) return y.code(403).send({ hata: 'Teknik kabulü Teknik Uzman verir.' });
     if (e.statu !== 'Tamamlandı') return y.code(409).send({ hata: 'Firma işi tamamlandı bildirmemiştir.' });
     if (!['Kabul', 'Koşullu Kabul', 'Ret'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    const ke = await kabulEngeli(b.db, e, sonuc!); if (ke) return y.code(409).send({ hata: ke });
+    if (sonuc === 'Koşullu Kabul') return y.code(400).send({ hata: 'Koşullu kabul açık iş listesiyle ayrı kaydedilir.' });
     const sonuclanmamis = (await b.db.query(`SELECT count(*)::int n FROM is_emri_ilerleme WHERE is_emri_ref = $1 AND NOT dogrulandi`, [e.kimlik])).rows[0].n;
     if (sonuc === 'Kabul' && sonuclanmamis) return y.code(409).send({ hata: 'Doğrulanmamış ilerleme varken kabul verilemez.' });
     await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, statu = CASE WHEN $2 = 'Ret' THEN 'Aktif' ELSE statu END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);

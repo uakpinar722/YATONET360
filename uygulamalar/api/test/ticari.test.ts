@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { alacakIsle, avansHesapla, firmaOdemePlani, hakedisKesintisi, ibanGecerli, izinGunu, masrafOdenecek, teslimEngeli, yillikHak } from '../src/ticari.js';
+import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
@@ -158,7 +159,8 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
   };
   it('kanıt zorunlu ve tek; kümülatif bedeli aşamaz; kesinti 10.000 üstünde', async () => {
     const { d, e } = await isEmri(12000); const u = `/api/firma-portal/is-emri/${e}/hakedis`;
-    const b1 = await o.belge(d.kimlik, 'ds'); const b2 = await o.belge(d.kimlik, 'ds');
+    const yukle = async () => { const r = await o.s.inject({ method: 'POST', url: `/api/belge/yukle?ad=K${Math.random()}.pdf&tur=${encodeURIComponent('İş Emri Kanıtı')}&bagTuru=${encodeURIComponent('İş Emri')}&bagKimligi=${e}&kaynak=Elden&dosya=k.pdf`, headers: { ...ana.H, 'content-type': 'application/octet-stream' }, cookies: { [COOKIE_ADI]: firmaC }, payload: Buffer.from(`%PDF-1.4 ${Math.random()}`) }); expect(r.statusCode, r.body).toBe(200); return r.json().belge as string; };
+    const b1 = await yukle(); const b2 = await yukle();
     expect((await o.ist('POST', u, firmaC, { brut: 100 })).statusCode).toBe(400);
     const r = await o.ist('POST', u, firmaC, { brut: 1000, belge: b1 });
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ hakedisNo: `${d.dosyaNo}-HK01`, kesinti: 50, net: 950 });

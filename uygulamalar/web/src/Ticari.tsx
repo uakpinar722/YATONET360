@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
+import { BelgeSec } from './Kalite';
 
 const eur = (x: string | number | null | undefined) => (x === null || x === undefined ? '—' : `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`);
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
@@ -22,12 +23,20 @@ interface Kayitlar {
 }
 interface Mali { odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
 
+/** YG-386: firmanın girdiği ilerlemeyi Teknik Uzman veya Saha Sorumlusu doğrular; kabul bundan sonra verilir. */
+function IlerlemeDogrula({ isEmri }: { isEmri: string }) {
+  const [l, setL] = useState<{ kimlik: string; aciklama: string; miktar: string; dogrulandi: boolean }[]>([]); const [h, setH] = useState('');
+  const yukle = () => istek<typeof l>(`/is-emri/${isEmri}/ilerlemeler`).then(setL).catch((e) => setH((e as Error).message));
+  useEffect(() => { void yukle(); }, [isEmri]);
+  return <>{h && <div className="hata" role="alert">{h}</div>}{l.filter((x) => !x.dogrulandi).map((x) => <button key={x.kimlik} className="btn2 kucuk" onClick={() => void istek(`/is-emri/${isEmri}/ilerleme/${x.kimlik}/dogrula`, {}).then(yukle).catch((e) => setH((e as Error).message))}>{x.aciklama} · {x.miktar} Doğrula</button>)}</>;
+}
+
 /** YG-195, YG-230, YG-301, YG-302, YG-884: dosya içinde kapsam, teklif, iş emri ve mali akış. */
 export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; rollerim: string[]; roller: string[]; asama: string | null }) {
   const [v, setV] = useState<Kayitlar | null>(null); const [m, setM] = useState<Mali | null>(null); const [firmalar, setFirmalar] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]);
   const yukle = () => Promise.all([istek<Kayitlar>(`/dosya/${id}/teklifler`).then(setV), istek<Mali>(`/dosya/${id}/mali`).then(setM)]);
   const { yap, Mesaj } = useYap(yukle);
-  useEffect(() => { void yukle().catch(() => {}); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); }, [id]);
+  useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); }, [id]);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '' }); const [ft, setFt] = useState('');
   const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
@@ -83,6 +92,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <span>{e.ana_is_emri_ref ? '↳ ' : ''}{e.is_emri_no} · {e.firma} · {e.statu}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
             <div className="dugmeler">
               {e.statu === 'Başlangıç Kontrolünde' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/baslangic`, { sonuc: 'Başlanabilir' }))}>Başlanabilir</button>}
+              {['Aktif', 'Tamamlandı'].includes(e.statu) && tu && <IlerlemeDogrula isEmri={e.kimlik} />}
               {e.statu === 'Tamamlandı' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/teknik-kabul`, { sonuc: 'Kabul' }), 'Teknik kabul kaydedildi.')}>Teknik Kabul</button>}
               {e.statu === 'Tamamlandı' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/kapat`, {}))}>Kapat</button>}
             </div>
@@ -124,9 +134,27 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   );
 }
 
-interface IsEmri { kimlik: string; isEmriNo: string; tur: string; statu: string; dosyaNo: string; oncelik: string; yat: string; yatTuru: string | null; yer: string; kapsam: string; bedel: string | null; yanitSon: string | null; yanit: string | null }
+interface IsEmri { kimlik: string; dosya: string; isEmriNo: string; tur: string; statu: string; dosyaNo: string; oncelik: string; yat: string; yatTuru: string | null; yer: string; kapsam: string; bedel: string | null; yanitSon: string | null; yanit: string | null }
 interface FirmaAyrinti extends IsEmri { kalemler: { aciklama: string; miktar: string; birim: string; gerceklesen_miktar: string }[] }
 interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum: string; yat_tipi: string | null; olay_turu: string; tehlike: string }
+
+/** YG-430: firma yalnız kendi birim fiyatını girer; müşteri fiyatı görünmez. */
+function FirmaFiyat({ dosya, yap }: { dosya: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [l, setL] = useState<{ kimlik: string; aciklama: string; miktar: string; birim: string }[]>([]); const [f, setF] = useState<Record<string, string>>({});
+  useEffect(() => { void yap(() => istek<typeof l>(`/firma-portal/dosya/${dosya}/kapsam`).then(setL)); }, [dosya]);
+  if (!l.length) return null;
+  return <Blok baslik="Firma Fiyat Teklifi">{l.map((s) => <div key={s.kimlik}><label htmlFor={`fy-${s.kimlik}`}>{s.aciklama} · {s.miktar} {s.birim} · Birim Fiyat (EUR)</label><input id={`fy-${s.kimlik}`} inputMode="decimal" value={f[s.kimlik] ?? ''} onChange={(e) => setF({ ...f, [s.kimlik]: e.target.value })} /></div>)}<button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/dosya/${dosya}/fiyat`, { kalemler: l.map((s) => ({ satir: s.kimlik, fiyat: Number((f[s.kimlik] ?? '').replace(',', '.')) })) }), 'Fiyat teklifiniz gönderildi.')}>Fiyat Teklifini Gönder</button></Blok>;
+}
+
+/** YG-292, YG-388: firma yalnız kendi uygunsuzluğunu görür ve yanıtlar. */
+function FirmaUygunsuzluk({ yap }: { yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; sinif: string; gercek_durum: string; statu: string; firma_yaniti: string | null }[]>([]); const [y, setY] = useState<Record<string, string>>({});
+  const yukle = () => istek<typeof l>('/firma-portal/uygunsuzluklar').then(setL);
+  useEffect(() => { void yukle().catch(() => {}); }, []);
+  const acik = l.filter((u) => u.statu !== 'Kapalı' && u.statu !== 'Geçersiz');
+  if (!acik.length) return null;
+  return <Blok baslik="Uygunsuzluklar">{acik.map((u) => <div className="soru" key={u.kimlik}><span>{u.uygunsuzluk_no} · {u.sinif} · {u.gercek_durum}</span><label htmlFor={`fu-${u.kimlik}`}>Yanıtınız</label><input id={`fu-${u.kimlik}`} value={y[u.kimlik] ?? u.firma_yaniti ?? ''} onChange={(e) => setY({ ...y, [u.kimlik]: e.target.value })} /><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/firma-portal/uygunsuzluk/${u.kimlik}/yanit`, { yanit: y[u.kimlik] }).then(yukle), 'Yanıtınız kaydedildi.')}>Yanıtla</button></div>)}</Blok>;
+}
 
 /** YG-1574 A7 Çözüm Ortağı: İşleminizi Bekleyenler, acil çağrı, iş emirleri, kabul kodla, ilerleme ve hakediş. Müşteri bilgisi ve müşteri fiyatı yoktur (YG-294). */
 export function FirmaAna({ ben }: { ben: Ben }) {
@@ -150,12 +178,14 @@ export function FirmaAna({ ben }: { ben: Ben }) {
       {acik.statu === 'Aktif' && <Blok baslik="İlerleme">
         <label htmlFor="f-ka">Kalem</label><select id="f-ka" value={kalem} onChange={(e) => setKalem(e.target.value)}><option value="">Seçiniz</option>{acik.kalemler.map((k) => <option key={k.aciklama}>{k.aciklama}</option>)}</select>
         <label htmlFor="f-m">Miktar</label><input id="f-m" inputMode="decimal" value={miktar} onChange={(e) => setMiktar(e.target.value)} />
-        <label htmlFor="f-bl">Kanıt Belgesi</label><input id="f-bl" value={belge} onChange={(e) => setBelge(e.target.value)} />
-        <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/ilerleme`, { kalem, miktar: Number(miktar.replace(',', '.')), belge }))}>İlerleme Kaydet</button>
+        <BelgeSec ad="Kanıt Belgesi" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
+        <button className="btn2" disabled={!belge} onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/ilerleme`, { kalem, miktar: Number(miktar.replace(',', '.')), belge }), 'İlerleme kaydedildi.').then(() => setBelge(''))}>İlerleme Kaydet</button>
         {acik.tur === 'AC' && <><label htmlFor="f-th">Tahmini Tutar (EUR)</label><input id="f-th" inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} /><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/acil-tutar`, { tahmini: Number(tahmini.replace(',', '.')) }))}>Tutarı Güncelle</button></>}
         <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/tamamlandi`, {}))}>İş Tamamlandı</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/durdur`, { neden: not_ }))}>İşi Durdur ve Bildir</button></div>
       </Blok>}
-      {['Aktif', 'Tamamlandı'].includes(acik.statu) && <Blok baslik="Hakediş">
+      {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaFiyat dosya={acik.dosya} yap={yap} />}
+      {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">
+        <BelgeSec ad="Hakediş Kanıtı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
         <div className="iki-tarih"><div><label htmlFor="f-br">Brüt (EUR)</label><input id="f-br" inputMode="decimal" value={brut} onChange={(e) => setBrut(e.target.value)} /></div><div><label htmlFor="f-fn">Fatura No</label><input id="f-fn" value={fat} onChange={(e) => setFat(e.target.value)} /></div></div>
         <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/hakedis`, { brut: Number(brut.replace(',', '.')), faturaNo: fat, belge }), 'Hakediş doğrulamaya gönderildi.')}>Hakediş Gönder</button>
       </Blok>}
@@ -169,6 +199,7 @@ export function FirmaAna({ ben }: { ben: Ben }) {
       {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div><div>Yanıt Son: {saat(c.son_zaman)}</div>
         <label htmlFor={`c-${c.kimlik}`}>Tahmini Tutar (EUR)</label><input id={`c-${c.kimlik}`} inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} />
         <div className="dugmeler"><button className="btn" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Kabul', tahmini: Number(tahmini.replace(',', '.') || 0) }))}>Kabul Ediyorum, Yola Çıkıyorum</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Müsait Değil' }))}>Müsait Değilim</button></div></div>)}
+      <FirmaUygunsuzluk yap={yap} />
       <div className="bolum">İş Emirlerim</div>
       {l.length === 0 && <div className="ozet bos">İş emri bulunmamaktadır.</div>}
       {l.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>İş Emri</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{l.map((e) => <tr key={e.kimlik}><td data-ad="İş Emri">{e.isEmriNo}</td><td data-ad="Yat">{e.yat}</td><td data-ad="Durum">{e.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => void istek<FirmaAyrinti>(`/firma-portal/is-emri/${e.kimlik}`).then(setAcik)}>Aç</button></td></tr>)}</tbody></table></div>}

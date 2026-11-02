@@ -34,23 +34,31 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-28 | 3 | Gündem | Şimdilik yalnız Süresi Aşan Onay sayısı otomatik dolar; dosya, uygunsuzluk ve KPI kaynakları modülleriyle gelir | `toplanti.ts` | Kabul (VAR-1, CEO 02.11.2026) |
 | V-29 | 3 | Periyodik takvim | Motor hazır, liste boş: YG-806 kalemlerinin sahibi ve tarihi ilgili modüllerle eklenir | `toplanti.ts` | Kabul (VAR-1, CEO 02.11.2026) |
 | V-30 | 3 | Yalnız Bilgi katılımcısı | Davet alır, hatırlatma almaz | `toplanti.ts` | Kabul (VAR-1, CEO 02.11.2026) |
-| V-31 | 4 | Metin kaynağı | BLD ve ONY metinleri ŞABLONLAR klasöründeki iki resmî Excel'den aktarılır (93 ve 29 satır); depodaki eski 40 satırlık liste kaldırıldı | `bildirim_metinlerini_aktar.py` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-32 | 4 | Açılış kararı adı | YG-030 "Koşullu Açılış" esas alındı; Alan Sözlüğü listesi eski adı ("Koşullu Kabul") taşıyor | `dosya.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-33 | 4 | Planlı ilk yanıt | YG-040/YG-144 "8 saat takvim" esas alındı; sözlük "1 iş günü" diyor | `sure.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-34 | 4 | Hiç risk yoksa öneri | Tüm öncelik soruları hayırsa önerilen öncelik Normal | `ihbar.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-35 | 4 | Talep statüsü | Listeye "Birleştirildi", "Dosyaya Dönüştü", "Bekletme" eklendi (YG-007, YG-030 gereği) | `0011` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-36 | 4 | Zorluk katsayısı | Teklif onayına kadar 1,00; kapasite bununla hesaplanır (YG-964 teklif onayında girer) | `0011` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-37 | 4 | Süre rengi | Kalan süre toplamın dörtte birine inince sarı; katalogda oran yok | `sure.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-38 | 4 | Dosya görüntüleme | dosya.tum: CEO, GMY, T&O, Ticari, Hukuk, Risk-Kalite Direktörleri, Operasyon ve Teknik Müdür ve yardımcıları, MPİ Müdürü, İç Denetim, Muhasebe kadrosu. Diğerleri yalnız ekibinde olduğu dosyayı görür | `kurulum.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-39 | 4 | Parolasız yat sahibi | Y1 ile açılan hesap telefon ve SMS koduyla girer (YG-463); parola belirlemiş hesapta bu yol kapalı | `portal.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-40 | 4 | Mülkiyet "Paylı" | Sözlük listesinde yok, YG-476 ve YG-1463 istediği için eklendi | `portal.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-41 | 5 | Kartela sürümü | 2026.2 Taslak olarak yüklendi; KRT-8 sonrası Yürürlükte olur. CEO'nun Excel'i bitince yeniden aktarılır | `kurulum.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-42 | 5 | Teklif tutarı | Son makam için kümülatif KDV hariç, reddedilmemiş tekliflerin toplamı (YG-173) | `teklif.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-43 | 5 | Ek kalem kartela dışı | Kartela kodu olmayan satır otomatik Kartela Dışı; Kart Öner akışı henüz yok (YG-188) | `teklif.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-44 | 5 | İş emri ara kademe | Operasyon Müdür Yardımcısı → Operasyon Müdürü → limite göre son makam | `firma.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-45 | 5 | Firma onay kodu | Firma kullanıcısının doğrulama uygulaması kodu (TOTP) kabul onayı sayılır (YG-224) | `firma.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-46 | 6 | Sigorta kullanıcısı | Şirket adıyla eşleşir; sigorta sicili açılınca şirket kimliğine bağlanır | `0015` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-47 | 6 | Mesai dışı dosya ekibi | Acil dosyada DS ve TU nöbetten atanır; OY ve TY Operasyon/Teknik Müdür atamasını bekler | `acil.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-48 | 7 | İzin günü | Cumartesi mesai günü olsa da YG-948 "hafta sonu düşülür" gereği Cumartesi sayılmaz | `ticari.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-49 | 7 | Avans matrahı | Avans onaylı teklifin KDV dahil genel toplamı üzerinden | `ticari.ts` | Kabul (VAR-2, CEO 03.11.2026) |
-| V-50 | 7 | Firma ödeme tahsilat tarihi | Dosyadaki son tahsilat tarihi esas; oransal bölüşüm (tahsil edilen oranda) henüz yok | `ticari.ts` | Kabul (VAR-2, CEO 03.11.2026) |
+| V-31 | 4 | Metin kaynağı | BLD ve ONY metinleri ŞABLONLAR klasöründeki iki resmî Excel'den aktarılır (93 ve 29 satır); depodaki eski 40 satırlık liste kaldırıldı | `bildirim_metinlerini_aktar.py` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-32 | 4 | Açılış kararı adı | YG-030 "Koşullu Açılış" esas alındı; Alan Sözlüğü listesi eski adı ("Koşullu Kabul") taşıyor | `dosya.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-33 | 4 | Planlı ilk yanıt | YG-040/YG-144 "8 saat takvim" esas alındı; sözlük "1 iş günü" diyor | `sure.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-34 | 4 | Hiç risk yoksa öneri | Tüm öncelik soruları hayırsa önerilen öncelik Normal | `ihbar.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-35 | 4 | Talep statüsü | Listeye "Birleştirildi", "Dosyaya Dönüştü", "Bekletme" eklendi (YG-007, YG-030 gereği) | `0011` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-36 | 4 | Zorluk katsayısı | Teklif onayına kadar 1,00; kapasite bununla hesaplanır (YG-964 teklif onayında girer) | `0011` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-37 | 4 | Süre rengi | Kalan süre toplamın dörtte birine inince sarı; katalogda oran yok | `sure.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-38 | 4 | Dosya görüntüleme | dosya.tum: CEO, GMY, T&O, Ticari, Hukuk, Risk-Kalite Direktörleri, Operasyon ve Teknik Müdür ve yardımcıları, MPİ Müdürü, İç Denetim, Muhasebe kadrosu. Diğerleri yalnız ekibinde olduğu dosyayı görür | `kurulum.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-39 | 4 | Parolasız yat sahibi | Y1 ile açılan hesap telefon ve SMS koduyla girer (YG-463); parola belirlemiş hesapta bu yol kapalı | `portal.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-40 | 4 | Mülkiyet "Paylı" | Sözlük listesinde yok, YG-476 ve YG-1463 istediği için eklendi | `portal.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-41 | 5 | Kartela sürümü | 2026.2 Taslak olarak yüklendi; KRT-8 sonrası Yürürlükte olur. CEO'nun Excel'i bitince yeniden aktarılır | `kurulum.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-42 | 5 | Teklif tutarı | Son makam için kümülatif KDV hariç, reddedilmemiş tekliflerin toplamı (YG-173) | `teklif.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-43 | 5 | Ek kalem kartela dışı | Kartela kodu olmayan satır otomatik Kartela Dışı; Kart Öner akışı henüz yok (YG-188) | `teklif.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-44 | 5 | İş emri ara kademe | Operasyon Müdür Yardımcısı → Operasyon Müdürü → limite göre son makam | `firma.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-45 | 5 | Firma onay kodu | Firma kullanıcısının doğrulama uygulaması kodu (TOTP) kabul onayı sayılır (YG-224) | `firma.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-46 | 6 | Sigorta kullanıcısı | Şirket adıyla eşleşir; sigorta sicili açılınca şirket kimliğine bağlanır | `0015` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-47 | 6 | Mesai dışı dosya ekibi | Acil dosyada DS ve TU nöbetten atanır; OY ve TY Operasyon/Teknik Müdür atamasını bekler | `acil.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-48 | 7 | İzin günü | Cumartesi mesai günü olsa da YG-948 "hafta sonu düşülür" gereği Cumartesi sayılmaz | `ticari.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-49 | 7 | Avans matrahı | Avans onaylı teklifin KDV dahil genel toplamı üzerinden | `ticari.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-50 | 7 | Firma ödeme tahsilat tarihi | Dosyadaki son tahsilat tarihi esas; oransal bölüşüm (tahsil edilen oranda) henüz yok | `ticari.ts` | Kabul (VAR-2, CEO 02.11.2026) |
+| V-51 | 5 | Kalite planı kapısı | YG-288 onarım, ek iş, garanti ve planlı hizmette uygulanır; keşif ve acil iş plandan önce başlar | `kalite.ts` | Sunulacak |
+| V-52 | 5 | Dosya görüntüleme ek | V-38 listesine Kalite Müdürü ve Yardımcısı, Tedarik Yönetimi Müdürü ve Yardımcısı eklendi; son karar ve sipariş onayı bunu gerektirir. Kalite Kontrolör ve Tedarik Sorumlusu dosyayı ekip ataması ile görür | `kurulum.ts` | Sunulacak |
+| V-53 | 5 | Kontrol noktası türleri | YG-383 adları esas alındı; Alan Sözlüğü listesi farklı adlar taşıyor | `kalite.ts` | Sunulacak |
+| V-54 | 5 | Uygunsuzluk kapanışı | YG-284 esas alındı (Kalite Kontrolör, Kritik ve Emniyette Kalite Müdürü); sözlük Teknik Uzman yazıyor | `kalite.ts` | Sunulacak |
+| V-55 | 5 | Numara önekleri | NCR, DF, TS, KP, SP, MG; katalogda yalnız KP tanımlı | `kalite.ts`, `tedarik.ts` | Sunulacak |
+| V-56 | 5 | Tekrarlayan uygunsuzluk | Aynı firma ve aynı dayanak ölçütte önceki kayıt varsa tekrarlayan sayılır | `kalite.ts` | Sunulacak |
+| V-57 | 5 | Bütünleşik test | Dosyada iki veya daha çok test grubu varsa nihai kabul bütünleşik test ister (YG-400) | `kalite.ts` | Sunulacak |
+| V-58 | 5 | Parça bedeli kapısı | Avans alınmayan dosyada aranmaz; diğerlerinde Parça veya Avans ödemesi tamamlanmış olmalı (YG-906) | `tedarik.ts` | Sunulacak |

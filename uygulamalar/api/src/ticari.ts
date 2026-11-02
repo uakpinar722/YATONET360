@@ -14,6 +14,7 @@ import { kapanisKapisi } from './saha.js';
 import { altNumara, sayac } from './sure.js';
 import { parametre, parasalZincir, sonMakam } from './teklif.js';
 import { UUID } from './yat.js';
+import { emniyetEngeli } from './kalite.js';
 import { izinGerekli } from './yetki.js';
 
 type Db = Pool | PoolClient;
@@ -71,6 +72,7 @@ export function ibanGecerli(iban: string): boolean {
 export async function teslimEngeli(db: Db, dosya: string): Promise<string | null> {
   const d = (await db.query(`SELECT d.musteri_turu, d.teslim_istisnasi, d.calisma_durduruldu, y.takyidat FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
   if (d.calisma_durduruldu) return 'Çalışmalar durdurulmuştur.';
+  const em = await emniyetEngeli(db, dosya); if (em) return em;
   if ((d.takyidat as string[]).some((x) => x === 'Haciz' || x.startsWith('İhtiyati')) && !(await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Takyidat Değerlendirmesi' AND nesne_kimligi = $1 AND durum = 'Tamamlandı'`, [dosya])).rowCount) return 'Takyidatlı yat Hukuk ve Uyum değerlendirmesi olmadan teslim edilemez.';
   if (d.teslim_istisnasi) return null;
   if (d.musteri_turu === 'Sigorta Şirketi') return null;

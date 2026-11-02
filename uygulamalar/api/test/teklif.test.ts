@@ -341,6 +341,8 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const ky = await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/yanit`, firmaC, { yanit: 'Kabul', kod: totpKodu(firmaGizli, suankiAdim()) });
     expect(ky.statusCode, ky.body).toBe(200); expect(ky.json().statu).toBe('Başlangıç Kontrolünde');
     expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('ds'), { sonuc: 'Başlanabilir' })).statusCode).toBe(403);
+    await o.sup.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, durum, hazirlayan_ref) VALUES ($1,1,'C','Ö','Onaylı',$2)`, [d.kimlik, o.K.tu]);
+    expect((await o.ist('GET', `/api/is-emri/${e.kimlik}/ilerlemeler`, await o.gir('tu'))).json()).toEqual([]);
     const bs = await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('tu'), { sonuc: 'Başlanabilir' });
     expect(bs.statusCode, bs.body).toBe(200);
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`bld02:${e.kimlik}`])).rows[0].metin;
