@@ -54,7 +54,7 @@ export async function onayTalebiAc(c: Db, g: OnayGirdisi): Promise<{ kimlik: str
   const { rows } = await c.query(
     `INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, dil, kutular, form_turu, tutar_eur, belge_surum_ref, belge_adi, alici_taraf_ref, alici_kullanici_ref, alici_ad, telefon, eposta, belirtec_ozeti, son_gecerlilik, nesne_turu, nesne_kimligi, hazirlayan_ref)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now() + make_interval(days => $18),$19,$20,$21) RETURNING kimlik`,
-    [g.dosya ?? null, g.ony, baslik, metin + (g.sigortaHatirlat && dil === 'tr' ? `\n\n${SIGORTA_HATIRLATMA}` : ''), s.dugme ?? (dil === 'tr' ? 'Onaylıyorum' : 'I approve'), dil, JSON.stringify(g.kutular ?? []), g.formTuru ?? null, g.tutar ?? null, g.belgeSurum ?? null, g.belgeAdi ?? baslik, g.taraf ?? null, g.kullanici ?? null, g.aliciAd, g.telefon ?? null, g.eposta ?? null, ozet(belirtec), g.gun ?? 30, g.nesneTuru ?? null, g.nesneKimligi ?? null, g.hazirlayan ?? null]);
+    [g.dosya ?? null, g.ony, baslik, metin + (g.sigortaHatirlat ? `\n\n${SIGORTA_HATIRLATMA[dil]}` : ''), s.dugme ?? (dil === 'tr' ? 'Onaylıyorum' : 'I approve'), dil, JSON.stringify(g.kutular ?? []), g.formTuru ?? null, g.tutar ?? null, g.belgeSurum ?? null, g.belgeAdi ?? baslik, g.taraf ?? null, g.kullanici ?? null, g.aliciAd, g.telefon ?? null, g.eposta ?? null, ozet(belirtec), g.gun ?? 30, g.nesneTuru ?? null, g.nesneKimligi ?? null, g.hazirlayan ?? null]);
   const id = rows[0].kimlik as string;
   const baglanti = `${g.webAdresi}/#onay=${belirtec}`;
   const dosyaNo = g.dosya ? (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [g.dosya])).rows[0]?.dosya_no ?? '' : '';
