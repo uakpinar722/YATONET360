@@ -101,3 +101,10 @@
 .cevap.c-y { background: #2e7d32; color: #fff; border-color: #2e7d32; }
 .cevap.c-s { background: #f9a825; color: #1a1a1a; border-color: #f9a825; }
 .cevap.c-k { background: #c62828; color: #fff; border-color: #c62828; }
+.m-durum { display: inline-block; padding: 2px 10px; border-radius: 10px; font-size: .85rem; font-weight: 600; }
+.m-y { background: #e3f2e6; color: #1b6e2c; }
+.m-s { background: #fdf0c8; color: #7a5600; }
+.m-k { background: #fbe0de; color: #a32019; }
+.m-g { background: #e8eaed; color: #444; }
+.ilerleme { height: 6px; background: #e8eaed; border-radius: 3px; margin: 6px 0; overflow: hidden; }
+.ilerleme i { display: block; height: 100%; background: #1f3a5f; }

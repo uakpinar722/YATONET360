@@ -5,6 +5,7 @@ import { Giris } from './Giris';
 import { ParolaYenile } from './Hesabim';
 import { Davet, IlkAdimlar } from './IlkGiris';
 import { Panel } from './Panel';
+import { OnayEkrani } from './Portal';
 
 const davetBelirteci = () => /^#davet=(.+)$/.exec(location.hash)?.[1] ?? null;
 
@@ -28,9 +29,10 @@ export function Uygulama() {
   }, []);
   if (!hazir) return null;
   // Giriş gerektirmeyen sayfalar (YG-611, YG-691).
-  const genel = /^#(dogrula|paylasim)=?(.*)$/.exec(location.hash);
+  const genel = /^#(dogrula|paylasim|onay)=?(.*)$/.exec(location.hash);
   if (genel?.[1] === 'dogrula') return <BelgeDogrula ilkKod={genel[2] ?? ''} />;
   if (genel?.[1] === 'paylasim' && genel[2]) return <PaylasimAc belirtec={genel[2]} />;
+  if (genel?.[1] === 'onay' && genel[2]) return <OnayEkrani belirtec={genel[2]} />;
   if (davet) return <Davet belirtec={davet} bitti={() => { setDavet(null); void yenile(); }} />;
   if (parola) return <ParolaYenile belirtec={parola} bitti={() => { history.replaceState(null, '', location.pathname); setParola(null); setBen(null); }} />;
   if (!ben) return <Giris girdi={yenile} />;

@@ -44,7 +44,7 @@ export function kimlikNormalle(k: string): { eposta?: string; telefon?: string }
   return {};
 }
 
-function cerezYaz(y: FastifyReply, b: Baglam, belirtec: string) {
+export function cerezYaz(y: FastifyReply, b: Baglam, belirtec: string) {
   y.setCookie(COOKIE_ADI, belirtec, { path: '/', httpOnly: true, sameSite: 'strict', secure: b.guvenliCerez });
 }
 

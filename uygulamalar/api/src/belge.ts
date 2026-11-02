@@ -93,7 +93,12 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const q = i.query as Record<string, string | undefined>;
     const red = (kod: number, hata: string) => { akis?.resume?.(); return y.code(kod).send({ hata }); };
     // YG-1440: yat sahibi belge yüklemez; belgeleri Dosya Sorumlusu girer, onarım kanıtını firma portalı yükler.
-    if (o.grup !== 'LGM İç Rolü' && o.grup !== 'İş Birliği Firması') return red(403, 'Belgeleriniz Dosya Sorumlunuz tarafından sisteme eklenir.');
+    // YG-1562: tek istisna, hasar bildirimine en fazla 5 fotoğraf.
+    const bildirimFoto = q.bagTuru === 'Talep' && o.grup !== 'LGM İç Rolü';
+    if (bildirimFoto) {
+      if (!['jpg', 'jpeg', 'png', 'heic'].includes((q.dosya ?? '').split('.').pop()?.toLowerCase() ?? '')) return red(400, 'Yalnız fotoğraf eklenebilir.');
+      if ((await b.db.query(`SELECT count(*)::int n FROM belge WHERE bag_turu = 'Talep' AND bag_kimligi = $1`, [q.bagKimligi])).rows[0].n >= 5) return red(409, 'En fazla 5 fotoğraf ekleyebilirsiniz.');
+    } else if (o.grup !== 'LGM İç Rolü' && o.grup !== 'İş Birliği Firması') return red(403, 'Belgeleriniz Dosya Sorumlunuz tarafından sisteme eklenir.');
     if (!akis || typeof akis.resume !== 'function') return y.code(400).send({ hata: 'Dosya gönderilmedi.' });
     const { ad, tur, bagTuru, bagKimligi, kaynak, kaynakKisi, sinif, belgeTarihi, gerekce, dosya } = q;
     if (!ad?.trim() || !tur?.trim() || !dosya?.trim()) return red(400, 'Belge adı, türü ve dosya zorunludur.');

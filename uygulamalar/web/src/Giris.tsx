@@ -1,5 +1,6 @@
 import { useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { istek, type GirisYaniti } from './api';
+import { YatSahibiKayit } from './Portal';
 
 // Metinler onaylı G-1 ekranından (G1_giris_B) alınmıştır.
 const T = {
@@ -31,7 +32,7 @@ const T = {
   },
 };
 type Dil = keyof typeof T;
-type Adim = 'giris' | 'kod' | 'hesap' | 'unuttum';
+type Adim = 'giris' | 'kod' | 'hesap' | 'unuttum' | 'yatsahibi';
 
 export function KodKutulari({ deger, degisti }: { deger: string; degisti: (s: string) => void }) {
   const kutu = useRef<(HTMLInputElement | null)[]>([]);
@@ -107,6 +108,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
             {hata && <div className="hata" role="alert">{hata}</div>}
             <button className="btn" disabled={mesgul}>{t.gir}</button>
             <div className="orta"><button type="button" className="lnk" onClick={() => { setHata(''); setNot(''); setAdim('unuttum'); }}>{t.unut}</button></div>
+            <div className="orta"><button type="button" className="lnk" onClick={() => void calistir(async () => { const y = await istek<GirisYaniti>('/kimlik/telefon', { telefon: kimlik }); setYanit(y); setNot(t.smsGitti); setAdim('kod'); })}>{dil === 'tr' ? 'Yat Sahibiyim: Telefonuma Kod Gönder' : 'I am a Yacht Owner: Send a Code to My Phone'}</button></div>
             {not && <div className="not orta">{not}</div>}
             <div className="ayir">{t.veya}</div>
             <button type="button" className="btn2" onClick={() => { setNot(''); setAdim('hesap'); }}>{t.yeni}</button>
@@ -152,12 +154,14 @@ export function Giris({ girdi }: { girdi: () => void }) {
             <h2>{t.hb}</h2>
             <div className="not">{t.hn}</div>
             {([['s1', 's1a'], ['s5', 's5a'], ['s2', 's2a'], ['s3', 's3a'], ['s4', 's4a']] as const).map(([b, a]) => (
-              <button key={b} type="button" className="secenek" onClick={() => setNot(t.yakinda)}><b>{t[b]}</b><span>{t[a]}</span></button>
+              <button key={b} type="button" className="secenek" onClick={() => { if (b === 's1') setAdim('yatsahibi'); else setNot(t.yakinda); }}><b>{t[b]}</b><span>{t[a]}</span></button>
             ))}
             {not && <div className="not orta">{not}</div>}
             <button type="button" className="lnk" onClick={geri}>{t.geri}</button>
           </div>
         )}
+
+        {adim === 'yatsahibi' && <YatSahibiKayit bitti={girdi} geri={() => setAdim('hesap')} />}
 
         <div className="alt">
           <span className="dil">

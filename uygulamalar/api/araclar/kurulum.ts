@@ -93,7 +93,10 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   };
   for (const [kod, tr, en] of tsv('matbu_M1_M10.tsv')) { await metin(kod!, 'tr', 'Matbu', null, tr); await metin(kod!, 'en', 'Matbu', null, en); }
   for (const r of tsv('bildirim_katalog.tsv')) { await metin(r[0]!, 'tr', 'Bildirim', `${r[1]} · ${r[2]}`, r[4]); await metin(r[0]!, 'en', 'Bildirim', `${r[1]} · ${r[2]}`, r[5]); }
-  for (const r of tsv('onay_ekran_metinleri.tsv')) { await metin(r[0]!, 'tr', 'Onay', r[3] ?? null, r[4]); await metin(r[0]!, 'en', 'Onay', r[5] ?? null, r[6]); }
+  for (const r of tsv('onay_ekran_metinleri.tsv')) {
+    await metin(r[0]!, 'tr', 'Onay', r[3] ?? null, r[4]); await metin(r[0]!, 'en', 'Onay', r[5] ?? null, r[6]);
+    for (const [dil, d] of [['tr', r[7]], ['en', r[8]]] as const) await c.query(`UPDATE sablon_metni SET dugme = $3, dogan_gorev = $4 WHERE kod = $1 AND dil = $2`, [r[0], dil, d && d !== '—' ? d : null, r[9] && r[9] !== '—' ? r[9] : null]);
+  }
   // YG-1037: teknik kabulü yapan kalite kontrolünü doğrulayamaz.
   await c.query(`INSERT INTO rol_cakisma SELECT a.kimlik, b.kimlik, 'Teknik kabul ile kalite doğrulaması aynı kişide olamaz' FROM rol a, rol b WHERE a.rol_adi = 'Teknik Uzman' AND b.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)' ON CONFLICT DO NOTHING`);
   await c.query('COMMIT');

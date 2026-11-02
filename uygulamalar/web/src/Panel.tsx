@@ -4,6 +4,7 @@ import { Bildirimler, Bugun, type BugunVeri } from './Bugun';
 import { AramaSonucu, Dosyalar } from './Dosya';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
+import { YatSahibiAna } from './Portal';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
@@ -54,7 +55,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   ];
   const b = veri?.okunmamisBildirim ?? 0;
   const icerik: Record<Sayfa, ReactNode> = {
-    ana: <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
+    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
     profil: <Profilim />,
     erisim: <ErisimTalebi />,

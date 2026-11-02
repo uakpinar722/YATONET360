@@ -104,7 +104,7 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
 }
 
 /** YG-022, BLD-35: ihbar eden kim olursa olsun yat sahibine/yetkilisine alındı bilgisi gider. Marina, sigorta ve yabancı sigortacı muhatap sayılmaz. */
-export async function ihbarAlindiGonder(c: Db, talepId: string) {
+export async function ihbarAlindiGonder(c: Db, talepId: string, web: string) {
   const t = (await c.query(
     `SELECT t.*, y.yat_adi, y.tur, o.telefon AS sahip_telefon, o.eposta AS sahip_eposta FROM talep t JOIN yat y ON y.kimlik = t.yat_ref LEFT JOIN taraf o ON o.kimlik = y.yat_sahibi_ref WHERE t.kimlik = $1`, [talepId])).rows[0];
   const yatTarafi = !IZLEME_ROLLERI.includes(t.talep_sahibi_turu) && !['Marina / Tesis', 'Yabancı Sigortacı / Sörveyör', 'Diğer'].includes(t.talep_sahibi_turu);
@@ -114,7 +114,7 @@ export async function ihbarAlindiGonder(c: Db, talepId: string) {
     return false;
   }
   return yatTarafinaYaz(c, { olay: `bld35:${talepId}`, kod: 'BLD-35', dil: dilKod(t.yazisma_dili), konu: `${t.talep_no} İhbar Alındı`, telefon, eposta, oncelik: t.oncelik, acil: t.acil_durum,
-    alanlar: { 'Tekne türü + Yat': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Boat type + Yacht': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Dosya No': t.talep_no, 'File No': t.talep_no, 'bağlantı': 'YATONET 360', link: 'YATONET 360' } });
+    alanlar: { 'Tekne türü + Yat': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Boat type + Yacht': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Dosya No': t.talep_no, 'File No': t.talep_no, 'bağlantı': web, link: web } });
 }
 
 export function ihbarYollari(s: FastifyInstance, b: Baglam) {
@@ -138,7 +138,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
       await c.query('BEGIN');
       const r = await ihbarKaydet(c, g, o.kullanici, { ilkSorumlu: o.kullanici });
       if ('hata' in r) { await c.query('ROLLBACK'); return y.code(400).send({ hata: r.hata }); }
-      await ihbarAlindiGonder(c, r.kimlik);
+      await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İhbar Kaydedildi', nesneTuru: 'Talep', nesneKimligi: r.kimlik, yeni: { no: r.talepNo, oncelik: r.oncelik }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return r;

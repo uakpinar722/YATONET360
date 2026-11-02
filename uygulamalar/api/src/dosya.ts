@@ -107,6 +107,11 @@ kapiKaydet('Teklif', async (db, d) => {
   return eksik.length ? `Teklife geçmek için yat bilgisi eksik: ${eksik.join(', ')}.` : null;
 });
 
+/** Dosya açılışında çalışan modül kancaları (yat sahibi beyanı, uygulama bağlantısı). */
+type AcilisKancasi = (c: PoolClient, dosya: string, web: string, yapan: string) => Promise<void>;
+const ACILIS: AcilisKancasi[] = [];
+export function acilisKancasi(f: AcilisKancasi) { ACILIS.push(f); }
+
 /** YG-036: görüş ayrılığında sırayla üst kademeye. Sahibi olmayan kademe atlanır. */
 const DUSURME_KADEMELERI = [['Operasyon Yöneticisi', 'Teknik Yönetici'], ['Operasyon Müdür Yardımcısı', 'Teknik Müdür Yardımcısı'], ['Operasyon Müdürü', 'Teknik Müdür'], ['Teknik ve Operasyon Direktörü']];
 
@@ -257,6 +262,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       // YG-1530: boy ve gövde dolmadan Teknik Uzman atanmaz; Dosya Sorumlusuna tamamlama görevi.
       if (await boyGovdeEksik(c, d.kimlik)) await kartAc(c, { tur: 'Eksik Bilgi', kategori: 'gorev', baslik: `${d.dosya_no} · Boy ve Gövde Malzemesini Tamamla`, ozet: 'Ruhsat fotoğrafından tamamlayınız; ruhsat yoksa kaptan veya yat sahibine telefonla sorunuz: "Tekne ahşap mı, fiber mi; yaklaşık kaç metre?"', sahipKullanici: t.ilk_sorumlu_ref, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
       else await kartAc(c, { tur: 'Teknik Ekip Ataması', baslik: `${d.dosya_no} · Teknik Uzman ve Teknik Yönetici Ata`, ozet: t.ihtiyac_tanimi.slice(0, 200), oncelik: t.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipRol: await rolId(c, 'Teknik Müdür'), kategori: 'islem', nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+      for (const f of ACILIS) await f(c, d.kimlik, b.webAdresi, o.kullanici);
       await iz(`Dosya Açıldı: ${g.karar}`, d.kimlik);
       await c.query('COMMIT');
       return { durum: 'Dosya Açıldı', kimlik: d.kimlik, dosyaNo: d.dosya_no };
@@ -476,7 +482,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     // BLD-06: Müşteri kararı ve bilgi dışında yat tarafı bilgilendirilir. Vefat işaretinde otomatik ileti durur (YG-1477).
     if (!d.vefat_isareti) {
       const t = (await b.db.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [id])).rows[0];
-      if (t) await yatTarafinaYaz(b.db, { olay: `bld06:${r.kimlik}`, kod: 'BLD-06', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Beklemede`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, neden: g.neden!.toLocaleLowerCase('tr'), reason: g.neden!, 'bağlantı': 'YATONET 360', link: 'YATONET 360' } });
+      if (t) await yatTarafinaYaz(b.db, { olay: `bld06:${r.kimlik}`, kod: 'BLD-06', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Beklemede`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, neden: g.neden!.toLocaleLowerCase('tr'), reason: g.neden!, 'bağlantı': b.webAdresi, link: b.webAdresi } });
     }
     return { kimlik: r.kimlik, sayacDurur: durur };
   });
