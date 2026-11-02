@@ -70,6 +70,14 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
     const m = JSON.parse(readFileSync(join(mk, f), 'utf8'));
     await c.query(`INSERT INTO hukuki_metin (kod, dil, surum, baslik, govde) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (kod, dil, surum) DO UPDATE SET baslik = EXCLUDED.baslik, govde = EXCLUDED.govde`, [m.kod, m.dil, m.surum, m.baslik, JSON.stringify(m.govde)]);
   }
+  // Onaylı metin kütüphanesi (YG-600, YG-626, YG-692). Kaynak: YATONET 360 KAYNAK\sablon.
+  const tsv = (d: string) => readFileSync(join(KOK, 'veri', 'sablon', d), 'utf8').split(/\r?\n/).filter(Boolean).slice(1).map((l) => l.split('\t'));
+  const metin = async (kod: string, dil: string, tur: string, baslik: string | null, m: string | undefined) => {
+    if (m) await c.query(`INSERT INTO sablon_metni (kod, dil, tur, baslik, metin) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (kod, dil, surum) DO UPDATE SET metin = EXCLUDED.metin, baslik = EXCLUDED.baslik`, [kod, dil, tur, baslik, m]);
+  };
+  for (const [kod, tr, en] of tsv('matbu_M1_M10.tsv')) { await metin(kod!, 'tr', 'Matbu', null, tr); await metin(kod!, 'en', 'Matbu', null, en); }
+  for (const r of tsv('bildirim_katalog.tsv')) { await metin(r[0]!, 'tr', 'Bildirim', `${r[1]} · ${r[2]}`, r[4]); await metin(r[0]!, 'en', 'Bildirim', `${r[1]} · ${r[2]}`, r[5]); }
+  for (const r of tsv('onay_ekran_metinleri.tsv')) { await metin(r[0]!, 'tr', 'Onay', r[3] ?? null, r[4]); await metin(r[0]!, 'en', 'Onay', r[5] ?? null, r[6]); }
   // YG-1037: teknik kabulü yapan kalite kontrolünü doğrulayamaz.
   await c.query(`INSERT INTO rol_cakisma SELECT a.kimlik, b.kimlik, 'Teknik kabul ile kalite doğrulaması aynı kişide olamaz' FROM rol a, rol b WHERE a.rol_adi = 'Teknik Uzman' AND b.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)' ON CONFLICT DO NOTHING`);
   await c.query('COMMIT');

@@ -19,3 +19,11 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-13 | 3 | Müdür Yardımcısı duyurusu | Dış kapsamlı duyuruyu hazırlayıp onaya gönderebilir; LGM içi duyuruyu yayımlayamaz | `iletisim.ts` | Sunulacak |
 | V-14 | 3 | Dış kanal sağlayıcıları | E-posta, SMS, WhatsApp hesapları açılana kadar deneme kutusuna yazılır; gerçek kişiye gitmez | `bildirim.ts` | Sunulacak |
 | V-15 | 3 | Resmî tatil | Mesai hesabı şimdilik Pzt–Cum 09–18, Cmt 09–15; resmî tatil takvimi eklenince daralır | `bildirim.ts` | Sunulacak |
+| V-16 | 3 | Virüs taraması | Gerçek antivirüs bağlanana kadar deneme tarayıcısı yalnız EICAR sınama imzasını yakalar; kayıtta kaynağı Deneme yazar. Üretim ayarıyla sunucu tarayıcı olmadan açılmaz | `depo.ts`, `belge.ts` | Sunulacak |
+| V-17 | 3 | Belge bağı | Şimdilik Görev ve Onay kayıtlarına bağlanır; Yat, Taraf, Dosya, İş Emri, Ödeme kendi modülleriyle eklenir. Belge ekranı Adım 4 Dosya Ayrıntısıyla gelir | `belge.ts` | Sunulacak |
+| V-18 | 3 | Kritik belge | Yalnız yükleyen görür, bağlantıyla paylaşılamaz; isim bazlı erişim listesi sonra eklenir | `belge.ts` | Sunulacak |
+| V-19 | 3 | Belge onay makamı | Belgeyi yükleyenin ilk aktif rolünün onay makamı. Türe göre özel onay silsileleri (Teknik Rapor vb.) ilgili modülde | `belge.ts` | Sunulacak |
+| V-20 | 3 | Paylaşım kodu metni | "Belge erişim kodunuz [kod]. Kodu kimseyle paylaşmayınız; LİMİT GLOBAL MARINE kodunuzu hiçbir zaman sormaz." ONY-20'den türetildi, katalogda yok. Bağlantıyı personel iletir; kod alıcının e-postasına gider, 5 hatalı denemede bağlantı kapanır | `belge.ts` | Sunulacak |
+| V-21 | 3 | PDF yazı tipi | Cambria ve Calibri (YG-669) kuruluysa kullanılır; Linux sunucuda ölçüleri aynı olan açık lisanslı Caladea ve Carlito devreye girer | `pdf.ts` | Sunulacak |
+| V-22 | 3 | PDF alt bilgisi | Unvan, web ve iki telefon; sicil ve vergi numaraları NUM-1 gereği yazılmadı. Logo olarak onaylı taslaktaki gibi YATONET 360 kullanıldı | `pdf.ts` | Sunulacak |
+| V-23 | 3 | PDF üretim aracı | Üretim sunucusuna Chromium kurulur; geliştirmede Edge kullanılır | `pdf.ts` | Sunulacak |

@@ -39,6 +39,13 @@ const tasmaYok = (p) => p.evaluate(() => document.documentElement.scrollWidth <=
 try {
   // G-1 ve LGM personeli ilk adımları
   let p = await sayfa();
+  // Giriş istemeyen belge doğrulama sayfası (YG-691)
+  const dg = await sayfa();
+  await dg.goto('http://127.0.0.1:5173/#dogrula=AAAA-AAAA');
+  await dg.getByRole('heading', { name: 'Belge Doğrulama' }).waitFor();
+  await dg.getByRole('button', { name: 'Doğrula' }).click();
+  await dg.getByText('Bu kodla kayıtlı belge bulunamadı.').waitFor();
+  kontrol('belge doğrulama sayfası girişsiz çalışır, yanlış kodu bildirir', true);
   await p.goto('http://127.0.0.1:5173/');
   kontrol('G-1 telefonda taşma yok', await tasmaYok(p));
   await p.getByRole('button', { name: 'Giriş' }).click();

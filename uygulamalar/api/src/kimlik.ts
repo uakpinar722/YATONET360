@@ -1,3 +1,4 @@
+import type { Depo, Tarayici } from './depo.js';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Pool } from 'pg';
 import { randomInt } from 'node:crypto';
@@ -10,7 +11,7 @@ import { coz, ozet, rastgeleBelirtec, sifrele, totpDogrula, totpGizliUret } from
 import { parolaDogrula, parolaKuraliHatasi, parolaOzetle, sahteDogrula } from './parola.js';
 import type { EpostaGonderici, SmsGonderici } from './sms.js';
 
-export interface Baglam { db: Pool; sms: SmsGonderici; eposta: EpostaGonderici; anahtar: string; guvenliCerez: boolean; webAdresi: string }
+export interface Baglam { db: Pool; sms: SmsGonderici; eposta: EpostaGonderici; anahtar: string; guvenliCerez: boolean; webAdresi: string; depo?: Depo; tarayici?: Tarayici }
 
 const UYGULAMA = 'Doğrulama uygulaması (6 haneli kod)';
 const HATALI = 'E-posta/telefon veya parola hatalı. 5 hatalı denemede hesap 15 dakika bekletilir.';
