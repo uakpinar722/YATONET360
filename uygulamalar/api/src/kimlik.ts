@@ -7,9 +7,9 @@ import { COOKIE_ADI, KURAL } from './ayarlar.js';
 import { izYaz } from './denetim.js';
 import { coz, ozet, rastgeleBelirtec, sifrele, totpDogrula, totpGizliUret } from './kripto.js';
 import { parolaDogrula, parolaKuraliHatasi, parolaOzetle, sahteDogrula } from './parola.js';
-import type { SmsGonderici } from './sms.js';
+import type { EpostaGonderici, SmsGonderici } from './sms.js';
 
-export interface Baglam { db: Pool; sms: SmsGonderici; anahtar: string; guvenliCerez: boolean }
+export interface Baglam { db: Pool; sms: SmsGonderici; eposta: EpostaGonderici; anahtar: string; guvenliCerez: boolean; webAdresi: string }
 
 const UYGULAMA = 'Doğrulama uygulaması (6 haneli kod)';
 const HATALI = 'E-posta/telefon veya parola hatalı. 5 hatalı denemede hesap 15 dakika bekletilir.';
@@ -106,6 +106,13 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
   s.post('/kimlik/giris', async (i, y) => {
     const { kimlik, parola } = (i.body ?? {}) as { kimlik?: string; parola?: string };
     if (!kimlik || !parola) return y.code(400).send({ hata: 'Lütfen iki alanı da doldurunuz.' });
+    // YG-1157: aynı adresten hızlı deneme. Tek hesabı kilitlemeden yayılan denemeleri de keser.
+    const hiz = await b.db.query(
+      `SELECT count(*)::int n FROM denetim_izi WHERE kaynak_adres = $1 AND sonuc = 'Başarısız' AND eylem IN ('Giriş Denemesi', 'Doğrulama Kodu Denemesi') AND olay_zamani > now() - make_interval(mins => $2)`, [i.ip, KURAL.adresDenemePenceresiDk]);
+    if (hiz.rows[0].n >= KURAL.adresDenemeSiniri) {
+      await izYaz(b.db, { eylem: 'Adres Bazlı Deneme Sınırı', sonuc: 'Başarısız', adres: i.ip, iliski: i.id });
+      return y.code(429).send({ hata: 'Çok fazla deneme yapıldı; birkaç dakika sonra yeniden deneyiniz.' });
+    }
     const n = kimlikNormalle(kimlik);
     const { rows } = n.eposta || n.telefon
       ? await b.db.query(`SELECT * FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta) = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon])

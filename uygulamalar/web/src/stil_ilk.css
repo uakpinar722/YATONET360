@@ -25,3 +25,9 @@
 .tam-metin p { margin: 0 0 8px; overflow-wrap: anywhere; }
 .basari { background: #E8F3EA; color: #1E6B34; border-radius: 12px; padding: 16px; margin-top: 10px; font-size: 15.5px; }
 .ust-bosluk { margin-top: 12px; }
+.panel h2.ara { font-family: 'Source Serif 4', serif; font-weight: 400; color: var(--lac); font-size: 20px; margin: 24px 0 6px; }
+.secili-kart { background: var(--abz); border-color: var(--brz); }
+.dar-form { max-width: 420px; }
+.panel .basari { margin: 0 0 12px; }
+.B .basari { margin-top: 12px; font-size: 14.5px; padding: 12px; }
+.panel .kanallar { max-width: 620px; }

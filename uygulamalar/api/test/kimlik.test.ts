@@ -25,7 +25,7 @@ beforeAll(async () => {
   await sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) SELECT kimlik, 'Çalışan', CASE WHEN kullanici_grubu = 'LGM İç Rolü' THEN 'KVKK-05' ELSE 'KVKK-01' END, 'R00', 'Türkçe', 'Web' FROM kullanici_hesabi`);
   await sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) SELECT kimlik, 'R00', 'Türkçe' FROM kullanici_hesabi`);
   db = new pg.Pool({ host: 'localhost', user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: VT });
-  s = await sunucuKur({ db, sms, anahtar: ANAHTAR, guvenliCerez: false });
+  s = await sunucuKur({ db, sms, eposta: new DenemeKutusu(null), webAdresi: 'http://x', anahtar: ANAHTAR, guvenliCerez: false });
 });
 afterAll(async () => { await s.close(); await db.end(); await sup.end(); });
 beforeEach(async () => {

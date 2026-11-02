@@ -30,6 +30,9 @@ export const KURAL = {
   parolaAsgari: 12, // YG-1152
   smsKodGecerlilikDk: 5, // YG-1712
   smsYenidenGonderimSn: 60, // YG-1712
+  parolaSifirlamaDk: 60, // parametre; katalogda tanımsız
+  adresDenemeSiniri: 30, // YG-1157; eşik parametre, katalogda tanımsız
+  adresDenemePenceresiDk: 10, // YG-1157; parametre
 } as const;
 
 export const COOKIE_ADI = 'yatonet_oturum';

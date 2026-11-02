@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+﻿import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { kurVeritabani } from '../araclar/kurulum.js';
@@ -21,7 +21,7 @@ beforeAll(async () => {
   await a.connect(); await a.query(`DROP DATABASE IF EXISTS ${VT} WITH (FORCE)`); await a.end();
   sup = await kurVeritabani(VT, { superParola: e.POSTGRES_SUPER_PAROLA!, uygulamaParola: e.YATONET_DB_PAROLA!, denemeHesap: false });
   db = new pg.Pool({ host: 'localhost', user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: VT });
-  s = await sunucuKur({ db, sms, anahtar: 'cd'.repeat(32), guvenliCerez: false });
+  s = await sunucuKur({ db, sms, eposta: new DenemeKutusu(null), webAdresi: 'http://x', anahtar: 'cd'.repeat(32), guvenliCerez: false });
 });
 afterAll(async () => { await s.close(); await db.end(); await sup.end(); });
 

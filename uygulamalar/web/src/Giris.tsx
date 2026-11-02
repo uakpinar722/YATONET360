@@ -6,6 +6,7 @@ const T = {
   tr: {
     kim: 'E-Posta veya Cep Telefonu', par: 'Parola', gir: 'Giriş', unut: 'Parolamı Unuttum', yeni: 'Hesap Oluştur', veya: 'veya', destek: '7/24 Destek Hattı: [●]', motto: 'Maviye Güç Verir',
     kodb: 'Doğrulama Kodu', kodApp: 'Doğrulama uygulamanızdaki 6 haneli kodu giriniz.', kodAppSms: 'Doğrulama uygulamanızdaki 6 haneli kodu giriniz. Uygulamayı kullanamıyorsanız SMS ile kod isteyiniz.', kodSms: 'Telefonunuza gönderilen 6 haneli kodu giriniz.',
+    unutN: 'Kayıtlı e-postanıza veya cep telefonunuza parola yenileme bağlantısı gönderilecektir.', unutD: 'Bağlantı Gönder', bosTek: 'Lütfen e-posta veya cep telefonunuzu giriniz.',
     kodd: 'Doğrula', sms: 'Kodu SMS ile Gönder', smsTekrar: 'Kodu Yeniden Gönder', smsGitti: 'Kod telefonunuza gönderilmiştir.', geri: '← Geri', bos: 'Lütfen iki alanı da doldurunuz.',
     kurB: 'Doğrulama Uygulaması Kurulumu', kurN: 'Doğrulama uygulamanızla bu kodu okutunuz, ardından uygulamanın ürettiği 6 haneli kodu giriniz.', kurEl: 'Elle Girilecek Anahtar',
     hb: 'Hesap Oluştur', hn: 'Sizi doğru yere yönlendirelim:', yakinda: 'Bu adım sonraki kod diliminde açılacaktır.',
@@ -18,6 +19,7 @@ const T = {
   en: {
     kim: 'E-mail or Mobile Phone', par: 'Password', gir: 'Sign In', unut: 'Forgot My Password', yeni: 'Create an Account', veya: 'or', destek: '24/7 Support Line: [●]', motto: 'Powering the Blue',
     kodb: 'Verification Code', kodApp: 'Enter the 6-digit code from your authenticator app.', kodAppSms: 'Enter the 6-digit code from your authenticator app. If you cannot use the app, request a code by SMS.', kodSms: 'Enter the 6-digit code sent to your phone.',
+    unutN: 'A password reset link will be sent to your registered e-mail or mobile phone.', unutD: 'Send Link', bosTek: 'Please enter your e-mail or mobile phone.',
     kodd: 'Verify', sms: 'Send Code by SMS', smsTekrar: 'Resend Code', smsGitti: 'The code has been sent to your phone.', geri: '← Back', bos: 'Please fill in both fields.',
     kurB: 'Authenticator App Setup', kurN: 'Scan this code with your authenticator app, then enter the 6-digit code it generates.', kurEl: 'Key for Manual Entry',
     hb: 'Create an Account', hn: 'Let us direct you to the right place:', yakinda: 'This step will open in the next release.',
@@ -29,7 +31,7 @@ const T = {
   },
 };
 type Dil = keyof typeof T;
-type Adim = 'giris' | 'kod' | 'hesap';
+type Adim = 'giris' | 'kod' | 'hesap' | 'unuttum';
 
 export function KodKutulari({ deger, degisti }: { deger: string; degisti: (s: string) => void }) {
   const kutu = useRef<(HTMLInputElement | null)[]>([]);
@@ -104,7 +106,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
             <input id="p" type="password" autoComplete="current-password" placeholder="••••••••••••" value={parola} onChange={(e) => setParola(e.target.value)} />
             {hata && <div className="hata" role="alert">{hata}</div>}
             <button className="btn" disabled={mesgul}>{t.gir}</button>
-            <div className="orta"><button type="button" className="lnk" onClick={() => setNot(t.yakinda)}>{t.unut}</button></div>
+            <div className="orta"><button type="button" className="lnk" onClick={() => { setHata(''); setNot(''); setAdim('unuttum'); }}>{t.unut}</button></div>
             {not && <div className="not orta">{not}</div>}
             <div className="ayir">{t.veya}</div>
             <button type="button" className="btn2" onClick={() => { setNot(''); setAdim('hesap'); }}>{t.yeni}</button>
@@ -128,6 +130,19 @@ export function Giris({ girdi }: { girdi: () => void }) {
             {not && <div className="not orta">{not}</div>}
             <button className="btn" disabled={mesgul || kod.replace(/\s/g, '').length !== 6}>{t.kodd}</button>
             {yanit?.smsAcik && <div className="orta"><button type="button" className="lnk" disabled={mesgul} onClick={() => void smsGonder()}>{yanit.yontem === 'sms' ? t.smsTekrar : t.sms}</button></div>}
+            <button type="button" className="lnk" onClick={geri}>{t.geri}</button>
+          </form>
+        )}
+
+        {adim === 'unuttum' && (
+          <form onSubmit={(e) => { e.preventDefault(); if (!kimlik.trim()) { setHata(t.bosTek); return; } void calistir(async () => { setNot((await istek<{ mesaj: string }>('/kimlik/parola-talep', { kimlik })).mesaj); }); }}>
+            <h2>{t.unut}</h2>
+            <div className="not">{t.unutN}</div>
+            <label htmlFor="ku">{t.kim}</label>
+            <input id="ku" autoComplete="username" value={kimlik} onChange={(e) => setKimlik(e.target.value)} />
+            {hata && <div className="hata" role="alert">{hata}</div>}
+            {not && <div className="basari">{not}</div>}
+            <button className="btn" disabled={mesgul}>{t.unutD}</button>
             <button type="button" className="lnk" onClick={geri}>{t.geri}</button>
           </form>
         )}

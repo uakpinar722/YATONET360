@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { istek, type Ben } from './api';
+import { Profilim } from './Hesabim';
 
-type Sayfa = 'ana' | 'roller' | 'iz';
+type Sayfa = 'ana' | 'roller' | 'iz' | 'profil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -28,6 +29,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'ana', ad: 'Bugün' },
     { s: 'roller', ad: 'Rol Kataloğu', izin: 'rol_katalogu.goruntule' },
     { s: 'iz', ad: 'İşlem İzi', izin: 'denetim_izi.goruntule' },
+    { s: 'profil', ad: 'Profil' },
   ];
   const cik = () => istek('/kimlik/cikis', {}).finally(cikti);
   return (
@@ -53,6 +55,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
             <p className="not">Bu sayfa kimlik ve yetki diliminin denemesidir. Rolünüze özel Bugün ekranı Adım 2'de gelecektir.</p>
           </>
         )}
+        {sayfa === 'profil' && <Profilim />}
         {sayfa === 'roller' && (<><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır']} /></>)}
         {sayfa === 'iz' && (<><h1>İşlem İzi</h1><p className="not">Son 100 kayıt. Bu görüntüleme de kayda geçmiştir.</p><Tablo<Iz> yol="/denetim/izler" baslik={['Zaman', 'Kullanıcı', 'İşlem', 'Sonuç', 'Açıklama']} satir={(r) => [tarih(r.olay_zamani), r.aktor, r.eylem, r.sonuc, r.gerekce]} /></>)}
       </main>

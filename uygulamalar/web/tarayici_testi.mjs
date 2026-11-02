@@ -112,6 +112,55 @@ try {
   await p.getByRole('button', { name: 'Şimdilik Geç' }).click();
   await p.getByRole('heading', { name: 'Hesabınız Hazır' }).waitFor();
   kontrol('rıza verilmeden devam edilir', (await sup.query(`SELECT count(*)::int n FROM acik_riza r JOIN kullanici_hesabi k ON k.kimlik = r.ilgili_kisi_ref WHERE k.e_posta = $1`, [epYat])).rows[0].n === 0);
+  // Profil: izin ver ve geri al, dil
+  await p.getByRole('button', { name: 'Ana Ekrana Geç' }).click();
+  await p.getByRole('button', { name: 'Profil' }).click();
+  await p.getByRole('heading', { name: 'İzinlerim' }).waitFor();
+  const wa = p.getByLabel('WhatsApp');
+  await wa.check();
+  await p.getByText('İzin tercihiniz kaydedilmiştir.').waitFor();
+  kontrol('profilden izin verilir', await wa.isChecked());
+  await p.screenshot({ path: join(CIKTI, 'profil_tel.png'), fullPage: true });
+  await wa.uncheck();
+  await p.waitForTimeout(400);
+  const rz = (await sup.query(`SELECT durum, geri_alma_kanali FROM acik_riza r JOIN kullanici_hesabi k ON k.kimlik = r.ilgili_kisi_ref WHERE k.e_posta = $1`, [epYat])).rows;
+  kontrol('profilden tek adımda geri alınır, kayıt kalır', rz.length === 1 && rz[0].durum === 'Geri Alındı');
+  kontrol('profil telefonda taşmaz', await tasmaYok(p));
+
+  // Parolamı unuttum (yeni bir davetli hesapla; deneme hesapları bozulmaz)
+  const eP = `parola${randomBytes(4).toString('hex')}@deneme.yatonet.local`;
+  const npxP = 'cmd.exe';
+  const cP = execFileSync(npxP, ['/d', '/c', 'npx', 'tsx', 'araclar/davet.ts', 'Deneme Parola Kişisi', eP, 'Dosya Sorumlusu', 'LGM İç Rolü'], { cwd: 'C:/YATONET360/uygulamalar/api', encoding: 'utf8' });
+  const dB = cP.trim().split('\n').at(-1).trim();
+  let pp = await sayfa();
+  await pp.goto(dB);
+  await pp.getByRole('button', { name: 'Türkçe' }).click();
+  await pp.getByLabel('Parola', { exact: true }).fill('Ilk parola uzun deneme 2026');
+  await pp.getByLabel('Parolayı Tekrar Giriniz').fill('Ilk parola uzun deneme 2026');
+  await pp.getByRole('button', { name: 'Parolamı Belirle' }).click();
+  await pp.locator('.kurulum code').waitFor();
+  pp = await sayfa();
+  await pp.goto('http://127.0.0.1:5173/');
+  await pp.getByRole('button', { name: 'Parolamı Unuttum' }).click();
+  await pp.getByLabel('E-Posta veya Cep Telefonu').fill(eP);
+  await pp.getByRole('button', { name: 'Bağlantı Gönder' }).click();
+  await pp.getByText('parola yenileme bağlantısı gönderilmiştir').waitFor();
+  kontrol('Parolamı Unuttum genel yanıt verir', true);
+  const satir = readFileSync('C:/YATONET360/.araclar/eposta_kutusu.txt', 'utf8').trim().split('\n').filter((l) => l.includes(eP) && l.includes('#parola=')).at(-1);
+  const yb = satir.match(/(http\S+#parola=[\w-]+)/)[1];
+  await pp.goto(yb);
+  await pp.getByRole('heading', { name: 'Yeni Parola Belirleyiniz' }).waitFor();
+  await pp.getByLabel('Parola', { exact: true }).fill('Yeni parola uzun deneme 2026');
+  await pp.getByLabel('Parolayı Tekrar Giriniz').fill('Yeni parola uzun deneme 2026');
+  await pp.getByRole('button', { name: 'Parolamı Yenile' }).click();
+  await pp.getByRole('heading', { name: 'Parolanız Yenilenmiştir' }).waitFor();
+  kontrol('adres çubuğunda parola bağlantısı kalmaz', !pp.url().includes('parola='));
+  await pp.getByRole('button', { name: 'Giriş Ekranına Dön' }).click();
+  await pp.getByLabel('E-Posta veya Cep Telefonu').fill(eP);
+  await pp.getByLabel('Parola').fill('Yeni parola uzun deneme 2026');
+  await pp.getByRole('button', { name: 'Giriş' }).click();
+  await pp.getByText('Doğrulama Kodu', { exact: true }).waitFor();
+  kontrol('yeni parolayla girişte kod yine istenir', true);
 
   // Davet bağlantısı (G-2)
   const e3 = `davet${randomBytes(4).toString('hex')}@deneme.yatonet.local`;
