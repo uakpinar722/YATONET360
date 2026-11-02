@@ -18,18 +18,18 @@ export function ortamOku(): Record<string, string> {
 }
 export const ENV_YOLU = ENV_DOSYASI;
 
-/** Süre kuralları. Kaynak gösterilenler onaylı; SMS değerleri katalogda tanımsız olduğundan varsayılan parametredir. */
+/** Süre kuralları (katalog satırlarıyla). */
 export const KURAL = {
   hareketsizlikDk: 30, // YG-1153
   ayricalikliHareketsizlikDk: 15, // YG-1153
   azamiOturumSaat: 12, // YG-1153
-  kodAsamasiDk: 10,
+  kodAsamasiDk: 10, // YG-1712
   beklemeDenemeSayisi: 5, // YG-1155
   ilkBeklemeDk: 15, // YG-1155
   azamiBeklemeDk: 24 * 60, // YG-1155
   parolaAsgari: 12, // YG-1152
-  smsKodGecerlilikDk: 5, // parametre
-  smsYenidenGonderimSn: 60, // parametre
+  smsKodGecerlilikDk: 5, // YG-1712
+  smsYenidenGonderimSn: 60, // YG-1712
 } as const;
 
 export const COOKIE_ADI = 'yatonet_oturum';

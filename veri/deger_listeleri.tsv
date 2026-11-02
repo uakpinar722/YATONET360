@@ -2438,6 +2438,7 @@ LST_TEYIT_DURUMU	Teyit edildi		Ana Veri xlsx Bağlama Noktaları (K-099)	2
 LST_TICARI_ILETI_KANALI	SMS	Ticari ileti kanalı	KVKK-02 ¶7	1
 LST_TICARI_ILETI_KANALI	E-posta	Ticari ileti kanalı	KVKK-02 ¶7	2
 LST_TICARI_ILETI_KANALI	Telefon	Ticari ileti kanalı	KVKK-02 ¶7	3
+LST_TICARI_ILETI_KANALI	WhatsApp	Ticari elektronik ileti kanalı	KVKK-10 Bölüm 4; CEO 02.11.2026 (KNL-1)	4
 LST_TICARI_ISLEM_TURU	Fiyat Teklifi	Tutar limiti ve iskonto	Cilt VI ¶268	1
 LST_TICARI_ISLEM_TURU	İş Emri	Tutar limiti; kredi limiti aşımında GMY	Cilt VI ¶268, ¶1991	2
 LST_TICARI_ISLEM_TURU	Tedarik Siparişi	Tutar limiti	Cilt VI ¶268; Ek II ¶2963	3

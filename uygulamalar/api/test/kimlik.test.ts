@@ -250,7 +250,7 @@ describe('işlem izi (YG-1183, YG-1186)', () => {
 
 describe('başlangıç verisi (YG-1124)', () => {
   it('değer listeleri ve roller yüklü', async () => {
-    expect((await sup.query(`SELECT count(*)::int n FROM deger_listesi`)).rows[0].n).toBe(2626);
+    expect((await sup.query(`SELECT count(*)::int n FROM deger_listesi`)).rows[0].n).toBe(2627);
     const o = (await sup.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_OLCU_BIRIMI'`)).rows.map((r) => r.deger);
     expect(o).toContain('m² × kat');
     expect((await sup.query(`SELECT kademe FROM rol WHERE rol_adi = 'Teknik Yönetici'`)).rows[0].kademe).toBe('Yönetici');
