@@ -37,7 +37,7 @@ export async function oncelikOner(db: Db, cevaplar: Record<string, string>, acil
 }
 
 /** Portal hesabı olmayan yat sahibi/yetkilisine dosya metni (YG-022, YG-1423). Vefat işaretinde otomatik ileti durur (YG-1477). */
-export async function yatTarafinaYaz(c: Db, g: { olay: string; kod: string; dil: Dil; alanlar: Record<string, string>; telefon?: string | null; eposta?: string | null; konu: string; oncelik?: string; acil?: boolean }) {
+export async function yatTarafinaYaz(c: Db, g: { olay: string; kod: string; dil: Dil; alanlar: Record<string, string | string[]>; telefon?: string | null; eposta?: string | null; konu: string; oncelik?: string; acil?: boolean }) {
   return disGonder(c, { olay: g.olay, telefon: g.telefon, eposta: g.eposta, konu: g.konu, metin: await metinGetir(c, g.kod, g.dil, g.alanlar), oncelik: g.oncelik, acil: g.acil });
 }
 

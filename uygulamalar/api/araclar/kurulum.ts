@@ -38,8 +38,9 @@ const IZINLER: [string, string][] = [
   ...['Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Operasyon Müdür Yardımcısı', 'Operasyon Müdürü', 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı'].map((r) => [r, 'ihbar.kaydet'] as [string, string]),
   ['Operasyon Müdürü', 'dosya.ata.operasyon'], ['Teknik Müdür', 'dosya.ata.teknik'], ['Kalite Müdürü', 'dosya.ata.kalite'], ['Tedarik Yönetimi Müdürü', 'dosya.ata.tedarik'],
   ['Operasyon Müdürü', 'dosya.statu'], ['Operasyon Müdür Yardımcısı', 'dosya.statu'], ['Operasyon Yöneticisi', 'dosya.statu'],
-  ...['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Ticari İşler Direktörü', 'Hukuk ve Uyum Direktörü', 'Risk ve Kalite Direktörü', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı', 'Teknik Müdür', 'Teknik Müdür Yardımcısı', 'Müşteri ve Paydaş İlişkileri Müdürü', 'İç Denetim Müdürü', 'İç Denetçi'].map((r) => [r, 'dosya.tum'] as [string, string]),
+  ...['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Ticari İşler Direktörü', 'Hukuk ve Uyum Direktörü', 'Risk ve Kalite Direktörü', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı', 'Teknik Müdür', 'Teknik Müdür Yardımcısı', 'Müşteri ve Paydaş İlişkileri Müdürü', 'İç Denetim Müdürü', 'İç Denetçi', 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Müdürü'].map((r) => [r, 'dosya.tum'] as [string, string]),
   ...['Dosya Sorumlusu', 'Teknik Uzman', 'Teknik Yönetici', 'Operasyon Yöneticisi', 'Teknik Müdür', 'Operasyon Müdürü'].map((r) => [r, 'yat.duzelt'] as [string, string]),
+  ['Sicil Sorumlusu', 'firma.kayit'], ['Firma Yönetimi Müdürü', 'firma.kayit'], ['Firma Yönetimi Müdürü', 'firma.onay'], ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'firma.onay'],
   ['İç Denetçi', 'denetim_izi.goruntule'], ['İç Denetim Müdürü', 'denetim_izi.goruntule'], ['Bilgi İşlem Müdürü', 'denetim_izi.goruntule'],
 ];
 
@@ -85,6 +86,14 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
       `INSERT INTO yat_marka_model (marka_kodu, marka, model, turkiye_kaynakli, katalog_seri, katalog_no, tekne_turu, boy_m, govde_malzemesi, tahrik_turu, fotograf, teknik_veri, durum)
        SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::boolean[], $5::int[], $6::text[], $7::text[], $8::numeric[], $9::text[], $10::text[], $11::text[], $12::text[], $13::text[])`,
       [sutun((r) => r[0]), sutun((r) => r[1]), sutun((r) => r[2]), sutun((r) => r[3] === 'Evet'), sutun((r) => (r[4] && /^\d+$/.test(r[4]) ? Number(r[4]) : null)), sutun((r) => r[5] || null), sutun((r) => r[6] || null), sutun((r) => { const v = sayi(r[7]); return v !== null && v < 10000 ? v : null; }), sutun((r) => (['Fiber', 'Ahşap', 'Çelik', 'Alüminyum'].includes(r[8] ?? '') ? r[8] : null)), sutun((r) => r[9] || null), sutun((r) => r[10] || null), sutun((r) => r[11] || null), sutun((r) => r[12] || null)]);
+  }
+  // Kartela: CEO'nun Excel çalışması bitene kadar 2026.2 Taslak olarak yüklenir (KRT-8 sonrası Yürürlükte).
+  if (!(await c.query(`SELECT 1 FROM kartela_surumu LIMIT 1`)).rowCount) {
+    await c.query(`INSERT INTO kartela_surumu VALUES ('2026.2', 'Taslak', NULL)`);
+    const kl = readFileSync(join(KOK, 'veri', 'kartela_2026_2.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
+    await c.query(`INSERT INTO kartela_kalemi SELECT a, '2026.2', b, d, e, f, g, h FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::numeric[]) t(a, b, d, e, f, g, h)`, [kl.map((r) => r[0]), kl.map((r) => r[1]), kl.map((r) => r[2]), kl.map((r) => r[3]), kl.map((r) => r[4]), kl.map((r) => r[5]), kl.map((r) => Number(r[6]))]);
+    const by = readFileSync(join(KOK, 'veri', 'kartela_birlikte_yazilmaz.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
+    for (const r of by) await c.query(`INSERT INTO kartela_birlikte_yazilmaz VALUES ($1,$2,$3)`, [r[0], r[1]!.split(' ').filter(Boolean), r[2]]);
   }
   // Onaylı metin kütüphanesi (YG-600, YG-626, YG-692). Kaynak: YATONET 360 KAYNAK\sablon.
   const tsv = (d: string) => readFileSync(join(KOK, 'veri', 'sablon', d), 'utf8').split(/\r?\n/).filter(Boolean).slice(1).map((l) => l.split('\t'));

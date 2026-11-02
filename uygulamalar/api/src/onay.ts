@@ -36,6 +36,13 @@ function onayKodu() {
   return s;
 }
 
+/** YG-1507, YG-468: onaylı metindeki "Kutu n: ☐ ..." satırları ayrı işaretsiz kutu olur; ana metinden çıkar. */
+export function kutuAyikla(metin: string): { metin: string; kutular: string[] } {
+  const kutular: string[] = [];
+  const y = metin.replace(/\s*Kutu(?: \d)?: ☐ ([^☐]+?)(?=\s*Kutu(?: \d)?: ☐|$)/g, (_t, k: string) => { kutular.push(k.trim()); return ''; });
+  return { metin: y.trim(), kutular };
+}
+
 /** YG-465, YG-1448: onay bağlantısı e-posta ve SMS ile gider; aynı akış portal ve bağlantıda çalışır. YG-1477: vefat işaretinde onay bağlantısı açılmaz. */
 export async function onayTalebiAc(c: Db, g: OnayGirdisi): Promise<{ kimlik: string; baglanti: string }> {
   if (g.dosya && (await c.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND vefat_isareti`, [g.dosya])).rowCount) throw Object.assign(new Error('Vefat işaretli dosyada onay bağlantısı gönderilmez.'), { statusCode: 409 });
@@ -43,7 +50,7 @@ export async function onayTalebiAc(c: Db, g: OnayGirdisi): Promise<{ kimlik: str
   const s = (await c.query(`SELECT baslik, metin, dugme FROM sablon_metni WHERE kod = $1 AND dil = $2 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [g.ony, dil])).rows[0];
   if (!s) throw new Error(`Onaylı metin bulunamadı: ${g.ony} (${dil})`);
   const belirtec = rastgeleBelirtec();
-  const baslik = doldur(s.baslik ?? g.ony, g.baslikAlanlari ?? g.alanlar); const metin = doldur(s.metin, g.alanlar);
+  const baslik = doldur(s.baslik ?? g.ony, g.baslikAlanlari ?? g.alanlar); const metin = doldur(kutuAyikla(s.metin).metin, g.alanlar);
   const { rows } = await c.query(
     `INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, dil, kutular, form_turu, tutar_eur, belge_surum_ref, belge_adi, alici_taraf_ref, alici_kullanici_ref, alici_ad, telefon, eposta, belirtec_ozeti, son_gecerlilik, nesne_turu, nesne_kimligi, hazirlayan_ref)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17, now() + make_interval(days => $18),$19,$20,$21) RETURNING kimlik`,

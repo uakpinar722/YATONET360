@@ -15,13 +15,13 @@ const ckr = (r: any) => r.cookies.find((c: any) => c.name === COOKIE_ADI)?.value
 
 export interface Ortam {
   s: FastifyInstance; sup: pg.Client; db: pg.Pool; sms: DenemeKutusu; posta: DenemeKutusu; K: Record<string, string>;
-  ist: (m: 'GET' | 'POST', url: string, c?: string, payload?: object) => ReturnType<FastifyInstance['inject']>;
+  ist: (m: 'GET' | 'POST', url: string, c?: string, payload?: object) => Promise<any>;
   gir: (k: string) => Promise<string>;
   kart: (tur: string, nesne: string) => Promise<any>;
-  karar: (id: string, k: string, kr: string, gerekce?: string) => ReturnType<FastifyInstance['inject']>;
+  karar: (id: string, k: string, kr: string, gerekce?: string) => Promise<any>;
   dosyaAc: (e?: Record<string, unknown>, ac?: Record<string, unknown>) => Promise<{ kimlik: string; dosyaNo: string; talep: any }>;
   ekipKur: (id: string) => Promise<void>;
-  ata: (id: string, kim: string, rol: string, yapan: string, e?: object) => ReturnType<FastifyInstance['inject']>;
+  ata: (id: string, kim: string, rol: string, yapan: string, e?: object) => Promise<any>;
   belge: (id: string, k: string, ad?: string, uzanti?: string) => Promise<string>;
   kapat: () => Promise<void>;
 }
@@ -45,7 +45,7 @@ export async function ortamKur(vt: string, kadro: Record<string, string>): Promi
   const sms = new DenemeKutusu(null), posta = new DenemeKutusu(null);
   const s = await sunucuKur({ db, sms, eposta: posta, anahtar: 'ab'.repeat(32), guvenliCerez: false, webAdresi: 'http://x' });
   const oturum: Record<string, string> = {};
-  const ist: Ortam['ist'] = (m, url, c, payload) => s.inject({ method: m, url, headers: H, cookies: c ? { [COOKIE_ADI]: c } : {}, payload });
+  const ist: Ortam['ist'] = async (m, url, c, payload) => s.inject({ method: m, url, headers: H, cookies: c ? { [COOKIE_ADI]: c } : {}, payload });
   const gir = async (k: string) => {
     if (oturum[k]) return oturum[k]!;
     const c = ckr(await s.inject({ method: 'POST', url: '/api/kimlik/giris', headers: H, payload: { kimlik: k + D, parola: PAROLA } }));

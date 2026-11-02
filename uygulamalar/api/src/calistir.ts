@@ -4,6 +4,7 @@ import { belgeYururlukIsle } from './belge.js';
 import { kuyrukIsle, onayHatirlat } from './bildirim.js';
 import { DenemeKutusu, denemeEpostaKutusu } from './sms.js';
 import { beklemedeIsle, sureIsle } from './dosya.js';
+import { teklifSureIsle } from './teklif.js';
 import { periyodikIsle, toplantiHatirlat } from './toplanti.js';
 import { sunucuKur } from './sunucu.js';
 
@@ -20,3 +21,4 @@ setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); }, 3
 setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
