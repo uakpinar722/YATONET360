@@ -131,7 +131,7 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
       // YG-466: onay sonrası kalıcı veri saklayıcıyla iletilir; iletim kuyrukta kayda geçer.
       if (karar === 'Onaylandı' && t.eposta) {
         const tarih = `${gunAy(zaman)} ${zaman.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })}`;
-        const m = await metinGetir(c, 'ONY-21', t.dil, { 'Belge adı': t.belge_adi, 'document name': t.belge_adi, 'Sürüm': 'Rev.1', version: 'Rev.1', 'tarih, saat': tarih, 'date, time': tarih });
+        const m = await metinGetir(c, 'ONY-21', t.dil, { 'Belge adı': t.belge_adi, 'document name': t.belge_adi, 'Sürüm': 'Rev.1', version: 'Rev.1', 'tarih saat': tarih, 'date time': tarih });
         await disGonder(c, { olay: `onay-sonuc:${t.kimlik}`, eposta: t.eposta, konu: t.belge_adi, metin: `${m} Onay kodu: ${kod}`, acil: true });
       }
       if (t.hazirlayan_ref) await bildir(c, { olay: `onay-karar:${t.kimlik}`, kullanicilar: [t.hazirlayan_ref], baslik: `${karar}: ${t.belge_adi}`, ozet: t.dosya_no, eposta: true });

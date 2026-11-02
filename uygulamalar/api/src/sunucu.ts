@@ -15,6 +15,7 @@ import { isYollari } from './is_motoru.js';
 import { kimlikYollari, type Baglam } from './kimlik.js';
 import { onayYollari } from './onay.js';
 import { portalYollari } from './portal.js';
+import { sahaYollari } from './saha.js';
 import { toplantiYollari } from './toplanti.js';
 import { yetkiYollari } from './yetki.js';
 
@@ -29,10 +30,11 @@ export async function sunucuKur(b: Baglam) {
   });
   s.setErrorHandler((e: Error, i, y) => {
     i.log.error({ hata: e.message, iliski: i.id });
+    if (process.env.HATA_GOSTER) console.error('HATA', e.message);
     const kod = (e as { statusCode?: number }).statusCode;
     y.code(kod && kod < 500 ? kod : 500).send({ hata: 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); }, { prefix: '/api' });
   return s;
 }

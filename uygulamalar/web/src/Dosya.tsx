@@ -285,8 +285,102 @@ function DosyaEkrani({ id, geri }: { id: string; geri: () => void }) {
         <div className="iki-tarih"><div><label htmlFor="n-s">Sahibi</label><select id="n-s" value={kSahip} onChange={(e) => setKSahip(e.target.value)}><option value="">Seçiniz</option>{[...new Map(d.ekip.map((e) => [e.kullanici, e])).values()].map((e) => <option key={e.kullanici} value={e.kullanici}>{e.ad_soyad}</option>)}</select></div><div><label htmlFor="n-t">Hedef Tarih</label><input id="n-t" type="date" value={kTarih} onChange={(e) => setKTarih(e.target.value)} /></div></div>
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/konu`, { baslik: kBaslik, sahip: kSahip, hedefTarih: kTarih })).then(() => setKBaslik(''))}>Konu Aç</button>
       </Blok>
+      <SahaBolumu id={id} d={d} belgeler={belgeler} yenile={() => void yukle()} />
       <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik}>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '—'} · {t.eposta ?? '—'}</div>)}</Blok>
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
+    </>
+  );
+}
+
+interface Saha {
+  kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null }[];
+  bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string }[];
+  gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
+  olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
+  kontrolListeleri: { kimlik: string; kayit_no: string; statu: string }[];
+  fotoEksik: string[];
+  garantiKayitlari: { kimlik: string; kayit_no: string; statu: string; oncelik: string; yanit_son: string | null; karar: string | null; sikayet_sonucu: string | null }[];
+}
+const KALEMLER = ['Genel – Baş', 'Genel – Kıç', 'Genel – Sancak', 'Genel – İskele', 'Genel – Güverte', 'Bölge – Geniş Plan', 'Bölge – Yakın Plan (Ölçekli)', 'Kimlik – Yat Adı', 'Kimlik – Sicil', 'Kimlik – HIN'];
+const CEKILEMEDI = ['Denize bakıyor / bağlı taraf', 'Yat suda, su altı görülemiyor', 'Erişim yok', 'Güvenlik riski', 'Diğer'];
+const KAPANMA = ['Tamamlandı', 'Sigortaca Onaylanmayan', 'Müşteri Vazgeçti', 'Müşteri Vazgeçti – Yanıt Alınamadı', 'Hükmi Tam Ziya', 'Tam Ziya', 'Birleştirildi', 'Hatalı Açılış', 'Devredildi'];
+
+/** YG-056, YG-127, YG-1452: keşif, bulgu, yönlendirmeli fotoğraf; YG-075, YG-148: kapanış ve tutanak; YG-1425: garanti ve şikâyet. */
+function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; belgeler: Belge[]; yenile: () => void }) {
+  const [v, setV] = useState<Saha | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
+  const [amac, setAmac] = useState(''); const [kBas, setKBas] = useState(''); const [kBit, setKBit] = useState(''); const [inc, setInc] = useState(''); const [cikis, setCikis] = useState('Hazır'); const [sup, setSup] = useState('Hayır'); const [sayim, setSayim] = useState(false); const [eris, setEris] = useState(''); const [erisT, setErisT] = useState('');
+  const [bKonum, setBKonum] = useState(''); const [bBolge, setBBolge] = useState(''); const [bAcik, setBAcik] = useState(''); const [bOnem, setBOnem] = useState('Orta'); const [bHedef, setBHedef] = useState('');
+  const [gKalem, setGKalem] = useState(KALEMLER[0]!); const [gBelge, setGBelge] = useState(''); const [gBolge, setGBolge] = useState(''); const [gOlcek, setGOlcek] = useState(''); const [gNeden, setGNeden] = useState('');
+  const [iTur, setITur] = useState('Askı'); const [iNeden, setINeden] = useState(''); const [iGer, setIGer] = useState(''); const [iYapilan, setIYapilan] = useState(''); const [iAcik, setIAcik] = useState(''); const [iTeslim, setITeslim] = useState(''); const [iDev, setIDev] = useState('');
+  const [kNeden, setKNeden] = useState(''); const [beyan, setBeyan] = useState(false);
+  const [gsTur, setGsTur] = useState('Garanti bildirimi'); const [gsAcik, setGsAcik] = useState('');
+  const yukle = () => istek<Saha>(`/dosya/${id}/saha`).then(setV).catch((e) => setHata(e.message));
+  useEffect(() => { void yukle(); }, [id]);
+  const yap = async (f: () => Promise<any>, tamam?: string) => { setHata(''); setNot(''); try { await f(); if (tamam) setNot(tamam); await yukle(); yenile(); } catch (x) { setHata((x as Error).message); } };
+  if (!v) return hata ? <div className="hata" role="alert">{hata}</div> : null;
+  const acikKesif = v.kesifler.find((k) => k.durum === 'Planlandı');
+  return (
+    <>
+      {hata && <div className="hata" role="alert">{hata}</div>}
+      {not && <div className="not" role="status">{not}</div>}
+      <Blok baslik="Keşif">
+        {v.kesifler.map((k) => <div key={k.kimlik}>{saat(k.planlanan_baslangic)} · {k.amac_kapsam} · {k.durum}{k.cikis_durumu ? ` · ${k.cikis_durumu}` : ''}</div>)}
+        {d.statu === 'Aktif' && d.asama === 'Keşif' && !acikKesif && <>
+          <label htmlFor="ks-a">Keşfin Amacı ve Kapsamı</label><input id="ks-a" value={amac} onChange={(e) => setAmac(e.target.value)} />
+          <div className="iki-tarih"><div><label htmlFor="ks-b">Başlangıç</label><input id="ks-b" type="datetime-local" value={kBas} onChange={(e) => setKBas(e.target.value)} /></div><div><label htmlFor="ks-s">Bitiş</label><input id="ks-s" type="datetime-local" value={kBit} onChange={(e) => setKBit(e.target.value)} /></div></div>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kesif`, { amac, baslangic: new Date(kBas).toISOString(), bitis: new Date(kBit).toISOString() }))}>Keşif Görevi Aç</button>
+        </>}
+        {acikKesif && <>
+          {v.fotoEksik.length > 0 && <div className="uyari">Eksik Fotoğraf: {v.fotoEksik.join(', ')}</div>}
+          <label htmlFor="ks-i">İncelenen Alanlar</label><input id="ks-i" value={inc} onChange={(e) => setInc(e.target.value)} />
+          <label htmlFor="ks-e">Erişilemeyen Alanlar</label><input id="ks-e" value={eris} onChange={(e) => setEris(e.target.value)} />
+          {eris && <><label htmlFor="ks-et">Açık Konu Hedef Tarihi</label><input id="ks-et" type="date" value={erisT} onChange={(e) => setErisT(e.target.value)} /></>}
+          <label htmlFor="ks-c">Çıkış Durumu</label><select id="ks-c" value={cikis} onChange={(e) => setCikis(e.target.value)}>{['Hazır', 'Koşullu', 'Açık'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="ks-t">Asbest veya Eski TBT Boyası Şüphesi Var mı?</label><select id="ks-t" value={sup} onChange={(e) => setSup(e.target.value)}>{['Hayır', 'Bilinmiyor', 'Evet'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label className="kutu"><input type="checkbox" checked={sayim} onChange={(e) => setSayim(e.target.checked)} /><span>Kanıt Sayımı Yapıldı</span></label>
+          <button className="btn2" onClick={() => void yap(() => istek(`/kesif/${acikKesif.kimlik}/tamamla`, { tarih: new Date().toISOString(), incelenen: inc, erisilemeyen: eris || undefined, hedefTarih: erisT || undefined, cikis, supheli: sup, kanitSayimi: sayim }))}>Keşfi Tamamla</button>
+        </>}
+      </Blok>
+      <Blok baslik="Bulgular">
+        {v.bulgular.map((b) => <div key={b.kimlik}>{b.bulgu_no} · {b.hasar_onem_derecesi}{b.bolge_kodu ? ` · ${b.bolge_kodu}` : ''} · {b.konum_referansi} · {b.aciklama}</div>)}
+        <label htmlFor="bg-k">Konum Referansı</label><input id="bg-k" value={bKonum} onChange={(e) => setBKonum(e.target.value)} placeholder="Baştan 8 m, sancak" />
+        <div className="iki-tarih"><div><label htmlFor="bg-b">Bölge Kodu</label><input id="bg-b" value={bBolge} onChange={(e) => setBBolge(e.target.value)} placeholder="S1" /></div><div><label htmlFor="bg-o">Önem</label><select id="bg-o" value={bOnem} onChange={(e) => setBOnem(e.target.value)}>{['Kritik', 'Yüksek', 'Orta', 'Düşük', 'Gözlem'].map((x) => <option key={x}>{x}</option>)}</select></div></div>
+        <label htmlFor="bg-a">Açıklama</label><input id="bg-a" value={bAcik} onChange={(e) => setBAcik(e.target.value)} />
+        <label htmlFor="bg-h">Hedef Tarih</label><input id="bg-h" type="date" value={bHedef} onChange={(e) => setBHedef(e.target.value)} />
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/bulgu`, { konum: bKonum, bolge: bBolge || undefined, aciklama: bAcik, etiket: 'Hasar', bilgiTuru: 'İlk Gözlem', onem: bOnem, yonlendirme: 'Onarım', sorumlu: d.ekip.find((e) => e.rol.includes('Teknik Uzman'))?.kullanici, hedefTarih: bHedef }))}>Bulgu Ekle</button>
+      </Blok>
+      <Blok baslik="Yönlendirmeli Fotoğraf">
+        {KALEMLER.map((k) => { const y = v.gorseller.find((g) => g.cekim_kalemi === k); return <div key={k}>{y ? '✔' : '○'} {k}{y?.gorsel_no ? ` · ${y.gorsel_no}` : ''}{y?.cekilemedi_nedeni ? ` · ${y.cekilemedi_nedeni}` : ''}</div>; })}
+        <label htmlFor="gr-k">Kalem</label><select id="gr-k" value={gKalem} onChange={(e) => setGKalem(e.target.value)}>{KALEMLER.map((k) => <option key={k}>{k}</option>)}</select>
+        {gKalem.startsWith('Bölge') && <><label htmlFor="gr-b">Bölge Kodu</label><input id="gr-b" value={gBolge} onChange={(e) => setGBolge(e.target.value)} /></>}
+        {gKalem.includes('Yakın') && <><label htmlFor="gr-o">Ölçek Referansı</label><input id="gr-o" value={gOlcek} onChange={(e) => setGOlcek(e.target.value)} /></>}
+        <label htmlFor="gr-f">Yüklenmiş Fotoğraf</label><select id="gr-f" value={gBelge} onChange={(e) => setGBelge(e.target.value)}><option value="">Seçiniz</option>{belgeler.map((b) => <option key={b.kimlik} value={b.kimlik}>{b.ad}</option>)}</select>
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, belge: gBelge, bolge: gBolge || undefined, olcek: gOlcek || undefined }))}>Fotoğrafı Kaydet</button>
+        {!gKalem.startsWith('Bölge') && <><label htmlFor="gr-n">Çekilemedi Nedeni</label><select id="gr-n" value={gNeden} onChange={(e) => setGNeden(e.target.value)}><option value="">Seçiniz</option>{CEKILEMEDI.map((x) => <option key={x}>{x}</option>)}</select><button className="btn2" disabled={!gNeden} onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, cekilemedi: gNeden }))}>Çekilemedi</button></>}
+      </Blok>
+      {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <>
+        <Blok baslik="Kapanış Kontrolü">
+          <label htmlFor="kp-n">Kapanma Nedeni (Kapalı için)</label><select id="kp-n" value={kNeden} onChange={(e) => setKNeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select>
+          <label className="kutu"><input type="checkbox" checked={beyan} onChange={(e) => setBeyan(e.target.checked)} /><span>Bu dosyayla ilgili aktarılmamış yazışma yok</span></label>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kapanis`, { cikis: d.statu === 'Teknik Kapalı' ? 'Kapalı' : 'Teknik Kapalı', neden: kNeden || undefined, yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: beyan }), 'Operasyon Müdürünün onayına gönderildi.')}>{d.statu === 'Teknik Kapalı' ? 'Kapanışı Onaya Gönder' : 'Teknik Kapanışı Onaya Gönder'}</button>
+        </Blok>
+        <Blok baslik="Askı, İptal, Fesih, Devir">
+          <label htmlFor="is-t">İşlem</label><select id="is-t" value={iTur} onChange={(e) => setITur(e.target.value)}>{['Askı', 'İptal', 'Fesih', 'Devir'].map((x) => <option key={x}>{x}</option>)}</select>
+          {iTur !== 'Askı' && <><label htmlFor="is-n">Kapanma Nedeni</label><select id="is-n" value={iNeden} onChange={(e) => setINeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select></>}
+          {iTur === 'Devir' && <><label htmlFor="is-d">Devralan Taraf</label><input id="is-d" value={iDev} onChange={(e) => setIDev(e.target.value)} /></>}
+          <label htmlFor="is-g">Gerekçe</label><input id="is-g" value={iGer} onChange={(e) => setIGer(e.target.value)} />
+          <label htmlFor="is-y">Yapılan İşler</label><input id="is-y" value={iYapilan} onChange={(e) => setIYapilan(e.target.value)} />
+          <label htmlFor="is-a">Açık İşler</label><input id="is-a" value={iAcik} onChange={(e) => setIAcik(e.target.value)} />
+          <label htmlFor="is-e">Teslim Edilenler</label><input id="is-e" value={iTeslim} onChange={(e) => setITeslim(e.target.value)} />
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/islem`, { tur: iTur, neden: iNeden || undefined, devralan: iDev || undefined, gerekce: iGer, talepEden: 'Dosya Sorumlusu', yatDurumu: d.talep.yat_mevcut_durumu, yapilan: iYapilan, acik: iAcik, teslim: iTeslim }), 'Operasyon Müdürünün onayına gönderildi.')}>Tutanağı Onaya Gönder</button>
+        </Blok>
+      </>}
+      <Blok baslik="Garanti ve Şikâyet">
+        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}</div>)}
+        <label htmlFor="gs-t">Kayıt Türü</label><select id="gs-t" value={gsTur} onChange={(e) => setGsTur(e.target.value)}><option>Garanti bildirimi</option><option>Şikâyet</option></select>
+        <label htmlFor="gs-a">{gsTur === 'Şikâyet' ? 'Şikâyet Konusu' : 'Belirti'}</label><input id="gs-a" value={gsAcik} onChange={(e) => setGsAcik(e.target.value)} />
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/garanti-sikayet`, { turler: [gsTur], kanal: 'Telefon', oncelik: 'Normal', belirti: gsTur === 'Şikâyet' ? undefined : gsAcik, konu: gsTur === 'Şikâyet' ? gsAcik : undefined }))}>Kaydı Aç</button>
+      </Blok>
     </>
   );
 }
