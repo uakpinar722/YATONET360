@@ -3,6 +3,7 @@ import Fastify from 'fastify';
 import { randomUUID } from 'node:crypto';
 import { hesabimYollari } from './hesabim.js';
 import { ilkGirisYollari } from './ilk_giris.js';
+import { isYollari } from './is_motoru.js';
 import { kimlikYollari, type Baglam } from './kimlik.js';
 import { yetkiYollari } from './yetki.js';
 
@@ -21,6 +22,6 @@ export async function sunucuKur(b: Baglam) {
     y.code(kod && kod < 500 ? kod : 500).send({ hata: 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); }, { prefix: '/api' });
   return s;
 }
