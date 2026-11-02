@@ -5,15 +5,12 @@ import { chromium, type Browser } from 'playwright-core';
 import type { Dil } from './metin.js';
 
 const KOK = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
-// YG-701 resmî unvan; web ve telefonlar CEO'nun verdiği iletişim bilgileridir. Sicil ve vergi numaraları ŞB maddeleriyle eklenir (NUM-1).
+// YG-701 resmî unvan. İletişim ve sicil bilgileri NUM-1 gereği şirket bilgileri (ŞB) kesinleşince parametreden gelir; YG-676 o zaman tamamlanır.
 const UNVAN = 'LİMİT GLOBAL MARINE Denizcilik Onarım ve Teknik Hizmetler Sanayi ve Ticaret Limited Şirketi';
-const WEB = 'www.limitglobalmarine.com.tr';
-const TEL = '+90 546 659 20 42';
-const TEL_7_24 = '+90 501 185 45 45';
 
 const ETIKET = {
-  tr: { sayfa: 'Sayfa', belgeNo: 'Belge No', dosyaNo: 'Dosya No', tarih: 'Tarih', surum: 'Sürüm', icindekiler: 'İçindekiler', onay: 'YATONET 360 Onay Kaydı', onaylayan: 'Onaylayan', zaman: 'Tarih-Saat', kanal: 'Kanal', kod: 'Onay Kodu', ic: 'İÇ KAYIT · DIŞARIYA GÖNDERİLMEZ', hat: '7/24 Destek Hattı' },
-  en: { sayfa: 'Page', belgeNo: 'Document No', dosyaNo: 'File No', tarih: 'Date', surum: 'Version', icindekiler: 'Contents', onay: 'YATONET 360 Approval Record', onaylayan: 'Approved By', zaman: 'Date and Time', kanal: 'Channel', kod: 'Approval Code', ic: 'INTERNAL RECORD · NOT FOR EXTERNAL USE', hat: '24/7 Support Line' },
+  tr: { sayfa: 'Sayfa', belgeNo: 'Belge No', dosyaNo: 'Dosya No', tarih: 'Tarih', surum: 'Sürüm', icindekiler: 'İçindekiler', onay: 'YATONET 360 Onay Kaydı', onaylayan: 'Onaylayan', zaman: 'Tarih-Saat', kanal: 'Kanal', kod: 'Onay Kodu', ic: 'İÇ KAYIT · DIŞARIYA GÖNDERİLMEZ' },
+  en: { sayfa: 'Page', belgeNo: 'Document No', dosyaNo: 'File No', tarih: 'Date', surum: 'Version', icindekiler: 'Contents', onay: 'YATONET 360 Approval Record', onaylayan: 'Approved By', zaman: 'Date and Time', kanal: 'Channel', kod: 'Approval Code', ic: 'INTERNAL RECORD · NOT FOR EXTERNAL USE' },
 };
 
 export type Hiza = 'sol' | 'ort' | 'sag';
@@ -46,7 +43,7 @@ function stil(t: BelgeTanim, kapak: boolean) {
   const e = ETIKET[t.dil];
   const ust = `${t.kod ? `${t.kod} — ` : ''}${t.ad}`;
   const sag = `${t.no} · ${t.surum}`;
-  const alt = `${UNVAN}\n${WEB} · ${TEL} · ${e.hat}: ${TEL_7_24}${t.isaret ? `\n${t.isaret}` : ''}`;
+  const alt = `${UNVAN}${t.isaret ? `\n${t.isaret}` : ''}`;
   const altLogo = gorsel('uygulamalar/web/public/yatonet.png');
   return `
 @page { size: A4; margin: 21mm 16mm 25mm;

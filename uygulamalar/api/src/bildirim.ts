@@ -68,7 +68,7 @@ async function kuyruk(db: Db, olay: string, k: string, kanal: string, hedef: str
 }
 
 /** YG-523: aynı dönem iki kez işlenmez. */
-async function birKez(db: Db, ad: string, anahtar: string): Promise<boolean> {
+export async function birKez(db: Db, ad: string, anahtar: string): Promise<boolean> {
   return Boolean((await db.query(`INSERT INTO zamanlanmis_is (ad, anahtar) VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING ad`, [ad, anahtar])).rowCount);
 }
 

@@ -3,6 +3,7 @@ import { ortamOku } from './ayarlar.js';
 import { belgeYururlukIsle } from './belge.js';
 import { kuyrukIsle, onayHatirlat } from './bildirim.js';
 import { DenemeKutusu, denemeEpostaKutusu } from './sms.js';
+import { periyodikIsle, toplantiHatirlat } from './toplanti.js';
 import { sunucuKur } from './sunucu.js';
 
 const e = ortamOku();
@@ -13,4 +14,6 @@ await s.listen({ host: '127.0.0.1', port: 3001 });
 const baglam = { db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anahtar: e.YATONET_SIFRELEME_ANAHTARI!, guvenliCerez: false, webAdresi: 'http://127.0.0.1:5173' };
 setInterval(() => { kuyrukIsle(baglam).catch((h) => s.log.error(h.message)); }, 30_000);
 setInterval(() => { onayHatirlat(db).catch((h) => s.log.error(h.message)); }, 300_000);
+setInterval(() => { toplantiHatirlat(db).catch((h) => s.log.error(h.message)); }, 60_000);
+setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);

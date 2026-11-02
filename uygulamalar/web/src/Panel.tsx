@@ -5,9 +5,10 @@ import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
+import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru';
+type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -46,7 +47,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'iz', ad: 'İşlem İzi', ik: '☰', izin: 'denetim_izi.goruntule' },
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
     { s: 'kurtarma', ad: 'Hesap Kurtarma', ik: '⚿', izin: 'hesap_kurtarma.ac' },
-    ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }, { s: 'vekalet' as Sayfa, ad: 'Vekâlet', ik: '⇄' }, { s: 'duyuru' as Sayfa, ad: 'Duyuru Yayımla', ik: '📣' }] : []),
+    ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }, { s: 'vekalet' as Sayfa, ad: 'Vekâlet', ik: '⇄' }, { s: 'duyuru' as Sayfa, ad: 'Duyuru Yayımla', ik: '📣' }, { s: 'toplanti' as Sayfa, ad: 'Toplantılar', ik: '▦' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
   ];
   const b = veri?.okunmamisBildirim ?? 0;
@@ -60,6 +61,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     vekalet: <VekaletSayfasi />,
     mesaj: <Mesajlar lgm={lgm} yenile={() => void yenile()} />,
     duyuru: <DuyuruYayimla />,
+    toplanti: <Toplantilar />,
     idari: <Yakinda ad="İdari İşlemlerim" adim="Adım 7" />,
     yardim: <Yakinda ad="Yardım" adim="Adım 3" />,
     roller: <><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır']} /></>,

@@ -121,6 +121,18 @@ try {
   await p.getByRole('heading', { name: 'Vekâlet' }).waitFor();
   await p.getByText('Vekil atayabileceğiniz bağlı personel bulunmamaktadır.').waitFor();
   kontrol('bağlı personeli olmayana vekâlet formu çıkmaz', true);
+  // Olağanüstü toplantı planlama
+  await p.getByRole('button', { name: 'Toplantılar' }).click();
+  await p.getByRole('button', { name: 'Toplantı Planla' }).click();
+  const tplKonu = `Deneme Toplantısı ${Date.now()}`;
+  await p.getByLabel('Konu').fill(tplKonu);
+  await p.getByLabel('Tarih ve Saat').fill(new Date(Date.now() + 864e5 * 2 + 3 * 36e5).toISOString().slice(0, 16));
+  await p.locator('label.kutu input[type=checkbox]').first().check();
+  await p.getByRole('button', { name: 'Davet Gönder' }).click();
+  await p.getByRole('heading', { name: tplKonu }).waitFor();
+  kontrol('olağanüstü toplantı planlanır, ayrıntısı açılır', true);
+  await p.getByRole('button', { name: 'Toplantıyı İptal Et' }).click();
+  await p.getByRole('button', { name: '← Toplantılar' }).click();
   // İç mesaj ve duyuru sayfaları
   await p.getByRole('button', { name: /Mesajlar/ }).click();
   await p.getByRole('heading', { name: 'Mesajlar' }).waitFor();

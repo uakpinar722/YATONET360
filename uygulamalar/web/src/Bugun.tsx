@@ -7,7 +7,7 @@ export interface Kart {
 }
 export interface BugunVeri {
   onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
-  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
+  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
 const TZ = 'Europe/Istanbul';
@@ -138,6 +138,14 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
         <div key={v.kimlik} className="ozet kart-sol">
           <div className="ust2"><b>Vekâleten Yürütülen İşler</b><Rozet s="gri" c={`Bitiş: ${v.bitis.split('-').reverse().join('.')}`} /></div>
           <div className="not">{v.rol} · {v.asil} Adına</div>
+        </div>
+      ))}
+
+      {veri.toplantilar.length > 0 && <div className="bolum">Yaklaşan Toplantılar</div>}
+      {veri.toplantilar.map((t) => (
+        <div key={t.kimlik} className="ozet kart-sol">
+          <div className="ust2"><b>{t.konu}</b><Rozet s="gri" c={new Date(t.baslangic).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} /></div>
+          <div className="not">{t.tpl_kod}</div>
         </div>
       ))}
 
