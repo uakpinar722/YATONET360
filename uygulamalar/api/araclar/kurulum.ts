@@ -70,6 +70,8 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
     const m = JSON.parse(readFileSync(join(mk, f), 'utf8'));
     await c.query(`INSERT INTO hukuki_metin (kod, dil, surum, baslik, govde) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (kod, dil, surum) DO UPDATE SET baslik = EXCLUDED.baslik, govde = EXCLUDED.govde`, [m.kod, m.dil, m.surum, m.baslik, JSON.stringify(m.govde)]);
   }
+  // YG-1037: teknik kabulü yapan kalite kontrolünü doğrulayamaz.
+  await c.query(`INSERT INTO rol_cakisma SELECT a.kimlik, b.kimlik, 'Teknik kabul ile kalite doğrulaması aynı kişide olamaz' FROM rol a, rol b WHERE a.rol_adi = 'Teknik Uzman' AND b.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)' ON CONFLICT DO NOTHING`);
   await c.query('COMMIT');
   console.log(`${dl.length} değer, ${n} rol yüklendi`);
   return c;

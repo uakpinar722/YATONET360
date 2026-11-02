@@ -1,7 +1,9 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
-import { kartAc, kapanisKaydet, rolSahipleri } from './is_motoru.js';
+import { kapanisKaydet } from './kapanis.js';
+import { kartAc } from './is_motoru.js';
+import { onayMakami } from './makam.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 
@@ -13,37 +15,6 @@ export async function kayitNo(db: Pool | PoolClient, onEk: string): Promise<stri
   const { rows } = await db.query(
     `INSERT INTO kayit_sayaci (on_ek, yil, sayi) VALUES ($1,$2,1) ON CONFLICT (on_ek, yil) DO UPDATE SET sayi = kayit_sayaci.sayi + 1 RETURNING sayi`, [onEk, yil]);
   return `${onEk}-${yil}-${String(rows[0].sayi).padStart(4, '0')}`;
-}
-
-/** Cilt I ¶1030: Müdürlüğün bağlı olduğu Direktör. */
-const BAGLI_DIREKTOR: Record<string, string> = {
-  'Operasyon Müdürlüğü': 'Teknik ve Operasyon Direktörü', 'Teknik Müdürlük': 'Teknik ve Operasyon Direktörü', 'Tedarik Yönetimi Müdürlüğü': 'Teknik ve Operasyon Direktörü',
-  'Muhasebe ve Finans Müdürlüğü': 'Ticari İşler Direktörü', 'İnsan Kaynakları Müdürlüğü': 'Ticari İşler Direktörü', 'İdari İşler Müdürlüğü': 'Ticari İşler Direktörü',
-  'Bilgi İşlem Müdürlüğü': 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Firma Yönetimi Müdürlüğü': 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü',
-  'Kalite Müdürlüğü': 'Risk ve Kalite Direktörü', 'İç Denetim Müdürlüğü': 'Risk ve Kalite Direktörü',
-  'Müşteri ve Paydaş İlişkileri Müdürlüğü': 'Strateji ve Kurumsal Gelişim Direktörü',
-};
-
-/**
- * YG-1009, YG-1714 (ERS-1): birim personeli → birim Müdürü; Müdürlüğü olmayan birimde aynı birimin Direktörü; Müdür → bağlı Direktör;
- * Direktör → Genel Müdür Yardımcısı; Üst Yönetim rolleri → CEO.
- */
-export async function onayMakami(db: Pool | PoolClient, rolId: string): Promise<string> {
-  const { rows } = await db.query(`SELECT rol_adi, rol_sahibi_birim, kademe FROM rol WHERE kimlik = $1`, [rolId]);
-  const r = rows[0];
-  const bul = async (ad: string) => (await db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
-  if (r.rol_sahibi_birim === 'Üst Yönetim') return bul('CEO');
-  if (r.kademe === 'Direktör') return bul('Genel Müdür Yardımcısı');
-  if (r.kademe === 'Müdür') {
-    const d = BAGLI_DIREKTOR[r.rol_sahibi_birim];
-    if (!d) throw new Error(`Bağlı Direktör tanımsız: ${r.rol_sahibi_birim}`);
-    return bul(d);
-  }
-  for (const k of ['Müdür', 'Direktör']) {
-    const m = await db.query(`SELECT kimlik FROM rol WHERE rol_sahibi_birim = $1 AND kademe = $2 AND kimlik <> $3 LIMIT 1`, [r.rol_sahibi_birim, k, rolId]);
-    if (m.rows[0]) return m.rows[0].kimlik;
-  }
-  throw new Error(`Onay makamı tanımsız: ${r.rol_adi}`);
 }
 
 /** Onay sonucu erişim talebine işlenir; onayda Sistem Yöneticisine 24 saatlik uygulama işi düşer (A33-1). */
@@ -101,7 +72,8 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/erisim/uygulanacak', uygulayici, async (i) => {
     const { rows } = await b.db.query(
-      `SELECT t.kimlik, t.sure_sonu::text, t.kapsam, t.is_gerekcesi, k.ad_soyad AS kullanici, r.rol_adi AS rol, o.ad_soyad AS onaylayan, t.kullanici_ref = $1 AS kendi
+      `SELECT t.kimlik, t.sure_sonu::text, t.kapsam, t.is_gerekcesi, k.ad_soyad AS kullanici, r.rol_adi AS rol, o.ad_soyad AS onaylayan, t.kullanici_ref = $1 AS kendi,
+              (SELECT string_agg(m.rol_adi || ': ' || c.neden, '; ') FROM rol_atamasi a JOIN rol_cakisma c ON (c.rol_a = t.rol_ref AND c.rol_b = a.rol_ref) OR (c.rol_b = t.rol_ref AND c.rol_a = a.rol_ref) JOIN rol m ON m.kimlik = a.rol_ref WHERE a.kullanici_ref = t.kullanici_ref AND a.atama_durumu = 'Aktif') AS cakisma
          FROM erisim_talebi t JOIN kullanici_hesabi k ON k.kimlik = t.kullanici_ref JOIN rol r ON r.kimlik = t.rol_ref LEFT JOIN kullanici_hesabi o ON o.kimlik = t.is_onayi_veren
         WHERE t.talep_asamasi = 'Teknik Atama' ORDER BY t.is_onayi_zamani`, [i.oturum!.kullanici]);
     return rows;
@@ -143,4 +115,4 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
     return { izinDogrulandi: dogru, izinler: await kullaniciIzinleri(b.db, t.kullanici_ref) };
   });
 }
-export { rolSahipleri };
+export { onayMakami };

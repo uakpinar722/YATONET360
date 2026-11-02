@@ -85,3 +85,4 @@
   table.kartli td { border: 0; padding: 3px 0; overflow-wrap: anywhere; }
   table.kartli td::before { content: attr(data-ad) ': '; font-weight: 700; color: var(--lac); }
 }
+.iki-tarih { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }

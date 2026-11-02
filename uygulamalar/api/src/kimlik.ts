@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { randomInt } from 'node:crypto';
 import QRCode from 'qrcode';
 import { eksikAdimlar } from './adimlar.js';
+import { cihazDenetle } from './cihaz.js';
 import { COOKIE_ADI, KURAL } from './ayarlar.js';
 import { izYaz } from './denetim.js';
 import { coz, ozet, rastgeleBelirtec, sifrele, totpDogrula, totpGizliUret } from './kripto.js';
@@ -197,6 +198,10 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
     if (!gecerli) {
       await hataIsle(b, a.h.kimlik, 'Doğrulama Kodu Denemesi', i);
       return y.code(401).send({ hata: KOD_HATALI });
+    }
+    if (a.h.ayricalikli_mi) {
+      const engel = await cihazDenetle(b.db, i, y, { kimlik: a.h.kimlik, ad_soyad: a.h.ad_soyad }, Number(a.h.totp_son_adim) === 0, b.guvenliCerez);
+      if (engel) { await oturumKapat(b, a.o.oturum, 'Güvenlik sınırlaması'); return y.code(403).send({ hata: engel }); }
     }
     // YG-1154: oturum belirteci yetki değişiminde yenilenir.
     const belirtec = rastgeleBelirtec();

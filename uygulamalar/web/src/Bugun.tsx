@@ -3,11 +3,11 @@ import { istek, type Ben } from './api';
 
 export interface Kart {
   kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null;
-  kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null;
+  kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null; vekaleten?: boolean;
 }
 export interface BugunVeri {
   onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
-  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number;
+  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
 const TZ = 'Europe/Istanbul';
@@ -52,6 +52,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   return (
     <div className="ozet kart-sol">
       <KartUst k={k} />
+      {k.vekaleten && <div><Rozet s="gri" c="Vekâleten" /></div>}
       <div className="not">Kademe {k.kademe + 1} / {k.kademe_sayisi}{k.hazirlayan_adi ? ` · Hazırlayan: ${k.hazirlayan_adi}` : ''}</div>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {acik ? (
@@ -132,6 +133,13 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
       <h1 className="selam">Hoş Geldiniz, {ben.adSoyad}</h1>
       <div className="not">{ben.roller.map((r) => <span key={r.kimlik}>{r.rol_adi}</span>)} · {bugun}</div>
+
+      {veri.vekaletler.map((v) => (
+        <div key={v.kimlik} className="ozet kart-sol">
+          <div className="ust2"><b>Vekâleten Yürütülen İşler</b><Rozet s="gri" c={`Bitiş: ${v.bitis.split('-').reverse().join('.')}`} /></div>
+          <div className="not">{v.rol} · {v.asil} Adına</div>
+        </div>
+      ))}
 
       <div className="bolum">Süre Uyarıları</div>
       {veri.sureUyarilari.length === 0 ? <Bos m="Süresi yaklaşan işiniz bulunmamaktadır." /> : veri.sureUyarilari.map((k) => (

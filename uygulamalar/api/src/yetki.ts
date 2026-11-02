@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { dilKodu, eksikAdimlar, rizaBicimi } from './adimlar.js';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
@@ -14,10 +14,20 @@ export async function kullaniciRolleri(db: Pool, kullanici: string) {
   return rows as { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string }[];
 }
 
+const GECERLI_VEKALET = `v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date`;
+
+/** Kişinin asıl rolleri ve vekâlet ettiği roller. Vekâlet bitişte kendiliğinden düşer (YG-1056). */
+export async function etkinRoller(db: Pool | PoolClient, kullanici: string) {
+  const { rows } = await db.query(
+    `SELECT r.kimlik, false AS vekalet FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND ${GECERLI}
+     UNION SELECT v.rol_ref, true FROM vekalet v WHERE v.vekil_ref = $1 AND ${GECERLI_VEKALET}`, [kullanici]);
+  const asil = new Set(rows.filter((r) => !r.vekalet).map((r) => r.kimlik));
+  return rows.filter((r) => !r.vekalet || !asil.has(r.kimlik)) as { kimlik: string; vekalet: boolean }[];
+}
+
 export async function kullaniciIzinleri(db: Pool, kullanici: string) {
   const { rows } = await db.query(
-    `SELECT DISTINCT z.izin FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN rol_izni z ON z.rol_ref = r.kimlik
-      WHERE a.kullanici_ref = $1 AND ${GECERLI} ORDER BY z.izin`, [kullanici]);
+    `SELECT DISTINCT z.izin FROM rol_izni z WHERE z.rol_ref = ANY($1) ORDER BY z.izin`, [(await etkinRoller(db, kullanici)).map((r) => r.kimlik)]);
   return rows.map((r) => r.izin as string);
 }
 

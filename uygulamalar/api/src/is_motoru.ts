@@ -2,7 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { kullaniciRolleri } from './yetki.js';
+import { KAPANIS } from './kapanis.js';
+import { rolSahipleri, zinciriDuzelt } from './makam.js';
+import { etkinRoller } from './yetki.js';
 
 /** Buton standardı YG-1637: ara kademede Onaya Gönder, son makamda Onayla / Reddet, her kademede Gerekçeyle İade Et. */
 export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade Et' | 'Yeniden Gönder' | 'Tamamlandı';
@@ -12,17 +14,7 @@ export interface KartGirdisi {
   sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string;
 }
 
-type KapanisIsleyici = (c: PoolClient, kart: { nesne_kimligi: string | null; ozet: string | null }, karar: string, yapan: string) => Promise<void>;
-const KAPANIS = new Map<string, KapanisIsleyici>();
-/** Modül, kendi kart türünün kararını aynı veritabanı işleminde kendi kaydına işler (YG-1143, YG-1145). */
-export function kapanisKaydet(tur: string, f: KapanisIsleyici) { KAPANIS.set(tur, f); }
-
-export async function rolSahipleri(db: Pool | PoolClient, rol: string): Promise<string[]> {
-  const { rows } = await db.query(
-    `SELECT DISTINCT a.kullanici_ref k FROM rol_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref
-      WHERE a.rol_ref = $1 AND a.atama_durumu = 'Aktif' AND a.baslangic_tarihi <= current_date AND (a.bitis_tarihi IS NULL OR a.bitis_tarihi >= current_date) AND h.hesap_durumu = 'Aktif'`, [rol]);
-  return rows.map((r) => r.k as string);
-}
+export { rolSahipleri };
 
 async function bildir(db: Pool | PoolClient, kisiler: string[], baslik: string, ozet: string | null, is: string) {
   for (const k of kisiler) await db.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet, is_ref) VALUES ($1,$2,$3,$4)`, [k, baslik, ozet, is]);
@@ -31,6 +23,7 @@ async function bildir(db: Pool | PoolClient, kisiler: string[], baslik: string, 
 /** Modüllerin ortak giriş noktası (YG-1143): iş kartı açar ve sıradaki makama bildirir. */
 export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<string> {
   const kategori = g.kategori ?? (g.zincir?.length ? 'onay' : 'islem');
+  if (g.zincir?.length) g = { ...g, zincir: await zinciriDuzelt(db, g.zincir, g.hazirlayan) };
   const { rows } = await db.query(
     `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING kimlik`,
@@ -50,15 +43,16 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
 
   /** Kişinin karar verebileceği adaylar: rolü sıradaki makam; kendi hazırladığı ve daha önce karar verdiği kartlar hariç (YG-1034). */
   async function kartlarim(kullanici: string) {
-    const roller = (await kullaniciRolleri(b.db, kullanici)).map((r) => r.kimlik);
+    const etkin = await etkinRoller(b.db, kullanici); const roller = etkin.map((r) => r.kimlik);
+    const vekilRoller = etkin.filter((r) => r.vekalet).map((r) => r.kimlik);
     const onay = await b.db.query(
       `SELECT ${SECIM}, h.ad_soyad AS hazirlayan_adi,
-              (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 2]) AS sonraki_rol, (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 1]) AS makam
+              (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 2]) AS sonraki_rol, (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 1]) AS makam, k.zincir[k.kademe + 1] = ANY($3) AS vekaleten
          FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.hazirlayan_ref
         WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.zincir[k.kademe + 1] = ANY($1)
           AND k.hazirlayan_ref IS DISTINCT FROM $2
           AND NOT EXISTS (SELECT 1 FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.yapan_ref = $2 AND a.kimlik > ${SON_GONDERIM})
-        ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [roller, kullanici]);
+        ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [roller, kullanici, vekilRoller]);
     const islem = await b.db.query(
       `SELECT ${SECIM} FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.kategori IN ('islem','gorev') AND (k.sahip_kullanici_ref = $1 OR k.sahip_rol_ref = ANY($2)) ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [kullanici, roller]);
     const iade = await b.db.query(`SELECT ${SECIM}, (SELECT gerekce FROM is_karti_adim a WHERE a.is_ref = k.kimlik ORDER BY a.kimlik DESC LIMIT 1) AS gerekce FROM is_karti k WHERE k.durum = 'İade Edildi' AND k.hazirlayan_ref = $1 ORDER BY k.olusturma_zamani DESC`, [kullanici]);
@@ -79,7 +73,8 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
         WHERE d.kapsam = ANY($2) AND (d.bitis_zamani IS NULL OR d.bitis_zamani > now()) AND (NOT d.zorunlu OR r.zaman IS NULL) ORDER BY d.zorunlu DESC, d.yayim_zamani DESC LIMIT 5`, [o.kullanici, kapsam]);
     const ood = await b.db.query(`SELECT baslangic FROM olaganustu_donem WHERE bitis IS NULL ORDER BY baslangic DESC LIMIT 1`);
     const say = await b.db.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND okunma_zamani IS NULL`, [o.kullanici]);
-    return { ...k, sureUyarilari: sure, duyurular: d.rows, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n };
+    const vek = await b.db.query(`SELECT v.kimlik, v.bitis_tarihi::text AS bitis, h.ad_soyad AS asil, r.rol_adi AS rol FROM vekalet v JOIN kullanici_hesabi h ON h.kimlik = v.asil_ref JOIN rol r ON r.kimlik = v.rol_ref WHERE v.vekil_ref = $1 AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date ORDER BY v.bitis_tarihi`, [o.kullanici]);
+    return { ...k, sureUyarilari: sure, duyurular: d.rows, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n, vekaletler: vek.rows };
   });
 
   s.post('/is/:id/karar', oturumlu, async (i, y) => {
@@ -88,7 +83,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
     const g = (gerekce ?? '').trim();
     if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
-    const roller = (await kullaniciRolleri(b.db, o.kullanici)).map((r) => r.kimlik);
+    const etkin = await etkinRoller(b.db, o.kullanici); const roller = etkin.map((r) => r.kimlik);
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -128,7 +123,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       }
       await c.query(`UPDATE is_karti SET durum = $2, kademe = $3, kapanma_zamani = CASE WHEN $4 THEN now() END WHERE kimlik = $1`, [id, yeni.durum, yeni.kademe, yeni.kapanir]);
       // Silinmez; kararın tamamı adım kaydında kalır (YG-1183).
-      await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [id, k.kademe, karar, g || null, o.kullanici, makam ?? null]);
+      await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref, vekaleten) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, k.kademe, karar, g || null, o.kullanici, makam ?? null, Boolean(makam && etkin.find((r) => r.kimlik === makam)?.vekalet)]);
       await KAPANIS.get(k.tur)?.(c, k, karar!, o.kullanici);
       if (hedef.length) await bildir(c, hedef.filter((x) => x !== o.kullanici), baslik, g || k.ozet, id);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Kartı: ${karar}`, nesneTuru: k.tur, nesneKimligi: id, eski: { durum: k.durum, kademe: k.kademe }, yeni: { durum: yeni.durum, kademe: yeni.kademe }, gerekce: g || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

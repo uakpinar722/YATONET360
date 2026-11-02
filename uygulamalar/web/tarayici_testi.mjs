@@ -109,6 +109,11 @@ try {
   await p.setViewportSize({ width: 1280, height: 800 });
   await p.getByRole('button', { name: 'Bugün' }).click();
   await p.screenshot({ path: join(CIKTI, 'bugun_web.png') });
+  // Vekâlet sayfası (Denetçinin bağlı personeli yok)
+  await p.getByRole('button', { name: 'Vekâlet' }).click();
+  await p.getByRole('heading', { name: 'Vekâlet' }).waitFor();
+  await p.getByText('Vekil atayabileceğiniz bağlı personel bulunmamaktadır.').waitFor();
+  kontrol('bağlı personeli olmayana vekâlet formu çıkmaz', true);
   // Erişim talebi formu
   await p.getByRole('button', { name: 'Erişim Talebi' }).click();
   await p.getByRole('heading', { name: 'Erişim Talebi' }).waitFor();

@@ -3,7 +3,7 @@ import { istek } from './api';
 
 interface Secenekler { kullanicilar: { kimlik: string; ad_soyad: string }[]; roller: { kimlik: string; rol_adi: string; rol_sahibi_birim: string }[] }
 interface Talep { kimlik: string; talep_asamasi: string; sure_sonu: string; kullanici: string; rol: string }
-interface Uygulanacak { kimlik: string; sure_sonu: string; kapsam: string; is_gerekcesi: string; kullanici: string; rol: string; onaylayan: string; kendi: boolean }
+interface Uygulanacak { kimlik: string; sure_sonu: string; kapsam: string; is_gerekcesi: string; kullanici: string; rol: string; onaylayan: string; kendi: boolean; cakisma: string | null }
 
 const gun = (s: string) => s.split('-').reverse().join('.');
 const ASAMA: Record<string, string> = { 'İş Onayı': 'Birim Onayında', 'Teknik Atama': 'Sistem Yöneticisinde', Bildirim: 'Tamamlandı', Reddedildi: 'Reddedildi', 'İade Edildi': 'İade Edildi' };
@@ -85,6 +85,7 @@ export function ErisimVeRol() {
           <div className="not">Kapsam: {t.kapsam}</div>
           <div className="not">Gerekçe: {t.is_gerekcesi}</div>
           <div className="not">Onaylayan: {t.onaylayan}</div>
+          {t.cakisma && <div className="uyari"><b>Çakışan Rol:</b> {t.cakisma}</div>}
           {t.kendi && <div className="uyari">Kendi hesabınıza yetki tanımlayamazsınız.</div>}
           <div className="dugmeler"><button className="btn" disabled={t.kendi} onClick={() => void uygula(t.kimlik)}>Uygula ve Kullanıcıya Bildir</button></div>
         </div>

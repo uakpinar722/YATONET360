@@ -1,8 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
-import { kayitNo, onayMakami } from './erisim.js';
-import { kapanisKaydet, kartAc } from './is_motoru.js';
+import { kayitNo } from './erisim.js';
+import { kapanisKaydet } from './kapanis.js';
+import { kartAc } from './is_motoru.js';
+import { onayMakami } from './makam.js';
 import { kimlikNormalle, type Baglam } from './kimlik.js';
 import { izinGerekli } from './yetki.js';
 
