@@ -3,6 +3,7 @@ import { ortamOku } from './ayarlar.js';
 import { belgeYururlukIsle } from './belge.js';
 import { kuyrukIsle, onayHatirlat } from './bildirim.js';
 import { DenemeKutusu, denemeEpostaKutusu } from './sms.js';
+import { beklemedeIsle, sureIsle } from './dosya.js';
 import { periyodikIsle, toplantiHatirlat } from './toplanti.js';
 import { sunucuKur } from './sunucu.js';
 
@@ -17,3 +18,5 @@ setInterval(() => { onayHatirlat(db).catch((h) => s.log.error(h.message)); }, 30
 setInterval(() => { toplantiHatirlat(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
+setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);

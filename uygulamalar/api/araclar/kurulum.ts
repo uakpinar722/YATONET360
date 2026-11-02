@@ -34,6 +34,12 @@ const IZINLER: [string, string][] = [
   ['Sistem Yöneticisi', 'rol_katalogu.goruntule'], ['Bilgi İşlem Müdürü', 'rol_katalogu.goruntule'], ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'rol_katalogu.goruntule'],
   ['Sistem Yöneticisi', 'erisim.uygula'], // A33-2
   ['Bilgi İşlem Destek Sorumlusu', 'hesap_kurtarma.ac'], // A32-3
+  // Dosya modülü: ihbarı Operasyon kadrosu kaydeder; ekip atamaları YG-047, YG-048; dosya.tum yönetim görünümü.
+  ...['Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Operasyon Müdür Yardımcısı', 'Operasyon Müdürü', 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı'].map((r) => [r, 'ihbar.kaydet'] as [string, string]),
+  ['Operasyon Müdürü', 'dosya.ata.operasyon'], ['Teknik Müdür', 'dosya.ata.teknik'], ['Kalite Müdürü', 'dosya.ata.kalite'], ['Tedarik Yönetimi Müdürü', 'dosya.ata.tedarik'],
+  ['Operasyon Müdürü', 'dosya.statu'], ['Operasyon Müdür Yardımcısı', 'dosya.statu'], ['Operasyon Yöneticisi', 'dosya.statu'],
+  ...['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Ticari İşler Direktörü', 'Hukuk ve Uyum Direktörü', 'Risk ve Kalite Direktörü', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı', 'Teknik Müdür', 'Teknik Müdür Yardımcısı', 'Müşteri ve Paydaş İlişkileri Müdürü', 'İç Denetim Müdürü', 'İç Denetçi'].map((r) => [r, 'dosya.tum'] as [string, string]),
+  ...['Dosya Sorumlusu', 'Teknik Uzman', 'Teknik Yönetici', 'Operasyon Yöneticisi', 'Teknik Müdür', 'Operasyon Müdürü'].map((r) => [r, 'yat.duzelt'] as [string, string]),
   ['İç Denetçi', 'denetim_izi.goruntule'], ['İç Denetim Müdürü', 'denetim_izi.goruntule'], ['Bilgi İşlem Müdürü', 'denetim_izi.goruntule'],
 ];
 
@@ -69,6 +75,16 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   for (const f of readdirSync(mk).filter((x) => x.endsWith('.json'))) {
     const m = JSON.parse(readFileSync(join(mk, f), 'utf8'));
     await c.query(`INSERT INTO hukuki_metin (kod, dil, surum, baslik, govde) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (kod, dil, surum) DO UPDATE SET baslik = EXCLUDED.baslik, govde = EXCLUDED.govde`, [m.kod, m.dil, m.surum, m.baslik, JSON.stringify(m.govde)]);
+  }
+  // Yat Marka-Model Ana Verisi LGM-2026-012 (YG-1527). Toplu yüklenir; yalnız ilk kurulumda.
+  if (!(await c.query(`SELECT 1 FROM yat_marka_model LIMIT 1`)).rowCount) {
+    const mm = readFileSync(join(KOK, 'veri', 'yat_marka_model.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
+    const sayi = (s: string | undefined) => { const n = Number((s ?? '').replace(/\./g, '').replace(',', '.')); return s && Number.isFinite(n) && n > 0 ? n : null; };
+    const sutun = (f: (r: string[]) => unknown) => mm.map(f);
+    await c.query(
+      `INSERT INTO yat_marka_model (marka_kodu, marka, model, turkiye_kaynakli, katalog_seri, katalog_no, tekne_turu, boy_m, govde_malzemesi, tahrik_turu, fotograf, teknik_veri, durum)
+       SELECT * FROM unnest($1::text[], $2::text[], $3::text[], $4::boolean[], $5::int[], $6::text[], $7::text[], $8::numeric[], $9::text[], $10::text[], $11::text[], $12::text[], $13::text[])`,
+      [sutun((r) => r[0]), sutun((r) => r[1]), sutun((r) => r[2]), sutun((r) => r[3] === 'Evet'), sutun((r) => (r[4] && /^\d+$/.test(r[4]) ? Number(r[4]) : null)), sutun((r) => r[5] || null), sutun((r) => r[6] || null), sutun((r) => { const v = sayi(r[7]); return v !== null && v < 10000 ? v : null; }), sutun((r) => (['Fiber', 'Ahşap', 'Çelik', 'Alüminyum'].includes(r[8] ?? '') ? r[8] : null)), sutun((r) => r[9] || null), sutun((r) => r[10] || null), sutun((r) => r[11] || null), sutun((r) => r[12] || null)]);
   }
   // Onaylı metin kütüphanesi (YG-600, YG-626, YG-692). Kaynak: YATONET 360 KAYNAK\sablon.
   const tsv = (d: string) => readFileSync(join(KOK, 'veri', 'sablon', d), 'utf8').split(/\r?\n/).filter(Boolean).slice(1).map((l) => l.split('\t'));

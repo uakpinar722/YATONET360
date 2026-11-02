@@ -86,3 +86,18 @@
   table.kartli td::before { content: attr(data-ad) ': '; font-weight: 700; color: var(--lac); }
 }
 .iki-tarih { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 12px; }
+
+/* Dosya modülü: YG-034 risk renkleri, YG-1579 öncelik rozeti */
+.oncelik { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: .8rem; font-weight: 600; }
+.o-k { background: #c62828; color: #fff; }
+.o-y { background: #f9a825; color: #1a1a1a; }
+.o-g { background: #e0e3e7; color: #333; }
+.sure.s-y { color: #1b6e2c; }
+.sure.s-s { color: #9a6b00; font-weight: 600; }
+.sure.s-k { color: #c62828; font-weight: 700; }
+.soru { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #eef0f2; }
+.soru > span { flex: 1 1 240px; }
+.cevap { border: 1px solid #c9ced4; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.cevap.c-y { background: #2e7d32; color: #fff; border-color: #2e7d32; }
+.cevap.c-s { background: #f9a825; color: #1a1a1a; border-color: #f9a825; }
+.cevap.c-k { background: #c62828; color: #fff; border-color: #c62828; }

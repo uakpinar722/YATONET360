@@ -61,10 +61,18 @@ export async function bildir(db: Db, b: Bildirimi, simdi = new Date()): Promise<
   }
 }
 
-async function kuyruk(db: Db, olay: string, k: string, kanal: string, hedef: string, konu: string, metin: string, oncelik: string | undefined, plan: Date) {
+async function kuyruk(db: Db, olay: string, k: string | null, kanal: string, hedef: string, konu: string, metin: string, oncelik: string | undefined, plan: Date) {
   await db.query(
     `INSERT INTO gonderim (olay_anahtari, kullanici_ref, kanal, hedef, konu, metin, oncelik, plan_zamani) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (olay_anahtari, kanal, hedef) DO NOTHING`,
     [olay, k, kanal, hedef, konu, metin, oncelik ?? 'Normal', plan]);
+}
+
+/** Portal hesabı olmayan alıcı (yat sahibi, kaptan, sigorta): kayıttaki iletişim bilgisine kuyruktan gider. Aynı olay aynı adrese iki kez gitmez. */
+export async function disGonder(db: Db, g: { olay: string; telefon?: string | null; eposta?: string | null; konu: string; metin: string; oncelik?: string; acil?: boolean }, simdi = new Date()): Promise<boolean> {
+  const plan = g.oncelik === 'Kritik' || g.acil ? simdi : sonrakiMesai(simdi);
+  if (g.telefon) await kuyruk(db, g.olay, null, 'SMS', g.telefon, g.konu, g.metin, g.oncelik, plan);
+  if (g.eposta) await kuyruk(db, g.olay, null, 'E-posta', g.eposta, g.konu, g.metin, g.oncelik, plan);
+  return Boolean(g.telefon || g.eposta);
 }
 
 /** YG-523: aynı dönem iki kez işlenmez. */

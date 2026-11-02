@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { Bildirimler, Bugun, type BugunVeri } from './Bugun';
+import { AramaSonucu, Dosyalar } from './Dosya';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
@@ -8,7 +9,7 @@ import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti';
+type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -36,13 +37,14 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   const [sayfa, setSayfa] = useState<Sayfa>('ana');
   const [veri, setVeri] = useState<BugunVeri | null>(null);
   const [hata, setHata] = useState('');
-  const [araNot, setAraNot] = useState(false);
+  const [araQ, setAraQ] = useState(''); const [acikDosya, setAcikDosya] = useState<string | null>(null);
   const lgm = ben.grup === 'LGM İç Rolü';
   const yenile = useCallback(() => istek<BugunVeri>('/bugun').then((v) => { setVeri(v); setHata(''); }).catch((e) => setHata(e.message)), []);
   useEffect(() => { void yenile(); }, [yenile, sayfa]);
-  const git = (s: Sayfa) => { setSayfa(s); setAraNot(false); };
+  const git = (s: Sayfa) => setSayfa(s);
   const menu: { s: Sayfa; ad: string; ik: string; izin?: string }[] = [
     { s: 'ana', ad: lgm ? 'Bugün' : 'Ana Sayfa', ik: '☀' },
+    ...(lgm ? [{ s: 'dosya' as Sayfa, ad: 'Dosyalar', ik: '▣' }] : []),
     { s: 'roller', ad: 'Rol Kataloğu', ik: '▤', izin: 'rol_katalogu.goruntule' },
     { s: 'iz', ad: 'İşlem İzi', ik: '☰', izin: 'denetim_izi.goruntule' },
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
@@ -62,8 +64,10 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     mesaj: <Mesajlar lgm={lgm} yenile={() => void yenile()} />,
     duyuru: <DuyuruYayimla />,
     toplanti: <Toplantilar />,
+    dosya: <Dosyalar ben={ben} acikDosya={acikDosya} acildi={() => setAcikDosya(null)} />,
+    ara: <AramaSonucu q={araQ} ac={(id) => { setAcikDosya(id); git('dosya'); }} />,
     idari: <Yakinda ad="İdari İşlemlerim" adim="Adım 7" />,
-    yardim: <Yakinda ad="Yardım" adim="Adım 3" />,
+    yardim: <Yakinda ad="Yardım" adim="sonraki adımlar" />,
     roller: <><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır']} /></>,
     iz: <><h1>İşlem İzi</h1><p className="not">Son 100 kayıt. Bu görüntüleme de kayda geçmiştir.</p><Tablo<Iz> yol="/denetim/izler" baslik={['Zaman', 'Kullanıcı', 'İşlem', 'Sonuç', 'Açıklama']} satir={(r) => [tarih(r.olay_zamani), r.aktor, r.eylem, r.sonuc, r.gerekce]} /></>,
   };
@@ -77,7 +81,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
         </div>
       </header>
       <div className="ara-satir">
-        <input aria-label="Ara" placeholder={lgm ? 'Ara: Dosya No, Hasar Dosya No, Yat, Firma, Kişi' : 'Ara: Dosya No, Yat Adı'} onKeyDown={(e) => { if (e.key === 'Enter') setAraNot(true); }} />
+        <input aria-label="Ara" placeholder={lgm ? 'Ara: Dosya No, Hasar Dosya No, Yat, Firma, Kişi' : 'Ara: Dosya No, Yat Adı'} onKeyDown={(e) => { const q = e.currentTarget.value.trim(); if (e.key === 'Enter' && q.length >= 2 && lgm) { setAraQ(q); git('ara'); } }} />
         <div className="ara-bag">
           <button className="ust-bag" onClick={() => git('mesaj')}>✉ Mesajlar <em className="sayi">{veri?.okunmamisMesaj ?? 0}</em></button>
           {lgm && <button className="ust-bag" onClick={() => git('idari')}>İdari İşlemlerim</button>}
@@ -94,7 +98,6 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
           ))}
         </nav>
         <main>
-          {araNot && <div className="not ara-not">Arama, kayıtlar eklendikçe Adım 4'te açılacaktır.</div>}
           {icerik[sayfa]}
           <footer><span className="ayrac" aria-hidden="true" /><img src="/yatonet.png" alt="YATONET 360" /></footer>
         </main>
