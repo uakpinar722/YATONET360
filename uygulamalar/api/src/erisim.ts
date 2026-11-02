@@ -15,20 +15,35 @@ export async function kayitNo(db: Pool | PoolClient, onEk: string): Promise<stri
   return `${onEk}-${yil}-${String(rows[0].sayi).padStart(4, '0')}`;
 }
 
+/** Cilt I ¶1030: Müdürlüğün bağlı olduğu Direktör. */
+const BAGLI_DIREKTOR: Record<string, string> = {
+  'Operasyon Müdürlüğü': 'Teknik ve Operasyon Direktörü', 'Teknik Müdürlük': 'Teknik ve Operasyon Direktörü', 'Tedarik Yönetimi Müdürlüğü': 'Teknik ve Operasyon Direktörü',
+  'Muhasebe ve Finans Müdürlüğü': 'Ticari İşler Direktörü', 'İnsan Kaynakları Müdürlüğü': 'Ticari İşler Direktörü', 'İdari İşler Müdürlüğü': 'Ticari İşler Direktörü',
+  'Bilgi İşlem Müdürlüğü': 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Firma Yönetimi Müdürlüğü': 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü',
+  'Kalite Müdürlüğü': 'Risk ve Kalite Direktörü', 'İç Denetim Müdürlüğü': 'Risk ve Kalite Direktörü',
+  'Müşteri ve Paydaş İlişkileri Müdürlüğü': 'Strateji ve Kurumsal Gelişim Direktörü',
+};
+
 /**
- * YG-1009: talep edilen rolün birim Müdürü onaylar. Müdürü olmayan birimde aynı birimin Direktörü, o da yoksa Genel Müdür Yardımcısı.
- * Üst Yönetim rolleri ve Direktörler için CEO onaylar.
+ * YG-1009, YG-1714 (ERS-1): birim personeli → birim Müdürü; Müdürlüğü olmayan birimde aynı birimin Direktörü; Müdür → bağlı Direktör;
+ * Direktör → Genel Müdür Yardımcısı; Üst Yönetim rolleri → CEO.
  */
 export async function onayMakami(db: Pool | PoolClient, rolId: string): Promise<string> {
   const { rows } = await db.query(`SELECT rol_adi, rol_sahibi_birim, kademe FROM rol WHERE kimlik = $1`, [rolId]);
   const r = rows[0];
   const bul = async (ad: string) => (await db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
-  if (r.kademe === 'Direktör' || r.rol_sahibi_birim === 'Üst Yönetim') return bul('CEO');
-  for (const k of r.kademe === 'Müdür' ? ['Direktör'] : ['Müdür', 'Direktör']) {
+  if (r.rol_sahibi_birim === 'Üst Yönetim') return bul('CEO');
+  if (r.kademe === 'Direktör') return bul('Genel Müdür Yardımcısı');
+  if (r.kademe === 'Müdür') {
+    const d = BAGLI_DIREKTOR[r.rol_sahibi_birim];
+    if (!d) throw new Error(`Bağlı Direktör tanımsız: ${r.rol_sahibi_birim}`);
+    return bul(d);
+  }
+  for (const k of ['Müdür', 'Direktör']) {
     const m = await db.query(`SELECT kimlik FROM rol WHERE rol_sahibi_birim = $1 AND kademe = $2 AND kimlik <> $3 LIMIT 1`, [r.rol_sahibi_birim, k, rolId]);
     if (m.rows[0]) return m.rows[0].kimlik;
   }
-  return bul('Genel Müdür Yardımcısı');
+  throw new Error(`Onay makamı tanımsız: ${r.rol_adi}`);
 }
 
 /** Onay sonucu erişim talebine işlenir; onayda Sistem Yöneticisine 24 saatlik uygulama işi düşer (A33-1). */

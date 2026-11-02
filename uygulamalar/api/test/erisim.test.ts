@@ -150,8 +150,21 @@ describe('onay makamı', () => {
     ['Sistem Yöneticisi', 'Bilgi İşlem Müdürü'],
     ['Teknik Uzman', 'Teknik Müdür'],
     ['Hukuk ve Uyum Uzmanı', 'Hukuk ve Uyum Direktörü'],
-    ['Bilgi İşlem Müdürü', 'Genel Müdür Yardımcısı'],
-    ['Teknik ve Operasyon Direktörü', 'CEO'],
+    ['Bilgi İşlem Müdürü', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'],
+    ['Teknik Müdür', 'Teknik ve Operasyon Direktörü'],
+    ['Kalite Müdürü', 'Risk ve Kalite Direktörü'],
+    ['Müşteri ve Paydaş İlişkileri Müdürü', 'Strateji ve Kurumsal Gelişim Direktörü'],
+    ['Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı'],
+    ['Hukuk ve Uyum Direktörü', 'Genel Müdür Yardımcısı'],
     ['Genel Müdür Yardımcısı', 'CEO'],
+    ['CEO Asistanı', 'CEO'],
   ])('%s → %s', async (r, m) => { expect(await adi(await onayMakami(db, await rol(r)))).toBe(m); });
+  it('48 iç rolün hepsinin onay makamı vardır, rol kendini onaylamaz', async () => {
+    const { rows } = await sup.query(`SELECT kimlik, rol_adi FROM rol WHERE kullanici_gruplari = 'LGM İç Rolü'`);
+    expect(rows.length).toBe(48);
+    for (const r of rows) {
+      const m = await onayMakami(db, r.kimlik);
+      if (r.rol_adi !== 'CEO') expect(m, r.rol_adi).not.toBe(r.kimlik);
+    }
+  });
 });
