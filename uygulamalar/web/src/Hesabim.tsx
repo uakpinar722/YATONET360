@@ -40,7 +40,7 @@ export function ParolaYenile({ belirtec, bitti }: { belirtec: string; bitti: () 
 }
 
 interface Izin { tur: string; amac: string | null; kanal: string | null; verildi: boolean }
-interface Profil { adSoyad: string; ePosta: string | null; telefon: string | null; dil: 'tr' | 'en'; izinler: Izin[] }
+interface Profil { adSoyad: string; ePosta: string | null; telefon: string | null; dil: 'tr' | 'en'; kanal: string; dis: boolean; izinler: Izin[] }
 
 const izinAdi = (z: Izin) => z.amac ?? z.kanal ?? z.tur.replace('Özel gün – ', '');
 
@@ -85,6 +85,16 @@ export function Profilim() {
           <button key={d} type="button" className={`secenek orta${p.dil === d ? ' secili-kart' : ''}`} onClick={() => void yap(() => istek('/profil/dil', { dil: d }), 'Dil tercihiniz kaydedilmiştir.')}><b>{d === 'tr' ? 'Türkçe' : 'English'}</b></button>
         ))}
       </div>
+
+      {p.dis && (<>
+        <h2 className="ara">Bildirim Kanalı</h2>
+        <div className="not">İş bildirimleriniz seçtiğiniz kanaldan iletilir; bu bildirimler kapatılamaz. Onay kodları her zaman SMS ile gönderilir.</div>
+        <div className="satir2">
+          {['E-posta', 'SMS', 'WhatsApp'].map((k) => (
+            <button key={k} type="button" className={`secenek orta${p.kanal === k ? ' secili-kart' : ''}`} onClick={() => void yap(() => istek('/profil/kanal', { kanal: k }), 'Kanal tercihiniz kaydedilmiştir.')}><b>{k}</b></button>
+          ))}
+        </div>
+      </>)}
 
       {p.izinler.length > 0 && (<>
         <h2 className="ara">İzinlerim</h2>

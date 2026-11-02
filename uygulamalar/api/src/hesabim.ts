@@ -68,11 +68,11 @@ export function hesabimYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/profil', oturumlu, async (i) => {
     const o = i.oturum!;
-    const { rows } = await b.db.query(`SELECT ad_soyad, e_posta, cep_telefonu, tercih_dili FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici]);
+    const { rows } = await b.db.query(`SELECT ad_soyad, e_posta, cep_telefonu, tercih_dili, bildirim_kanali FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici]);
     const r = await b.db.query(`SELECT riza_turu, amac, kanal FROM acik_riza WHERE ilgili_kisi_ref = $1 AND durum = 'Verildi'`, [o.kullanici]);
     const izinVar = o.grup === 'LGM İç Rolü' || o.grup.startsWith('Bireysel');
     return {
-      adSoyad: rows[0].ad_soyad, ePosta: rows[0].e_posta, telefon: rows[0].cep_telefonu, dil: rows[0].tercih_dili === 'İngilizce' ? 'en' : 'tr',
+      adSoyad: rows[0].ad_soyad, ePosta: rows[0].e_posta, telefon: rows[0].cep_telefonu, dil: rows[0].tercih_dili === 'İngilizce' ? 'en' : 'tr', kanal: rows[0].bildirim_kanali, dis: o.grup !== 'LGM İç Rolü',
       izinler: izinVar ? secenekler(o.grup).map((x) => ({ ...x, verildi: r.rows.some((v) => v.riza_turu === x.tur && v.amac === x.amac && v.kanal === x.kanal) })) : [],
     };
   });

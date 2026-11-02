@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
+import { bildir } from './bildirim.js';
 import { KAPANIS } from './kapanis.js';
 import { rolSahipleri, zinciriDuzelt } from './makam.js';
 import { etkinRoller } from './yetki.js';
@@ -16,10 +17,6 @@ export interface KartGirdisi {
 
 export { rolSahipleri };
 
-async function bildir(db: Pool | PoolClient, kisiler: string[], baslik: string, ozet: string | null, is: string) {
-  for (const k of kisiler) await db.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet, is_ref) VALUES ($1,$2,$3,$4)`, [k, baslik, ozet, is]);
-}
-
 /** Modüllerin ortak giriş noktası (YG-1143): iş kartı açar ve sıradaki makama bildirir. */
 export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<string> {
   const kategori = g.kategori ?? (g.zincir?.length ? 'onay' : 'islem');
@@ -30,7 +27,7 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
     [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null]);
   const id = rows[0].kimlik as string;
   const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![0]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
-  await bildir(db, hedef.filter((k) => k !== g.hazirlayan), `Yeni İş: ${g.baslik}`, g.ozet ?? null, id);
+  await bildir(db, { olay: `kart-ac:${id}`, kullanicilar: hedef.filter((k) => k !== g.hazirlayan), baslik: `Yeni İş: ${g.baslik}`, ozet: g.ozet ?? null, isRef: id, oncelik: g.oncelik, eposta: true });
   return id;
 }
 
@@ -70,11 +67,12 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const kapsam = o.grup === 'LGM İç Rolü' ? ['LGM', 'Tümü'] : ['Dış', 'Tümü'];
     const d = await b.db.query(
       `SELECT d.kimlik, d.baslik, d.govde, d.zorunlu, d.yayim_zamani, r.zaman AS okundu FROM duyuru d LEFT JOIN duyuru_okuma r ON r.duyuru_ref = d.kimlik AND r.kullanici_ref = $1
-        WHERE d.kapsam = ANY($2) AND (d.bitis_zamani IS NULL OR d.bitis_zamani > now()) AND (NOT d.zorunlu OR r.zaman IS NULL) ORDER BY d.zorunlu DESC, d.yayim_zamani DESC LIMIT 5`, [o.kullanici, kapsam]);
+        WHERE d.durum = 'Yayında' AND d.kapsam = ANY($2) AND (d.bitis_zamani IS NULL OR d.bitis_zamani > now()) AND (NOT d.zorunlu OR r.zaman IS NULL) ORDER BY d.zorunlu DESC, d.yayim_zamani DESC LIMIT 5`, [o.kullanici, kapsam]);
     const ood = await b.db.query(`SELECT baslangic FROM olaganustu_donem WHERE bitis IS NULL ORDER BY baslangic DESC LIMIT 1`);
     const say = await b.db.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND okunma_zamani IS NULL`, [o.kullanici]);
+    const msj = await b.db.query(`SELECT count(*)::int n FROM ic_mesaj WHERE alici_ref = $1 AND okunma_zamani IS NULL`, [o.kullanici]);
     const vek = await b.db.query(`SELECT v.kimlik, v.bitis_tarihi::text AS bitis, h.ad_soyad AS asil, r.rol_adi AS rol FROM vekalet v JOIN kullanici_hesabi h ON h.kimlik = v.asil_ref JOIN rol r ON r.kimlik = v.rol_ref WHERE v.vekil_ref = $1 AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date ORDER BY v.bitis_tarihi`, [o.kullanici]);
-    return { ...k, sureUyarilari: sure, duyurular: d.rows, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n, vekaletler: vek.rows };
+    return { ...k, sureUyarilari: sure, duyurular: d.rows, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n, okunmamisMesaj: msj.rows[0].n, vekaletler: vek.rows };
   });
 
   s.post('/is/:id/karar', oturumlu, async (i, y) => {
@@ -125,7 +123,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       // Silinmez; kararın tamamı adım kaydında kalır (YG-1183).
       await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref, vekaleten) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, k.kademe, karar, g || null, o.kullanici, makam ?? null, Boolean(makam && etkin.find((r) => r.kimlik === makam)?.vekalet)]);
       await KAPANIS.get(k.tur)?.(c, k, karar!, o.kullanici);
-      if (hedef.length) await bildir(c, hedef.filter((x) => x !== o.kullanici), baslik, g || k.ozet, id);
+      if (hedef.length) await bildir(c, { olay: `kart-karar:${id}:${(await c.query('SELECT count(*) n FROM is_karti_adim WHERE is_ref = $1', [id])).rows[0].n}`, kullanicilar: hedef.filter((x) => x !== o.kullanici), baslik, ozet: g || k.ozet, isRef: id, oncelik: k.oncelik, eposta: true });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Kartı: ${karar}`, nesneTuru: k.tur, nesneKimligi: id, eski: { durum: k.durum, kademe: k.kademe }, yeni: { durum: yeni.durum, kademe: yeni.kademe }, gerekce: g || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { durum: yeni.durum, kademe: yeni.kademe };
@@ -147,7 +145,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
     const kapsam = o.grup === 'LGM İç Rolü' ? ['LGM', 'Tümü'] : ['Dış', 'Tümü'];
-    const r = await b.db.query(`INSERT INTO duyuru_okuma (duyuru_ref, kullanici_ref) SELECT kimlik, $2 FROM duyuru WHERE kimlik = $1 AND kapsam = ANY($3) ON CONFLICT DO NOTHING`, [id, o.kullanici, kapsam]);
+    const r = await b.db.query(`INSERT INTO duyuru_okuma (duyuru_ref, kullanici_ref) SELECT kimlik, $2 FROM duyuru WHERE kimlik = $1 AND durum = 'Yayında' AND kapsam = ANY($3) ON CONFLICT DO NOTHING`, [id, o.kullanici, kapsam]);
     if (!r.rowCount) {
       const var_ = await b.db.query(`SELECT 1 FROM duyuru_okuma WHERE duyuru_ref = $1 AND kullanici_ref = $2`, [id, o.kullanici]);
       if (!var_.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });

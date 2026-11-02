@@ -7,7 +7,7 @@ export interface Kart {
 }
 export interface BugunVeri {
   onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
-  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
+  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
 const TZ = 'Europe/Istanbul';

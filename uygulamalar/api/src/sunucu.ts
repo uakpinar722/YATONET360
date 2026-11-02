@@ -5,6 +5,7 @@ import { erisimYollari } from './erisim.js';
 import { hesabimYollari } from './hesabim.js';
 import { vekaletYollari } from './vekalet.js';
 import { hesapKurtarmaYollari } from './hesap_kurtarma.js';
+import { iletisimYollari } from './iletisim.js';
 import { ilkGirisYollari } from './ilk_giris.js';
 import { isYollari } from './is_motoru.js';
 import { kimlikYollari, type Baglam } from './kimlik.js';
@@ -25,6 +26,6 @@ export async function sunucuKur(b: Baglam) {
     y.code(kod && kod < 500 ? kod : 500).send({ hata: 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); }, { prefix: '/api' });
   return s;
 }

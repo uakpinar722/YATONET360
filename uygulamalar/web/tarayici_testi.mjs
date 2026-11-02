@@ -114,6 +114,18 @@ try {
   await p.getByRole('heading', { name: 'Vekâlet' }).waitFor();
   await p.getByText('Vekil atayabileceğiniz bağlı personel bulunmamaktadır.').waitFor();
   kontrol('bağlı personeli olmayana vekâlet formu çıkmaz', true);
+  // İç mesaj ve duyuru sayfaları
+  await p.getByRole('button', { name: /Mesajlar/ }).click();
+  await p.getByRole('heading', { name: 'Mesajlar' }).waitFor();
+  await p.getByLabel('Kime').selectOption({ index: 1 });
+  const msj = `Deneme iç mesajı ${Date.now()}`;
+  await p.getByLabel('Mesaj', { exact: true }).fill(msj);
+  await p.getByRole('button', { name: 'Gönder', exact: true }).click();
+  await p.getByText(msj).waitFor();
+  kontrol('iç mesaj gönderilir ve konuşmada görünür', true);
+  await p.getByRole('button', { name: 'Duyuru Yayımla' }).click();
+  await p.getByRole('heading', { name: 'Duyuru Yayımla' }).waitFor();
+  kontrol('duyuru sayfası açılır', true);
   // Erişim talebi formu
   await p.getByRole('button', { name: 'Erişim Talebi' }).click();
   await p.getByRole('heading', { name: 'Erişim Talebi' }).waitFor();
