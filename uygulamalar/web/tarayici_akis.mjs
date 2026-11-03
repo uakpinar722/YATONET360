@@ -52,6 +52,7 @@ const gir = async (ep, k, w = 1280, h = 900) => {
   return p;
 };
 const TEMP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.araclar', 'e2e_kanit.pdf');
+const dosyaYaz = (ad) => { const y = TEMP.replace('.pdf', `${ad}.pdf`); writeFileSync(y, `%PDF-1.4 ${tek}${ad}`); return y; };
 writeFileSync(TEMP, `%PDF-1.4 ${tek}`); writeFileSync(TEMP.replace('.pdf', '2.pdf'), `%PDF-1.4 ${tek}2`); writeFileSync(TEMP.replace('.pdf', '3.pdf'), `%PDF-1.4 ${tek}3`); writeFileSync(TEMP.replace('.pdf', '5.pdf'), `%PDF-1.4 ${tek}5`);
 const dosyaAc = async (p, no) => {
   await p.goto(KOK); await p.reload();
@@ -298,6 +299,19 @@ try {
   await pF2.getByLabel('Kanıt Belgesi').setInputFiles(TEMP);
   await pF2.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pF2, 'İlerleme Kaydet');
+  // Günlük Kayıt ve Parça Girişi (YG-1574, YG-1430)
+  await pF2.getByLabel('Yapılan Faaliyet').fill('Söküm'); await tikla(pF2, 'Kaydı Sakla');
+  const glKapat = pF2.getByRole('button', { name: 'Günü Kapat', exact: true }); await glKapat.click(); await pF2.waitForTimeout(400);
+  kontrol('zorunlu alan olmadan gün kapanmaz', (await pF2.getByRole('alert').first().textContent()).includes('zorunlu alan'));
+  await pF2.getByLabel('Fotoğraf').setInputFiles(dosyaYaz('gunluk')); await pF2.waitForTimeout(500);
+  await pF2.getByLabel('Bir Sonraki Çalışma Günü Planı').fill('Montaj'); await pF2.getByLabel('Sorumlu', { exact: true }).fill('Usta');
+  await tikla(pF2, 'Günü Kapat');
+  kontrol('günlük kayıt kapatılır', (await sup.query(`SELECT g.durum FROM firma_gunluk_kaydi g JOIN is_emri e ON e.kimlik = g.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rows[0]?.durum === 'Kapatıldı');
+  await pF2.getByLabel('Ürün', { exact: true }).fill('Kovan'); await pF2.getByLabel('Parça No').fill('PN-1'); await pF2.getByLabel('Parça Miktarı').fill('1'); await pF2.getByLabel('Lot No').fill('L-1');
+  await pF2.getByLabel('İrsaliye veya Sertifika').setInputFiles(dosyaYaz('parca')); await pF2.getByRole('button', { name: 'Parça Girişini Kaydet' }).waitFor(); await pF2.waitForTimeout(500);
+  await tikla(pF2, 'Parça Girişini Kaydet');
+  kontrol('firma parça girişi kontrole gider', (await sup.query(`SELECT p.kabul_karari FROM firma_parca_girisi p JOIN is_emri e ON e.kimlik = p.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rowCount === 1);
+  await tasmaYok(pF2, 'firma_is_emri_ayrinti');
   await tikla(pF2, 'İş Tamamlandı');
   kontrol('firma ilerlemeyi dosya yükleyerek girer ve işi bitirir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].statu === 'Tamamlandı');
 
@@ -369,7 +383,6 @@ try {
   await sup.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, durum, hazirlayan_ref) VALUES ($1,1,'D','Ö','Onaylı',$2)`, [d2.kimlik, kimlikler.tu]);
   const ie2 = (await sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Bodrum','K',500,'Aktif',$4) RETURNING kimlik, is_emri_no`, [`${d2.dosyaNo}-ON01`, d2.kimlik, firma, kimlikler.oy])).rows[0];
   await sup.query(`INSERT INTO is_emri_kalemi (is_emri_ref, aciklama, miktar, birim) VALUES ($1,'Kalem A',4,'saat')`, [ie2.kimlik]);
-  const dosyaYaz = (ad) => { const y = TEMP.replace('.pdf', `${ad}.pdf`); writeFileSync(y, `%PDF-1.4 ${tek}${ad}`); return y; };
   // Bekletme noktası
   const pT2 = await al('tu', E); await dosyaAc(pT2, d2.dosyaNo);
   await pT2.locator('#kp-e').selectOption(ie2.kimlik); await pT2.locator('#kp-o').fill('Basınç'); await pT2.locator('#kp-k').fill('5 bar');

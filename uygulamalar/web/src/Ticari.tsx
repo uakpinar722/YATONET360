@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { IbanTeyit, NobetCizelge } from './Sicil';
+import { GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
 /** YG-202: gerçekleşen teslimlerden ortalama tedarik süresi. */
 function TedarikSuresi({ id }: { id: string }) {
@@ -186,6 +187,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <div className="dugmeler">
               {e.statu === 'Başlangıç Kontrolünde' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/baslangic`, { sonuc: 'Başlanabilir' }))}>Başlanabilir</button>}
               {['Aktif', 'Tamamlandı'].includes(e.statu) && tu && <IlerlemeDogrula isEmri={e.kimlik} />}
+              {!['Taslak', 'İç Onayda', 'İptal'].includes(e.statu) && <SahaKayitlari isEmri={e.kimlik} />}
               {e.statu === 'Tamamlandı' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/teknik-kabul`, { sonuc: 'Kabul' }), 'Teknik kabul kaydedildi.')}>Teknik Kabul</button>}
               {e.statu === 'Tamamlandı' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/kapat`, {}))}>Kapat</button>}
             </div>
@@ -312,6 +314,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
         {acik.tur === 'AC' && <><label htmlFor="f-th">Tahmini Tutar (EUR)</label><input id="f-th" inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} /><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/acil-tutar`, { tahmini: Number(tahmini.replace(',', '.')) }))}>Tutarı Güncelle</button></>}
         <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/tamamlandi`, {}))}>İş Tamamlandı</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/durdur`, { neden: not_ }))}>İşi Durdur ve Bildir</button></div>
       </Blok>}
+      {acik.statu === 'Aktif' && <GunlukKayit isEmri={acik.kimlik} yap={yap} />}
+      {['Aktif', 'Tamamlandı'].includes(acik.statu) && <ParcaVeTeslim isEmri={acik.kimlik} yap={yap} />}
       {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaRapor isEmri={acik.kimlik} yap={yap} />}
       {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaFiyat dosya={acik.dosya} yap={yap} />}
       {acik.statu === 'Aktif' && <CalismaIzni isEmri={acik.kimlik} yap={yap} />}

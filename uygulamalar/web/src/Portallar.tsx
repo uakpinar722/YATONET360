@@ -83,6 +83,101 @@ interface TedarikciV {
 /** YG-1577, YG-298 A9 Tedarikçi: yalnız kendi teklif ve siparişleri; müşteri kimliği yoktur. */
 interface KurumHesapV { kurum: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kurumsal_eposta: string | null; kurumsal_telefon: string | null; il: string | null; ilce: string | null }; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; cep_telefonu: string | null; hesap_durumu: string; ben: boolean }[]; talepler: { kimlik: string; ad_soyad: string; eposta: string; durum: string }[]; bankalar: { kimlik: string; iban: string; durum: string }[]; bilgiTalepleri: { kimlik: string; alan: string; yeni_deger: string; durum: string }[]; itiraz: { durum: string } | null; itirazEdilebilir: boolean }
 interface Cari { satirlar: { hakedis_no: string; is_emri_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string; firma_fatura_no: string | null; planlanan_tarih: string | null; talimat: string | null; tahsilat_tarihi: string | null }[]; acikNet: number }
+/** YG-1574: gün başına kayıt; zorunlu alanlar dolmadan Günü Kapat çalışmaz. */
+export function GunlukKayit({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [f, setF] = useState({ faaliyet: '', olcumler: '', engel: '', sonrakiPlan: '', sorumlu: '' }); const [fot, setFot] = useState<string[]>([]);
+  const kaydet = (kapat: boolean) => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/gunluk`, { ...f, fotograflar: fot, kapat }), kapat ? 'Gün kapatıldı.' : 'Kayıt saklandı.');
+  return (
+    <Blok baslik="Günlük Kayıt">
+      <label htmlFor={`gl-f-${isEmri}`}>Yapılan Faaliyet</label><input id={`gl-f-${isEmri}`} value={f.faaliyet} onChange={(e) => setF({ ...f, faaliyet: e.target.value })} />
+      <BelgeSec ad="Fotoğraf" bagTuru="İş Emri" bagKimligi={isEmri} deger={fot[fot.length - 1] ?? ''} sec={(x) => setFot([...fot, x])} />
+      <label htmlFor={`gl-o-${isEmri}`}>Ölçümler</label><input id={`gl-o-${isEmri}`} value={f.olcumler} onChange={(e) => setF({ ...f, olcumler: e.target.value })} />
+      <label htmlFor={`gl-e-${isEmri}`}>Engel</label><input id={`gl-e-${isEmri}`} value={f.engel} onChange={(e) => setF({ ...f, engel: e.target.value })} />
+      <label htmlFor={`gl-p-${isEmri}`}>Bir Sonraki Çalışma Günü Planı</label><input id={`gl-p-${isEmri}`} value={f.sonrakiPlan} onChange={(e) => setF({ ...f, sonrakiPlan: e.target.value })} />
+      <label htmlFor={`gl-s-${isEmri}`}>Sorumlu</label><input id={`gl-s-${isEmri}`} value={f.sorumlu} onChange={(e) => setF({ ...f, sorumlu: e.target.value })} />
+      <div className="not">Günü kapatabilmeniz için zorunlu alanları tamamlamanızı rica ederiz.</div>
+      <div className="dugmeler"><button className="btn2" onClick={() => kaydet(false)}>Kaydı Sakla</button><button className="btn evet" onClick={() => kaydet(true)}>Günü Kapat</button></div>
+    </Blok>
+  );
+}
+
+/** A7 Çözüm Ortağı alt menüsü: açık kayıtlar ve aktif iş emirleri. */
+export function GunlukSayfasi() {
+  const [v, setV] = useState<{ acik: { kimlik: string; tarih: string; is_emri_no: string }[]; aktif: { kimlik: string; is_emri_no: string; bugun: string | null }[] } | null>(null); const [sec, setSec] = useState('');
+  const yukle = () => istek<NonNullable<typeof v>>('/firma-portal/gunluk').then(setV);
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { void yap(yukle); }, []);
+  return (
+    <>
+      <h1>Günlük Kayıt</h1><Mesaj />
+      {v && <>
+        {v.acik.length > 0 && <Blok baslik="Kapatılmamış Günlük Kayıtlar">{v.acik.map((x) => <div key={x.kimlik} className="uyari">⚠ {x.is_emri_no} · {tarih(x.tarih)}</div>)}</Blok>}
+        <Blok baslik="Aktif İş Emirleri">
+          {v.aktif.length === 0 && <div className="not">Aktif iş emri bulunmamaktadır.</div>}
+          {v.aktif.map((x) => <div className="soru" key={x.kimlik}><span>{x.is_emri_no} · Bugün: {x.bugun ?? 'Kayıt yok'}</span><button className="btn2 kucuk" onClick={() => setSec(x.kimlik)}>Kayıt Gir</button></div>)}
+        </Blok>
+        {sec && <GunlukKayit key={sec} isEmri={sec} yap={yap} />}
+      </>}
+    </>
+  );
+}
+
+/** YG-1430, YG-404, YG-417: firma tedariki parça ve teslim talebi; kabulü LGM verir. */
+export function ParcaVeTeslim({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [l, setL] = useState<{ kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]>([]); const [p, setP] = useState({ urun: '', parcaNo: '', miktar: '', birim: 'adet', lot: '' }); const [b, setB] = useState(''); const [ts, setTs] = useState<boolean | null>(null);
+  const yukle = () => Promise.all([istek<typeof l>(`/firma-portal/is-emri/${isEmri}/parca`).then(setL), istek<{ teslimOnayi: boolean }>(`/firma-portal/is-emri/${isEmri}/teslim-durumu`).then((x) => setTs(x.teslimOnayi))]);
+  useEffect(() => { void yukle().catch(() => undefined); }, [isEmri]);
+  return (
+    <>
+      <Blok baslik="Parça Girişi">
+        {l.map((x) => <div key={x.kimlik}>{x.urun_tanimi} · {x.parca_no} · Lot: {x.lot_no} · {x.kabul_karari ?? 'Kontrol Bekliyor'}</div>)}
+        <label htmlFor={`pg-u-${isEmri}`}>Ürün</label><input id={`pg-u-${isEmri}`} value={p.urun} onChange={(e) => setP({ ...p, urun: e.target.value })} />
+        <label htmlFor={`pg-n-${isEmri}`}>Parça No</label><input id={`pg-n-${isEmri}`} value={p.parcaNo} onChange={(e) => setP({ ...p, parcaNo: e.target.value })} />
+        <div className="iki-tarih"><div><label htmlFor={`pg-m-${isEmri}`}>Parça Miktarı</label><input id={`pg-m-${isEmri}`} inputMode="decimal" value={p.miktar} onChange={(e) => setP({ ...p, miktar: e.target.value })} /></div><div><label htmlFor={`pg-b-${isEmri}`}>Birim</label><input id={`pg-b-${isEmri}`} value={p.birim} onChange={(e) => setP({ ...p, birim: e.target.value })} /></div></div>
+        <label htmlFor={`pg-l-${isEmri}`}>Lot No</label><input id={`pg-l-${isEmri}`} value={p.lot} onChange={(e) => setP({ ...p, lot: e.target.value })} />
+        <BelgeSec ad="İrsaliye veya Sertifika" bagTuru="İş Emri" bagKimligi={isEmri} deger={b} sec={setB} />
+        <button className="btn2" disabled={!b} onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/parca`, { ...p, miktar: Number(p.miktar.replace(',', '.')), belge: b }).then(() => { setB(''); setP({ urun: '', parcaNo: '', miktar: '', birim: 'adet', lot: '' }); return yukle(); }), 'Parça girişi kontrole gönderildi.')}>Parça Girişini Kaydet</button>
+      </Blok>
+      <Blok baslik="Teslim">
+        <div className={ts ? 'not' : 'uyari'}>{ts ? 'Teslim Onayı Verildi.' : '⚠ LGM teslim onayını beklemenizi rica ederiz; yat, anahtar ve evrak bu onaydan önce teslim edilmez.'}</div>
+        <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teslim-talebi`, {}), 'Teslim talebiniz iletildi.')}>Teslim Talebi</button>
+      </Blok>
+    </>
+  );
+}
+
+interface SahaV { teshisiBelirsiz: boolean; gunlukler: { kimlik: string; tarih: string; faaliyet: string | null; engel: string | null; durum: string }[]; parcalar: { kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]; sapmalar: { kimlik: string; tur: string; aciklama: string; karar: string }[]; bulgular: { kimlik: string; sinif: string; aciklama: string }[] }
+/** YG-379, YG-786, Ek I §7.5: LGM saha kayıtları; karneye kayıtlardan yansır. */
+export function SahaKayitlari({ isEmri }: { isEmri: string }) {
+  const [v, setV] = useState<SahaV | null>(null); const [s, setS] = useState({ tur: 'Yöntem', aciklama: '', karar: 'Düzeltme', firmaKaynakli: true, isgIhlali: false, onaysizEkIs: false }); const [d, setD] = useState({ sinif: 'Minör', aciklama: '', hedef: '' }); const [be, setBe] = useState(''); const [ac, setAc] = useState(false);
+  const yukle = () => istek<SahaV>(`/is-emri/${isEmri}/saha-kayitlari`).then(setV);
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { if (ac) void yap(yukle); }, [ac]);
+  if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>Saha Kayıtları</button>;
+  return (
+    <div className="tam"><Mesaj />
+      {v && <>
+        {v.gunlukler.map((x) => <div key={x.kimlik}>{tarih(x.tarih)} · {x.faaliyet ?? '—'}{x.engel ? ` · Engel: ${x.engel}` : ''} · {x.durum}</div>)}
+        {v.parcalar.map((x) => <div className="soru" key={x.kimlik}><span>{x.urun_tanimi} · {x.parca_no} · Lot: {x.lot_no} · {x.kabul_karari ?? 'Kontrol Bekliyor'}</span>{!x.kabul_karari && ['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => void yap(() => istek(`/parca-girisi/${x.kimlik}/karar`, { karar: k }))}>{k}</button>)}</div>)}
+        {v.sapmalar.map((x) => <div key={x.kimlik}>Sapma: {x.tur} · {x.karar} · {x.aciklama}</div>)}
+        {v.bulgular.map((x) => <div key={x.kimlik}>Denetim: {x.sinif} · {x.aciklama}</div>)}
+        <label><input type="checkbox" checked={v.teshisiBelirsiz} onChange={(e) => void yap(() => istek(`/is-emri/${isEmri}/teshisi-belirsiz`, { deger: e.target.checked }))} /> Teşhisi Belirsiz İş</label>
+        <label htmlFor={`sp-t-${isEmri}`}>Sapma Türü</label><select id={`sp-t-${isEmri}`} value={s.tur} onChange={(e) => setS({ ...s, tur: e.target.value })}>{['Kapsam', 'Yöntem', 'Süre', 'Maliyet', 'Kalite', 'Güvenlik', 'Belge'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor={`sp-a-${isEmri}`}>Sapma Açıklaması</label><input id={`sp-a-${isEmri}`} value={s.aciklama} onChange={(e) => setS({ ...s, aciklama: e.target.value })} />
+        <label htmlFor={`sp-k-${isEmri}`}>Sapma Kararı</label><select id={`sp-k-${isEmri}`} value={s.karar} onChange={(e) => setS({ ...s, karar: e.target.value })}>{['İşi Durdur', 'Sınırlı Devam', 'Düzeltme', 'Değişiklik Talebi'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label><input type="checkbox" checked={s.firmaKaynakli} onChange={(e) => setS({ ...s, firmaKaynakli: e.target.checked })} /> Firma Kaynaklı</label>
+        <label><input type="checkbox" checked={s.isgIhlali} onChange={(e) => setS({ ...s, isgIhlali: e.target.checked })} /> İSG İhlali</label>
+        <label><input type="checkbox" checked={s.onaysizEkIs} onChange={(e) => setS({ ...s, onaysizEkIs: e.target.checked })} /> Onaysız Ek İş</label>
+        <button className="btn2 kucuk" disabled={!s.aciklama.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/sapma`, s).then(() => setS({ ...s, aciklama: '' })))}>Sapmayı Kaydet</button>
+        <label htmlFor={`db-s-${isEmri}`}>Denetim Bulgusu Sınıfı</label><select id={`db-s-${isEmri}`} value={d.sinif} onChange={(e) => setD({ ...d, sinif: e.target.value })}><option>Minör</option><option>Majör</option></select>
+        <label htmlFor={`db-a-${isEmri}`}>Bulgu Açıklaması</label><input id={`db-a-${isEmri}`} value={d.aciklama} onChange={(e) => setD({ ...d, aciklama: e.target.value })} />
+        <BelgeSec ad="Denetim Kanıtı" bagTuru="İş Emri" bagKimligi={isEmri} deger={be} sec={setBe} />
+        <button className="btn2 kucuk" disabled={!d.aciklama.trim() || !be} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/denetim-bulgusu`, { ...d, belge: be }).then(() => { setBe(''); setD({ ...d, aciklama: '' }); }))}>Bulguyu Kaydet</button>
+      </>}
+    </div>
+  );
+}
+
 interface KarneOlay { kimlik: string; is_emri_no: string; oncelik: string; kalite_puani: string | null; sure_puani: string | null; maliyet_puani: string | null; iletisim_puani: string | null; uyum_puani: string | null; dosya_puani: string; itiraz: string | null }
 interface KarneV { donem: { donem_puani: string | null; yetersiz_veri: boolean; kapanan_dosya_sayisi: number; uygunsuzluk_kesintisi: string; kalite: string | null; sure: string | null; maliyet: string | null; iletisim: string | null; uyum: string | null } | null; olaylar: KarneOlay[] }
 const puan = (x: string | null | undefined) => (x === null || x === undefined ? '—' : Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }));

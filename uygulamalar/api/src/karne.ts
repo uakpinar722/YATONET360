@@ -79,14 +79,26 @@ async function girdiTopla(db: Db, id: string, p: P): Promise<{ g: Girdi; e: Reco
   const hak = (await db.query(`SELECT sum(bu_donem_brut) t FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].t;
   const ek = Number((await db.query(`SELECT coalesce(sum(firma_bedeli_eur), 0) t FROM is_emri WHERE ana_is_emri_ref = $1 AND statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [id])).rows[0].t);
   const saat = Number(p[`yanit_${SIRA[e.oncelik] ?? 'normal'}`] ?? 24);
+  // YG-1518: rapor son zamanı firma kabulünden; rapor yoksa ölçülmez.
+  const fr = (await db.query(`SELECT firma_onayi FROM firma_teknik_raporu WHERE is_emri_ref = $1 ORDER BY firma_onayi LIMIT 1`, [id])).rows[0];
+  let raporZamaninda: number | null = null;
+  if (fr && e.firma_kabul_zamani) {
+    const sat = Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [`rapor_sure_saat_${SIRA[e.oncelik] ?? 'normal'}`])).rows[0]?.deger ?? 72);
+    raporZamaninda = new Date(fr.firma_onayi).getTime() <= new Date(e.firma_kabul_zamani).getTime() + sat * 3_600_000 ? 100 : 0;
+  }
+  // Önceden bildirim: gecikme varsa hedef bitişten önce günlük kayda engel yazılmış olmalı; gecikme yoksa ölçülmez.
+  let oncedenBildirim: number | null = null;
+  if (firmaGecikmeGun > 0) oncedenBildirim = (await say(`SELECT count(*) n FROM firma_gunluk_kaydi WHERE is_emri_ref = $1 AND engel IS NOT NULL AND tarih <= $2::date`, id, e.hedef_bitis_tarihi)) > 0 ? 100 : 0;
+  const sapma = (await db.query(`SELECT count(*) FILTER (WHERE isg_ihlali)::int isg, count(*) FILTER (WHERE NOT isg_ihlali AND tur IN ('Yöntem', 'Güvenlik', 'Belge'))::int prosedur, count(*) FILTER (WHERE onaysiz_ek_is)::int onaysiz FROM sapma_kaydi WHERE is_emri_ref = $1 AND firma_kaynakli`, [id])).rows[0];
+  const denetim = (await db.query(`SELECT count(*) FILTER (WHERE sinif = 'Majör')::int majoer, count(*) FILTER (WHERE sinif = 'Minör')::int minoer FROM firma_denetim_bulgusu WHERE is_emri_ref = $1`, [id])).rows[0];
   const yanit = e.yayim_zamani && e.firma_kabul_zamani ? ((new Date(e.firma_kabul_zamani).getTime() - new Date(e.yayim_zamani).getTime()) / 3_600_000 <= saat ? 100 : 0) : null;
   const g: Girdi = {
     oncelik: e.oncelik, kabul: e.teknik_kabul_sonucu ?? null, ilkSeferdeKabul: Number(e.teknik_ret_sayisi) === 0, majoer: await uyg('Majör'), minoer: await uyg('Minör'),
     basarisizTest: await say(`SELECT count(*) n FROM test_kaydi WHERE dosya_ref = $1 AND sonuc = 'Başarısız'`, e.dosya_ref), garanti,
-    planlananGun, firmaGecikmeGun, teshisiBelirsiz: false,
-    butce: e.firma_bedeli_eur === null ? null : Number(e.firma_bedeli_eur), ekIs: ek, fatura: hak === null ? null : Number(hak), onaysizEkIs: false,
-    yanitUyum: yanit, raporZamaninda: null, oncedenBildirim: null,
-    isg: 0, prosedur: 0, denetimMajoer: 0, denetimMinoer: 0,
+    planlananGun, firmaGecikmeGun, teshisiBelirsiz: Boolean(e.teshisi_belirsiz),
+    butce: e.firma_bedeli_eur === null ? null : Number(e.firma_bedeli_eur), ekIs: ek, fatura: hak === null ? null : Number(hak), onaysizEkIs: sapma.onaysiz > 0,
+    yanitUyum: yanit, raporZamaninda, oncedenBildirim,
+    isg: sapma.isg, prosedur: sapma.prosedur, denetimMajoer: denetim.majoer, denetimMinoer: denetim.minoer,
     eksikBelge: await say(`SELECT count(*) n FROM sicil_belgesi WHERE kurulus_ref = $1 AND gecerlilik_bitis < $2::timestamptz`, e.kurulus_ref, kapanis),
     emniyetOlayi: (await say(`SELECT count(*) n FROM uygunsuzluk WHERE emniyet_isareti AND (is_emri_ref = $1 OR (dosya_ref = $2 AND sorumlu_firma_ref = $3))`, id, e.dosya_ref, e.kurulus_ref)) > 0,
   };
@@ -98,7 +110,7 @@ export async function performansOlayIsle(db: Db, isEmri: string, neden?: string)
   const once = (await db.query(`SELECT * FROM performans_olay_kaydi WHERE is_emri_ref = $1`, [isEmri])).rows[0];
   const pr = await parametre(db, once?.parametre_surum);
   const { g, e } = await girdiTopla(db, isEmri, pr.deger);
-  if (e.kayit_rolu !== 'Çözüm Ortağı' || e.statu !== 'Kapalı') return;
+  if (e.kayit_rolu !== 'Çözüm Ortağı' || e.statu !== 'Kapalı') return; // açık iş emrinde kayıt kapanışta toplanır
   const k = dosyaPuani(g, pr.deger);
   if (once) {
     await db.query(`INSERT INTO performans_olay_gecmisi (olay_ref, onceki, neden) VALUES ($1,$2,$3)`, [once.kimlik, JSON.stringify(once), neden ?? 'Yeniden hesap']);
