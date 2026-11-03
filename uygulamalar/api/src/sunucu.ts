@@ -20,6 +20,7 @@ import { firmaYollari } from './firma.js';
 import { ticariYollari } from './ticari.js';
 import { kaliteYollari } from './kalite.js';
 import { tedarikYollari } from './tedarik.js';
+import { yatDegeriYollari } from './yat_degeri.js';
 import { sigortaYollari } from './sigorta.js';
 import { sahaYollari } from './saha.js';
 import { teklifYollari } from './teklif.js';
@@ -44,6 +45,6 @@ export async function sunucuKur(b: Baglam) {
     y.code(kod && kod < 500 ? kod : 500).send({ hata: isKurali ? e.message : 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); }, { prefix: '/api' });
   return s;
 }

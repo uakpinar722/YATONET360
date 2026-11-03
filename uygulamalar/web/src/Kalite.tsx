@@ -147,3 +147,27 @@ export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) 
     </Blok>
   );
 }
+
+interface YatDegeriV { durum: string; deger: string | null; ekPolice: string | null; gorusler: { rol: string; deger_eur: string; dayanak: string }[]; rollerim: string[] }
+
+/** K-240, YG-985: yat değerine dosyaya atanmış Operasyon Yöneticisi ve Teknik Yönetici ortak karar verir; yetkisiz kullanıcıya bölüm görünmez. */
+export function YatDegeriBolumu({ id }: { id: string }) {
+  const [v, setV] = useState<YatDegeriV | null>(null); const [deger, setDeger] = useState(''); const [dayanak, setDayanak] = useState(''); const [hata, setHata] = useState('');
+  const yukle = () => istek<YatDegeriV>(`/dosya/${id}/yat-degeri`).then(setV);
+  useEffect(() => { void yukle().catch(() => setV(null)); }, [id]);
+  if (!v) return null;
+  const para = (x: string) => `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+  return (
+    <Blok baslik="Yat Değeri Ortak Kararı">
+      {hata && <div className="hata" role="alert">{hata}</div>}
+      <div>Durum: <b className="koyu">{v.durum}</b>{v.deger ? ` · ${para(v.deger)}` : ''}{v.ekPolice ? ` · Ek Poliçe: ${v.ekPolice}` : ''}</div>
+      {v.gorusler.map((g) => <div key={g.rol}>{g.rol}: {para(g.deger_eur)} · {g.dayanak}</div>)}
+      {v.durum === 'Uyuşmazlık' && <div className="uyari">Değerler aynı olmadan teklif gönderilemez ve iş emri verilemez.</div>}
+      {v.rollerim.length > 0 && <>
+        <label htmlFor="yd-d">Değer (EUR)</label><input id="yd-d" inputMode="decimal" value={deger} onChange={(e) => setDeger(e.target.value)} />
+        <label htmlFor="yd-g">Dayanak</label><input id="yd-g" value={dayanak} onChange={(e) => setDayanak(e.target.value)} />
+        <button className="btn2" onClick={() => { setHata(''); void istek(`/dosya/${id}/yat-degeri`, { deger: Number(deger.replace(/\./g, '').replace(',', '.')), dayanak }).then(yukle).catch((x) => setHata((x as Error).message)); }}>Görüşü Kaydet</button>
+      </>}
+    </Blok>
+  );
+}

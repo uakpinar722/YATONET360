@@ -100,6 +100,15 @@ try {
   await pDs.api(`/dosya/${d.kimlik}/yat-bilgisi`, { tahrik: 'Dizel' });
   await sup.query(`UPDATE yat SET gecici_kayit = false WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
   await sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-01','k','m','d','a','+905550002222',$2,'Onaylandı',now())`, [d.kimlik, `e2e${tek}`]);
+  await sup.query(`INSERT INTO sistem_parametresi (kod, deger, aciklama) VALUES ('police_olay_basi_limit_eur', 100000000, 'Deneme') ON CONFLICT DO NOTHING`);
+  for (const k of ['oy', 'ty']) {
+    const p = await al(k, E); await dosyaAc(p, d.dosyaNo);
+    await p.locator('#yd-d').fill('1.500.000,50'); await p.locator('#yd-g').fill('Piyasa bilgisi');
+    await tikla(p, 'Görüşü Kaydet');
+  }
+  await (await al('ty', E)); await dosyaAc(sayfalar.ty, d.dosyaNo);
+  await sayfalar.ty.getByText('1.500.000,50 EUR').first().waitFor();
+  kontrol('Operasyon Yöneticisi ve Teknik Yönetici yat değerine ekrandan ortak karar verir', (await sup.query(`SELECT durum FROM dosya_yat_degeri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].durum === 'Kesin');
   const isEmriForm = async (p, tur, kapsam, bedel, teklif) => {
     await p.getByLabel('Tür', { exact: true }).selectOption(tur);
     await p.getByLabel('Firma', { exact: true }).selectOption(firma);

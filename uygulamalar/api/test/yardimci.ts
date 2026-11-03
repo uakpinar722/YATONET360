@@ -71,6 +71,7 @@ export async function ortamKur(vt: string, kadro: Record<string, string>): Promi
       for (const [kim, rol, yapan] of [['ds', 'Dosya Sorumlusu', 'opm'], ['oy', 'Operasyon Yöneticisi', 'opm'], ['tu', 'Teknik Uzman', 'tm'], ['ty', 'Teknik Yönetici', 'tm']] as const) {
         const r = await ata(id, kim, rol, yapan); expect(r.statusCode, r.body).toBe(200);
       }
+      await sup.query(`INSERT INTO dosya_yat_degeri (dosya_ref, durum, deger_eur, ek_police_durumu) VALUES ($1,'Kesin',10000000,'Gerekli değil') ON CONFLICT DO NOTHING`, [id]); // Kapı; asıl akış yat_degeri.test.ts içinde
     },
     belge: async (id, k, ad = `B${Math.random()}`, uzanti = 'pdf') => {
       const icerik = uzanti === 'pdf' ? Buffer.from(`%PDF-1.4 ${Math.random()}`) : Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(String(Math.random()))]);

@@ -13,6 +13,7 @@ import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID, vergiNoGecerli } from './yat.js';
 import { belgeBagiKaydet } from './belge.js';
 import { ilerlemeEngeli, kabulEngeli, planEngeli } from './kalite.js';
+import { yatDegeriEngeli } from './yat_degeri.js';
 import { izinGerekli } from './yetki.js';
 
 type Db = Pool | PoolClient;
@@ -144,6 +145,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (d.statu !== 'Aktif') return y.code(409).send({ hata: 'İş emri yalnız Aktif dosyada verilir.' });
     if (d.calisma_durduruldu) return y.code(409).send({ hata: 'Yat sahibi itirazı nedeniyle çalışmalar durdurulmuştur.' });
     if (!['KN', 'AC', 'ON', 'EK', 'GR', 'PH'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'İş emri türünü seçiniz.' });
+    const yde = await yatDegeriEngeli(b.db, id, g.tur); if (yde) return y.code(409).send({ hata: yde });
     const roller = (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [id, o.kullanici])).rows.map((r) => r.rol as string);
     const yetkili = g.tur === 'GR' ? 'Teknik Yönetici' : 'Operasyon Yöneticisi';
     if (!roller.includes(yetkili)) return y.code(403).send({ hata: `Bu iş emrini ${yetkili} çıkarır.` });

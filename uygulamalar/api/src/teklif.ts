@@ -1,3 +1,4 @@
+import { ekonomikIzle, yatDegeriEngeli } from './yat_degeri.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
@@ -303,6 +304,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const zincir = await parasalZincir(c, ARA, son);
       await c.query(`UPDATE fiyat_teklifi SET statu = 'İç Onayda', kilitli = true, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
+      await ekonomikIzle(c, t.dosya_ref, kum);
       await kartAc(c, { tur: 'Fiyat Teklifi', baslik: `${t.teklif_no} · Fiyat Teklifi Onayı`, ozet: `${tutar(Number(t.onay_limit_tutari_eur))} EUR (KDV hariç)`, hazirlayan: o.kullanici, zincir, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklif Onaya Gönderildi', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { kumulatif: kum, sonMakam: son }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { sonMakam: son, kumulatif: kum };
@@ -315,6 +317,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return yok(y);
     if (t.statu !== 'Onaylı') return y.code(409).send({ hata: 'Teklif iç onaydan geçmemiştir.' });
     if (t.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada teklif gönderilmez.' });
+    const yde = await yatDegeriEngeli(b.db, t.dosya_ref); if (yde) return y.code(409).send({ hata: yde });
     const dil = dilKod(t.yazisma_dili);
     if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Lehtar muvafakati girilmeden teklif onayı açılmaz.' });
     const gun = await parametre(b.db, 'teklif_gecerlilik_gun');

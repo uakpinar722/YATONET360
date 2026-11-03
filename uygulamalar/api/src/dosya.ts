@@ -351,6 +351,11 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         if (eski) await c.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now(), devir_notu = $2 WHERE kimlik = $1`, [eski.kimlik, g.devirNotu!.trim()]);
       } else if ((await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = $3 AND bitis_zamani IS NULL`, [id, g.kullanici, g.rol])).rowCount) return dur(409, 'Kişi bu rolde zaten atanmıştır.');
       await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,$3,$4)`, [id, g.kullanici, g.rol, o.kullanici]);
+      if (g.rol === 'Operasyon Yöneticisi' || g.rol === 'Teknik Yönetici') { // K-240: yat değeri görevi atanan kişiye düşer; devredilenin görevi kapanır.
+        await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Yat Değeri Görüşü' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı' AND sahip_kullanici_ref NOT IN (SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1::uuid AND bitis_zamani IS NULL)`, [id]);
+        const dv = (await c.query(`SELECT dosya_no, hizmet_turu FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+        if (dv.hizmet_turu === 'Hasar onarımı') await kartAc(c, { tur: 'Yat Değeri Görüşü', kategori: 'islem', baslik: `${dv.dosya_no} · Yat Değeri Ortak Kararı`, sahipKullanici: g.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
+      }
       if (g.rol === 'Dosya Sorumlusu') await c.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [id, g.kullanici]);
       if (g.rol === 'Yedek Sorumlu') await c.query(`UPDATE dosya SET yedek_sorumlu_ref = $2 WHERE kimlik = $1`, [id, g.kullanici]);
       if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') await sureBitir(c, { tur: 'Teknik Uzman Ataması', dosya: id });
