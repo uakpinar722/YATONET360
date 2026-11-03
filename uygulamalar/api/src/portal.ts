@@ -12,6 +12,7 @@ import { ozet, rastgeleBelirtec } from './kripto.js';
 import { rolSahipleri } from './makam.js';
 import { onayFormKaydet, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { tarafNo, UUID } from './yat.js';
+import { onayEngeli, talepEngeli } from './kurumsal.js';
 
 type Db = Pool | PoolClient;
 export const GRUP_YAT = 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)';
@@ -165,7 +166,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
 
-  const benimDosyalarim = `EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND t.kullanici_ref = $1 AND t.aktif AND t.taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci', 'Kaptan', 'İşletmeci', 'Yat Yönetim Şirketi'))`;
+  const benimDosyalarim = `EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND t.kullanici_ref = $1 AND t.aktif AND t.taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci', 'Kaptan', 'İşletmeci', 'Yat Yönetim Şirketi')) OR EXISTS (SELECT 1 FROM kurumsal_kullanici u JOIN kurumsal_kurum c ON c.kimlik = u.kurum_ref JOIN yat ky ON ky.yat_sahibi_ref = c.taraf_ref WHERE u.kullanici_ref = $1 AND ky.kimlik = d.yat_ref)`;
   const kart = async (d: Record<string, any>) => {
     const bek = (await b.db.query(`SELECT neden FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.neden as string);
     const durum = musteriDurumu(d as never, { beklemede: bek });
@@ -175,7 +176,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   // YG-1565: Onayınızı Bekleyenler, Dosyalarım. YG-459: firma, maliyet ve iç yazışma yoktur.
   s.get('/portal/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const red = musteri(o.grup, y); if (red) return red;
-    const dosyalar = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.birlestirilen_ana_dosya_ref IS NULL AND ${benimDosyalarim} ORDER BY d.statu = 'Kapalı', d.acilis_tarihi DESC`, [o.kullanici])).rows;
+    const dosyalar = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.birlestirilen_ana_dosya_ref IS NULL AND (${benimDosyalarim}) ORDER BY d.statu = 'Kapalı', d.acilis_tarihi DESC`, [o.kullanici])).rows;
     const talepler = (await b.db.query(`SELECT t.kimlik, t.talep_no, t.statu, t.kayda_gecis_zamani, y.yat_adi FROM talep t JOIN yat y ON y.kimlik = t.yat_ref WHERE t.olusturan_ref = $1 AND t.dosya_ref IS NULL AND t.statu NOT IN ('Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY t.kayda_gecis_zamani DESC`, [o.kullanici])).rows;
     const onaylar = (await b.db.query(`SELECT t.kimlik, t.baslik, t.belge_adi, t.son_gecerlilik, d.dosya_no FROM onay_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.alici_kullanici_ref = $1 AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() ORDER BY t.olusturma_zamani DESC`, [o.kullanici])).rows;
     return { onaylar, dosyalar: await Promise.all(dosyalar.map(kart)), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
@@ -184,7 +185,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   s.get('/portal/dosya/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const red = musteri(o.grup, y); if (red) return red;
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
-    const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $2 AND ${benimDosyalarim}`, [o.kullanici, id])).rows[0];
+    const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $2 AND (${benimDosyalarim})`, [o.kullanici, id])).rows[0];
     if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
     const belgeler = (await b.db.query(`SELECT e.kimlik, e.ad, s.surum_no FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.bag_turu = 'Dosya' AND e.bag_kimligi = $1 AND s.durum = 'Yürürlükte' AND e.bilgi_sinifi <> 'Kritik' ORDER BY e.olusturma_zamani DESC`, [id])).rows;
     return { ...(await kart(d)), belgeler };
@@ -194,6 +195,8 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   s.post('/portal/onay/:id/ac', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Onay bulunamadı.' });
+    const ot = (await b.db.query(`SELECT tutar_eur FROM onay_talebi WHERE kimlik = $1 AND alici_kullanici_ref = $2`, [id, o.kullanici])).rows[0];
+    if (ot) { const oe = await onayEngeli(b.db, o.kullanici, ot.tutar_eur === null ? null : Number(ot.tutar_eur)); if (oe) return y.code(403).send({ hata: oe }); }
     const bel = rastgeleBelirtec();
     const r = await b.db.query(`UPDATE onay_talebi SET portal_belirtec_ozeti = $3 WHERE kimlik = $1 AND alici_kullanici_ref = $2 AND durum = 'Bekliyor' RETURNING kimlik`, [id, o.kullanici, ozet(bel)]);
     if (!r.rowCount) return y.code(404).send({ hata: 'Onay bulunamadı.' });
@@ -203,6 +206,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   // YG-011, YG-1553, YG-1562: portal kısa formu; hasar içerikli talep Operasyona düşer. YG-485: aydınlatma ilk girişte onaylandı.
   s.post('/portal/ihbar', oturumlu, async (i, y) => {
     const o = i.oturum!; const red = musteri(o.grup, y); if (red) return red;
+    const ke = await talepEngeli(b.db, o.kullanici); if (ke) return y.code(403).send({ hata: ke });
     const g = (i.body ?? {}) as { yatAdi?: string; konum?: string; ozet?: string; sigorta?: string; sigortaci?: string; hasarNo?: string; tur?: 'Hasar' | 'Talep' };
     if (!g.yatAdi?.trim()) return y.code(400).send({ hata: 'Yatın adı zorunludur.' });
     if (!g.konum?.trim()) return y.code(400).send({ hata: 'Yatın bulunduğu yer zorunludur.' });

@@ -325,6 +325,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { gerekce } = (i.body ?? {}) as { gerekce?: string };
     if (!UUID.test(id)) return yok(y);
     if (!gerekce?.trim()) return y.code(400).send({ hata: 'Güvenli koşul doğrulaması zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM uygunsuzluk u JOIN is_emri e ON e.kimlik = u.is_emri_ref WHERE e.dosya_ref = $1 AND e.statu = 'Durduruldu' AND u.is_durduruldu AND u.statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'İşi durduran uygunsuzluk açıktır; kapanması bekleniyor.' }); // V-123
     await b.db.query(`UPDATE dosya SET calisma_durduruldu = false WHERE kimlik = $1`, [id]);
     await b.db.query(`UPDATE is_emri SET statu = 'Aktif', durdurma_nedeni = NULL WHERE dosya_ref = $1 AND statu = 'Durduruldu'`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İş Yeniden Başlatıldı', nesneTuru: 'Dosya', nesneKimligi: id, gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

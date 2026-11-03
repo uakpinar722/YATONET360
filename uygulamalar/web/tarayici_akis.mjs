@@ -268,7 +268,7 @@ try {
   const pMpm = await al('mpm', E);
   await pMpm.getByRole('button', { name: 'Sigorta Ek-2' }).first().click();
   await pMpm.getByLabel('Sigorta Şirketi').fill(`E2E Ek2 ${tek}`);
-  await pMpm.getByLabel('Ad Soyad').fill('Onay Yetkilisi'); await pMpm.getByLabel('E-posta').fill('ek2@deneme.local');
+  await pMpm.getByLabel('Ad Soyad').fill('Onay Yetkilisi'); await pMpm.getByLabel('E-posta', { exact: true }).fill('ek2@deneme.local');
   await pMpm.getByLabel('Onay Adresi').check(); await pMpm.getByLabel('Kurumsal Temsilci').check();
   await tikla(pMpm, 'Listeyi Kaydet');
   await tasmaYok(pMpm, 'sigorta_ek2');

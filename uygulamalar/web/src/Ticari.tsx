@@ -429,6 +429,21 @@ export function TedarikciOdemeleri() {
 
 interface Ek2Satir { eposta: string; ad: string; gorev: string; onay: boolean; temsilci: boolean; limit: string; bitis: string }
 interface Ek2Surum { kimlik: string; sigortaci_adi: string; surum: number; durum: string; adresler: { eposta: string; ad: string; onay: boolean; temsilci: boolean; limit: string | null; bitis: string | null }[] }
+/** YG-1563: kurumu ve ilk yetkiliyi A53 Müşteri ve Paydaş İlişkileri Müdürü tanımlar. */
+function KurumsalTanim() {
+  const { yap, Mesaj } = useYap(() => undefined);
+  const [f, setF] = useState({ tarafNo: '', ek2Siniri: '', yetkiliAd: '', yetkiliEposta: '' });
+  return (
+    <Blok baslik="Kurumsal Müşteri Tanımı"><Mesaj />
+      <label htmlFor="kt-t">Taraf No</label><input id="kt-t" value={f.tarafNo} onChange={(e) => setF({ ...f, tarafNo: e.target.value })} />
+      <label htmlFor="kt-s">Ek-2 Onay Sınırı (EUR)</label><input id="kt-s" inputMode="decimal" value={f.ek2Siniri} onChange={(e) => setF({ ...f, ek2Siniri: e.target.value })} />
+      <label htmlFor="kt-a">Kurum Yetkilisi</label><input id="kt-a" value={f.yetkiliAd} onChange={(e) => setF({ ...f, yetkiliAd: e.target.value })} />
+      <label htmlFor="kt-e">Yetkili E-postası</label><input id="kt-e" type="email" value={f.yetkiliEposta} onChange={(e) => setF({ ...f, yetkiliEposta: e.target.value })} />
+      <button className="btn2" onClick={() => void yap(() => istek('/kurumsal-kurum', { ...f, ek2Siniri: Number(f.ek2Siniri.replace(',', '.')) }).then(() => ({ uyari: 'Kurum tanımlandı, yetkiliye davet gönderildi.' })))}>Kurumu Tanımla</button>
+    </Blok>
+  );
+}
+
 /** YG-219, YG-1522: Sigorta Çerçeve Sözleşmesi Ek-2. Değişiklik temsilcinin bildirimiyle yeni sürüm olur. */
 export function SigortaEk2() {
   const { yap, Mesaj } = useYap(() => undefined);
@@ -446,6 +461,7 @@ export function SigortaEk2() {
         {l.length === 0 && <div className="not">Kayıtlı liste bulunmamaktadır.</div>}
         {l.map((x) => <div key={x.kimlik} className="soru"><span><b className="koyu">{x.sigortaci_adi}</b> · Sürüm {x.surum} · {x.durum}</span><div className="tam">{x.adresler.map((a) => <div key={a.eposta}>{a.ad} · {a.eposta}{a.onay ? ' · Onay Adresi' : ''}{a.temsilci ? ' · Kurumsal Temsilci' : ''}{a.limit ? ` · Sınır: ${eur(a.limit)}` : ''}{a.bitis ? ` · Bitiş: ${a.bitis.split('T')[0]!.split('-').reverse().join('.')}` : ''}</div>)}</div></div>)}
       </Blok>
+      <KurumsalTanim />
       <Blok baslik="Liste Kaydet">
         <label htmlFor="e2-s">Sigorta Şirketi</label><input id="e2-s" value={sig} onChange={(e) => setSig(e.target.value)} />
         {kayitli && <><label htmlFor="e2-b">Bildirimi Gönderen Temsilci Adresi</label><input id="e2-b" type="email" value={bildiren} onChange={(e) => setBildiren(e.target.value)} /><label htmlFor="e2-r">Bildirim Referansı</label><input id="e2-r" value={ref} onChange={(e) => setRef(e.target.value)} /></>}

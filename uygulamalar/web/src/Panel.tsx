@@ -7,13 +7,13 @@ import { Profilim } from './Hesabim';
 import { YatSahibiAna } from './Portal';
 import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
 import { KarneParametreleri, FirmaSicil } from './Sicil';
-import { GunlukSayfasi, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
+import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -61,6 +61,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'firmaisemri' as Sayfa, ad: 'İş Emirleri', ik: '▣' }, { s: 'gunluk' as Sayfa, ad: 'Günlük Kayıt', ik: '✎' }] : []),
     ...(ben.grup === 'Tedarikçi' ? [{ s: 'tedsiparis' as Sayfa, ad: 'Siparişler', ik: '▣' }, { s: 'tedteklif' as Sayfa, ad: 'Teklifler', ik: '▤' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
+    ...(ben.grup === 'Kurumsal Müşteri' ? [{ s: 'kullanicilarim' as Sayfa, ad: 'Kullanıcılarım', ik: '▦' }] : []),
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'kurum' as Sayfa, ad: 'Firma', ik: '▦' }] : ben.grup === 'Tedarikçi' || ben.grup.startsWith('Tesis') ? [{ s: 'kurum' as Sayfa, ad: 'Hesap', ik: '▦' }] : []),
   ];
   const b = veri?.okunmamisBildirim ?? 0;
@@ -82,6 +83,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     firmaisemri: <FirmaAna ben={ben} bolum="isemri" />,
     karnepar: <KarneParametreleri />,
     gunluk: <GunlukSayfasi />,
+    kullanicilarim: <Kullanicilarim />,
     tedodeme: <TedarikciOdemeleri />,
     tedsiparis: <TedarikciAna ben={ben} bolum="siparis" />,
     tedteklif: <TedarikciAna ben={ben} bolum="teklif" />,
