@@ -77,11 +77,51 @@ interface TedarikciV {
   kurulus: string;
   talepler: { kimlik: string; talep_no: string; son_zaman: string; durum: string; kalemler: { kimlik: string; urun_tanimi: string; uretici_parca_no: string | null; miktar: string; birim: string; birim_fiyat_eur: string | null; teslim_suresi_gun: number | null }[] }[];
   siparisler: { kimlik: string; siparis_no: string; statu: string; kdv_haric_eur: string; teslim_tarihi: string; teslim_yeri: string; tedarikci_kabul: string | null; tedarikci_teslim_tarihi: string | null; sevk_var: boolean; kalemler: { urun_tanimi: string; uretici_parca_no: string; miktar: string; birim: string; birim_bedel_eur: string }[] }[];
-  faturalar: { kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; siparis_no: string; eslestirme: string | null }[];
+  faturalar: { kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; siparis_no: string; eslestirme: string | null; vade: string; odeme_durumu: string }[];
 }
 
 /** YG-1577, YG-298 A9 Tedarikçi: yalnız kendi teklif ve siparişleri; müşteri kimliği yoktur. */
-export function TedarikciAna({ ben }: { ben: Ben }) {
+interface KurumHesapV { kurum: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kurumsal_eposta: string | null; kurumsal_telefon: string | null; il: string | null; ilce: string | null }; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; cep_telefonu: string | null; hesap_durumu: string; ben: boolean }[]; talepler: { kimlik: string; ad_soyad: string; eposta: string; durum: string }[] }
+/** YG-425, YG-1004: firma bilgileri ve kullanıcılar; yeni kullanıcı LGM teyidiyle açılır, ayrılan kişinin hesabı hemen kapanır. YG-298: tedarikçide fatura ve ödeme durumu. */
+export function KurumHesap({ baslik }: { baslik: string }) {
+  const [v, setV] = useState<KurumHesapV | null>(null); const [f, setF] = useState({ ad: '', eposta: '', telefon: '' }); const [ge, setGe] = useState<Record<string, string>>({}); const [fat, setFat] = useState<TedarikciV['faturalar']>([]);
+  const yukle = async () => { const h = await istek<KurumHesapV>('/kurum/hesap'); setV(h); if (h.kurum.kayit_rolu === 'Tedarikçi') setFat((await istek<TedarikciV>('/tedarikci-portal/ana')).faturalar); };
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { void yap(yukle); }, []);
+  if (!v) return <Mesaj />;
+  const k = v.kurum;
+  return (
+    <>
+      <h1>{baslik}</h1><Mesaj />
+      <Blok baslik="Kurum Bilgileri">
+        <div className="ozet"><div>{k.ticari_unvan} · {k.kayit_rolu} · Sicil No: {k.sicil_no}</div><div>E-posta: {k.kurumsal_eposta ?? '—'} · Telefon: {k.kurumsal_telefon ?? '—'} · {[k.il, k.ilce].filter(Boolean).join(' / ') || '—'}</div></div>
+        <div className="not">Bilgi değişikliği için Sicil Sorumlusu ile görüşmenizi rica ederiz.</div>
+      </Blok>
+      {k.kayit_rolu === 'Tedarikçi' && <Blok baslik="Faturalar ve Ödeme Durumu">
+        {fat.length === 0 && <div className="not">Fatura bulunmamaktadır.</div>}
+        {fat.map((x) => <div key={x.kimlik}>{x.fatura_no} · {x.siparis_no} · {eur(x.tutar_eur)} · {x.odeme_durumu} · Vade: {tarih(x.vade)}</div>)}
+      </Blok>}
+      <Blok baslik="Kullanıcılar">
+        {v.kullanicilar.map((u) => (
+          <div className="soru" key={u.kimlik}>
+            <span>{u.ad_soyad} · {u.e_posta} · {u.hesap_durumu}</span>
+            {!u.ben && u.hesap_durumu !== 'Kapalı' && <div className="tam">
+              <label htmlFor={`kk-${u.kimlik}`}>Kapatma Nedeni</label><input id={`kk-${u.kimlik}`} value={ge[u.kimlik] ?? ''} onChange={(e) => setGe({ ...ge, [u.kimlik]: e.target.value })} />
+              <button className="btn hayir" disabled={!ge[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/kurum/kullanici/${u.kimlik}/kapat`, { gerekce: ge[u.kimlik] }))}>Hesabı Kapat</button>
+            </div>}
+          </div>
+        ))}
+        {v.talepler.map((u) => <div key={u.kimlik}>{u.ad_soyad} · {u.eposta} · {u.durum}</div>)}
+        <label htmlFor="ky-a">Ad Soyad</label><input id="ky-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+        <label htmlFor="ky-e">E-posta</label><input id="ky-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
+        <label htmlFor="ky-t">Telefon</label><input id="ky-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
+        <button className="btn2" disabled={!f.ad.trim() || !f.eposta.trim()} onClick={() => void yap(() => istek('/kurum/kullanici', f).then(() => { setF({ ad: '', eposta: '', telefon: '' }); return { uyari: 'Talebiniz LGM teyidine gönderildi.' }; }))}>Kullanıcı Ekle</button>
+      </Blok>
+    </>
+  );
+}
+
+export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'siparis' | 'teklif' }) {
   const [v, setV] = useState<TedarikciV | null>(null); const [fy, setFy] = useState<Record<string, { fiyat: string; sure: string }>>({});
   const [ka, setKa] = useState<Record<string, { kod: string; teslim: string; gerekce: string }>>({});
   const [se, setSe] = useState<Record<string, { tarih: string; irsaliye: string; tasiyici: string; lot: string; belge: string }>>({});
@@ -91,10 +131,12 @@ export function TedarikciAna({ ben }: { ben: Ben }) {
   useEffect(() => { void yap(yukle); }, []);
   if (!v) return <Mesaj />;
   const bekT = v.talepler.filter((t) => t.durum === 'Yanıt Bekliyor');
+  // YG-1577: Ana Sayfa yalnız yanıt bekleyenleri gösterir; Siparişler ve Teklifler ayrı menüdedir.
+  const gorunenS = bolum === 'ana' ? v.siparisler.filter((s) => s.statu === 'Verildi' && !s.tedarikci_kabul) : v.siparisler;
   return (
     <>
-      <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
-      <Blok baslik="Teklif Talepleri">
+      <h1>{bolum === 'siparis' ? 'Siparişler' : bolum === 'teklif' ? 'Teklifler' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      {bolum !== 'siparis' && <Blok baslik="Teklif Talepleri">
         {bekT.length === 0 && <div className="not">Bekleyen teklif talebi bulunmamaktadır.</div>}
         {bekT.map((t) => (
           <div className="soru" key={t.kimlik}>
@@ -103,10 +145,10 @@ export function TedarikciAna({ ben }: { ben: Ben }) {
             <button className="btn2" onClick={() => void yap(() => istek(`/tedarikci-portal/talep/${t.kimlik}/yanit`, { kalemler: t.kalemler.map((k) => ({ kimlik: k.kimlik, fiyat: sayi(fy[k.kimlik]?.fiyat ?? ''), sure: Number(fy[k.kimlik]?.sure ?? '') })) }), 'Teklifiniz iletildi; geçerlilik 30 gündür.')}>Teklifi Gönder</button>
           </div>
         ))}
-      </Blok>
-      <Blok baslik="Siparişler">
-        {v.siparisler.length === 0 && <div className="not">Sipariş bulunmamaktadır.</div>}
-        {v.siparisler.map((s) => {
+      </Blok>}
+      {bolum !== 'teklif' && <Blok baslik={bolum === 'ana' ? 'Kabul Bekleyen Siparişler' : 'Siparişler'}>
+        {gorunenS.length === 0 && <div className="not">{bolum === 'ana' ? 'Kabul bekleyen sipariş bulunmamaktadır.' : 'Sipariş bulunmamaktadır.'}</div>}
+        {gorunenS.map((s) => {
           const a = ka[s.kimlik] ?? { kod: '', teslim: '', gerekce: '' }; const b = se[s.kimlik] ?? { tarih: '', irsaliye: '', tasiyici: '', lot: '', belge: '' }; const c = fa[s.kimlik] ?? { no: '', tarih: '', tutar: '', belge: '' };
           return (
             <div className="soru" key={s.kimlik}>
@@ -134,8 +176,7 @@ export function TedarikciAna({ ben }: { ben: Ben }) {
             </div>
           );
         })}
-      </Blok>
-      {v.faturalar.length > 0 && <Blok baslik="Faturalarım">{v.faturalar.map((f) => <div key={f.kimlik}>{f.fatura_no} · {f.siparis_no} · {eur(f.tutar_eur)} · {f.eslestirme ?? 'Kontrolde'}</div>)}</Blok>}
+      </Blok>}
     </>
   );
 }

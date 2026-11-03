@@ -445,9 +445,19 @@ try {
   await al('tdc', E);
   await pTc.locator(`#sk-t-${sp2.kimlik}`).fill('2027-01-15'); await pTc.locator(`#sk-k-${sp2.kimlik}`).fill(await kod('tdc'));
   await tikla(pTc, 'Siparişi Kabul Ediyorum');
+  await pTc.getByRole('button', { name: 'Siparişler' }).first().click(); await pTc.locator(`#sv-t-${sp2.kimlik}`).waitFor();
+  kontrol('tedarikçi alt menüde Teklifler ve Hesap vardır', await pTc.getByRole('button', { name: 'Teklifler' }).first().isVisible() && await pTc.getByRole('button', { name: 'Hesap' }).first().isVisible());
+  await pTc.getByRole('button', { name: 'Hesap' }).first().click(); await pTc.getByText('Kurum Bilgileri').waitFor();
+  await tasmaYok(pTc, 'kurum_hesap');
+  await pTc.getByLabel('Ad Soyad').fill('Yeni Kişi'); await pTc.getByLabel('E-posta').fill(`e2e-yeni-${tek}@deneme.local`);
+  await tikla(pTc, 'Kullanıcı Ekle');
+  kontrol('kurum kullanıcı talebi ekrandan açılır, hesap teyitten önce açılmaz', (await sup.query(`SELECT durum FROM kurum_kullanici_talebi WHERE eposta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rows[0]?.durum === 'Teyit Bekliyor' && !(await sup.query(`SELECT 1 FROM kullanici_hesabi WHERE e_posta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rowCount);
+  await pTc.getByRole('button', { name: 'Siparişler' }).first().click(); await pTc.locator(`#sv-t-${sp2.kimlik}`).waitFor();
   await pTc.locator(`#sv-t-${sp2.kimlik}`).fill('2027-01-10'); await pTc.locator(`#sv-i-${sp2.kimlik}`).fill('İ9'); await pTc.locator(`#sv-s-${sp2.kimlik}`).fill('Kargo'); await pTc.locator(`#sv-l-${sp2.kimlik}`).fill('L9');
   await pTc.getByLabel('İrsaliye ve Sertifika').setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTc, 'Sevk Bildir');
+  const pMt = await al('mfm', E); await pMt.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).first().click(); await pMt.getByRole('heading', { name: 'Tedarikçi Ödemeleri' }).waitFor();
+  kontrol('muhasebe Tedarikçi Ödemeleri sayfasını açar', await pMt.getByText('Açık Faturalar').first().isVisible());
   kontrol('tedarikçi teklif verir, siparişi kodla kabul eder, sevk bildirir', (await sup.query(`SELECT count(*)::int n FROM tedarik_sevki WHERE siparis_ref = $1`, [sp2.kimlik])).rows[0].n === 1);
   // Bugün: kademe atlama ve geri çekme
   const atlaR = (await sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Muhasebe ve Finans Müdürü'`)).rows[0].kimlik; const atlaS = (await sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Ticari İşler Direktörü'`)).rows[0].kimlik;

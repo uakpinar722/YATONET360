@@ -390,6 +390,23 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
 }
 
 /** YG-948, YG-920: İdari İşlemlerim: izin ve masraf. Metin sağlık veya tanı bilgisi içermez (YG-952). */
+/** YG-845, YG-918: tedarikçi faturaları vade sırasıyla; ödeme yalnız üçlü eşleşmeden sonra kaydedilir. */
+export function TedarikciOdemeleri() {
+  const [l, setL] = useState<{ kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; vade: string; ticari_unvan: string; siparis_no: string; eslestirme: string | null }[]>([]);
+  const yukle = () => istek<typeof l>('/tedarikci-odemeleri').then(setL);
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { void yap(yukle); }, []);
+  return (
+    <>
+      <h1>Tedarikçi Ödemeleri</h1><Mesaj />
+      <Blok baslik="Açık Faturalar">
+        {l.length === 0 && <div className="not">Açık fatura bulunmamaktadır.</div>}
+        {l.map((f) => <div className="soru" key={f.kimlik}><span><b className="koyu">{f.fatura_no}</b> · {f.ticari_unvan} · {f.siparis_no} · {eur(f.tutar_eur)} · Vade: {f.vade.split('-').reverse().join('.')} · Üçlü Eşleşme: {f.eslestirme ?? 'Bekleniyor'}</span><button className="btn2 kucuk" disabled={f.eslestirme !== 'Eşleşti'} onClick={() => void yap(() => istek(`/tedarikci-odemeleri/${f.kimlik}/odendi`, {}))}>Ödendi Olarak Kaydet</button></div>)}
+      </Blok>
+    </>
+  );
+}
+
 interface Ek2Satir { eposta: string; ad: string; gorev: string; onay: boolean; temsilci: boolean; limit: string; bitis: string }
 interface Ek2Surum { kimlik: string; sigortaci_adi: string; surum: number; durum: string; adresler: { eposta: string; ad: string; onay: boolean; temsilci: boolean; limit: string | null; bitis: string | null }[] }
 /** YG-219, YG-1522: Sigorta Çerçeve Sözleşmesi Ek-2. Değişiklik temsilcinin bildirimiyle yeni sürüm olur. */
