@@ -107,7 +107,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
     if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND r.rol_adi = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Kalıcı askı ve ağdan çıkarma Direktör kararıdır.' });
-    const r = await b.db.query(`UPDATE kurulus SET kayit_asamasi = coalesce($2, kayit_asamasi), ag_statusu = coalesce($3, ag_statusu), risk_derecesi = coalesce($4, risk_derecesi), guncelleme_zamani = now() WHERE kimlik = $1 RETURNING kimlik`, [id, g.asama ?? null, g.ag ?? null, g.risk ?? null]);
+    const r = await b.db.query(`UPDATE kurulus SET kayit_asamasi = coalesce($2, kayit_asamasi), ag_statusu = coalesce($3, ag_statusu), risk_derecesi = coalesce($4, risk_derecesi), kabul_karar_zamani = CASE WHEN $2::text IS NOT NULL THEN now() ELSE kabul_karar_zamani END, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING kimlik`, [id, g.asama ?? null, g.ag ?? null, g.risk ?? null]);
     if (!r.rowCount) return yok(y);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Statü Kararı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: g, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

@@ -371,6 +371,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { iban } = (i.body ?? {}) as { iban?: string };
     if (!UUID.test(id)) return yok(y);
     if (!iban || !ibanGecerli(iban)) return y.code(400).send({ hata: 'IBAN geçersiz.' });
+    if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = $2`, [id, iban.replace(/\s/g, '').toUpperCase()])).rowCount) return y.code(409).send({ hata: 'Bu IBAN kayıtlıdır.' });
     const r = (await b.db.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, giren_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [id, iban.replace(/\s/g, '').toUpperCase(), o.kullanici])).rows[0];
     return { kimlik: r.kimlik, durum: 'Karantina' };
   });

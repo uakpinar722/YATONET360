@@ -116,7 +116,7 @@ try {
     if (teklif) await p.getByLabel('Onaylı Teklif').selectOption({ index: 1 });
     await tikla(p, 'İş Emri Oluştur');
   };
-  const firmaIsEmri = async (no) => { const p = await al('fir', E); await p.locator('tr', { hasText: no }).getByRole('button', { name: 'Aç' }).click(); await p.getByRole('heading', { name: no }).waitFor(); return p; };
+  const firmaIsEmri = async (no) => { const p = await al('fir', E); await p.getByRole('button', { name: 'İş Emirleri' }).first().click(); await p.locator('tr', { hasText: no }).getByRole('button', { name: 'Aç' }).click(); await p.getByRole('heading', { name: no }).waitFor(); return p; };
   const firmaKabul = async (no) => { const p = await firmaIsEmri(no); await p.getByLabel('Onay Kodu').fill(await kod('fir')); await tikla(p, 'Kabul Ediyorum'); return p; };
 
   // Keşif iş emri ekrandan; firma kabul eder
@@ -244,6 +244,15 @@ try {
   await tikla(pDs, 'Sigorta Kararı: Devam');
   kontrol('ekonomik kilit sigorta kararıyla açılır', (await sup.query(`SELECT ekonomik_kilit k FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].k === false);
 
+  // Firma sayfası (YG-425, YG-422)
+  const pFf = await al('fir', E); await pFf.getByRole('button', { name: 'Firma' }).first().click(); await pFf.getByText('Cari Ekstre').waitFor();
+  await tasmaYok(pFf, 'firma_sayfasi');
+  await pFf.getByLabel('Yeni IBAN').fill('TR200006100519786457849999'); await tikla(pFf, 'IBAN Bildir'); await pFf.waitForTimeout(400);
+  kontrol('firma IBAN bildirir, karantinada başlar', (await sup.query(`SELECT durum FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = 'TR200006100519786457849999'`, [firma])).rows[0]?.durum === 'Karantina');
+  await sup.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kurulus_ref = $1`, [firma]); // sonraki sicil adımı kendi IBAN'ını teyit eder
+  await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et'); await pFf.waitForTimeout(400);
+  kontrol('firma bilgi değişikliği teyide gider', (await sup.query(`SELECT durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1`, [firma])).rows[0]?.durum === 'Teyit Bekliyor');
+
   // Sigorta Ek-2 sayfası (YG-219)
   E.mpm = await hesap('mpm', 'Müşteri ve Paydaş İlişkileri Müdürü');
   const pMpm = await al('mpm', E);
@@ -327,7 +336,7 @@ try {
   await pM.getByRole('button', { name: 'İdari İşlemlerim' }).click();
   await pM.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByLabel('Teyit Kanalı').fill('Sicildeki numaradan geri arama');
   await pM.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Teyit Et' }).click(); await pM.waitForTimeout(400); await hataVarsa(pM, 'IBAN');
-  kontrol('IBAN Sicilden girilir, Muhasebe ve Finans Müdürü teyit eder', (await sup.query(`SELECT durum FROM banka_hesabi b JOIN kurulus k ON k.kimlik = b.kurulus_ref WHERE k.kimlik = $1`, [firma])).rows[0].durum === 'Geçerli');
+  kontrol('IBAN Sicilden girilir, Muhasebe ve Finans Müdürü teyit eder', (await sup.query(`SELECT durum FROM banka_hesabi b JOIN kurulus k ON k.kimlik = b.kurulus_ref WHERE k.kimlik = $1 AND b.durum <> 'İptal'`, [firma])).rows[0].durum === 'Geçerli');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Ödeme Talimatı');
   await kartKarar(E, 'mfm', h.hakedis_no, 'Onaya Gönder');
   kontrol('Ticari Sorumlu ödeme talimatını ekrandan hazırlar', (await sup.query(`SELECT count(*)::int n FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref WHERE h.is_emri_ref = $1`, [ie.kimlik])).rows[0].n === 1);

@@ -4,7 +4,7 @@ import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', mfm: 'Muhasebe ve Finans Müdürü', tu: 'Teknik Uzman' };
+const KADRO = { ds: 'Dosya Sorumlusu', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', mfm: 'Muhasebe ve Finans Müdürü', tu: 'Teknik Uzman', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', ty: 'Teknik Yönetici', tm: 'Teknik Müdür' };
 const P = 'Sinama-Parolasi-2026!'; const H = { 'x-yatonet': '1' };
 let o: Ortam; let fir: string; let ted: string; let firC: string; let firK: string; let ikiC: string; let ikiK: string; let tedC: string;
 const disGir = async (ad: string, grup: string, rol: string, kurulus: string) => {
@@ -69,6 +69,72 @@ describe('kurum kullanıcıları (YG-1004, YG-425)', () => {
     expect((await o.s.inject({ method: 'POST', url: '/api/kimlik/giris', headers: H, payload: { kimlik: 'kf2@deneme.yatonet.local', parola: P } })).statusCode).not.toBe(200);
     expect(await o.kart('Çalışan Ayrıldı Bildirimi', ikiK)).toBeDefined();
     expect((await o.ist('POST', `/api/kurum/kullanici/${ikiK}/kapat`, firC, { gerekce: 'Tekrar' })).statusCode).toBe(409);
+  });
+});
+
+describe('firma bilgi, banka, itiraz, cari (YG-425, YG-422, K-178)', () => {
+  const IB = 'TR33 0006 1005 1978 6457 8413 26';
+  it('bilgi değişikliği Sicil teyidiyle işlenir, reddedilince işlenmez; önceki değer saklanır', async () => {
+    expect((await o.ist('POST', '/api/kurum/bilgi-degisikligi', firC, { alan: 'vergi_no', yeni: '1' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/kurum/bilgi-degisikligi', firC, { alan: 'kurumsal_eposta', yeni: 'gecersiz' })).statusCode).toBe(400);
+    const r = await o.ist('POST', '/api/kurum/bilgi-degisikligi', firC, { alan: 'il', yeni: 'Muğla' }); expect(r.statusCode, r.body).toBe(200);
+    const il = async () => (await o.sup.query(`SELECT il FROM kurulus WHERE kimlik = $1`, [fir])).rows[0].il;
+    expect(await il()).not.toBe('Muğla');
+    await o.karar((await o.kart('Kurum Bilgi Değişikliği', r.json().talep)).kimlik, 'sc', 'Onayla'); expect(await il()).toBe('Muğla');
+    const r2 = await o.ist('POST', '/api/kurum/bilgi-degisikligi', firC, { alan: 'il', yeni: 'İzmir' });
+    await o.karar((await o.kart('Kurum Bilgi Değişikliği', r2.json().talep)).kimlik, 'sc', 'Reddet', 'Belge yok'); expect(await il()).toBe('Muğla');
+    expect((await o.sup.query(`SELECT eski_deger FROM kurum_bilgi_talebi WHERE kimlik = $1`, [r2.json().talep])).rows[0].eski_deger).toBe('Muğla');
+  });
+  it('IBAN karantinada başlar, firmaya maskeli görünür, teyit olmadan geçerli olmaz', async () => {
+    expect((await o.ist('POST', '/api/kurum/banka', firC, { iban: 'TR00' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/kurum/banka', firC, { iban: IB })).json().durum).toBe('Karantina');
+    expect((await o.ist('POST', '/api/kurum/banka', firC, { iban: IB })).statusCode).toBe(409);
+    const v = (await o.ist('GET', '/api/kurum/hesap', firC)).json(); expect(v.bankalar[0].durum).toBe('Karantina'); expect(v.bankalar[0].iban).toBe('TR33 •••• 1326');
+    const be = (await o.ist('GET', '/api/banka-hesabi/bekleyen', await o.gir('mfm'))).json(); expect(be.some((x: { ticari_unvan: string }) => x.ticari_unvan === 'Kurum Firma')).toBe(true);
+    expect((await o.ist('POST', `/api/banka-hesabi/${be.find((x: { ticari_unvan: string }) => x.ticari_unvan === 'Kurum Firma').kimlik}/teyit`, await o.gir('mfm'), { kanal: 'Sicildeki numaradan geri arama' })).json().durum).toBe('Geçerli');
+  });
+  it('itiraz yalnız ret/koşullu kararda, 15 gün içinde, bir kez; Direktör kabul edince yeniden incelemeye döner', async () => {
+    const f2 = await kuruluş('İtiraz Firma', 'Çözüm Ortağı'); const c = (await disGir('if1', 'İş Birliği Firması', 'Firma Yetkilisi', f2)).c;
+    expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, { gerekce: 'G' })).statusCode).toBe(409);
+    await o.ist('POST', `/api/firma/${f2}/statu`, await o.gir('fym'), { asama: 'Reddedildi', gerekce: 'Eksik' });
+    expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, {})).statusCode).toBe(400);
+    expect((await o.ist('GET', '/api/kurum/hesap', c)).json().itirazEdilebilir).toBe(true);
+    await o.sup.query(`UPDATE kurulus SET kabul_karar_zamani = now() - interval '16 days' WHERE kimlik = $1`, [f2]);
+    expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, { gerekce: 'G' })).json().hata).toContain('15.');
+    await o.sup.query(`UPDATE kurulus SET kabul_karar_zamani = now() - interval '14 days' WHERE kimlik = $1`, [f2]);
+    expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, { gerekce: 'Belgeler tamam' })).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, { gerekce: 'Yine' })).statusCode).toBe(409);
+    const id = (await o.sup.query(`SELECT kimlik FROM kurum_kabul_itirazi WHERE kurulus_ref = $1`, [f2])).rows[0].kimlik;
+    expect(await o.kart('Firma Kabul İtirazı', id)).toBeDefined();
+    const r = (await o.sup.query(`SELECT r.rol_adi FROM is_karti k JOIN rol r ON r.kimlik = k.zincir[1] WHERE k.tur = 'Firma Kabul İtirazı' AND k.nesne_kimligi = $1`, [id])).rows[0]; expect(r.rol_adi).toBe('Bilgi Teknolojileri ve Firma Yönetimi Direktörü');
+    expect((await o.sup.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [f2])).rows[0].kayit_asamasi).toBe('Reddedildi');
+    await o.karar((await o.kart('Firma Kabul İtirazı', id)).kimlik, 'btd', 'Onayla');
+    expect((await o.sup.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [f2])).rows[0].kayit_asamasi).toBe('İncelemede');
+  });
+  it('cari ekstre firmaya kendi hakedişini verir, müşteri adı ve maliyet dışı bilgi yazmaz; başka kuruma kapalı', async () => {
+    const d = await o.dosyaAc();
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K',1000,$4) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, fir, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, kesinti, net, statu, giren_ref) VALUES ($1,$2,$3,1,1000,1000,50,950,'Doğrulandı',$4)`, [`${d.dosyaNo}-HK01`, e, d.kimlik, firK]);
+    const r = await o.ist('GET', '/api/firma-portal/cari', firC); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().satirlar[0]).toMatchObject({ hakedis_no: `${d.dosyaNo}-HK01`, statu: 'Doğrulandı' }); expect(r.json().acikNet).toBe(950);
+    expect(r.body).not.toContain('Sahip');
+    expect((await o.ist('GET', '/api/firma-portal/cari', tedC)).json().satirlar).toHaveLength(0);
+    expect((await o.ist('GET', '/api/firma-portal/cari', await o.gir('ds'))).statusCode).toBe(404);
+  });
+});
+
+describe('parça tedarik süresi (YG-202)', () => {
+  it('kabul edilen teslimlerden ortalama gün; yetkisiz ve kısa aramaya kapalı', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const s = (await o.sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, statu, hazirlayan_ref, olusturma_zamani) VALUES ($1,$2,$3,'T','Y',100,20,120,'2026-12-01','M','K','G','Verildi',$4, now() - interval '10 days') RETURNING kimlik`, [`SP-S${Date.now()}`, d.kimlik, ted, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur) VALUES ($1,1,'Şaft Kovanı','PN-777',1,'adet',100,100)`, [s]);
+    await o.sup.query(`INSERT INTO malzeme_giris_kabulu (kayit_no, siparis_ref, satir_no, miktar, lot_no, irsaliye_no, bekletme_yeri_ref, bekletme_baslangic, kontrol_eden_ref, hazirlayan_ref, kabul_karari) VALUES ($1,$2,1,1,'L','I',$3, now() - interval '4 days',$4,$4,'Kabul')`, [`MG-${Date.now()}`, s, ted, o.K.ds]);
+    const u = `/api/dosya/${d.kimlik}/tedarik-suresi`;
+    expect((await o.ist('GET', `${u}?parca=P`, await o.gir('ds'))).statusCode).toBe(400);
+    const r = await o.ist('GET', `${u}?parca=PN-777`, await o.gir('ds')); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json()[0]).toMatchObject({ parcaNo: 'PN-777', adet: 1, gun: 6 });
+    expect((await o.ist('GET', `${u}?parca=YOK-1`, await o.gir('ds'))).json()).toHaveLength(0);
+    expect((await o.ist('GET', `${u}?parca=PN-777`, firC)).statusCode).toBe(404);
   });
 });
 

@@ -81,11 +81,13 @@ interface TedarikciV {
 }
 
 /** YG-1577, YG-298 A9 Tedarikçi: yalnız kendi teklif ve siparişleri; müşteri kimliği yoktur. */
-interface KurumHesapV { kurum: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kurumsal_eposta: string | null; kurumsal_telefon: string | null; il: string | null; ilce: string | null }; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; cep_telefonu: string | null; hesap_durumu: string; ben: boolean }[]; talepler: { kimlik: string; ad_soyad: string; eposta: string; durum: string }[] }
+interface KurumHesapV { kurum: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kurumsal_eposta: string | null; kurumsal_telefon: string | null; il: string | null; ilce: string | null }; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; cep_telefonu: string | null; hesap_durumu: string; ben: boolean }[]; talepler: { kimlik: string; ad_soyad: string; eposta: string; durum: string }[]; bankalar: { kimlik: string; iban: string; durum: string }[]; bilgiTalepleri: { kimlik: string; alan: string; yeni_deger: string; durum: string }[]; itiraz: { durum: string } | null; itirazEdilebilir: boolean }
+interface Cari { satirlar: { hakedis_no: string; is_emri_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string; firma_fatura_no: string | null; planlanan_tarih: string | null; talimat: string | null; tahsilat_tarihi: string | null }[]; acikNet: number }
+const ALANLAR: Record<string, string> = { kurumsal_eposta: 'Kurumsal E-posta', kurumsal_telefon: 'Kurumsal Telefon', il: 'İl', ilce: 'İlçe' };
 /** YG-425, YG-1004: firma bilgileri ve kullanıcılar; yeni kullanıcı LGM teyidiyle açılır, ayrılan kişinin hesabı hemen kapanır. YG-298: tedarikçide fatura ve ödeme durumu. */
 export function KurumHesap({ baslik }: { baslik: string }) {
-  const [v, setV] = useState<KurumHesapV | null>(null); const [f, setF] = useState({ ad: '', eposta: '', telefon: '' }); const [ge, setGe] = useState<Record<string, string>>({}); const [fat, setFat] = useState<TedarikciV['faturalar']>([]);
-  const yukle = async () => { const h = await istek<KurumHesapV>('/kurum/hesap'); setV(h); if (h.kurum.kayit_rolu === 'Tedarikçi') setFat((await istek<TedarikciV>('/tedarikci-portal/ana')).faturalar); };
+  const [v, setV] = useState<KurumHesapV | null>(null); const [f, setF] = useState({ ad: '', eposta: '', telefon: '' }); const [ge, setGe] = useState<Record<string, string>>({}); const [fat, setFat] = useState<TedarikciV['faturalar']>([]); const [cari, setCari] = useState<Cari | null>(null); const [iban, setIban] = useState(''); const [bi, setBi] = useState({ alan: 'kurumsal_eposta', yeni: '' }); const [itz, setItz] = useState('');
+  const yukle = async () => { const h = await istek<KurumHesapV>('/kurum/hesap'); setV(h); if (h.kurum.kayit_rolu === 'Tedarikçi') setFat((await istek<TedarikciV>('/tedarikci-portal/ana')).faturalar); if (h.kurum.kayit_rolu === 'Çözüm Ortağı') setCari(await istek<Cari>('/firma-portal/cari')); };
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); }, []);
   if (!v) return <Mesaj />;
@@ -95,8 +97,27 @@ export function KurumHesap({ baslik }: { baslik: string }) {
       <h1>{baslik}</h1><Mesaj />
       <Blok baslik="Kurum Bilgileri">
         <div className="ozet"><div>{k.ticari_unvan} · {k.kayit_rolu} · Sicil No: {k.sicil_no}</div><div>E-posta: {k.kurumsal_eposta ?? '—'} · Telefon: {k.kurumsal_telefon ?? '—'} · {[k.il, k.ilce].filter(Boolean).join(' / ') || '—'}</div></div>
-        <div className="not">Bilgi değişikliği için Sicil Sorumlusu ile görüşmenizi rica ederiz.</div>
+        {v.bilgiTalepleri.map((x) => <div key={x.kimlik}>{ALANLAR[x.alan]}: {x.yeni_deger} · {x.durum}</div>)}
+        <label htmlFor="bi-a">Değiştirilecek Bilgi</label><select id="bi-a" value={bi.alan} onChange={(e) => setBi({ ...bi, alan: e.target.value })}>{Object.entries(ALANLAR).map(([a, ad]) => <option key={a} value={a}>{ad}</option>)}</select>
+        <label htmlFor="bi-y">Yeni Değer</label><input id="bi-y" value={bi.yeni} onChange={(e) => setBi({ ...bi, yeni: e.target.value })} />
+        <button className="btn2" disabled={!bi.yeni.trim()} onClick={() => void yap(() => istek('/kurum/bilgi-degisikligi', bi).then(() => { setBi({ ...bi, yeni: '' }); return { uyari: 'Talebiniz LGM teyidine gönderildi.' }; }))}>Değişiklik Talep Et</button>
       </Blok>
+      <Blok baslik="Banka Hesabı">
+        {v.bankalar.length === 0 && <div className="not">Kayıtlı banka hesabı bulunmamaktadır.</div>}
+        {v.bankalar.map((x) => <div key={x.kimlik}>{x.iban} · {x.durum === 'Karantina' ? 'Teyit Bekleniyor' : x.durum}</div>)}
+        <label htmlFor="ib-n">Yeni IBAN</label><input id="ib-n" value={iban} onChange={(e) => setIban(e.target.value)} />
+        <div className="not">Yeni hesap, sicilde kayıtlı numaranızdan geri aranarak teyit edilince geçerli olur.</div>
+        <button className="btn2" disabled={!iban.trim()} onClick={() => void yap(() => istek('/kurum/banka', { iban }).then(() => { setIban(''); return { uyari: 'IBAN teyide gönderildi.' }; }))}>IBAN Bildir</button>
+      </Blok>
+      {cari && <Blok baslik="Cari Ekstre">
+        <div>Açık Net Tutar: {eur(cari.acikNet)}</div>
+        {cari.satirlar.length === 0 && <div className="not">Hakediş bulunmamaktadır.</div>}
+        {cari.satirlar.map((x) => <div key={x.hakedis_no}>{x.hakedis_no} · {x.is_emri_no} · Brüt: {eur(x.bu_donem_brut)} · Kesinti: {eur(x.kesinti)} · Net: {eur(x.net)} · {x.statu}{x.firma_fatura_no ? ` · Fatura: ${x.firma_fatura_no}` : ''}{x.tahsilat_tarihi ? ` · Tahsilat: ${tarih(x.tahsilat_tarihi)}` : ''}{x.planlanan_tarih ? ` · Ödeme Günü: ${tarih(x.planlanan_tarih)}` : ''}</div>)}
+      </Blok>}
+      {(v.itirazEdilebilir || v.itiraz) && <Blok baslik="Kabul Kararı İtirazı">
+        {v.itiraz && <div>İtiraz Durumu: {v.itiraz.durum}</div>}
+        {v.itirazEdilebilir && <><label htmlFor="it-g">İtiraz Gerekçesi</label><input id="it-g" value={itz} onChange={(e) => setItz(e.target.value)} /><button className="btn2" disabled={!itz.trim()} onClick={() => void yap(() => istek('/kurum/kabul-itiraz', { gerekce: itz }))}>İtiraz Et</button></>}
+      </Blok>}
       {k.kayit_rolu === 'Tedarikçi' && <Blok baslik="Faturalar ve Ödeme Durumu">
         {fat.length === 0 && <div className="not">Fatura bulunmamaktadır.</div>}
         {fat.map((x) => <div key={x.kimlik}>{x.fatura_no} · {x.siparis_no} · {eur(x.tutar_eur)} · {x.odeme_durumu} · Vade: {tarih(x.vade)}</div>)}

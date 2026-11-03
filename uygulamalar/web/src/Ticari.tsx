@@ -3,6 +3,20 @@ import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 
+/** YG-202: gerçekleşen teslimlerden ortalama tedarik süresi. */
+function TedarikSuresi({ id }: { id: string }) {
+  const [q, setQ] = useState(''); const [l, setL] = useState<{ parcaNo: string; ad: string; adet: number; gun: number }[] | null>(null); const [hata, setHata] = useState('');
+  return (
+    <div>
+      <label htmlFor={`ts-${id}`}>Tahmini Tedarik Süresi: Parça No veya Adı</label><input id={`ts-${id}`} value={q} onChange={(e) => setQ(e.target.value)} />
+      <button className="btn2 kucuk" disabled={q.trim().length < 2} onClick={() => { setHata(''); void istek<NonNullable<typeof l>>(`/dosya/${id}/tedarik-suresi?parca=${encodeURIComponent(q)}`).then(setL).catch((x) => setHata((x as Error).message)); }}>Süreyi Göster</button>
+      {hata && <div className="hata" role="alert">{hata}</div>}
+      {l && l.length === 0 && <div className="not">Bu parça için gerçekleşen teslim kaydı bulunmamaktadır.</div>}
+      {l?.map((x) => <div key={x.parcaNo}>{x.parcaNo} · {x.ad} · Ortalama {String(x.gun).replace('.', ',')} gün · {x.adet} teslim</div>)}
+    </div>
+  );
+}
+
 const KURUMSAL = 'Sözleşmede Tanımlı Kurumsal E-posta';
 /** YG-218, YG-219, YG-221: telefon ve WhatsApp kanal sayılmaz; e-posta onayında gönderen adres Ek-2 listesiyle denetlenir. */
 function OnayKanali({ no, id, kanal, setKanal, yetkili, setYetkili, gonderen, setGonderen, belge, setBelge }: { no: string; id: string; kanal: string; setKanal: (x: string) => void; yetkili: string; setYetkili: (x: string) => void; gonderen: string; setGonderen: (x: string) => void; belge: string; setBelge: (x: string) => void }) {
@@ -156,6 +170,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             {t.teklif_muhatabi === 'Sigorta Şirketi' && ['Gönderildi', 'Karar'].includes(t.statu) && <SigortaTeklifIslem id={id} teklif={t.kimlik} statu={t.statu} karar={t.karar} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} onayBelge={onayBelge} setOnayBelge={setOnayBelge} yap={yap} />}
           </div>
         ))}
+        <TedarikSuresi id={id} />
         {ticari && <>
           <label htmlFor="t-f">Firma Fiyat Teklifi</label><select id="t-f" value={ft} onChange={(e) => setFt(e.target.value)}><option value="">Seçiniz</option>{v.firma.map((f) => <option key={f.kimlik} value={f.kimlik}>{f.teklif_no} · {eur(f.toplam_eur)} · {f.durum}</option>)}</select>
           {v.teklifler.some((t) => t.statu === 'Karar') && <><label htmlFor="t-a">Ek Fiyat Teklifi İçin Ana Teklif</label><select id="t-a" value={ek} onChange={(e) => setEk(e.target.value)}><option value="">Ek Teklif Değil</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
@@ -270,12 +285,13 @@ function FirmaUygunsuzluk({ yap }: { yap: (f: () => Promise<any>, t?: string) =>
 }
 
 /** YG-1574 A7 Çözüm Ortağı: İşleminizi Bekleyenler, acil çağrı, iş emirleri, kabul kodla, ilerleme ve hakediş. Müşteri bilgisi ve müşteri fiyatı yoktur (YG-294). */
-export function FirmaAna({ ben }: { ben: Ben }) {
+export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'isemri' }) {
   const [l, setL] = useState<IsEmri[] | null>(null); const [ac, setAc] = useState<AcilCagri[]>([]); const [acik, setAcik] = useState<FirmaAyrinti | null>(null); const [kod, setKod] = useState(''); const [not_, setNot_] = useState(''); const [tahmini, setTahmini] = useState(''); const [brut, setBrut] = useState(''); const [fat, setFat] = useState(''); const [kalem, setKalem] = useState(''); const [miktar, setMiktar] = useState(''); const [belge, setBelge] = useState('');
   const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setL([])); }, []);
   if (!l) return null;
+  const gorunen = bolum === 'isemri' ? l : l.filter((e) => e.statu === 'Kabul Bekliyor');
   if (acik) return (
     <>
       <button className="lnk" onClick={() => setAcik(null)}>← İş Emirleri</button>
@@ -308,16 +324,16 @@ export function FirmaAna({ ben }: { ben: Ben }) {
   );
   return (
     <>
-      <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
-      <div className="bolum">İşleminizi Bekleyenler</div>
+      <h1>{bolum === 'isemri' ? 'İş Emirleri' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      {bolum === 'ana' && <><div className="bolum">İşleminizi Bekleyenler</div>
       {ac.length === 0 && <div className="ozet bos">Acil çağrı bulunmamaktadır.</div>}
       {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div><div>Yanıt Son: {saat(c.son_zaman)}</div>
         <label htmlFor={`c-${c.kimlik}`}>Tahmini Tutar (EUR)</label><input id={`c-${c.kimlik}`} inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} />
         <div className="dugmeler"><button className="btn" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Kabul', tahmini: Number(tahmini.replace(',', '.') || 0) }))}>Kabul Ediyorum, Yola Çıkıyorum</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Müsait Değil' }))}>Müsait Değilim</button></div></div>)}
-      <FirmaUygunsuzluk yap={yap} />
-      <div className="bolum">İş Emirlerim</div>
-      {l.length === 0 && <div className="ozet bos">İş emri bulunmamaktadır.</div>}
-      {l.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>İş Emri</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{l.map((e) => <tr key={e.kimlik}><td data-ad="İş Emri">{e.isEmriNo}</td><td data-ad="Yat">{e.yat}</td><td data-ad="Durum">{e.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => void istek<FirmaAyrinti>(`/firma-portal/is-emri/${e.kimlik}`).then(setAcik)}>Aç</button></td></tr>)}</tbody></table></div>}
+      <FirmaUygunsuzluk yap={yap} /></>}
+      <div className="bolum">{bolum === 'isemri' ? 'Tüm İş Emirleri' : 'Yanıt Bekleyen İş Emirleri'}</div>
+      {gorunen.length === 0 && <div className="ozet bos">{bolum === 'isemri' ? 'İş emri bulunmamaktadır.' : 'Yanıt bekleyen iş emri bulunmamaktadır.'}</div>}
+      {gorunen.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>İş Emri</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{gorunen.map((e) => <tr key={e.kimlik}><td data-ad="İş Emri">{e.isEmriNo}</td><td data-ad="Yat">{e.yat}</td><td data-ad="Durum">{e.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => void istek<FirmaAyrinti>(`/firma-portal/is-emri/${e.kimlik}`).then(setAcik)}>Aç</button></td></tr>)}</tbody></table></div>}
     </>
   );
 }

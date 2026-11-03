@@ -6,6 +6,9 @@ import { davetOlustur } from './ilk_giris.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
+import { ibanGecerli } from './ticari.js';
+import { dosyaErisimi } from './dosya.js';
+import { rolSahipleri } from './makam.js';
 import { UUID } from './yat.js';
 
 const EPOSTA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -31,11 +34,32 @@ kapanisKaydet('Kurum Kullanıcı Teyidi', async (c, k, karar) => {
   await bildir(c, { olay: `kurum-kullanici:${t.kimlik}`, kullanicilar: [t.talep_eden_ref], baslik: `Kullanıcı Talebi: ${t.ad_soyad}`, ozet: karar === 'Onayla' ? 'Hesap açıldı, davet gönderildi.' : 'Talep kabul edilmedi.' });
 });
 
+// YG-425: firma bilgi değişikliği Sicil Sorumlusu teyidiyle işlenir; önceki değer kayıtta kalır.
+kapanisKaydet('Kurum Bilgi Değişikliği', async (c, k, karar) => {
+  const t = (await c.query(`SELECT * FROM kurum_bilgi_talebi WHERE kimlik = $1 AND durum = 'Teyit Bekliyor'`, [k.nesne_kimligi])).rows[0];
+  if (!t) return;
+  if (karar === 'Onayla') {
+    const sutun = ({ kurumsal_eposta: 'kurumsal_eposta', kurumsal_telefon: 'kurumsal_telefon', il: 'il', ilce: 'ilce' } as Record<string, string>)[t.alan]!;
+    await c.query(`UPDATE kurulus SET ${sutun} = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kurulus_ref, t.yeni_deger]);
+  }
+  await c.query(`UPDATE kurum_bilgi_talebi SET durum = $2, karar_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar === 'Onayla' ? 'İşlendi' : 'Reddedildi']);
+  await bildir(c, { olay: `kurum-bilgi:${t.kimlik}`, kullanicilar: [t.talep_eden_ref], baslik: 'Bilgi Değişikliği Talebi', ozet: karar === 'Onayla' ? 'Talebiniz işlendi.' : 'Talebiniz kabul edilmedi.' });
+});
+
+// K-178: itirazı BT ve Firma Yönetimi Direktörü karara bağlar; kabulde başvuru yeniden incelemeye döner.
+kapanisKaydet('Firma Kabul İtirazı', async (c, k, karar) => {
+  const t = (await c.query(`SELECT * FROM kurum_kabul_itirazi WHERE kimlik = $1 AND durum = 'İncelemede'`, [k.nesne_kimligi])).rows[0];
+  if (!t) return;
+  if (karar === 'Onayla') await c.query(`UPDATE kurulus SET kayit_asamasi = 'İncelemede', kabul_karar_zamani = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kurulus_ref]);
+  await c.query(`UPDATE kurum_kabul_itirazi SET durum = $2, karar_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar === 'Onayla' ? 'Kabul Edildi' : 'Reddedildi']);
+  await bildir(c, { olay: `kurum-itiraz:${t.kimlik}`, kullanicilar: [t.itiraz_eden_ref], baslik: 'Kabul Kararı İtirazı', ozet: karar === 'Onayla' ? 'İtirazınız kabul edildi; başvurunuz yeniden incelenecektir.' : 'İtirazınız kabul edilmedi.' });
+});
+
 export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
   webAdresi = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
-  const kurumum = async (k: string) => (await b.db.query(`SELECT u.kimlik, u.sicil_no, u.ticari_unvan, u.kayit_rolu, u.kurumsal_eposta, u.kurumsal_telefon, u.il, u.ilce FROM kurulus_kullanici x JOIN kurulus u ON u.kimlik = x.kurulus_ref WHERE x.kullanici_ref = $1 LIMIT 1`, [k])).rows[0];
+  const kurumum = async (k: string) => (await b.db.query(`SELECT u.kimlik, u.sicil_no, u.ticari_unvan, u.kayit_rolu, u.kayit_asamasi, u.kabul_karar_zamani, u.kurumsal_eposta, u.kurumsal_telefon, u.il, u.ilce FROM kurulus_kullanici x JOIN kurulus u ON u.kimlik = x.kurulus_ref WHERE x.kullanici_ref = $1 LIMIT 1`, [k])).rows[0];
 
   // YG-425, YG-1574, YG-1575, YG-1577: firma bilgileri ve kullanıcılar; kurum yalnız kendini görür.
   s.get('/kurum/hesap', oturumlu, async (i, y) => {
@@ -43,7 +67,77 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     if (!u) return yok(y);
     const kullanicilar = (await b.db.query(`SELECT h.kimlik, h.ad_soyad, h.e_posta, h.cep_telefonu, h.hesap_durumu FROM kurulus_kullanici x JOIN kullanici_hesabi h ON h.kimlik = x.kullanici_ref WHERE x.kurulus_ref = $1 ORDER BY h.hesap_durumu, h.ad_soyad`, [u.kimlik])).rows;
     const talepler = (await b.db.query(`SELECT kimlik, ad_soyad, eposta, durum FROM kurum_kullanici_talebi WHERE kurulus_ref = $1 AND durum <> 'Açıldı' ORDER BY olusturma_zamani DESC LIMIT 20`, [u.kimlik])).rows;
-    return { kurum: u, kullanicilar: kullanicilar.map((x) => ({ ...x, ben: x.kimlik === i.oturum!.kullanici })), talepler };
+    const bankalar = (await b.db.query(`SELECT kimlik, iban, durum FROM banka_hesabi WHERE kurulus_ref = $1 ORDER BY olusturma_zamani DESC`, [u.kimlik])).rows.map((x) => ({ kimlik: x.kimlik, iban: `${String(x.iban).slice(0, 4)} •••• ${String(x.iban).slice(-4)}`, durum: x.durum }));
+    const bilgiTalepleri = (await b.db.query(`SELECT kimlik, alan, yeni_deger, durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 10`, [u.kimlik])).rows;
+    const itiraz = (await b.db.query(`SELECT durum, olusturma_zamani FROM kurum_kabul_itirazi WHERE kurulus_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 1`, [u.kimlik])).rows[0] ?? null;
+    const itirazEdilebilir = ['Reddedildi', 'Koşullu Onaylı'].includes(u.kayit_asamasi) && u.kabul_karar_zamani && Date.now() - new Date(u.kabul_karar_zamani).getTime() <= 15 * 86_400_000 && !itiraz;
+    return { kurum: u, kullanicilar: kullanicilar.map((x) => ({ ...x, ben: x.kimlik === i.oturum!.kullanici })), talepler, bankalar, bilgiTalepleri, itiraz, itirazEdilebilir: Boolean(itirazEdilebilir) };
+  });
+
+  // YG-928, YG-1272: yeni hesap karantinada başlar; sicildeki numaradan geri aranıp Muhasebe ve Finans Müdürü teyit etmeden geçerli olmaz.
+  s.post('/kurum/banka', oturumlu, async (i, y) => {
+    const o = i.oturum!; const u = await kurumum(o.kullanici); const iban = ((i.body ?? {}) as { iban?: string }).iban;
+    if (!u) return yok(y);
+    if (!iban || !ibanGecerli(iban)) return y.code(400).send({ hata: 'Geçerli bir IBAN girmenizi rica ederiz.' });
+    const temiz = iban.replace(/\s/g, '').toUpperCase();
+    if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = $2`, [u.kimlik, temiz])).rowCount) return y.code(409).send({ hata: 'Bu IBAN kayıtlıdır.' });
+    const r = (await b.db.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, giren_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [u.kimlik, temiz, o.kullanici])).rows[0];
+    await bildir(b.db, { olay: `banka-teyit:${r.kimlik}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, 'Muhasebe ve Finans Müdürü')), baslik: `${u.ticari_unvan} · Banka Hesabı Teyidi`, ozet: 'Sicildeki kayıtlı numaradan geri arayarak teyit etmenizi rica ederiz.', oncelik: 'Yüksek' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurum Banka Hesabı Bildirimi', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
+    return { durum: 'Karantina' };
+  });
+
+  s.post('/kurum/bilgi-degisikligi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const u = await kurumum(o.kullanici); const g = (i.body ?? {}) as { alan?: string; yeni?: string };
+    if (!u) return yok(y);
+    if (!['kurumsal_eposta', 'kurumsal_telefon', 'il', 'ilce'].includes(g.alan ?? '') || !g.yeni?.trim()) return y.code(400).send({ hata: 'Alanı ve yeni değeri girmenizi rica ederiz.' });
+    if (g.alan === 'kurumsal_eposta' && !EPOSTA.test(g.yeni.trim())) return y.code(400).send({ hata: 'Geçerli bir e-posta adresi girmenizi rica ederiz.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const t = (await c.query(`INSERT INTO kurum_bilgi_talebi (kurulus_ref, alan, eski_deger, yeni_deger, talep_eden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [u.kimlik, g.alan, u[g.alan!] ?? null, g.yeni.trim(), o.kullanici])).rows[0];
+      await kartAc(c, { tur: 'Kurum Bilgi Değişikliği', baslik: `${u.ticari_unvan} · Bilgi Değişikliği`, ozet: `${g.alan}: ${g.yeni.trim()}`.slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Sicil Sorumlusu')], nesneTuru: 'Kurum Bilgi Talebi', nesneKimligi: t.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurum Bilgi Değişikliği Talebi', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
+      await c.query('COMMIT');
+      return { durum: 'Teyit Bekliyor', talep: t.kimlik };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
+  // K-178, YG-425: ağa kabul kararına 15 gün içinde bir kez itiraz.
+  s.post('/kurum/kabul-itiraz', oturumlu, async (i, y) => {
+    const o = i.oturum!; const u = await kurumum(o.kullanici); const gerekce = ((i.body ?? {}) as { gerekce?: string }).gerekce?.trim();
+    if (!u) return yok(y);
+    if (!gerekce) return y.code(400).send({ hata: 'İtiraz gerekçesini yazmanızı rica ederiz.' });
+    if (!['Reddedildi', 'Koşullu Onaylı'].includes(u.kayit_asamasi) || !u.kabul_karar_zamani) return y.code(409).send({ hata: 'İtiraz, ret veya koşullu onay kararına yapılır.' });
+    if (Date.now() - new Date(u.kabul_karar_zamani).getTime() > 15 * 86_400_000) return y.code(409).send({ hata: 'İtiraz süresi kararın 15. gününde sona ermiştir.' });
+    if ((await b.db.query(`SELECT 1 FROM kurum_kabul_itirazi WHERE kurulus_ref = $1 LIMIT 1`, [u.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu karara itiraz edilmiştir.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const t = (await c.query(`INSERT INTO kurum_kabul_itirazi (kurulus_ref, karar_asamasi, gerekce, itiraz_eden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [u.kimlik, u.kayit_asamasi, gerekce, o.kullanici])).rows[0];
+      await kartAc(c, { tur: 'Firma Kabul İtirazı', baslik: `${u.ticari_unvan} · Kabul Kararı İtirazı`, ozet: gerekce.slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')], nesneTuru: 'Kurum Kabul İtirazı', nesneKimligi: t.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kabul Kararı İtirazı', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
+      await c.query('COMMIT');
+      return { durum: 'İncelemede' };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
+  // YG-422, K-193: cari ekstre portalda; firma yalnız kendi hakedişini görür, müşteri adı ve müşteri fiyatı yazmaz.
+  s.get('/firma-portal/cari', oturumlu, async (i, y) => {
+    const u = await kurumum(i.oturum!.kullanici);
+    if (!u) return yok(y);
+    const satirlar = (await b.db.query(`SELECT h.hakedis_no, e.is_emri_no, h.bu_donem_brut, h.kesinti, h.net, h.statu, h.firma_fatura_no, t.planlanan_tarih::text, t.durum AS talimat, (SELECT max(x.tarih)::text FROM tahsilat x WHERE x.dosya_ref = h.dosya_ref) AS tahsilat_tarihi FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref LEFT JOIN odeme_talimati t ON t.hakedis_ref = h.kimlik WHERE e.kurulus_ref = $1 ORDER BY h.olusturma_zamani DESC`, [u.kimlik])).rows;
+    const acik = satirlar.filter((x) => x.statu !== 'Reddedildi' && x.statu !== 'Ödendi').reduce((a, x) => a + Number(x.net), 0);
+    return { satirlar, acikNet: Math.round(acik * 100) / 100 };
+  });
+
+  // YG-202: gerçekleşen teslimlerden parça bazında ortalama tedarik süresi; Dosya Sorumlusu teklifte tahmini süre olarak görür.
+  s.get('/dosya/:id/tedarik-suresi', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string }; const q = ((i.query ?? {}) as { parca?: string }).parca?.trim();
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return yok(y);
+    if (!q || q.length < 2) return y.code(400).send({ hata: 'Parça numarası veya adını yazmanızı rica ederiz.' });
+    const r = (await b.db.query(`SELECT k.uretici_parca_no, min(k.urun_tanimi) AS urun_tanimi, count(*)::int AS adet, round(avg(EXTRACT(EPOCH FROM (g.bekletme_baslangic - s.olusturma_zamani)) / 86400)::numeric, 1) AS gun FROM tedarik_siparisi_kalemi k JOIN tedarik_siparisi s ON s.kimlik = k.siparis_ref JOIN malzeme_giris_kabulu g ON g.siparis_ref = k.siparis_ref AND g.satir_no = k.satir_no WHERE (k.uretici_parca_no ILIKE $1 OR k.urun_tanimi ILIKE $1) AND g.kabul_karari = 'Kabul' GROUP BY k.uretici_parca_no ORDER BY adet DESC LIMIT 10`, [`%${q.replace(/[%_\\]/g, '\\$&')}%`])).rows;
+    return r.map((x) => ({ parcaNo: x.uretici_parca_no, ad: x.urun_tanimi, adet: x.adet, gun: Number(x.gun) }));
   });
 
   s.post('/kurum/kullanici', oturumlu, async (i, y) => {
