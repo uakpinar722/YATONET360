@@ -176,6 +176,9 @@ try {
   await kartKarar(E, 'mfm', no, 'Onaya Gönder'); await kartKarar(E, 'tid', no, 'Onayla');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Gönder');
   kontrol('sigortaya teklif ilk düğmeyle gitmez', (await sup.query(`SELECT statu FROM fiyat_teklifi WHERE teklif_no = $1`, [no])).rows[0].statu === 'Onaylı');
+  kontrol('teyit ekranı giden ekleri gösterir', await pTs.getByText(`Fiyat Teklifi ${no}.pdf`).first().isVisible());
+  const on = await pTs.getByRole('link', { name: 'Teklif PDF Önizleme' }).first().getAttribute('href');
+  kontrol('teklif PDF önizlemesi açılır', (await pTs.evaluate(async (u) => (await fetch(u)).headers.get('content-type'), on)).includes('pdf'));
   await pTs.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).click();
   const ikinci = pTs.getByRole('button', { name: 'İkinci Teyit: Sigortaya Gönder' });
   await ikinci.waitFor();

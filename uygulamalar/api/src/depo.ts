@@ -25,7 +25,7 @@ export class Depo {
       }
       await new Promise<void>((r, x) => c.end((e?: Error | null) => (e ? x(e) : r())));
       return { yol, boyut, ozet: h.digest('hex') };
-    } catch (e) { c.destroy(); gecisiciSil(yol); throw e; }
+    } catch (e) { await new Promise<void>((r) => { c.once('close', () => r()); c.destroy(); }); gecisiciSil(yol); throw e; }
   }
   /** Taranan geçici dosyayı kalıcı yere taşır. */
   yerlestir(gecici: string, ozet: string): string {

@@ -226,9 +226,21 @@ export function YatDegeriBolumu({ id }: { id: string }) {
   );
 }
 
-interface Gonderim { kimlik: string; tur: string; alici: string; konu: string; metin: string | null; durum: string; benimBirinci: boolean }
+interface Gonderim { kimlik: string; tur: string; alici: string; konu: string; metin: string | null; durum: string; benimBirinci: boolean; ekler: string[]; onizleme: boolean }
 
 /** K-241: sigortaya giden her ileti ve belge, son gönderenin iki ayrı teyidiyle çıkar. İkinci düğme metin görüldükten sonra açılır. */
+export function SigortaEposta({ id, eposta, yenile }: { id: string; eposta: string | null; yenile: () => unknown }) {
+  const [v, setV] = useState(''); const [hata, setHata] = useState(''); const [ac, setAc] = useState(false);
+  const kaydet = () => { setHata(''); void istek(`/dosya/${id}/sigorta-eposta`, { eposta: v }).then(() => { setAc(false); setV(''); return yenile(); }).catch((x) => setHata((x as Error).message)); };
+  return (
+    <div>
+      {eposta ? <>Sigorta E-postası: {eposta} <button className="btn2 kucuk" onClick={() => setAc(!ac)}>Değiştir</button></> : <span className="uyari">⚠ Sigorta şirketinin e-posta adresi bekleniyor. <button className="btn2 kucuk" onClick={() => setAc(!ac)}>Adres Gir</button></span>}
+      {ac && <div><label htmlFor={`sge-${id}`}>Sigorta E-postası</label><input id={`sge-${id}`} type="email" value={v} onChange={(e) => setV(e.target.value)} /><button className="btn2 kucuk" disabled={!v.trim()} onClick={kaydet}>Kaydet</button></div>}
+      {hata && <div className="hata" role="alert">{hata}</div>}
+    </div>
+  );
+}
+
 export function SigortaGonderimBolumu({ id }: { id: string }) {
   const [l, setL] = useState<Gonderim[]>([]); const [hata, setHata] = useState(''); const [hazir, setHazir] = useState<Record<string, boolean>>({}); const [baglanti, setBaglanti] = useState(''); const [iptal, setIptal] = useState<Record<string, string>>({});
   const yukle = () => istek<Gonderim[]>(`/sigorta-gonderim?dosya=${id}`).then(setL).catch((x) => setHata((x as Error).message));
@@ -245,6 +257,8 @@ export function SigortaGonderimBolumu({ id }: { id: string }) {
         <div className="soru" key={g.kimlik}>
           <span><b className="koyu">{g.tur}</b> · {g.konu}</span>
           <div>Alıcı: {g.alici}</div>
+          {g.ekler.length > 0 && <div>Ekler: {g.ekler.join(' · ')}</div>}
+          {g.onizleme && <div><a href={`/api/sigorta-gonderim/${g.kimlik}/onizleme`} target="_blank" rel="noreferrer">Teklif PDF Önizleme</a></div>}
           {g.durum === 'Teyit Bekliyor' && <button className="btn2 kucuk" onClick={() => teyit(g, 1)}>Birinci Teyit: İçeriği Gördüm</button>}
           {g.durum === 'Birinci Teyit' && <>
             {g.metin && <div className="ozet">{g.metin}</div>}

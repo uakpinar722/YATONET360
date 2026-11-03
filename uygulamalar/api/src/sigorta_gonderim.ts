@@ -41,15 +41,53 @@ export function sigortaGonderimYollari(s: FastifyInstance, b: Baglam) {
     const d = (await b.db.query(`SELECT dosya_sorumlusu_ref, yedek_sorumlu_ref FROM dosya WHERE kimlik = $1`, [r.dosya_ref])).rows[0];
     return d?.dosya_sorumlusu_ref === k || d?.yedek_sorumlu_ref === k;
   };
+  // İkili teyit veren kişi nelerin gideceğini görür (V-80).
+  const ekListesi = async (r: { tur: string; nesne_kimligi: string; dosya_ref: string | null }) => {
+    if (r.tur !== 'Fiyat Teklifi') return [] as string[];
+    const t = (await b.db.query(`SELECT teklif_no FROM fiyat_teklifi WHERE kimlik = $1`, [r.nesne_kimligi])).rows[0];
+    const ra = (await b.db.query(`SELECT e.ad FROM belge_uretim u JOIN belge e ON e.kimlik = u.belge_ref WHERE u.dosya_ref = $1 AND u.tur = 'Teknik Rapor' AND u.durum = 'Üretildi' ORDER BY u.olusturma_zamani DESC LIMIT 1`, [r.dosya_ref])).rows[0];
+    return [`Fiyat Teklifi ${t?.teklif_no ?? ''}.pdf`, ...(ra ? [`${ra.ad}.pdf`] : [])];
+  };
   const satirlar = async (k: string, dosya?: string) => {
-    const { rows } = await b.db.query(`SELECT kimlik, dosya_ref, tur, alici, konu, metin, durum, sorumlu_ref, birinci_teyit_ref FROM sigorta_gonderim WHERE durum IN ('Teyit Bekliyor', 'Birinci Teyit') AND ($1::uuid IS NULL OR dosya_ref = $1) ORDER BY olusturma_zamani`, [dosya ?? null]);
-    const l = []; for (const r of rows) if (await yetkili(r, k)) l.push({ kimlik: r.kimlik, tur: r.tur, alici: r.alici ?? 'Sigorta Portalı', konu: r.konu, metin: r.metin, durum: r.durum, benimBirinci: r.birinci_teyit_ref === k });
+    const { rows } = await b.db.query(`SELECT kimlik, dosya_ref, tur, nesne_kimligi, alici, konu, metin, durum, sorumlu_ref, birinci_teyit_ref FROM sigorta_gonderim WHERE durum IN ('Teyit Bekliyor', 'Birinci Teyit') AND ($1::uuid IS NULL OR dosya_ref = $1) ORDER BY olusturma_zamani`, [dosya ?? null]);
+    const l = []; for (const r of rows) if (await yetkili(r, k)) l.push({ kimlik: r.kimlik, tur: r.tur, alici: r.alici ?? 'Sigorta Portalı', konu: r.konu, metin: r.metin, durum: r.durum, benimBirinci: r.birinci_teyit_ref === k, ekler: await ekListesi(r), onizleme: r.tur === 'Fiyat Teklifi' });
     return l;
   };
   s.get('/sigorta-gonderim', oturumlu, async (i, y) => {
     const { dosya } = i.query as { dosya?: string };
     if (dosya && !UUID.test(dosya)) return yok(y);
     return satirlar(i.oturum!.kullanici, dosya);
+  });
+  // Gönderimden önce teklif PDF'i görülür; önizleme dosyaya kaydedilmez, doğrulama kodu taşımaz.
+  s.get('/sigorta-gonderim/:id/onizleme', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id)) return yok(y);
+    const r = (await b.db.query(`SELECT kimlik, dosya_ref, tur, nesne_kimligi, sorumlu_ref FROM sigorta_gonderim WHERE kimlik = $1`, [id])).rows[0];
+    if (!r || r.tur !== 'Fiyat Teklifi' || !(await yetkili(r, i.oturum!.kullanici))) return yok(y);
+    const { teklifTanim } = await import('./belge_uret.js'); const { pdfUret } = await import('./pdf.js');
+    const v = await teklifTanim(b.db, r.nesne_kimligi, 'ÖNİZLEME', b.webAdresi);
+    return y.type('application/pdf').header('Content-Disposition', `inline; filename="onizleme.pdf"`).send(await pdfUret(v.t));
+  });
+  // YG-443: sigorta şirketinin e-posta adresini dosya sorumlusu girer; bekleyen gönderimler yeni adrese yeniden teyit ister.
+  s.post('/dosya/:id/sigorta-eposta', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const eposta = ((i.body ?? {}) as { eposta?: string }).eposta?.trim();
+    if (!UUID.test(id) || !(await yetkili({ dosya_ref: id, sorumlu_ref: null }, o.kullanici))) return yok(y);
+    if (!eposta || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(eposta)) return y.code(400).send({ hata: 'Geçerli bir e-posta adresi girmenizi rica ederiz.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const k = (await c.query(`SELECT sigorta_taraf_ref, sigortaci_adi FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 FOR UPDATE`, [id])).rows[0];
+      if (!k) { await c.query('ROLLBACK'); return yok(y); }
+      if (k.sigorta_taraf_ref) await c.query(`UPDATE dosya_tarafi SET eposta = $2 WHERE kimlik = $1`, [k.sigorta_taraf_ref, eposta]);
+      else {
+        const t = (await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, eposta, olusturan_ref) VALUES ($1,'Sigorta Şirketi',$2,$3,$4) RETURNING kimlik`, [id, k.sigortaci_adi ?? 'Sigorta Şirketi', eposta, o.kullanici])).rows[0];
+        await c.query(`UPDATE dosya_sigorta_kaydi SET sigorta_taraf_ref = $2 WHERE dosya_ref = $1`, [id, t.kimlik]);
+      }
+      await c.query(`UPDATE sigorta_gonderim SET alici = $2, durum = 'Teyit Bekliyor', birinci_teyit_ref = NULL, birinci_teyit_zamani = NULL WHERE dosya_ref = $1 AND durum IN ('Teyit Bekliyor', 'Birinci Teyit') AND tur <> 'Belge Paylaşımı'`, [id, eposta]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta E-posta Adresi Girildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { eposta }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { eposta };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   // K-241: birinci teyit göndermez; ikinci teyit aynı kişiden, ayrı istekle ve bekleme süresinden sonra gelir.
   s.post('/sigorta-gonderim/:id/teyit', oturumlu, async (i, y) => {

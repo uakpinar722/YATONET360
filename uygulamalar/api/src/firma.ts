@@ -9,6 +9,7 @@ import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { coz, totpDogrula } from './kripto.js';
 import { altNumara, sayac } from './sure.js';
+import { belgeUret } from './belge_uret.js';
 import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID, vergiNoGecerli } from './yat.js';
 import { belgeBagiKaydet } from './belge.js';
@@ -47,6 +48,9 @@ async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; d
   await c.query(`UPDATE is_emri SET statu = 'Kabul Bekliyor', yayim_zamani = $2, yanit_son = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, simdi, son]);
   const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
   await bildir(c, { olay: `is-emri:${e.kimlik}`, kullanicilar: kisiler, baslik: `Yeni İş Emri: ${e.is_emri_no}`, oncelik: d.oncelik, eposta: true, sms: true }, simdi); // YG-328
+  // YG-665: iş emri PDF'i firmanın kurumsal adresine ekli gider; fiyat içermez.
+  const ep = (await c.query(`SELECT kurumsal_eposta FROM kurulus WHERE kimlik = $1`, [e.kurulus_ref])).rows[0]?.kurumsal_eposta as string | null;
+  await belgeUret(c, { tur: 'İş Emri', nesne: e.kimlik, dosya: e.dosya_ref, gonder: ep ? { olay: `is-emri-pdf:${e.kimlik}`, eposta: ep, konu: `Yeni İş Emri: ${e.is_emri_no}`, metin: `Yeni İş Emri: ${e.is_emri_no}`, acil: true } : undefined });
 }
 
 kapanisKaydet('İş Emri', async (c, k, karar) => {
@@ -226,6 +230,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       const statu = g.yanit === 'Kabul' ? 'Başlangıç Kontrolünde' : g.yanit === 'Ret' ? 'İptal' : 'Çekinceli';
       await c.query(`UPDATE is_emri SET statu = $2, firma_yaniti = $3, firma_kabul_eden_ref = $4, firma_kabul_zamani = now(), cekince_aciklamasi = $5, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, statu, g.yanit, o.kullanici, g.aciklama?.trim() || null]);
       const ds = (await c.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].dosya_sorumlusu_ref;
+      if (g.yanit === 'Kabul') await belgeUret(c, { tur: 'İş Emri', nesne: e.kimlik, dosya: e.dosya_ref }); // YG-224: kabul kaydı PDF'e basılır
       if (g.yanit !== 'Kabul' && ds) await kartAc(c, { tur: g.yanit === 'Ret' ? 'Firma Değiştir' : 'Firma Çekincesi', kategori: 'gorev', baslik: `${e.is_emri_no} · Firma ${g.yanit}`, ozet: g.aciklama!.trim().slice(0, 200), oncelik: e.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: ds, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Emri Yanıtı: ${g.yanit}`, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Firma Portalı' });
       return { statu };

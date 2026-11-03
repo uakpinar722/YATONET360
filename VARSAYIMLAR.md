@@ -81,8 +81,12 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-75 | 5 | Kart önerisi kodu | Kartelaya öneriyle eklenen kalem KO-nnnnn kodu alır; Teknik Uzman maliyeti önerir, Ticari İşler Direktörü onaylar | `rapor.ts` | Kabul (VAR-7, CEO 03.11.2026) |
 | V-76 | 5 | Ek teklif Açık İşi | Yanıtsız ek teklif düşünce Dosya Sorumlusuna 7 gün hedefli Açık İş açılır | `teklif.ts` | Kabul (VAR-7, CEO 03.11.2026) |
 | V-77 | 5 | Masraf kalemi | Tesis bedeli teklife Ticari Sorumlu tarafından, belge zorunlu, miktar 1 adet, KDV teklif oranıyla eklenir; firma bedeline ve iş emrine girmez | `teklif.ts` | Kabul (VAR-8, CEO 03.11.2026) |
-| V-78 | 5 | PDF kuyruğu | Belge işlem içinde kuyruğa yazılır, en geç 1 dakikada üretilir; 3 başarısız denemede Dosya Sorumlusuna görev açılır | `belge_uret.ts` | Bekliyor (VAR-9) |
-| V-79 | 5 | PDF hatasında ileti | Üretim 3 kez başarısız olursa yat tarafı iletisi eksiz gider (onay kodu kaybolmaz); sigorta iletisi eksiz gitmez, görevde belirtilir | `belge_uret.ts` | Bekliyor (VAR-9) |
-| V-80 | 5 | Sigortaya ek | BLD-71 ekinde teklif PDF'i ve varsa onaylı Teknik Rapor gider; ek listesi teyit ekranında henüz gösterilmez | `teklif.ts` | Bekliyor (VAR-9) |
-| V-81 | 5 | Numara uyumu | Kodda RP ve PF yerine şablondaki TR ve OT kullanılır; proforma ve ödeme talebi aynı OT sayacını paylaşır | `rapor.ts`, `ticari.ts` | Bekliyor (VAR-9) |
-| V-82 | 5 | Şablondan eksik bölümler | Teknik Raporda konum şeması, risk ve klas bölümleri; proformada TL karşılığı ve ödeme yolları; tüm belgelerde 7/24 Destek Hattı satırı, veri sisteme girilene kadar yazılmaz | `belge_uret.ts` | Bekliyor (VAR-9) |
+| V-78 | 5 | PDF kuyruğu | Belge işlem içinde kuyruğa yazılır, en geç 1 dakikada üretilir; 3 başarısız denemede Dosya Sorumlusuna görev açılır | `belge_uret.ts` | Kabul (VAR-9, CEO 03.11.2026) |
+| V-79 | 5 | PDF hatasında ileti | Üretim 3 kez başarısız olursa yat tarafı iletisi eksiz gider (onay kodu kaybolmaz); sigorta iletisi eksiz gitmez, görevde belirtilir | `belge_uret.ts` | Kabul (VAR-9, CEO 03.11.2026) |
+| V-80 | 5 | Sigortaya ek | BLD-71 ekinde teklif PDF'i ve varsa onaylı Teknik Rapor gider; ek listesi teyit ekranında henüz gösterilmez | `teklif.ts` | Kabul (VAR-9, CEO 03.11.2026) |
+| V-81 | 5 | Numara uyumu | Kodda RP ve PF yerine şablondaki TR ve OT kullanılır; proforma ve ödeme talebi aynı OT sayacını paylaşır | `rapor.ts`, `ticari.ts` | Kabul (VAR-9, CEO 03.11.2026) |
+| V-82 | 5 | Şablondan eksik bölümler | Teknik Raporda konum şeması, risk ve klas bölümleri; proformada TL karşılığı ve ödeme yolları; tüm belgelerde 7/24 Destek Hattı satırı, veri sisteme girilene kadar yazılmaz | `belge_uret.ts` | Kabul (VAR-9, CEO 03.11.2026) |
+| V-83 | 5 | İş Emri PDF | Her zaman Türkçe; fiyat içermez; yayımda firmanın kurumsal e-postasına ekli gider, kabulde onay kaydıyla yeni sürüm olur; Kritik sınıfta | `belge_uret.ts`, `firma.ts` | Bekliyor (VAR-10) |
+| V-84 | 5 | Teslim Tutanağı PDF | Yat sahibi onayında üretilir; garanti teslimden 12 ay, kalem bazında; anahtar/evrak/eşya iadesi ve FR-KLT-010 eki verisi sistemde olmadığından yazılmaz | `belge_uret.ts` | Bekliyor (VAR-10) |
+| V-85 | 5 | Sigorta adresi | Dosya Sorumlusu veya yedeği girer; adres değişirse bekleyen gönderim birinci teyide döner; e-posta da portal kullanıcısı da yoksa teklif hazırlanmaz | `sigorta_gonderim.ts`, `teklif.ts` | Bekliyor (VAR-10) |
+| V-86 | 5 | Teyit önizlemesi | Teklif PDF'i teyit ekranında önizlenir; önizleme dosyaya kaydedilmez, kodu geçerli değildir | `sigorta_gonderim.ts` | Bekliyor (VAR-10) |

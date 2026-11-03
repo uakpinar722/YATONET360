@@ -80,6 +80,24 @@ describe('resmî PDF (YG-665, YG-691)', () => {
     expect((await o.sup.query(`SELECT e.ad FROM belge e WHERE e.kimlik = $1`, [u.belge_ref])).rows[0].ad).toContain(`${d.dosyaNo}-YO01`);
     expect((await o.sup.query(`SELECT ek_surumler FROM gonderim WHERE olay_anahtari = $1`, [`onay-sonuc:${on}`])).rows[0].ek_surumler).toHaveLength(2);
   });
+  it('İş Emri fiyat içermez; yeni kabulde PDF yeniden üretilir, tutanak TT numaralıdır', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const t = await teklif(d);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kurumsal_eposta, olusturan_ref) VALUES ($1,'Gizli Firma Ltd','Çözüm Ortağı','firma@deneme.local',$2) RETURNING kimlik`, [`S${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, hazirlayan_ref) VALUES ($1,'ON',$2,$3,$4,'Marmaris','Karina onarımı',7777,$5) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, t, f, o.K.oy])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri_kalemi (is_emri_ref, aciklama, miktar, birim) VALUES ($1,'Laminasyon',2,'m²')`, [e]);
+    await belgeUret(o.db, { tur: 'İş Emri', nesne: e, dosya: d.kimlik, gonder: { olay: `ie:${e}`, eposta: 'firma@deneme.local', konu: 'K', metin: 'M', acil: true } }); await belgeKuyruguIsle(b as never);
+    const u = await durum('İş Emri', e); expect(u.durum, u.son_hata).toBe('Üretildi');
+    expect((await o.sup.query(`SELECT bilgi_sinifi FROM belge WHERE kimlik = $1`, [u.belge_ref])).rows[0].bilgi_sinifi).toBe('Kritik');
+    const metin = readFileSync(join(dk, (await o.sup.query(`SELECT depo_anahtari FROM belge_surum WHERE kimlik = $1`, [u.surum_ref])).rows[0].depo_anahtari));
+    expect(metin.subarray(0, 5).toString()).toBe('%PDF-');
+    await o.sup.query(`UPDATE is_emri SET firma_yaniti = 'Kabul', firma_kabul_zamani = now(), statu = 'Başlangıç Kontrolünde' WHERE kimlik = $1`, [e]);
+    await belgeUret(o.db, { tur: 'İş Emri', nesne: e, dosya: d.kimlik }); await belgeKuyruguIsle(b as never);
+    expect((await durum('İş Emri', e)).surum_ref).not.toBe(u.surum_ref);
+    const tk = (await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref, durum, teslim_alan, teslim_zamani) VALUES ($1,$2,'Teslim Edildi','Yat Sahibi',now()) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    await belgeUret(o.db, { tur: 'Teslim Tutanağı', nesne: tk, dosya: d.kimlik }); await belgeKuyruguIsle(b as never);
+    const ut = await durum('Teslim Tutanağı', tk); expect(ut.durum, ut.son_hata).toBe('Üretildi');
+    expect((await o.sup.query(`SELECT ad, bilgi_sinifi FROM belge WHERE kimlik = $1`, [ut.belge_ref])).rows[0].ad).toContain(`${d.dosyaNo}-TT01`);
+  });
   it('Ödeme Talebi OT numaralı üretilir; yeniden tetiklenen teklif yeni sürüm olur, eskisi Yerine Geçti', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const t = await teklif(d);
     const ot = (await o.sup.query(`INSERT INTO odeme_talebi (dosya_ref, teklif_ref, tur, tutar_eur, muhatap, son_tarih, hazirlayan_ref) VALUES ($1,$2,'Ara Ödeme',500,'Yat Sahibi','2026-12-01',$3) RETURNING kimlik`, [d.kimlik, t, o.K.ts])).rows[0].kimlik;

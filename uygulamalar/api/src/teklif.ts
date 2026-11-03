@@ -390,7 +390,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const gun = await parametre(b.db, 'teklif_gecerlilik_gun');
     // K-241: sigortaya giden teklif ikinci teyide kadar gönderilmiş sayılmaz; portala düşmez, süre başlamaz.
     if (t.teklif_muhatabi === 'Sigorta Şirketi') return islem(async (c) => {
-      const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
+      const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, s.sigortaci_adi, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
+      // YG-443: sigorta şirketi portal kullanmak zorunda değildir; e-posta da portal kullanıcısı da yoksa teklif kimseye ulaşmaz.
+      if (!sg?.eposta && !(await c.query(`SELECT 1 FROM sigorta_kullanici WHERE sigortaci_adi = $1 LIMIT 1`, [sg?.sigortaci_adi ?? ''])).rowCount) throw Object.assign(new Error('Sigorta şirketinin e-posta adresi bekleniyor; dosya ayrıntısından girilmesini rica ederiz.'), { statusCode: 409 });
       const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
       const gonderim = await sigortayaHazirla(c, { dosya: t.dosya_ref, tur: 'Fiyat Teklifi', nesne: t.kimlik, alici: sg?.eposta ?? null, konu: `${t.dosya_no} Teklif`, metin: await bld71(c, t, sg, son), acil: true, sorumlu: o.kullanici });
       return { durum: 'Teyit Bekliyor', gonderim };

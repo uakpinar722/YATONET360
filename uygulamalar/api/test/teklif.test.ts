@@ -68,6 +68,8 @@ const onayla = async (id: string) => {
 
 beforeAll(async () => {
   o = await ortamKur('yatonet360_test14', KADRO);
+  // Sigorta şirketi portal kullanıcısı: e-posta yoksa teklif portaldan görülür (YG-443).
+  await o.sup.query(`INSERT INTO sigorta_kullanici VALUES ($1,'SG')`, [o.K.sc]);
   firmaC = await firmaGir(); ceo = await ceoGir();
   const f = await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Deneme Tersane A.Ş.', rol: 'Çözüm Ortağı' });
   firma = f.json().kimlik;
@@ -278,6 +280,23 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect((await o.ist('POST', `/api/sigorta-gonderim/${gn.json().gonderim}/teyit`, await o.gir('ts'), { adim: 2 })).json().durum).toBe('Gönderildi');
     return { d, t, gn: gn.json().gonderim as string };
   };
+  it('e-posta da portal kullanıcısı da yoksa teklif hazırlanmaz; Dosya Sorumlusu adresi girer; teyit ekranı ekleri ve önizlemeyi gösterir', async () => {
+    const d = await hazir({ sigortaci: 'Adressiz Sigorta', hasarNo: 'H9', yetkiDurumu: 'Doğrulandı' }, { musteriTuru: 'Sigorta Şirketi' }, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
+    const t = await teklifAc(d, 100); await onayla(t.kimlik);
+    const u = `/api/teklif/${t.kimlik}/gonder`;
+    const r = await o.ist('POST', u, await o.gir('ts')); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('e-posta adresi bekleniyor');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ty'), { eposta: 'x@y.local' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ds'), { eposta: 'gecersiz' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ds'), { eposta: 'hasar@adressiz.local' })).statusCode).toBe(200);
+    const gn = await o.ist('POST', u, await o.gir('ts')); expect(gn.json().durum, gn.body).toBe('Teyit Bekliyor');
+    const id = gn.json().gonderim as string;
+    expect((await o.sup.query(`SELECT alici FROM sigorta_gonderim WHERE kimlik = $1`, [id])).rows[0].alici).toBe('hasar@adressiz.local');
+    const on = await o.ist('GET', `/api/sigorta-gonderim/${id}/onizleme`, await o.gir('ts')); expect(on.statusCode, on.body.slice(0, 200)).toBe(200); expect(on.headers['content-type']).toContain('pdf');
+    const l = (await o.ist('GET', `/api/sigorta-gonderim?dosya=${d.kimlik}`, await o.gir('ts'))).json(); expect(l[0].ekler[0]).toContain('Fiyat Teklifi'); expect(l[0].onizleme).toBe(true);
+    await o.ist('POST', `/api/sigorta-gonderim/${id}/teyit`, await o.gir('ts'), { adim: 1 });
+    await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ds'), { eposta: 'yeni@adressiz.local' });
+    const s = (await o.sup.query(`SELECT alici, durum FROM sigorta_gonderim WHERE kimlik = $1`, [id])).rows[0]; expect(s).toMatchObject({ alici: 'yeni@adressiz.local', durum: 'Teyit Bekliyor' });
+  });
   it('ikinci teyitten sonra BLD-71 teklif PDF ekiyle kuyruğa girer; PDF üretilmeden gitmez', async () => {
     const { t, gn } = await gonder('hasar@sigorta.deneme.local'); const olay = `sigorta:${gn}`;
     const satir = () => o.sup.query(`SELECT cardinality(ek_surumler) n FROM gonderim WHERE olay_anahtari = $1`, [olay]);
