@@ -12,7 +12,7 @@ KESIF-01.04.02-01	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, 
 KESIF-01.04.02-02	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, elektrik ve kontrol sistemi teşhisi	Akışkan ve yardımcı devrelerin incelenmesi	Yağ veya sıvı analizi için numune alma	adet	46.0
 KESIF-01.04.03-01	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, elektrik ve kontrol sistemi teşhisi	Elektrik, elektronik ve otomasyon incelemesi	Elektrik ve elektronik sistem hasar incelemesi	saat	41.0
 KESIF-01.04.03-02	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, elektrik ve kontrol sistemi teşhisi	Elektrik, elektronik ve otomasyon incelemesi	Cihaz alarm ve hata kaydı aktarımı	adet	55.0
-KESIF-01.04.03-03	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, elektrik ve kontrol sistemi teşhisi	Elektrik, elektronik ve otomasyon incelemesi	Elektrik panosu termal kamera ölçümü	adet	4.48
+KESIF-01.04.03-03	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, elektrik ve kontrol sistemi teşhisi	Elektrik, elektronik ve otomasyon incelemesi	Elektrik panosu termal kamera ölçümü	saat	45.0
 KESIF-01.04.04-01	Keşif, inceleme ve teknik teşhis	Makine, tahrik, akışkan, elektrik ve kontrol sistemi teşhisi	Fonksiyon ve çalışma testi	Sistem çalışma testi	saat	55.0
 KESIF-01.05.01-01	Keşif, inceleme ve teknik teşhis	Hasar mekanizması, kapsam ve önceki durum ayrıştırması	Olay bilgisi ile teknik bulguların korelasyonu	Hasar neden analizi	saat	100.0
 KESIF-01.05.02-01	Keşif, inceleme ve teknik teşhis	Hasar mekanizması, kapsam ve önceki durum ayrıştırması	Önceden mevcut durum ve yeni bulguların ayrıştırılması	Eski kusur ile yeni hasarın ayrıştırılması	saat	51.0
@@ -1319,7 +1319,6 @@ SUALTI-02.05.01-01	Su altı, dalış ve yüzdürme hâlinde onarım	Islak kaynak
 SUALTI-02.05.02-01	Su altı, dalış ve yüzdürme hâlinde onarım	Islak kaynak ve cofferdam	Islak/kuru kaynak uygulaması ve muayene	Su altı kaynağı (ıslak veya kuru yöntem)	m	275.0
 SUALTI-02.05.03-01	Su altı, dalış ve yüzdürme hâlinde onarım	Islak kaynak ve cofferdam	Cofferdam ve lokal izolasyon	Su altı onarımı için geçici koferdam (cofferdam) kurulumu	adet	1311.0
 LOJISTIK-01.01.01-01	Tersane lojistiği ve geçici saha altyapısı	Kaldırma, bloklama ve saha planı	Saha kabulü ve yerleşim planı	Onarım sahası yerleşim krokisi (erişim, depolama, geçici hizmetler)	saat	41.0
-LOJISTIK-01.01.04-01	Tersane lojistiği ve geçici saha altyapısı	Kaldırma, bloklama ve saha planı	Operasyon gözetimi ve saha değişikliği	Yatın tersane/karapark içinde travel lift veya römorkla yer değiştirmesi	m²	8.96
 LOJISTIK-01.02.01-01	Tersane lojistiği ve geçici saha altyapısı	Geçici enerji, su ve hava	Geçici elektrik ve kıyı bağlantısı	Onarım sahasına geçici elektrik bağlantısı (kaçak akım korumalı)	adet	56.0
 LOJISTIK-01.02.02-01	Tersane lojistiği ve geçici saha altyapısı	Geçici enerji, su ve hava	Jeneratör ve geçici yakıt hattı	Geçici jeneratörün kurulumu ve yük altında devreye alınması	adet	116.0
 LOJISTIK-01.02.03-01	Tersane lojistiği ve geçici saha altyapısı	Geçici enerji, su ve hava	Su, basınçlı hava ve hortumlar	Geçici teknik su hattı kurulumu (geri akış önleyicili)	adet	45.0

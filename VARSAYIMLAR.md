@@ -75,8 +75,9 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-69 | 7 | Portalsız tedarikçi | Portal kullanıcısı olan tedarikçide malzeme girişi sipariş kabulünden sonra yapılır; kullanıcısı olmayanda Tedarik Sorumlusu kabulsüz giriş açabilir | `tedarik.ts` | Kabul (VAR-6, CEO 03.11.2026) |
 | V-70 | 7 | BLD-23 zamanı | Teslim ve taşıma kısıtı bildirimi, dosya için o tesise açılan ilk talepte gider | `portallar.ts` | Kabul (VAR-6, CEO 03.11.2026) |
 | V-71 | 7 | Nazik metin kapsamı | YG-1576 sistem hata ve yönlendirme metinlerine uygulandı; onaylı BLD ve ONY metinlerine dokunulmadı | `api/src` | Kabul (VAR-6, CEO 03.11.2026) |
-| V-72 | 5 | Teklif ve rapor bağı | Hasar dosyasında teklif iç onaya, Teknik Yönetici kontrolünden geçmiş Teknik Rapor olmadan gitmez (YG-200 yorumu); acil tedbir teklifi hariç | `rapor.ts` | Sunulacak |
-| V-73 | 5 | Süre aşımında son makam | Son makamda 1 saat aşımda iş bir üst makama geçer; CEO son makamsa yalnız uyarı ve CEO Asistanına bilgi | `onay_sure.ts` | Sunulacak |
-| V-74 | 5 | Kademe atlama kapsamı | Direktör yalnız silsilesindeki işi, GMY CEO son makam olmayan her işi, CEO her işi öne alır; mesleki kararlar (kalite planı, kapsam cetveli, teknik rapor) hariç | `is_motoru.ts` | Sunulacak |
-| V-75 | 5 | Kart önerisi kodu | Kartelaya öneriyle eklenen kalem KO-nnnnn kodu alır; Teknik Uzman maliyeti önerir, Ticari İşler Direktörü onaylar | `rapor.ts` | Sunulacak |
-| V-76 | 5 | Ek teklif Açık İşi | Yanıtsız ek teklif düşünce Dosya Sorumlusuna 7 gün hedefli Açık İş açılır | `teklif.ts` | Sunulacak |
+| V-72 | 5 | Teklif ve rapor bağı | Hasar dosyasında teklif iç onaya, Teknik Yönetici kontrolünden geçmiş Teknik Rapor olmadan gitmez (YG-200 yorumu); acil tedbir teklifi hariç | `rapor.ts` | Kabul (VAR-7, CEO 03.11.2026) |
+| V-73 | 5 | Süre aşımında son makam | Son makamda 1 saat aşımda iş bir üst makama geçer; CEO son makamsa yalnız uyarı ve CEO Asistanına bilgi | `onay_sure.ts` | Kabul (VAR-7, CEO 03.11.2026) |
+| V-74 | 5 | Kademe atlama kapsamı | Direktör yalnız silsilesindeki işi, GMY CEO son makam olmayan her işi, CEO her işi öne alır; mesleki kararlar (kalite planı, kapsam cetveli, teknik rapor) hariç | `is_motoru.ts` | Kabul (VAR-7, CEO 03.11.2026) |
+| V-75 | 5 | Kart önerisi kodu | Kartelaya öneriyle eklenen kalem KO-nnnnn kodu alır; Teknik Uzman maliyeti önerir, Ticari İşler Direktörü onaylar | `rapor.ts` | Kabul (VAR-7, CEO 03.11.2026) |
+| V-76 | 5 | Ek teklif Açık İşi | Yanıtsız ek teklif düşünce Dosya Sorumlusuna 7 gün hedefli Açık İş açılır | `teklif.ts` | Kabul (VAR-7, CEO 03.11.2026) |
+| V-77 | 5 | Masraf kalemi | Tesis bedeli teklife Ticari Sorumlu tarafından, belge zorunlu, miktar 1 adet, KDV teklif oranıyla eklenir; firma bedeline ve iş emrine girmez | `teklif.ts` | Sunulacak |

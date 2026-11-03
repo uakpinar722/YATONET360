@@ -93,7 +93,8 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   if ((await c.query(`SELECT 1 FROM kartela_surumu LIMIT 1`)).rowCount) {
     await c.query(`UPDATE kartela_surumu SET durum = 'Yürürlükte', yururluk = '2027-01-01' WHERE surum = '2026.2'`);
     const kl = readFileSync(join(KOK, 'veri', 'kartela_2026_2.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
-    await c.query(`UPDATE kartela_kalemi k SET maliyet_eur = t.m FROM unnest($1::text[], $2::numeric[]) t(a, m) WHERE k.kod = t.a AND k.surum = '2026.2' AND k.maliyet_eur <> t.m`, [kl.map((r) => r[0]), kl.map((r) => r[6])]);
+    await c.query(`UPDATE kartela_kalemi k SET maliyet_eur = t.m, birim = t.b FROM unnest($1::text[], $2::numeric[], $3::text[]) t(a, m, b) WHERE k.kod = t.a AND k.surum = '2026.2' AND (k.maliyet_eur <> t.m OR k.birim <> t.b)`, [kl.map((r) => r[0]), kl.map((r) => r[6]), kl.map((r) => r[5])]);
+    await c.query(`DELETE FROM kartela_kalemi WHERE surum = '2026.2' AND kod NOT LIKE 'KO-%' AND NOT kod = ANY($1)`, [kl.map((r) => r[0])]); // KRT-10
   }
   if (!(await c.query(`SELECT 1 FROM kartela_surumu LIMIT 1`)).rowCount) {
     await c.query(`INSERT INTO kartela_surumu VALUES ('2026.2', 'Yürürlükte', '2027-01-01')`); // KRT-8

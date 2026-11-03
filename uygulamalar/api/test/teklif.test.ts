@@ -95,8 +95,8 @@ describe('fiyat kuralı (YG-185, YG-187, YG-1709)', () => {
 });
 
 describe('kartela ve cetvel (YG-195, YG-198, YG-1706)', () => {
-  it('kartela 1.511 kalem, 130 grup; arama fiyat vermez', async () => {
-    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi`)).rows[0].n).toBe(1511);
+  it('kartela 1.510 kalem, 130 grup; arama fiyat vermez', async () => {
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi`)).rows[0].n).toBe(1510);
     expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_birlikte_yazilmaz`)).rows[0].n).toBe(130);
     const r = (await o.ist('GET', '/api/kartela/ara?q=KESIF-01.01', firmaC)).json();
     expect(r.length).toBeGreaterThan(0); expect(r[0].maliyet_eur).toBeUndefined();
@@ -297,6 +297,23 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     const ie = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 });
     expect(ie.statusCode, ie.body).toBe(200);
     expect((await o.sup.query(`SELECT aciklama FROM is_emri_kalemi WHERE is_emri_ref = $1`, [ie.json().kimlik])).rows.map((x) => x.aciklama)).toEqual(['A']);
+  });
+});
+
+describe('tesis bedeli Masraf kalemi (MSR-1, KRT-10)', () => {
+  it('tesis bedeli kalemi kartelada yok; Masraf belgeyle gerçek tutarından eklenir, katsayı uygulanmaz; yalnız taslakta ve hazırlayandan', async () => {
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi WHERE kod = 'LOJISTIK-01.01.04-01'`)).rows[0].n).toBe(0);
+    expect((await o.sup.query(`SELECT birim, maliyet_eur FROM kartela_kalemi WHERE kod = 'KESIF-01.04.03-03'`)).rows[0]).toEqual({ birim: 'saat', maliyet_eur: '45.00' });
+    const d = await hazir(); const t = await teklifAc(d); const u = `/api/teklif/${t.kimlik}/masraf-kalemi`; const c = await o.gir('ts'); const belge = await o.belge(d.kimlik, 'ds');
+    const once = (await o.sup.query(`SELECT ara_toplam_eur a FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].a;
+    expect((await o.ist('POST', u, await o.gir('ds'), { aciklama: 'Travel lift', tutar: 500, belge })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500 })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500, belge });
+    expect(r.statusCode, r.body).toBe(200); expect(r.json().araToplam).toBe(Number(once) + 500);
+    const k = (await o.sup.query(`SELECT bedel_turu, birim_satis_fiyati_eur, tutar_eur, kartela_kodu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = $2`, [t.kimlik, r.json().sira])).rows[0];
+    expect(k).toEqual({ bedel_turu: 'Masraf', birim_satis_fiyati_eur: '500.00', tutar_eur: '500.00', kartela_kodu: null });
+    await onayla(t.kimlik);
+    expect((await o.ist('POST', u, c, { aciklama: 'Ek', tutar: 10, belge })).statusCode).toBe(409);
   });
 });
 

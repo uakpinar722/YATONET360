@@ -52,7 +52,7 @@ const gir = async (ep, k, w = 1280, h = 900) => {
   return p;
 };
 const TEMP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.araclar', 'e2e_kanit.pdf');
-writeFileSync(TEMP, `%PDF-1.4 ${tek}`); writeFileSync(TEMP.replace('.pdf', '2.pdf'), `%PDF-1.4 ${tek}2`); writeFileSync(TEMP.replace('.pdf', '3.pdf'), `%PDF-1.4 ${tek}3`);
+writeFileSync(TEMP, `%PDF-1.4 ${tek}`); writeFileSync(TEMP.replace('.pdf', '2.pdf'), `%PDF-1.4 ${tek}2`); writeFileSync(TEMP.replace('.pdf', '3.pdf'), `%PDF-1.4 ${tek}3`); writeFileSync(TEMP.replace('.pdf', '5.pdf'), `%PDF-1.4 ${tek}5`);
 const dosyaAc = async (p, no) => {
   await p.goto(KOK); await p.reload();
   await p.getByRole('button', { name: 'Dosyalar', exact: true }).click();
@@ -166,6 +166,10 @@ try {
   const pTs = await al('ts', E); await dosyaAc(pTs, d.dosyaNo);
   await pTs.getByLabel('Firma Fiyat Teklifi').selectOption({ index: 1 });
   await tikla(pTs, 'Fiyat Teklifi Hazırla');
+  await pTs.getByLabel('Masraf Açıklaması (Tesis Bedeli)').fill('Travel lift bedeli'); await pTs.getByLabel('Gerçek Tutar (EUR)').fill('1.000,00');
+  await pTs.getByLabel('Tesis Teklifi veya Tarifesi').setInputFiles(TEMP.replace('.pdf', '5.pdf')); await pTs.getByText('Dosya yüklendi.').first().waitFor();
+  await tikla(pTs, 'Masraf Ekle');
+  kontrol('tesis bedeli teklife gerçek tutarıyla Masraf olarak eklenir', (await sup.query(`SELECT tutar_eur FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 AND k.bedel_turu = 'Masraf'`, [d.kimlik])).rows[0]?.tutar_eur === '1000.00');
   await tikla(pTs, 'Onaya Gönder');
   kontrol('Ticari Sorumlu teklifi ekrandan hazırlar ve gönderir', true);
   const no = (await sup.query(`SELECT teklif_no FROM fiyat_teklifi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].teklif_no;
@@ -376,6 +380,17 @@ try {
   await pTc.getByLabel('İrsaliye ve Sertifika').setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTc, 'Sevk Bildir');
   kontrol('tedarikçi teklif verir, siparişi kodla kabul eder, sevk bildirir', (await sup.query(`SELECT count(*)::int n FROM tedarik_sevki WHERE siparis_ref = $1`, [sp2.kimlik])).rows[0].n === 1);
+  // Bugün: kademe atlama ve geri çekme
+  const atlaR = (await sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Muhasebe ve Finans Müdürü'`)).rows[0].kimlik; const atlaS = (await sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Ticari İşler Direktörü'`)).rows[0].kimlik;
+  const atlaB = `E2E Kademe ${tek}`; await sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir) VALUES ('Deneme','onay',$1,$2,$3)`, [atlaB, kimlikler.ds, [atlaR, atlaS]]);
+  const pTd2 = await al('tid', E);
+  const atlaK = pTd2.locator('.ozet', { hasText: atlaB }); await atlaK.waitFor();
+  await atlaK.getByLabel('Gerekçe').fill('Acil'); await atlaK.getByRole('button', { name: 'Kademeyi Atla' }).click(); await atlaK.waitFor({ state: 'detached' });
+  kontrol('Direktör Bugün ekranından kademeyi gerekçeyle atlar', (await sup.query(`SELECT durum FROM is_karti WHERE baslik = $1`, [atlaB])).rows[0].durum === 'Onaylandı');
+  const iadeB = `E2E İade ${tek}`; await sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir, durum) VALUES ('Deneme','onay',$1,$2,$3,'İade Edildi')`, [iadeB, kimlikler.ds, [atlaS]]);
+  await al('ds', E); const iadeK = pDs.locator('.ozet', { hasText: iadeB }); await iadeK.waitFor();
+  await iadeK.getByRole('button', { name: 'Geri Çek' }).click(); await iadeK.waitFor({ state: 'detached' });
+  kontrol('hazırlayan iade edileni Bugün ekranından geri çeker', (await sup.query(`SELECT durum FROM is_karti WHERE baslik = $1`, [iadeB])).rows[0].durum === 'Geri Çekildi');
   sonuc.push(`DOSYA ${d2.dosyaNo}`);
 } catch (e) {
   sonuc.push(`KALDI  beklenmeyen: ${e.message.split('\n')[0]}`);

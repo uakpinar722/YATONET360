@@ -32,6 +32,17 @@ function IlerlemeDogrula({ isEmri }: { isEmri: string }) {
   return <>{h && <div className="hata" role="alert">{h}</div>}{l.filter((x) => !x.dogrulandi).map((x) => <button key={x.kimlik} className="btn2 kucuk" onClick={() => void istek(`/is-emri/${isEmri}/ilerleme/${x.kimlik}/dogrula`, {}).then(yukle).catch((e) => setH((e as Error).message))}>{x.aciklama} · {x.miktar} Doğrula</button>)}</>;
 }
 
+/** MSR-1: tesisin kendi tarifesiyle fiyatladığı bedel, belgesiyle ve gerçek tutarıyla Masraf kalemi olur; fiyat kuralı uygulanmaz. */
+function MasrafKalemi({ dosya, teklif, yap }: { dosya: string; teklif: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [f, setF] = useState({ aciklama: '', tutar: '', belge: '' });
+  return <div className="soru">
+    <label htmlFor={`mk-a-${teklif}`}>Masraf Açıklaması (Tesis Bedeli)</label><input id={`mk-a-${teklif}`} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+    <label htmlFor={`mk-t-${teklif}`}>Gerçek Tutar (EUR)</label><input id={`mk-t-${teklif}`} inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+    <BelgeSec ad="Tesis Teklifi veya Tarifesi" bagTuru="Dosya" bagKimligi={dosya} deger={f.belge} sec={(x) => setF({ ...f, belge: x })} />
+    <button className="btn2 kucuk" disabled={!f.belge} onClick={() => void yap(() => istek(`/teklif/${teklif}/masraf-kalemi`, { aciklama: f.aciklama, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')), belge: f.belge }), 'Masraf kalemi eklendi.').then(() => setF({ aciklama: '', tutar: '', belge: '' }))}>Masraf Ekle</button>
+  </div>;
+}
+
 /** YG-195, YG-230, YG-301, YG-302, YG-884: dosya içinde kapsam, teklif, iş emri ve mali akış. */
 export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; rollerim: string[]; roller: string[]; asama: string | null }) {
   const [v, setV] = useState<Kayitlar | null>(null); const [m, setM] = useState<Mali | null>(null); const [firmalar, setFirmalar] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]);
@@ -67,6 +78,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <span>{t.teklif_no} Rev.{t.surum_no} · {t.teklif_muhatabi} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {eur(t.genel_toplam_eur)}{t.gecerlilik_bitis_tarihi ? ` · Geçerlilik: ${t.gecerlilik_bitis_tarihi.split('-').reverse().join('.')}` : ''}</span>
             <div className="dugmeler">
               {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
+              {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
               {t.statu === 'Onaylı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek<{ durum: string }>(`/teklif/${t.kimlik}/gonder`, {}).then((r) => { window.dispatchEvent(new Event('sigorta-gonderim')); return { uyari: r.durum === 'Teyit Bekliyor' ? 'Sigortaya gönderim için iki teyit gereklidir; aşağıdaki bölümden teyit ediniz.' : 'Gönderildi.' }; }))}>Gönder</button>}
               {t.statu === 'Karar' && ticari && <>
                 <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/proforma`, {}), 'Proforma onaya gönderildi.')}>Proforma Hazırla</button>

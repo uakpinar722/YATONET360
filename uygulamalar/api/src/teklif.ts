@@ -318,6 +318,26 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'Onaya Gönderildi' };
   });
 
+  // MSR-1, YG-182, YG-183, YG-331: tesisin kendi tarifesiyle fiyatladığı bedel kartelada yoktur; teklife belgesiyle, gerçek tutarıyla Masraf kalemi olarak yazılır. Fiyat kuralı uygulanmaz.
+  s.post('/teklif/:id/masraf-kalemi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { aciklama?: string; nitelik?: string; tutar?: number; belge?: string };
+    if (!t) return yok(y);
+    if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Masraf kalemini teklifi hazırlayan ekler.' });
+    if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Masraf kalemi taslak teklife eklenir.' });
+    if (!g.aciklama?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Açıklama ve tutarı yazmanızı rica ederiz.' });
+    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Tesis teklifi veya tarife belgesini eklemenizi rica ederiz.' });
+    return islem(async (c) => {
+      const tutarE = R2(Number(g.tutar));
+      const sira = (await c.query(`SELECT coalesce(max(sira_no), 0) + 1 n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows[0].n;
+      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi) VALUES ($1,$2,$3,$4,'Masraf',1,'adet',$5,$5,$5,false)`, [t.kimlik, sira, g.aciklama!.trim(), g.nitelik ?? 'Onarım', tutarE]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklife Masraf Eklendi', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { aciklama: g.aciklama, tutar: tutarE, belge: g.belge }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      const kl = (await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
+      const top = toplamlar(kl, t.indirim_orani === null ? null : Number(t.indirim_orani), Number(t.kesif_mahsubu_eur), Number(t.kdv_orani));
+      await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, indirim_tutari_eur = $3, kdv_tutari_eur = $4, genel_toplam_eur = $5, onay_limit_tutari_eur = $6, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, top.ara, top.ind, top.kdv, top.genel, top.matrah]);
+      return { sira, araToplam: top.ara, genelToplam: top.genel };
+    });
+  });
+
   // YG-212: ek teklif önceki onaylı toplam, bu ek ve yeni toplamı gösterir.
   s.get('/teklif/:id/ek-ozet', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
