@@ -230,7 +230,7 @@ describe('bireysel onay ve cayma (YG-152, YG-466, YG-468)', () => {
     expect(c.erken_ifa_onayi).toBe(false); expect((+c.cayma_bitis - +c.sozlesme_zamani) / 86_400_000).toBe(14);
     const ie = (x: object = {}) => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${g.d.kimlik}/is-emri`, k, { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: g.t.kimlik, bedel: 510, ...x }));
     const eng = await ie();
-    expect(eng.statusCode).toBe(409); expect(eng.json().hata).toContain('Yasal bekleme');
+    expect(eng.statusCode).toBe(409); expect(eng.json().hata).toContain('yasal bekleme');
     expect(await caymaEngeli(o.db, g.d.kimlik, new Date(Date.now() + 15 * 86_400_000))).toBeNull();
     await o.sup.query(`UPDATE on_bilgilendirme_cayma_kaydi SET cayma_bitis = now() - interval '1 minute' WHERE teklif_ref = $1`, [g.t.kimlik]);
     expect((await ie()).statusCode).toBe(200);

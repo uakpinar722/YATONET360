@@ -165,7 +165,7 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     const d = await dosya(); const e = await isEmri(d, 'Tamamlandı'); const tu = await o.gir('tu');
     const p = (await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'C', ozet: 'Ö', gereklilikler: [{ gereklilik: 'G', dogrulama: 'D' }] })).json().kimlik;
     await o.karar((await o.kart('Kalite Planı', p)).kimlik, 'ty', 'Onayla');
-    expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).json().hata).toContain('gereklilik');
+    expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).json().hata).toContain('gerekliliğin');
     const g = (await o.sup.query(`SELECT kimlik FROM gereklilik_satiri WHERE plan_ref = $1`, [p])).rows[0].kimlik;
     expect((await o.ist('POST', `/api/gereklilik/${g}/kanit`, tu, { belge: await o.belge(d.kimlik, 'ds'), durum: 'Karşılandı' })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).statusCode).toBe(200);

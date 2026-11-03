@@ -75,7 +75,7 @@ describe('yükleme denetimleri (YG-602, YG-606, YG-1269, YG-1440)', () => {
     expect((await yukle(d, PDF('x'), { dosya: 'a.exe' })).statusCode).toBe(400);
     expect((await yukle(d, PDF('x'), { dosya: 'adsiz' })).statusCode).toBe(400);
     const mz = await yukle(d, Buffer.from([0x4d, 0x5a, 0x90, 0]), { dosya: 'fatura.pdf' });
-    expect(mz.statusCode).toBe(400); expect(mz.json().hata).toMatch(/Çalıştırılabilir/);
+    expect(mz.statusCode).toBe(400); expect(mz.json().hata).toMatch(/çalıştırılabilir/i);
     expect((await yukle(d, Buffer.from('metin'), { dosya: 'a.pdf' })).json().hata).toMatch(/uyuşmamaktadır/);
   });
   it('zararlı içerik kaydedilmez, iz bırakır; geçici dosya kalmaz', async () => {

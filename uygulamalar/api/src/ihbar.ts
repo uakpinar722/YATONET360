@@ -65,15 +65,15 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   if (!g.ihtiyac?.trim()) return { hata: 'Olay özeti zorunludur.' };
   const bildirimZamani = new Date(g.bildirimZamani ?? simdi);
   if (Number.isNaN(+bildirimZamani)) return { hata: 'Bildirim zamanı geçersiz.' };
-  if (bildirimZamani > simdi) return { hata: 'Bildirim zamanı kayda geçiş zamanından sonra olamaz.' }; // YG-040
+  if (bildirimZamani > simdi) return { hata: 'Bildirim zamanının kayda geçiş zamanından önce olmasını rica ederiz.' }; // YG-040
   const olay = g.olayTarihi ? new Date(g.olayTarihi) : null;
-  if (olay && (Number.isNaN(+olay) || olay > bildirimZamani)) return { hata: 'Olay tarihi bildirim zamanından sonra olamaz.' };
+  if (olay && (Number.isNaN(+olay) || olay > bildirimZamani)) return { hata: 'Olay tarihinin bildirim zamanından önce olmasını rica ederiz.' };
   const cevaplar = g.cevaplar ?? {};
   const onerilen = await oncelikOner(c, cevaplar, Boolean(g.acil));
   const oncelik = g.oncelik ?? onerilen;
   if (!ONCELIK_SIRA.includes(oncelik)) return { hata: 'Öncelik geçersiz.' };
   // YG-036: yükseltme serbest; önerinin altına inmek ancak açılıştan sonra gerekçe ve iki onayla olur.
-  if (ONCELIK_SIRA.indexOf(oncelik) < ONCELIK_SIRA.indexOf(onerilen)) return { hata: 'Öncelik sistemin önerdiğinin altına indirilemez; düşürme dosya açıldıktan sonra gerekçeyle talep edilir.' };
+  if (ONCELIK_SIRA.indexOf(oncelik) < ONCELIK_SIRA.indexOf(onerilen)) return { hata: 'Öncelik düşürme, dosya açıldıktan sonra gerekçeyle talep edilir; sistemin önerdiği öncelik korunmuştur.' };
   const yat = await yatBulVeyaAc(c, g.yat ?? {}, kullanici);
   if ('hata' in yat) return yat;
   if (g.yatSahibi?.ad?.trim()) {

@@ -137,7 +137,7 @@ export async function caymaEngeli(db: Db, dosya: string, simdi = new Date()): Pr
   const r = (await db.query(`SELECT cayma_bitis, erken_ifa_onayi, cayma_zamani FROM on_bilgilendirme_cayma_kaydi WHERE dosya_ref = $1 ORDER BY sozlesme_zamani DESC LIMIT 1`, [dosya])).rows[0];
   if (!r) return null;
   if (r.cayma_zamani) return 'Yat sahibi cayma hakkını kullanmıştır.';
-  if (!r.erken_ifa_onayi && new Date(r.cayma_bitis) > simdi) return 'Yasal bekleme süresi dolmadan iş emri verilemez; erken başlama onayı yoktur.';
+  if (!r.erken_ifa_onayi && new Date(r.cayma_bitis) > simdi) return 'İş emri için yasal bekleme süresinin dolması veya erken başlama onayı bekleniyor.';
   return null;
 }
 
@@ -215,7 +215,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const muhatap = g.muhatap ?? (d.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta Şirketi' : d.musteri_turu === 'Kurumsal Müşteri' ? 'Kurumsal Müşteri' : 'Yat Sahibi');
     if (!['Sigorta Şirketi', 'Yat Sahibi', 'Kurumsal Müşteri'].includes(muhatap)) return y.code(400).send({ hata: 'Muhatap geçersiz.' });
     const cetvel = (await b.db.query(`SELECT kimlik FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
-    if (!cetvel) return y.code(409).send({ hata: 'Onaylı kapsam cetveli olmadan teklif hazırlanamaz.' });
+    if (!cetvel) return y.code(409).send({ hata: 'Teklif için Onaylı kapsam cetveli bekleniyor.' });
     if (!g.firmaTeklifi || !UUID.test(g.firmaTeklifi)) return y.code(400).send({ hata: 'Firma fiyat teklifini seçiniz.' });
     const ft = (await b.db.query(`SELECT * FROM firma_fiyat_teklifi WHERE kimlik = $1 AND dosya_ref = $2 AND durum IN ('Gönderildi', 'Seçildi')`, [g.firmaTeklifi, id])).rows[0];
     if (!ft) return y.code(404).send({ hata: 'Firma teklifi bulunamadı.' });
@@ -309,10 +309,10 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Onaya teklifi hazırlayan gönderir.' });
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Teklif taslak değildir.' });
     if ((await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND bant_disi LIMIT 1`, [t.kimlik])).rowCount && !t.bant_disi_onay_ref) return y.code(409).send({ hata: 'Bant dışı kalem için Ticari İşler Direktörünün gerekçeli onayı gereklidir.' });
-    if ((await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND gecici_kayit`, [t.yat_ref])).rowCount) return y.code(409).send({ hata: 'Geçici yat kaydıyla teklif yayımlanamaz; yat kaydını doğrulayınız.' });
+    if ((await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND gecici_kayit`, [t.yat_ref])).rowCount) return y.code(409).send({ hata: 'Teklif için önce Geçici yat kaydını doğrulamanızı rica ederiz.' });
     if (t.teklif_muhatabi === 'Sigorta Şirketi') {
       const sg = (await b.db.query(`SELECT sigorta_hasar_dosya_no, cerceve_sozlesme_yok FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
-      if (!sg?.sigorta_hasar_dosya_no) return y.code(409).send({ hata: 'Sigorta hasar dosya numarası girilmeden teklif gönderilemez.' }); // YG-101
+      if (!sg?.sigorta_hasar_dosya_no) return y.code(409).send({ hata: 'Gönderim için Sigorta hasar dosya numarası bekleniyor.' }); // YG-101
       if (sg.cerceve_sozlesme_yok && (!t.odeme_vadesi || !t.fatura_bilgisi)) return y.code(409).send({ hata: 'Çerçeve sözleşmesi olmayan dosyada ödeme vadesi ve fatura bilgisi zorunludur.' }); // YG-1552
     }
     const kum = (await dosyaTaahhudu(b.db, t.dosya_ref, t.kimlik)) + Number(t.onay_limit_tutari_eur);
@@ -332,10 +332,10 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
     if (t.statu !== 'Onaylı') return y.code(409).send({ hata: 'Teklif iç onaydan geçmemiştir.' });
-    if (t.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada teklif gönderilmez.' });
+    if (t.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada teklif gönderimi bekletilmektedir.' });
     const yde = await yatDegeriEngeli(b.db, t.dosya_ref); if (yde) return y.code(409).send({ hata: yde });
     const dil = dilKod(t.yazisma_dili);
-    if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Lehtar muvafakati girilmeden teklif onayı açılmaz.' });
+    if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Teklif onayı için Lehtar muvafakati bekleniyor.' });
     const gun = await parametre(b.db, 'teklif_gecerlilik_gun');
     // K-241: sigortaya giden teklif ikinci teyide kadar gönderilmiş sayılmaz; portala düşmez, süre başlamaz.
     if (t.teklif_muhatabi === 'Sigorta Şirketi') return islem(async (c) => {
@@ -363,7 +363,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     const g = (i.body ?? {}) as { karar?: string; kanal?: string; yetkili?: string; belge?: string; onaylananSiralar?: number[] };
     if (!t) return yok(y);
-    if (t.teklif_muhatabi !== 'Sigorta Şirketi' || t.statu !== 'Gönderildi') return y.code(409).send({ hata: 'Bu teklifte sigorta kararı girilemez.' });
+    if (t.teklif_muhatabi !== 'Sigorta Şirketi' || t.statu !== 'Gönderildi') return y.code(409).send({ hata: 'Sigorta kararı gönderilmiş tekliflere girilir.' });
     if (!['Tam Onay', 'Kısmi Onay', 'Ret', 'Revizyon İstendi'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
     if (!['YATONET 360', 'KEP', 'E-imza', 'Sözleşmede Tanımlı Kurumsal E-posta'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Telefon ve WhatsApp onay kanalı sayılmaz; tanımlı kanalı seçiniz.' }); // YG-218, YG-221
     if (!g.yetkili?.trim()) return y.code(400).send({ hata: 'Onaylayan yetkiliyi yazınız.' });

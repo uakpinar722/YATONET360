@@ -56,7 +56,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (!kl.length || kl.some((k) => !k.tanim?.trim() || !k.parcaNo?.trim() || !(Number(k.miktar) > 0) || !k.birim?.trim() || !(Number(k.bedel) >= 0))) return y.code(400).send({ hata: 'Kalem bilgileri eksiktir.' });
     const f = (await b.db.query(`SELECT kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE kimlik = $1`, [g.tedarikci])).rows[0];
     if (!f || f.kayit_rolu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kayıt tedarikçi değildir.' });
-    if (f.ag_statusu !== 'Aktif' || !['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return y.code(409).send({ hata: 'Onaylı ve aktif olmayan tedarikçiye sipariş verilmez.' });
+    if (f.ag_statusu !== 'Aktif' || !['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return y.code(409).send({ hata: 'Sipariş için onaylı ve aktif bir tedarikçi seçmenizi rica ederiz.' });
     const eng = await parcaOdemeEngeli(b.db, id);
     if (eng) return y.code(409).send({ hata: eng });
     const matrah = R2(kl.reduce((a, k) => a + R2(Number(k.miktar) * Number(k.bedel)), 0)); const kdv = R2((matrah * await parametre(b.db, 'kdv_orani')) / 100);
@@ -88,7 +88,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (!['Verildi', 'Kısmi Teslim'].includes(t.statu)) return y.code(409).send({ hata: 'Sipariş verilmemiştir.' });
     // YG-1577: portal kullanıcısı olan tedarikçide giriş kabulden sonra yapılır; kullanıcısı olmayan tedarikçide Tedarik Sorumlusu kayıt açar.
     if (t.tedarikci_kabul !== 'Kabul' && (await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kurulus_ref = $1 LIMIT 1`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: t.tedarikci_kabul === 'Ret' ? 'Tedarikçi siparişi kabul etmemiştir.' : 'Tedarikçinin sipariş kabulü bekleniyor.' });
-    if (!g.lot?.trim()) return y.code(400).send({ hata: 'Kaynağı veya lotu izlenemeyen malzeme kabul edilmez.' });
+    if (!g.lot?.trim()) return y.code(400).send({ hata: 'Kabul için malzemenin kaynağını ve lot numarasını yazmanızı rica ederiz.' });
     if (!g.irsaliye?.trim() || !g.bekletmeYeri || !UUID.test(g.bekletmeYeri) || !(Number(g.miktar) > 0)) return y.code(400).send({ hata: 'İrsaliye, miktar ve bekletme yeri zorunludur.' });
     const k = (await b.db.query(`SELECT miktar, teslim_alinan FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 AND satir_no = $2`, [id, g.satir])).rows[0];
     if (!k) return y.code(400).send({ hata: 'Satır bulunamadı.' });

@@ -108,3 +108,7 @@
 .m-g { background: #e8eaed; color: #444; }
 .ilerleme { height: 6px; background: #e8eaed; border-radius: 3px; margin: 6px 0; overflow: hidden; }
 .ilerleme i { display: block; height: 100%; background: #1f3a5f; }
+/* YG-1578: metinler iki yana yaslı; başlıklar sola, düğmeler ortaya. */
+.ozet, .not, .hata, .uyari, .ood, .soru, .kutu span, .tam-metin, p { text-align: justify; }
+h1, h2, h3, .bolum, label { text-align: left; }
+button:not(.secenek):not(.lnk) { text-align: center; }

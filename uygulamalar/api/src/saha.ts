@@ -95,7 +95,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.amac?.trim()) return y.code(400).send({ hata: 'Keşfin amacı ve kapsamı zorunludur.' });
     if (!g.baslangic || !g.bitis || new Date(g.bitis) <= new Date(g.baslangic)) return y.code(400).send({ hata: 'Planlanan başlangıç ve bitişi giriniz.' });
     const tu = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Uzman') AND bitis_zamani IS NULL ORDER BY rol DESC LIMIT 1`, [id])).rows[0];
-    if (!tu) return y.code(409).send({ hata: 'Teknik Uzman atanmadan keşif başlatılamaz.' });
+    if (!tu) return y.code(409).send({ hata: 'Keşif için Teknik Uzman ataması bekleniyor.' });
     const liste = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_KESIF_IZINLI_ISLEM'`)).rows.map((r) => r.deger as string);
     if ((g.izinli ?? []).some((x) => !liste.includes(x))) return y.code(400).send({ hata: 'İzinli işlem listeden seçilir.' });
     const r = await islem(async (c) => {
@@ -152,7 +152,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     if (!(await ekipRolleri(id, o.kullanici)).some((r) => ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Saha Sorumlusu', 'Teknik Yönetici'].includes(r))) return y.code(403).send({ hata: 'Bulguyu teknik ekip girer.' });
-    if (!g.konum?.trim() || BAGLAMSIZ.test(g.konum.trim())) return y.code(400).send({ hata: 'Konum referansı bağlamsız olamaz; bölge veya referans hattına göre yazınız.' });
+    if (!g.konum?.trim() || BAGLAMSIZ.test(g.konum.trim())) return y.code(400).send({ hata: 'Konum referansını bölge veya referans hattına göre yazmanızı rica ederiz.' });
     if (!g.aciklama?.trim()) return y.code(400).send({ hata: 'Bulgu açıklaması zorunludur.' });
     const lst = async (k: string, v?: string) => Boolean((await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = $1 AND deger = $2`, [k, v ?? ''])).rowCount);
     if (!(await lst('LST_BULGU_ETIKETI', g.etiket)) || !(await lst('LST_BILGI_TURU', g.bilgiTuru)) || !(await lst('LST_HASAR_ONEMI', g.onem)) || !(await lst('LST_BULGU_YONLENDIRME', g.yonlendirme))) return y.code(400).send({ hata: 'Etiket, bilgi türü, önem ve yönlendirme listeden seçilir.' });
@@ -184,7 +184,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const bolgeKalemi = KANIT_ZORUNLU.includes(g.kalem!);
     if (bolgeKalemi && !g.bolge?.trim()) return y.code(400).send({ hata: 'Bölge kalemlerinde bölge kodu zorunludur.' });
     if (g.cekilemedi) {
-      if (bolgeKalemi) return y.code(400).send({ hata: 'Hasar veya iş bölgesi fotoğrafı geçilemez.' });
+      if (bolgeKalemi) return y.code(400).send({ hata: 'Hasar veya iş bölgesi fotoğrafını eklemenizi rica ederiz.' });
       if (!(await lst('LST_FOTO_CEKILEMEDI_NEDENI', g.cekilemedi))) return y.code(400).send({ hata: 'Çekilememe nedenini seçiniz.' });
       if (g.cekilemedi === 'Diğer' && !g.cekilemediAciklama?.trim()) return y.code(400).send({ hata: 'Açıklama zorunludur.' });
       await b.db.query(`INSERT INTO gorsel_kanit (dosya_ref, asama, cekim_kalemi, ceken_ref, cekilemedi_nedeni, cekilemedi_aciklama) VALUES ($1,$2,$3,$4,$5,$6)`, [id, g.asama, g.kalem, o.kullanici, g.cekilemedi, g.cekilemediAciklama?.trim() || null]);
@@ -210,7 +210,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.nokta?.trim() || !g.buyukluk?.trim() || !g.birim?.trim() || !g.yontem?.trim() || !g.cihaz?.trim() || !g.ham?.trim() || typeof g.deger !== 'number') return y.code(400).send({ hata: 'Ölçüm noktası, büyüklük, birim, yöntem, cihaz, ham veri ve değer zorunludur.' });
     if (!['Geçerli', 'Saha doğrulaması', 'Süresi geçmiş'].includes(g.kalibrasyon ?? '')) return y.code(400).send({ hata: 'Kalibrasyon durumunu seçiniz.' });
     if (!['Geçerli', 'Sınırlı', 'Geçersiz'].includes(g.gecerlilik ?? '')) return y.code(400).send({ hata: 'Geçerliliği seçiniz.' });
-    if (g.kalibrasyon === 'Süresi geçmiş' && g.gecerlilik === 'Geçerli') return y.code(400).send({ hata: 'Kalibrasyonu geçmiş cihaz sonucu kesin değer olarak kullanılamaz.' });
+    if (g.kalibrasyon === 'Süresi geçmiş' && g.gecerlilik === 'Geçerli') return y.code(400).send({ hata: 'Kalibrasyonu geçmiş cihaz sonucu kesin değer olarak değil, bilgi olarak kaydedilir.' });
     const sinirDisi = g.nominal !== undefined && g.tolerans !== undefined && Math.abs(g.deger - g.nominal) > g.tolerans;
     if (sinirDisi && (!g.ikinci || g.ikinci === o.kullanici)) return y.code(400).send({ hata: 'Sınır dışı sonuçta farklı bir ikinci doğrulayan zorunludur.' });
     if (g.gecerlilik === 'Geçersiz' && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Geçersizlik gerekçesi zorunludur.' });
@@ -235,7 +235,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     return { surum: r.rows[0].surum };
   });
 
-  // YG-135: Uygun değilse açıklama; kritik maddede kanıt. Hazırlayan kendi kaydını onaylayamaz.
+  // YG-135: Uygun değilse açıklama; kritik maddede kanıt. Onayın hazırlayan dışında bir kişi tarafından verilmesini rica ederiz.
   s.post('/dosya/:id/kontrol-listesi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { kod } = (i.body ?? {}) as { kod?: string };
     const d = await getir(id, o.kullanici);
@@ -266,7 +266,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT dosya_ref, hazirlayan_ref FROM kontrol_listesi_kaydi WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
-    if (k.hazirlayan_ref === o.kullanici) return y.code(403).send({ hata: 'Hazırlayan kendi kaydını onaylayamaz.' });
+    if (k.hazirlayan_ref === o.kullanici) return y.code(403).send({ hata: 'Onayın hazırlayan dışında bir kişi tarafından verilmesini rica ederiz.' });
     const m = (await b.db.query(`SELECT sonuc FROM kontrol_listesi_maddesi WHERE kayit_ref = $1`, [id])).rows;
     if (m.some((x) => !x.sonuc)) return y.code(409).send({ hata: 'Tüm maddeleri yanıtlayınız.' });
     if (m.some((x) => x.sonuc === 'Uygun Değil') && !eksikler?.trim()) return y.code(400).send({ hata: 'Uygun dışı madde varken eksikler alanı zorunludur.' });
@@ -350,7 +350,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     if (d.statu !== 'Kapalı') return y.code(409).send({ hata: 'Yalnız kapalı dosya yeniden açılır.' });
-    if (d.kapanma_nedeni === 'Birleştirildi') return y.code(409).send({ hata: 'Birleştirilen dosya yeniden açılamaz; ana dosyadan yürütünüz.' });
+    if (d.kapanma_nedeni === 'Birleştirildi') return y.code(409).send({ hata: 'Birleştirilen dosyanın işlemlerini ana dosyadan yürütmenizi rica ederiz.' });
     if (!['Yeni Bilgi', 'Hata', 'Müşteri Bildirimi'].includes(g.tur ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe türü ve açıklama zorunludur.' });
     return islem(async (c) => {
       const t = (await c.query(`INSERT INTO dosya_yeniden_acma (dosya_ref, gerekce_turu, gerekce, onceki_nedeni, talep_eden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, g.tur, g.gerekce!.trim(), d.kapanma_nedeni, o.kullanici])).rows[0];
@@ -368,7 +368,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const d = (await c.query(`SELECT * FROM dosya WHERE kimlik = $1 FOR UPDATE`, [id])).rows[0];
       const a = (await c.query(`SELECT * FROM dosya WHERE kimlik = $1`, [g.ana])).rows[0];
       if (!d || !a) throw Object.assign(new Error('Dosya bulunamadı.'), { statusCode: 404 });
-      if (d.statu === 'Kapalı' || a.statu === 'Kapalı') throw Object.assign(new Error('Kapalı dosya birleştirilemez.'), { statusCode: 409 });
+      if (d.statu === 'Kapalı' || a.statu === 'Kapalı') throw Object.assign(new Error('Birleştirme açık dosyalarda yapılır.'), { statusCode: 409 });
       await c.query(`UPDATE dosya SET birlestirilen_ana_dosya_ref = $2, kapanma_nedeni = 'Birleştirildi', kapanis_zamani = now() WHERE kimlik = $1`, [id, g.ana]);
       await statuYaz(c, d, { statu: 'Kapalı', asama: d.asama }, `Birleştirildi: ${a.dosya_no}. ${g.gerekce!.trim()}`, o.kullanici);
       await c.query(`INSERT INTO dosya_iliskisi (kaynak_ref, hedef_ref, tur, gerekce, olusturan_ref) VALUES ($1,$2,'Birleştirildi',$3,$4)`, [id, g.ana, g.gerekce!.trim(), o.kullanici]);
@@ -385,7 +385,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     if (d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'İşareti Dosya Sorumlusu girer.' });
-    if (d.musteri_turu === 'Kurumsal Müşteri') return y.code(409).send({ hata: 'Kurumsal müşteride kurum yeni yetkili atar; vefat akışı açılmaz.' });
+    if (d.musteri_turu === 'Kurumsal Müşteri') return y.code(409).send({ hata: 'Kurumsal müşteride kurum yeni yetkili atar; vefat akışı bireysel yat sahipleri içindir.' });
     if (d.vefat_isareti) return y.code(409).send({ hata: 'İşaret girilmiştir.' });
     return islem(async (c) => {
       await c.query(`UPDATE dosya SET vefat_isareti = true, vefat_tarihi = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, g.tarih || null]);
@@ -469,7 +469,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const izinler = await kullaniciIzinleri(b.db, o.kullanici);
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });
       if ((g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Düzeltme maliyeti 5.000,00 EUR üstünde karar Teknik Müdür onayındadır.' });
-      if (g.kapat && !g.kokNeden) return y.code(409).send({ hata: 'Kök neden analizi tamamlanmadan kayıt kapatılamaz.' });
+      if (g.kapat && !g.kokNeden) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
     }
     if (k.kayit_turu.includes('Şikâyet') && g.sikayetSonucu && !['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].includes(g.sikayetSonucu)) return y.code(400).send({ hata: 'Şikâyet sonucunu seçiniz.' });
     await b.db.query(`UPDATE garanti_sikayet SET karar = coalesce($2, karar), sikayet_sonucu = coalesce($3, sikayet_sonucu), karar_gerekcesi = $4, karar_veren_ref = $5, duzeltme_maliyeti = coalesce($6, duzeltme_maliyeti), kok_neden_tamam = kok_neden_tamam OR $7, statu = $8, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`,

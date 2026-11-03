@@ -18,7 +18,7 @@ const KM = 'Kalite Müdürü';
 /** YG-283: A sınıfı işte Minör olamaz; emniyeti etkiliyorsa Kritik; hasar önemi Kritik/Yüksek işte en az Majör. */
 export function sinifEngeli(sinif: string, kabulSinifi: string | null, hasarOnemi: string | null, emniyet: boolean): string | null {
   if (emniyet && sinif !== 'Kritik') return 'Emniyeti etkileyen uygunsuzluk Kritik sınıfındadır.';
-  if (kabulSinifi === 'A' && sinif === 'Minör') return 'A sınıfı işte uygunsuzluk Minör olamaz.';
+  if (kabulSinifi === 'A' && sinif === 'Minör') return 'A sınıfı işte uygunsuzluk Minör dışında bir sınıfla kaydedilir.';
   if ((hasarOnemi === 'Kritik' || hasarOnemi === 'Yüksek') && (sinif === 'Minör' || sinif === 'Gözlem')) return 'Hasar önemi Kritik veya Yüksek olan işte uygunsuzluk en az Majördür.';
   return null;
 }
@@ -58,7 +58,7 @@ export async function ilerlemeEngeli(db: Db, e: { kimlik: string; dosya_ref: str
   const em = await emniyetEngeli(db, e.dosya_ref);
   if (em) return em;
   if ((await db.query(`SELECT 1 FROM kontrol_noktasi WHERE is_emri_ref = $1 AND nokta_turu = 'Bekletme' AND serbest_birakma_zamani IS NULL AND ($2::text IS NULL OR kalem IS NULL OR kalem = $2) LIMIT 1`, [e.kimlik, kalem])).rowCount) return 'Bekletme noktası serbest bırakılmadan sonraki adım açılmaz.';
-  if (e.calisma_izni_gerekli && !(await db.query(`SELECT 1 FROM calisma_izni_belgesi WHERE is_emri_ref = $1 AND baslangic <= now() AND bitis > now() AND kapanis_zamani IS NULL LIMIT 1`, [e.kimlik])).rowCount) return 'Geçerli çalışma izni belgesi yoktur; süresi dolan izinle faaliyet başlatılamaz.';
+  if (e.calisma_izni_gerekli && !(await db.query(`SELECT 1 FROM calisma_izni_belgesi WHERE is_emri_ref = $1 AND baslangic <= now() AND bitis > now() AND kapanis_zamani IS NULL LIMIT 1`, [e.kimlik])).rowCount) return 'Güvenliğiniz için geçerli çalışma izni belgesi bekleniyor; süresi dolan izni yenilemenizi rica ederiz.';
   return null;
 }
 
@@ -66,12 +66,12 @@ export async function ilerlemeEngeli(db: Db, e: { kimlik: string; dosya_ref: str
 export async function kabulEngeli(db: Db, e: { kimlik: string; dosya_ref: string }, sonuc: string): Promise<string | null> {
   if (sonuc === 'Ret') return null;
   const acik = (await db.query(`SELECT sinif, emniyet_isareti FROM uygunsuzluk WHERE (is_emri_ref = $1 OR (is_emri_ref IS NULL AND dosya_ref = $2)) AND statu NOT IN ('Kapalı', 'Geçersiz')`, [e.kimlik, e.dosya_ref])).rows;
-  if (acik.some((n) => n.sinif === 'Kritik' || n.emniyet_isareti)) return 'Açık Kritik uygunsuzlukta kabul verilemez.';
+  if (acik.some((n) => n.sinif === 'Kritik' || n.emniyet_isareti)) return 'Kabul için açık Kritik uygunsuzluğun kapanması bekleniyor.';
   if (acik.some((n) => n.sinif === 'Majör')) return 'Koşullu kabul yalnız Minör açık işler için verilir; Majör uygunsuzluk açıktır.';
   if (sonuc === 'Kabul' && acik.some((n) => n.sinif === 'Minör')) return 'Açık Minör uygunsuzluk varken yalnız koşullu kabul verilir.';
   // Yenilenmemiş son testler bakılır; yeniden test başarılıysa önceki başarısız kayıt kalır ama kapıyı tutmaz.
-  if ((await db.query(`SELECT 1 FROM test_kaydi t WHERE t.dosya_ref = $1 AND (t.sonuc = 'Başarısız' OR t.durum <> 'Tamamlandı') AND NOT EXISTS (SELECT 1 FROM test_kaydi n WHERE n.onceki_test_ref = t.kimlik) LIMIT 1`, [e.dosya_ref])).rowCount) return 'Başarısız veya tamamlanmamış test varken kabul verilemez.';
-  if (sonuc === 'Kabul' && (await db.query(`SELECT 1 FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı' AND g.durum = 'Açık' LIMIT 1`, [e.dosya_ref])).rowCount) return 'Kanıta bağlanmamış gereklilik varken teknik kabul verilemez.';
+  if ((await db.query(`SELECT 1 FROM test_kaydi t WHERE t.dosya_ref = $1 AND (t.sonuc = 'Başarısız' OR t.durum <> 'Tamamlandı') AND NOT EXISTS (SELECT 1 FROM test_kaydi n WHERE n.onceki_test_ref = t.kimlik) LIMIT 1`, [e.dosya_ref])).rowCount) return 'Kabul için Başarısız veya tamamlanmamış testin sonuçlanması bekleniyor.';
+  if (sonuc === 'Kabul' && (await db.query(`SELECT 1 FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı' AND g.durum = 'Açık' LIMIT 1`, [e.dosya_ref])).rowCount) return 'Teknik kabul için kanıta bağlanmamış gerekliliğin tamamlanması bekleniyor.';
   return null;
 }
 
@@ -170,7 +170,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const son = n.sinif === 'Kritik' || n.emniyet_isareti;
     if (!(await rolVar(o.kullanici, son ? [KM] : [KK, KM]))) return y.code(403).send({ hata: son ? 'Son karar Kalite Müdüründedir.' : 'Teknik tasarrufu Kalite Kontrolör verir.' });
     if (!['Olduğu Gibi Kabul', 'Düzeltme', 'Yeniden İşleme', 'Ayırma/Karantina', 'İade/Değişim', 'Ret/Hurda'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
-    if (g.karar === 'Olduğu Gibi Kabul' && n.sinif === 'Kritik') return y.code(409).send({ hata: 'Kritik sınıfta Olduğu Gibi Kabul verilemez.' });
+    if (g.karar === 'Olduğu Gibi Kabul' && n.sinif === 'Kritik') return y.code(409).send({ hata: 'Kritik sınıfta Olduğu Gibi Kabul dışında bir karar seçmenizi rica ederiz.' });
     if (n.firma_yeni_hasar && (!g.ihbar || !g.mahsup?.trim())) return y.code(400).send({ hata: 'Firma kaynaklı yeni hasarda sorumluluk ihbar tarihi ve mahsup referansı zorunludur.' });
     await b.db.query(`UPDATE uygunsuzluk SET tasarruf_karari = $2, tasarruf_onaylayan_ref = $3, bedel_sorumlusu = $4, sorumluluk_ihbar_tarihi = $5, mahsup_referansi = $6, statu = 'İşlemde' WHERE kimlik = $1`, [n.kimlik, g.karar, o.kullanici, g.bedel ?? null, g.ihbar ?? null, g.mahsup?.trim() ?? null]);
     return { statu: 'İşlemde' };
@@ -180,7 +180,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const n = await ncr((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as Record<string, string | undefined>;
     if (!n) return yok(y);
     if (['problem', 'dogrudan', 'katki', 'bariyer', 'kokNeden', 'tekrar'].some((a) => !g[a]?.trim())) return y.code(400).send({ hata: 'Kök neden analizinin tüm alanları zorunludur.' });
-    if (/^\s*(dikkatsizlik|ihmal|personel hatası|kişi hatası)\s*\.?\s*$/i.test(g.kokNeden!)) return y.code(400).send({ hata: 'Kişiye veya tek hataya dayalı kök neden kararı verilemez.' });
+    if (/^\s*(dikkatsizlik|ihmal|personel hatası|kişi hatası)\s*\.?\s*$/i.test(g.kokNeden!)) return y.code(400).send({ hata: 'Kök nedeni kişi yerine süreç ve sistem etkenleriyle yazmanızı rica ederiz.' });
     const r = (await b.db.query(`INSERT INTO kok_neden_analizi (uygunsuzluk_ref, problem_tanimi, dogrudan_neden, katki_faktorleri, bariyer_analizi, kok_neden, tekrar_olasiligi, analist_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [n.kimlik, g.problem, g.dogrudan, g.katki, g.bariyer, g.kokNeden, g.tekrar, o.kullanici])).rows[0];
     await b.db.query(`UPDATE uygunsuzluk SET kok_neden_ref = $2 WHERE kimlik = $1`, [n.kimlik, r.kimlik]);
     return { kimlik: r.kimlik };
@@ -221,7 +221,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Kapanış kanıtı zorunludur.' });
     if (g.kanit === n.kanit_belge_ref) return y.code(400).send({ hata: 'Tespit kanıtı kapanış kanıtı sayılmaz.' });
     const tekrar = Boolean(n.sorumlu_firma_ref) && Boolean((await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND dayanak_olcut = $2 AND kimlik <> $3 LIMIT 1`, [n.sorumlu_firma_ref, n.dayanak_olcut, n.kimlik])).rowCount);
-    if ((n.sinif === 'Kritik' || n.sinif === 'Majör' || n.yaygin_isareti || tekrar) && !n.kok_neden_ref) return y.code(409).send({ hata: 'Kök neden analizi bağlanmadan kapatılamaz.' });
+    if ((n.sinif === 'Kritik' || n.sinif === 'Majör' || n.yaygin_isareti || tekrar) && !n.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
     return islem(async (c) => {
       await c.query(`UPDATE uygunsuzluk SET yeniden_kontrol_sonucu = 'Uygun', kapanis_kaniti_ref = $2, kapanis_yetkilisi_ref = $3, statu = 'Kapalı', kapanis_zamani = now() WHERE kimlik = $1`, [n.kimlik, g.kanit, o.kullanici]);
       if (n.is_durduruldu && n.is_emri_ref) await c.query(`UPDATE is_emri SET statu = 'Aktif', durdurma_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1 AND statu = 'Durduruldu' AND durdurma_nedeni = $2`, [n.is_emri_ref, `Uygunsuzluk ${n.uygunsuzluk_no}`]);
@@ -290,9 +290,9 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!(await erisim(id, o.kullanici))) return yok(y);
     if (!['Gövde ve Yapısal', 'Makine ve Tahrik', 'Elektrik/Elektronik', 'Tesisat ve Yardımcı', 'Seyir ve Haberleşme', 'İç Mekân ve Donanım', 'Arayüz / Bütünleşik'].includes(g.grup ?? '')) return y.code(400).send({ hata: 'Test grubunu seçiniz.' });
     if (!g.amac?.trim() || !g.yontem?.trim() || !g.olcut?.trim() || !g.durdurma?.trim()) return y.code(400).send({ hata: 'Amaç, yöntem, kabul ölçütü ve durdurma koşulu zorunludur.' });
-    if (/^\s*(normal|iyi|uygun|çalışıyor)\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Öznel ifade kabul ölçütü olamaz.' });
+    if (/^\s*(normal|iyi|uygun|çalışıyor)\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Kabul ölçütünü ölçülebilir biçimde yazmanızı rica ederiz.' });
     const cihaz = g.cihazlar ?? [];
-    for (const c of (await b.db.query(`SELECT ad, kalibrasyon_tarihi, aralik_ay, kabul FROM olcum_cihazi WHERE kimlik = ANY($1::uuid[])`, [cihaz])).rows) if (!cihazGecerli(c)) return y.code(409).send({ hata: `${c.ad} kalibrasyonu geçersizdir; testte kullanılamaz.` });
+    for (const c of (await b.db.query(`SELECT ad, kalibrasyon_tarihi, aralik_ay, kabul FROM olcum_cihazi WHERE kimlik = ANY($1::uuid[])`, [cihaz])).rows) if (!cihazGecerli(c)) return y.code(409).send({ hata: `${c.ad} kalibrasyonu geçersizdir; testte geçerli bir cihaz seçmenizi rica ederiz.` });
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       const no = await altNumara(c, d.dosya_no, 'TS');
@@ -318,7 +318,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const t = (await b.db.query(`SELECT * FROM test_kaydi WHERE kimlik = $1`, [id])).rows[0];
     if (!t || !(await erisim(t.dosya_ref, o.kullanici))) return yok(y);
     if (t.durum !== 'Kontrolde') return y.code(409).send({ hata: 'Test kontrol aşamasında değildir.' });
-    if (o.kullanici === t.hazirlayan_ref) return y.code(403).send({ hata: 'Hazırlayan kontrol edemez.' });
+    if (o.kullanici === t.hazirlayan_ref) return y.code(403).send({ hata: 'Kontrolün hazırlayan dışında bir kişi tarafından yapılmasını rica ederiz.' });
     await b.db.query(`UPDATE test_kaydi SET kontrol_eden_ref = $2, durum = 'Kararda' WHERE kimlik = $1`, [id, o.kullanici]);
     return { durum: 'Kararda' };
   });
@@ -375,12 +375,12 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!(await erisim(id, o.kullanici))) return yok(y);
     if (!(await rolVar(o.kullanici, ['Teknik Yönetici', 'Teknik Müdür', KM]))) return y.code(403).send({ hata: 'Nihai kabulü Teknik Yönetici veya Kalite Müdürü kaydeder.' });
-    if ((await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE dosya_ref = $1 AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık uygunsuzluk varken nihai kabul verilemez.' });
+    if ((await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE dosya_ref = $1 AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Nihai kabul için açık uygunsuzluğun kapanması bekleniyor.' });
     const eng = await kabulEngeli(b.db, { kimlik: '00000000-0000-0000-0000-000000000000', dosya_ref: id }, 'Kabul');
     if (eng) return y.code(409).send({ hata: eng });
     if ((await b.db.query(`SELECT 1 FROM acik_is_kalemi p JOIN kabul_kaydi a ON a.kimlik = p.kabul_ref WHERE a.dosya_ref = $1 AND p.kapanis_zamani IS NULL LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık iş kalemi vardır.' });
     const gr = (await b.db.query(`SELECT test_grubu, bool_or(sonuc = 'Başarılı') basari FROM test_kaydi WHERE dosya_ref = $1 AND durum = 'Tamamlandı' GROUP BY test_grubu`, [id])).rows;
-    if (gr.length >= 2 && !gr.some((x) => x.test_grubu === 'Arayüz / Bütünleşik' && x.basari)) return y.code(409).send({ hata: 'Bütünleşik test yapılmadan nihai kabul verilemez.' });
+    if (gr.length >= 2 && !gr.some((x) => x.test_grubu === 'Arayüz / Bütünleşik' && x.basari)) return y.code(409).send({ hata: 'Nihai kabul için Bütünleşik test bekleniyor.' });
     const r = (await b.db.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, garanti_baslangic, kaydeden_ref) VALUES ($1,'Nihai Kabul',(now() AT TIME ZONE 'Europe/Istanbul')::date,$2) RETURNING garanti_baslangic::text`, [id, o.kullanici])).rows[0];
     return { garantiBaslangic: r.garanti_baslangic };
   });
@@ -410,7 +410,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!f || !UUID.test(id)) return yok(y);
     const z = (await b.db.query(`SELECT z.izin_turu FROM calisma_izni_belgesi z JOIN is_emri e ON e.kimlik = z.is_emri_ref WHERE z.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
     if (!z) return yok(y);
-    if (/sıcak/i.test(z.izin_turu) && !(Number(gozetimDk) >= 60)) return y.code(409).send({ hata: 'Sıcak işte en az 60 dakika yangın gözetimi kaydedilmeden izin kapatılamaz.' });
+    if (/sıcak/i.test(z.izin_turu) && !(Number(gozetimDk) >= 60)) return y.code(409).send({ hata: 'Güvenliğiniz için sıcak işte en az 60 dakika yangın gözetimi kaydını rica ederiz.' });
     await b.db.query(`UPDATE calisma_izni_belgesi SET yangin_gozetim_dk = $2, kapanis_zamani = now() WHERE kimlik = $1`, [id, gozetimDk ?? null]);
     return { tamam: true };
   });

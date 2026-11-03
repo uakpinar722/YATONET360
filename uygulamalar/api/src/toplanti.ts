@@ -108,7 +108,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!c) return y.code(403).send({ hata: 'Bu toplantıyı planlama yetkiniz bulunmamaktadır.' });
     if (!g.konu?.trim()) return y.code(400).send({ hata: 'Konu zorunludur.' });
     const bas = new Date(g.baslangic ?? '');
-    if (isNaN(bas.getTime()) || bas.getTime() < Date.now() - 60_000) return y.code(400).send({ hata: 'Toplantı zamanı geçmişte olamaz.' });
+    if (isNaN(bas.getTime()) || bas.getTime() < Date.now() - 60_000) return y.code(400).send({ hata: 'Toplantı için ileri bir zaman seçmenizi rica ederiz.' });
     const dk = g.sureDk ?? 60;
     if (!Number.isInteger(dk) || dk < 5 || dk > 600) return y.code(400).send({ hata: 'Süre 5 ile 600 dakika arasında olmalıdır.' });
     if (g.kritik && c.kod !== 'TPL-10') return y.code(400).send({ hata: 'Kritik işareti yalnız Olağanüstü Toplantıda kullanılır.' });
@@ -157,7 +157,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT konu, durum, baskan_ref, duzenleyen_ref, tpl_kod FROM toplanti WHERE kimlik = $1`, [id])).rows[0];
     if (!t || (t.baskan_ref !== o.kullanici && t.duzenleyen_ref !== o.kullanici)) return yok(y);
-    if (t.durum !== 'Planlandı') return y.code(409).send({ hata: 'Kapanan toplantıya karar eklenemez.' });
+    if (t.durum !== 'Planlandı') return y.code(409).send({ hata: 'Kararlar açık toplantılara eklenir.' });
     if (!metin?.trim() || !sorumlu || !hedef || !/^\d{4}-\d{2}-\d{2}$/.test(hedef)) return y.code(400).send({ hata: 'Karar, sorumlu ve hedef tarih zorunludur.' });
     const v = await b.db.query(`SELECT 1 FROM toplanti_katilimci WHERE toplanti_ref = $1 AND kullanici_ref = $2`, [id, sorumlu]);
     if (!v.rowCount) return y.code(400).send({ hata: 'Sorumlu toplantı katılımcısı olmalıdır.' });
@@ -177,7 +177,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   s.post('/toplanti/:id/tutanak', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { tutanak } = (i.body ?? {}) as { tutanak?: string };
     if (!UUID.test(id)) return yok(y);
-    if (!tutanak?.trim()) return y.code(400).send({ hata: 'Tutanak boş olamaz.' });
+    if (!tutanak?.trim()) return y.code(400).send({ hata: 'Tutanağı yazmanızı rica ederiz.' });
     const r = await b.db.query(`UPDATE toplanti SET tutanak = $3 WHERE kimlik = $1 AND durum = 'Planlandı' AND (duzenleyen_ref = $2 OR baskan_ref = $2)`, [id, o.kullanici, tutanak.trim()]);
     return r.rowCount ? { tamam: true } : yok(y);
   });
@@ -188,7 +188,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!t || t.baskan_ref !== o.kullanici) return y.code(403).send({ hata: 'Tutanağı toplantının başkanı onaylar.' });
     if (t.durum !== 'Planlandı') return y.code(409).send({ hata: 'Toplantı zaten kapalıdır.' });
     if (!t.tutanak) return y.code(400).send({ hata: 'Önce tutanak yazılmalıdır.' });
-    if (new Date(t.baslangic).getTime() > Date.now()) return y.code(400).send({ hata: 'Toplantı başlamadan kapatılamaz.' });
+    if (new Date(t.baslangic).getTime() > Date.now()) return y.code(400).send({ hata: 'Kapanış toplantı başladıktan sonra yapılır.' });
     await b.db.query(`UPDATE toplanti SET durum = 'Tamamlandı', kapanis_zamani = now() WHERE kimlik = $1`, [id]);
     await b.db.query(`UPDATE toplanti_katilimci SET vekil_durumu = 'Mazeretli' WHERE toplanti_ref = $1 AND vekil_durumu = 'Onay Bekliyor'`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Toplantı Kapandı', nesneTuru: 'toplanti', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
@@ -211,7 +211,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const p = (await b.db.query(`SELECT p.kimlik, p.vekil_durumu, t.konu, t.baslangic, t.durum, t.baskan_ref FROM toplanti_katilimci p JOIN toplanti t ON t.kimlik = p.toplanti_ref WHERE p.toplanti_ref = $1 AND p.kullanici_ref = $2`, [id, o.kullanici])).rows[0];
     if (!p) return yok(y);
-    if (p.durum !== 'Planlandı' || p.baskan_ref === o.kullanici) return y.code(409).send({ hata: 'Bu toplantı için vekil atanamaz.' });
+    if (p.durum !== 'Planlandı' || p.baskan_ref === o.kullanici) return y.code(409).send({ hata: 'Bu toplantıda vekil ataması kullanılmıyor.' });
     if (new Date(p.baslangic).getTime() - Date.now() < VEKIL_SON_DK * 60_000) return y.code(400).send({ hata: 'Vekil onayı en geç toplantıdan 1 saat önce alınmalıdır.' });
     if (p.vekil_durumu) return y.code(409).send({ hata: 'Vekil talebi zaten açılmıştır.' });
     const v = await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1 AND kimlik <> $2 AND kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif'`, [vekil, o.kullanici]);

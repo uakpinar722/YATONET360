@@ -472,14 +472,14 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; sorumlu?: string; hedefTarih?: string; kanitBelge?: string; mesaj?: string; tedarikciKaynakli?: boolean };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
-    if (['Kapalı'].includes(d.statu)) return y.code(409).send({ hata: 'Kapalı dosyada Beklemede konamaz.' });
+    if (['Kapalı'].includes(d.statu)) return y.code(409).send({ hata: 'Beklemede işareti açık dosyalarda kullanılır.' });
     const n = (await b.db.query(`SELECT aciklama FROM deger_listesi WHERE liste_kodu = 'LST_BEKLEME_NEDENI' AND deger = $1`, [g.neden ?? ''])).rows[0];
     if (!n) return y.code(400).send({ hata: 'Bekleme nedenini listeden seçiniz.' });
     if (!g.sorumlu || !(await dosyaErisimi(b.db, g.sorumlu, id))) return y.code(400).send({ hata: 'Sorumluyu dosya ekibinden seçiniz.' });
     const bugun = new Date().toISOString().slice(0, 10);
     if (!g.hedefTarih || g.hedefTarih <= bugun) return y.code(400).send({ hata: 'Hedef tarih bugünden sonra olmalıdır.' });
-    if (!g.kanitBelge || !UUID.test(g.kanitBelge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.kanitBelge, id])).rowCount) return y.code(400).send({ hata: 'Kanıt belgesi dosyaya yüklenmeden işaret açılmaz.' });
-    if (g.mesaj && /firma|çözüm ortağı/i.test(g.mesaj)) return y.code(400).send({ hata: 'Durum mesajı firma bilgisi içeremez.' });
+    if (!g.kanitBelge || !UUID.test(g.kanitBelge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.kanitBelge, id])).rowCount) return y.code(400).send({ hata: 'İşaret için önce kanıt belgesini dosyaya yüklemenizi rica ederiz.' });
+    if (g.mesaj && /firma|çözüm ortağı/i.test(g.mesaj)) return y.code(400).send({ hata: 'Durum mesajında firma bilgisine yer vermemenizi rica ederiz.' });
     const durur = n.aciklama.includes('sayaç işler') ? false : g.neden === 'Parça' ? Boolean(g.tedarikciKaynakli) : true;
     if ((await b.db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND neden = $2 AND kaldirilma_zamani IS NULL`, [id, g.neden])).rowCount) return y.code(409).send({ hata: 'Bu nedenle açık işaret vardır.' });
     const r = (await b.db.query(`INSERT INTO beklemede_isareti (dosya_ref, neden, sorumlu_ref, hedef_tarih, durum_mesaji, kanit_belge_ref, sayac_durur, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [id, g.neden, g.sorumlu, g.hedefTarih, g.mesaj?.trim() || null, g.kanitBelge, durur, o.kullanici])).rows[0];
@@ -542,7 +542,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
     if (!g.baslik?.trim()) return y.code(400).send({ hata: 'Konu başlığı zorunludur.' });
-    if (!g.sahip || !(await dosyaErisimi(b.db, g.sahip, id))) return y.code(400).send({ hata: 'Açık konu sahipsiz açılamaz; sahibi dosya ekibinden seçiniz.' });
+    if (!g.sahip || !(await dosyaErisimi(b.db, g.sahip, id))) return y.code(400).send({ hata: 'Açık konu için sahibi dosya ekibinden seçmenizi rica ederiz.' });
     if (!g.hedefTarih) return y.code(400).send({ hata: 'Hedef tarih zorunludur.' });
     const c = await b.db.connect();
     try {
@@ -561,9 +561,9 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const k = (await b.db.query(`SELECT * FROM acik_konu WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
     const gecer: Record<string, string[]> = { 'Açık': ['İşlemde', 'Geçersiz'], 'İşlemde': ['Doğrulamada', 'Geçersiz'], 'Doğrulamada': ['Kapalı', 'İşlemde'] };
-    if (!gecer[k.statu]?.includes(g.statu ?? '')) return y.code(409).send({ hata: 'Bu geçiş yapılamaz.' });
+    if (!gecer[k.statu]?.includes(g.statu ?? '')) return y.code(409).send({ hata: 'Bu geçiş mevcut durumda uygun değildir.' });
     if (g.statu === 'Doğrulamada' && !g.kanit?.trim()) return y.code(400).send({ hata: 'Kapanış kanıtı zorunludur.' });
-    if (g.statu === 'Kapalı' && k.sahip_ref === o.kullanici) return y.code(403).send({ hata: 'Kapanış bağımsız yeniden kontrolle yapılır; sahibi kendi konusunu kapatamaz.' });
+    if (g.statu === 'Kapalı' && k.sahip_ref === o.kullanici) return y.code(403).send({ hata: 'Kapanış bağımsız yeniden kontrolle yapılır; konunun başka bir kişi tarafından kapatılmasını rica ederiz.' });
     await b.db.query(`UPDATE acik_konu SET statu = $2, kapanis_kaniti = coalesce($3, kapanis_kaniti), dogrulayan_ref = CASE WHEN $2 = 'Kapalı' THEN $4 ELSE dogrulayan_ref END, kapanis_zamani = CASE WHEN $2 = 'Kapalı' THEN now() END, guncelleme_zamani = now() WHERE kimlik = $1`, [id, g.statu, g.kanit?.trim() || null, o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Açık Konu Durumu', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, eski: { statu: k.statu }, yeni: { statu: g.statu }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

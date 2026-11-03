@@ -91,8 +91,8 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ic(i, y))) return;
     const o = i.oturum!; const { alici, metin } = (i.body ?? {}) as { alici?: string; metin?: string };
     if (!alici || !metin?.trim()) return y.code(400).send({ hata: 'Alıcı ve mesaj zorunludur.' });
-    if (metin.length > 4000) return y.code(400).send({ hata: 'Mesaj 4.000 karakteri aşamaz.' });
-    if (alici === o.kullanici) return y.code(400).send({ hata: 'Kendinize mesaj gönderemezsiniz.' });
+    if (metin.length > 4000) return y.code(400).send({ hata: 'Mesajın 4.000 karakter içinde kalmasını rica ederiz.' });
+    if (alici === o.kullanici) return y.code(400).send({ hata: 'Mesaj için başka bir alıcı seçmenizi rica ederiz.' });
     const v = await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif'`, [alici]);
     if (!v.rowCount) return y.code(400).send({ hata: 'Alıcı geçersizdir.' });
     const { rows } = await b.db.query(`INSERT INTO ic_mesaj (gonderen_ref, alici_ref, metin) VALUES ($1,$2,$3) RETURNING kimlik`, [o.kullanici, alici, metin.trim()]);

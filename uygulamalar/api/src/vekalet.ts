@@ -68,7 +68,7 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     if (!a) return y.code(403).send({ hata: 'Bu görevli için vekil atama yetkiniz bulunmamaktadır.' });
     const adaylar = kadro.filter((k) => k.kullanici === vekil);
     let uygun = false; for (const k of adaylar) if (await uygunMu(a, k)) uygun = true;
-    if (!uygun) return y.code(400).send({ hata: 'Seçilen kişi bu role vekâlet edemez.' });
+    if (!uygun) return y.code(400).send({ hata: 'Bu role vekâlet için başka bir kişi seçmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

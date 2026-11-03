@@ -172,7 +172,7 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/kimlik/sms', async (i, y) => {
     const a = await kodAsamasi(i, y); if (!a) return;
-    if (!smsAcikMi(a.h) || !a.h.cep_telefonu) return y.code(403).send({ hata: 'Bu hesap için SMS kodu kullanılamaz; doğrulama uygulamanızdaki kodu giriniz.' });
+    if (!smsAcikMi(a.h) || !a.h.cep_telefonu) return y.code(403).send({ hata: 'Bu hesapta doğrulama uygulamanızdaki kodu girmenizi rica ederiz.' });
     const son = await b.db.query(`SELECT 1 FROM sms_kodu WHERE oturum_ref = $1 AND gonderim_zamani > now() - make_interval(secs => $2)`, [a.o.oturum, KURAL.smsYenidenGonderimSn]);
     if (son.rowCount) return y.code(429).send({ hata: 'Yeni kod için bir dakika bekleyiniz.' });
     const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');

@@ -196,7 +196,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
       await c.query('BEGIN');
       const r = (await c.query(`SELECT s.kimlik, s.durum, s.yukleyen_ref, e.ad FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE s.belge_ref = $1 AND s.surum_no = $2 FOR UPDATE OF s`, [id, Number(no) || 0])).rows[0];
       if (!r || r.yukleyen_ref !== o.kullanici) { await c.query('ROLLBACK'); return yok(y); }
-      if (r.durum !== 'Taslak') { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Bu sürüm onaya gönderilemez.' }); }
+      if (r.durum !== 'Taslak') { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Bu sürüm onaya uygun durumda değildir.' }); }
       const rol = (await kullaniciRolleri(b.db, o.kullanici))[0];
       if (!rol) { await c.query('ROLLBACK'); return y.code(403).send({ hata: 'Aktif rolünüz bulunmamaktadır.' }); }
       const kart = await kartAc(c, { tur: 'Belge Onayı', baslik: `Belge Onayı · ${r.ad}`, ozet: `${no}. sürüm${yururluk ? ` · Yürürlük: ${yururluk.split('-').reverse().join('.')}` : ''}`, hazirlayan: o.kullanici, zincir: [await onayMakami(c, rol.kimlik)], nesneTuru: 'belge_surum', nesneKimligi: r.kimlik });
@@ -216,13 +216,13 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     return { ad: r.ad, surum: r.surum_no, durum: r.durum, onayZamani: r.onay_zamani, ozet: r.ozet_sha256 };
   });
 
-  // YG-611: alıcısı, süresi (varsayılan 7, en çok 30 gün) ve izni belli bağlantı. Kritik belge bağlantıyla paylaşılamaz.
+  // YG-611: alıcısı, süresi (varsayılan 7, en çok 30 gün) ve izni belli bağlantı. Güvenliğiniz için Kritik belgeler bağlantıyla paylaşılmıyor.
   s.post('/belge/:id/surum/:no/paylas', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id, no } = i.params as { id: string; no: string };
     if (o.grup !== 'LGM İç Rolü') return yok(y);
     const a = await erisim(o.kullanici, o.grup, id);
     if (!a) return yok(y);
-    if (a.e.bilgi_sinifi === 'Kritik') return y.code(403).send({ hata: 'Kritik belge bağlantıyla paylaşılamaz.' });
+    if (a.e.bilgi_sinifi === 'Kritik') return y.code(403).send({ hata: 'Güvenliğiniz için Kritik belgeler bağlantıyla paylaşılmıyor.' });
     const { alici, gun = 7, izin = 'Görüntüle' } = (i.body ?? {}) as { alici?: string; gun?: number; izin?: string };
     if (!alici || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(alici)) return y.code(400).send({ hata: 'Alıcı e-posta adresi zorunludur.' });
     if (!Number.isInteger(gun) || gun < 1 || gun > 30) return y.code(400).send({ hata: 'Bağlantı süresi 1 ile 30 gün arasında olmalıdır.' });

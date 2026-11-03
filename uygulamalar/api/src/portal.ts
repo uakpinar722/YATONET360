@@ -51,7 +51,7 @@ export async function muvafakatKilidi(db: Db, dosya: string): Promise<boolean> {
 }
 
 /** YG-1468 sonrası kapı: mülkiyet beyanı olmadan da teklif hazırlanır, onay aşamasında kilit devreye girer. */
-kapiKaydet('Onay', async (db, d) => (await muvafakatKilidi(db, d.kimlik) ? 'Lehtar muvafakati girilmeden teklif onayına geçilemez.' : null));
+kapiKaydet('Onay', async (db, d) => (await muvafakatKilidi(db, d.kimlik) ? 'Teklif onayı için Lehtar muvafakati bekleniyor.' : null));
 
 // YG-476, ONY-11: Mülkiyet ve Takyidat Beyanı; ıslak imzasız YATONET 360 beyanı.
 const MULKIYET = ['Malik', 'Finansal kiralama (leasing)', 'Kredi / ipotekli', 'Miras (elbirliği)', 'Paylı'];
@@ -59,7 +59,7 @@ const TAKYIDAT = ['Yok', 'Rehin / ipotek', 'Haciz', 'İhtiyati tedbir / ihtiyati
 onayFormKaydet('Mülkiyet Beyanı', async (_db, _t, f) => {
   if (!MULKIYET.includes(f?.mulkiyet)) return 'Mülkiyet türünü seçiniz.';
   if (!Array.isArray(f?.takyidat) || !f.takyidat.length || f.takyidat.some((x: string) => !TAKYIDAT.includes(x))) return 'Takyidat bilgisini seçiniz.';
-  if (f.takyidat.includes('Yok') && f.takyidat.length > 1) return '"Yok" başka takyidatla birlikte seçilemez.';
+  if (f.takyidat.includes('Yok') && f.takyidat.length > 1) return '"Yok" seçeneğini tek başına işaretlemenizi rica ederiz.';
   if ((f.mulkiyet !== 'Malik' || f.takyidat.includes('Rehin / ipotek')) && f.mulkiyet !== 'Miras (elbirliği)' && f.mulkiyet !== 'Paylı' && !f.lehtar?.trim()) return 'Lehtar adını yazınız.';
   return null;
 });

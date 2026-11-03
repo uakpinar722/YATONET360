@@ -35,8 +35,8 @@ export async function yatDegeriEngeli(db: Db, dosya: string, isEmriTuru?: string
   if (isEmriTuru === 'AC') return null;
   const d = (await db.query(`SELECT d.hizmet_turu, v.durum, v.ek_police_durumu FROM dosya d LEFT JOIN dosya_yat_degeri v ON v.dosya_ref = d.kimlik WHERE d.kimlik = $1`, [dosya])).rows[0];
   if (d.hizmet_turu !== 'Hasar onarımı') return null;
-  if (d.durum !== 'Kesin') return 'Yat değeri Operasyon Yöneticisi ve Teknik Yöneticinin ortak kararıyla belirlenmeden işlem yapılamaz.';
-  if (isEmriTuru && d.ek_police_durumu === 'Gerekli – bekleniyor') return 'Dosyaya özel ek poliçe sağlanmadan iş emri verilemez.';
+  if (d.durum !== 'Kesin') return 'Bu işlem için yat değerinin Operasyon Yöneticisi ve Teknik Yöneticinin ortak kararıyla belirlenmesi bekleniyor.';
+  if (isEmriTuru && d.ek_police_durumu === 'Gerekli – bekleniyor') return 'İş emri için dosyaya özel ek poliçe bekleniyor.';
   return null;
 }
 
@@ -79,7 +79,7 @@ export function yatDegeriYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const roller = await atanmisRol(id, o.kullanici);
     if (!roller.length) return y.code(403).send({ hata: 'Yat değerine dosyaya atanmış Operasyon Yöneticisi ve Teknik Yönetici ortak karar verir.' });
-    if (roller.length > 1) return y.code(409).send({ hata: 'İki rol aynı kişide olduğundan ortak karar verilemez; rollerden birini başka kişiye atayınız.' });
+    if (roller.length > 1) return y.code(409).send({ hata: 'Ortak karar için rollerden birini başka kişiye atamanızı rica ederiz.' });
     if (!(Number(g.deger) > 0) || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Değer ve dayanak zorunludur.' });
     const c = await b.db.connect();
     try {

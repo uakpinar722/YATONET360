@@ -49,7 +49,7 @@ export function basiniOku(yol: string, n = 16): Buffer {
 /** YG-1269: çalıştırılabilir dosya uzantısı değiştirilse de yüklenemez; içerik uzantıyla uyuşmalıdır. */
 export function icerikHatasi(uzanti: string, b: Buffer): string | null {
   const bas = (...x: number[]) => x.every((v, i) => b[i] === v);
-  if (bas(0x4d, 0x5a) || bas(0x7f, 0x45, 0x4c, 0x46) || bas(0x23, 0x21)) return 'Çalıştırılabilir dosya yüklenemez.';
+  if (bas(0x4d, 0x5a) || bas(0x7f, 0x45, 0x4c, 0x46) || bas(0x23, 0x21)) return 'Güvenliğiniz için çalıştırılabilir dosyalar alınmıyor; lütfen başka bir biçim seçiniz.';
   const ftyp = b.subarray(4, 8).toString('latin1') === 'ftyp';
   const zip = bas(0x50, 0x4b, 0x03, 0x04) || bas(0x50, 0x4b, 0x05, 0x06);
   const uygun: Record<string, boolean> = {

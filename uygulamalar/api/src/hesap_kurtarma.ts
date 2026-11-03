@@ -55,7 +55,7 @@ export function hesapKurtarmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!;
     const { kullanici, kimlikTeyidi, neden } = (i.body ?? {}) as Record<string, string | undefined>;
     if (!kullanici || !kimlikTeyidi?.trim() || !neden?.trim()) return y.code(400).send({ hata: 'Kullanıcı, kimlik teyidi ve neden zorunludur.' });
-    if (kullanici === o.kullanici) return y.code(403).send({ hata: 'Kendi hesabınız için kurtarma açamazsınız.' });
+    if (kullanici === o.kullanici) return y.code(403).send({ hata: 'Kendi hesabınızın kurtarma işlemini başka bir yetkilinin açmasını rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

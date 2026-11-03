@@ -74,7 +74,7 @@ export async function teslimEngeli(db: Db, dosya: string): Promise<string | null
   const d = (await db.query(`SELECT d.musteri_turu, d.teslim_istisnasi, d.calisma_durduruldu, y.takyidat FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
   if (d.calisma_durduruldu) return 'Çalışmalar durdurulmuştur.';
   const em = await emniyetEngeli(db, dosya); if (em) return em;
-  if ((d.takyidat as string[]).some((x) => x === 'Haciz' || x.startsWith('İhtiyati')) && !(await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Takyidat Değerlendirmesi' AND nesne_kimligi = $1 AND durum = 'Tamamlandı'`, [dosya])).rowCount) return 'Takyidatlı yat Hukuk ve Uyum değerlendirmesi olmadan teslim edilemez.';
+  if ((d.takyidat as string[]).some((x) => x === 'Haciz' || x.startsWith('İhtiyati')) && !(await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Takyidat Değerlendirmesi' AND nesne_kimligi = $1 AND durum = 'Tamamlandı'`, [dosya])).rowCount) return 'Takyidatlı yatın teslimi için Hukuk ve Uyum değerlendirmesi bekleniyor.';
   if (d.teslim_istisnasi) return null;
   if (d.musteri_turu === 'Sigorta Şirketi') return null;
   const borc = Number((await db.query(`SELECT coalesce(sum(toplam_eur - tahsil_edilen_eur), 0) b FROM musteri_faturasi WHERE dosya_ref = $1 AND durum IN ('Faturalandı', 'Kısmi Tahsil')`, [dosya])).rows[0].b);
@@ -183,7 +183,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const c = (await b.db.query(`SELECT erken_ifa_onayi, cayma_bitis FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [t.kimlik])).rows[0];
       if (c && !c.erken_ifa_onayi && new Date(c.cayma_bitis) > new Date()) return y.code(409).send({ hata: 'Erken başlama onayı yokken cayma süresinde avans istenmez.' });
       tut = avansHesapla(t.musteri_turu, Number(t.genel_toplam_eur), t.oncelik === 'Kritik', await parametre(b.db, 'avans_orani'), await parametre(b.db, 'sigorta_avans_esik_eur'));
-      if (tut === 0) return y.code(409).send({ hata: 'Bu dosyada avans alınmaz.' });
+      if (tut === 0) return y.code(409).send({ hata: 'Bu dosyada avans alınmaz; ayrıca talep gerekmez.' });
     } else if (!(tut > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO odeme_talebi (dosya_ref, teklif_ref, tur, tutar_eur, muhatap, son_tarih, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [t.dosya_ref, t.kimlik, g.tur, tut, t.teklif_muhatabi, g.sonTarih, o.kullanici])).rows[0];
@@ -198,8 +198,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return yok(y);
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Proformayı Ticari Sorumlu hazırlar.' });
     if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay'].includes(t.karar)) return y.code(409).send({ hata: 'Proforma onaylı teklife dayanır.' });
-    if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE teklif_ref = $1 AND durum <> 'Reddedildi'`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklifin proforması vardır; aynı kalem mükerrer faturalanamaz.' }); // YG-886
-    if (t.teklif_muhatabi === 'Sigorta Şirketi' && !(await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Hasar dosya numarası girilmeden sigortaya fatura kesilemez.' }); // YG-451
+    if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE teklif_ref = $1 AND durum <> 'Reddedildi'`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklifin proforması vardır; mevcut proformayı kullanmanızı rica ederiz.' }); // YG-886
+    if (t.teklif_muhatabi === 'Sigorta Şirketi' && !(await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigortaya fatura için Hasar dosya numarası bekleniyor.' }); // YG-451
     const hk = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı'`, [t.kimlik])).rows[0].t);
     const indirim = Number(t.ara_toplam_eur) > 0 ? R2((hk * Number(t.indirim_tutari_eur)) / Number(t.ara_toplam_eur)) : 0;
     const matrah = R2(hk - indirim - Number(t.kesif_mahsubu_eur)); const kdv = R2((matrah * Number(t.kdv_orani)) / 100);
@@ -245,15 +245,15 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   s.post('/tahsilat', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { fatura?: string; odemeTalebi?: string; tutar?: number; tarih?: string; kanal?: string; referans?: string };
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Tahsilatı Ticari Sorumlu kaydeder.' });
-    if (!['Havale', 'POS', 'Ödeme Bağlantısı'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Çek ve senet kabul edilmez; kanalı seçiniz.' });
+    if (!['Havale', 'POS', 'Ödeme Bağlantısı'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Ödeme kanalını havale, POS veya ödeme bağlantısı olarak seçmenizi rica ederiz.' });
     if (!(Number(g.tutar) > 0) || !g.tarih) return y.code(400).send({ hata: 'Tutar ve tarih zorunludur.' });
-    if (g.kanal !== 'Havale' && Number(g.tutar) > 20000) return y.code(400).send({ hata: 'Kartla tahsilat 20.000,00 EUR karşılığını aşamaz; havale kullanınız.' });
+    if (g.kanal !== 'Havale' && Number(g.tutar) > 20000) return y.code(400).send({ hata: '20.000,00 EUR karşılığı üzerindeki tahsilatta havale kullanmanızı rica ederiz.' });
     return islem(async (c) => {
       if (g.fatura) {
         const f = (await c.query(`SELECT * FROM musteri_faturasi WHERE kimlik = $1 FOR UPDATE`, [g.fatura])).rows[0];
         if (!f || !['Faturalandı', 'Kısmi Tahsil'].includes(f.durum)) throw Object.assign(new Error('Tahsilat faturalanmış kayda girilir.'), { statusCode: 409 });
         const yeni = R2(Number(f.tahsil_edilen_eur) + Number(g.tutar));
-        if (yeni > Number(f.toplam_eur)) throw Object.assign(new Error('Tahsilat fatura tutarını aşamaz; fazla ödeme iade akışındadır.'), { statusCode: 409 });
+        if (yeni > Number(f.toplam_eur)) throw Object.assign(new Error('Tahsilat fatura tutarının üzerindedir; fazla ödeme iade akışından yürütülür.'), { statusCode: 409 });
         await c.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, referans, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [f.kimlik, f.dosya_ref, g.tutar, g.tarih, g.kanal, g.referans ?? null, o.kullanici]);
         const durum = yeni === Number(f.toplam_eur) ? 'Tahsil Edildi' : 'Kısmi Tahsil';
         await c.query(`UPDATE musteri_faturasi SET tahsil_edilen_eur = $2, durum = $3 WHERE kimlik = $1`, [f.kimlik, yeni, durum]);
@@ -313,8 +313,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const e = (await b.db.query(`SELECT e.*, d.dosya_no FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
     if (!e) return yok(y);
     if (!(Number(g.brut) > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
-    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Gerçekleşme kanıtı olmadan hakediş girilmez.' });
-    if ((await b.db.query(`SELECT 1 FROM hakedis WHERE kanit_belge_ref = $1`, [g.belge])).rowCount) return y.code(409).send({ hata: 'Aynı kanıt farklı dönemde kullanılamaz.' });
+    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Hakediş için Gerçekleşme kanıtını eklemenizi rica ederiz.' });
+    if ((await b.db.query(`SELECT 1 FROM hakedis WHERE kanit_belge_ref = $1`, [g.belge])).rowCount) return y.code(409).send({ hata: 'Aynı kanıt daha önce kullanılmıştır; bu dönemin kanıtını eklemenizi rica ederiz.' });
     return islem(async (c) => {
       const kum = Number((await c.query(`SELECT coalesce(sum(bu_donem_brut), 0) t FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].t);
       const bedel = Number(e.firma_bedeli_eur ?? 0);
@@ -348,8 +348,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const h = (await b.db.query(`SELECT h.*, e.kurulus_ref, e.teknik_kabul_sonucu, e.is_emri_no FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE h.kimlik = $1`, [id])).rows[0];
     if (!h) return yok(y);
     if (h.statu !== 'Doğrulandı') return y.code(409).send({ hata: 'Hakediş doğrulanmamıştır.' });
-    if (!h.teknik_kabul_sonucu || h.teknik_kabul_sonucu === 'Ret') return y.code(409).send({ hata: 'Teknik kabul olmadan ödeme planlanamaz.' });
-    if (!h.firma_fatura_no) return y.code(409).send({ hata: 'Firma faturası alınmadan ödeme planlanamaz.' });
+    if (!h.teknik_kabul_sonucu || h.teknik_kabul_sonucu === 'Ret') return y.code(409).send({ hata: 'Ödeme planı için Teknik kabul bekleniyor.' });
+    if (!h.firma_fatura_no) return y.code(409).send({ hata: 'Ödeme planı için Firma faturası bekleniyor.' });
     if ((await b.db.query(`SELECT 1 FROM hakedis WHERE firma_fatura_no = $1 AND kimlik <> $2 AND statu <> 'Reddedildi'`, [h.firma_fatura_no, id])).rowCount) return y.code(409).send({ hata: 'Bu fatura numarasıyla kayıt vardır; mükerrer ödeme engellendi.' });
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [h.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli IBAN kaydı yoktur.' });
     const dolu = (await b.db.query(`SELECT tur FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%SGK%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [h.kurulus_ref])).rows[0];
@@ -382,7 +382,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!kanal?.trim() || /e-?posta/i.test(kanal)) return y.code(400).send({ hata: 'Sicildeki kayıtlı numaradan geri arama gibi bağımsız kanal yazınız; e-posta teyit sayılmaz.' });
     const h = (await b.db.query(`SELECT giren_ref FROM banka_hesabi WHERE kimlik = $1`, [id])).rows[0];
     if (!h) return yok(y);
-    if (h.giren_ref === o.kullanici) return y.code(403).send({ hata: 'Giren kişi teyit edemez.' });
+    if (h.giren_ref === o.kullanici) return y.code(403).send({ hata: 'Teyidin giren kişi dışında bir yetkili tarafından yapılmasını rica ederiz.' });
     await b.db.query(`UPDATE banka_hesabi SET durum = 'Geçerli', teyit_eden_ref = $2, teyit_kanali = $3 WHERE kimlik = $1`, [id, o.kullanici, kanal.trim()]);
     return { durum: 'Geçerli' };
   });
@@ -418,7 +418,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     if (!g.tur?.trim() || !g.tarih || !(Number(g.tutarTl) > 0) || !(Number(g.kur) > 0)) return y.code(400).send({ hata: 'Tür, tarih, tutar ve kur zorunludur.' });
-    if (!g.belgeOzeti?.trim()) return y.code(400).send({ hata: 'Belgesiz masraf kabul edilmez.' });
+    if (!g.belgeOzeti?.trim()) return y.code(400).send({ hata: 'Masraf için belge numarasını yazmanızı rica ederiz.' });
     if ((Date.now() - new Date(g.tarih).getTime()) / 86_400_000 > 30) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
     const eur = R2(Number(g.tutarTl) / Number(g.kur));
     const lim = { km: await parametre(b.db, 'masraf_km_eur'), yemek: await parametre(b.db, 'masraf_yemek_eur'), konaklama: await parametre(b.db, 'masraf_konaklama_eur') };
