@@ -265,7 +265,10 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
   const gonder = async () => {
     const d = await hazir({ sigortaci: 'SG', hasarNo: 'H1', yetkiDurumu: 'Doğrulandı' }, { musteriTuru: 'Sigorta Şirketi' }, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'B', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
     const t = await teklifAc(d, 100); await onayla(t.kimlik);
-    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).statusCode).toBe(200);
+    const gn = await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts')); expect(gn.json().durum, gn.body).toBe('Teyit Bekliyor');
+    expect((await o.sup.query(`SELECT statu FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].statu).toBe('Onaylı');
+    await o.ist('POST', `/api/sigorta-gonderim/${gn.json().gonderim}/teyit`, await o.gir('ts'), { adim: 1 });
+    expect((await o.ist('POST', `/api/sigorta-gonderim/${gn.json().gonderim}/teyit`, await o.gir('ts'), { adim: 2 })).json().durum).toBe('Gönderildi');
     return { d, t };
   };
   it('yat sahibinden onay istenmez, BLD-37 eş zamanlı gider; telefon kanalı geçersiz', async () => {
@@ -300,7 +303,8 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
 describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', () => {
   const onarim = async (bedel = 510) => {
     const d = await hazir({ sigortaci: 'SG', hasarNo: 'H1' }, { musteriTuru: 'Sigorta Şirketi' }); const t = await teklifAc(d); await onayla(t.kimlik);
-    await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'));
+    const gn = (await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).json().gonderim;
+    await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 1 }); await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 2 });
     await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'YATONET 360', yetkili: 'Y' });
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'Marmaris', kapsam: 'Onarım', teklif: t.kimlik, bedel, tehlikeliAtik: true });
     expect(r.statusCode, r.body).toBe(200);

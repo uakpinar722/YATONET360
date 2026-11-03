@@ -66,7 +66,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <span>{t.teklif_no} Rev.{t.surum_no} · {t.teklif_muhatabi} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {eur(t.genel_toplam_eur)}{t.gecerlilik_bitis_tarihi ? ` · Geçerlilik: ${t.gecerlilik_bitis_tarihi.split('-').reverse().join('.')}` : ''}</span>
             <div className="dugmeler">
               {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
-              {t.statu === 'Onaylı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/gonder`, {}), 'Gönderildi.')}>Gönder</button>}
+              {t.statu === 'Onaylı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek<{ durum: string }>(`/teklif/${t.kimlik}/gonder`, {}).then((r) => { window.dispatchEvent(new Event('sigorta-gonderim')); return { uyari: r.durum === 'Teyit Bekliyor' ? 'Sigortaya gönderim için iki teyit gereklidir; aşağıdaki bölümden teyit ediniz.' : 'Gönderildi.' }; }))}>Gönder</button>}
               {t.statu === 'Karar' && ticari && <>
                 <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/proforma`, {}), 'Proforma onaya gönderildi.')}>Proforma Hazırla</button>
                 <button className="btn2 kucuk" disabled={!sonTarih} onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/odeme-talebi`, { tur: 'Avans', sonTarih }), 'Ödeme talebi onaya gönderildi.')}>Avans Talebi</button>

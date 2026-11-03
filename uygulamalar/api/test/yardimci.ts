@@ -41,6 +41,7 @@ export async function ortamKur(vt: string, kadro: Record<string, string>): Promi
   await sup.query(`UPDATE kullanici_hesabi SET parola_ozeti = $1, izin_adimi_zamani = now()`, [oz]);
   await sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) SELECT kimlik, 'Çalışan', CASE WHEN kullanici_grubu = 'LGM İç Rolü' THEN 'KVKK-05' WHEN kullanici_grubu = 'İş Birliği Firması' THEN 'KVKK-03' ELSE 'KVKK-01' END, 'R00', 'Türkçe', 'Web' FROM kullanici_hesabi`);
   await sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) SELECT kimlik, 'R00', 'Türkçe' FROM kullanici_hesabi`);
+  await sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sigorta_teyit_bekleme_sn'`); // Bekleme sigorta_gonderim.test.ts içinde sınanır
   const db = new pg.Pool({ host: 'localhost', user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: vt });
   const sms = new DenemeKutusu(null), posta = new DenemeKutusu(null);
   const s = await sunucuKur({ db, sms, eposta: posta, anahtar: 'ab'.repeat(32), guvenliCerez: false, webAdresi: 'http://x' });

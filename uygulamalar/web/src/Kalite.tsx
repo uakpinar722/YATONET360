@@ -171,3 +171,35 @@ export function YatDegeriBolumu({ id }: { id: string }) {
     </Blok>
   );
 }
+
+interface Gonderim { kimlik: string; tur: string; alici: string; konu: string; metin: string | null; durum: string; benimBirinci: boolean }
+
+/** K-241: sigortaya giden her ileti ve belge, son gönderenin iki ayrı teyidiyle çıkar. İkinci düğme metin görüldükten sonra açılır. */
+export function SigortaGonderimBolumu({ id }: { id: string }) {
+  const [l, setL] = useState<Gonderim[]>([]); const [hata, setHata] = useState(''); const [hazir, setHazir] = useState<Record<string, boolean>>({}); const [baglanti, setBaglanti] = useState(''); const [iptal, setIptal] = useState<Record<string, string>>({});
+  const yukle = () => istek<Gonderim[]>(`/sigorta-gonderim?dosya=${id}`).then(setL).catch((x) => setHata((x as Error).message));
+  useEffect(() => { void yukle(); const f = () => void yukle(); window.addEventListener('sigorta-gonderim', f); return () => window.removeEventListener('sigorta-gonderim', f); }, [id]);
+  const ac = (k: string) => setTimeout(() => setHazir((h) => ({ ...h, [k]: true })), 2100);
+  useEffect(() => { for (const g of l) if (g.durum === 'Birinci Teyit' && !hazir[g.kimlik]) ac(g.kimlik); }, [l]);
+  const teyit = (g: Gonderim, adim: number) => { setHata(''); void istek<{ baglanti?: string }>(`/sigorta-gonderim/${g.kimlik}/teyit`, { adim }).then((r) => { if (r.baglanti) setBaglanti(r.baglanti); return yukle(); }).catch((x) => setHata((x as Error).message)); };
+  if (!l.length && !baglanti && !hata) return null;
+  return (
+    <Blok baslik="Sigortaya Gönderim Teyidi">
+      {hata && <div className="hata" role="alert">{hata}</div>}
+      {baglanti && <div className="not" role="status">Paylaşım Bağlantısı: {baglanti}</div>}
+      {l.map((g) => (
+        <div className="soru" key={g.kimlik}>
+          <span><b className="koyu">{g.tur}</b> · {g.konu}</span>
+          <div>Alıcı: {g.alici}</div>
+          {g.durum === 'Teyit Bekliyor' && <button className="btn2 kucuk" onClick={() => teyit(g, 1)}>Birinci Teyit: İçeriği Gördüm</button>}
+          {g.durum === 'Birinci Teyit' && <>
+            {g.metin && <div className="ozet">{g.metin}</div>}
+            {g.benimBirinci ? <button className="btn" disabled={!hazir[g.kimlik]} onClick={() => teyit(g, 2)}>İkinci Teyit: Sigortaya Gönder</button> : <div className="not">Birinci teyidi başka kişi verdi; ikinci teyidi o kişi verir.</div>}
+          </>}
+          <label htmlFor={`sgi-${g.kimlik}`}>Vazgeçme Gerekçesi</label><input id={`sgi-${g.kimlik}`} value={iptal[g.kimlik] ?? ''} onChange={(e) => setIptal({ ...iptal, [g.kimlik]: e.target.value })} />
+          <button className="btn2 kucuk" disabled={!iptal[g.kimlik]?.trim()} onClick={() => { setHata(''); void istek(`/sigorta-gonderim/${g.kimlik}/iptal`, { gerekce: iptal[g.kimlik] }).then(yukle).catch((x) => setHata((x as Error).message)); }}>Vazgeç</button>
+        </div>
+      ))}
+    </Blok>
+  );
+}

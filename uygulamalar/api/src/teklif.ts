@@ -1,4 +1,5 @@
 import { ekonomikIzle, yatDegeriEngeli } from './yat_degeri.js';
+import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
@@ -147,7 +148,22 @@ export async function teklifSureIsle(db: Pool, simdi = new Date()): Promise<numb
   return rows.length;
 }
 
+const bld71 = (c: Db, t: { dosya_no: string }, sg: { sigorta_hasar_dosya_no?: string | null } | undefined, son: Date) => metinGetir(c, 'BLD-71', 'tr', { 'Dosya No': t.dosya_no, 'Hasar Dosya No': sg?.sigorta_hasar_dosya_no ?? '', 'Teknik Raporu ve Fiyat Teklifi': 'Fiyat Teklifi', 'son tarih': son.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' }) });
+let webAdresiTeklif = '';
+// K-241: ikinci teyitte teklif gönderilir, sigorta karar süresi (YG-444) ve geçerlilik başlar; yat sahibine BLD-37 eş zamanlı (YG-191).
+gonderimIsleyici('Fiyat Teklifi', async (c, r) => {
+  const t = (await c.query(`SELECT f.kimlik, f.statu, f.dosya_ref, d.dosya_no, d.yazisma_dili FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1 FOR UPDATE OF f`, [r.nesne_kimligi])).rows[0];
+  if (t.statu !== 'Onaylı') throw Object.assign(new Error('Teklif gönderilebilir durumda değildir.'), { statusCode: 409 });
+  const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
+  const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), sigorta_karar_son = $3, gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, await parametre(c, 'teklif_gecerlilik_gun'), son])).rows[0].b;
+  const sg = (await c.query(`SELECT sigorta_hasar_dosya_no FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
+  const sahip = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
+  if (sahip) await yatTarafinaYaz(c, { olay: `bld37:${t.kimlik}`, kod: 'BLD-37', dil: dilKod(t.yazisma_dili), konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: { ...SIFIRLA_YAT(t), 'bağlantı': webAdresiTeklif, link: webAdresiTeklif } });
+  return { metin: await bld71(c, t, sg, son), sonuc: { gecerlilik: bit } };
+});
+
 export function teklifYollari(s: FastifyInstance, b: Baglam) {
+  webAdresiTeklif = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const islem = async <T>(f: (c: PoolClient) => Promise<T>) => { const c = await b.db.connect(); try { await c.query('BEGIN'); const r = await f(c); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); } };
@@ -321,18 +337,17 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const dil = dilKod(t.yazisma_dili);
     if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Lehtar muvafakati girilmeden teklif onayı açılmaz.' });
     const gun = await parametre(b.db, 'teklif_gecerlilik_gun');
+    // K-241: sigortaya giden teklif ikinci teyide kadar gönderilmiş sayılmaz; portala düşmez, süre başlamaz.
+    if (t.teklif_muhatabi === 'Sigorta Şirketi') return islem(async (c) => {
+      const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
+      const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
+      const gonderim = await sigortayaHazirla(c, { dosya: t.dosya_ref, tur: 'Fiyat Teklifi', nesne: t.kimlik, alici: sg?.eposta ?? null, konu: `${t.dosya_no} Teklif`, metin: await bld71(c, t, sg, son), acil: true, sorumlu: o.kullanici });
+      return { durum: 'Teyit Bekliyor', gonderim };
+    });
     return islem(async (c) => {
       const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, gun])).rows[0].b;
       const sahip = (await c.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
       const alan = { ...SIFIRLA_YAT(t), 'bağlantı': b.webAdresi, link: b.webAdresi };
-      if (t.teklif_muhatabi === 'Sigorta Şirketi') {
-        const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
-        const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu')); // YG-444
-        await c.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = $2 WHERE kimlik = $1`, [t.kimlik, son]);
-        if (sg?.eposta) await disGonder(c, { olay: `bld71:${t.kimlik}`, eposta: sg.eposta, konu: `${t.dosya_no} Teklif`, metin: await metinGetir(c, 'BLD-71', 'tr', { 'Dosya No': t.dosya_no, 'Hasar Dosya No': sg.sigorta_hasar_dosya_no ?? '', 'Teknik Raporu ve Fiyat Teklifi': 'Fiyat Teklifi', 'son tarih': son.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' }) }), acil: true });
-        if (sahip) await yatTarafinaYaz(c, { olay: `bld37:${t.kimlik}`, kod: 'BLD-37', dil, konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: alan });
-        return { durum: 'Gönderildi', gecerlilik: bit };
-      }
       if (!sahip) throw Object.assign(new Error('Yat sahibinin iletişim bilgisi kayıtlı değildir.'), { statusCode: 409 });
       const s0 = (await c.query(`SELECT metin FROM sablon_metni WHERE kod = 'ONY-23' AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil])).rows[0];
       const { kutular } = kutuAyikla(s0.metin);

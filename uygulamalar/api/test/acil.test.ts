@@ -213,7 +213,7 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     const { d, t } = await dosyaVeTeklif();
     await o.sup.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = now() + interval '10 hours' WHERE kimlik = $1`, [t]);
     await sigortaSureIsle(o.db); await sigortaSureIsle(o.db);
-    expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari = $1`, [`bld72:${t}`])).rows[0].n).toBe(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM sigorta_gonderim WHERE tur = 'BLD-72' AND nesne_kimligi = $1 AND durum = 'Teyit Bekliyor'`, [t])).rows[0].n).toBe(1);
     await o.sup.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = now() - interval '1 minute' WHERE kimlik = $1`, [t]);
     await sigortaSureIsle(o.db);
     expect((await o.sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [t])).rows[0].karar).toBe('Tam Onay');

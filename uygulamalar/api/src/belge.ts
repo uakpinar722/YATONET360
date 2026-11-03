@@ -3,6 +3,7 @@ import type { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
+import { gonderimIsleyici, sigortaAdresi, sigortayaHazirla } from './sigorta_gonderim.js';
 import { BoyutAsimi, Depo, basiniOku, denemeTarayici, icerikHatasi, type Tarayici } from './depo.js';
 import { kapanisKaydet } from './kapanis.js';
 import { kartAc } from './is_motoru.js';
@@ -22,6 +23,14 @@ const PAYLASIM_KOD_DK = 10; const PAYLASIM_HATA = 5;
 type Bag = (db: Db, kullanici: string, kimlik: string) => Promise<'yok' | 'yetkisiz' | 'tamam'>;
 const BAGLAR = new Map<string, Bag>();
 export function belgeBagiKaydet(tur: string, f: Bag) { BAGLAR.set(tur, f); }
+
+let webAdresiPaylasim = '';
+gonderimIsleyici('Belge Paylaşımı', async (c, r, kim) => {
+  const v = r.veri as { surum: string; alici: string; izin: string; gun: number };
+  const belirtec = rastgeleBelirtec();
+  await c.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, izin, son_gecerlilik, olusturan_ref) VALUES ($1,$2,lower($3),$4,now() + make_interval(days => $5),$6)`, [v.surum, ozet(belirtec), v.alici, v.izin, v.gun, kim]);
+  return { sonuc: { baglanti: `${webAdresiPaylasim}/#paylasim=${belirtec}` } };
+});
 
 const kartBagi: Bag = async (db, k, id) => {
   if (!UUID.test(id)) return 'yok';
@@ -67,6 +76,7 @@ kapanisKaydet('Belge Onayı', async (c, k, karar, yapan) => {
 const dosyaAdi = (ad: string) => `filename*=UTF-8''${encodeURIComponent(ad)}`;
 
 export function belgeYollari(s: FastifyInstance, b: Baglam) {
+  webAdresiPaylasim = b.webAdresi;
   if (b.guvenliCerez && !b.tarayici) throw new Error('Üretimde gerçek virüs tarayıcısı bağlanmadan belge yükleme açılamaz (YG-602).');
   const depo = b.depo ?? new Depo();
   const tarayici: Tarayici = b.tarayici ?? denemeTarayici;
@@ -219,6 +229,9 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     if (izin !== 'Görüntüle' && izin !== 'İndir') return y.code(400).send({ hata: 'Geçersiz izin.' });
     const s2 = (await b.db.query(`SELECT kimlik FROM belge_surum WHERE belge_ref = $1 AND surum_no = $2`, [id, Number(no) || 0])).rows[0];
     if (!s2) return yok(y);
+    // K-241: sigorta adresine bağlantı ancak son gönderenin ikili teyidinden sonra üretilir.
+    const sg = await sigortaAdresi(b.db, alici);
+    if (sg) return { gonderim: await sigortayaHazirla(b.db, { dosya: sg.dosya, tur: 'Belge Paylaşımı', nesne: `${s2.kimlik}:${alici.toLowerCase()}`, alici: null, konu: `${a.e.ad} · ${alici}`, sorumlu: o.kullanici, veri: { surum: s2.kimlik, belge: id, alici, izin, gun } }), durum: 'Teyit Bekliyor' };
     const belirtec = rastgeleBelirtec();
     const r = (await b.db.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, izin, son_gecerlilik, olusturan_ref) VALUES ($1,$2,lower($3),$4,now() + make_interval(days => $5),$6) RETURNING kimlik, son_gecerlilik`, [s2.kimlik, ozet(belirtec), alici, izin, gun, o.kullanici])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Paylaşıldı', nesneTuru: 'belge', nesneKimligi: id, yeni: { alici, gun, izin }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

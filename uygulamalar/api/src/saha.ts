@@ -11,6 +11,7 @@ import { altNumara, sureBaslat, sureBitir } from './sure.js';
 import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 import { bildir, disGonder } from './bildirim.js';
+import { sigortayaHazirla } from './sigorta_gonderim.js';
 import { metinGetir } from './metin.js';
 import { rolSahipleri } from './makam.js';
 
@@ -394,9 +395,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       await kartAc(c, { tur: 'Vefat Görevi', kategori: 'gorev', baslik: `${d.dosya_no} · Aileyi Ara`, ozet: enErken ? `En erken arama tarihi: ${enErken.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}` : 'Ailenin yas sürecine saygı gösteriniz.', sonZaman: enErken, sahipKullanici: o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
       await kartAc(c, { tur: 'Vefat Görevi', kategori: 'gorev', baslik: `${d.dosya_no} · Mirasçılık Belgesi ve Tek Temsilci`, ozet: 'Mirasçılık belgesini ve tek temsilciyi kaydediniz.', sahipKullanici: o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
       await kartAc(c, { tur: 'Vefat Görevi', kategori: 'islem', baslik: `${d.dosya_no} · Vefat Değerlendirmesi`, ozet: 'Tahsilat askıda; alacak bu göreve bağlıdır.', sahipRol: await rolId(c, 'Hukuk ve Uyum Direktörü'), nesneTuru: 'Dosya', nesneKimligi: id });
-      // BLD-45: sigortaya bekletme e-postası otomatik gider (K-208); yat sahibine otomatik ileti durmuştur.
+      // BLD-45: sigortaya bekletme e-postası Dosya Sorumlusunun ikili teyidiyle gider (K-241); yat sahibine otomatik ileti durmuştur.
       const sg = (await c.query(`SELECT t.eposta FROM dosya_sigorta_kaydi s JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [id])).rows[0];
-      if (sg?.eposta) await disGonder(c, { olay: `bld45:${id}`, eposta: sg.eposta, konu: `${d.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-45', 'tr', { 'Dosya No': d.dosya_no }), acil: true });
+      if (sg?.eposta) await sigortayaHazirla(c, { dosya: id, tur: 'BLD-45', nesne: id, alici: sg.eposta, konu: `${d.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-45', 'tr', { 'Dosya No': d.dosya_no }), acil: true });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vefat İşareti', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { tamam: true };
     });

@@ -62,9 +62,12 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-56 | 5 | Tekrarlayan uygunsuzluk | Aynı firma ve aynı dayanak ölçütte önceki kayıt varsa tekrarlayan sayılır | `kalite.ts` | Kabul (VAR-3, CEO 03.11.2026) |
 | V-57 | 5 | Bütünleşik test | Dosyada iki veya daha çok test grubu varsa nihai kabul bütünleşik test ister (YG-400) | `kalite.ts` | Kabul (VAR-3, CEO 03.11.2026) |
 | V-58 | 5 | Parça bedeli kapısı | Avans alınmayan dosyada aranmaz; diğerlerinde Parça veya Avans ödemesi tamamlanmış olmalı (YG-906) | `tedarik.ts` | Kabul (VAR-3, CEO 03.11.2026) |
-| V-59 | 4 | Yat değerinde görüş ayrılığı | İki değer farklıysa teklif ve iş emri kapalı kalır; Teknik ve Operasyon Direktörüne görev açılır; Direktör değer girmez | `yat_degeri.ts` | Sunulacak |
-| V-60 | 4 | Ortak karar biçimi | İki kişi ayrı ayrı değer ve dayanak girer; değerler kuruşuna kadar aynıysa kesinleşir; biri değiştirirse yeniden açılır | `yat_degeri.ts` | Sunulacak |
-| V-61 | 4 | Ek poliçe kaydı | Ek poliçeyi Hukuk ve Uyum Direktörü belgeyle kaydeder; katalogda sahip yok | `yat_degeri.ts` | Sunulacak |
-| V-62 | 4 | Poliçe limiti tanımsız | Olay başı limit girilene kadar her hasar dosyasında ek poliçe gerekli sayılır ve onarım iş emri kapalıdır | `yat_degeri.ts` | Sunulacak |
-| V-63 | 4 | Keşif iş emri | YG-126 yalnız acil ilk tedbiri ayırdığı için keşif iş emri de ortak karardan sonra verilir | `firma.ts` | Sunulacak |
-| V-64 | 4 | Ekonomik oran matrahı | Oran, dosyadaki kümülatif KDV hariç teklif tutarı üzerinden; iç onaya gönderilirken ölçülür | `teklif.ts` | Sunulacak |
+| V-59 | 4 | Yat değerinde görüş ayrılığı | İki değer farklıysa teklif ve iş emri kapalı kalır; Teknik ve Operasyon Direktörüne görev açılır; Direktör değer girmez | `yat_degeri.ts` | Kabul (VAR-4, CEO 03.11.2026) |
+| V-60 | 4 | Ortak karar biçimi | İki kişi ayrı ayrı değer ve dayanak girer; değerler kuruşuna kadar aynıysa kesinleşir; biri değiştirirse yeniden açılır | `yat_degeri.ts` | Kabul (VAR-4, CEO 03.11.2026) |
+| V-61 | 4 | Ek poliçe kaydı | Ek poliçeyi Hukuk ve Uyum Direktörü belgeyle kaydeder; katalogda sahip yok | `yat_degeri.ts` | Kabul (VAR-4, CEO 03.11.2026) |
+| V-62 | 4 | Poliçe limiti tanımsız | Olay başı limit girilene kadar her hasar dosyasında ek poliçe gerekli sayılır ve onarım iş emri kapalıdır | `yat_degeri.ts` | Kabul (VAR-4, CEO 03.11.2026) |
+| V-63 | 4 | Keşif iş emri | YG-126 yalnız acil ilk tedbiri ayırdığı için keşif iş emri de ortak karardan sonra verilir | `firma.ts` | Kabul (VAR-4, CEO 03.11.2026) |
+| V-64 | 4 | Ekonomik oran matrahı | Oran, dosyadaki kümülatif KDV hariç teklif tutarı üzerinden; iç onaya gönderilirken ölçülür | `teklif.ts` | Kabul (VAR-4, CEO 03.11.2026) |
+| V-65 | 6 | Otomatik sigorta iletileri | BLD-45 ve BLD-72 gibi kendiliğinden üretilen iletilerde son gönderen Dosya Sorumlusu veya Yedek Sorumlu sayılır; teyit gelene kadar ileti gitmez | `sigorta_gonderim.ts` | Sunulacak |
+| V-66 | 6 | Teyit arası süre | İki teyit arasında en az 2 saniye (parametre); ikinci düğme bu sürede kapalı | `0019` | Sunulacak |
+| V-67 | 6 | Sigorta tarafı tanımı | Adres dosyanın sigorta tarafı kaydından tanınır; eksper ve sigorta portal kullanıcısının sistem içi bildirimi kapsam dışı | `bildirim.ts` | Sunulacak |
