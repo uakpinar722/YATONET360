@@ -7,7 +7,7 @@ interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_
 export function FirmaSicil({ ben }: { ben: Ben }) {
   const [l, setL] = useState<Firma[]>([]); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   const [yeni, setYeni] = useState({ unvan: '', rol: 'Çözüm Ortağı' }); const [secili, setSecili] = useState('');
-  const [belge, setBelge] = useState({ tur: '', bitis: '' }); const [iban, setIban] = useState(''); const [gerekce, setGerekce] = useState('');
+  const [belge, setBelge] = useState({ tur: '', bitis: '' }); const [iban, setIban] = useState(''); const [gerekce, setGerekce] = useState(''); const [oneri, setOneri] = useState('Koşullu Onaylı');
   const yukle = () => istek<Firma[]>('/firma/sicil').then(setL);
   useEffect(() => { void yukle().catch((x) => setHata((x as Error).message)); }, []);
   const yap = async (f: () => Promise<unknown>, t: string) => { setHata(''); setNot(''); try { await f(); setNot(t); await yukle(); } catch (x) { setHata((x as Error).message); } };
@@ -31,6 +31,9 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           {onay && <>
             <label htmlFor="fs-g">Statü Gerekçesi</label><input id="fs-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce }), 'Firma onaylandı.')}>Onayla ve Aktif Yap</button>
+            <label htmlFor="fs-o">Olumsuz Öneri</label><select id="fs-o" value={oneri} onChange={(e) => setOneri(e.target.value)}><option>Koşullu Onaylı</option><option>Reddedildi</option></select>
+            <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/hukuk-gorusu`, { oneri }), 'Hukuk ve Uyum görüşü istendi.')}>Hukuk Görüşü İste</button>
+            <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: oneri, gerekce }), 'Karar kaydedildi.')}>Öneriyi Karara Bağla</button>
           </>}
           <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} />
           <label htmlFor="fs-t">Geçerlilik Bitişi</label><input id="fs-t" type="date" value={belge.bitis} onChange={(e) => setBelge({ ...belge, bitis: e.target.value })} />

@@ -6,9 +6,8 @@ import { davetOlustur } from './ilk_giris.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { ibanGecerli } from './ticari.js';
+import { bankaHesabiAc, ibanGecerli } from './ticari.js';
 import { dosyaErisimi } from './dosya.js';
-import { rolSahipleri } from './makam.js';
 import { UUID } from './yat.js';
 
 const EPOSTA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -22,6 +21,7 @@ let webAdresi = '';
 
 // YG-1004: LGM teyidinde hesap ve 7 gün geçerli davet açılır; bağlantı yalnız kişinin e-postasına gider.
 kapanisKaydet('Kurum Kullanıcı Teyidi', async (c, k, karar) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
   const t = (await c.query(`SELECT t.*, u.kayit_rolu, u.ticari_unvan FROM kurum_kullanici_talebi t JOIN kurulus u ON u.kimlik = t.kurulus_ref WHERE t.kimlik = $1 AND t.durum = 'Teyit Bekliyor'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   if (karar === 'Onayla') {
@@ -36,6 +36,7 @@ kapanisKaydet('Kurum Kullanıcı Teyidi', async (c, k, karar) => {
 
 // YG-425: firma bilgi değişikliği Sicil Sorumlusu teyidiyle işlenir; önceki değer kayıtta kalır.
 kapanisKaydet('Kurum Bilgi Değişikliği', async (c, k, karar) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
   const t = (await c.query(`SELECT * FROM kurum_bilgi_talebi WHERE kimlik = $1 AND durum = 'Teyit Bekliyor'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   if (karar === 'Onayla') {
@@ -48,6 +49,7 @@ kapanisKaydet('Kurum Bilgi Değişikliği', async (c, k, karar) => {
 
 // K-178: itirazı BT ve Firma Yönetimi Direktörü karara bağlar; kabulde başvuru yeniden incelemeye döner.
 kapanisKaydet('Firma Kabul İtirazı', async (c, k, karar) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
   const t = (await c.query(`SELECT * FROM kurum_kabul_itirazi WHERE kimlik = $1 AND durum = 'İncelemede'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   if (karar === 'Onayla') await c.query(`UPDATE kurulus SET kayit_asamasi = 'İncelemede', kabul_karar_zamani = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kurulus_ref]);
@@ -81,10 +83,14 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     if (!iban || !ibanGecerli(iban)) return y.code(400).send({ hata: 'Geçerli bir IBAN girmenizi rica ederiz.' });
     const temiz = iban.replace(/\s/g, '').toUpperCase();
     if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = $2`, [u.kimlik, temiz])).rowCount) return y.code(409).send({ hata: 'Bu IBAN kayıtlıdır.' });
-    const r = (await b.db.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, giren_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [u.kimlik, temiz, o.kullanici])).rows[0];
-    await bildir(b.db, { olay: `banka-teyit:${r.kimlik}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, 'Muhasebe ve Finans Müdürü')), baslik: `${u.ticari_unvan} · Banka Hesabı Teyidi`, ozet: 'Sicildeki kayıtlı numaradan geri arayarak teyit etmenizi rica ederiz.', oncelik: 'Yüksek' });
-    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurum Banka Hesabı Bildirimi', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
-    return { durum: 'Karantina' };
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await bankaHesabiAc(c, { kurulus: u.kimlik, iban: temiz, giren: o.kullanici });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurum Banka Hesabı Bildirimi', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
+      await c.query('COMMIT');
+      return { durum: 'Karantina' };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
 
   s.post('/kurum/bilgi-degisikligi', oturumlu, async (i, y) => {

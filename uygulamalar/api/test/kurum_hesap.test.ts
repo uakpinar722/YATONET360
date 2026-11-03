@@ -4,7 +4,7 @@ import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', mfm: 'Muhasebe ve Finans Müdürü', tu: 'Teknik Uzman', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', ty: 'Teknik Yönetici', tm: 'Teknik Müdür' };
+const KADRO = { ds: 'Dosya Sorumlusu', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', hd: 'Hukuk ve Uyum Direktörü', tu: 'Teknik Uzman', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', ty: 'Teknik Yönetici', tm: 'Teknik Müdür' };
 const P = 'Sinama-Parolasi-2026!'; const H = { 'x-yatonet': '1' };
 let o: Ortam; let fir: string; let ted: string; let firC: string; let firK: string; let ikiC: string; let ikiK: string; let tedC: string;
 const disGir = async (ad: string, grup: string, rol: string, kurulus: string) => {
@@ -90,13 +90,42 @@ describe('firma bilgi, banka, itiraz, cari (YG-425, YG-422, K-178)', () => {
     expect((await o.ist('POST', '/api/kurum/banka', firC, { iban: IB })).json().durum).toBe('Karantina');
     expect((await o.ist('POST', '/api/kurum/banka', firC, { iban: IB })).statusCode).toBe(409);
     const v = (await o.ist('GET', '/api/kurum/hesap', firC)).json(); expect(v.bankalar[0].durum).toBe('Karantina'); expect(v.bankalar[0].iban).toBe('TR33 •••• 1326');
-    const be = (await o.ist('GET', '/api/banka-hesabi/bekleyen', await o.gir('mfm'))).json(); expect(be.some((x: { ticari_unvan: string }) => x.ticari_unvan === 'Kurum Firma')).toBe(true);
-    expect((await o.ist('POST', `/api/banka-hesabi/${be.find((x: { ticari_unvan: string }) => x.ticari_unvan === 'Kurum Firma').kimlik}/teyit`, await o.gir('mfm'), { kanal: 'Sicildeki numaradan geri arama' })).json().durum).toBe('Geçerli');
+    expect((await o.ist('GET', '/api/banka-hesabi/bekleyen', await o.gir('mfm'))).statusCode).toBe(403);
+    const be = (await o.ist('GET', '/api/banka-hesabi/bekleyen', await o.gir('mfy'))).json(); const h = be.find((x: { ticari_unvan: string }) => x.ticari_unvan === 'Kurum Firma');
+    const kart = await o.kart('Banka Hesabı Onayı', h.kimlik);
+    const durum = async () => (await o.sup.query(`SELECT durum FROM banka_hesabi WHERE kimlik = $1`, [h.kimlik])).rows[0].durum;
+    expect((await o.karar(kart.kimlik, 'fym', 'Onayla')).statusCode).not.toBe(200);
+    expect((await o.karar(kart.kimlik, 'fmy', 'Onaya Gönder')).statusCode).toBe(200);
+    expect((await o.karar(kart.kimlik, 'fym', 'Onaya Gönder')).statusCode).toBe(200);
+    const once = await o.karar(kart.kimlik, 'mfm', 'Onayla'); expect(once.statusCode).toBe(409); expect(once.json().hata).toContain('geri arama');
+    expect(await durum()).toBe('Karantina');
+    expect((await o.ist('POST', `/api/banka-hesabi/${h.kimlik}/teyit`, await o.gir('mfy'), { kanal: 'e-posta' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/banka-hesabi/${h.kimlik}/teyit`, await o.gir('mfm'), { kanal: 'Geri arama' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/banka-hesabi/${h.kimlik}/teyit`, await o.gir('mfy'), { kanal: 'Sicildeki numaradan geri arama' })).json().durum).toBe('Karantina');
+    expect(await durum()).toBe('Karantina');
+    expect((await o.kart('Banka Geri Arama Teyidi', h.kimlik)).durum).toBe('Tamamlandı');
+    expect((await o.karar(kart.kimlik, 'mfm', 'Onayla')).statusCode).toBe(200); expect(await durum()).toBe('Geçerli');
+    expect((await o.sup.query(`SELECT onaylayan_ref, teyit_eden_ref FROM banka_hesabi WHERE kimlik = $1`, [h.kimlik])).rows[0]).toMatchObject({ onaylayan_ref: o.K.mfm, teyit_eden_ref: o.K.mfy });
+    // Yeni hesap önceki hesabı silmez, onayda yerine geçer; red yeni hesabı iptal eder.
+    const ik = 'TR200006100519786457849999'; expect((await o.ist('POST', '/api/kurum/banka', firC, { iban: ik })).statusCode).toBe(200);
+    const yeni = (await o.sup.query(`SELECT kimlik FROM banka_hesabi WHERE iban = $1 AND kurulus_ref = $2`, [ik, fir])).rows[0].kimlik; const ky = await o.kart('Banka Hesabı Onayı', yeni);
+    await o.karar(ky.kimlik, 'fmy', 'Gerekçeyle İade Et', 'Belge yok');
+    expect((await o.sup.query(`SELECT durum FROM banka_hesabi WHERE kurulus_ref = $1 ORDER BY olusturma_zamani`, [fir])).rows.map((x) => x.durum)).toEqual(['Geçerli', 'İptal']);
   });
   it('itiraz yalnız ret/koşullu kararda, 15 gün içinde, bir kez; Direktör kabul edince yeniden incelemeye döner', async () => {
     const f2 = await kuruluş('İtiraz Firma', 'Çözüm Ortağı'); const c = (await disGir('if1', 'İş Birliği Firması', 'Firma Yetkilisi', f2)).c;
     expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, { gerekce: 'G' })).statusCode).toBe(409);
-    await o.ist('POST', `/api/firma/${f2}/statu`, await o.gir('fym'), { asama: 'Reddedildi', gerekce: 'Eksik' });
+    const st = () => o.gir('fym').then((c2) => o.ist('POST', `/api/firma/${f2}/statu`, c2, { asama: 'Reddedildi', gerekce: 'Eksik' }));
+    const y1 = await st(); expect(y1.statusCode).toBe(409); expect(y1.json().hata).toContain('Hukuk ve Uyum');
+    expect((await o.ist('POST', `/api/firma/${f2}/hukuk-gorusu`, await o.gir('fym'), { oneri: 'Onaylı' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/firma/${f2}/hukuk-gorusu`, await o.gir('fym'), { oneri: 'Reddedildi' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/firma/${f2}/hukuk-gorusu`, await o.gir('fym'), { oneri: 'Reddedildi' })).statusCode).toBe(409);
+    expect((await st()).statusCode).toBe(409);
+    const hg = (await o.sup.query(`SELECT kimlik FROM firma_hukuk_gorusu WHERE kurulus_ref = $1`, [f2])).rows[0].kimlik;
+    await o.karar((await o.kart('Firma Hukuk Görüşü', hg)).kimlik, 'hd', 'Reddet', 'Sözleşme uygun değil');
+    expect((await o.sup.query(`SELECT gorus FROM firma_hukuk_gorusu WHERE kimlik = $1`, [hg])).rows[0].gorus).toBe('Uygun Görülmedi');
+    expect((await st()).statusCode).toBe(200); // görüş bağlayıcı değildir
+    expect((await st()).statusCode).toBe(409); // her karar için yeni görüş
     expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, {})).statusCode).toBe(400);
     expect((await o.ist('GET', '/api/kurum/hesap', c)).json().itirazEdilebilir).toBe(true);
     await o.sup.query(`UPDATE kurulus SET kabul_karar_zamani = now() - interval '16 days' WHERE kimlik = $1`, [f2]);

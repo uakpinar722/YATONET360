@@ -30,6 +30,7 @@ export async function kapanisEksikleri(db: PoolClient | Baglam['db'], d: { kimli
 }
 
 kapanisKaydet('İyi Niyet Kararı', async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
   if (karar === 'Onayla') await c.query(`UPDATE garanti_sikayet SET karar = 'İyi Niyet', statu = 'Karar', karar_veren_ref = $2, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`, [k.nesne_kimligi, yapan]);
   else await c.query(`UPDATE garanti_sikayet SET statu = 'Açık', iyi_niyet_orani = NULL WHERE kimlik = $1`, [k.nesne_kimligi]);
 });

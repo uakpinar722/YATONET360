@@ -23,6 +23,7 @@ type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
 const TICARI = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)';
 const MFM = 'Muhasebe ve Finans Müdürü';
+const MFMY = 'Muhasebe ve Finans Müdür Yardımcısı';
 const gun = (d: Date | string) => new Date(new Date(d).getTime() + 180 * 60_000).toISOString().slice(0, 10);
 
 /** YG-906: sigorta 20.000,00 EUR'ya kadar avans yok, üzerinde %50; bireysel tutardan bağımsız %50; kurumsal %50. Acil/kritikte sigorta ve kurumsalda avans beklenmez. Tutar KDV dahil genel toplamdır. */
@@ -158,6 +159,37 @@ onaySonucKaydet('ONY-27', async (c, t, karar, k) => {
   const ts = (await c.query(`UPDATE teslim_kaydi SET durum = 'Teslim Edildi', teslim_alan = $2, teslim_zamani = $3 WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' RETURNING kimlik`, [t.dosya_ref, t.alici_ad, k.zaman])).rows[0];
   if (ts) await belgeUret(c, { tur: 'Teslim Tutanağı', nesne: ts.kimlik, dosya: t.dosya_ref });
   await tesisSerbestBirak(c, t.dosya_ref, t.alici_ad); // YG-554
+});
+
+/**
+ * YG-928, A38-S1: hesap karantinada başlar; FY Müdür Yardımcısı kontrol eder, FY Müdürü birinci, MF Müdürü ikinci onayı verir.
+ * Geri arama teyidini MF Müdür Yardımcısı ayrıca yapar; teyit olmadan son onay verilmez. Önceki hesap silinmez.
+ */
+export async function bankaHesabiAc(c: PoolClient, g: { kurulus: string; iban: string; giren: string }): Promise<string> {
+  const temiz = g.iban.replace(/\s/g, '').toUpperCase();
+  const u = (await c.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [g.kurulus])).rows[0];
+  const r = (await c.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, giren_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [g.kurulus, temiz, g.giren])).rows[0];
+  const rol = (ad: string) => rolId(c, ad);
+  await kartAc(c, { tur: 'Banka Hesabı Onayı', baslik: `${u.ticari_unvan} · Banka Hesabı Onayı`, ozet: temiz, hazirlayan: g.giren, zincir: [await rol('Firma Yönetimi Müdür Yardımcısı'), await rol('Firma Yönetimi Müdürü'), await rol('Muhasebe ve Finans Müdürü')], nesneTuru: 'Banka Hesabı', nesneKimligi: r.kimlik });
+  await kartAc(c, { tur: 'Banka Geri Arama Teyidi', kategori: 'gorev', baslik: `${u.ticari_unvan} · Banka Hesabı Geri Arama`, ozet: 'Sicildeki kayıtlı numaradan geri arayarak teyit etmenizi rica ederiz.', oncelik: 'Yüksek', sahipRol: await rol('Muhasebe ve Finans Müdür Yardımcısı'), nesneTuru: 'Banka Hesabı', nesneKimligi: r.kimlik });
+  return r.kimlik;
+}
+
+kapanisKaydet('Banka Hesabı Onayı', async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
+  const h = (await c.query(`SELECT * FROM banka_hesabi WHERE kimlik = $1 AND durum = 'Karantina' FOR UPDATE`, [k.nesne_kimligi])).rows[0];
+  if (!h) return;
+  if (karar === 'Onayla') {
+    if (!h.teyit_eden_ref) throw Object.assign(new Error('Muhasebe ve Finans Müdür Yardımcısının geri arama teyidi bekleniyor.'), { statusCode: 409 });
+    if (h.teyit_eden_ref === yapan) throw Object.assign(new Error('Geri arama teyidini veren kişi son onayı veremez.'), { statusCode: 403 });
+    await c.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [h.kurulus_ref]);
+    await c.query(`UPDATE banka_hesabi SET durum = 'Geçerli', onaylayan_ref = $2 WHERE kimlik = $1`, [h.kimlik, yapan]);
+  } else {
+    await c.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kimlik = $1`, [h.kimlik]);
+    await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Banka Geri Arama Teyidi' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [h.kimlik]);
+  }
+  const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [h.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
+  await bildir(c, { olay: `banka-sonuc:${h.kimlik}`, kullanicilar: kisiler, baslik: 'Banka Hesabı', ozet: karar === 'Onayla' ? 'Bildirdiğiniz banka hesabı teyit edildi.' : 'Bildirdiğiniz banka hesabı kabul edilmedi; Sicil Sorumlusu ile görüşmenizi rica ederiz.' });
 });
 
 export function ticariYollari(s: FastifyInstance, b: Baglam) {
@@ -372,23 +404,24 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     if (!iban || !ibanGecerli(iban)) return y.code(400).send({ hata: 'IBAN geçersiz.' });
     if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = $2`, [id, iban.replace(/\s/g, '').toUpperCase()])).rowCount) return y.code(409).send({ hata: 'Bu IBAN kayıtlıdır.' });
-    const r = (await b.db.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, giren_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [id, iban.replace(/\s/g, '').toUpperCase(), o.kullanici])).rows[0];
-    return { kimlik: r.kimlik, durum: 'Karantina' };
+    return islem(async (c) => ({ kimlik: await bankaHesabiAc(c, { kurulus: id, iban, giren: o.kullanici }), durum: 'Karantina' }));
   });
   s.get('/banka-hesabi/bekleyen', oturumlu, async (i, y) => {
-    if (!(await roller(i.oturum!.kullanici)).includes(MFM)) return y.code(403).send({ hata: 'Teyidi Muhasebe ve Finans Müdürü yapar.' });
-    return (await b.db.query(`SELECT h.kimlik, h.iban, k.ticari_unvan FROM banka_hesabi h JOIN kurulus k ON k.kimlik = h.kurulus_ref WHERE h.durum = 'Karantina' ORDER BY h.olusturma_zamani`)).rows;
+    if (!(await roller(i.oturum!.kullanici)).includes(MFMY)) return y.code(403).send({ hata: 'Geri arama teyidini Muhasebe ve Finans Müdür Yardımcısı yapar.' });
+    return (await b.db.query(`SELECT h.kimlik, h.iban, k.ticari_unvan, k.kurumsal_telefon FROM banka_hesabi h JOIN kurulus k ON k.kimlik = h.kurulus_ref WHERE h.durum = 'Karantina' AND h.teyit_eden_ref IS NULL ORDER BY h.olusturma_zamani`)).rows;
   });
   s.post('/banka-hesabi/:id/teyit', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { kanal } = (i.body ?? {}) as { kanal?: string };
     if (!UUID.test(id)) return yok(y);
-    if (!(await roller(o.kullanici)).includes(MFM)) return y.code(403).send({ hata: 'Teyidi Muhasebe ve Finans Müdürü yapar.' });
+    if (!(await roller(o.kullanici)).includes(MFMY)) return y.code(403).send({ hata: 'Geri arama teyidini Muhasebe ve Finans Müdür Yardımcısı yapar.' });
     if (!kanal?.trim() || /e-?posta/i.test(kanal)) return y.code(400).send({ hata: 'Sicildeki kayıtlı numaradan geri arama gibi bağımsız kanal yazınız; e-posta teyit sayılmaz.' });
     const h = (await b.db.query(`SELECT giren_ref FROM banka_hesabi WHERE kimlik = $1`, [id])).rows[0];
     if (!h) return yok(y);
     if (h.giren_ref === o.kullanici) return y.code(403).send({ hata: 'Teyidin giren kişi dışında bir yetkili tarafından yapılmasını rica ederiz.' });
-    await b.db.query(`UPDATE banka_hesabi SET durum = 'Geçerli', teyit_eden_ref = $2, teyit_kanali = $3 WHERE kimlik = $1`, [id, o.kullanici, kanal.trim()]);
-    return { durum: 'Geçerli' };
+    await b.db.query(`UPDATE banka_hesabi SET teyit_eden_ref = $2, teyit_kanali = $3 WHERE kimlik = $1 AND durum = 'Karantina'`, [id, o.kullanici, kanal.trim()]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Banka Geri Arama Teyidi' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Banka Hesabı Geri Arama Teyidi', nesneTuru: 'Banka Hesabı', nesneKimligi: id, yeni: { kanal: kanal.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { durum: 'Karantina', teyit: true };
   });
 
   // YG-948, YG-950, YG-951, YG-1614: izin; gün sistemce; bakiye negatif olamaz; açık dosyası olanda vekil zorunlu; İK sonra birim amiri.

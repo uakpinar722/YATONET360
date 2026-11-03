@@ -4,7 +4,7 @@ import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ik: 'İnsan Kaynakları Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ik: 'İnsan Kaynakları Sorumlusu' };
 let o: Ortam; let firma: string; let firmaC: string;
 const IBAN_OK = 'TR330006100519786457841326';
 
@@ -179,8 +179,10 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
     expect((await o.ist('POST', `/api/firma/${firma}/iban`, sc, { iban: 'TR000000000000000000000000' })).statusCode).toBe(400);
     const ib = (await o.ist('POST', `/api/firma/${firma}/iban`, sc, { iban: IBAN_OK })).json().kimlik;
     expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('IBAN');
-    expect((await o.ist('POST', `/api/banka-hesabi/${ib}/teyit`, await o.gir('mfm'), { kanal: 'e-posta' })).statusCode).toBe(400);
-    expect((await o.ist('POST', `/api/banka-hesabi/${ib}/teyit`, await o.gir('mfm'), { kanal: 'Sicildeki numaradan geri arama' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/banka-hesabi/${ib}/teyit`, await o.gir('mfy'), { kanal: 'e-posta' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/banka-hesabi/${ib}/teyit`, await o.gir('mfy'), { kanal: 'Sicildeki numaradan geri arama' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('IBAN'); // geri arama tek başına geçerli kılmaz
+    const ibk = await o.kart('Banka Hesabı Onayı', ib); await o.karar(ibk.kimlik, 'fmy', 'Onaya Gönder'); await o.karar(ibk.kimlik, 'fym', 'Onaya Gönder'); await o.karar(ibk.kimlik, 'mfm', 'Onayla');
     expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('SGK');
     await o.ist('POST', `/api/firma/${firma}/belge`, sc, { tur: 'SGK Borcu Yoktur Yazısı', bitis: '2099-01-01' });
     const r = await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts);

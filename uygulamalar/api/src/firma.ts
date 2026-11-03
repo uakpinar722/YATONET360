@@ -1,3 +1,4 @@
+import { rolId } from './ihbar.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir } from './bildirim.js';
@@ -54,6 +55,11 @@ async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; d
   await belgeUret(c, { tur: 'İş Emri', nesne: e.kimlik, dosya: e.dosya_ref, gonder: ep ? { olay: `is-emri-pdf:${e.kimlik}`, eposta: ep, konu: `Yeni İş Emri: ${e.is_emri_no}`, metin: `Yeni İş Emri: ${e.is_emri_no}`, acil: true } : undefined });
 }
 
+kapanisKaydet('Firma Hukuk Görüşü', async (c, k, karar, yapan) => {
+  if (karar !== 'Onayla' && karar !== 'Reddet') return;
+  await c.query(`UPDATE firma_hukuk_gorusu SET durum = 'Verildi', gorus = $2, veren_ref = $3, gorus_zamani = now() WHERE kimlik = $1 AND durum = 'Bekliyor'`, [k.nesne_kimligi, karar === 'Onayla' ? 'Uygun' : 'Uygun Görülmedi', yapan]);
+});
+
 kapanisKaydet('İş Emri', async (c, k, karar) => {
   const e = (await c.query(`SELECT * FROM is_emri WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0];
   if (!e) return;
@@ -102,10 +108,29 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-360, YG-361, YG-362: statü kararını Sicil Sorumlusu hazırlar, Firma Yönetimi Müdürü verir. Kalıcı askı ve çıkarma Direktörde.
+  s.post('/firma/:id/hukuk-gorusu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { oneri } = (i.body ?? {}) as { oneri?: string };
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (oneri !== 'Koşullu Onaylı' && oneri !== 'Reddedildi') return y.code(400).send({ hata: 'Öneriyi seçmenizi rica ederiz.' });
+    const u = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0];
+    if (!u) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if ((await b.db.query(`SELECT 1 FROM firma_hukuk_gorusu WHERE kurulus_ref = $1 AND oneri = $2 AND durum IN ('Bekliyor', 'Verildi')`, [id, oneri])).rowCount) return y.code(409).send({ hata: 'Bu öneri için açık görüş kaydı bulunmaktadır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const t = (await c.query(`INSERT INTO firma_hukuk_gorusu (kurulus_ref, oneri, isteyen_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [id, oneri, o.kullanici])).rows[0];
+      await kartAc(c, { tur: 'Firma Hukuk Görüşü', baslik: `${u.ticari_unvan} · Hukuk ve Uyum Görüşü`, ozet: `Öneri: ${oneri}`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Hukuk ve Uyum Direktörü')], nesneTuru: 'Firma Hukuk Görüşü', nesneKimligi: t.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Hukuk Görüşü İstendi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { oneri }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { durum: 'Bekliyor' };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
   s.post('/firma/:id/statu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string };
     if (!UUID.test(id)) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
+    // YG-1659, K-178: Koşullu Onaylı ve Reddedildi önerisinde Hukuk ve Uyum görüşü alınır; bağlayıcı değildir, kademe sayılmaz.
+    if ((g.asama === 'Koşullu Onaylı' || g.asama === 'Reddedildi') && !(await b.db.query(`UPDATE firma_hukuk_gorusu SET durum = 'Kullanıldı' WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi' RETURNING kimlik`, [id, g.asama])).rowCount) return y.code(409).send({ hata: 'Hukuk ve Uyum görüşü bekleniyor.' });
     if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND r.rol_adi = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Kalıcı askı ve ağdan çıkarma Direktör kararıdır.' });
     const r = await b.db.query(`UPDATE kurulus SET kayit_asamasi = coalesce($2, kayit_asamasi), ag_statusu = coalesce($3, ag_statusu), risk_derecesi = coalesce($4, risk_derecesi), kabul_karar_zamani = CASE WHEN $2::text IS NOT NULL THEN now() ELSE kabul_karar_zamani END, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING kimlik`, [id, g.asama ?? null, g.ag ?? null, g.risk ?? null]);
     if (!r.rowCount) return yok(y);

@@ -75,7 +75,7 @@ const kartKarar = async (E, kim, baslik, karar) => {
 };
 const kod = async (k) => { await sup.query(`UPDATE kullanici_hesabi SET totp_son_adim = 0 WHERE kimlik = $1`, [kimlikler[k]]); return totp(gizliler[k]); };
 const tasmaYok = async (p, ad) => { const v = p.viewportSize(); await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(250); kontrol(`${ad} telefonda taşmaz`, await p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)); if (await p.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) console.log('TAŞAN', ad, await p.evaluate(() => [...document.querySelectorAll('body *')].filter((e) => e.getBoundingClientRect().right > window.innerWidth + 1).slice(0, 8).map((e) => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().right)} ${(e.textContent ?? '').slice(0, 30)}`).join(' | '))); kontrol(`${ad} metin yaslaması uygun`, await p.evaluate(() => { const o = document.querySelector('.ozet, .not'); const h = document.querySelector('h1, .bolum'); return (!o || getComputedStyle(o).textAlign === 'justify') && (!h || ['left', 'start'].includes(getComputedStyle(h).textAlign)); })); await p.screenshot({ path: join(CIKTI, `${ad.replace(/\s/g, '_')}.png`), fullPage: true }); await p.setViewportSize(v); };
-const R = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü' };
+const R = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü' };
 try {
   const E = {};
   for (const [k, r] of Object.entries(R)) E[k] = await hesap(k, r);
@@ -173,7 +173,7 @@ try {
   await tikla(pTs, 'Onaya Gönder');
   kontrol('Ticari Sorumlu teklifi ekrandan hazırlar ve gönderir', true);
   const no = (await sup.query(`SELECT teklif_no FROM fiyat_teklifi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].teklif_no;
-  await kartKarar(E, 'mfm', no, 'Onaya Gönder'); await kartKarar(E, 'tid', no, 'Onayla');
+  await kartKarar(E, 'mfy', no, 'Onaya Gönder'); await kartKarar(E, 'mfm', no, 'Onaya Gönder'); await kartKarar(E, 'tid', no, 'Onayla');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Gönder');
   kontrol('sigortaya teklif ilk düğmeyle gitmez', (await sup.query(`SELECT statu FROM fiyat_teklifi WHERE teklif_no = $1`, [no])).rows[0].statu === 'Onaylı');
   kontrol('teyit ekranı giden ekleri gösterir', await pTs.getByText(`Fiyat Teklifi ${no}.pdf`).first().isVisible());
@@ -250,6 +250,7 @@ try {
   await pFf.getByLabel('Yeni IBAN').fill('TR200006100519786457849999'); await tikla(pFf, 'IBAN Bildir'); await pFf.waitForTimeout(400);
   kontrol('firma IBAN bildirir, karantinada başlar', (await sup.query(`SELECT durum FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = 'TR200006100519786457849999'`, [firma])).rows[0]?.durum === 'Karantina');
   await sup.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kurulus_ref = $1`, [firma]); // sonraki sicil adımı kendi IBAN'ını teyit eder
+  await sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur IN ('Banka Hesabı Onayı', 'Banka Geri Arama Teyidi') AND baslik LIKE $1`, [`E2E Firma ${tek}%`]);
   await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et'); await pFf.waitForTimeout(400);
   kontrol('firma bilgi değişikliği teyide gider', (await sup.query(`SELECT durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1`, [firma])).rows[0]?.durum === 'Teyit Bekliyor');
 
@@ -332,11 +333,14 @@ try {
   await pSc2.getByLabel('Belge Türü').fill('SGK Borcu Yoktur Yazısı'); await pSc2.getByLabel('Geçerlilik Bitişi').fill('2099-01-01');
   await tikla(pSc2, 'Belge Kaydet');
   await tasmaYok(pSc2, 'firma_sicili');
+  const pMy = await al('mfy', E);
+  await pMy.getByRole('button', { name: 'İdari İşlemlerim' }).click();
+  await pMy.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByLabel('Teyit Kanalı').fill('Sicildeki numaradan geri arama');
+  await pMy.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Teyit Et' }).click(); await pMy.waitForTimeout(400); await hataVarsa(pMy, 'IBAN');
+  const ibanB = `E2E Firma ${tek} · Banka Hesabı Onayı`;
+  await kartKarar(E, 'fmy', ibanB, 'Onaya Gönder'); await kartKarar(E, 'fym', ibanB, 'Onaya Gönder'); await kartKarar(E, 'mfm', ibanB, 'Onayla');
   const pM = await al('mfm', E);
-  await pM.getByRole('button', { name: 'İdari İşlemlerim' }).click();
-  await pM.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByLabel('Teyit Kanalı').fill('Sicildeki numaradan geri arama');
-  await pM.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Teyit Et' }).click(); await pM.waitForTimeout(400); await hataVarsa(pM, 'IBAN');
-  kontrol('IBAN Sicilden girilir, Muhasebe ve Finans Müdürü teyit eder', (await sup.query(`SELECT durum FROM banka_hesabi b JOIN kurulus k ON k.kimlik = b.kurulus_ref WHERE k.kimlik = $1 AND b.durum <> 'İptal'`, [firma])).rows[0].durum === 'Geçerli');
+  kontrol('IBAN Sicilden girilir, geri arama ve iki onayla geçerli olur', (await sup.query(`SELECT durum FROM banka_hesabi b JOIN kurulus k ON k.kimlik = b.kurulus_ref WHERE k.kimlik = $1 AND b.durum <> 'İptal'`, [firma])).rows[0].durum === 'Geçerli');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Ödeme Talimatı');
   await kartKarar(E, 'mfm', h.hakedis_no, 'Onaya Gönder');
   kontrol('Ticari Sorumlu ödeme talimatını ekrandan hazırlar', (await sup.query(`SELECT count(*)::int n FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref WHERE h.is_emri_ref = $1`, [ie.kimlik])).rows[0].n === 1);
