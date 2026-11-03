@@ -3,10 +3,23 @@ import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 
-interface Karsilastirma { satirlar: { sira: number; aciklama: string; teklif: number; eksper: number | null; fark: number | null; not: string | null; onay: string | null; yd: string | null }[]; toplam: { teklif: number; eksper: number; fark: number }; talep: { kimlik: string; durum: string } | null }
+const KURUMSAL = 'Sözleşmede Tanımlı Kurumsal E-posta';
+/** YG-218, YG-219, YG-221: telefon ve WhatsApp kanal sayılmaz; e-posta onayında gönderen adres Ek-2 listesiyle denetlenir. */
+function OnayKanali({ no, id, kanal, setKanal, yetkili, setYetkili, gonderen, setGonderen, belge, setBelge }: { no: string; id: string; kanal: string; setKanal: (x: string) => void; yetkili: string; setYetkili: (x: string) => void; gonderen: string; setGonderen: (x: string) => void; belge: string; setBelge: (x: string) => void }) {
+  return (
+    <>
+      <label htmlFor={`k-${no}`}>Onay Kanalı</label><select id={`k-${no}`} value={kanal} onChange={(e) => setKanal(e.target.value)}>{['YATONET 360', 'KEP', 'E-imza', KURUMSAL].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor={`y-${no}`}>Onaylayan Yetkili</label><input id={`y-${no}`} value={yetkili} onChange={(e) => setYetkili(e.target.value)} />
+      {kanal === KURUMSAL && <><label htmlFor={`g-${no}`}>Onayın Geldiği E-posta Adresi</label><input id={`g-${no}`} type="email" value={gonderen} onChange={(e) => setGonderen(e.target.value)} /></>}
+      {kanal !== 'YATONET 360' && <BelgeSec ad={`Onay Belgesi ${no}`} bagTuru="Dosya" bagKimligi={id} deger={belge} sec={setBelge} />}
+    </>
+  );
+}
+
+interface Karsilastirma { satirlar: { sira: number; aciklama: string; teklif: number; eksper: number | null; fark: number | null; not: string | null; onay: string | null; yd: string | null }[]; toplam: { teklif: number; eksper: number; fark: number; girilen: number }; talep: { kimlik: string; durum: string } | null }
 /** YG-203: eksper raporuyla kalem kalem karşılaştırma. YG-204: onaylanmayan kalem için bir kez yeniden değerlendirme, sonucu. YG-205: kısmi onay kaydı. */
-function SigortaTeklifIslem({ id, teklif, statu, karar, kanal, yetkili, yap }: { id: string; teklif: string; statu: string; karar: string | null; kanal: string; yetkili: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
-  const [v, setV] = useState<Karsilastirma | null>(null); const [hata, setHata] = useState(''); const [ek, setEk] = useState<Record<number, { tutar: string; not: string }>>({}); const [belge, setBelge] = useState(''); const [sec, setSec] = useState<number[]>([]); const [gerekce, setGerekce] = useState(''); const [ydBelge, setYdBelge] = useState('');
+function SigortaTeklifIslem({ id, teklif, statu, karar, kanal, setKanal, yetkili, setYetkili, gonderen, setGonderen, onayBelge, setOnayBelge, yap }: { id: string; teklif: string; statu: string; karar: string | null; kanal: string; setKanal: (x: string) => void; yetkili: string; setYetkili: (x: string) => void; gonderen: string; setGonderen: (x: string) => void; onayBelge: string; setOnayBelge: (x: string) => void; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
+  const [v, setV] = useState<Karsilastirma | null>(null); const [hata, setHata] = useState(''); const [ek, setEk] = useState<Record<number, { tutar: string; not: string }>>({}); const [belge, setBelge] = useState(''); const [sec, setSec] = useState<number[]>([]); const [gerekce, setGerekce] = useState('');
   const yukle = () => istek<Karsilastirma>(`/teklif/${teklif}/eksper-karsilastirma`).then(setV).catch((x) => setHata((x as Error).message));
   useEffect(() => { void yukle(); }, [teklif, statu, karar]);
   const isle = (f: () => Promise<any>, tamam: string) => yap(async () => { await f(); setSec([]); setGerekce(''); await yukle(); }, tamam);
@@ -15,32 +28,34 @@ function SigortaTeklifIslem({ id, teklif, statu, karar, kanal, yetkili, yap }: {
   const degis = (s: number) => setSec(sec.includes(s) ? sec.filter((x) => x !== s) : [...sec, s]);
   const istenebilir = statu === 'Karar' && (karar === 'Kısmi Onay' || karar === 'Ret');
   const girilen = Object.entries(ek).filter(([, x]) => x.tutar !== '');
+  // Seçim yalnız kararı etkileyebilen kalemlerde: kısmi onay, istenmemiş onaylanmayan kalem veya yanıtı beklenen kalem.
+  const secilebilir = (s: Karsilastirma['satirlar'][number]) => statu === 'Gönderildi' || (v.talep ? s.yd === 'Gönderildi' : istenebilir && s.onay === 'Onaylanmadı' && !s.yd);
+  const secimli = v.satirlar.some(secilebilir);
   return (
     <div className="tam">
       <h3>Kalemler ve Eksper Raporu</h3>
-      <div className="tablo"><table className="kartli"><thead><tr><th>#</th><th>Kalem</th><th>Teklif (EUR)</th><th>Eksper (EUR)</th><th>Fark (EUR)</th><th>Eksper Notu</th><th>Onay</th><th>Seç</th></tr></thead>
+      <div className="tablo"><table className="kartli"><thead><tr><th>#</th><th>Kalem</th><th>Teklif (EUR)</th><th>Eksper (EUR)</th><th>Fark (EUR)</th><th>Eksper Notu</th><th>Onay</th>{secimli && <th>Seç</th>}</tr></thead>
         <tbody>{v.satirlar.map((s) => (
           <tr key={s.sira}><td data-ad="#">{s.sira}</td><td data-ad="Kalem">{s.aciklama}</td><td data-ad="Teklif (EUR)">{eur(s.teklif)}</td>
             <td data-ad="Eksper (EUR)"><input aria-label={`Eksper Tutarı ${s.sira}`} type="number" min="0" step="0.01" value={ek[s.sira]?.tutar ?? (s.eksper ?? '')} onChange={(e) => setEk({ ...ek, [s.sira]: { tutar: e.target.value, not: ek[s.sira]?.not ?? s.not ?? '' } })} /></td>
             <td data-ad="Fark (EUR)">{eur(s.fark)}</td>
             <td data-ad="Eksper Notu"><input aria-label={`Eksper Notu ${s.sira}`} value={ek[s.sira]?.not ?? s.not ?? ''} onChange={(e) => setEk({ ...ek, [s.sira]: { tutar: ek[s.sira]?.tutar ?? (s.eksper === null ? '' : String(s.eksper)), not: e.target.value } })} /></td>
             <td data-ad="Onay">{s.onay ?? '—'}{s.yd ? ` · Yeniden Değerlendirme: ${s.yd}` : ''}</td>
-            <td data-ad="Seç"><input type="checkbox" aria-label={`Kalem Seç ${s.sira}`} checked={sec.includes(s.sira)} onChange={() => degis(s.sira)} /></td></tr>
+            {secimli && <td data-ad="Seç">{secilebilir(s) && <input type="checkbox" aria-label={`Kalem Seç ${s.sira}`} checked={sec.includes(s.sira)} onChange={() => degis(s.sira)} />}</td>}</tr>
         ))}</tbody>
       </table></div>
-      <div>Toplam · Teklif: {eur(v.toplam.teklif)} · Eksper: {eur(v.toplam.eksper)} · Fark: {eur(v.toplam.fark)}</div>
+      <div>Toplam · Teklif: {eur(v.toplam.teklif)} · Eksper: {v.toplam.girilen ? eur(v.toplam.eksper) : '—'} · Fark: {v.toplam.girilen ? eur(v.toplam.fark) : '—'}</div>
       <BelgeSec ad="Eksper Raporu" bagTuru="Dosya" bagKimligi={id} deger={belge} sec={setBelge} />
       <button className="btn2 kucuk" disabled={!belge || !girilen.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/eksper-karsilastirma`, { belge, satirlar: girilen.map(([s, x]) => ({ sira: Number(s), tutar: Number(x.tutar), not: x.not })) }), 'Eksper tutarları kaydedildi.')}>Eksper Tutarlarını Kaydet</button>
-      {statu === 'Gönderildi' && <button className="btn2 kucuk" disabled={!sec.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/sigorta-karar`, { karar: 'Kısmi Onay', kanal, yetkili, onaylananSiralar: sec }), 'Sigorta kararı kaydedildi.')}>Seçilenlerle Kısmi Onay Kaydet</button>}
-      {istenebilir && <>
+      {statu === 'Gönderildi' && <button className="btn2 kucuk" disabled={!sec.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/sigorta-karar`, { karar: 'Kısmi Onay', kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined, onaylananSiralar: sec }), 'Sigorta kararı kaydedildi.')}>Seçilenlerle Kısmi Onay Kaydet</button>}
+      {istenebilir && !v.talep && secimli && <>
         <label htmlFor={`yd-${teklif}`}>Teknik Gerekçe</label><textarea id={`yd-${teklif}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
         <button className="btn2 kucuk" disabled={!sec.length || !gerekce.trim()} onClick={() => void isle(() => istek(`/teklif/${teklif}/yeniden-degerlendirme`, { siralar: sec, gerekce }).then(() => { window.dispatchEvent(new Event('sigorta-gonderim')); }), 'Yeniden değerlendirme teyide hazırlandı.')}>Seçilenler İçin Yeniden Değerlendirme İste</button>
       </>}
       {v.talep && <>
         <div className="not">Sigorta şirketinin yeniden değerlendirme yanıtı bekleniyor. Olumlu kalemleri seçerek sonucu kaydediniz; hiç seçilmezse tüm kalemler onaylanmamış kalır.</div>
-        {kanal !== 'YATONET 360' && <BelgeSec ad="Yanıt Belgesi" bagTuru="Dosya" bagKimligi={id} deger={ydBelge} sec={setYdBelge} />}
-        <label htmlFor={`ydk-${teklif}`}>Onay Kanalı</label><div id={`ydk-${teklif}`}>{kanal} · {yetkili || 'Onaylayan yetkiliyi yazınız'}</div>
-        <button className="btn2 kucuk" disabled={!yetkili.trim()} onClick={() => void isle(() => istek(`/yeniden-degerlendirme/${v.talep!.kimlik}/sonuc`, { onaylananSiralar: sec, kanal, yetkili, belge: ydBelge || undefined }), 'Sonuç kaydedildi.')}>Yeniden Değerlendirme Sonucunu Kaydet</button>
+        <OnayKanali no={`yd-${teklif}`} id={id} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} belge={onayBelge} setBelge={setOnayBelge} />
+        <button className="btn2 kucuk" disabled={!yetkili.trim()} onClick={() => void isle(() => istek(`/yeniden-degerlendirme/${v.talep!.kimlik}/sonuc`, { onaylananSiralar: sec, kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined }), 'Sonuç kaydedildi.')}>Yeniden Değerlendirme Sonucunu Kaydet</button>
       </>}
     </div>
   );
@@ -94,7 +109,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); }, [id]);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
-  const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
+  const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [gonderen, setGonderen] = useState(''); const [onayBelge, setOnayBelge] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
   if (!v) return null;
   const ticari = roller.includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
   const tu = rollerim.includes('Teknik Uzman') || rollerim.includes('Sorumlu Teknik Uzman (Koordinatör)');
@@ -128,12 +143,11 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
                 <button className="btn2 kucuk" disabled={!sonTarih} onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/odeme-talebi`, { tur: 'Avans', sonTarih }), 'Ödeme talebi onaya gönderildi.')}>Avans Talebi</button>
               </>}
             </div>
-            {(t.statu === 'Gönderildi' || t.statu === 'Karar') && t.teklif_muhatabi === 'Sigorta Şirketi' && <div>
-              <label htmlFor={`k-${t.kimlik}`}>Onay Kanalı</label><select id={`k-${t.kimlik}`} value={kanal} onChange={(e) => setKanal(e.target.value)}>{['YATONET 360', 'KEP', 'E-imza', 'Sözleşmede Tanımlı Kurumsal E-posta'].map((x) => <option key={x}>{x}</option>)}</select>
-              <label htmlFor={`y-${t.kimlik}`}>Onaylayan Yetkili</label><input id={`y-${t.kimlik}`} value={yetkili} onChange={(e) => setYetkili(e.target.value)} />
-              {t.statu === 'Gönderildi' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/sigorta-karar`, { karar: 'Tam Onay', kanal, yetkili }), 'Sigorta kararı kaydedildi.')}>Tam Onay Kaydet</button>}
+            {t.statu === 'Gönderildi' && t.teklif_muhatabi === 'Sigorta Şirketi' && <div className="tam">
+              <OnayKanali no={t.kimlik} id={id} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} belge={onayBelge} setBelge={setOnayBelge} />
+              <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/sigorta-karar`, { karar: 'Tam Onay', kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined }), 'Sigorta kararı kaydedildi.')}>Tam Onay Kaydet</button>
             </div>}
-            {t.teklif_muhatabi === 'Sigorta Şirketi' && ['Gönderildi', 'Karar'].includes(t.statu) && <SigortaTeklifIslem id={id} teklif={t.kimlik} statu={t.statu} karar={t.karar} kanal={kanal} yetkili={yetkili} yap={yap} />}
+            {t.teklif_muhatabi === 'Sigorta Şirketi' && ['Gönderildi', 'Karar'].includes(t.statu) && <SigortaTeklifIslem id={id} teklif={t.kimlik} statu={t.statu} karar={t.karar} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} onayBelge={onayBelge} setOnayBelge={setOnayBelge} yap={yap} />}
           </div>
         ))}
         {ticari && <>
@@ -370,6 +384,45 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
 }
 
 /** YG-948, YG-920: İdari İşlemlerim: izin ve masraf. Metin sağlık veya tanı bilgisi içermez (YG-952). */
+interface Ek2Satir { eposta: string; ad: string; gorev: string; onay: boolean; temsilci: boolean; limit: string; bitis: string }
+interface Ek2Surum { kimlik: string; sigortaci_adi: string; surum: number; durum: string; adresler: { eposta: string; ad: string; onay: boolean; temsilci: boolean; limit: string | null; bitis: string | null }[] }
+/** YG-219, YG-1522: Sigorta Çerçeve Sözleşmesi Ek-2. Değişiklik temsilcinin bildirimiyle yeni sürüm olur. */
+export function SigortaEk2() {
+  const { yap, Mesaj } = useYap(() => undefined);
+  const bos: Ek2Satir = { eposta: '', ad: '', gorev: '', onay: false, temsilci: false, limit: '', bitis: '' };
+  const [l, setL] = useState<Ek2Surum[]>([]); const [hata, setHata] = useState(''); const [sig, setSig] = useState(''); const [bildiren, setBildiren] = useState(''); const [ref, setRef] = useState(''); const [s, setS] = useState<Ek2Satir[]>([bos]);
+  const yukle = () => istek<Ek2Surum[]>('/sigorta-ek2').then(setL).catch((x) => setHata((x as Error).message));
+  useEffect(() => { void yukle(); }, []);
+  const deg = (n: number, x: Partial<Ek2Satir>) => setS(s.map((a, i) => (i === n ? { ...a, ...x } : a)));
+  const kayitli = l.some((x) => x.sigortaci_adi.toLocaleLowerCase('tr-TR') === sig.trim().toLocaleLowerCase('tr-TR') && x.durum === 'Yürürlükte');
+  return (
+    <>
+      <h1>Sigorta Ek-2 Listesi</h1><Mesaj />
+      {hata && <div className="hata" role="alert">{hata}</div>}
+      <Blok baslik="Kayıtlı Listeler">
+        {l.length === 0 && <div className="not">Kayıtlı liste bulunmamaktadır.</div>}
+        {l.map((x) => <div key={x.kimlik} className="soru"><span><b className="koyu">{x.sigortaci_adi}</b> · Sürüm {x.surum} · {x.durum}</span><div className="tam">{x.adresler.map((a) => <div key={a.eposta}>{a.ad} · {a.eposta}{a.onay ? ' · Onay Adresi' : ''}{a.temsilci ? ' · Kurumsal Temsilci' : ''}{a.limit ? ` · Sınır: ${eur(a.limit)}` : ''}{a.bitis ? ` · Bitiş: ${a.bitis.split('T')[0]!.split('-').reverse().join('.')}` : ''}</div>)}</div></div>)}
+      </Blok>
+      <Blok baslik="Liste Kaydet">
+        <label htmlFor="e2-s">Sigorta Şirketi</label><input id="e2-s" value={sig} onChange={(e) => setSig(e.target.value)} />
+        {kayitli && <><label htmlFor="e2-b">Bildirimi Gönderen Temsilci Adresi</label><input id="e2-b" type="email" value={bildiren} onChange={(e) => setBildiren(e.target.value)} /><label htmlFor="e2-r">Bildirim Referansı</label><input id="e2-r" value={ref} onChange={(e) => setRef(e.target.value)} /></>}
+        {s.map((a, n) => (
+          <div key={n} className="soru"><div className="tam">
+            <label htmlFor={`e2-a${n}`}>Ad Soyad</label><input id={`e2-a${n}`} value={a.ad} onChange={(e) => deg(n, { ad: e.target.value })} />
+            <label htmlFor={`e2-e${n}`}>E-posta</label><input id={`e2-e${n}`} type="email" value={a.eposta} onChange={(e) => deg(n, { eposta: e.target.value })} />
+            <label htmlFor={`e2-l${n}`}>Tek İşlem Sınırı (EUR)</label><input id={`e2-l${n}`} type="number" min="0" step="0.01" value={a.limit} onChange={(e) => deg(n, { limit: e.target.value })} />
+            <label htmlFor={`e2-d${n}`}>Yetki Bitişi</label><input id={`e2-d${n}`} type="date" value={a.bitis} onChange={(e) => deg(n, { bitis: e.target.value })} />
+            <label><input type="checkbox" checked={a.onay} onChange={(e) => deg(n, { onay: e.target.checked })} /> Onay Adresi</label>
+            <label><input type="checkbox" checked={a.temsilci} onChange={(e) => deg(n, { temsilci: e.target.checked })} /> Kurumsal Temsilci</label>
+          </div></div>
+        ))}
+        <button className="btn2 kucuk" onClick={() => setS([...s, bos])}>Satır Ekle</button>
+        <button className="btn" onClick={() => void yap(() => istek<{ surum: number }>('/sigorta-ek2', { sigortaci: sig, bildiren: bildiren || undefined, referans: ref || undefined, adresler: s.map((a) => ({ eposta: a.eposta, ad: a.ad, onay: a.onay, temsilci: a.temsilci, limit: a.limit ? Number(a.limit) : undefined, bitis: a.bitis || undefined })) }).then((r) => { setS([bos]); setSig(''); setBildiren(''); setRef(''); void yukle(); return { uyari: `Sürüm ${r.surum} kaydedildi.` }; }))}>Listeyi Kaydet</button>
+      </Blok>
+    </>
+  );
+}
+
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
   const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '' });

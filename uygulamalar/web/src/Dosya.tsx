@@ -17,7 +17,7 @@ interface DosyaAyrinti extends DosyaSatir {
   yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null }[];
-  sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null } | null;
+  sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
   ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean }[];
   gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null }[];
 }
@@ -238,7 +238,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         <div>{d.kisa_teknik_tanim}</div>
         <div>Konum: {d.konum}</div>
         {d.sigorta && <div>Sigorta: {d.sigorta.sigortaci_adi ?? '—'} · Hasar Dosya No: {d.sigorta.sigorta_hasar_dosya_no ?? '—'}</div>}
-        {d.sigorta && <SigortaEposta id={id} eposta={d.sigorta.eposta} yenile={yukle} />}
+        {d.sigorta && <SigortaEposta id={id} eposta={d.sigorta.eposta} ek3={d.sigorta.onay_yetkilisi_eposta} yenile={yukle} />}
       </div>
       {d.yapilacaklar.length > 0 && <Blok baslik="Yapılacaklar">{d.yapilacaklar.map((y) => <div key={y.is} className={y.engel ? 'uyari' : ''}>{y.is} · {y.sorumlu}</div>)}</Blok>}
       {d.sureler.length > 0 && <Blok baslik="Süreler">{d.sureler.map((s) => <div key={s.tur}>{s.tur}: <Sayac s={s} /></div>)}</Blok>}

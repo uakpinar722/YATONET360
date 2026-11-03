@@ -5,7 +5,7 @@ import { AramaSonucu, Dosyalar } from './Dosya';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 import { YatSahibiAna } from './Portal';
-import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna } from './Ticari';
+import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna, SigortaEk2 } from './Ticari';
 import { FirmaSicil } from './Sicil';
 import { TedarikciAna, TesisAna } from './Portallar';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
@@ -13,7 +13,7 @@ import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'ek2' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -55,6 +55,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
     { s: 'kurtarma', ad: 'Hesap Kurtarma', ik: '⚿', izin: 'hesap_kurtarma.ac' },
     ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }, { s: 'vekalet' as Sayfa, ad: 'Vekâlet', ik: '⇄' }, { s: 'duyuru' as Sayfa, ad: 'Duyuru Yayımla', ik: '📣' }, { s: 'toplanti' as Sayfa, ad: 'Toplantılar', ik: '▦' }] : []),
+    ...(ben.roller.some((r) => r.rol_adi === 'Müşteri ve Paydaş İlişkileri Müdürü') ? [{ s: 'ek2' as Sayfa, ad: 'Sigorta Ek-2', ik: '✉' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
   ];
   const b = veri?.okunmamisBildirim ?? 0;
@@ -72,6 +73,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     dosya: <Dosyalar ben={ben} acikDosya={acikDosya} acildi={() => setAcikDosya(null)} />,
     ara: <AramaSonucu q={araQ} ac={(id) => { setAcikDosya(id); git('dosya'); }} />,
     idari: <IdariIslemler />,
+    ek2: <SigortaEk2 />,
     sicil: <FirmaSicil ben={ben} />,
     nobet: <NobetAcil cizelge={ben.izinler.includes('nobet.hazirla')} izinli={ben.izinler.includes('ihbar.kaydet')} dosyaAc={(id) => { setAcikDosya(id); git('dosya'); }} />,
     yardim: <Yakinda ad="Yardım" adim="sonraki adımlar" />,

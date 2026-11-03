@@ -205,6 +205,38 @@ try {
   await pDs.getByText('Kalemler ve Eksper Raporu').first().scrollIntoViewIfNeeded();
   await pDs.screenshot({ path: join(CIKTI, 'eksper_karsilastirma.png') });
 
+  // Kısmi kararlı teklif: yeniden değerlendirme ekranı (YG-204)
+  const yd = (await sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) SELECT $1, $2, 'Sigorta Şirketi', 20, 'Karar', 'Kısmi Onay', 300, 60, 360, 300, hazirlayan_ref FROM fiyat_teklifi WHERE teklif_no = $3 RETURNING kimlik`, [`${d.dosyaNo}-TK98`, d.kimlik, no])).rows[0].kimlik;
+  await sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'Şaft','Onarım','İşçilik',1,'adet',300,300,'Onaylanmadı')`, [yd]);
+  await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
+  const adresDugme = pDs.getByRole('button', { name: 'Adres Gir' }); await pDs.getByText('Fiyat Teklifleri').first().waitFor();
+  if (await adresDugme.count()) { await adresDugme.click(); await pDs.getByLabel('Sigorta E-postası').fill('hasar@deneme.local'); await tikla(pDs, 'Kaydet'); await pDs.getByText('Sigorta E-postası: hasar@deneme.local').waitFor(); }
+  kontrol('sigorta adresi dosya ekranından girilir', await pDs.getByText(/Sigorta E-postası: /).first().isVisible());
+  const ydKart = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
+  await ydKart.getByLabel('Kalem Seç 1').check();
+  await ydKart.getByLabel('Teknik Gerekçe').fill('Salgı 0,11 mm ölçüldü');
+  await ydKart.getByRole('button', { name: 'Seçilenler İçin Yeniden Değerlendirme İste' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme');
+  await pDs.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).first().click();
+  const yd2 = pDs.getByRole('button', { name: 'İkinci Teyit: Sigortaya Gönder' }).first(); await yd2.waitFor(); await pDs.waitForTimeout(2300);
+  await yd2.click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme teyidi');
+  kontrol('yeniden değerlendirme ikinci teyitle gider', (await sup.query(`SELECT durum FROM yeniden_degerlendirme WHERE teklif_ref = $1`, [yd])).rows[0].durum === 'Gönderildi');
+  await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
+  const ydSon = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
+  await ydSon.getByLabel('Kalem Seç 1').check();
+  await ydSon.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
+  await ydSon.getByRole('button', { name: 'Yeniden Değerlendirme Sonucunu Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme sonucu');
+  kontrol('yeniden değerlendirme sonucu kalemi onaylar', (await sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [yd])).rows[0].onay_durumu === 'Onaylandı');
+  await sup.query(`UPDATE fiyat_teklifi SET statu = 'Yerine Geçti' WHERE kimlik = $1`, [yd]);
+
+  // Garanti kararı ekranı: iyi niyet onaya gider (YG-175)
+  await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
+  await pDs.getByLabel('Belirti').fill('Titreşim'); await tikla(pDs, 'Kaydı Aç'); await pDs.waitForTimeout(500);
+  await dosyaAc(sayfalar.ty, d.dosyaNo);
+  await sayfalar.ty.getByLabel('Kapsam Kararı').first().selectOption('İyi Niyet');
+  await sayfalar.ty.getByLabel('Karar Gerekçesi').first().fill('Müşteri memnuniyeti'); await sayfalar.ty.getByLabel('İyi Niyet Tutarı (EUR)').first().fill('10');
+  await tikla(sayfalar.ty, 'Kararı Kaydet');
+  kontrol('iyi niyet kararı onaya gider, karar yazılmaz', (await sup.query(`SELECT g.karar, (SELECT count(*)::int FROM is_karti k WHERE k.tur = 'İyi Niyet Kararı' AND k.nesne_kimligi = g.kimlik::text) n FROM garanti_sikayet g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani DESC LIMIT 1`, [d.kimlik])).rows.every((r) => r.karar === null && r.n === 1));
+
   // Onarım iş emri
   await dosyaAc(pOy, d.dosyaNo);
   await isEmriForm(pOy, 'ON', 'Laminasyon', '510', true);

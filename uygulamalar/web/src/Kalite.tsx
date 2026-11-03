@@ -229,12 +229,13 @@ export function YatDegeriBolumu({ id }: { id: string }) {
 interface Gonderim { kimlik: string; tur: string; alici: string; konu: string; metin: string | null; durum: string; benimBirinci: boolean; ekler: string[]; onizleme: boolean }
 
 /** K-241: sigortaya giden her ileti ve belge, son gönderenin iki ayrı teyidiyle çıkar. İkinci düğme metin görüldükten sonra açılır. */
-export function SigortaEposta({ id, eposta, yenile }: { id: string; eposta: string | null; yenile: () => unknown }) {
-  const [v, setV] = useState(''); const [hata, setHata] = useState(''); const [ac, setAc] = useState(false);
+export function SigortaEposta({ id, eposta, ek3, yenile }: { id: string; eposta: string | null; ek3: string | null; yenile: () => unknown }) {
+  const [v, setV] = useState(''); const [hata, setHata] = useState(''); const [ac, setAc] = useState(false); const [e3, setE3] = useState(ek3 ?? '');
   const kaydet = () => { setHata(''); void istek(`/dosya/${id}/sigorta-eposta`, { eposta: v }).then(() => { setAc(false); setV(''); return yenile(); }).catch((x) => setHata((x as Error).message)); };
   return (
     <div>
       {eposta ? <>Sigorta E-postası: {eposta} <button className="btn2 kucuk" onClick={() => setAc(!ac)}>Değiştir</button></> : <span className="uyari">⚠ Sigorta şirketinin e-posta adresi bekleniyor. <button className="btn2 kucuk" onClick={() => setAc(!ac)}>Adres Gir</button></span>}
+      <div><label htmlFor={`sg3-${id}`}>Dosyaya Özel Onay Yetkilisi (Ek-3)</label><input id={`sg3-${id}`} type="email" value={e3} onChange={(e) => setE3(e.target.value)} /><button className="btn2 kucuk" disabled={e3.trim() === (ek3 ?? '')} onClick={() => { setHata(''); void istek(`/dosya/${id}/ek3-onay-yetkilisi`, { eposta: e3 }).then(() => yenile()).catch((x) => setHata((x as Error).message)); }}>Onay Yetkilisini Kaydet</button></div>
       {ac && <div><label htmlFor={`sge-${id}`}>Sigorta E-postası</label><input id={`sge-${id}`} type="email" value={v} onChange={(e) => setV(e.target.value)} /><button className="btn2 kucuk" disabled={!v.trim()} onClick={kaydet}>Kaydet</button></div>}
       {hata && <div className="hata" role="alert">{hata}</div>}
     </div>
