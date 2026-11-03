@@ -7,6 +7,9 @@ import { dilKod, rolId, yatTarafinaYaz } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
+import { metinGetir } from './metin.js';
+import { ek2Engeli, KURUMSAL_EPOSTA } from './sigorta_ek2.js';
+import { sigortaAdresiBekleniyor, sigortayaHazirla } from './sigorta_gonderim.js';
 
 type Db = Pool | PoolClient;
 export const GORUS_ROLLERI = ['Operasyon Yöneticisi', 'Teknik Yönetici'];
@@ -52,12 +55,45 @@ export async function ekonomikIzle(c: PoolClient, dosya: string, tutar: number):
   if (esik === 80) {
     await kart('Ekonomik Onarılamazlık', 'Ekonomik Onarılamazlık Değerlendirmesi', 'Ticari İşler Direktörü');
     const t = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [dosya])).rows[0];
+    // YG-1458, BLD-57: sigortalı dosyada sigortaya ikili teyitle bildirim; kararına kadar yeni kalem eklenmez.
+    if (v.dosya_niteligi === 'Sigorta bağlantılı' && await birKez(c, 'Ekonomik Kilit', dosya)) {
+      await c.query(`UPDATE dosya SET ekonomik_kilit = true WHERE kimlik = $1`, [dosya]);
+      const sg = (await c.query(`SELECT s.sigortaci_adi, s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [dosya])).rows[0];
+      if (sg?.eposta) await sigortayaHazirla(c, { dosya, tur: 'BLD-57', nesne: dosya, alici: sg.eposta, konu: `${v.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-57', dilKod(v.yazisma_dili), { Kurum: sg.sigortaci_adi ?? '', Institution: sg.sigortaci_adi ?? '', 'Dosya No': v.dosya_no, 'File No': v.dosya_no, 'Hasar Dosya No': sg.sigorta_hasar_dosya_no ?? '—', 'Claim No': sg.sigorta_hasar_dosya_no ?? '—' }), acil: true });
+      else await sigortaAdresiBekleniyor(c, dosya);
+    }
     if (t && !v.vefat_isareti) await yatTarafinaYaz(c, { olay: `ekonomik:${dosya}`, kod: v.dosya_niteligi === 'Sigorta bağlantılı' ? 'BLD-58' : 'BLD-59', dil: dilKod(v.yazisma_dili), konu: `${v.dosya_no} Onarım Planı`, telefon: t.telefon, eposta: t.eposta, alanlar: { Yat: v.yat_adi, Yacht: v.yat_adi } });
   }
 }
 
+/** YG-1458: kilitli dosyada yeni kalem, yeni teklif ve ek iş emri beklemeye alınır. */
+export async function ekonomikKilitEngeli(db: Db, dosya: string): Promise<string | null> {
+  return (await db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND ekonomik_kilit`, [dosya])).rowCount ? 'Sigorta şirketinin onarıma devam kararı bekleniyor; kararına kadar yeni kalem eklenmemektedir.' : null;
+}
+
 export function yatDegeriYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
+  // YG-1458: sigortanın yazılı kararını Dosya Sorumlusu tanımlı kanalla girer; oran ve değer ekrana gelmez.
+  s.post('/dosya/:id/ekonomik-karar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; kanal?: string; yetkili?: string; belge?: string; gonderen?: string };
+    const d = UUID.test(id) ? (await b.db.query(`SELECT dosya_no, ekonomik_kilit, dosya_sorumlusu_ref, yedek_sorumlu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0] : null;
+    if (!d || (d.dosya_sorumlusu_ref !== o.kullanici && d.yedek_sorumlu_ref !== o.kullanici)) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    if (!d.ekonomik_kilit) return y.code(409).send({ hata: 'Bu dosyada sigorta kararı beklenmemektedir.' });
+    if (!['Devam', 'Onarım Yapılmayacak'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
+    if (!['YATONET 360', 'KEP', 'E-imza', KURUMSAL_EPOSTA].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Telefon ve WhatsApp onay kanalı sayılmaz; tanımlı kanalı seçmenizi rica ederiz.' });
+    if (!g.yetkili?.trim()) return y.code(400).send({ hata: 'Onaylayan yetkiliyi yazmanızı rica ederiz.' });
+    if (g.kanal !== 'YATONET 360' && !(g.belge && UUID.test(g.belge) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi::text = $2`, [g.belge, id])).rowCount)) return y.code(400).send({ hata: 'Karar belgesini dosyaya yüklemenizi rica ederiz.' });
+    if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(b.db, id, g.gonderen, 0); if (h) return y.code(409).send({ hata: h }); }
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE dosya SET ekonomik_kilit = $2, ekonomik_karar = $3, ekonomik_karar_zamani = now() WHERE kimlik = $1`, [id, g.karar !== 'Devam', g.karar]);
+      if (g.karar !== 'Devam') await kartAc(c, { tur: 'Hükmi Tam Ziya Kapanışı', kategori: 'gorev', baslik: `${d.dosya_no} · Sigorta Onarım Yapılmayacağını Bildirdi`, ozet: 'Dosya kapanışını Hükmi Tam Ziya nedeniyle başlatmanızı rica ederiz.', oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ekonomik Onarım Sigorta Kararı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { karar: g.karar, kanal: g.kanal, yetkili: g.yetkili.trim(), gonderen: g.gonderen?.trim() || null, belge: g.belge ?? null }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { karar: g.karar };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const atanmisRol = async (dosya: string, k: string) => (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = ANY($3) AND bitis_zamani IS NULL`, [dosya, k, GORUS_ROLLERI])).rows.map((r) => r.rol as string);
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2) LIMIT 1`, [k, r])).rowCount);

@@ -1,4 +1,4 @@
-import { ekonomikIzle, yatDegeriEngeli } from './yat_degeri.js';
+import { ekonomikIzle, ekonomikKilitEngeli, yatDegeriEngeli } from './yat_degeri.js';
 import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import { ek2Engeli, KURUMSAL_EPOSTA } from './sigorta_ek2.js';
 import { raporEngeli } from './rapor.js';
@@ -239,6 +239,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { firmaTeklifi?: string; muhatap?: string; dil?: string; odemeVadesi?: string; faturaBilgisi?: string; ekTeklif?: string };
     const d = await dosyam(id, o.kullanici);
     if (!d) return yok(y);
+    const kilit = await ekonomikKilitEngeli(b.db, id); if (kilit) return y.code(409).send({ hata: kilit });
     if (!(await roller(o.kullanici)).includes(TICARI)) return y.code(403).send({ hata: 'Müşteri teklifini Ticari Sorumlu hazırlar.' });
     if (d.statu !== 'Aktif') return y.code(409).send({ hata: 'Teklif yalnız Aktif dosyada hazırlanır.' });
     const muhatap = g.muhatap ?? (d.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta Şirketi' : d.musteri_turu === 'Kurumsal Müşteri' ? 'Kurumsal Müşteri' : 'Yat Sahibi');
@@ -300,7 +301,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const teklifler = (await b.db.query(`SELECT kimlik, teklif_no, surum_no, teklif_turu, statu, karar, ara_toplam_eur, genel_toplam_eur, gecerlilik_bitis_tarihi::text, teklif_muhatabi FROM fiyat_teklifi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`, [id])).rows;
     const firma = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.durum, f.toplam_eur, f.gecerlilik::text FROM firma_fiyat_teklifi f WHERE f.dosya_ref = $1 ORDER BY f.olusturma_zamani DESC`, [id])).rows;
     const isEmirleri = (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.is_emri_turu, e.statu, e.firma_yaniti, e.ana_is_emri_ref, u.ticari_unvan AS firma FROM is_emri e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 ORDER BY e.olusturma_zamani`, [id])).rows;
-    return { cetveller, teklifler, firma, isEmirleri };
+    return { cetveller, teklifler, firma, isEmirleri, ekonomikKilit: !(await ekonomikKilitEngeli(b.db, id) === null) };
   });
 
   // YG-174: indirim yalnız GMY ve CEO ekranında; %1–%10 tam sayı; tutara bakmadan GMY'ye çıkar, %5 üstü GMY görüşüyle CEO.
@@ -337,6 +338,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return yok(y);
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Masraf kalemini teklifi hazırlayan ekler.' });
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Masraf kalemi taslak teklife eklenir.' });
+    const kilit = await ekonomikKilitEngeli(b.db, t.dosya_ref); if (kilit) return y.code(409).send({ hata: kilit });
     if (!g.aciklama?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Açıklama ve tutarı yazmanızı rica ederiz.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Tesis teklifi veya tarife belgesini eklemenizi rica ederiz.' });
     return islem(async (c) => {

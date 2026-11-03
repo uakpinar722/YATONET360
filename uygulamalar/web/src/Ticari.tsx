@@ -76,6 +76,7 @@ const BEDEL = ['Malzeme', 'İşçilik', 'Nakliye', 'Masraf', 'Kurtarma', 'Çekme
 interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string }
 interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
+  ekonomikKilit: boolean;
   teklifler: { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string }[];
   isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null }[];
@@ -131,6 +132,11 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
       </Blok>
       <Blok baslik="Fiyat Teklifleri">
         {v.teklifler.length === 0 && <div className="not">Teklif bulunmamaktadır.</div>}
+        {v.ekonomikKilit && <div className="soru"><div className="tam">
+          <div className="uyari">⚠ Sigorta şirketinin onarıma devam kararı bekleniyor; kararına kadar yeni kalem eklenmemektedir.</div>
+          <OnayKanali no="ekonomik" id={id} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} belge={onayBelge} setBelge={setOnayBelge} />
+          {['Devam', 'Onarım Yapılmayacak'].map((k) => <button key={k} className="btn2 kucuk" disabled={!yetkili.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/ekonomik-karar`, { karar: k, kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined }), 'Sigorta kararı kaydedildi.')}>Sigorta Kararı: {k}</button>)}
+        </div></div>}
         {v.teklifler.map((t) => (
           <div key={t.kimlik} className="soru">
             <span>{t.teklif_no} Rev.{t.surum_no} · {t.teklif_muhatabi} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {eur(t.genel_toplam_eur)}{t.gecerlilik_bitis_tarihi ? ` · Geçerlilik: ${t.gecerlilik_bitis_tarihi.split('-').reverse().join('.')}` : ''}</span>

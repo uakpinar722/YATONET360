@@ -1,11 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { sigortaSureIsle } from '../src/sigorta.js';
+import { ekonomikIzle } from '../src/yat_degeri.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', gmy: 'Genel Müdür Yardımcısı' };
 let o: Ortam; const EP = 'hasar@yd.deneme.local';
 const dosya = async (eposta: string | null = EP) => {
+  await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); // kapasite sınırı sınanmıyor
   const d = await o.dosyaAc({ sigortaci: 'YD Sigorta', hasarNo: 'H7' }, { musteriTuru: 'Sigorta Şirketi' }); await o.ekipKur(d.kimlik);
   if (eposta) await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ds'), { eposta });
   return d;
@@ -108,6 +110,43 @@ describe('iyi niyet kararı (YG-175)', () => {
     expect((await o.sup.query(`SELECT karar, statu, iyi_niyet_orani FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0]).toMatchObject({ karar: null, statu: 'Açık', iyi_niyet_orani: null });
     const d2 = await dosya(); const id2 = await kayit(d2.kimlik); await K(id2, { maliyet: 1 }); expect(await makam(id2)).toBe('CEO');
     const d3 = await dosya(); await fatura(d3, 1000000); const id3 = await kayit(d3.kimlik); const r3 = await o.ist('POST', `/api/garanti-sikayet/${id3}/karar`, await o.gir('tm'), { gerekce: 'Jest', karar: 'İyi Niyet', maliyet: 10000.01 }); expect(r3.statusCode, r3.body).toBe(200); expect(await makam(id3)).toBe('CEO');
+  });
+});
+
+describe('ekonomik onarım kilidi (YG-1458, BLD-57)', () => {
+  const izle = async (id: string, tutar: number) => { const c = await o.db.connect(); try { await ekonomikIzle(c, id, tutar); } finally { c.release(); } };
+  const deger = async (id: string) => Number((await o.sup.query(`SELECT deger_eur FROM dosya_yat_degeri WHERE dosya_ref = $1 AND durum = 'Kesin'`, [id])).rows[0].deger_eur);
+  it('%80 altında kilit yok; %80\'de BLD-57 ikili teyide düşer, oran ve değer yazmaz, yeni teklif ve masraf kilitlenir; bir kez', async () => {
+    const d = await dosya(); const v = await deger(d.kimlik);
+    await izle(d.kimlik, v * 0.79); expect((await o.sup.query(`SELECT ekonomik_kilit FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].ekonomik_kilit).toBe(false);
+    await izle(d.kimlik, v * 0.8); await izle(d.kimlik, v * 0.9);
+    const g = (await o.sup.query(`SELECT metin, alici, durum FROM sigorta_gonderim WHERE dosya_ref = $1 AND tur = 'BLD-57'`, [d.kimlik])).rows; expect(g).toHaveLength(1);
+    expect(g[0]).toMatchObject({ alici: EP, durum: 'Teyit Bekliyor' }); expect(g[0].metin).toContain('yeni kalem eklenmeyecektir'); expect(g[0].metin).toContain(d.dosyaNo); expect(g[0].metin).not.toContain(String(v)); expect(g[0].metin).not.toContain('%');
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teklif`, await o.gir('ts'), {}); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('devam kararı bekleniyor');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, await o.gir('ts'))).json().ekonomikKilit).toBe(true);
+  });
+  it('kararı yalnız Dosya Sorumlusu girer; Devam kilidi açar, tekrar kilitlenmez; Onarım Yapılmayacak kapanış görevi açar', async () => {
+    const d = await dosya(); const v = await deger(d.kimlik); await izle(d.kimlik, v); const u = `/api/dosya/${d.kimlik}/ekonomik-karar`; const c = await o.gir('ds');
+    expect((await o.ist('POST', u, await o.gir('ty'), { karar: 'Devam', kanal: 'YATONET 360', yetkili: 'Y' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, c, { karar: 'Devam', kanal: 'Telefon', yetkili: 'Y' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { karar: 'Devam', kanal: 'KEP', yetkili: 'Y' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { karar: 'Devam', kanal: 'YATONET 360', yetkili: 'Y' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT ekonomik_kilit FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].ekonomik_kilit).toBe(false);
+    await izle(d.kimlik, v * 1.1); expect((await o.sup.query(`SELECT ekonomik_kilit FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].ekonomik_kilit).toBe(false);
+    expect((await o.ist('POST', u, c, { karar: 'Devam', kanal: 'YATONET 360', yetkili: 'Y' })).statusCode).toBe(409);
+    const d2 = await dosya(); await izle(d2.kimlik, await deger(d2.kimlik));
+    expect((await o.ist('POST', `/api/dosya/${d2.kimlik}/ekonomik-karar`, c, { karar: 'Onarım Yapılmayacak', kanal: 'YATONET 360', yetkili: 'Y' })).statusCode).toBe(200);
+    expect(await o.kart('Hükmi Tam Ziya Kapanışı', d2.kimlik)).toBeDefined();
+    expect((await o.sup.query(`SELECT ekonomik_kilit FROM dosya WHERE kimlik = $1`, [d2.kimlik])).rows[0].ekonomik_kilit).toBe(true);
+  });
+  it('sigorta adresi yoksa görev açılır, kilit yine devrededir', async () => {
+    const d = await dosya(null); await izle(d.kimlik, await deger(d.kimlik));
+    expect((await o.sup.query(`SELECT ekonomik_kilit FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].ekonomik_kilit).toBe(true);
+    expect(await o.kart('Sigorta Adresi Bekleniyor', d.kimlik)).toBeDefined();
+  });
+  it('bireysel dosyada sigorta kilidi yoktur', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); await izle(d.kimlik, await deger(d.kimlik));
+    expect((await o.sup.query(`SELECT ekonomik_kilit FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].ekonomik_kilit).toBe(false);
   });
 });
 

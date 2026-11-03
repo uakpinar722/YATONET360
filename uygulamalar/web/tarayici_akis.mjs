@@ -206,14 +206,18 @@ try {
   await pDs.screenshot({ path: join(CIKTI, 'eksper_karsilastirma.png') });
 
   // Kısmi kararlı teklif: yeniden değerlendirme ekranı (YG-204)
-  const yd = (await sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) SELECT $1, $2, 'Sigorta Şirketi', 20, 'Karar', 'Kısmi Onay', 300, 60, 360, 300, hazirlayan_ref FROM fiyat_teklifi WHERE teklif_no = $3 RETURNING kimlik`, [`${d.dosyaNo}-TK98`, d.kimlik, no])).rows[0].kimlik;
-  await sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'Şaft','Onarım','İşçilik',1,'adet',300,300,'Onaylanmadı')`, [yd]);
+  const yd = (await sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) SELECT $1, $2, 'Sigorta Şirketi', 20, 'Gönderildi', NULL, 400, 80, 480, 400, hazirlayan_ref FROM fiyat_teklifi WHERE teklif_no = $3 RETURNING kimlik`, [`${d.dosyaNo}-TK98`, d.kimlik, no])).rows[0].kimlik;
+  await sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,1,'Pervane','Onarım','İşçilik',1,'adet',100,100), ($1,2,'Şaft','Onarım','İşçilik',1,'adet',300,300)`, [yd]);
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   const adresDugme = pDs.getByRole('button', { name: 'Adres Gir' }); await pDs.getByText('Fiyat Teklifleri').first().waitFor();
   if (await adresDugme.count()) { await adresDugme.click(); await pDs.getByLabel('Sigorta E-postası').fill('hasar@deneme.local'); await tikla(pDs, 'Kaydet'); await pDs.getByText('Sigorta E-postası: hasar@deneme.local').waitFor(); }
   kontrol('sigorta adresi dosya ekranından girilir', await pDs.getByText(/Sigorta E-postası: /).first().isVisible());
   const ydKart = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
   await ydKart.getByLabel('Kalem Seç 1').check();
+  await ydKart.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
+  await ydKart.getByRole('button', { name: 'Seçilenlerle Kısmi Onay Kaydet' }).click(); await pDs.waitForTimeout(600); await hataVarsa(pDs, 'Kısmi onay');
+  kontrol('kısmi onay ekrandan kaydedilir', (await sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [yd])).rows[0].karar === 'Kısmi Onay');
+  await ydKart.getByLabel('Kalem Seç 2').check();
   await ydKart.getByLabel('Teknik Gerekçe').fill('Salgı 0,11 mm ölçüldü');
   await ydKart.getByRole('button', { name: 'Seçilenler İçin Yeniden Değerlendirme İste' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme');
   await pDs.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).first().click();
@@ -222,11 +226,34 @@ try {
   kontrol('yeniden değerlendirme ikinci teyitle gider', (await sup.query(`SELECT durum FROM yeniden_degerlendirme WHERE teklif_ref = $1`, [yd])).rows[0].durum === 'Gönderildi');
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   const ydSon = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
-  await ydSon.getByLabel('Kalem Seç 1').check();
+  await ydSon.getByLabel('Kalem Seç 2').check();
   await ydSon.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
   await ydSon.getByRole('button', { name: 'Yeniden Değerlendirme Sonucunu Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme sonucu');
-  kontrol('yeniden değerlendirme sonucu kalemi onaylar', (await sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [yd])).rows[0].onay_durumu === 'Onaylandı');
+  kontrol('yeniden değerlendirme sonucu kalemi onaylar', (await sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = 2`, [yd])).rows[0].onay_durumu === 'Onaylandı');
   await sup.query(`UPDATE fiyat_teklifi SET statu = 'Yerine Geçti' WHERE kimlik = $1`, [yd]);
+
+  // Ek-3 alanı ve ekonomik kilit ekranı
+  await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
+  await pDs.getByLabel('Dosyaya Özel Onay Yetkilisi (Ek-3)').fill('yetkili@deneme.local'); await tikla(pDs, 'Onay Yetkilisini Kaydet');
+  kontrol('Ek-3 onay yetkilisi ekrandan kaydedilir', (await sup.query(`SELECT onay_yetkilisi_eposta e FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].e === 'yetkili@deneme.local');
+  await sup.query(`UPDATE dosya_sigorta_kaydi SET onay_yetkilisi_eposta = NULL WHERE dosya_ref = $1`, [d.kimlik]);
+  await sup.query(`UPDATE dosya SET ekonomik_kilit = true WHERE kimlik = $1`, [d.kimlik]);
+  await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
+  await pDs.getByText('onarıma devam kararı bekleniyor').first().waitFor();
+  await pDs.getByLabel('Onaylayan Yetkili').first().fill('Hasar Müdürü');
+  await tikla(pDs, 'Sigorta Kararı: Devam');
+  kontrol('ekonomik kilit sigorta kararıyla açılır', (await sup.query(`SELECT ekonomik_kilit k FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].k === false);
+
+  // Sigorta Ek-2 sayfası (YG-219)
+  E.mpm = await hesap('mpm', 'Müşteri ve Paydaş İlişkileri Müdürü');
+  const pMpm = await al('mpm', E);
+  await pMpm.getByRole('button', { name: 'Sigorta Ek-2' }).first().click();
+  await pMpm.getByLabel('Sigorta Şirketi').fill(`E2E Ek2 ${tek}`);
+  await pMpm.getByLabel('Ad Soyad').fill('Onay Yetkilisi'); await pMpm.getByLabel('E-posta').fill('ek2@deneme.local');
+  await pMpm.getByLabel('Onay Adresi').check(); await pMpm.getByLabel('Kurumsal Temsilci').check();
+  await tikla(pMpm, 'Listeyi Kaydet');
+  await tasmaYok(pMpm, 'sigorta_ek2');
+  kontrol('Ek-2 listesi ekrandan kaydedilir', (await sup.query(`SELECT count(*)::int n FROM sigorta_ek2_surum WHERE sigortaci_adi = $1 AND durum = 'Yürürlükte'`, [`E2E Ek2 ${tek}`])).rows[0].n === 1);
 
   // Garanti kararı ekranı: iyi niyet onaya gider (YG-175)
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);

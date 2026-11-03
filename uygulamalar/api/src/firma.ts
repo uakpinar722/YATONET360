@@ -10,6 +10,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { coz, totpDogrula } from './kripto.js';
 import { altNumara, sayac } from './sure.js';
 import { belgeUret } from './belge_uret.js';
+import { ekonomikKilitEngeli } from './yat_degeri.js';
 import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID, vergiNoGecerli } from './yat.js';
 import { belgeBagiKaydet } from './belge.js';
@@ -148,6 +149,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT * FROM dosya WHERE kimlik = $1`, [id])).rows[0];
     if (d.statu !== 'Aktif') return y.code(409).send({ hata: 'İş emri yalnız Aktif dosyada verilir.' });
+    if (g.tur === 'EK') { const kilit = await ekonomikKilitEngeli(b.db, id); if (kilit) return y.code(409).send({ hata: kilit }); }
     if (d.calisma_durduruldu) return y.code(409).send({ hata: 'Yat sahibi itirazı nedeniyle çalışmalar durdurulmuştur.' });
     if (!['KN', 'AC', 'ON', 'EK', 'GR', 'PH'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'İş emri türünü seçiniz.' });
     const yde = await yatDegeriEngeli(b.db, id, g.tur); if (yde) return y.code(409).send({ hata: yde });
