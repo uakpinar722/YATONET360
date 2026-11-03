@@ -11,7 +11,7 @@ import { altNumara, sureBaslat, sureBitir } from './sure.js';
 import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 import { bildir, disGonder } from './bildirim.js';
-import { sigortayaHazirla } from './sigorta_gonderim.js';
+import { sigortaAdresiBekleniyor, sigortayaHazirla } from './sigorta_gonderim.js';
 import { metinGetir } from './metin.js';
 import { rolSahipleri } from './makam.js';
 
@@ -28,6 +28,11 @@ export async function kapanisEksikleri(db: PoolClient | Baglam['db'], d: { kimli
   if (neden === 'Tamamlandı' && !(await db.query(`SELECT 1 FROM kesif WHERE dosya_ref = $1 AND durum = 'Tamamlandı' LIMIT 1`, [d.kimlik])).rowCount) l.push('Teknik Eksik');
   return l;
 }
+
+kapanisKaydet('İyi Niyet Kararı', async (c, k, karar, yapan) => {
+  if (karar === 'Onayla') await c.query(`UPDATE garanti_sikayet SET karar = 'İyi Niyet', statu = 'Karar', karar_veren_ref = $2, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`, [k.nesne_kimligi, yapan]);
+  else await c.query(`UPDATE garanti_sikayet SET statu = 'Açık', iyi_niyet_orani = NULL WHERE kimlik = $1`, [k.nesne_kimligi]);
+});
 
 kapanisKaydet('Dosya İşlemi', async (c, k, karar, yapan) => {
   const t = (await c.query(`SELECT t.*, d.statu, d.asama, d.dosya_no FROM dosya_islem_tutanagi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [k.nesne_kimligi])).rows[0];
@@ -398,6 +403,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       // BLD-45: sigortaya bekletme e-postası Dosya Sorumlusunun ikili teyidiyle gider (K-241); yat sahibine otomatik ileti durmuştur.
       const sg = (await c.query(`SELECT t.eposta FROM dosya_sigorta_kaydi s JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [id])).rows[0];
       if (sg?.eposta) await sigortayaHazirla(c, { dosya: id, tur: 'BLD-45', nesne: id, alici: sg.eposta, konu: `${d.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-45', 'tr', { 'Dosya No': d.dosya_no }), acil: true });
+      else await sigortaAdresiBekleniyor(c, id);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vefat İşareti', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { tamam: true };
     });
@@ -470,6 +476,24 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });
       if ((g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Düzeltme maliyeti 5.000,00 EUR üstünde karar Teknik Müdür onayındadır.' });
       if (g.kapat && !g.kokNeden) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
+    }
+    // YG-175: iyi niyet fatura tutarının %5'ine kadar GMY, üzeri CEO; karar onaylanınca yazılır. Fatura yoksa oran hesaplanamaz, CEO'ya gider.
+    if (garanti && g.karar === 'İyi Niyet') {
+      if (!(Number(g.maliyet) > 0)) return y.code(400).send({ hata: 'İyi niyet tutarını yazmanızı rica ederiz.' });
+      if (k.iyi_niyet_orani !== null || await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'İyi Niyet Kararı' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'Reddedildi', 'İptal') LIMIT 1`, [id]).then((r) => r.rowCount)) return y.code(409).send({ hata: 'Bu kayıt için iyi niyet onayı bekleniyor.' });
+      const fatura = Number((await b.db.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM musteri_faturasi WHERE dosya_ref = $1 AND durum <> 'Reddedildi'`, [k.dosya_ref])).rows[0].t);
+      const oran = fatura > 0 ? Math.round((Number(g.maliyet) / fatura) * 10000) / 100 : null;
+      const tamOran = fatura > 0 ? Number(g.maliyet) / fatura : Infinity;
+      const makam = tamOran <= 0.05 && Number(g.maliyet) <= 10000 ? 'Genel Müdür Yardımcısı' : 'CEO';
+      const c = await b.db.connect();
+      try {
+        await c.query('BEGIN');
+        await c.query(`UPDATE garanti_sikayet SET statu = 'İncelemede', iyi_niyet_orani = $2, duzeltme_maliyeti = $3, karar_gerekcesi = $4, kok_neden_tamam = kok_neden_tamam OR $5 WHERE kimlik = $1`, [id, oran ?? 100, g.maliyet, g.gerekce.trim(), Boolean(g.kokNeden)]);
+        await kartAc(c, { tur: 'İyi Niyet Kararı', baslik: `${k.kayit_no} · İyi Niyet Kararı`, ozet: `${Number(g.maliyet).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR${oran === null ? ' · fatura yok' : ` · fatura tutarının %${String(oran).replace('.', ',')}'i`}`, hazirlayan: o.kullanici, zincir: [await rolId(c, makam)], nesneTuru: 'Garanti Kaydı', nesneKimligi: id });
+        await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İyi Niyet Kararı Onaya Gönderildi', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+        await c.query('COMMIT');
+      } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+      return { durum: 'Onay Bekleniyor', makam };
     }
     if (k.kayit_turu.includes('Şikâyet') && g.sikayetSonucu && !['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].includes(g.sikayetSonucu)) return y.code(400).send({ hata: 'Şikâyet sonucunu seçiniz.' });
     await b.db.query(`UPDATE garanti_sikayet SET karar = coalesce($2, karar), sikayet_sonucu = coalesce($3, sikayet_sonucu), karar_gerekcesi = $4, karar_veren_ref = $5, duzeltme_maliyeti = coalesce($6, duzeltme_maliyeti), kok_neden_tamam = kok_neden_tamam OR $7, statu = $8, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`,

@@ -317,6 +317,19 @@ const KALEMLER = ['Genel – Baş', 'Genel – Kıç', 'Genel – Sancak', 'Gene
 const CEKILEMEDI = ['Denize bakıyor / bağlı taraf', 'Yat suda, su altı görülemiyor', 'Erişim yok', 'Güvenlik riski', 'Diğer'];
 const KAPANMA = ['Tamamlandı', 'Sigortaca Onaylanmayan', 'Müşteri Vazgeçti', 'Müşteri Vazgeçti – Yanıt Alınamadı', 'Hükmi Tam Ziya', 'Tam Ziya', 'Birleştirildi', 'Hatalı Açılış', 'Devredildi'];
 
+/** YG-175, YG-1425: garanti kapsam kararı; iyi niyet tutarına göre GMY veya CEO onayına gider. */
+function GarantiKarar({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
+  const [karar, setKarar] = useState('Garanti'); const [gerekce, setGerekce] = useState(''); const [tutar, setTutar] = useState('');
+  return (
+    <div>
+      <label htmlFor={`gk-${id}`}>Kapsam Kararı</label><select id={`gk-${id}`} value={karar} onChange={(e) => setKarar(e.target.value)}>{['Garanti', 'Üretici Garantisi', 'İyi Niyet', 'Ücretli İş', 'Kapsam Dışı'].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor={`gg-${id}`}>Karar Gerekçesi</label><input id={`gg-${id}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
+      <label htmlFor={`gt-${id}`}>{karar === 'İyi Niyet' ? 'İyi Niyet Tutarı (EUR)' : 'Düzeltme Maliyeti (EUR)'}</label><input id={`gt-${id}`} type="number" min="0" step="0.01" value={tutar} onChange={(e) => setTutar(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!gerekce.trim() || (karar === 'İyi Niyet' && !tutar)} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/karar`, { karar, gerekce, maliyet: tutar ? Number(tutar) : undefined }), karar === 'İyi Niyet' ? 'İyi niyet kararı onaya gönderildi.' : 'Karar kaydedildi.')}>Kararı Kaydet</button>
+    </div>
+  );
+}
+
 /** YG-056, YG-127, YG-1452: keşif, bulgu, yönlendirmeli fotoğraf; YG-075, YG-148: kapanış ve tutanak; YG-1425: garanti ve şikâyet. */
 function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; belgeler: Belge[]; yenile: () => void }) {
   const [v, setV] = useState<Saha | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
@@ -388,7 +401,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         </Blok>
       </>}
       <Blok baslik="Garanti ve Şikâyet">
-        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}</div>)}
+        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}{!g.karar && g.statu !== 'Kapalı' && <GarantiKarar id={g.kimlik} yap={yap} />}</div>)}
         <label htmlFor="gs-t">Kayıt Türü</label><select id="gs-t" value={gsTur} onChange={(e) => setGsTur(e.target.value)}><option>Garanti bildirimi</option><option>Şikâyet</option></select>
         <label htmlFor="gs-a">{gsTur === 'Şikâyet' ? 'Şikâyet Konusu' : 'Belirti'}</label><input id="gs-a" value={gsAcik} onChange={(e) => setGsAcik(e.target.value)} />
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/garanti-sikayet`, { turler: [gsTur], kanal: 'Telefon', oncelik: 'Normal', belirti: gsTur === 'Şikâyet' ? undefined : gsAcik, konu: gsTur === 'Şikâyet' ? gsAcik : undefined }))}>Kaydı Aç</button>

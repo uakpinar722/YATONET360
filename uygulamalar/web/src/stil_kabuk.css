@@ -97,6 +97,7 @@
 .sure.s-k { color: #c62828; font-weight: 700; }
 .soru { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid #eef0f2; }
 .soru > span { flex: 1 1 240px; }
+.soru > .tam { flex: 1 1 100%; min-width: 0; }
 .cevap { border: 1px solid #c9ced4; background: #fff; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 .cevap.c-y { background: #2e7d32; color: #fff; border-color: #2e7d32; }
 .cevap.c-s { background: #f9a825; color: #1a1a1a; border-color: #f9a825; }

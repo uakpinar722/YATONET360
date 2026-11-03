@@ -23,6 +23,14 @@ export async function sigortaAdresi(db: Db, eposta: string): Promise<{ dosya: st
  * K-241: sigortaya giden her şey önce buraya yazılır, gönderilmez. sorumlu verilirse son gönderen odur;
  * verilmezse (sistemin kendiliğinden ürettiği ileti) dosyanın Dosya Sorumlusu veya Yedek Sorumlusu teyit eder.
  */
+/** Adres yoksa ileti sessizce atlanmaz: Dosya Sorumlusuna bir kez görev açılır, adres girilince kapanır. */
+export async function sigortaAdresiBekleniyor(c: Db, dosya: string): Promise<void> {
+  const d = (await c.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  if (!d?.dosya_sorumlusu_ref) return;
+  if ((await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Sigorta Adresi Bekleniyor' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı' LIMIT 1`, [dosya])).rowCount) return;
+  await kartAc(c, { tur: 'Sigorta Adresi Bekleniyor', kategori: 'gorev', baslik: `${d.dosya_no} · Sigorta E-posta Adresi Bekleniyor`, ozet: 'Sigorta şirketine ileti gönderilemedi; adresi dosya ayrıntısından girmenizi rica ederiz.', oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
+}
+
 export async function sigortayaHazirla(c: Db, g: { dosya?: string | null; tur: string; nesne: string; alici?: string | null; konu: string; metin?: string | null; acil?: boolean; veri?: object; sorumlu?: string | null; sonZaman?: Date | null }): Promise<string> {
   const var_ = (await c.query(`SELECT kimlik FROM sigorta_gonderim WHERE tur = $1 AND nesne_kimligi = $2 AND durum IN ('Teyit Bekliyor', 'Birinci Teyit')`, [g.tur, g.nesne])).rows[0];
   if (var_) return var_.kimlik;
@@ -84,6 +92,7 @@ export function sigortaGonderimYollari(s: FastifyInstance, b: Baglam) {
         await c.query(`UPDATE dosya_sigorta_kaydi SET sigorta_taraf_ref = $2 WHERE dosya_ref = $1`, [id, t.kimlik]);
       }
       await c.query(`UPDATE sigorta_gonderim SET alici = $2, durum = 'Teyit Bekliyor', birinci_teyit_ref = NULL, birinci_teyit_zamani = NULL WHERE dosya_ref = $1 AND durum IN ('Teyit Bekliyor', 'Birinci Teyit') AND tur <> 'Belge Paylaşımı'`, [id, eposta]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Sigorta Adresi Bekleniyor' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [id]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta E-posta Adresi Girildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { eposta }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { eposta };

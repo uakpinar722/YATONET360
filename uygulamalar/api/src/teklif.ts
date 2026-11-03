@@ -168,6 +168,13 @@ export async function teklifSureIsle(db: Pool, simdi = new Date()): Promise<numb
 const bld71 = (c: Db, t: { dosya_no: string }, sg: { sigorta_hasar_dosya_no?: string | null } | undefined, son: Date) => metinGetir(c, 'BLD-71', 'tr', { 'Dosya No': t.dosya_no, 'Hasar Dosya No': sg?.sigorta_hasar_dosya_no ?? '', 'Teknik Raporu ve Fiyat Teklifi': 'Fiyat Teklifi', 'son tarih': son.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' }) });
 let webAdresiTeklif = '';
 // K-241: ikinci teyitte teklif gönderilir, sigorta karar süresi (YG-444) ve geçerlilik başlar; yat sahibine BLD-37 eş zamanlı (YG-191).
+gonderimIsleyici('Yeniden Değerlendirme', async (c, r) => {
+  const y = (await c.query(`UPDATE yeniden_degerlendirme SET durum = 'Gönderildi', gonderim_zamani = now() WHERE kimlik = $1 RETURNING talep_eden_ref, dosya_ref`, [r.nesne_kimligi])).rows[0];
+  const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
+  await kartAc(c, { tur: 'Yeniden Değerlendirme Yanıtı', kategori: 'gorev', baslik: r.konu, ozet: 'Sigorta şirketinin yazılı yanıtı bekleniyor.', sahipKullanici: y.talep_eden_ref, sonZaman: son, nesneTuru: 'Yeniden Değerlendirme', nesneKimligi: r.nesne_kimligi });
+  return { metin: r.metin ?? undefined };
+});
+
 gonderimIsleyici('Fiyat Teklifi', async (c, r) => {
   const t = (await c.query(`SELECT f.kimlik, f.statu, f.dosya_ref, d.dosya_no, d.yazisma_dili FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1 FOR UPDATE OF f`, [r.nesne_kimligi])).rows[0];
   if (t.statu !== 'Onaylı') throw Object.assign(new Error('Teklif gönderilebilir durumda değildir.'), { statusCode: 409 });
@@ -397,6 +404,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const gonderim = await sigortayaHazirla(c, { dosya: t.dosya_ref, tur: 'Fiyat Teklifi', nesne: t.kimlik, alici: sg?.eposta ?? null, konu: `${t.dosya_no} Teklif`, metin: await bld71(c, t, sg, son), acil: true, sorumlu: o.kullanici });
       return { durum: 'Teyit Bekliyor', gonderim };
     });
+    // YG-204: yeniden değerlendirme sürerken aynı kalemler yat sahibine ayrıca sunulmaz; aynı iş iki kez onaylanmasın.
+    if ((await b.db.query(`SELECT 1 FROM yeniden_degerlendirme WHERE dosya_ref = $1 AND durum = 'Gönderildi' LIMIT 1`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigorta şirketinin yeniden değerlendirme yanıtı bekleniyor.' });
     return islem(async (c) => {
       const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, gun])).rows[0].b;
       const sahip = (await c.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
@@ -445,6 +454,102 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       }
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Kararı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { karar: g.karar, tutar: tutarOnay }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { durum: g.karar, onaylananTutar: tutarOnay, ekTeklif };
+    });
+  });
+
+  const dsMi = async (dosya: string, k: string) => { const d = (await b.db.query(`SELECT dosya_sorumlusu_ref, yedek_sorumlu_ref FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]; return d?.dosya_sorumlusu_ref === k || d?.yedek_sorumlu_ref === k; };
+  const dosyaBelgesi = async (belge: string | undefined, dosya: string) => Boolean(belge && UUID.test(belge) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi::text = $2`, [belge, dosya])).rowCount);
+  const karsilastirma = async (t: { kimlik: string }) => {
+    const { rows } = await b.db.query(`SELECT k.sira_no, k.aciklama, k.tutar_eur, k.onay_durumu, e.eksper_tutar_eur, e.eksper_notu, (SELECT y.durum FROM yeniden_degerlendirme_kalemi m JOIN yeniden_degerlendirme y ON y.kimlik = m.talep_ref WHERE m.kalem_ref = k.kimlik ORDER BY y.olusturma_zamani DESC LIMIT 1) AS yd FROM fiyat_teklifi_kalemi k LEFT JOIN eksper_karsilastirma e ON e.kalem_ref = k.kimlik WHERE k.teklif_ref = $1 ORDER BY k.sira_no`, [t.kimlik]);
+    const satirlar = rows.map((r) => { const ek = r.eksper_tutar_eur === null ? null : Number(r.eksper_tutar_eur); const te = Number(r.tutar_eur); return { sira: r.sira_no as number, aciklama: r.aciklama as string, teklif: te, eksper: ek, fark: ek === null ? null : R2(te - ek), not: r.eksper_notu as string | null, onay: r.onay_durumu as string | null, yd: r.yd as string | null }; });
+    const girilen = satirlar.filter((x) => x.eksper !== null);
+    const talep = (await b.db.query(`SELECT y.kimlik, y.durum FROM yeniden_degerlendirme y WHERE y.teklif_ref = $1 AND y.durum = 'Gönderildi' ORDER BY y.olusturma_zamani DESC LIMIT 1`, [t.kimlik])).rows[0] ?? null;
+    return { satirlar, toplam: { teklif: R2(satirlar.reduce((a, x) => a + x.teklif, 0)), eksper: R2(girilen.reduce((a, x) => a + x.eksper!, 0)), fark: R2(girilen.reduce((a, x) => a + x.fark!, 0)) }, talep };
+  };
+  // YG-203: eksper raporu dosyaya yüklenir, tutarları Dosya Sorumlusu kalem kalem girer; maliyet görünmez.
+  s.get('/teklif/:id/eksper-karsilastirma', oturumlu, async (i, y) => {
+    const t = await teklifGetir((i.params as { id: string }).id, i.oturum!.kullanici);
+    if (!t) return yok(y);
+    return karsilastirma(t);
+  });
+  s.post('/teklif/:id/eksper-karsilastirma', oturumlu, async (i, y) => {
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { belge?: string; satirlar?: { sira?: number; tutar?: number; not?: string }[] };
+    if (!t) return yok(y);
+    if (!(await dsMi(t.dosya_ref, o.kullanici))) return y.code(403).send({ hata: 'Eksper raporu tutarlarını Dosya Sorumlusu girer.' });
+    if (!(await dosyaBelgesi(g.belge, t.dosya_ref))) return y.code(400).send({ hata: 'Eksper raporunu dosyaya yüklemenizi rica ederiz.' });
+    if (!g.satirlar?.length || g.satirlar.some((x) => typeof x.tutar !== 'number' || !(x.tutar >= 0))) return y.code(400).send({ hata: 'Eksper tutarını girmenizi rica ederiz.' });
+    return islem(async (c) => {
+      const kl = (await c.query(`SELECT kimlik, sira_no FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
+      for (const x of g.satirlar!) {
+        const k = kl.find((r) => r.sira_no === x.sira);
+        if (!k) throw Object.assign(new Error('Kalem bulunamadı.'), { statusCode: 400 });
+        await c.query(`INSERT INTO eksper_karsilastirma (kalem_ref, teklif_ref, eksper_tutar_eur, eksper_notu, belge_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (kalem_ref) DO UPDATE SET eksper_tutar_eur = EXCLUDED.eksper_tutar_eur, eksper_notu = EXCLUDED.eksper_notu, belge_ref = EXCLUDED.belge_ref, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [k.kimlik, t.kimlik, x.tutar, x.not?.trim() || null, g.belge, o.kullanici]);
+      }
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Eksper Karşılaştırması', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { tamam: true };
+    });
+  });
+  // YG-204: teknik gerekçesi olan onaylanmayan kalem için bir kez; K-241 ikili teyidiyle gider. Dışa giden metne teminat yazılmaz.
+  s.post('/teklif/:id/yeniden-degerlendirme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { siralar?: number[]; gerekce?: string };
+    if (!t) return yok(y);
+    if (!(await dsMi(t.dosya_ref, o.kullanici))) return y.code(403).send({ hata: 'Yeniden değerlendirmeyi Dosya Sorumlusu ister.' });
+    if (t.teklif_muhatabi !== 'Sigorta Şirketi' || t.statu !== 'Karar' || !['Kısmi Onay', 'Ret'].includes(t.karar)) return y.code(409).send({ hata: 'Yeniden değerlendirme, kısmi onaylanan veya reddedilen sigorta tekliflerinde istenir.' });
+    const gerekce = g.gerekce?.trim();
+    if (!gerekce || !g.siralar?.length) return y.code(400).send({ hata: 'Kalemleri seçmenizi ve teknik gerekçeyi yazmanızı rica ederiz.' });
+    if (/teminat|muafiyet|sigorta kapsam|poliçe kapsam/i.test(gerekce)) return y.code(400).send({ hata: 'Gerekçenin yalnız teknik bilgi içermesini rica ederiz.' });
+    return islem(async (c) => {
+      const kl = (await c.query(`SELECT kimlik, sira_no, aciklama, onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = ANY($2::int[]) ORDER BY sira_no`, [t.kimlik, g.siralar])).rows;
+      if (kl.length !== g.siralar!.length || kl.some((k) => k.onay_durumu !== 'Onaylanmadı')) throw Object.assign(new Error('Yalnız onaylanmayan kalemler için istenir.'), { statusCode: 400 });
+      const once = await c.query(`SELECT 1 FROM yeniden_degerlendirme_kalemi m JOIN yeniden_degerlendirme r ON r.kimlik = m.talep_ref WHERE m.kalem_ref = ANY($1::uuid[]) AND NOT EXISTS (SELECT 1 FROM sigorta_gonderim s WHERE s.tur = 'Yeniden Değerlendirme' AND s.nesne_kimligi = r.kimlik::text AND s.durum = 'İptal') LIMIT 1`, [kl.map((k) => k.kimlik)]);
+      if (once.rowCount) throw Object.assign(new Error('Bu kalem için yeniden değerlendirme daha önce istenmiştir; bir kez istenir.'), { statusCode: 409 });
+      const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
+      if (!sg?.eposta) throw Object.assign(new Error('Sigorta şirketinin e-posta adresi bekleniyor; dosya ayrıntısından girilmesini rica ederiz.'), { statusCode: 409 });
+      const r = (await c.query(`INSERT INTO yeniden_degerlendirme (teklif_ref, dosya_ref, gerekce, talep_eden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [t.kimlik, t.dosya_ref, gerekce, o.kullanici])).rows[0];
+      for (const k of kl) await c.query(`INSERT INTO yeniden_degerlendirme_kalemi (talep_ref, kalem_ref) VALUES ($1,$2)`, [r.kimlik, k.kimlik]);
+      const liste = kl.map((k) => `${k.sira_no}. ${k.aciklama}`).join('; ');
+      const metin = dilKod(t.yazisma_dili) === 'en'
+        ? `LİMİT GLOBAL MARINE: Regarding Price Quotation ${t.teklif_no} under file no. ${t.dosya_no} (claim no. ${sg.sigorta_hasar_dosya_no ?? '—'}), we kindly request your written re-evaluation of the items below, which were not approved, in light of the technical grounds stated.\nItems: ${liste}\nTechnical Grounds: ${gerekce}`
+        : `LİMİT GLOBAL MARINE: ${t.dosya_no} numaralı dosyaya (hasar dosya no: ${sg.sigorta_hasar_dosya_no ?? '—'}) ilişkin ${t.teklif_no} numaralı Fiyat Teklifinde onaylanmayan aşağıdaki kalemleri, belirtilen teknik gerekçe doğrultusunda yazılı olarak yeniden değerlendirmenizi rica ederiz.\nKalemler: ${liste}\nTeknik Gerekçe: ${gerekce}`;
+      const gonderim = await sigortayaHazirla(c, { dosya: t.dosya_ref, tur: 'Yeniden Değerlendirme', nesne: r.kimlik, alici: sg.eposta, konu: `${t.dosya_no} Yeniden Değerlendirme`, metin, acil: true, sorumlu: o.kullanici });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yeniden Değerlendirme Hazırlandı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { durum: 'Teyit Bekliyor', talep: r.kimlik, gonderim };
+    });
+  });
+  s.post('/yeniden-degerlendirme/:id/sonuc', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { onaylananSiralar?: number[]; kanal?: string; yetkili?: string; belge?: string };
+    if (!UUID.test(id)) return yok(y);
+    const r0 = (await b.db.query(`SELECT teklif_ref FROM yeniden_degerlendirme WHERE kimlik = $1`, [id])).rows[0];
+    const t = r0 && await teklifGetir(r0.teklif_ref, o.kullanici);
+    if (!t) return yok(y);
+    if (!(await dsMi(t.dosya_ref, o.kullanici))) return y.code(403).send({ hata: 'Sonucu Dosya Sorumlusu girer.' });
+    if (!['YATONET 360', 'KEP', 'E-imza', 'Sözleşmede Tanımlı Kurumsal E-posta'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Telefon ve WhatsApp onay kanalı sayılmaz; tanımlı kanalı seçmenizi rica ederiz.' }); // YG-218, YG-221
+    if (!g.yetkili?.trim()) return y.code(400).send({ hata: 'Onaylayan yetkiliyi yazmanızı rica ederiz.' });
+    if (g.kanal !== 'YATONET 360' && !(await dosyaBelgesi(g.belge, t.dosya_ref))) return y.code(400).send({ hata: 'Yanıt belgesini dosyaya yüklemenizi rica ederiz.' });
+    return islem(async (c) => {
+      const r = (await c.query(`SELECT * FROM yeniden_degerlendirme WHERE kimlik = $1 FOR UPDATE`, [id])).rows[0];
+      if (r.durum !== 'Gönderildi') throw Object.assign(new Error('Bu talep sonuç beklemiyor.'), { statusCode: 409 });
+      const istenen = (await c.query(`SELECT k.kimlik, k.sira_no FROM yeniden_degerlendirme_kalemi m JOIN fiyat_teklifi_kalemi k ON k.kimlik = m.kalem_ref WHERE m.talep_ref = $1`, [id])).rows;
+      const on = g.onaylananSiralar ?? [];
+      if (on.some((s) => !istenen.some((k) => k.sira_no === s))) throw Object.assign(new Error('Yalnız talepteki kalemler seçilebilir.'), { statusCode: 400 });
+      for (const k of istenen) {
+        const ok = on.includes(k.sira_no); const sonuc = ok ? 'Onaylandı' : 'Onaylanmadı';
+        await c.query(`UPDATE yeniden_degerlendirme_kalemi SET sonuc = $3 WHERE talep_ref = $1 AND kalem_ref = $2`, [id, k.kimlik, sonuc]);
+        await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = $2 WHERE kimlik = $1`, [k.kimlik, sonuc]);
+      }
+      const hepsi = (await c.query(`SELECT onay_durumu, tutar_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
+      const onayli = hepsi.filter((k) => k.onay_durumu === 'Onaylandı');
+      const karar = onayli.length === hepsi.length ? 'Tam Onay' : onayli.length ? 'Kısmi Onay' : 'Ret';
+      const tutarOnay = R2(onayli.reduce((a, k) => a + Number(k.tutar_eur), 0));
+      await c.query(`INSERT INTO sigorta_onayi (dosya_ref, teklif_ref, karar, onaylanan_tutar_eur, onay_kanali, onay_tarihi, onay_belgesi_ref, onaylayan_yetkili, kaydi_yapan_ref) VALUES ($1,$2,$3,$4,$5,now(),$6,$7,$8)`, [t.dosya_ref, t.kimlik, karar, tutarOnay, g.kanal, g.belge ?? null, g.yetkili!.trim(), o.kullanici]);
+      await c.query(`UPDATE fiyat_teklifi SET karar = $2, karar_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar]);
+      await c.query(`UPDATE yeniden_degerlendirme SET durum = 'Sonuçlandı', sonuc_zamani = now(), sonuc_kanali = $2, sonuc_yetkili = $3, sonuc_belge_ref = $4 WHERE kimlik = $1`, [id, g.kanal, g.yetkili!.trim(), g.belge ?? null]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Yeniden Değerlendirme Yanıtı' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [id]);
+      if (karar !== 'Ret' && t.dosya_statu === 'Aktif' && t.dosya_asama !== 'Uygulama') await statuYaz(c, { kimlik: t.dosya_ref, statu: 'Aktif', asama: t.dosya_asama }, { statu: 'Aktif', asama: 'Uygulama' }, `Yeniden değerlendirme: ${karar}`, o.kullanici, 'Operasyon Yöneticisi');
+      const sahip = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
+      if (sahip && karar === 'Tam Onay') await yatTarafinaYaz(c, { olay: `bld38:${t.kimlik}`, kod: 'BLD-38', dil: dilKod(t.yazisma_dili), konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: { ...SIFIRLA_YAT(t), 'bağlantı': b.webAdresi, link: b.webAdresi } });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yeniden Değerlendirme Sonucu', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { karar, tutar: tutarOnay }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { karar, onaylananTutar: tutarOnay };
     });
   });
 

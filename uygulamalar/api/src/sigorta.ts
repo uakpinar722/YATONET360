@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, disGonder } from './bildirim.js';
-import { sigortayaHazirla } from './sigorta_gonderim.js';
+import { sigortaAdresiBekleniyor, sigortayaHazirla } from './sigorta_gonderim.js';
 import { izYaz } from './denetim.js';
 import { statuYaz } from './dosya.js';
 import { ihbarAlindiGonder, ihbarKaydet, rolId } from './ihbar.js';
@@ -38,6 +38,7 @@ export async function sigortaSureIsle(db: Pool, simdi = new Date()): Promise<num
     if (!t.sigorta_hatirlatma && son.getTime() - simdi.getTime() <= 24 * 3_600_000 && son > simdi) {
       const m = await metinGetir(db, 'BLD-72', 'tr', { 'Dosya No': t.dosya_no, 'Fiyat Teklifi / Ek Fiyat Teklifi / Acil Tedbir Fiyat Teklifi': t.teklif_turu, Kurum: t.sigortaci_adi ?? '', 'son tarih saat': son.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }) });
       if (t.eposta) await sigortayaHazirla(db, { dosya: t.dosya_ref, tur: 'BLD-72', nesne: t.kimlik, alici: t.eposta, konu: `${t.dosya_no} Hatırlatma`, metin: m, acil: true, sonZaman: son }); // K-241
+      else await sigortaAdresiBekleniyor(db, t.dosya_ref);
       await db.query(`UPDATE fiyat_teklifi SET sigorta_hatirlatma = true WHERE kimlik = $1`, [t.kimlik]);
       n++;
     } else if (son <= simdi && !t.cerceve_sozlesme_yok) {
