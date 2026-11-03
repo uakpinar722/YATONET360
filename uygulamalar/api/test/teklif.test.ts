@@ -412,6 +412,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/teknik-kabul`, await o.gir('tu'), { sonuc: 'Kabul' })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/kapat`, await o.gir('ds'), {})).json().hata).toContain('atık');
     expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/kapat`, await o.gir('ds'), { atikBelgesi: bel })).json().statu).toBe('Kapalı');
+    const ka = (await o.sup.query(`SELECT dosya_puani, kapanis_zamani FROM performans_olay_kaydi WHERE is_emri_ref = $1`, [e.kimlik])).rows; expect(ka).toHaveLength(1); expect(ka[0].kapanis_zamani).not.toBeNull(); // YG-350: kapanışta karne kaydı
   }, 60_000);
   it('firma başka firmanın iş emrini göremez; firma Ret verirse DS görevi; çekince gerekçe ister', async () => {
     const { e } = await onarim();

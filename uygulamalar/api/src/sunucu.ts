@@ -27,6 +27,7 @@ import { raporYollari } from './rapor.js';
 import { sigortaYollari } from './sigorta.js';
 import { sigortaEk2Yollari } from './sigorta_ek2.js';
 import { kurumHesapYollari } from './kurum_hesap.js';
+import { karneYollari } from './karne.js';
 import { sahaYollari } from './saha.js';
 import { teklifYollari } from './teklif.js';
 import { toplantiYollari } from './toplanti.js';
@@ -50,6 +51,6 @@ export async function sunucuKur(b: Baglam) {
     y.code(kod && kod < 500 ? kod : 500).send({ hata: isKurali ? e.message : 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { sigortaEk2Yollari(a, b); kurumHesapYollari(a, b); kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); sigortaGonderimYollari(a, b); tesisTedarikciYollari(a, b); raporYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { sigortaEk2Yollari(a, b); kurumHesapYollari(a, b); karneYollari(a, b); kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); sigortaGonderimYollari(a, b); tesisTedarikciYollari(a, b); raporYollari(a, b); }, { prefix: '/api' });
   return s;
 }

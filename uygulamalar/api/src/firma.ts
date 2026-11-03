@@ -11,6 +11,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { coz, totpDogrula } from './kripto.js';
 import { altNumara, sayac } from './sure.js';
 import { belgeUret } from './belge_uret.js';
+import { performansOlayIsle } from './karne.js';
 import { ekonomikKilitEngeli } from './yat_degeri.js';
 import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID, vergiNoGecerli } from './yat.js';
@@ -321,7 +322,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!e) return yok(y);
     if (e.statu !== 'Aktif') return y.code(409).send({ hata: 'İş emri aktif değildir.' });
     const te = await ilerlemeEngeli(b.db, { ...e, calisma_izni_gerekli: false }, null); if (te) return y.code(409).send({ hata: te });
-    await b.db.query(`UPDATE is_emri SET statu = 'Tamamlandı', guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]); // YG-386: firma bildirimi teknik kabul değildir.
+    await b.db.query(`UPDATE is_emri SET statu = 'Tamamlandı', firma_tamamlama_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]); // YG-386: firma bildirimi teknik kabul değildir.
     return { statu: 'Tamamlandı' };
   });
 
@@ -380,7 +381,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (sonuc === 'Koşullu Kabul') return y.code(400).send({ hata: 'Koşullu kabul açık iş listesiyle ayrı kaydedilir.' });
     const sonuclanmamis = (await b.db.query(`SELECT count(*)::int n FROM is_emri_ilerleme WHERE is_emri_ref = $1 AND NOT dogrulandi`, [e.kimlik])).rows[0].n;
     if (sonuc === 'Kabul' && sonuclanmamis) return y.code(409).send({ hata: 'Kabul için Doğrulanmamış ilerlemenin doğrulanması bekleniyor.' });
-    await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, statu = CASE WHEN $2 = 'Ret' THEN 'Aktif' ELSE statu END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);
+    await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, statu = CASE WHEN $2 = 'Ret' THEN 'Aktif' ELSE statu END, teknik_ret_sayisi = teknik_ret_sayisi + CASE WHEN $2 = 'Ret' THEN 1 ELSE 0 END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);
     return { tamam: true };
   });
   s.post('/is-emri/:id/kapat', oturumlu, async (i, y) => {
@@ -389,7 +390,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Dosya Sorumlusu']))) return y.code(403).send({ hata: 'İş emrini Dosya Sorumlusu kapatır.' });
     if (!e.teknik_kabul_sonucu || e.teknik_kabul_sonucu === 'Ret') return y.code(409).send({ hata: 'İş emrini kapatmak için Teknik kabul bekleniyor.' });
     if (e.tehlikeli_atik && !atikBelgesi && !e.atik_teslim_belgesi_ref) return y.code(409).send({ hata: 'Kapanış için Tehlikeli atık teslim belgesi bekleniyor.' });
-    await b.db.query(`UPDATE is_emri SET statu = 'Kapalı', atik_teslim_belgesi_ref = coalesce($2, atik_teslim_belgesi_ref), guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, atikBelgesi ?? null]);
+    await b.db.query(`UPDATE is_emri SET statu = 'Kapalı', kapanis_zamani = now(), atik_teslim_belgesi_ref = coalesce($2, atik_teslim_belgesi_ref), guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, atikBelgesi ?? null]);
+    await performansOlayIsle(b.db, e.kimlik); // YG-350: karne her iş emri kapanışında güncellenir
     return { statu: 'Kapalı' };
   });
 

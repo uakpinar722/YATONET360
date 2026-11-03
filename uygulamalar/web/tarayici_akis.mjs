@@ -254,6 +254,14 @@ try {
   await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et'); await pFf.waitForTimeout(400);
   kontrol('firma bilgi değişikliği teyide gider', (await sup.query(`SELECT durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1`, [firma])).rows[0]?.durum === 'Teyit Bekliyor');
 
+  // Karne (YG-351, YG-795)
+  await pFf.getByText('Performans Karnesi').first().waitFor();
+  kontrol('firma karnesini görür, risk derecesini görmez', !(await pFf.locator('main').innerText()).includes('Risk Derecesi'));
+  E.tod = await hesap('tod', 'Teknik ve Operasyon Direktörü');
+  const pTod = await al('tod', E); await pTod.getByRole('button', { name: 'Karne Parametreleri' }).first().click(); await pTod.getByLabel('Kalite: Minör uygunsuzluk kesintisi').waitFor();
+  await tasmaYok(pTod, 'karne_parametreleri');
+  kontrol('karne parametreleri başlangıç değerleriyle görünür', (await pTod.getByLabel('Kalite: Minör uygunsuzluk kesintisi').inputValue()) === '5');
+
   // Sigorta Ek-2 sayfası (YG-219)
   E.mpm = await hesap('mpm', 'Müşteri ve Paydaş İlişkileri Müdürü');
   const pMpm = await al('mpm', E);

@@ -3,7 +3,7 @@ import { istek, type Ben } from './api';
 
 interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kayit_asamasi: string; ag_statusu: string }
 
-/** YG-344, YG-354, YG-928: firma sicili; IBAN karantinada başlar, Muhasebe ve Finans Müdürü bağımsız kanalla teyit eder. */
+/** YG-344, YG-354, YG-928: firma sicili; IBAN karantinada başlar, geri arama ve iki onayla geçerli olur. */
 export function FirmaSicil({ ben }: { ben: Ben }) {
   const [l, setL] = useState<Firma[]>([]); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   const [yeni, setYeni] = useState({ unvan: '', rol: 'Çözüm Ortağı' }); const [secili, setSecili] = useState('');
@@ -28,6 +28,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
       {secili && <>
         <div className="bolum">{l.find((f) => f.kimlik === secili)?.ticari_unvan}</div>
         <div className="ozet">
+          <SicilKarne id={secili} onay={onay} gerekce={gerekce} yap={yap} />
           {onay && <>
             <label htmlFor="fs-g">Statü Gerekçesi</label><input id="fs-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce }), 'Firma onaylandı.')}>Onayla ve Aktif Yap</button>
@@ -47,6 +48,35 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
 }
 
 /** YG-928: giren kişi teyit edemez; e-posta teyit sayılmaz. Yetkisiz kullanıcıya bölüm görünmez. */
+const PARAMETRE: Record<string, string> = { kabul: 'Kalite: Kabul başlangıç puanı', kosullu_kabul: 'Kalite: Koşullu Kabul başlangıç puanı', ret: 'Kalite: Ret başlangıç puanı', ilk_sefer: 'Kalite: İlk seferde kabul edilmeme kesintisi', majoer: 'Kalite: Majör uygunsuzluk kesintisi', minoer: 'Kalite: Minör uygunsuzluk kesintisi', basarisiz_test: 'Kalite: Başarısız test kesintisi', garanti: 'Kalite: Garanti çağrısı kesintisi', tol_kritik: 'Süre: Kritik tolerans (%)', tol_yuksek: 'Süre: Yüksek tolerans (%)', tol_normal: 'Süre: Normal tolerans (%)', tol_planli: 'Süre: Planlı tolerans (%)', tol_belirsiz: 'Süre: Teşhisi belirsiz ek tolerans (%)', sure_asim: 'Süre: Aşım başına kesinti', maliyet_1: 'Maliyet: Birinci bant sınırı (%)', maliyet_1_puan: 'Maliyet: Birinci bant sonu puanı', maliyet_2: 'Maliyet: İkinci bant sınırı (%)', yanit_kritik: 'İletişim: Kritik yanıt hedefi (saat)', yanit_yuksek: 'İletişim: Yüksek yanıt hedefi (saat)', yanit_normal: 'İletişim: Normal yanıt hedefi (saat)', yanit_planli: 'İletişim: Planlı yanıt hedefi (saat)', isg: 'Uyum: İSG ihlali kesintisi', prosedur: 'Uyum: Prosedür sapması kesintisi', denetim_majoer: 'Uyum: Denetim Majör bulgu kesintisi', denetim_minoer: 'Uyum: Denetim Minör bulgu kesintisi', eksik_belge: 'Uyum: Eksik belge kesintisi', kesinti_kritik: 'Dönem: Kritik uygunsuzluk kesintisi', kesinti_emniyet: 'Dönem: Emniyet işaretli uygunsuzluk kesintisi', agirlik_kritik: 'Dönem: Kritik ağırlığı', agirlik_yuksek: 'Dönem: Yüksek ağırlığı', agirlik_normal: 'Dönem: Normal ağırlığı', agirlik_planli: 'Dönem: Planlı ağırlığı', esik_tercihli: 'Risk: Tercihli eşiği', esik_standart: 'Risk: Standart eşiği', asgari_dosya: 'Dönem: Asgari dosya sayısı' };
+/** YG-795: T&O Direktörü önerir, GMY görüşü ve CEO onayıyla ertesi gün yürürlüğe girer; geçmiş puanlar yeniden hesaplanmaz. */
+export function KarneParametreleri() {
+  const [v, setV] = useState<{ yururlukte: { surum: number; deger: Record<string, number> }; onayda: { surum: number } | null } | null>(null); const [d, setD] = useState<Record<string, string>>({}); const [ger, setGer] = useState(''); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
+  const yukle = () => istek<NonNullable<typeof v>>('/karne-parametre').then((r) => { setV(r); setD(Object.fromEntries(Object.entries(r.yururlukte.deger).map(([k, x]) => [k, String(x)]))); }).catch((x) => setHata((x as Error).message));
+  useEffect(() => { void yukle(); }, []);
+  return (
+    <>
+      <h1>Karne Parametreleri</h1>
+      {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
+      {v && <div className="ozet">
+        <div>Yürürlükteki Sürüm: {v.yururlukte.surum}{v.onayda ? ` · Onayda: Sürüm ${v.onayda.surum}` : ''}</div>
+        {Object.keys(v.yururlukte.deger).map((k) => <div key={k}><label htmlFor={`kp-${k}`}>{PARAMETRE[k] ?? k}</label><input id={`kp-${k}`} inputMode="decimal" value={d[k] ?? ''} onChange={(e) => setD({ ...d, [k]: e.target.value })} /></div>)}
+        <label htmlFor="kp-g">Gerekçe</label><input id="kp-g" value={ger} onChange={(e) => setGer(e.target.value)} />
+        <button className="btn2" disabled={!ger.trim() || Boolean(v.onayda)} onClick={() => { setHata(''); setNot(''); void istek('/karne-parametre', { gerekce: ger, deger: Object.fromEntries(Object.entries(d).map(([k, x]) => [k, Number(x.replace(',', '.'))])) }).then(() => { setNot('Öneri Genel Müdür Yardımcısı görüşüne gönderildi.'); setGer(''); return yukle(); }).catch((x) => setHata((x as Error).message)); }}>Değişikliği Öner</button>
+      </div>}
+    </>
+  );
+}
+
+/** YG-794: öneri yalnız burada görünür; nihai risk derecesini yetkili rol verir. */
+function SicilKarne({ id, onay, gerekce, yap }: { id: string; onay: boolean; gerekce: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [v, setV] = useState<{ donem: { donem_puani: string | null; yetersiz_veri: boolean; kapanan_dosya_sayisi: number; risk_derecesi_onerisi: string; acik_emniyet_uygunsuzlugu: boolean } | null } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/firma/${id}/karne`).then(setV).catch(() => setV(null)); }, [id]);
+  if (!v?.donem) return null;
+  const d = v.donem;
+  return <div><div>Karne: {d.yetersiz_veri ? 'Yetersiz veri' : Number(d.donem_puani).toLocaleString('tr-TR')} · {d.kapanan_dosya_sayisi} dosya · Risk Derecesi Önerisi: {d.risk_derecesi_onerisi}{d.acik_emniyet_uygunsuzlugu ? ' · ⚠ Açık Emniyet Uygunsuzluğu' : ''}</div>{onay && <button className="btn2 kucuk" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${id}/statu`, { risk: d.risk_derecesi_onerisi, gerekce }), 'Risk derecesi kaydedildi.')}>Öneriyi Risk Derecesi Yap</button>}</div>;
+}
+
 export function IbanTeyit() {
   const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; iban: string }[]>([]); const [k, setK] = useState<Record<string, string>>({}); const [hata, setHata] = useState('');
   const yukle = () => istek<typeof l>('/banka-hesabi/bekleyen').then(setL).catch(() => setL([]));

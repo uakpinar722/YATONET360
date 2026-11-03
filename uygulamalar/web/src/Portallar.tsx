@@ -83,6 +83,30 @@ interface TedarikciV {
 /** YG-1577, YG-298 A9 Tedarikçi: yalnız kendi teklif ve siparişleri; müşteri kimliği yoktur. */
 interface KurumHesapV { kurum: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kurumsal_eposta: string | null; kurumsal_telefon: string | null; il: string | null; ilce: string | null }; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; cep_telefonu: string | null; hesap_durumu: string; ben: boolean }[]; talepler: { kimlik: string; ad_soyad: string; eposta: string; durum: string }[]; bankalar: { kimlik: string; iban: string; durum: string }[]; bilgiTalepleri: { kimlik: string; alan: string; yeni_deger: string; durum: string }[]; itiraz: { durum: string } | null; itirazEdilebilir: boolean }
 interface Cari { satirlar: { hakedis_no: string; is_emri_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string; firma_fatura_no: string | null; planlanan_tarih: string | null; talimat: string | null; tahsilat_tarihi: string | null }[]; acikNet: number }
+interface KarneOlay { kimlik: string; is_emri_no: string; oncelik: string; kalite_puani: string | null; sure_puani: string | null; maliyet_puani: string | null; iletisim_puani: string | null; uyum_puani: string | null; dosya_puani: string; itiraz: string | null }
+interface KarneV { donem: { donem_puani: string | null; yetersiz_veri: boolean; kapanan_dosya_sayisi: number; uygunsuzluk_kesintisi: string; kalite: string | null; sure: string | null; maliyet: string | null; iletisim: string | null; uyum: string | null } | null; olaylar: KarneOlay[] }
+const puan = (x: string | null | undefined) => (x === null || x === undefined ? '—' : Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 2 }));
+/** YG-351, YG-422: firma kendi dönem puanını ve boyut dökümünü görür, risk derecesini görmez; puana itiraz edebilir, geçmiş silinmez. */
+function FirmaKarne({ yap }: { yap: (f: () => Promise<any>) => Promise<void> }) {
+  const [v, setV] = useState<KarneV | null>(null); const [itz, setItz] = useState<Record<string, string>>({});
+  const yukle = () => istek<KarneV>('/firma-portal/karne').then(setV);
+  useEffect(() => { void yukle().catch(() => setV({ donem: null, olaylar: [] })); }, []);
+  if (!v) return null;
+  const d = v.donem;
+  return (
+    <Blok baslik="Performans Karnesi">
+      {!d && <div className="not">Henüz kapanan iş emri bulunmamaktadır.</div>}
+      {d && <div className="ozet"><div>Dönem Puanı (son 12 ay): {d.yetersiz_veri ? 'Yetersiz veri' : puan(d.donem_puani)} · Kapanan Dosya: {d.kapanan_dosya_sayisi}{Number(d.uygunsuzluk_kesintisi) > 0 ? ` · Uygunsuzluk Kesintisi: ${puan(d.uygunsuzluk_kesintisi)}` : ''}</div><div>Kalite: {puan(d.kalite)} · Uyum/Güvenlik: {puan(d.uyum)} · Süre: {puan(d.sure)} · Maliyet: {puan(d.maliyet)} · İletişim: {puan(d.iletisim)}</div></div>}
+      {v.olaylar.map((x) => (
+        <div className="soru" key={x.kimlik}>
+          <span><b className="koyu">{x.is_emri_no}</b> · {x.oncelik} · Puan: {puan(x.dosya_puani)} · Kalite {puan(x.kalite_puani)} · Uyum {puan(x.uyum_puani)} · Süre {puan(x.sure_puani)} · Maliyet {puan(x.maliyet_puani)} · İletişim {puan(x.iletisim_puani)}{x.itiraz ? ` · İtiraz: ${x.itiraz}` : ''}</span>
+          {x.itiraz !== 'İncelemede' && <div className="tam"><label htmlFor={`kr-${x.kimlik}`}>İtiraz Konusu</label><input id={`kr-${x.kimlik}`} value={itz[x.kimlik] ?? ''} onChange={(e) => setItz({ ...itz, [x.kimlik]: e.target.value })} /><button className="btn hayir" disabled={!itz[x.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/karne/${x.kimlik}/itiraz`, { konu: itz[x.kimlik] }).then(() => { setItz({ ...itz, [x.kimlik]: '' }); return yukle().then(() => ({ uyari: 'İtirazınız Firma Yönetimi Müdürüne iletildi.' })); }))}>İtiraz Et</button></div>}
+        </div>
+      ))}
+    </Blok>
+  );
+}
+
 const ALANLAR: Record<string, string> = { kurumsal_eposta: 'Kurumsal E-posta', kurumsal_telefon: 'Kurumsal Telefon', il: 'İl', ilce: 'İlçe' };
 /** YG-425, YG-1004: firma bilgileri ve kullanıcılar; yeni kullanıcı LGM teyidiyle açılır, ayrılan kişinin hesabı hemen kapanır. YG-298: tedarikçide fatura ve ödeme durumu. */
 export function KurumHesap({ baslik }: { baslik: string }) {
@@ -114,6 +138,7 @@ export function KurumHesap({ baslik }: { baslik: string }) {
         {cari.satirlar.length === 0 && <div className="not">Hakediş bulunmamaktadır.</div>}
         {cari.satirlar.map((x) => <div key={x.hakedis_no}>{x.hakedis_no} · {x.is_emri_no} · Brüt: {eur(x.bu_donem_brut)} · Kesinti: {eur(x.kesinti)} · Net: {eur(x.net)} · {x.statu}{x.firma_fatura_no ? ` · Fatura: ${x.firma_fatura_no}` : ''}{x.tahsilat_tarihi ? ` · Tahsilat: ${tarih(x.tahsilat_tarihi)}` : ''}{x.planlanan_tarih ? ` · Ödeme Günü: ${tarih(x.planlanan_tarih)}` : ''}</div>)}
       </Blok>}
+      {k.kayit_rolu === 'Çözüm Ortağı' && <FirmaKarne yap={yap} />}
       {(v.itirazEdilebilir || v.itiraz) && <Blok baslik="Kabul Kararı İtirazı">
         {v.itiraz && <div>İtiraz Durumu: {v.itiraz.durum}</div>}
         {v.itirazEdilebilir && <><label htmlFor="it-g">İtiraz Gerekçesi</label><input id="it-g" value={itz} onChange={(e) => setItz(e.target.value)} /><button className="btn2" disabled={!itz.trim()} onClick={() => void yap(() => istek('/kurum/kabul-itiraz', { gerekce: itz }))}>İtiraz Et</button></>}

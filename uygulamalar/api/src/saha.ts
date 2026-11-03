@@ -5,6 +5,7 @@ import { dosyaErisimi, kapiKaydet, statuYaz } from './dosya.js';
 import { dilKod, rolId, ONCELIK_SIRA, yatTarafinaYaz } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
+import { garantiKarneIsle } from './karne.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayTalebiAc } from './onay.js';
 import { altNumara, sureBaslat, sureBitir } from './sure.js';
@@ -499,6 +500,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (k.kayit_turu.includes('Şikâyet') && g.sikayetSonucu && !['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].includes(g.sikayetSonucu)) return y.code(400).send({ hata: 'Şikâyet sonucunu seçiniz.' });
     await b.db.query(`UPDATE garanti_sikayet SET karar = coalesce($2, karar), sikayet_sonucu = coalesce($3, sikayet_sonucu), karar_gerekcesi = $4, karar_veren_ref = $5, duzeltme_maliyeti = coalesce($6, duzeltme_maliyeti), kok_neden_tamam = kok_neden_tamam OR $7, statu = $8, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`,
       [id, g.karar ?? null, g.sikayetSonucu ?? null, g.gerekce.trim(), o.kullanici, g.maliyet ?? null, Boolean(g.kokNeden), g.kapat ? 'Kapalı' : 'Karar']);
+    if (g.karar === 'Garanti') await garantiKarneIsle(b.db, k.dosya_ref); // Ek I §7.5
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Garanti/Şikâyet Kararı', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, yeni: { karar: g.karar, sonuc: g.sikayetSonucu }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
