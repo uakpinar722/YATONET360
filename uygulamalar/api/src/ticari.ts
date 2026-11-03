@@ -11,11 +11,12 @@ import { rolSahipleri, onayMakami } from './makam.js';
 import { gunAy, tutar } from './metin.js';
 import { kutuAyikla, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { kapanisKapisi } from './saha.js';
-import { altNumara, sayac } from './sure.js';
+import { altNumara } from './sure.js';
 import { parametre, parasalZincir, sonMakam } from './teklif.js';
 import { UUID } from './yat.js';
 import { emniyetEngeli } from './kalite.js';
 import { tesisSerbestBirak } from './portallar.js';
+import { belgeUret } from './belge_uret.js';
 import { izinGerekli } from './yetki.js';
 
 type Db = Pool | PoolClient;
@@ -109,12 +110,13 @@ kapanisKaydet('Ödeme Talebi', async (c, k, karar) => {
   if (karar === 'Reddet') { await c.query(`UPDATE odeme_talebi SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]); return; }
   if (karar !== 'Onayla') return;
   await c.query(`UPDATE odeme_talebi SET durum = 'Gönderildi' WHERE kimlik = $1`, [t.kimlik]);
+  await belgeUret(c, { tur: 'Ödeme Talebi', nesne: t.kimlik, dosya: t.dosya_ref });
   const y = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
   if (y && !t.vefat_isareti && t.muhatap !== 'Sigorta Şirketi') await yatTarafinaYaz(c, { olay: `bld26:${t.kimlik}`, kod: 'BLD-26', dil: dilKod(t.yazisma_dili), konu: `${t.dosya_no} Ödeme Talebi`, telefon: y.telefon, eposta: y.eposta, alanlar: { 'Dosya No': t.dosya_no, 'File No': t.dosya_no, 'ödeme türü': t.tur, 'payment type': t.tur, 'son tarih': gunAy(t.son_tarih), 'due date': gunAy(t.son_tarih), 'bağlantı': webAdresi, link: webAdresi } });
 });
 
 kapanisKaydet('Proforma', async (c, k, karar) => {
-  if (karar === 'Onayla') await c.query(`UPDATE musteri_faturasi SET durum = 'Proforma' WHERE kimlik = $1`, [k.nesne_kimligi]);
+  if (karar === 'Onayla') { const f = (await c.query(`UPDATE musteri_faturasi SET durum = 'Proforma' WHERE kimlik = $1 RETURNING dosya_ref`, [k.nesne_kimligi])).rows[0]; await belgeUret(c, { tur: 'Proforma', nesne: k.nesne_kimligi!, dosya: f.dosya_ref }); }
   else if (karar === 'Reddet') await c.query(`UPDATE musteri_faturasi SET durum = 'Reddedildi' WHERE kimlik = $1`, [k.nesne_kimligi]);
 });
 
@@ -204,7 +206,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const indirim = Number(t.ara_toplam_eur) > 0 ? R2((hk * Number(t.indirim_tutari_eur)) / Number(t.ara_toplam_eur)) : 0;
     const matrah = R2(hk - indirim - Number(t.kesif_mahsubu_eur)); const kdv = R2((matrah * Number(t.kdv_orani)) / 100);
     return islem(async (c) => {
-      const no = `${t.dosya_no}-PF${String(await sayac(c, `${t.dosya_no}:PF`)).padStart(2, '0')}`;
+      const no = await altNumara(c, t.dosya_no, 'OT');
       const r = (await c.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [no, t.dosya_ref, t.kimlik, t.teklif_muhatabi, matrah, kdv, R2(matrah + kdv), o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Proforma', baslik: `${no} · Proforma Onayı`, ozet: `${tutar(matrah)} EUR (KDV hariç)`, hazirlayan: o.kullanici, zincir: await parasalZincir(c, [MFM], await sonMakam(c, matrah)), nesneTuru: 'Fatura', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, proformaNo: no, kdvHaric: matrah, kdv, toplam: R2(matrah + kdv) };

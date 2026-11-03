@@ -8,7 +8,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 type Db = Pool | PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i; // belge.ts bu modülü yükler; yat.ts üzerinden döngü kurulmaz
 export interface GonderimSatiri { kimlik: string; dosya_ref: string | null; tur: string; nesne_kimligi: string; alici: string | null; konu: string; metin: string | null; acil: boolean; veri: Record<string, unknown>; sorumlu_ref: string | null }
-type Isleyici = (c: PoolClient, r: GonderimSatiri, kim: string) => Promise<{ metin?: string; sonuc?: Record<string, unknown> } | void>;
+type Isleyici = (c: PoolClient, r: GonderimSatiri, kim: string) => Promise<{ metin?: string; ekli?: boolean; sonuc?: Record<string, unknown> } | void>;
 const ISLEYICI = new Map<string, Isleyici>();
 /** Gönderimin iş sonucu (teklifin Gönderildi olması gibi) yalnız ikinci teyitte çalışır. */
 export function gonderimIsleyici(tur: string, f: Isleyici) { ISLEYICI.set(tur, f); }
@@ -74,7 +74,7 @@ export function sigortaGonderimYollari(s: FastifyInstance, b: Baglam) {
       if ((Date.now() - new Date(r.birinci_teyit_zamani).getTime()) / 1000 < bekle) return dur(409, 'Metni okuyup yeniden teyit ediniz.');
       const is = await ISLEYICI.get(r.tur)?.(c, r, o.kullanici);
       const metin = is?.metin ?? r.metin;
-      if (r.alici && metin) await disGonder(c, { olay: `sigorta:${id}`, eposta: r.alici, konu: r.konu, metin, acil: r.acil, sigortaTeyitli: true });
+      if (r.alici && metin && !is?.ekli) await disGonder(c, { olay: `sigorta:${id}`, eposta: r.alici, konu: r.konu, metin, acil: r.acil, sigortaTeyitli: true });
       await c.query(`UPDATE sigorta_gonderim SET durum = 'Gönderildi', metin = $2, ikinci_teyit_zamani = now() WHERE kimlik = $1`, [id, metin]);
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Sigortaya Gönderim Teyidi' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [id]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Gönderimi İkinci Teyit', nesneTuru: r.tur, nesneKimligi: r.nesne_kimligi, yeni: { alici: r.alici }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

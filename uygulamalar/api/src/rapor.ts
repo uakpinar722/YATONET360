@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir } from './bildirim.js';
+import { belgeUret } from './belge_uret.js';
 import { izYaz } from './denetim.js';
 import { dosyaErisimi } from './dosya.js';
 import { rolId } from './ihbar.js';
@@ -32,6 +33,7 @@ export async function raporEngeli(db: Db, dosya: string): Promise<string | null>
 kapanisKaydet('Teknik Rapor', async (c, k, karar) => {
   const durum = karar === 'Onayla' ? 'Onaylı' : karar === 'Reddet' ? 'Reddedildi' : karar === 'Gerekçeyle İade Et' ? 'İade Edildi' : karar === 'Yeniden Gönder' ? 'Kontrolde' : karar === 'Geri Çek' ? 'Geri Çekildi' : null;
   if (durum) await c.query(`UPDATE teknik_rapor SET durum = $2 WHERE kimlik = $1`, [k.nesne_kimligi, durum]);
+  if (karar === 'Onayla') { const d = (await c.query(`SELECT dosya_ref FROM teknik_rapor WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0]; await belgeUret(c, { tur: 'Teknik Rapor', nesne: k.nesne_kimligi!, dosya: d.dosya_ref }); }
 });
 
 kapanisKaydet('Kart Önerisi', async (c, k, karar) => {
@@ -102,7 +104,7 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
       const f = (await c.query(`SELECT kimlik, bulgular, onerilen_islemler, firma_onayi FROM firma_teknik_raporu WHERE dosya_ref = $1 ORDER BY firma_onayi DESC LIMIT 1`, [id])).rows[0];
       const ana = tur === 'Ek Teknik Rapor' ? (await c.query(`SELECT kimlik FROM teknik_rapor WHERE dosya_ref = $1 AND rapor_turu = 'İlk Rapor' AND durum = 'Onaylı' LIMIT 1`, [id])).rows[0]?.kimlik : null;
       if (tur === 'Ek Teknik Rapor' && !ana) throw Object.assign(new Error('Ek Teknik Rapor için onaylı İlk Rapor bekleniyor.'), { statusCode: 409 });
-      const no = await altNumara(c, d.dosya_no, 'RP');
+      const no = await altNumara(c, d.dosya_no, 'TR');
       const son = f ? await raporSonZamani(c, d.oncelik, new Date(f.firma_onayi)) : null;
       const r = (await c.query(`INSERT INTO teknik_rapor (rapor_no, rapor_turu, ana_rapor_ref, dosya_ref, dayanak_firma_raporu_ref, kapsam, incelenen_alan, saha_kosullari, yontem_olcut, bulgular, acik_sorular, analiz_risk, oneriler, uzmanlik_siniri, rapor_dili, son_zaman, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`, [no, tur, ana, id, f?.kimlik ?? null, g.kapsam!.trim(), g.incelenen!.trim(), g.saha!.trim(), g.yontem!.trim(), g.bulgular!.trim(), g.acikSorular!.trim(), g.analiz!.trim(), g.oneriler!.trim(), g.uzmanlik!.trim(), d.yazisma_dili ?? 'Türkçe', son, o.kullanici])).rows[0];
       if (f) {

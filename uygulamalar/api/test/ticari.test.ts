@@ -83,7 +83,7 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     const d = await dosya('Sigorta Şirketi'); const t = await teklifVer(d, 'Sigorta Şirketi', 1000); const c = await o.gir('ts');
     const p = await o.ist('POST', `/api/teklif/${t}/proforma`, c);
     expect(p.statusCode, p.body).toBe(200);
-    expect(p.json()).toMatchObject({ kdvHaric: 1000, kdv: 200, toplam: 1200 }); expect(p.json().proformaNo).toBe(`${d.dosyaNo}-PF01`);
+    expect(p.json()).toMatchObject({ kdvHaric: 1000, kdv: 200, toplam: 1200 }); expect(p.json().proformaNo).toBe(`${d.dosyaNo}-OT01`);
     expect((await o.ist('POST', `/api/teklif/${t}/proforma`, c)).statusCode).toBe(409);
     const id = p.json().kimlik;
     expect((await o.ist('POST', `/api/fatura/${id}/muhasebeye`, c)).statusCode).toBe(409);
@@ -122,7 +122,7 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
 describe('teslim kilidi (YG-087, YG-910, YG-216)', () => {
   it('bireyselde bakiye teslimi durdurur; sigortada vade engellemez; GMY istisnası açar; ONY-27 gider', async () => {
     const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi');
-    await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, vade, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',100,20,120,'Faturalandı',current_date,$4)`, [`${d.dosyaNo}-PF01`, d.kimlik, t, o.K.ts]);
+    await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, vade, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',100,20,120,'Faturalandı',current_date,$4)`, [`${d.dosyaNo}-OT01`, d.kimlik, t, o.K.ts]);
     expect(await teslimEngeli(o.db, d.kimlik)).toContain('120,00 EUR');
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teslim-durumu`, await o.gir('ds'))).json().engel).toContain('Ödeme bekleniyor');
     await o.sup.query(`UPDATE dosya SET asama = 'Teslim' WHERE kimlik = $1`, [d.kimlik]);
@@ -144,7 +144,7 @@ describe('teslim kilidi (YG-087, YG-910, YG-216)', () => {
   });
   it('kapalıya geçişte tahsilat ve firma ödemesi aranır (YG-067)', async () => {
     const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi'); const c = await o.gir('ds');
-    await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, vade, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',100,20,120,'Faturalandı',current_date,$4)`, [`${d.dosyaNo}-PF01`, d.kimlik, t, o.K.ts]);
+    await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, vade, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',100,20,120,'Faturalandı',current_date,$4)`, [`${d.dosyaNo}-OT01`, d.kimlik, t, o.K.ts]);
     await o.sup.query(`UPDATE dosya SET statu = 'Teknik Kapalı' WHERE kimlik = $1`, [d.kimlik]);
     const e = await o.ist('POST', `/api/dosya/${d.kimlik}/kapanis`, c, { cikis: 'Kapalı', neden: 'Müşteri Vazgeçti', yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: true });
     expect(e.statusCode).toBe(409); expect(e.json().eksikler).toContain('Tahsilat Bekliyor');

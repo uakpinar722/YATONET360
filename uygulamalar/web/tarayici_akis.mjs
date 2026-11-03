@@ -159,7 +159,7 @@ try {
   kontrol('firma raporu Teknik Rapor formuna kendiliğinden gelir', true);
   for (const k of ['kapsam', 'incelenen', 'saha', 'yontem', 'acikSorular', 'uzmanlik']) await pR.locator(`#rp-${k}`).fill('Yazıldı');
   await tikla(pR, 'Raporu Kontrole Gönder');
-  await kartKarar(E, 'ty', `${d.dosyaNo}-RP01`, 'Onaya Gönder');
+  await kartKarar(E, 'ty', `${d.dosyaNo}-TR01`, 'Onaya Gönder');
   kontrol('Teknik Yönetici raporu kontrol eder', true);
 
   // Teklif

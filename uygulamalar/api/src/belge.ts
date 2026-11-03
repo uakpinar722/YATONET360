@@ -44,7 +44,7 @@ belgeBagiKaydet('Görev', kartBagi);
 belgeBagiKaydet('Onay', kartBagi);
 
 /** YG-691: doğrulama kodu okunaklıdır, karışan harfleri içermez: 7KQ4-M2XD. */
-function dogrulamaKodu() {
+export function dogrulamaKodu() {
   const b = randomBytes(8); let s = '';
   for (let i = 0; i < 8; i++) s += (i === 4 ? '-' : '') + KOD_ABC[b[i]! % KOD_ABC.length];
   return s;

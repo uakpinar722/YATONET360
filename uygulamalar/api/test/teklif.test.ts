@@ -5,6 +5,12 @@ import { caymaEngeli, teklifSureIsle } from '../src/teklif.js';
 import { firmaUygunlugu } from '../src/firma.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { belgeKuyruguIsle } from '../src/belge_uret.js';
+import { Depo } from '../src/depo.js';
+import { pdfKapat } from '../src/pdf.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', mfm: 'Muhasebe ve Finans Müdürü' };
 let o: Ortam; let firma: string; let firmaC: string; let firmaGizli: string; let ceo: string;
@@ -70,7 +76,7 @@ beforeAll(async () => {
   const k = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE e_posta = $1`, [FIRMA_EP])).rows[0].kimlik;
   expect((await o.ist('POST', `/api/firma/${firma}/kullanici`, fy, { kullanici: k })).statusCode).toBe(200);
 }, 120_000);
-afterAll(async () => { await o.kapat(); });
+afterAll(async () => { await pdfKapat(); await o.kapat(); });
 beforeEach(async () => { await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); });
 
 describe('fiyat kuralı (YG-185, YG-187, YG-1709)', () => {
@@ -262,15 +268,24 @@ describe('bireysel onay ve cayma (YG-152, YG-466, YG-468)', () => {
 });
 
 describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
-  const gonder = async () => {
+  const gonder = async (eposta?: string) => {
     const d = await hazir({ sigortaci: 'SG', hasarNo: 'H1', yetkiDurumu: 'Doğrulandı' }, { musteriTuru: 'Sigorta Şirketi' }, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'B', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
     const t = await teklifAc(d, 100); await onayla(t.kimlik);
     const gn = await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts')); expect(gn.json().durum, gn.body).toBe('Teyit Bekliyor');
+    if (eposta) await o.sup.query(`UPDATE sigorta_gonderim SET alici = $2 WHERE kimlik = $1`, [gn.json().gonderim, eposta]);
     expect((await o.sup.query(`SELECT statu FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].statu).toBe('Onaylı');
     await o.ist('POST', `/api/sigorta-gonderim/${gn.json().gonderim}/teyit`, await o.gir('ts'), { adim: 1 });
     expect((await o.ist('POST', `/api/sigorta-gonderim/${gn.json().gonderim}/teyit`, await o.gir('ts'), { adim: 2 })).json().durum).toBe('Gönderildi');
-    return { d, t };
+    return { d, t, gn: gn.json().gonderim as string };
   };
+  it('ikinci teyitten sonra BLD-71 teklif PDF ekiyle kuyruğa girer; PDF üretilmeden gitmez', async () => {
+    const { t, gn } = await gonder('hasar@sigorta.deneme.local'); const olay = `sigorta:${gn}`;
+    const satir = () => o.sup.query(`SELECT cardinality(ek_surumler) n FROM gonderim WHERE olay_anahtari = $1`, [olay]);
+    expect((await satir()).rowCount).toBe(0);
+    await belgeKuyruguIsle({ db: o.db, webAdresi: 'http://x', depo: new Depo(mkdtempSync(join(tmpdir(), 'bt'))), eposta: o.posta, sms: o.sms } as never, 200);
+    expect((await o.sup.query(`SELECT durum, son_hata FROM belge_uretim WHERE tur = 'Fiyat Teklifi' AND nesne = $1`, [t.kimlik])).rows[0]).toMatchObject({ durum: 'Üretildi', son_hata: null });
+    expect((await satir()).rows[0].n).toBeGreaterThanOrEqual(1);
+  });
   it('yat sahibinden onay istenmez, BLD-37 eş zamanlı gider; telefon kanalı geçersiz', async () => {
     const { d, t } = await gonder();
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE nesne_kimligi = $1`, [t.kimlik])).rowCount).toBe(0);

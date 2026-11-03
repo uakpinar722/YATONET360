@@ -1,6 +1,7 @@
 import { ekonomikIzle, yatDegeriEngeli } from './yat_degeri.js';
 import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import { raporEngeli } from './rapor.js';
+import { belgeUret } from './belge_uret.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
@@ -175,7 +176,11 @@ gonderimIsleyici('Fiyat Teklifi', async (c, r) => {
   const sg = (await c.query(`SELECT sigorta_hasar_dosya_no FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
   const sahip = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
   if (sahip) await yatTarafinaYaz(c, { olay: `bld37:${t.kimlik}`, kod: 'BLD-37', dil: dilKod(t.yazisma_dili), konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: { ...SIFIRLA_YAT(t), 'bağlantı': webAdresiTeklif, link: webAdresiTeklif } });
-  return { metin: await bld71(c, t, sg, son), sonuc: { gecerlilik: bit } };
+  // BLD-71 PDF ekiyle gider (varsa onaylı Teknik Rapor da); ikili teyit geçilmiştir (K-241).
+  const metin = await bld71(c, t, sg, son);
+  if (r.alici) await belgeUret(c, { tur: 'Fiyat Teklifi', nesne: t.kimlik, dosya: t.dosya_ref, gonder: { olay: `sigorta:${r.kimlik}`, eposta: r.alici, konu: r.konu, metin, acil: true, sigortaTeyitli: true, ekle: ['Teknik Rapor'] } });
+  else await belgeUret(c, { tur: 'Fiyat Teklifi', nesne: t.kimlik, dosya: t.dosya_ref });
+  return { metin, ekli: true, sonuc: { gecerlilik: bit } };
 });
 
 export function teklifYollari(s: FastifyInstance, b: Baglam) {
@@ -399,6 +404,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const { kutular } = kutuAyikla(s0.metin);
       const toplam = tutar(Number(t.genel_toplam_eur), dil);
       const bag = { ...alan, 'Teklif No / Sürüm': `${t.teklif_no} Rev.${t.surum_no}`, 'Quotation No / Version': `${t.teklif_no} Rev.${t.surum_no}`, tutar: toplam, amount: toplam };
+      await belgeUret(c, { tur: 'Fiyat Teklifi', nesne: t.kimlik, dosya: t.dosya_ref });
       await onayTalebiAc(c, { dosya: t.dosya_ref, ony: 'ONY-23', dil, alanlar: bag, baslikAlanlari: SIFIRLA_YAT(t), kutular: kutular.map((k, n) => ({ ad: k, zorunlu: n === 0 })), tutar: Number(t.genel_toplam_eur), taraf: sahip.kimlik, kullanici: sahip.kullanici_ref, aliciAd: sahip.kisi_adi_soyadi, telefon: sahip.telefon, eposta: sahip.eposta, belgeAdi: `Fiyat Teklifi ${t.teklif_no}`, hazirlayan: o.kullanici, sigortaHatirlat: t.teklif_muhatabi === 'Yat Sahibi' || t.teklif_muhatabi === 'Kurumsal Müşteri', webAdresi: b.webAdresi, gun, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
       return { durum: 'Gönderildi', gecerlilik: bit };
     });

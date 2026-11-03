@@ -74,7 +74,7 @@ describe('teknik rapor (YG-200, YG-280, YG-428, YG-1518)', () => {
     const tu = await o.gir('tu');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, kapsam: '' })).statusCode).toBe(400);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, R);
-    expect(r.statusCode, r.body).toBe(200); expect(r.json().raporNo).toBe(`${d.dosyaNo}-RP01`);
+    expect(r.statusCode, r.body).toBe(200); expect(r.json().raporNo).toBe(`${d.dosyaNo}-TR01`);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, R)).statusCode).toBe(409);
     expect(await raporEngeli(o.db, d.kimlik)).toContain('Teknik Rapor');
     const k = await o.kart('Teknik Rapor', r.json().kimlik);
@@ -85,7 +85,7 @@ describe('teknik rapor (YG-200, YG-280, YG-428, YG-1518)', () => {
     await o.karar(k.kimlik, 'tmy', 'Onaya Gönder');
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM teknik_rapor WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Onaylı');
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, tur: 'Ek Teknik Rapor' })).json().raporNo).toBe(`${d.dosyaNo}-RP02`);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, tur: 'Ek Teknik Rapor' })).json().raporNo).toBe(`${d.dosyaNo}-TR02`);
     const e = await o.dosyaAc(); await o.ekipKur(e.kimlik); await o.sup.query(`DELETE FROM teknik_rapor WHERE dosya_ref = $1`, [e.kimlik]);
     expect((await o.ist('POST', `/api/dosya/${e.kimlik}/teknik-rapor`, tu, { ...R, tur: 'Ek Teknik Rapor' })).statusCode).toBe(409);
   });

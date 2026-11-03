@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+import { Depo } from './depo.js';
 import type { Pool, PoolClient } from 'pg';
 import type { Baglam } from './kimlik.js';
 import { onayMakami, rolSahipleri } from './makam.js';
@@ -68,12 +70,13 @@ async function kuyruk(db: Db, olay: string, k: string | null, kanal: string, hed
 }
 
 /** Portal hesabı olmayan alıcı (yat sahibi, kaptan, sigorta): kayıttaki iletişim bilgisine kuyruktan gider. Aynı olay aynı adrese iki kez gitmez. */
-export async function disGonder(db: Db, g: { olay: string; telefon?: string | null; eposta?: string | null; konu: string; metin: string; oncelik?: string; acil?: boolean; sigortaTeyitli?: boolean }, simdi = new Date()): Promise<boolean> {
+export async function disGonder(db: Db, g: { olay: string; telefon?: string | null; eposta?: string | null; konu: string; metin: string; oncelik?: string; acil?: boolean; sigortaTeyitli?: boolean; ekler?: string[] }, simdi = new Date()): Promise<boolean> {
   // K-241: sigorta adresine ileti yalnız ikili teyitten geçer; unutulan bir modül burada durur.
   if (g.eposta && !g.sigortaTeyitli && (await db.query(`SELECT 1 FROM dosya_sigorta_kaydi s JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE lower(t.eposta COLLATE "C") = lower($1::text COLLATE "C") LIMIT 1`, [g.eposta])).rowCount) throw new Error('Sigorta şirketine gönderim ikili teyit gerektirir.');
   const plan = g.oncelik === 'Kritik' || g.acil ? simdi : sonrakiMesai(simdi);
   if (g.telefon) await kuyruk(db, g.olay, null, 'SMS', g.telefon, g.konu, g.metin, g.oncelik, plan);
   if (g.eposta) await kuyruk(db, g.olay, null, 'E-posta', g.eposta, g.konu, g.metin, g.oncelik, plan);
+  if (g.eposta && g.ekler?.length) await db.query(`UPDATE gonderim SET ek_surumler = $3 WHERE olay_anahtari = $1 AND hedef = $2 AND kanal = 'E-posta'`, [g.olay, g.eposta, g.ekler]);
   return Boolean(g.telefon || g.eposta);
 }
 
@@ -93,7 +96,10 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
     const { rows } = await c.query(`SELECT * FROM gonderim WHERE durum = 'Bekliyor' AND plan_zamani <= $1 ORDER BY plan_zamani LIMIT $2 FOR UPDATE SKIP LOCKED`, [simdi, limit]);
     for (const g of rows) {
       try {
-        if (g.kanal === 'E-posta') await b.eposta.gonder(g.hedef, g.metin);
+        if (g.kanal === 'E-posta') {
+          const ek = g.ek_surumler?.length ? (await c.query(`SELECT dosya_adi, depo_anahtari FROM belge_surum WHERE kimlik = ANY($1)`, [g.ek_surumler])).rows.map((r) => ({ ad: r.dosya_adi as string, yol: join((b.depo ?? new Depo()).kok, r.depo_anahtari as string) })) : undefined;
+          await b.eposta.gonder(g.hedef, g.metin, ek);
+        }
         else await b.sms.gonder(g.hedef, g.metin); // WhatsApp sağlayıcısı bağlanana kadar deneme kutusu
         await c.query(`UPDATE gonderim SET durum = 'Gönderildi', gonderim_zamani = $2, deneme = deneme + 1 WHERE kimlik = $1`, [g.kimlik, simdi]);
         n++;
