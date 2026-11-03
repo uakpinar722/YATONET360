@@ -68,6 +68,6 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-62 | 4 | Poliçe limiti tanımsız | Olay başı limit girilene kadar her hasar dosyasında ek poliçe gerekli sayılır ve onarım iş emri kapalıdır | `yat_degeri.ts` | Kabul (VAR-4, CEO 03.11.2026) |
 | V-63 | 4 | Keşif iş emri | YG-126 yalnız acil ilk tedbiri ayırdığı için keşif iş emri de ortak karardan sonra verilir | `firma.ts` | Kabul (VAR-4, CEO 03.11.2026) |
 | V-64 | 4 | Ekonomik oran matrahı | Oran, dosyadaki kümülatif KDV hariç teklif tutarı üzerinden; iç onaya gönderilirken ölçülür | `teklif.ts` | Kabul (VAR-4, CEO 03.11.2026) |
-| V-65 | 6 | Otomatik sigorta iletileri | BLD-45 ve BLD-72 gibi kendiliğinden üretilen iletilerde son gönderen Dosya Sorumlusu veya Yedek Sorumlu sayılır; teyit gelene kadar ileti gitmez | `sigorta_gonderim.ts` | Sunulacak |
-| V-66 | 6 | Teyit arası süre | İki teyit arasında en az 2 saniye (parametre); ikinci düğme bu sürede kapalı | `0019` | Sunulacak |
-| V-67 | 6 | Sigorta tarafı tanımı | Adres dosyanın sigorta tarafı kaydından tanınır; eksper ve sigorta portal kullanıcısının sistem içi bildirimi kapsam dışı | `bildirim.ts` | Sunulacak |
+| V-65 | 6 | Otomatik sigorta iletileri | BLD-45 ve BLD-72 gibi kendiliğinden üretilen iletilerde son gönderen Dosya Sorumlusu veya Yedek Sorumlu sayılır; teyit gelene kadar ileti gitmez | `sigorta_gonderim.ts` | Kabul (VAR-5, CEO 03.11.2026) |
+| V-66 | 6 | Teyit arası süre | İki teyit arasında en az 2 saniye (parametre); ikinci düğme bu sürede kapalı | `0019` | Kabul (VAR-5, CEO 03.11.2026) |
+| V-67 | 6 | Sigorta tarafı tanımı | Adres dosyanın sigorta tarafı kaydından tanınır; eksper ve sigorta portal kullanıcısının sistem içi bildirimi kapsam dışı | `bildirim.ts` | Kabul (VAR-5, CEO 03.11.2026) |

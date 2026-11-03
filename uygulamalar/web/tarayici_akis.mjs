@@ -252,6 +252,81 @@ try {
   await dosyaAc(pDs, d.dosyaNo); await tikla(pDs, 'Teslimi Başlat');
   kontrol('Dosya Sorumlusu teslimi ekrandan başlatır, yat sahibine ONY-27 gider', (await sup.query(`SELECT count(*)::int n FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-27'`, [d.kimlik])).rows[0].n === 1);
   sonuc.push(`DOSYA ${d.dosyaNo}`);
+
+  // İkinci dosya: bekletme noktası, çalışma izni, uygunsuzluk, koşullu kabul, tedarik; nöbet çizelgesi
+  const t2 = await pDs.api('/ihbar', { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', sigortaci: sgAd, hasarNo: `J${tek}`, yat: { adi: `E2E Yat2 ${tek}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip2${tek}@deneme.yatonet.local` }, cevaplar: {} });
+  await pDs.api(`/ihbar/${t2.kimlik}/mukerrerlik`, { sonuc: 'Mükerrer değil' });
+  const d2 = await pDs.api(`/ihbar/${t2.kimlik}/acilis`, { karar: 'Kabul', ozet: 'Açılış', musteriTuru: 'Sigorta Şirketi' });
+  for (const [p, k, r] of [[pOpm, 'ds', 'Dosya Sorumlusu'], [pOpm, 'oy', 'Operasyon Yöneticisi'], [pTm, 'tu', 'Teknik Uzman'], [pTm, 'ty', 'Teknik Yönetici']]) await p.api(`/dosya/${d2.kimlik}/ekip`, { kullanici: kimlikler[k], rol: r });
+  E.kk = await hesap('kk', 'Kalite Uzmanı (Kalite Kontrolör)'); E.tds = await hesap('tds', 'Tedarik Sorumlusu'); E.tym = await hesap('tym', 'Tedarik Yönetimi Müdürü'); E.to = await hesap('to', 'Teknik ve Operasyon Direktörü');
+  for (const [k, r] of [['kk', 'Kalite Kontrolör'], ['tds', 'Tedarik Sorumlusu']]) await sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,$3,$4)`, [d2.kimlik, kimlikler[k], r, kimlikler.opm]);
+  await sup.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, durum, hazirlayan_ref) VALUES ($1,1,'D','Ö','Onaylı',$2)`, [d2.kimlik, kimlikler.tu]);
+  const ie2 = (await sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Bodrum','K',500,'Aktif',$4) RETURNING kimlik, is_emri_no`, [`${d2.dosyaNo}-ON01`, d2.kimlik, firma, kimlikler.oy])).rows[0];
+  await sup.query(`INSERT INTO is_emri_kalemi (is_emri_ref, aciklama, miktar, birim) VALUES ($1,'Kalem A',4,'saat')`, [ie2.kimlik]);
+  const dosyaYaz = (ad) => { const y = TEMP.replace('.pdf', `${ad}.pdf`); writeFileSync(y, `%PDF-1.4 ${tek}${ad}`); return y; };
+  // Bekletme noktası
+  const pT2 = await al('tu', E); await dosyaAc(pT2, d2.dosyaNo);
+  await pT2.locator('#kp-e').selectOption(ie2.kimlik); await pT2.locator('#kp-o').fill('Basınç'); await pT2.locator('#kp-k').fill('5 bar');
+  await pT2.locator('#kp-z').fill(new Date(Date.now() + 30 * 3_600_000 + 180 * 60_000).toISOString().slice(0, 16));
+  await tikla(pT2, 'Kontrol Noktası Ekle');
+  const firmaIlerleme = async (dosya) => { const p = await firmaIsEmri(ie2.is_emri_no); await p.getByLabel('Kalem', { exact: true }).selectOption({ index: 1 }); await p.getByLabel('Miktar', { exact: true }).fill('1'); await p.getByLabel('Kanıt Belgesi').setInputFiles(dosyaYaz(dosya)); await p.getByText('Dosya yüklendi.').first().waitFor(); await p.getByRole('button', { name: 'İlerleme Kaydet' }).click(); await p.waitForTimeout(500); return p; };
+  let pF3 = await firmaIlerleme('a');
+  kontrol('bekletme noktası serbest bırakılmadan firma ilerleyemez', (await pF3.getByRole('alert').first().textContent()).includes('Bekletme noktası'));
+  await dosyaAc(pT2, d2.dosyaNo);
+  await pT2.getByLabel('Kontrol Kanıtı').first().setInputFiles(dosyaYaz('b')); await pT2.getByText('Dosya yüklendi.').first().waitFor();
+  await pT2.getByRole('button', { name: 'Uygun', exact: true }).click(); await pT2.waitForTimeout(500); await hataVarsa(pT2, 'Kontrol sonucu');
+  kontrol('kontrol noktası ekrandan serbest bırakılır', (await sup.query(`SELECT serbest_birakma_zamani z FROM kontrol_noktasi WHERE is_emri_ref = $1`, [ie2.kimlik])).rows[0].z !== null);
+  // Çalışma izni
+  await pT2.locator('#kp-e').selectOption(ie2.kimlik); await tikla(pT2, 'Çalışma İzni Zorunlu');
+  pF3 = await firmaIlerleme('c');
+  kontrol('çalışma izni yokken firma ilerleyemez', (await pF3.getByRole('alert').first().textContent()).includes('çalışma izni'));
+  await pF3.locator('#ci-s').fill('Marina'); await pF3.locator('#ci-n').fill('İ-1'); await pF3.locator('#ci-v').fill('Tesis Yetkilisi');
+  const yerel = (s) => new Date(Date.now() + 180 * 60_000 + s * 3_600_000).toISOString().slice(0, 16);
+  await pF3.locator('#ci-b').fill(yerel(-1)); await pF3.locator('#ci-e').fill(yerel(5)); await pF3.locator('#ci-o').fill('25'); await pF3.locator('#ci-y').fill('1');
+  await pF3.getByLabel('İzin Belgesi').setInputFiles(dosyaYaz('d')); await pF3.waitForTimeout(600);
+  await pF3.getByRole('button', { name: 'İzin Belgesini Kaydet' }).click(); await pF3.waitForTimeout(400);
+  kontrol('gaz ölçümü aralık dışıysa izin kaydedilmez', (await pF3.getByRole('alert').first().textContent()).includes('Gaz ölçümü'));
+  await pF3.locator('#ci-o').fill('20,9'); await tikla(pF3, 'İzin Belgesini Kaydet');
+  pF3 = await firmaIlerleme('e'); await hataVarsa(pF3, 'İlerleme');
+  await tikla(pF3, 'İş Tamamlandı');
+  kontrol('firma izin belgesini yükler, ilerler ve işi bitirir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].statu === 'Tamamlandı');
+  // Uygunsuzluk ve koşullu kabul
+  const pK = await al('kk', E); await dosyaAc(pK, d2.dosyaNo);
+  await pK.locator('#n-y').fill('Güverte'); await pK.locator('#n-o').fill('Şartname 4'); await pK.locator('#n-d').fill('Çizik'); await pK.getByLabel('Uygunsuzluk Kanıtı').setInputFiles(dosyaYaz('f')); await pK.getByText('Dosya yüklendi.').first().waitFor();
+  await tikla(pK, 'Uygunsuzluk Aç');
+  kontrol('Kalite Kontrolör uygunsuzluğu ekrandan açar', (await sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d2.kimlik])).rows[0].n === 1);
+  await dosyaAc(pT2, d2.dosyaNo);
+  await pT2.locator('#kk-e').selectOption(ie2.kimlik); await pT2.locator('#kk-b').fill(new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)); await pT2.locator('#kk-t').fill('Rötuş'); await pT2.locator('#kk-i').fill('Görsel'); await pT2.locator('#kk-h').fill(new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10));
+  await tikla(pT2, 'Koşullu Kabul Ver');
+  kontrol('Teknik Uzman koşullu kabulü ekrandan verir', (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].s === 'Koşullu Kabul');
+  // Tedarik
+  const ted = (await pSc.api('/firma', { unvan: `E2E Tedarikçi ${tek}`, rol: 'Tedarikçi' })).kimlik;
+  await pFym.api(`/firma/${ted}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
+  const pTd = await al('tds', E); await dosyaAc(pTd, d2.dosyaNo);
+  await pTd.locator('#sp-ted').selectOption(ted);
+  for (const [i, v] of [['teklifRef', 'T1'], ['kullanim', 'Ana makine'], ['teslimTarihi', '2027-01-15'], ['teslimYeri', 'Marina'], ['olcut', 'Sertifikalı'], ['gerekce', 'Tek kaynak'], ['tanim', 'Pompa'], ['parcaNo', 'P-1'], ['miktar', '2'], ['bedel', '100']]) await pTd.locator(`#sp-${i}`).fill(v);
+  await tikla(pTd, 'Siparişi Onaya Gönder');
+  const sp = (await sup.query(`SELECT kimlik, siparis_no FROM tedarik_siparisi WHERE dosya_ref = $1`, [d2.kimlik])).rows[0];
+  await kartKarar(E, 'tym', sp.siparis_no, 'Onaya Gönder'); await kartKarar(E, 'to', sp.siparis_no, 'Onaya Gönder'); await kartKarar(E, 'tid', sp.siparis_no, 'Onayla');
+  await dosyaAc(pTd, d2.dosyaNo);
+  await pTd.locator(`#g-l-${sp.kimlik}`).fill('L1'); await pTd.locator(`#g-i-${sp.kimlik}`).fill('İ1'); await pTd.locator(`#g-m-${sp.kimlik}`).fill('2'); await pTd.locator(`#g-y-${sp.kimlik}`).selectOption(firma);
+  await tikla(pTd, 'Teknik Kontrole Gönder');
+  await dosyaAc(pT2, d2.dosyaNo);
+  await pT2.locator('.soru', { hasText: 'Lot L1' }).getByRole('button', { name: 'Kabul', exact: true }).click(); await pT2.waitForTimeout(500); await hataVarsa(pT2, 'Malzeme');
+  kontrol('sipariş, giriş ve teknik kabul ekrandan tamamlanır', (await sup.query(`SELECT statu FROM tedarik_siparisi WHERE kimlik = $1`, [sp.kimlik])).rows[0].statu === 'Teslim Alındı');
+  await dosyaAc(pTd, d2.dosyaNo);
+  await pTd.locator(`#fa-n-${sp.kimlik}`).fill(`S${tek}`); await pTd.locator(`#fa-t-${sp.kimlik}`).fill('2026-11-20'); await pTd.locator(`#fa-u-${sp.kimlik}`).fill('200,00');
+  await pTd.getByRole('button', { name: 'Üçlü Eşleştir' }).click(); await pTd.getByText('Eşleştirme: Eşleşti').waitFor();
+  kontrol('üçlü eşleştirme ekrandan sonuç verir', true);
+  await tasmaYok(pTd, 'tedarik_bolumu');
+  // Nöbet çizelgesi
+  const pOp2 = await al('opm', E);
+  await pOp2.getByRole('button', { name: 'Nöbet ve Acil' }).click();
+  await pOp2.locator('#nb-d').fill('2027-03'); await pOp2.locator('#nb-u').selectOption(kimlikler.ds); await pOp2.locator('#nb-b').fill('2027-03-01T18:00'); await pOp2.locator('#nb-s').fill('2027-03-02T09:00');
+  await tikla(pOp2, 'Vardiya Ekle'); await tikla(pOp2, 'Çizelgeyi Onaya Gönder');
+  await pOp2.getByText('Çizelge onaya gönderildi.').waitFor();
+  kontrol('nöbet çizelgesi ekrandan onaya gönderilir', true);
+  sonuc.push(`DOSYA ${d2.dosyaNo}`);
 } catch (e) {
   sonuc.push(`KALDI  beklenmeyen: ${e.message.split('\n')[0]}`);
   for (const [k, s] of Object.entries(sayfalar)) await s.screenshot({ path: join(CIKTI, `hata_${k}.png`), fullPage: true }).catch(() => {});
