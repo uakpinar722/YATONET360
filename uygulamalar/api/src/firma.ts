@@ -111,7 +111,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const { id } = i.params as { id: string }; const { kullanici } = (i.body ?? {}) as { kullanici?: string };
     if (!UUID.test(id) || !kullanici) return y.code(400).send({ hata: 'Firma ve kullanıcıyı seçiniz.' });
     const h = (await b.db.query(`SELECT kullanici_grubu FROM kullanici_hesabi WHERE kimlik = $1`, [kullanici])).rows[0];
-    if (h?.kullanici_grubu !== GRUP && h?.kullanici_grubu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kullanıcı firma hesabı değildir.' });
+    if (h?.kullanici_grubu !== GRUP && h?.kullanici_grubu !== 'Tedarikçi' && !h?.kullanici_grubu?.startsWith('Tesis Yetkilisi')) return y.code(400).send({ hata: 'Kullanıcı firma hesabı değildir.' });
     await b.db.query(`INSERT INTO kurulus_kullanici VALUES ($1,$2) ON CONFLICT DO NOTHING`, [id, kullanici]);
     return { tamam: true };
   });

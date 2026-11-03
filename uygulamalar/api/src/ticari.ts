@@ -15,6 +15,7 @@ import { altNumara, sayac } from './sure.js';
 import { parametre, parasalZincir, sonMakam } from './teklif.js';
 import { UUID } from './yat.js';
 import { emniyetEngeli } from './kalite.js';
+import { tesisSerbestBirak } from './portallar.js';
 import { izinGerekli } from './yetki.js';
 
 type Db = Pool | PoolClient;
@@ -153,6 +154,7 @@ kapanisKapisi(async (db, d, cikis) => {
 onaySonucKaydet('ONY-27', async (c, t, karar, k) => {
   if (karar !== 'Onaylandı') return;
   await c.query(`UPDATE teslim_kaydi SET durum = 'Teslim Edildi', teslim_alan = $2, teslim_zamani = $3 WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor'`, [t.dosya_ref, t.alici_ad, k.zaman]);
+  await tesisSerbestBirak(c, t.dosya_ref, t.alici_ad); // YG-554
 });
 
 export function ticariYollari(s: FastifyInstance, b: Baglam) {

@@ -7,6 +7,7 @@ import { Profilim } from './Hesabim';
 import { YatSahibiAna } from './Portal';
 import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna } from './Ticari';
 import { FirmaSicil } from './Sicil';
+import { TedarikciAna, TesisAna } from './Portallar';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
@@ -58,7 +59,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   ];
   const b = veri?.okunmamisBildirim ?? 0;
   const icerik: Record<Sayfa, ReactNode> = {
-    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Sigorta') ? <SigortaAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
+    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Sigorta') ? <SigortaAna ben={ben} /> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
     profil: <Profilim />,
     erisim: <ErisimTalebi />,

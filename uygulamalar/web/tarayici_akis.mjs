@@ -326,6 +326,44 @@ try {
   await tikla(pOp2, 'Vardiya Ekle'); await tikla(pOp2, 'Çizelgeyi Onaya Gönder');
   await pOp2.getByText('Çizelge onaya gönderildi.').waitFor();
   kontrol('nöbet çizelgesi ekrandan onaya gönderilir', true);
+  // A8 Tesis
+  const marina = (await pSc.api('/firma', { unvan: `E2E Marina ${tek}`, rol: 'Tesis' })).kimlik;
+  await pFym.api(`/firma/${marina}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
+  E.mar = await hesap('mar', 'Tesis Yetkilisi', 'Tesis Yetkilisi (Marina, Tersane, Çekek Sahası)');
+  await pFym.api(`/firma/${marina}/kullanici`, { kullanici: kimlikler.mar });
+  await dosyaAc(pDs, d2.dosyaNo);
+  await pDs.locator('#tis-t').selectOption(marina); await pDs.locator('#tis-u').selectOption('Çekek Randevusu'); await pDs.locator('#tis-h').fill('2026-12-15');
+  await tikla(pDs, 'Tesise Talep Gönder');
+  const pMar = await al('mar', E);
+  for (let n = 0; n < 6; n++) { await pMar.waitForTimeout(500); const b = pMar.getByRole('button', { name: /^(Bilgilendim|Devam|Ana Ekrana Geç|Okudum, Kabul Ediyorum)$/ }); if (await b.count()) await b.first().click(); else break; }
+  await pMar.getByText('LGM teslim onayını beklemenizi rica ederiz').first().waitFor();
+  const mGovde = await pMar.locator('body').innerText();
+  kontrol('tesise firma unvanı ve fiyat görünmez', !mGovde.includes(`E2E Firma ${tek}`) && !mGovde.includes('Teklif'));
+  await tasmaYok(pMar, 'tesis_portali');
+  await pMar.getByLabel('Tesis İzin Numarası').fill('M-77');
+  await tikla(pMar, 'İzin Ver');
+  await pMar.getByText('İzin No: M-77').first().waitFor();
+  kontrol('tesis talebi portaldan onaylar, takvimde Onaylı görünür', (await pMar.locator('body').innerText()).includes('Onaylı'));
+  // A9 Tedarikçi
+  E.tdc = await hesap('tdc', 'Tedarikçi Kullanıcısı', 'Tedarikçi');
+  await pFym.api(`/firma/${ted}/kullanici`, { kullanici: kimlikler.tdc });
+  await dosyaAc(pTd, d2.dosyaNo);
+  await pTd.locator('#tt-t').selectOption(ted); await pTd.locator('#tt-s').fill('2027-01-20T12:00'); await pTd.locator('#tt-u').fill('Filtre'); await pTd.locator('#tt-p').fill('F-9');
+  await tikla(pTd, 'Teklif Talebi Gönder');
+  const pTc = await al('tdc', E);
+  for (let n = 0; n < 6; n++) { await pTc.waitForTimeout(500); const b = pTc.getByRole('button', { name: /^(Bilgilendim|Devam|Ana Ekrana Geç|Okudum, Kabul Ediyorum)$/ }); if (await b.count()) await b.first().click(); else break; }
+  await pTc.getByLabel('Birim Fiyat (EUR)').fill('40'); await pTc.getByLabel('Teslim Süresi (Gün)').fill('3');
+  await tasmaYok(pTc, 'tedarikci_portali');
+  await tikla(pTc, 'Teklifi Gönder');
+  const sp2 = (await sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, statu, hazirlayan_ref) VALUES ($1,$2,$3,'T','K',80,16,96,'2027-01-20','Marina','Ö','G','Verildi',$4) RETURNING kimlik`, [`${d2.dosyaNo}-SP09`, d2.kimlik, ted, kimlikler.tds])).rows[0];
+  await sup.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur) VALUES ($1,1,'Filtre','F-9',2,'adet',40,80)`, [sp2.kimlik]);
+  await al('tdc', E);
+  await pTc.locator(`#sk-t-${sp2.kimlik}`).fill('2027-01-15'); await pTc.locator(`#sk-k-${sp2.kimlik}`).fill(await kod('tdc'));
+  await tikla(pTc, 'Siparişi Kabul Ediyorum');
+  await pTc.locator(`#sv-t-${sp2.kimlik}`).fill('2027-01-10'); await pTc.locator(`#sv-i-${sp2.kimlik}`).fill('İ9'); await pTc.locator(`#sv-s-${sp2.kimlik}`).fill('Kargo'); await pTc.locator(`#sv-l-${sp2.kimlik}`).fill('L9');
+  await pTc.getByLabel('İrsaliye ve Sertifika').setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
+  await tikla(pTc, 'Sevk Bildir');
+  kontrol('tedarikçi teklif verir, siparişi kodla kabul eder, sevk bildirir', (await sup.query(`SELECT count(*)::int n FROM tedarik_sevki WHERE siparis_ref = $1`, [sp2.kimlik])).rows[0].n === 1);
   sonuc.push(`DOSYA ${d2.dosyaNo}`);
 } catch (e) {
   sonuc.push(`KALDI  beklenmeyen: ${e.message.split('\n')[0]}`);

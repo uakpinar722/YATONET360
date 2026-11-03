@@ -86,6 +86,8 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
     if (!(await tedarikSorumlusu(o.kullanici))) return y.code(403).send({ hata: 'Giriş kaydını Tedarik Sorumlusu hazırlar.' });
     if (!['Verildi', 'Kısmi Teslim'].includes(t.statu)) return y.code(409).send({ hata: 'Sipariş verilmemiştir.' });
+    // YG-1577: portal kullanıcısı olan tedarikçide giriş kabulden sonra yapılır; kullanıcısı olmayan tedarikçide Tedarik Sorumlusu kayıt açar.
+    if (t.tedarikci_kabul !== 'Kabul' && (await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kurulus_ref = $1 LIMIT 1`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: t.tedarikci_kabul === 'Ret' ? 'Tedarikçi siparişi kabul etmemiştir.' : 'Tedarikçinin sipariş kabulü bekleniyor.' });
     if (!g.lot?.trim()) return y.code(400).send({ hata: 'Kaynağı veya lotu izlenemeyen malzeme kabul edilmez.' });
     if (!g.irsaliye?.trim() || !g.bekletmeYeri || !UUID.test(g.bekletmeYeri) || !(Number(g.miktar) > 0)) return y.code(400).send({ hata: 'İrsaliye, miktar ve bekletme yeri zorunludur.' });
     const k = (await b.db.query(`SELECT miktar, teslim_alinan FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 AND satir_no = $2`, [id, g.satir])).rows[0];

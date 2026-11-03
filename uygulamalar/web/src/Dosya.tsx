@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
 import { KaliteBolumu, SigortaGonderimBolumu, TedarikBolumu, YatDegeriBolumu } from './Kalite';
+import { TeklifTalebiBolumu, TesisIslemleri } from './Portallar';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
@@ -292,6 +293,8 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <SigortaGonderimBolumu id={id} />
       <TicariBolumu id={id} rollerim={d.rollerim} roller={roller} asama={d.asama} />
       <KaliteBolumu id={id} roller={roller} />
+      <TesisIslemleri id={id} ds={d.rollerim.includes('Dosya Sorumlusu')} />
+      <TeklifTalebiBolumu id={id} roller={roller} />
       <TedarikBolumu id={id} roller={roller} />
       <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik}>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '—'} · {t.eposta ?? '—'}</div>)}</Blok>
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
