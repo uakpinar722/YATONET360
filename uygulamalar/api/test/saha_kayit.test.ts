@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { performansOlayIsle } from '../src/karne.js';
+import { sahaSureIsle } from '../src/saha_kayit.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
@@ -81,6 +82,65 @@ describe('parça girişi ve teslim talebi (YG-1430, YG-417)', () => {
   });
 });
 
+describe('düzeltme, yeniden başlatma, toplantı, eskalasyon (YG-380, YG-262, YG-580, YG-417, YG-350)', () => {
+  it('sapma kanıtla ve girenden başkası tarafından kapanır; kayıt silinmez; özet firma bazında', async () => {
+    const { e } = await isEmri(); const r = await o.ist('POST', `/api/is-emri/${e}/sapma`, await o.gir('tu'), { tur: 'Kalite', aciklama: 'A', karar: 'Düzeltme', hedef: '2026-12-01' }); const u = `/api/sapma/${r.json().kimlik}/kapat`;
+    const b1 = await belge(e);
+    expect((await o.ist('POST', u, await o.gir('tu'), { belge: b1 })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('ds'), {})).statusCode).toBe(400);
+    expect((await o.ist('POST', u, await o.gir('ds'), { belge: b1 })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, await o.gir('ds'), { belge: b1 })).statusCode).toBe(409);
+    expect((await o.kart('Sapma Kaydı', r.json().kimlik)).durum).toBe('Tamamlandı');
+    const oz = (await o.ist('GET', `/api/firma/${f}/sapma-ozeti`, await o.gir('fym'))).json(); expect(oz.find((x: { tur: string }) => x.tur === 'Kalite')).toMatchObject({ adet: 1, acik: 0 });
+    expect((await o.ist('GET', `/api/firma/${f}/sapma-ozeti`, await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('durdurulan işi yalnız Teknik Müdür başlatır; işi durduran açık uygunsuzluk varken başlamaz; firma durdurması ekibe bildirilir', async () => {
+    const { d, e } = await isEmri(); const u = `/api/is-emri/${e}/yeniden-baslat`;
+    expect((await o.ist('POST', u, await o.gir('tm'), { gerekce: 'G' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/firma-portal/is-emri/${e}/durdur`, fC, { neden: 'Kapsam dışı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.tu, `is-emri-durdu:${e}%`])).rowCount).toBe(1);
+    expect((await o.ist('POST', u, await o.gir('tu'), { gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('tm'), {})).statusCode).toBe(400);
+    const be = await belge(e); const n = (await o.sup.query(`INSERT INTO uygunsuzluk (uygunsuzluk_no, dosya_ref, is_emri_ref, tespit_kaynagi, yer_nitelik, dayanak_olcut, gercek_durum, kanit_belge_ref, sinif, is_durduruldu, acan_ref) VALUES ($1,$2,$3,'K','Y','D','G',$4,'Majör',true,$5) RETURNING kimlik`, [`NCR-R${Date.now()}`, d.kimlik, e, be, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', u, await o.gir('tm'), { gerekce: 'G' })).json().hata).toContain('uygunsuzluk');
+    await o.sup.query(`UPDATE uygunsuzluk SET statu = 'Kapalı' WHERE kimlik = $1`, [n]);
+    expect((await o.ist('POST', u, await o.gir('tm'), { gerekce: 'Ölçüm temiz' })).json().statu).toBe('Aktif');
+  });
+  it('güvenlik sapmasında İşi Durdur emniyet alıcılarına gider', async () => {
+    const { e } = await isEmri();
+    expect((await o.ist('POST', `/api/is-emri/${e}/sapma`, await o.gir('tu'), { tur: 'Güvenlik', aciklama: 'Gaz', karar: 'İşi Durdur' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.tm, `is-emri-durdu:${e}%`])).rowCount).toBe(1);
+  });
+  it('TPL-07 kaydı olmadan onarım başlamaz; keşif ve acil muaf; yalnız Dosya Sorumlusu kaydeder; firma görür; bir kez', async () => {
+    const { e } = await isEmri('Başlangıç Kontrolünde'); const u = `/api/is-emri/${e}/baslangic-toplantisi`;
+    const { baslangicToplantiEngeli } = await import('../src/saha_kayit.js');
+    expect(await baslangicToplantiEngeli(o.db, e, 'KN')).toBeNull(); expect(await baslangicToplantiEngeli(o.db, e, 'AC')).toBeNull(); expect(await baslangicToplantiEngeli(o.db, e, 'ON')).toContain('toplantısı');
+    const g = { tarih: '2026-11-04', katilimcilar: 'Saha Sorumlusu, Firma Yetkilisi', konusulanlar: 'İSG', kisaForm: true };
+    expect((await o.ist('POST', u, await o.gir('tu'), g)).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('ds'), { ...g, katilimcilar: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, await o.gir('ds'), g)).statusCode).toBe(200);
+    expect((await o.ist('POST', u, await o.gir('ds'), g)).statusCode).toBe(409);
+    expect(await baslangicToplantiEngeli(o.db, e, 'ON')).toBeNull();
+    expect((await o.ist('GET', `/api/firma-portal/is-emri/${e}/baslangic-toplantisi`, fC)).json()).toMatchObject({ kisa_form: true, konusulanlar: 'İSG' });
+    expect((await o.ist('GET', `/api/firma-portal/is-emri/${e}/baslangic-toplantisi`, f2C)).statusCode).toBe(404);
+  });
+  it('teslim talebi 24 saatte Operasyon Müdürüne yükselir, bir kez; yeniden değerlendirme görevi Koşullu 3, onaylı 12 ayda', async () => {
+    const { d, e } = await isEmri(); await o.ist('POST', `/api/firma-portal/is-emri/${e}/teslim-talebi`, fC, {});
+    await o.sup.query(`UPDATE is_karti SET olusturma_zamani = now() - interval '25 hours' WHERE tur = 'Teslim Talebi' AND nesne_kimligi = $1`, [d.kimlik]);
+    await sahaSureIsle(o.db); await sahaSureIsle(o.db);
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Teslim Uyuşmazlığı' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
+    const k = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Koşullu Firma', rol: 'Çözüm Ortağı' })).json().kimlik;
+    await o.sup.query(`UPDATE kurulus SET kayit_asamasi = 'Koşullu Onaylı', ag_statusu = 'Aktif', kabul_karar_zamani = now() - interval '4 months' WHERE kimlik = $1`, [k]);
+    const a = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Yeni Firma', rol: 'Çözüm Ortağı' })).json().kimlik;
+    await o.sup.query(`UPDATE kurulus SET kayit_asamasi = 'Onaylı', ag_statusu = 'Aktif', kabul_karar_zamani = now() - interval '4 months' WHERE kimlik = $1`, [a]);
+    await sahaSureIsle(o.db); await sahaSureIsle(o.db);
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Firma Yeniden Değerlendirme' AND nesne_kimligi = $1`, [k])).rowCount).toBe(1);
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Firma Yeniden Değerlendirme' AND nesne_kimligi = $1`, [a])).rowCount).toBe(0);
+    await o.ist('POST', `/api/firma/${k}/statu`, await o.gir('fym'), { risk: 'Standart', gerekce: 'Değerlendirildi' });
+    expect((await o.sup.query(`SELECT sonraki_gozden_gecirme_tarihi t FROM kurulus WHERE kimlik = $1`, [k])).rows[0].t).toBeNull();
+  });
+});
+
 describe('sapma, denetim ve karne (YG-379, YG-786, Ek I §7.5)', () => {
   const olay = async (e: string) => (await o.sup.query(`SELECT * FROM performans_olay_kaydi WHERE is_emri_ref = $1`, [e])).rows[0];
   it('yetki ve zorunlu alan; İşi Durdur iş emrini durdurur, görev açılır', async () => {
@@ -97,9 +157,11 @@ describe('sapma, denetim ve karne (YG-379, YG-786, Ek I §7.5)', () => {
     await performansOlayIsle(o.db, e);
     const once = await olay(e); expect(once.uyum_puani).toBe('100.00'); expect(once.maliyet_puani).toBe('100.00');
     const c = await o.gir('tu'); const u = `/api/is-emri/${e}/sapma`;
-    await o.ist('POST', u, c, { tur: 'Güvenlik', aciklama: 'KKD yok', karar: 'Düzeltme', isgIhlali: true });
-    await o.ist('POST', u, c, { tur: 'Yöntem', aciklama: 'İzin', karar: 'Düzeltme' });
-    await o.ist('POST', u, c, { tur: 'Kapsam', aciklama: 'Bu firma kaynaklı değil', karar: 'Düzeltme', firmaKaynakli: false });
+    expect((await o.ist('POST', u, c, { tur: 'Yöntem', aciklama: 'İzin', karar: 'Düzeltme' })).statusCode).toBe(400);
+    const H = '2026-12-01';
+    await o.ist('POST', u, c, { tur: 'Güvenlik', aciklama: 'KKD yok', karar: 'Düzeltme', isgIhlali: true, hedef: H });
+    await o.ist('POST', u, c, { tur: 'Yöntem', aciklama: 'İzin', karar: 'Düzeltme', hedef: H });
+    await o.ist('POST', u, c, { tur: 'Kapsam', aciklama: 'Bu firma kaynaklı değil', karar: 'Düzeltme', firmaKaynakli: false, hedef: H });
     const kk = await o.gir('kk'); const d = `/api/is-emri/${e}/denetim-bulgusu`;
     expect((await o.ist('POST', d, await o.gir('tu'), { sinif: 'Majör', aciklama: 'A', belge: await belge(e) })).statusCode).toBe(403);
     expect((await o.ist('POST', d, kk, { sinif: 'Majör', aciklama: 'A' })).statusCode).toBe(400);

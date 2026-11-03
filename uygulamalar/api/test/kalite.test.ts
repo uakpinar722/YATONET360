@@ -57,12 +57,14 @@ describe('kalite planı (YG-288)', () => {
     const k = await o.kart('Kalite Planı', p.json().kimlik);
     expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).not.toBe(200);
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir' })).json().hata).toContain('toplantısı');
+    await o.sup.query(`INSERT INTO baslangic_toplantisi (is_emri_ref, tarih, katilimcilar, konusulanlar, kaydeden_ref) VALUES ($1,current_date,'K','K',$2)`, [on, o.K.ds]);
     expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir' })).statusCode).toBe(200);
     expect((await ncr(d, { sinif: 'Minör' })).json().hata).toContain('A sınıfı');
   });
 });
 describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
-  it('Kritik işi durdurur, Olduğu Gibi Kabul yok, son karar Kalite Müdürü; kök neden ve kanıtla kapanır, iş açılır', async () => {
+  it('Kritik işi durdurur, Olduğu Gibi Kabul yok, son karar Kalite Müdürü; kök neden ve kanıtla kapanır; emniyet işaretliyse işi Teknik Müdür başlatır', async () => {
     const d = await dosya(); const e = await isEmri(d);
     const r = await ncr(d, { sinif: 'Kritik', emniyet: true, isEmri: e });
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ uygunsuzlukNo: `${d.dosyaNo}-NCR01`, isDurduruldu: true });
@@ -86,6 +88,8 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     const tespit = (await o.sup.query(`SELECT kanit_belge_ref k FROM uygunsuzluk WHERE kimlik = $1`, [id])).rows[0].k;
     expect((await o.ist('POST', `/api/uygunsuzluk/${id}/kapat`, km, { sonuc: 'Uygun', kanit: tespit })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/uygunsuzluk/${id}/kapat`, km, { sonuc: 'Uygun', kanit })).json().statu).toBe('Kapalı');
+    expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [e])).rows[0].statu).toBe('Durduruldu');
+    expect((await o.ist('POST', `/api/is-emri/${e}/yeniden-baslat`, await o.gir('tm'), { gerekce: 'Ölçüm temiz' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT statu, durdurma_nedeni FROM is_emri WHERE kimlik = $1`, [e])).rows[0]).toEqual({ statu: 'Aktif', durdurma_nedeni: null });
   });
   it('firma yeni hasarında ihbar ve mahsup zorunlu; Minör kök nedensiz Kalite Kontrolörce kapanır; süre aşımı tek kart açar', async () => {

@@ -289,6 +289,12 @@ try {
   const ie = (await sup.query(`SELECT kimlik, is_emri_no FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'ON'`, [d.kimlik])).rows[0];
   await kartKarar(E, 'opm', ie.is_emri_no, 'Onaya Gönder'); await kartKarar(E, 'tid', ie.is_emri_no, 'Onayla');
   await firmaKabul(ie.is_emri_no);
+  await dosyaAc(pDs, d.dosyaNo); const ieKart = pDs.locator('.soru', { hasText: ie.is_emri_no });
+  await ieKart.getByRole('button', { name: 'Saha Kayıtları' }).click(); await ieKart.getByLabel('Başlangıç Toplantısı Tarihi').fill('2026-12-01');
+  await ieKart.getByLabel('Toplantı Katılımcıları').fill('Saha Sorumlusu, Firma Yetkilisi'); await ieKart.getByLabel('Konuşulanlar').fill('İSG ve iş programı');
+  await ieKart.getByRole('button', { name: 'Toplantıyı Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Başlangıç toplantısı');
+  kontrol('başlangıç toplantısı ekrandan kaydedilir', (await sup.query(`SELECT 1 FROM baslangic_toplantisi t JOIN is_emri e ON e.kimlik = t.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rowCount === 1);
+  await ieKart.getByLabel('Sapma Açıklaması').fill('Yöntem bildirimi eksik'); await ieKart.getByLabel('Sapma Kararı').selectOption('Değişiklik Talebi');
   await dosyaAc(pTu, d.dosyaNo); await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: 'Başlanabilir' }).click(); await pTu.waitForTimeout(500); await hataVarsa(pTu, 'Başlanabilir');
   kontrol('Teknik Uzman başlangıç kontrolünü ekrandan verir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].statu === 'Aktif');
 

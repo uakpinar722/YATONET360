@@ -124,8 +124,8 @@ export function GunlukSayfasi() {
 
 /** YG-1430, YG-404, YG-417: firma tedariki parça ve teslim talebi; kabulü LGM verir. */
 export function ParcaVeTeslim({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
-  const [l, setL] = useState<{ kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]>([]); const [p, setP] = useState({ urun: '', parcaNo: '', miktar: '', birim: 'adet', lot: '' }); const [b, setB] = useState(''); const [ts, setTs] = useState<boolean | null>(null);
-  const yukle = () => Promise.all([istek<typeof l>(`/firma-portal/is-emri/${isEmri}/parca`).then(setL), istek<{ teslimOnayi: boolean }>(`/firma-portal/is-emri/${isEmri}/teslim-durumu`).then((x) => setTs(x.teslimOnayi))]);
+  const [l, setL] = useState<{ kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]>([]); const [p, setP] = useState({ urun: '', parcaNo: '', miktar: '', birim: 'adet', lot: '' }); const [b, setB] = useState(''); const [ts, setTs] = useState<boolean | null>(null); const [tpl, setTpl] = useState<{ tarih: string; kisa_form: boolean; katilimcilar: string; konusulanlar: string } | null>(null);
+  const yukle = () => Promise.all([istek<typeof l>(`/firma-portal/is-emri/${isEmri}/parca`).then(setL), istek<{ teslimOnayi: boolean }>(`/firma-portal/is-emri/${isEmri}/teslim-durumu`).then((x) => setTs(x.teslimOnayi)), istek<typeof tpl>(`/firma-portal/is-emri/${isEmri}/baslangic-toplantisi`).then(setTpl)]);
   useEffect(() => { void yukle().catch(() => undefined); }, [isEmri]);
   return (
     <>
@@ -138,6 +138,7 @@ export function ParcaVeTeslim({ isEmri, yap }: { isEmri: string; yap: (f: () => 
         <BelgeSec ad="İrsaliye veya Sertifika" bagTuru="İş Emri" bagKimligi={isEmri} deger={b} sec={setB} />
         <button className="btn2" disabled={!b} onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/parca`, { ...p, miktar: Number(p.miktar.replace(',', '.')), belge: b }).then(() => { setB(''); setP({ urun: '', parcaNo: '', miktar: '', birim: 'adet', lot: '' }); return yukle(); }), 'Parça girişi kontrole gönderildi.')}>Parça Girişini Kaydet</button>
       </Blok>
+      {tpl && <Blok baslik="Başlangıç Toplantısı"><div>{tarih(tpl.tarih)}{tpl.kisa_form ? ' · Kısa Form' : ''} · {tpl.katilimcilar}</div><div>{tpl.konusulanlar}</div></Blok>}
       <Blok baslik="Teslim">
         <div className={ts ? 'not' : 'uyari'}>{ts ? 'Teslim Onayı Verildi.' : '⚠ LGM teslim onayını beklemenizi rica ederiz; yat, anahtar ve evrak bu onaydan önce teslim edilmez.'}</div>
         <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teslim-talebi`, {}), 'Teslim talebiniz iletildi.')}>Teslim Talebi</button>
@@ -146,10 +147,10 @@ export function ParcaVeTeslim({ isEmri, yap }: { isEmri: string; yap: (f: () => 
   );
 }
 
-interface SahaV { teshisiBelirsiz: boolean; gunlukler: { kimlik: string; tarih: string; faaliyet: string | null; engel: string | null; durum: string }[]; parcalar: { kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]; sapmalar: { kimlik: string; tur: string; aciklama: string; karar: string }[]; bulgular: { kimlik: string; sinif: string; aciklama: string }[] }
+interface SahaV { teshisiBelirsiz: boolean; statu: string; toplanti: { tarih: string; kisa_form: boolean; katilimcilar: string } | null; gunlukler: { kimlik: string; tarih: string; faaliyet: string | null; engel: string | null; durum: string }[]; parcalar: { kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]; sapmalar: { kimlik: string; tur: string; aciklama: string; karar: string; durum: string; hedef_tarih: string | null }[]; bulgular: { kimlik: string; sinif: string; aciklama: string }[] }
 /** YG-379, YG-786, Ek I §7.5: LGM saha kayıtları; karneye kayıtlardan yansır. */
 export function SahaKayitlari({ isEmri }: { isEmri: string }) {
-  const [v, setV] = useState<SahaV | null>(null); const [s, setS] = useState({ tur: 'Yöntem', aciklama: '', karar: 'Düzeltme', firmaKaynakli: true, isgIhlali: false, onaysizEkIs: false }); const [d, setD] = useState({ sinif: 'Minör', aciklama: '', hedef: '' }); const [be, setBe] = useState(''); const [ac, setAc] = useState(false);
+  const [v, setV] = useState<SahaV | null>(null); const [s, setS] = useState({ tur: 'Yöntem', aciklama: '', karar: 'Düzeltme', firmaKaynakli: true, isgIhlali: false, onaysizEkIs: false }); const [d, setD] = useState({ sinif: 'Minör', aciklama: '', hedef: '' }); const [be, setBe] = useState(''); const [ac, setAc] = useState(false); const [hedef, setHedef] = useState(''); const [kk, setKk] = useState<Record<string, string>>({}); const [gv, setGv] = useState(''); const [tp, setTp] = useState({ tarih: '', katilimcilar: '', konusulanlar: '', kisaForm: false });
   const yukle = () => istek<SahaV>(`/is-emri/${isEmri}/saha-kayitlari`).then(setV);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { if (ac) void yap(yukle); }, [ac]);
@@ -159,7 +160,15 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
       {v && <>
         {v.gunlukler.map((x) => <div key={x.kimlik}>{tarih(x.tarih)} · {x.faaliyet ?? '—'}{x.engel ? ` · Engel: ${x.engel}` : ''} · {x.durum}</div>)}
         {v.parcalar.map((x) => <div className="soru" key={x.kimlik}><span>{x.urun_tanimi} · {x.parca_no} · Lot: {x.lot_no} · {x.kabul_karari ?? 'Kontrol Bekliyor'}</span>{!x.kabul_karari && ['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => void yap(() => istek(`/parca-girisi/${x.kimlik}/karar`, { karar: k }))}>{k}</button>)}</div>)}
-        {v.sapmalar.map((x) => <div key={x.kimlik}>Sapma: {x.tur} · {x.karar} · {x.aciklama}</div>)}
+        {v.statu === 'Durduruldu' && <div className="uyari">⚠ İş durduruldu. <label htmlFor={`rb-${isEmri}`}>Güvenli Koşul Doğrulaması</label><input id={`rb-${isEmri}`} value={gv} onChange={(e) => setGv(e.target.value)} /><button className="btn2 kucuk" disabled={!gv.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/yeniden-baslat`, { gerekce: gv }), 'İş yeniden başlatıldı.')}>Yeniden Başlat</button></div>}
+        {v.toplanti ? <div>Başlangıç Toplantısı: {tarih(v.toplanti.tarih)}{v.toplanti.kisa_form ? ' · Kısa Form' : ''} · {v.toplanti.katilimcilar}</div> : <>
+          <label htmlFor={`tp-t-${isEmri}`}>Başlangıç Toplantısı Tarihi</label><input id={`tp-t-${isEmri}`} type="date" value={tp.tarih} onChange={(e) => setTp({ ...tp, tarih: e.target.value })} />
+          <label htmlFor={`tp-k-${isEmri}`}>Toplantı Katılımcıları</label><input id={`tp-k-${isEmri}`} value={tp.katilimcilar} onChange={(e) => setTp({ ...tp, katilimcilar: e.target.value })} />
+          <label htmlFor={`tp-o-${isEmri}`}>Konuşulanlar</label><input id={`tp-o-${isEmri}`} value={tp.konusulanlar} onChange={(e) => setTp({ ...tp, konusulanlar: e.target.value })} />
+          <label><input type="checkbox" checked={tp.kisaForm} onChange={(e) => setTp({ ...tp, kisaForm: e.target.checked })} /> Kısa Form (Basit İş)</label>
+          <button className="btn2 kucuk" disabled={!tp.tarih || !tp.katilimcilar.trim() || !tp.konusulanlar.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/baslangic-toplantisi`, tp), 'Başlangıç toplantısı kaydedildi.')}>Toplantıyı Kaydet</button>
+        </>}
+        {v.sapmalar.map((x) => <div className="soru" key={x.kimlik}><span>Sapma: {x.tur} · {x.karar} · {x.aciklama} · {x.durum}{x.hedef_tarih ? ` · Hedef: ${tarih(x.hedef_tarih)}` : ''}</span>{x.durum === 'Açık' && <div className="tam"><BelgeSec ad={`Kapanış Kanıtı ${x.tur}`} bagTuru="İş Emri" bagKimligi={isEmri} deger={kk[x.kimlik] ?? ''} sec={(b) => setKk({ ...kk, [x.kimlik]: b })} /><button className="btn2 kucuk" disabled={!kk[x.kimlik]} onClick={() => void yap(() => istek(`/sapma/${x.kimlik}/kapat`, { belge: kk[x.kimlik] }))}>Sapmayı Kapat</button></div>}</div>)}
         {v.bulgular.map((x) => <div key={x.kimlik}>Denetim: {x.sinif} · {x.aciklama}</div>)}
         <label><input type="checkbox" checked={v.teshisiBelirsiz} onChange={(e) => void yap(() => istek(`/is-emri/${isEmri}/teshisi-belirsiz`, { deger: e.target.checked }))} /> Teşhisi Belirsiz İş</label>
         <label htmlFor={`sp-t-${isEmri}`}>Sapma Türü</label><select id={`sp-t-${isEmri}`} value={s.tur} onChange={(e) => setS({ ...s, tur: e.target.value })}>{['Kapsam', 'Yöntem', 'Süre', 'Maliyet', 'Kalite', 'Güvenlik', 'Belge'].map((x) => <option key={x}>{x}</option>)}</select>
@@ -168,7 +177,8 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
         <label><input type="checkbox" checked={s.firmaKaynakli} onChange={(e) => setS({ ...s, firmaKaynakli: e.target.checked })} /> Firma Kaynaklı</label>
         <label><input type="checkbox" checked={s.isgIhlali} onChange={(e) => setS({ ...s, isgIhlali: e.target.checked })} /> İSG İhlali</label>
         <label><input type="checkbox" checked={s.onaysizEkIs} onChange={(e) => setS({ ...s, onaysizEkIs: e.target.checked })} /> Onaysız Ek İş</label>
-        <button className="btn2 kucuk" disabled={!s.aciklama.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/sapma`, s).then(() => setS({ ...s, aciklama: '' })))}>Sapmayı Kaydet</button>
+        {(s.karar === 'Düzeltme' || s.karar === 'Sınırlı Devam') && <><label htmlFor={`sp-h-${isEmri}`}>Düzeltme Hedef Tarihi</label><input id={`sp-h-${isEmri}`} type="date" value={hedef} onChange={(e) => setHedef(e.target.value)} /></>}
+        <button className="btn2 kucuk" disabled={!s.aciklama.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/sapma`, { ...s, hedef: hedef || undefined }).then(() => { setS({ ...s, aciklama: '' }); setHedef(''); }))}>Sapmayı Kaydet</button>
         <label htmlFor={`db-s-${isEmri}`}>Denetim Bulgusu Sınıfı</label><select id={`db-s-${isEmri}`} value={d.sinif} onChange={(e) => setD({ ...d, sinif: e.target.value })}><option>Minör</option><option>Majör</option></select>
         <label htmlFor={`db-a-${isEmri}`}>Bulgu Açıklaması</label><input id={`db-a-${isEmri}`} value={d.aciklama} onChange={(e) => setD({ ...d, aciklama: e.target.value })} />
         <BelgeSec ad="Denetim Kanıtı" bagTuru="İş Emri" bagKimligi={isEmri} deger={be} sec={setBe} />

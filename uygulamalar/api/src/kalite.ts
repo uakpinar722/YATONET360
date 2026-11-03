@@ -224,7 +224,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if ((n.sinif === 'Kritik' || n.sinif === 'Majör' || n.yaygin_isareti || tekrar) && !n.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
     return islem(async (c) => {
       await c.query(`UPDATE uygunsuzluk SET yeniden_kontrol_sonucu = 'Uygun', kapanis_kaniti_ref = $2, kapanis_yetkilisi_ref = $3, statu = 'Kapalı', kapanis_zamani = now() WHERE kimlik = $1`, [n.kimlik, g.kanit, o.kullanici]);
-      if (n.is_durduruldu && n.is_emri_ref) await c.query(`UPDATE is_emri SET statu = 'Aktif', durdurma_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1 AND statu = 'Durduruldu' AND durdurma_nedeni = $2`, [n.is_emri_ref, `Uygunsuzluk ${n.uygunsuzluk_no}`]);
+      // YG-262: emniyet işaretli uygunsuzlukla duran işi yalnız Teknik Müdür yeniden başlatır.
+      if (n.is_durduruldu && n.is_emri_ref && !n.emniyet_isareti) await c.query(`UPDATE is_emri SET statu = 'Aktif', durdurma_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1 AND statu = 'Durduruldu' AND durdurma_nedeni = $2`, [n.is_emri_ref, `Uygunsuzluk ${n.uygunsuzluk_no}`]);
       return { statu: 'Kapalı' };
     });
   });

@@ -1,5 +1,9 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { Pool, PoolClient } from 'pg';
+import { birKez, bildir } from './bildirim.js';
 import { izYaz } from './denetim.js';
+import { rolId } from './ihbar.js';
+import { rolSahipleri } from './makam.js';
 import { dosyaErisimi } from './dosya.js';
 import { kartAc } from './is_motoru.js';
 import { performansOlayIsle } from './karne.js';
@@ -12,6 +16,47 @@ const SAPMA_KARAR = ['İşi Durdur', 'Sınırlı Devam', 'Düzeltme', 'Değişik
 const SAHA_ROLLERI = ['Saha Sorumlusu', 'Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Yönetici', 'Kalite Uzmanı (Kalite Kontrolör)', 'Kalite Müdürü'];
 const PARCA_ROLLERI = ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Kalite Uzmanı (Kalite Kontrolör)', 'Tedarik Sorumlusu'];
 const DENETIM_ROLLERI = ['Kalite Uzmanı (Kalite Kontrolör)', 'Kalite Müdürü', 'Firma Yönetimi Müdürü'];
+
+export const EMNIYET_ALICILAR = ['Teknik Müdür', 'Operasyon Müdürü', 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO', 'İSG Uzmanı', 'Risk ve Kalite Direktörü'];
+type Db = Pool | PoolClient;
+
+/** YG-1437: işi durdurma ayrı olaydır, DS, TU ve OY'ye sistem içi ve e-posta. YG-262: emniyet durdurmasında üst alıcılara SMS ile. */
+export async function isDurduBildir(c: Db, e: { kimlik: string; is_emri_no: string; dosya_ref: string }, neden: string, emniyet: boolean): Promise<void> {
+  const ekip = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Teknik Uzman', 'Operasyon Yöneticisi')`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
+  const al = [...ekip]; if (emniyet) for (const r of EMNIYET_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, r)));
+  await bildir(c, { olay: `is-emri-durdu:${e.kimlik}:${Date.now()}`, kullanicilar: [...new Set(al)], baslik: `${emniyet ? 'Emniyet Olayı · ' : ''}İş Durduruldu: ${e.is_emri_no}`, ozet: neden.slice(0, 200), oncelik: emniyet ? 'Kritik' : 'Yüksek', eposta: true, sms: emniyet, acil: true });
+}
+
+/** YG-580: her mobilizasyonda TPL-07; keşif ve acil ilk tedbir toplantıyı beklemez. */
+export async function baslangicToplantiEngeli(db: Db, isEmri: string, tur: string): Promise<string | null> {
+  if (tur === 'KN' || tur === 'AC') return null;
+  return (await db.query(`SELECT 1 FROM baslangic_toplantisi WHERE is_emri_ref = $1`, [isEmri])).rowCount ? null : 'Başlangıç toplantısı kaydı bekleniyor; Dosya Sorumlusunun kaydetmesini rica ederiz.';
+}
+
+/** YG-417: Teslim Talebi 24 saatte sonuçlanmazsa uyuşmazlık sayılır ve Operasyon Müdürüne yükselir. YG-350: firma yeniden değerlendirme görevi ve karne özeti. */
+export async function sahaSureIsle(db: Pool, simdi = new Date()): Promise<number> {
+  let n = 0;
+  const { rows } = await db.query(`SELECT kimlik, baslik, nesne_kimligi FROM is_karti WHERE tur = 'Teslim Talebi' AND durum = 'Bekliyor' AND olusturma_zamani <= $1::timestamptz - interval '24 hours'`, [simdi]);
+  for (const k of rows) {
+    if (!(await birKez(db, 'Teslim Uyuşmazlığı', k.kimlik))) continue;
+    await kartAc(db, { tur: 'Teslim Uyuşmazlığı', kategori: 'islem', baslik: k.baslik.replace(/ · .*$/, ' · Teslim Uyuşmazlığı'), ozet: 'Teslim talebi 24 saat içinde sonuçlanmadı.', oncelik: 'Yüksek', sahipRol: await rolId(db, 'Operasyon Müdürü'), nesneTuru: 'Dosya', nesneKimligi: k.nesne_kimligi });
+    n++;
+  }
+  // Yeniden değerlendirme tarihi: Koşullu Onaylı 3 ay, diğer onaylı ve aktif firma 12 ay; kabul kararından başlar.
+  await db.query(`UPDATE kurulus SET sonraki_gozden_gecirme_tarihi = (coalesce(kabul_karar_zamani, olusturma_zamani) + CASE WHEN kayit_asamasi = 'Koşullu Onaylı' THEN interval '3 months' ELSE interval '12 months' END)::date WHERE sonraki_gozden_gecirme_tarihi IS NULL AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`);
+  const vade = (await db.query(`SELECT kimlik, ticari_unvan, sonraki_gozden_gecirme_tarihi::text t FROM kurulus WHERE sonraki_gozden_gecirme_tarihi <= $1::date AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`, [simdi])).rows;
+  for (const f of vade) {
+    if (!(await birKez(db, 'Firma Yeniden Değerlendirme', `${f.kimlik}:${f.t}`))) continue;
+    await kartAc(db, { tur: 'Firma Yeniden Değerlendirme', kategori: 'gorev', baslik: `${f.ticari_unvan} · Yeniden Değerlendirme`, ozet: 'Karneyi inceleyip statü kararını vermenizi rica ederiz.', sahipRol: await rolId(db, 'Firma Yönetimi Müdürü'), nesneTuru: 'Kuruluş', nesneKimligi: f.kimlik });
+    n++;
+  }
+  const ceyrek = `${simdi.getFullYear()}-Q${Math.floor(simdi.getMonth() / 3) + 1}`;
+  if (await birKez(db, 'Karne Üç Aylık Özet', ceyrek)) {
+    const o = (await db.query(`SELECT count(DISTINCT kurulus_ref)::int firma, count(DISTINCT kurulus_ref) FILTER (WHERE risk_derecesi_onerisi = 'Yakın İzleme')::int izleme FROM performans_donem_puani WHERE guncelleme_zamani > $1::timestamptz - interval '3 months'`, [simdi])).rows[0];
+    await bildir(db, { olay: `karne-ozet:${ceyrek}`, kullanicilar: await rolSahipleri(db, await rolId(db, 'Firma Yönetimi Müdürü')), baslik: `Karne Üç Aylık Özeti: ${ceyrek}`, ozet: `${o.firma} firma puanlandı; ${o.izleme} firma için Yakın İzleme önerildi.` }, simdi);
+  }
+  return n;
+}
 
 export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -89,10 +134,10 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     if (!e) return yok(y);
     const q = async (sql: string) => (await b.db.query(sql, [e.kimlik])).rows;
     return {
-      teshisiBelirsiz: e.teshisi_belirsiz,
+      teshisiBelirsiz: e.teshisi_belirsiz, statu: e.statu, toplanti: (await b.db.query(`SELECT tarih::text, kisa_form, katilimcilar FROM baslangic_toplantisi WHERE is_emri_ref = $1`, [e.kimlik])).rows[0] ?? null,
       gunlukler: await q(`SELECT kimlik, tarih::text, faaliyet, engel, sonraki_plan, sorumlu, durum FROM firma_gunluk_kaydi WHERE is_emri_ref = $1 ORDER BY tarih DESC LIMIT 30`),
       parcalar: await q(`SELECT kimlik, urun_tanimi, parca_no, miktar, birim, lot_no, belge_ref, kabul_karari FROM firma_parca_girisi WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),
-      sapmalar: await q(`SELECT kimlik, tur, aciklama, karar, firma_kaynakli, isg_ihlali, onaysiz_ek_is, olusturma_zamani FROM sapma_kaydi WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),
+      sapmalar: await q(`SELECT kimlik, tur, aciklama, karar, durum, hedef_tarih::text, firma_kaynakli, isg_ihlali, onaysiz_ek_is, olusturma_zamani FROM sapma_kaydi WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),
       bulgular: await q(`SELECT kimlik, sinif, aciklama, hedef_tarih::text FROM firma_denetim_bulgusu WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),
     };
   });
@@ -113,22 +158,85 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-379, YG-380: sapma türü ve kararı yetkili rolde; kayıt silinmez; düzeltme Dosya Sorumlusuna görev açar; karneye yansır.
   s.post('/is-emri/:id/sapma', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await lgmIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tur?: string; aciklama?: string; karar?: string; firmaKaynakli?: boolean; isgIhlali?: boolean; onaysizEkIs?: boolean };
+    const o = i.oturum!; const e = await lgmIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tur?: string; aciklama?: string; karar?: string; firmaKaynakli?: boolean; isgIhlali?: boolean; onaysizEkIs?: boolean; hedef?: string };
     if (!e) return yok(y);
     if (!(await rolVar(o.kullanici, SAHA_ROLLERI))) return y.code(403).send({ hata: 'Sapmayı Saha Sorumlusu, Teknik Uzman veya Kalite Kontrolör kaydeder.' });
     if (!SAPMA_TUR.includes(g.tur ?? '') || !SAPMA_KARAR.includes(g.karar ?? '') || !g.aciklama?.trim()) return y.code(400).send({ hata: 'Tür, açıklama ve kararı girmenizi rica ederiz.' });
+    if ((g.karar === 'Düzeltme' || g.karar === 'Sınırlı Devam') && !/^\d{4}-\d{2}-\d{2}$/.test(g.hedef ?? '')) return y.code(400).send({ hata: 'Düzeltme için hedef tarih girmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
-      const r = (await c.query(`INSERT INTO sapma_kaydi (is_emri_ref, dosya_ref, tur, aciklama, karar, firma_kaynakli, isg_ihlali, onaysiz_ek_is, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [e.kimlik, e.dosya_ref, g.tur, g.aciklama.trim(), g.karar, g.firmaKaynakli !== false, Boolean(g.isgIhlali), Boolean(g.onaysizEkIs), o.kullanici])).rows[0];
-      if (g.karar === 'İşi Durdur' && e.statu === 'Aktif') await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, g.aciklama.trim()]);
+      const r = (await c.query(`INSERT INTO sapma_kaydi (is_emri_ref, dosya_ref, tur, aciklama, karar, firma_kaynakli, isg_ihlali, onaysiz_ek_is, giren_ref, hedef_tarih, sorumlu_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [e.kimlik, e.dosya_ref, g.tur, g.aciklama.trim(), g.karar, g.firmaKaynakli !== false, Boolean(g.isgIhlali), Boolean(g.onaysizEkIs), o.kullanici, g.hedef || null, (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].r])).rows[0];
+      if (g.karar === 'İşi Durdur' && e.statu === 'Aktif') { await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, g.aciklama.trim()]); await isDurduBildir(c, e, g.aciklama.trim(), g.tur === 'Güvenlik' || Boolean(g.isgIhlali)); }
       const ds = (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].r;
-      if (ds) await kartAc(c, { tur: 'Sapma Kaydı', kategori: 'gorev', baslik: `${e.is_emri_no} · ${g.tur} Sapması · ${g.karar}`, ozet: g.aciklama.trim().slice(0, 200), oncelik: g.karar === 'İşi Durdur' || g.isgIhlali ? 'Yüksek' : 'Normal', sahipKullanici: ds, nesneTuru: 'Sapma', nesneKimligi: r.kimlik });
+      if (ds) await kartAc(c, { tur: 'Sapma Kaydı', kategori: 'gorev', baslik: `${e.is_emri_no} · ${g.tur} Sapması · ${g.karar}`, ozet: g.aciklama.trim().slice(0, 200), oncelik: g.karar === 'İşi Durdur' || g.isgIhlali ? 'Yüksek' : 'Normal', sahipKullanici: ds, sonZaman: g.hedef ? new Date(`${g.hedef}T18:00:00+03:00`) : undefined, nesneTuru: 'Sapma', nesneKimligi: r.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sapma Kaydı', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, yeni: { tur: g.tur, karar: g.karar }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await performansOlayIsle(c, e.kimlik, 'Sapma kaydı');
       await c.query('COMMIT');
       return { kimlik: r.kimlik };
     } catch (x) { await c.query('ROLLBACK').catch(() => {}); throw x; } finally { c.release(); }
+  });
+
+  // YG-380: kapanış kanıtla olur; kayıt silinmez. Girenden başka bir yetkili kapatır.
+  s.post('/sapma/:id/kapat', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { belge } = (i.body ?? {}) as { belge?: string };
+    if (!UUID.test(id)) return yok(y);
+    const r = (await b.db.query(`SELECT * FROM sapma_kaydi WHERE kimlik = $1`, [id])).rows[0];
+    if (!r || !(await lgmIsi(r.is_emri_ref, o.kullanici))) return yok(y);
+    if (!(await rolVar(o.kullanici, [...SAHA_ROLLERI, 'Dosya Sorumlusu']))) return y.code(403).send({ hata: 'Sapmayı Saha Sorumlusu, Teknik Uzman, Kalite Kontrolör veya Dosya Sorumlusu kapatır.' });
+    if (r.durum === 'Kapalı') return y.code(409).send({ hata: 'Bu sapma kapatılmıştır.' });
+    if (r.giren_ref === o.kullanici) return y.code(403).send({ hata: 'Sapmayı kaydeden kişi dışında bir yetkilinin kapatmasını rica ederiz.' });
+    if (!(await isBelgesi(belge, r.is_emri_ref))) return y.code(400).send({ hata: 'Kapanış kanıtını yüklemenizi rica ederiz.' });
+    await b.db.query(`UPDATE sapma_kaydi SET durum = 'Kapalı', kapanis_kaniti_ref = $2, kapatan_ref = $3, kapanis_zamani = now() WHERE kimlik = $1`, [id, belge, o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Sapma Kaydı' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sapma Kapatıldı', nesneTuru: 'İş Emri', nesneKimligi: r.is_emri_ref, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { durum: 'Kapalı' };
+  });
+
+  // YG-262, YG-1588: durdurulan iş emrini yalnız Teknik Müdür, güvenli koşul doğrulamasıyla yeniden başlatır; işi durduran açık uygunsuzluk varken başlatılmaz.
+  s.post('/is-emri/:id/yeniden-baslat', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = await lgmIsi((i.params as { id: string }).id, o.kullanici); const { gerekce } = (i.body ?? {}) as { gerekce?: string };
+    if (!e) return yok(y);
+    if (!(await rolVar(o.kullanici, ['Teknik Müdür']))) return y.code(403).send({ hata: 'Yeniden başlatma izni Teknik Müdürdedir.' });
+    if (e.statu !== 'Durduruldu') return y.code(409).send({ hata: 'İş emri durdurulmuş değildir.' });
+    if (!gerekce?.trim()) return y.code(400).send({ hata: 'Güvenli koşul doğrulamasını yazmanızı rica ederiz.' });
+    if ((await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE is_emri_ref = $1 AND is_durduruldu AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [e.kimlik])).rowCount) return y.code(409).send({ hata: 'İşi durduran uygunsuzluk açıktır; kapanması bekleniyor.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE is_emri SET statu = 'Aktif', durdurma_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]);
+      const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
+      const ekip = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Teknik Uzman', 'Operasyon Yöneticisi')`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
+      await bildir(c, { olay: `is-emri-basladi:${e.kimlik}:${Date.now()}`, kullanicilar: [...new Set([...kisiler, ...ekip])], baslik: `İş Yeniden Başlatıldı: ${e.is_emri_no}`, oncelik: 'Yüksek', eposta: true, acil: true });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İş Emri Yeniden Başlatıldı', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { statu: 'Aktif' };
+    } catch (x) { await c.query('ROLLBACK').catch(() => {}); throw x; } finally { c.release(); }
+  });
+
+  // YG-329, YG-580, YG-425: TPL-07 kaydını Dosya Sorumlusu girer; firma görür.
+  s.post('/is-emri/:id/baslangic-toplantisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = await lgmIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tarih?: string; kisaForm?: boolean; katilimcilar?: string; konusulanlar?: string };
+    if (!e) return yok(y);
+    const d = (await b.db.query(`SELECT dosya_sorumlusu_ref, yedek_sorumlu_ref FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0];
+    if (d.dosya_sorumlusu_ref !== o.kullanici && d.yedek_sorumlu_ref !== o.kullanici) return y.code(403).send({ hata: 'Başlangıç toplantısını Dosya Sorumlusu kaydeder.' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.katilimcilar?.trim() || !g.konusulanlar?.trim()) return y.code(400).send({ hata: 'Tarih, katılımcılar ve konuşulanları girmenizi rica ederiz.' });
+    const r = await b.db.query(`INSERT INTO baslangic_toplantisi (is_emri_ref, tarih, kisa_form, katilimcilar, konusulanlar, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (is_emri_ref) DO NOTHING RETURNING kimlik`, [e.kimlik, g.tarih, Boolean(g.kisaForm), g.katilimcilar.trim(), g.konusulanlar.trim(), o.kullanici]);
+    if (!r.rowCount) return y.code(409).send({ hata: 'Bu iş emrinin başlangıç toplantısı kayıtlıdır.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Başlangıç Toplantısı', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.rows[0].kimlik };
+  });
+  s.get('/firma-portal/is-emri/:id/baslangic-toplantisi', oturumlu, async (i, y) => {
+    const e = await firmaIsi((i.params as { id: string }).id, i.oturum!.kullanici);
+    if (!e) return yok(y);
+    return (await b.db.query(`SELECT tarih::text, kisa_form, katilimcilar, konusulanlar FROM baslangic_toplantisi WHERE is_emri_ref = $1`, [e.kimlik])).rows[0] ?? null;
+  });
+
+  // YG-380: tekrar eden sapmalar firma ve tür bazında izlenir.
+  s.get('/firma/:id/sapma-ozeti', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(i.oturum!.kullanici, DENETIM_ROLLERI))) return yok(y);
+    return (await b.db.query(`SELECT s.tur, count(*)::int adet, count(*) FILTER (WHERE s.durum = 'Açık')::int acik FROM sapma_kaydi s JOIN is_emri e ON e.kimlik = s.is_emri_ref WHERE e.kurulus_ref = $1 AND s.firma_kaynakli AND s.olusturma_zamani > now() - interval '12 months' GROUP BY s.tur ORDER BY adet DESC`, [id])).rows;
   });
 
   // YG-786: denetim bulgusu sınıf, kanıt ve hedef tarihle; firma karnesine işlenir.

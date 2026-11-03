@@ -1,3 +1,4 @@
+import { EMNIYET_ALICILAR } from './saha_kayit.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez, mesaiIcinde } from './bildirim.js';
@@ -18,7 +19,6 @@ import { izinGerekli } from './yetki.js';
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
 const ACIL_ALICILAR = ['Operasyon Müdürü', 'Teknik Müdür', 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO'];
-const EMNIYET_ALICILAR = ['Teknik Müdür', 'Operasyon Müdürü', 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO', 'İSG Uzmanı', 'Risk ve Kalite Direktörü'];
 const ACIL_TURLER = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
 const CAN_CEVRE = ['Can Güvenliği', 'Kirlilik'];
 const DEVIR_LISTESI = ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu'];
