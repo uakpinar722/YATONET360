@@ -1,5 +1,6 @@
 import { ekonomikIzle, yatDegeriEngeli } from './yat_degeri.js';
 import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
+import { raporEngeli } from './rapor.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
@@ -143,8 +144,23 @@ export async function caymaEngeli(db: Db, dosya: string, simdi = new Date()): Pr
 
 /** YG-151, YG-191: geçerliliği dolan gönderilmiş teklif Süresi Doldu olur; kendiliğinden yenilenmez. BLD-42: 45 gün yanıtsızda bireysel dosya kapanış görevi. */
 export async function teklifSureIsle(db: Pool, simdi = new Date()): Promise<number> {
-  const { rows } = await db.query(`UPDATE fiyat_teklifi SET statu = 'Süresi Doldu', karar = 'Süresi Doldu', karar_zamani = $1 WHERE statu = 'Gönderildi' AND gecerlilik_bitis_tarihi < ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date RETURNING kimlik, dosya_ref, teklif_no, hazirlayan_ref`, [simdi]);
-  for (const t of rows) await bildir(db, { olay: `teklif-sure:${t.kimlik}`, kullanicilar: [t.hazirlayan_ref], baslik: `Teklif Süresi Doldu: ${t.teklif_no}`, eposta: true }, simdi);
+  // YG-212, BLD-51: yat sahibine geçerlilik dolmadan 24 saat önce tek hatırlatma. Sigortaya hatırlatma BLD-72 ile ayrıdır.
+  const yak = (await db.query(`SELECT f.kimlik, f.teklif_turu, f.gecerlilik_bitis_tarihi::text b, d.dosya_no, d.yazisma_dili, t.telefon, t.eposta FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE f.statu = 'Gönderildi' AND NOT f.gecerlilik_hatirlatma AND f.teklif_muhatabi <> 'Sigorta Şirketi' AND NOT d.vefat_isareti AND f.gecerlilik_bitis_tarihi = ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date`, [simdi])).rows;
+  for (const h of yak) {
+    const bitis = `${h.b.split('-').reverse().join('.')} 23:59`; const dil = dilKod(h.yazisma_dili);
+    await yatTarafinaYaz(db, { olay: `bld51:${h.kimlik}`, kod: 'BLD-51', dil, konu: `${h.dosya_no} Teklif Hatırlatması`, telefon: h.telefon, eposta: h.eposta, alanlar: { 'Dosya No': h.dosya_no, 'File No': h.dosya_no, 'Fiyat Teklifi / Ek Fiyat Teklifi': h.teklif_turu, 'Price Quotation / Additional Price Quotation': h.teklif_turu, 'tarih saat': bitis, 'date time': bitis, 'bağlantı': webAdresiTeklif, link: webAdresiTeklif } });
+    await db.query(`UPDATE fiyat_teklifi SET gecerlilik_hatirlatma = true WHERE kimlik = $1`, [h.kimlik]);
+  }
+  const { rows } = await db.query(`UPDATE fiyat_teklifi SET statu = 'Süresi Doldu', karar = 'Süresi Doldu', karar_zamani = $1 WHERE statu = 'Gönderildi' AND gecerlilik_bitis_tarihi < ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date RETURNING kimlik, dosya_ref, teklif_no, teklif_turu, teklif_muhatabi, hazirlayan_ref`, [simdi]);
+  for (const t of rows) {
+    await bildir(db, { olay: `teklif-sure:${t.kimlik}`, kullanicilar: [t.hazirlayan_ref], baslik: `Teklif Süresi Doldu: ${t.teklif_no}`, eposta: true }, simdi);
+    if (t.teklif_turu !== 'Ek Fiyat Teklifi') continue;
+    // YG-212, BLD-52: yanıtsız ek teklif düşer, Açık İş ve kısa bildirim oluşur.
+    const d = (await db.query(`SELECT dosya_no, yazisma_dili, dosya_sorumlusu_ref, vefat_isareti FROM dosya WHERE kimlik = $1`, [t.dosya_ref])).rows[0];
+    await db.query(`INSERT INTO acik_konu (konu_no, dosya_ref, baslik, aciklama, sahip_ref, hedef_tarih, olusturan_ref) VALUES ($1,$2,'Ek İş Yapılmadı',$3,$4,($5::timestamptz AT TIME ZONE 'Europe/Istanbul')::date + 7,$4)`, [await altNumara(db, d.dosya_no, 'AK'), t.dosya_ref, t.teklif_no, d.dosya_sorumlusu_ref, simdi]);
+    const sah = t.teklif_muhatabi === 'Sigorta Şirketi' || d.vefat_isareti ? undefined : (await db.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
+    if (sah) await yatTarafinaYaz(db, { olay: `bld52:${t.kimlik}`, kod: 'BLD-52', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Açık İş`, telefon: sah.telefon, eposta: sah.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no } });
+  }
   return rows.length;
 }
 
@@ -249,7 +265,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
 
   const teklifGetir = async (id: string, k: string) => {
     if (!UUID.test(id)) return undefined;
-    const t = (await b.db.query(`SELECT f.*, d.dosya_no, d.musteri_turu, d.yazisma_dili, d.vefat_isareti, d.statu AS dosya_statu, d.asama AS dosya_asama, d.yat_ref FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [id])).rows[0];
+    const t = (await b.db.query(`SELECT f.*, d.dosya_no, d.oncelik, d.musteri_turu, d.yazisma_dili, d.vefat_isareti, d.statu AS dosya_statu, d.asama AS dosya_asama, d.yat_ref FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [id])).rows[0];
     return t && await dosyaErisimi(b.db, k, t.dosya_ref) ? t : undefined;
   };
 
@@ -302,11 +318,21 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'Onaya Gönderildi' };
   });
 
+  // YG-212: ek teklif önceki onaylı toplam, bu ek ve yeni toplamı gösterir.
+  s.get('/teklif/:id/ek-ozet', oturumlu, async (i, y) => {
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
+    if (!t) return yok(y);
+    const once = Number((await b.db.query(`SELECT coalesce(sum(genel_toplam_eur), 0) n FROM fiyat_teklifi WHERE dosya_ref = $1 AND kimlik <> $2 AND statu = 'Karar' AND karar IN ('Tam Onay', 'Kısmi Onay', 'Koşullu Onay')`, [t.dosya_ref, t.kimlik])).rows[0].n);
+    const bu = Number(t.genel_toplam_eur);
+    return { oncekiOnayli: once, buEk: bu, yeniToplam: Math.round((once + bu) * 100) / 100 };
+  });
+
   // YG-194, YG-1552, YG-214: kontroller tamamlanmadan onaya gönderilmez; son makam KDV hariç kümülatif toplama göre (YG-173).
   s.post('/teklif/:id/onaya-gonder', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Onaya teklifi hazırlayan gönderir.' });
+    if (t.teklif_turu !== 'Acil Tedbir Fiyat Teklifi') { const re = await raporEngeli(b.db, t.dosya_ref); if (re) return y.code(409).send({ hata: re }); }
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Teklif taslak değildir.' });
     if ((await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND bant_disi LIMIT 1`, [t.kimlik])).rowCount && !t.bant_disi_onay_ref) return y.code(409).send({ hata: 'Bant dışı kalem için Ticari İşler Direktörünün gerekçeli onayı gereklidir.' });
     if ((await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND gecici_kayit`, [t.yat_ref])).rowCount) return y.code(409).send({ hata: 'Teklif için önce Geçici yat kaydını doğrulamanızı rica ederiz.' });
@@ -321,7 +347,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const zincir = await parasalZincir(c, ARA, son);
       await c.query(`UPDATE fiyat_teklifi SET statu = 'İç Onayda', kilitli = true, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
       await ekonomikIzle(c, t.dosya_ref, kum);
-      await kartAc(c, { tur: 'Fiyat Teklifi', baslik: `${t.teklif_no} · Fiyat Teklifi Onayı`, ozet: `${tutar(Number(t.onay_limit_tutari_eur))} EUR (KDV hariç)`, hazirlayan: o.kullanici, zincir, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
+      await kartAc(c, { tur: 'Fiyat Teklifi', oncelik: t.oncelik, baslik: `${t.teklif_no} · Fiyat Teklifi Onayı`, ozet: `${tutar(Number(t.onay_limit_tutari_eur))} EUR (KDV hariç)`, hazirlayan: o.kullanici, zincir, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklif Onaya Gönderildi', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { kumulatif: kum, sonMakam: son }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { sonMakam: son, kumulatif: kum };
     });

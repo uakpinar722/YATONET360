@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
-import { KaliteBolumu, SigortaGonderimBolumu, TedarikBolumu, YatDegeriBolumu } from './Kalite';
+import { KaliteBolumu, RaporBolumu, SigortaGonderimBolumu, TedarikBolumu, YatDegeriBolumu } from './Kalite';
 import { TeklifTalebiBolumu, TesisIslemleri } from './Portallar';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
@@ -291,6 +291,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <SahaBolumu id={id} d={d} belgeler={belgeler} yenile={() => void yukle()} />
       <YatDegeriBolumu id={id} />
       <SigortaGonderimBolumu id={id} />
+      <RaporBolumu id={id} rollerim={d.rollerim} />
       <TicariBolumu id={id} rollerim={d.rollerim} roller={roller} asama={d.asama} />
       <KaliteBolumu id={id} roller={roller} />
       <TesisIslemleri id={id} ds={d.rollerim.includes('Dosya Sorumlusu')} />

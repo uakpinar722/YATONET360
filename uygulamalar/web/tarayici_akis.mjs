@@ -150,6 +150,18 @@ try {
   await tasmaYok(pF, 'firma_is_emri');
   kontrol('firma fiyatını portaldan girer', true);
 
+  // Firma raporu ve Teknik Rapor
+  const pFr = await firmaIsEmri(kn);
+  await pFr.locator('#fr-t').fill('2026-11-05'); await pFr.locator('#fr-b').fill('Gövdede çatlak'); await pFr.locator('#fr-o').fill('Laminasyon'); await pFr.locator('#fr-s').fill('5'); await pFr.locator('#fr-d').fill('Onarım uygundur');
+  await tikla(pFr, 'Raporu Onayla ve Gönder');
+  const pR = await al('tu', E); await dosyaAc(pR, d.dosyaNo);
+  await pR.waitForFunction(() => document.querySelector('#rp-bulgular')?.value === 'Gövdede çatlak');
+  kontrol('firma raporu Teknik Rapor formuna kendiliğinden gelir', true);
+  for (const k of ['kapsam', 'incelenen', 'saha', 'yontem', 'acikSorular', 'uzmanlik']) await pR.locator(`#rp-${k}`).fill('Yazıldı');
+  await tikla(pR, 'Raporu Kontrole Gönder');
+  await kartKarar(E, 'ty', `${d.dosyaNo}-RP01`, 'Onaya Gönder');
+  kontrol('Teknik Yönetici raporu kontrol eder', true);
+
   // Teklif
   const pTs = await al('ts', E); await dosyaAc(pTs, d.dosyaNo);
   await pTs.getByLabel('Firma Fiyat Teklifi').selectOption({ index: 1 });

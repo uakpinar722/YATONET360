@@ -10,6 +10,7 @@ import { teklifSureIsle } from './teklif.js';
 import { alacakIsle } from './ticari.js';
 import { kaliteSureIsle } from './kalite.js';
 import { tedarikSureIsle } from './tedarik.js';
+import { onaySureIsle } from './onay_sure.js';
 import { periyodikIsle, toplantiHatirlat } from './toplanti.js';
 import { sunucuKur } from './sunucu.js';
 
@@ -28,5 +29,6 @@ setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000
 setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { alacakIsle(db).catch((h) => s.log.error(h.message)); kaliteSureIsle(db).catch((h) => s.log.error(h.message)); tedarikSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { onaySureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { sigortaSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { acilIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);

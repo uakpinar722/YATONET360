@@ -71,7 +71,12 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-65 | 6 | Otomatik sigorta iletileri | BLD-45 ve BLD-72 gibi kendiliğinden üretilen iletilerde son gönderen Dosya Sorumlusu veya Yedek Sorumlu sayılır; teyit gelene kadar ileti gitmez | `sigorta_gonderim.ts` | Kabul (VAR-5, CEO 03.11.2026) |
 | V-66 | 6 | Teyit arası süre | İki teyit arasında en az 2 saniye (parametre); ikinci düğme bu sürede kapalı | `0019` | Kabul (VAR-5, CEO 03.11.2026) |
 | V-67 | 6 | Sigorta tarafı tanımı | Adres dosyanın sigorta tarafı kaydından tanınır; eksper ve sigorta portal kullanıcısının sistem içi bildirimi kapsam dışı | `bildirim.ts` | Kabul (VAR-5, CEO 03.11.2026) |
-| V-68 | 7 | Tedarikçi sipariş kabul kodu | YG-1577 SMS kodu diyor; YG-1150 kurumsal dış kullanıcıya doğrulama uygulaması diyor. Firma ile aynı doğrulama uygulaması kodu kullanıldı (V-45); SMS yalnız uygulamayı kullanamayan için ileride | `portallar.ts` | Sunulacak |
-| V-69 | 7 | Portalsız tedarikçi | Portal kullanıcısı olan tedarikçide malzeme girişi sipariş kabulünden sonra yapılır; kullanıcısı olmayanda Tedarik Sorumlusu kabulsüz giriş açabilir | `tedarik.ts` | Sunulacak |
-| V-70 | 7 | BLD-23 zamanı | Teslim ve taşıma kısıtı bildirimi, dosya için o tesise açılan ilk talepte gider | `portallar.ts` | Sunulacak |
-| V-71 | 7 | Nazik metin kapsamı | YG-1576 sistem hata ve yönlendirme metinlerine uygulandı; onaylı BLD ve ONY metinlerine dokunulmadı | `api/src` | Sunulacak |
+| V-68 | 7 | Tedarikçi sipariş kabul kodu | YG-1577 SMS kodu diyor; YG-1150 kurumsal dış kullanıcıya doğrulama uygulaması diyor. Firma ile aynı doğrulama uygulaması kodu kullanıldı (V-45); SMS yalnız uygulamayı kullanamayan için ileride | `portallar.ts` | Kabul (VAR-6, CEO 03.11.2026) |
+| V-69 | 7 | Portalsız tedarikçi | Portal kullanıcısı olan tedarikçide malzeme girişi sipariş kabulünden sonra yapılır; kullanıcısı olmayanda Tedarik Sorumlusu kabulsüz giriş açabilir | `tedarik.ts` | Kabul (VAR-6, CEO 03.11.2026) |
+| V-70 | 7 | BLD-23 zamanı | Teslim ve taşıma kısıtı bildirimi, dosya için o tesise açılan ilk talepte gider | `portallar.ts` | Kabul (VAR-6, CEO 03.11.2026) |
+| V-71 | 7 | Nazik metin kapsamı | YG-1576 sistem hata ve yönlendirme metinlerine uygulandı; onaylı BLD ve ONY metinlerine dokunulmadı | `api/src` | Kabul (VAR-6, CEO 03.11.2026) |
+| V-72 | 5 | Teklif ve rapor bağı | Hasar dosyasında teklif iç onaya, Teknik Yönetici kontrolünden geçmiş Teknik Rapor olmadan gitmez (YG-200 yorumu); acil tedbir teklifi hariç | `rapor.ts` | Sunulacak |
+| V-73 | 5 | Süre aşımında son makam | Son makamda 1 saat aşımda iş bir üst makama geçer; CEO son makamsa yalnız uyarı ve CEO Asistanına bilgi | `onay_sure.ts` | Sunulacak |
+| V-74 | 5 | Kademe atlama kapsamı | Direktör yalnız silsilesindeki işi, GMY CEO son makam olmayan her işi, CEO her işi öne alır; mesleki kararlar (kalite planı, kapsam cetveli, teknik rapor) hariç | `is_motoru.ts` | Sunulacak |
+| V-75 | 5 | Kart önerisi kodu | Kartelaya öneriyle eklenen kalem KO-nnnnn kodu alır; Teknik Uzman maliyeti önerir, Ticari İşler Direktörü onaylar | `rapor.ts` | Sunulacak |
+| V-76 | 5 | Ek teklif Açık İşi | Yanıtsız ek teklif düşünce Dosya Sorumlusuna 7 gün hedefli Açık İş açılır | `teklif.ts` | Sunulacak |

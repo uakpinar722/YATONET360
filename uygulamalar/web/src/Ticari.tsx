@@ -39,7 +39,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); }, [id]);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
-  const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '' }); const [ft, setFt] = useState('');
+  const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
   const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
   if (!v) return null;
   const ticari = roller.includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
@@ -82,7 +82,8 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         ))}
         {ticari && <>
           <label htmlFor="t-f">Firma Fiyat Teklifi</label><select id="t-f" value={ft} onChange={(e) => setFt(e.target.value)}><option value="">Seçiniz</option>{v.firma.map((f) => <option key={f.kimlik} value={f.kimlik}>{f.teklif_no} · {eur(f.toplam_eur)} · {f.durum}</option>)}</select>
-          <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
+          {v.teklifler.some((t) => t.statu === 'Karar') && <><label htmlFor="t-a">Ek Fiyat Teklifi İçin Ana Teklif</label><select id="t-a" value={ek} onChange={(e) => setEk(e.target.value)}><option value="">Ek Teklif Değil</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
+          <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft, ekTeklif: ek || undefined }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
           <label htmlFor="t-s">Ödeme Son Tarihi</label><input id="t-s" type="date" value={sonTarih} onChange={(e) => setSonTarih(e.target.value)} />
         </>}
       </Blok>
@@ -155,6 +156,25 @@ function CalismaIzni({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<a
   </Blok>;
 }
 
+/** YG-428, YG-429, YG-1518: fiyat içermez; Firma Değerlendirmesi zorunlu; son zaman görünür. */
+function FirmaRapor({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [v, setV] = useState<{ rapor: { rapor_no: string } | null; sonZaman: string } | null>(null); const [f, setF] = useState({ tarih: '', bulgular: '', oneriler: '', malzeme: '', sure: '', degerlendirme: '' });
+  const yukle = () => istek<NonNullable<typeof v>>(`/firma-portal/is-emri/${isEmri}/teknik-rapor`).then(setV);
+  useEffect(() => { void yap(yukle); }, [isEmri]);
+  if (!v) return null;
+  if (v.rapor) return <Blok baslik="Firma Teknik Raporu"><div>{v.rapor.rapor_no} iletildi.</div></Blok>;
+  return <Blok baslik="Firma Teknik Raporu">
+    <div className="not">Son Zaman: {saat(v.sonZaman)}</div>
+    <label htmlFor="fr-t">İnceleme Tarihi</label><input id="fr-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} />
+    <label htmlFor="fr-b">Bulgular</label><textarea id="fr-b" value={f.bulgular} onChange={(e) => setF({ ...f, bulgular: e.target.value })} />
+    <label htmlFor="fr-o">Önerilen İşlemler</label><textarea id="fr-o" value={f.oneriler} onChange={(e) => setF({ ...f, oneriler: e.target.value })} />
+    <label htmlFor="fr-m">Malzeme İhtiyacı</label><input id="fr-m" value={f.malzeme} onChange={(e) => setF({ ...f, malzeme: e.target.value })} />
+    <label htmlFor="fr-s">Tahmini Süre (Gün)</label><input id="fr-s" inputMode="numeric" value={f.sure} onChange={(e) => setF({ ...f, sure: e.target.value })} />
+    <label htmlFor="fr-d">Firma Değerlendirmesi</label><textarea id="fr-d" value={f.degerlendirme} onChange={(e) => setF({ ...f, degerlendirme: e.target.value })} />
+    <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teknik-rapor`, { ...f, sure: Number(f.sure) }).then(yukle), 'Raporunuz iletildi.')}>Raporu Onayla ve Gönder</button>
+  </Blok>;
+}
+
 /** YG-430: firma yalnız kendi birim fiyatını girer; müşteri fiyatı görünmez. */
 function FirmaFiyat({ dosya, yap }: { dosya: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
   const [l, setL] = useState<{ kimlik: string; aciklama: string; miktar: string; birim: string }[]>([]); const [f, setF] = useState<Record<string, string>>({});
@@ -200,6 +220,7 @@ export function FirmaAna({ ben }: { ben: Ben }) {
         {acik.tur === 'AC' && <><label htmlFor="f-th">Tahmini Tutar (EUR)</label><input id="f-th" inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} /><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/acil-tutar`, { tahmini: Number(tahmini.replace(',', '.')) }))}>Tutarı Güncelle</button></>}
         <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/tamamlandi`, {}))}>İş Tamamlandı</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/durdur`, { neden: not_ }))}>İşi Durdur ve Bildir</button></div>
       </Blok>}
+      {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaRapor isEmri={acik.kimlik} yap={yap} />}
       {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaFiyat dosya={acik.dosya} yap={yap} />}
       {acik.statu === 'Aktif' && <CalismaIzni isEmri={acik.kimlik} yap={yap} />}
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">

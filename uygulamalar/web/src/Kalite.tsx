@@ -257,3 +257,33 @@ export function SigortaGonderimBolumu({ id }: { id: string }) {
     </Blok>
   );
 }
+
+interface RaporV { raporlar: { kimlik: string; rapor_no: string; rapor_turu: string; durum: string; kademe: number | null; kademe_sayisi: number | null }[]; firmaRaporu: { rapor_no: string; bulgular: string; onerilen_islemler: string; malzeme_ihtiyaci: string | null; tahmini_sure_gun: number; firma_degerlendirmesi: string } | null; oneri: { bulgular: string; oneriler: string; analiz: string } | null }
+const RAPOR_ALAN: [string, string][] = [['kapsam', 'Görevlendirme Kapsamı'], ['incelenen', 'İncelenen Alan'], ['saha', 'Saha Koşulları'], ['yontem', 'Yöntem ve Ölçüt'], ['bulgular', 'Bulgular'], ['acikSorular', 'Açık Sorular'], ['analiz', 'Analiz ve Risk'], ['oneriler', 'Öneriler'], ['uzmanlik', 'Uzmanlık Sınırı']];
+
+/** YG-200, YG-280: firma girdisi forma kendiliğinden gelir; Teknik Uzman düzeltir. Firma raporu dışa giden rapora yazılmaz. */
+export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }) {
+  const [v, setV] = useState<RaporV | null>(null); const [f, setF] = useState<Record<string, string>>({ tur: 'İlk Rapor' }); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
+  const [ko, setKo] = useState({ ana: '', alt: '', tali: '', islem: '', birim: 'adet', maliyet: '', gerekce: '' });
+  const yukle = () => istek<RaporV>(`/dosya/${id}/teknik-rapor`).then((r) => { setV(r); if (r.oneri) setF((x) => ({ bulgular: r.oneri!.bulgular, oneriler: r.oneri!.oneriler, analiz: r.oneri!.analiz, ...x })); });
+  useEffect(() => { void yukle().catch((x) => setHata((x as Error).message)); }, [id]);
+  if (!v) return hata ? <div className="hata" role="alert">{hata}</div> : null;
+  const tu = rollerim.includes('Teknik Uzman') || rollerim.includes('Sorumlu Teknik Uzman (Koordinatör)');
+  const yap = (p: Promise<unknown>, t: string) => { setHata(''); setNot(''); void p.then(() => { setNot(t); return yukle(); }).catch((x) => setHata((x as Error).message)); };
+  return (
+    <Blok baslik="Teknik Rapor">
+      {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
+      {v.raporlar.length === 0 && <div className="not">Teknik Rapor bulunmamaktadır.</div>}
+      {v.raporlar.map((r) => <div key={r.kimlik}>{r.rapor_no} · {r.rapor_turu} · {r.durum}{r.durum === 'Kontrolde' && r.kademe_sayisi ? ` · Kademe ${(r.kademe ?? 0) + 1} / ${r.kademe_sayisi}` : ''}</div>)}
+      {tu && v.firmaRaporu && <div className="not">Firma Raporu {v.firmaRaporu.rapor_no} forma aktarıldı; düzeltmeleriniz kayda geçer. Tahmini Süre: {v.firmaRaporu.tahmini_sure_gun} Gün{v.firmaRaporu.malzeme_ihtiyaci ? ` · Malzeme: ${v.firmaRaporu.malzeme_ihtiyaci}` : ''}</div>}
+      {tu && <>
+        <label htmlFor="rp-t">Rapor Türü</label><select id="rp-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['İlk Rapor', 'Ek Teknik Rapor', 'Garanti İnceleme Raporu'].map((x) => <option key={x}>{x}</option>)}</select>
+        {RAPOR_ALAN.map(([k, ad]) => <div key={k}><label htmlFor={`rp-${k}`}>{ad}</label><textarea id={`rp-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>)}
+        <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/teknik-rapor`, f), 'Rapor kontrole gönderildi.')}>Raporu Kontrole Gönder</button>
+        <div className="bolum">Kartela Önerisi</div>
+        {([['ana', 'Ana Branş'], ['alt', 'Alt Branş'], ['tali', 'Tali Branş'], ['islem', 'İşlem'], ['birim', 'Birim'], ['maliyet', 'Maliyet (EUR)'], ['gerekce', 'Gerekçe']] as const).map(([k, ad]) => <div key={k}><label htmlFor={`ko-${k}`}>{ad}</label><input id={`ko-${k}`} value={ko[k]} onChange={(e) => setKo({ ...ko, [k]: e.target.value })} /></div>)}
+        <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/kart-onerisi`, { ...ko, maliyet: Number(ko.maliyet.replace(/\./g, '').replace(',', '.')) }), 'Öneri Ticari İşler Direktörüne gönderildi.')}>Kart Öner</button>
+      </>}
+    </Blok>
+  );
+}

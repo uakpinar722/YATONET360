@@ -2,17 +2,18 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { bildir } from './bildirim.js';
+import { bildir, mesaiIcinde } from './bildirim.js';
 import { KAPANIS } from './kapanis.js';
 import { rolSahipleri, zinciriDuzelt } from './makam.js';
 import { etkinRoller } from './yetki.js';
+import { MESLEKI } from './onay_sure.js';
 
 /** Buton standardı YG-1637: ara kademede Onaya Gönder, son makamda Onayla / Reddet, her kademede Gerekçeyle İade Et. */
-export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade Et' | 'Yeniden Gönder' | 'Tamamlandı';
+export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade Et' | 'Yeniden Gönder' | 'Tamamlandı' | 'Geri Çek' | 'Kademe Atla';
 
 export interface KartGirdisi {
   tur: string; baslik: string; ozet?: string; oncelik?: string; hazirlayan?: string | null; zincir?: string[];
-  sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string;
+  sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string; simdi?: Date;
 }
 
 export { rolSahipleri };
@@ -21,12 +22,19 @@ export { rolSahipleri };
 export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<string> {
   const kategori = g.kategori ?? (g.zincir?.length ? 'onay' : 'islem');
   if (g.zincir?.length) g = { ...g, zincir: await zinciriDuzelt(db, g.zincir, g.hazirlayan) };
+  // YG-228: mesai dışında Kritik onay, son makam Direktör, GMY veya CEO ise ara kademeler beklenmeden son makama gider; ara kademeler bilgilenir.
+  let ilkKademe = 0;
+  if (kategori === 'onay' && g.oncelik === 'Kritik' && g.zincir!.length > 1 && !MESLEKI.has(g.tur) && !mesaiIcinde(g.simdi ?? new Date())) {
+    const son = (await db.query(`SELECT rol_adi, kademe FROM rol WHERE kimlik = $1`, [g.zincir![g.zincir!.length - 1]])).rows[0];
+    if (son && (son.kademe === 'Direktör' || son.rol_adi === 'Genel Müdür Yardımcısı' || son.rol_adi === 'CEO')) ilkKademe = g.zincir!.length - 1;
+  }
   const { rows } = await db.query(
-    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING kimlik`,
-    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null]);
+    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`,
+    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe]);
   const id = rows[0].kimlik as string;
-  const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![0]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
+  if (ilkKademe) { const ara: string[] = []; for (const r of g.zincir!.slice(0, ilkKademe)) ara.push(...await rolSahipleri(db, r)); await bildir(db, { olay: `kart-ara:${id}`, kullanicilar: ara, baslik: `Bilgi: Doğrudan Son Makama Gitti: ${g.baslik}`, oncelik: g.oncelik, isRef: id }); }
+  const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![ilkKademe]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
   await bildir(db, { olay: `kart-ac:${id}`, kullanicilar: hedef.filter((k) => k !== g.hazirlayan), baslik: `Yeni İş: ${g.baslik}`, ozet: g.ozet ?? null, isRef: id, oncelik: g.oncelik, eposta: true });
   return id;
 }
@@ -56,7 +64,13 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const gonderilmis = await b.db.query(
       `SELECT ${SECIM}, (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 1]) AS makam FROM is_karti k
         WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.hazirlayan_ref = $1 ORDER BY k.olusturma_zamani DESC`, [kullanici]);
-    return { onay: onay.rows, islem: islem.rows.filter((r) => r.kategori === 'islem'), gorev: islem.rows.filter((r) => r.kategori === 'gorev'), iade: iade.rows, gonderilmis: gonderilmis.rows };
+    // YG-169: üst makam, sırası kendisine gelmeyen işi görüp kademeyi gerekçeyle atlayabilir.
+    const ustAd = (await b.db.query(`SELECT rol_adi, kademe FROM rol WHERE kimlik = ANY($1)`, [roller])).rows;
+    const genel = ustAd.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı');
+    const zincirde = genel || ustAd.some((r) => r.kademe === 'Direktör') ? (await b.db.query(
+      `SELECT ${SECIM}, (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 1]) AS makam FROM is_karti k
+        WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.hazirlayan_ref IS DISTINCT FROM $2 AND NOT k.tur = ANY($3) AND NOT k.zincir[k.kademe + 1] = ANY($1) AND ($4 OR k.zincir && $1::text[]) ORDER BY k.olusturma_zamani LIMIT 50`, [roller, kullanici, [...MESLEKI], genel])).rows : [];
+    return { zincirde, onay: onay.rows, islem: islem.rows.filter((r) => r.kategori === 'islem'), gorev: islem.rows.filter((r) => r.kategori === 'gorev'), iade: iade.rows, gonderilmis: gonderilmis.rows };
   }
 
   s.get('/bugun', oturumlu, async (i) => {
@@ -81,7 +95,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const { karar, gerekce } = (i.body ?? {}) as { karar?: Karar; gerekce?: string };
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
     const g = (gerekce ?? '').trim();
-    if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
+    if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet' || karar === 'Kademe Atla') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
     const etkin = await etkinRoller(b.db, o.kullanici); const roller = etkin.map((r) => r.kimlik);
     const c = await b.db.connect();
     try {
@@ -93,8 +107,27 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       const makam: string | undefined = k.zincir[k.kademe];
       const sonMakam = k.kademe === k.zincir.length - 1;
       let yeni: { durum: string; kademe: number; kapanir: boolean };
-      let hedef: string[] = []; let baslik = '';
-      if (karar === 'Yeniden Gönder') {
+      let hedef: string[] = []; let baslik = ''; let kapanisKarari: string = karar!;
+      if (karar === 'Geri Çek') { // YG-167
+        if (k.durum !== 'İade Edildi' || k.hazirlayan_ref !== o.kullanici) return dur(403, 'Bu işlem için yetkiniz bulunmamaktadır.');
+        yeni = { durum: 'Geri Çekildi', kademe: k.kademe, kapanir: true };
+        if (k.tur !== 'Fiyat Teklifi' && k.tur !== 'Teknik Rapor') kapanisKarari = 'Reddet';
+      } else if (karar === 'Kademe Atla') { // YG-169, YG-170
+        if (k.durum !== 'Bekliyor' || k.kategori !== 'onay') return dur(409, 'Bu kayıt üzerinde işlem yapılmıştır.');
+        if (MESLEKI.has(k.tur) || k.hazirlayan_ref === o.kullanici) return dur(403, 'Bu kayıtta kademe atlanmaz.');
+        const ad = (await c.query(`SELECT kimlik, rol_adi, kademe FROM rol WHERE kimlik = ANY($1)`, [roller])).rows;
+        if (!ad.some((r) => r.kademe === 'Direktör' || r.rol_adi === 'Genel Müdür Yardımcısı' || r.rol_adi === 'CEO')) return dur(403, 'Kademe atlama Direktör, Genel Müdür Yardımcısı ve CEO içindir.');
+        const son = k.zincir.length - 1; let j = -1;
+        for (let n = k.kademe; n <= son; n++) if (roller.includes(k.zincir[n])) j = n;
+        const sonAd = (await c.query(`SELECT rol_adi FROM rol WHERE kimlik = $1`, [k.zincir[son]])).rows[0].rol_adi;
+        const nihai = j === son || ad.some((r) => r.rol_adi === 'CEO') || (ad.some((r) => r.rol_adi === 'Genel Müdür Yardımcısı') && sonAd !== 'CEO');
+        if (j < 0 && !nihai) return dur(403, 'Bu kayıt onay silsilenizde değildir.');
+        const atlanan = k.zincir.slice(k.kademe, nihai ? son : j); const ata: string[] = [];
+        for (const r of atlanan) ata.push(...await rolSahipleri(c, r));
+        await bildir(c, { olay: `kart-atla:${id}:${k.kademe}`, kullanicilar: ata, baslik: `Kademe Atlandı: ${k.baslik}`, ozet: g, isRef: id });
+        if (nihai) { yeni = { durum: 'Onaylandı', kademe: son, kapanir: true }; hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `Onaylandı: ${k.baslik}`; kapanisKarari = 'Onayla'; }
+        else { yeni = { durum: 'Bekliyor', kademe: j + 1, kapanir: false }; hedef = await rolSahipleri(c, k.zincir[j + 1]); baslik = `Onayınızı Bekliyor: ${k.baslik}`; kapanisKarari = 'Onaya Gönder'; }
+      } else if (karar === 'Yeniden Gönder') {
         if (k.durum !== 'İade Edildi' || k.hazirlayan_ref !== o.kullanici) return dur(403, 'Bu işlem için yetkiniz bulunmamaktadır.');
         yeni = { durum: 'Bekliyor', kademe: 0, kapanir: false };
         hedef = await rolSahipleri(c, k.zincir[0]); baslik = `Yeniden Gönderildi: ${k.baslik}`;
@@ -120,10 +153,10 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
           hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `${yeni.durum}: ${k.baslik}`;
         } else return dur(400, 'Geçersiz karar.');
       }
-      await c.query(`UPDATE is_karti SET durum = $2, kademe = $3, kapanma_zamani = CASE WHEN $4 THEN now() END WHERE kimlik = $1`, [id, yeni.durum, yeni.kademe, yeni.kapanir]);
+      await c.query(`UPDATE is_karti SET durum = $2, kademe = $3, kademe_zamani = now(), kapanma_zamani = CASE WHEN $4 THEN now() END WHERE kimlik = $1`, [id, yeni.durum, yeni.kademe, yeni.kapanir]);
       // Silinmez; kararın tamamı adım kaydında kalır (YG-1183).
       await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref, vekaleten) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, k.kademe, karar, g || null, o.kullanici, makam ?? null, Boolean(makam && etkin.find((r) => r.kimlik === makam)?.vekalet)]);
-      await KAPANIS.get(k.tur)?.(c, k, karar!, o.kullanici);
+      await KAPANIS.get(k.tur)?.(c, k, kapanisKarari as never, o.kullanici);
       if (hedef.length) await bildir(c, { olay: `kart-karar:${id}:${(await c.query('SELECT count(*) n FROM is_karti_adim WHERE is_ref = $1', [id])).rows[0].n}`, kullanicilar: hedef.filter((x) => x !== o.kullanici), baslik, ozet: g || k.ozet, isRef: id, oncelik: k.oncelik, eposta: true });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Kartı: ${karar}`, nesneTuru: k.tur, nesneKimligi: id, eski: { durum: k.durum, kademe: k.kademe }, yeni: { durum: yeni.durum, kademe: yeni.kademe }, gerekce: g || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

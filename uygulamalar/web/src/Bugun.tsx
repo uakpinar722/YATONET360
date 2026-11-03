@@ -6,7 +6,7 @@ export interface Kart {
   kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null; vekaleten?: boolean;
 }
 export interface BugunVeri {
-  onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
+  zincirde?: (Kart & { makam?: string })[]; onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
   duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
@@ -104,6 +104,12 @@ function KonumSeridi() {
   );
 }
 
+/** YG-169: Direktör, GMY ve CEO, sırası gelmeyen işi gerekçeyle öne alabilir; atlanan kademeler bilgilenir. */
+function KademeAtla({ k, yenile }: { k: Kart & { makam?: string }; yenile: () => void }) {
+  const [g, setG] = useState(''); const [h, setH] = useState('');
+  return <div className="ozet"><b>{k.baslik}</b><div className="not">Şu An: {k.makam}</div>{h && <div className="hata" role="alert">{h}</div>}<label htmlFor={`ka-${k.kimlik}`}>Gerekçe</label><input id={`ka-${k.kimlik}`} value={g} onChange={(e) => setG(e.target.value)} /><button className="btn2" disabled={!g.trim()} onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Kademe Atla', gerekce: g }).then(yenile).catch((x) => setH((x as Error).message))}>Kademeyi Atla</button></div>;
+}
+
 export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri | null; hata: string; yenile: () => void }) {
   const lgm = ben.grup === 'LGM İç Rolü';
   const [dHata, setDHata] = useState('');
@@ -168,11 +174,15 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
           <div key={k.kimlik} className="ozet kart-sol">
             <KartUst k={k} sayac={false} />
             {k.gerekce && <div className="uyari"><b>İade Gerekçesi:</b> {k.gerekce}</div>}
-            <div className="dugmeler"><button className="btn" onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Yeniden Gönder' }).then(yenile)}>Yeniden Gönder</button></div>
+            <div className="dugmeler"><button className="btn" onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Yeniden Gönder' }).then(yenile)}>Yeniden Gönder</button><button className="btn2" onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Geri Çek' }).then(yenile)}>Geri Çek</button></div>
           </div>
         ))}
       </>)}
 
+      {(veri.zincirde ?? []).length > 0 && (<>
+        <div className="bolum">Silsilenizde Bekleyenler</div>
+        {(veri.zincirde ?? []).map((k) => <KademeAtla key={k.kimlik} k={k} yenile={yenile} />)}
+      </>)}
       {veri.gonderilmis.length > 0 && (<>
         <div className="bolum">Onaya Gönderilmiş İşlemlerim</div>
         {veri.gonderilmis.map((k) => (

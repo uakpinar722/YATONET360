@@ -89,8 +89,14 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
       [sutun((r) => r[0]), sutun((r) => r[1]), sutun((r) => r[2]), sutun((r) => r[3] === 'Evet'), sutun((r) => (r[4] && /^\d+$/.test(r[4]) ? Number(r[4]) : null)), sutun((r) => r[5] || null), sutun((r) => r[6] || null), sutun((r) => { const v = sayi(r[7]); return v !== null && v < 10000 ? v : null; }), sutun((r) => (['Fiber', 'Ahşap', 'Çelik', 'Alüminyum'].includes(r[8] ?? '') ? r[8] : null)), sutun((r) => r[9] || null), sutun((r) => r[10] || null), sutun((r) => r[11] || null), sutun((r) => r[12] || null)]);
   }
   // Kartela: CEO'nun Excel çalışması bitene kadar 2026.2 Taslak olarak yüklenir (KRT-8 sonrası Yürürlükte).
+  // KRT-8: kurulu sistemde sürüm ve maliyetler kaynak dosyayla eşitlenir; kart önerisiyle eklenen kalemlere dokunulmaz.
+  if ((await c.query(`SELECT 1 FROM kartela_surumu LIMIT 1`)).rowCount) {
+    await c.query(`UPDATE kartela_surumu SET durum = 'Yürürlükte', yururluk = '2027-01-01' WHERE surum = '2026.2'`);
+    const kl = readFileSync(join(KOK, 'veri', 'kartela_2026_2.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
+    await c.query(`UPDATE kartela_kalemi k SET maliyet_eur = t.m FROM unnest($1::text[], $2::numeric[]) t(a, m) WHERE k.kod = t.a AND k.surum = '2026.2' AND k.maliyet_eur <> t.m`, [kl.map((r) => r[0]), kl.map((r) => r[6])]);
+  }
   if (!(await c.query(`SELECT 1 FROM kartela_surumu LIMIT 1`)).rowCount) {
-    await c.query(`INSERT INTO kartela_surumu VALUES ('2026.2', 'Taslak', NULL)`);
+    await c.query(`INSERT INTO kartela_surumu VALUES ('2026.2', 'Yürürlükte', '2027-01-01')`); // KRT-8
     const kl = readFileSync(join(KOK, 'veri', 'kartela_2026_2.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
     await c.query(`INSERT INTO kartela_kalemi SELECT a, '2026.2', b, d, e, f, g, h FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::numeric[]) t(a, b, d, e, f, g, h)`, [kl.map((r) => r[0]), kl.map((r) => r[1]), kl.map((r) => r[2]), kl.map((r) => r[3]), kl.map((r) => r[4]), kl.map((r) => r[5]), kl.map((r) => Number(r[6]))]);
     const by = readFileSync(join(KOK, 'veri', 'kartela_birlikte_yazilmaz.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
