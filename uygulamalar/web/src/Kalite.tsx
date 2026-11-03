@@ -53,6 +53,9 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [t, setT] = useState({ grup: GRUP[0]!, amac: '', yontem: '', olcut: '', durdurma: '' });
   const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string }>>({});
   const [gk, setGk] = useState<Record<string, string>>({});
+  const [ie, setIe] = useState<{ kimlik: string; is_emri_no: string; statu: string; teknik_kabul?: string | null }[]>([]); const [kpk, setKpk] = useState<Record<string, string>>({});
+  const [kp, setKp] = useState({ isEmri: '', tur: 'Bekletme', ozellik: '', olcut: '', zaman: '', eksperKlas: false }); const [kk, setKk] = useState({ isEmri: '', bitis: '', tanim: '', etki: '', hedef: '' });
+  useEffect(() => { void istek<{ isEmirleri: typeof ie }>(`/dosya/${id}/teklifler`).then((r) => setIe(r.isEmirleri)).catch(() => {}); }, [id, v]);
   if (!v) return null;
   const kalite = roller.includes(KM) || roller.includes(KK);
   const teknik = roller.some((r) => ['Teknik Uzman', 'Teknik Yönetici', 'Teknik Müdür', 'Sorumlu Teknik Uzman (Koordinatör)', 'Saha Sorumlusu'].includes(r));
@@ -102,8 +105,29 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
       </Blok>
       <Blok baslik="Kontrol Noktaları">
         {v.kontrolNoktalari.length === 0 && <div className="not">Kontrol noktası bulunmamaktadır.</div>}
-        {v.kontrolNoktalari.map((k) => <div key={k.kimlik}>{k.kontrol_noktasi_no} · {k.nokta_turu} · {k.kontrol_ozelligi} · {k.serbest_birakma_zamani ? 'Serbest Bırakıldı' : k.sonuc ?? 'Bekliyor'}</div>)}
+        {v.kontrolNoktalari.map((k) => { const a = kpk[k.kimlik] ?? ''; return <div className="soru" key={k.kimlik}><span>{k.kontrol_noktasi_no} · {k.nokta_turu} · {k.kontrol_ozelligi} · {k.serbest_birakma_zamani ? 'Serbest Bırakıldı' : k.sonuc ?? 'Bekliyor'}</span>{!k.serbest_birakma_zamani && <>
+          <BelgeSec ad="Kontrol Kanıtı" bagTuru="Dosya" bagKimligi={id} deger={a} sec={(x) => setKpk({ ...kpk, [k.kimlik]: x })} />
+          <div className="dugmeler">{['Uygun', 'Düzeltme gerekli', 'Reddedildi'].map((s) => <button key={s} className="btn2 kucuk" disabled={!a} onClick={() => void yap(() => istek(`/kontrol-noktasi/${k.kimlik}/sonuc`, { sonuc: s, kanit: a }))}>{s}</button>)}</div></>}</div>; })}
+        {teknik && ie.length > 0 && <>
+          <label htmlFor="kp-e">İş Emri</label><select id="kp-e" value={kp.isEmri} onChange={(e) => setKp({ ...kp, isEmri: e.target.value })}><option value="">Seçiniz</option>{ie.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.is_emri_no}</option>)}</select>
+          <label htmlFor="kp-t">Nokta Türü</label><select id="kp-t" value={kp.tur} onChange={(e) => setKp({ ...kp, tur: e.target.value })}>{['Bekletme', 'Tanıklık', 'Belge İnceleme', 'Gözetim', 'Uygulayıcı Öz Kontrolü', 'Bağımsız Doğrulama'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="kp-o">Kontrol Özelliği</label><input id="kp-o" value={kp.ozellik} onChange={(e) => setKp({ ...kp, ozellik: e.target.value })} />
+          <label htmlFor="kp-k">Kabul Ölçütü (Ölçülebilir)</label><input id="kp-k" value={kp.olcut} onChange={(e) => setKp({ ...kp, olcut: e.target.value })} />
+          <label htmlFor="kp-z">Planlanan Zaman</label><input id="kp-z" type="datetime-local" value={kp.zaman} onChange={(e) => setKp({ ...kp, zaman: e.target.value })} />
+          <label className="kutu"><input type="checkbox" checked={kp.eksperKlas} onChange={(e) => setKp({ ...kp, eksperKlas: e.target.checked })} /><span>Eksper veya Klas Katılacak</span></label>
+          <button className="btn2" disabled={!kp.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kp.isEmri}/kontrol-noktasi`, { tur: kp.tur, ozellik: kp.ozellik, olcut: kp.olcut, zaman: kp.zaman && new Date(kp.zaman).toISOString(), eksperKlas: kp.eksperKlas }), 'Kontrol noktası eklendi.')}>Kontrol Noktası Ekle</button>
+          <button className="btn2" disabled={!kp.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kp.isEmri}/izin-gerekli`, { gerekli: true }), 'Bu iş emrinde çalışma izni belgesi zorunlu oldu.')}>Çalışma İzni Zorunlu</button>
+        </>}
       </Blok>
+      {teknik && ie.some((x) => x.statu === 'Tamamlandı' && !x.teknik_kabul) && <Blok baslik="Koşullu Kabul">
+        <div className="not">Yalnız Minör açık işlerde verilir; bitiş en geç 30 gündür.</div>
+        <label htmlFor="kk-e">İş Emri</label><select id="kk-e" value={kk.isEmri} onChange={(e) => setKk({ ...kk, isEmri: e.target.value })}><option value="">Seçiniz</option>{ie.filter((x) => x.statu === 'Tamamlandı').map((x) => <option key={x.kimlik} value={x.kimlik}>{x.is_emri_no}</option>)}</select>
+        <label htmlFor="kk-b">Koşul Bitişi</label><input id="kk-b" type="date" value={kk.bitis} onChange={(e) => setKk({ ...kk, bitis: e.target.value })} />
+        <label htmlFor="kk-t">Açık İş</label><input id="kk-t" value={kk.tanim} onChange={(e) => setKk({ ...kk, tanim: e.target.value })} />
+        <label htmlFor="kk-i">Etki</label><input id="kk-i" value={kk.etki} onChange={(e) => setKk({ ...kk, etki: e.target.value })} />
+        <label htmlFor="kk-h">Hedef Tarih</label><input id="kk-h" type="date" value={kk.hedef} onChange={(e) => setKk({ ...kk, hedef: e.target.value })} />
+        <button className="btn2" disabled={!kk.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kk.isEmri}/kosullu-kabul`, { bitis: kk.bitis, kalemler: [{ tanim: kk.tanim, etki: kk.etki, hedef: kk.hedef }] }), 'Koşullu kabul kaydedildi.')}>Koşullu Kabul Ver</button>
+      </Blok>}
       <Blok baslik="Testler">
         {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '' }; return (
           <div className="soru" key={x.kimlik}>
@@ -133,17 +157,47 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   );
 }
 
-/** YG-823, YG-404, YG-1589: tedarik siparişi Tedarik Sorumlusundan onay zincirine gider. */
+interface Siparisler { siparisler: { kimlik: string; siparis_no: string; statu: string; kdv_haric_eur: string; ticari_unvan: string }[]; girisler: { kimlik: string; kayit_no: string; siparis_ref: string; miktar: string; lot_no: string; kabul_karari: string | null; benim: boolean }[] }
+
+/** YG-823, YG-404, YG-1589: sipariş Tedarik Sorumlusundan onay zincirine gider; giriş kontrolünü Saha Sorumlusu, yoksa Teknik Uzman yapar. */
 export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [f, setF] = useState({ tedarikci: '', teklifRef: '', kullanim: '', teslimTarihi: '', teslimYeri: '', olcut: '', gerekce: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', bedel: '' });
+  const [v, setV] = useState<Siparisler | null>(null); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [yer, setYer] = useState<{ kimlik: string; ticari_unvan: string }[]>([]);
+  const [g, setG] = useState({ lot: '', irsaliye: '', miktar: '', bekletmeYeri: '' }); const [fa, setFa] = useState({ no: '', tarih: '', tutar: '' });
   const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
-  if (!roller.includes('Tedarik Sorumlusu')) return null;
+  const ts = roller.includes('Tedarik Sorumlusu');
+  const yukle = () => istek<Siparisler>(`/dosya/${id}/siparisler`).then(setV);
+  useEffect(() => { void yukle().catch(() => {}); if (ts) { void istek<typeof ted>('/firma/uygunluk?rol=Tedarikçi').then(setTed).catch(() => {}); void istek<typeof yer>('/firma/uygunluk').then(setYer).catch(() => {}); } }, [id]);
+  const yap = (p: Promise<unknown>, t: string) => { setHata(''); setNot(''); void p.then(() => { setNot(t); return yukle(); }).catch((x) => setHata((x as Error).message)); };
+  if (!v || (!ts && !v.siparisler.length)) return null;
   const yaz = (k: keyof typeof f, ad: string, tur = 'text') => <><label htmlFor={`sp-${k}`}>{ad}</label><input id={`sp-${k}`} type={tur} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
+  const sayi = (x: string) => Number(x.replace(/\./g, '').replace(',', '.'));
   return (
-    <Blok baslik="Tedarik Siparişi">
+    <Blok baslik="Tedarik">
       {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
-      {yaz('tedarikci', 'Tedarikçi Sicil Kaydı')}{yaz('teklifRef', 'Tedarikçi Teklif No')}{yaz('kullanim', 'Nihai Kullanım Yeri')}{yaz('teslimTarihi', 'Teslim Tarihi', 'date')}{yaz('teslimYeri', 'Teslim Yeri')}{yaz('olcut', 'Kabul Ölçütü')}{yaz('gerekce', 'Seçim Gerekçesi')}{yaz('tanim', 'Ürün')}{yaz('parcaNo', 'Üretici Parça No')}{yaz('miktar', 'Miktar')}{yaz('birim', 'Birim')}{yaz('bedel', 'Birim Bedel (EUR)')}
-      <button className="btn2" onClick={() => { setHata(''); void istek<{ siparisNo: string }>(`/dosya/${id}/siparis`, { ...f, kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: Number(f.miktar.replace(',', '.')), birim: f.birim, bedel: Number(f.bedel.replace(',', '.')) }] }).then((r) => setNot(`${r.siparisNo} onaya gönderildi.`)).catch((x) => setHata((x as Error).message)); }}>Siparişi Onaya Gönder</button>
+      {v.siparisler.map((s) => (
+        <div className="soru" key={s.kimlik}>
+          <span>{s.siparis_no} · {s.ticari_unvan} · {s.statu}</span>
+          {ts && ['Verildi', 'Kısmi Teslim'].includes(s.statu) && <>
+            <label htmlFor={`g-l-${s.kimlik}`}>Lot No</label><input id={`g-l-${s.kimlik}`} value={g.lot} onChange={(e) => setG({ ...g, lot: e.target.value })} />
+            <label htmlFor={`g-i-${s.kimlik}`}>İrsaliye No</label><input id={`g-i-${s.kimlik}`} value={g.irsaliye} onChange={(e) => setG({ ...g, irsaliye: e.target.value })} />
+            <label htmlFor={`g-m-${s.kimlik}`}>Teslim Miktarı</label><input id={`g-m-${s.kimlik}`} inputMode="decimal" value={g.miktar} onChange={(e) => setG({ ...g, miktar: e.target.value })} />
+            <label htmlFor={`g-y-${s.kimlik}`}>Bekletme Yeri</label><select id={`g-y-${s.kimlik}`} value={g.bekletmeYeri} onChange={(e) => setG({ ...g, bekletmeYeri: e.target.value })}><option value="">Seçiniz</option>{[...yer, ...ted].map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
+            <button className="btn2 kucuk" onClick={() => yap(istek(`/siparis/${s.kimlik}/giris`, { satir: 1, lot: g.lot, irsaliye: g.irsaliye, miktar: sayi(g.miktar), bekletmeYeri: g.bekletmeYeri }), 'Giriş kaydı teknik kontrole gönderildi.')}>Teknik Kontrole Gönder</button>
+          </>}
+          {ts && ['Kısmi Teslim', 'Teslim Alındı'].includes(s.statu) && <>
+            <div className="iki-tarih"><div><label htmlFor={`fa-n-${s.kimlik}`}>Tedarikçi Fatura No</label><input id={`fa-n-${s.kimlik}`} value={fa.no} onChange={(e) => setFa({ ...fa, no: e.target.value })} /></div><div><label htmlFor={`fa-t-${s.kimlik}`}>Fatura Tarihi</label><input id={`fa-t-${s.kimlik}`} type="date" value={fa.tarih} onChange={(e) => setFa({ ...fa, tarih: e.target.value })} /></div></div>
+            <label htmlFor={`fa-u-${s.kimlik}`}>KDV Hariç Tutar (EUR)</label><input id={`fa-u-${s.kimlik}`} inputMode="decimal" value={fa.tutar} onChange={(e) => setFa({ ...fa, tutar: e.target.value })} />
+            <button className="btn2 kucuk" onClick={() => { setHata(''); setNot(''); void istek<{ sonuc: string }>(`/siparis/${s.kimlik}/eslestirme`, { no: fa.no, tarih: fa.tarih, tutar: sayi(fa.tutar) }).then((r) => setNot(`Eşleştirme: ${r.sonuc}`)).catch((x) => setHata((x as Error).message)); }}>Üçlü Eşleştir</button>
+          </>}
+        </div>
+      ))}
+      {v.girisler.map((m) => <div className="soru" key={m.kimlik}><span>{m.kayit_no} · Lot {m.lot_no} · {m.miktar} · {m.kabul_karari ?? 'Kontrol Bekliyor'}</span>{m.benim && !m.kabul_karari && <div className="dugmeler">{['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => yap(istek(`/malzeme-giris/${m.kimlik}/karar`, { karar: k }), 'Karar kaydedildi.')}>{k}</button>)}</div>}</div>)}
+      {ts && <>
+        <label htmlFor="sp-ted">Tedarikçi</label><select id="sp-ted" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })}><option value="">Seçiniz</option>{ted.map((x) => <option key={x.kimlik} value={x.kimlik} disabled={Boolean(x.engel)}>{x.ticari_unvan}{x.engel ? ` · ${x.engel}` : ''}</option>)}</select>
+        {yaz('teklifRef', 'Tedarikçi Teklif No')}{yaz('kullanim', 'Nihai Kullanım Yeri')}{yaz('teslimTarihi', 'Teslim Tarihi', 'date')}{yaz('teslimYeri', 'Teslim Yeri')}{yaz('olcut', 'Kabul Ölçütü')}{yaz('gerekce', 'Seçim Gerekçesi')}{yaz('tanim', 'Ürün')}{yaz('parcaNo', 'Üretici Parça No')}{yaz('miktar', 'Sipariş Miktarı')}{yaz('birim', 'Birim')}{yaz('bedel', 'Birim Bedel (EUR)')}
+        <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/siparis`, { ...f, kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: sayi(f.miktar), birim: f.birim, bedel: sayi(f.bedel) }] }), 'Sipariş onaya gönderildi.')}>Siparişi Onaya Gönder</button>
+      </>}
     </Blok>
   );
 }

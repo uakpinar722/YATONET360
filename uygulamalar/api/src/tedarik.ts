@@ -71,6 +71,13 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  s.get('/dosya/:id/siparisler', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const sp = (await b.db.query(`SELECT s.kimlik, s.siparis_no, s.statu, s.kdv_haric_eur, s.teslim_tarihi::text, k.ticari_unvan FROM tedarik_siparisi s JOIN kurulus k ON k.kimlik = s.kurulus_ref WHERE s.dosya_ref = $1 ORDER BY s.olusturma_zamani`, [id])).rows;
+    const girisler = (await b.db.query(`SELECT m.kimlik, m.kayit_no, m.siparis_ref, m.miktar, m.lot_no, m.kabul_karari, m.kontrol_eden_ref = $2 AS benim FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE s.dosya_ref = $1 ORDER BY m.olusturma_zamani`, [id, o.kullanici])).rows;
+    return { siparisler: sp, girisler };
+  });
   // YG-404, YG-405, YG-1589: lotsuz kabul yok; bekletme yeri firma veya tedarikçi (LGM deposu yok); kontrol Saha Sorumlusu, yoksa Teknik Uzman.
   s.post('/siparis/:id/giris', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { satir?: number; miktar?: number; lot?: string; irsaliye?: string; bekletmeYeri?: string };

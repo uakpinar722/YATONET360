@@ -52,7 +52,7 @@ const gir = async (ep, k, w = 1280, h = 900) => {
   return p;
 };
 const TEMP = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '.araclar', 'e2e_kanit.pdf');
-writeFileSync(TEMP, `%PDF-1.4 ${tek}`); writeFileSync(TEMP.replace('.pdf', '2.pdf'), `%PDF-1.4 ${tek}2`);
+writeFileSync(TEMP, `%PDF-1.4 ${tek}`); writeFileSync(TEMP.replace('.pdf', '2.pdf'), `%PDF-1.4 ${tek}2`); writeFileSync(TEMP.replace('.pdf', '3.pdf'), `%PDF-1.4 ${tek}3`);
 const dosyaAc = async (p, no) => {
   await p.goto(KOK); await p.reload();
   await p.getByRole('button', { name: 'Dosyalar', exact: true }).click();
@@ -220,6 +220,37 @@ try {
   await tikla(pTs, 'Havale Tahsilatı');
   kontrol('proforma, fatura bilgisi ve tahsilat ekrandan tamamlanır', (await sup.query(`SELECT durum FROM musteri_faturasi WHERE proforma_no = $1`, [pf])).rows[0].durum === 'Tahsil Edildi');
   await tasmaYok(pTs, 'mali_bolum');
+
+  // Hakediş, IBAN, ödeme talimatı
+  const pH = await firmaIsEmri(ie.is_emri_no);
+  await pH.getByLabel('Hakediş Kanıtı').setInputFiles(TEMP.replace('.pdf', '3.pdf'));
+  await pH.getByText('Dosya yüklendi.').first().waitFor();
+  await pH.getByLabel('Brüt (EUR)').fill('510'); await pH.getByLabel('Fatura No').fill(`H${tek}`);
+  await tikla(pH, 'Hakediş Gönder');
+  const h = (await sup.query(`SELECT hakedis_no FROM hakedis WHERE is_emri_ref = $1`, [ie.kimlik])).rows[0];
+  kontrol('firma hakedişi kanıtla portaldan gönderir', Boolean(h));
+  await dosyaAc(pDs, d.dosyaNo); await tikla(pDs, 'Doğrula');
+  const pSc2 = await al('sc', E);
+  await pSc2.getByRole('button', { name: 'Firma Sicili' }).click();
+  await pSc2.locator('tr', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Seç' }).click();
+  await pSc2.getByLabel('IBAN').fill('TR330006100519786457841326');
+  await tikla(pSc2, 'IBAN Ekle');
+  await pSc2.getByLabel('Belge Türü').fill('SGK Borcu Yoktur Yazısı'); await pSc2.getByLabel('Geçerlilik Bitişi').fill('2099-01-01');
+  await tikla(pSc2, 'Belge Kaydet');
+  await tasmaYok(pSc2, 'firma_sicili');
+  const pM = await al('mfm', E);
+  await pM.getByRole('button', { name: 'İdari İşlemlerim' }).click();
+  await pM.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByLabel('Teyit Kanalı').fill('Sicildeki numaradan geri arama');
+  await pM.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Teyit Et' }).click(); await pM.waitForTimeout(400); await hataVarsa(pM, 'IBAN');
+  kontrol('IBAN Sicilden girilir, Muhasebe ve Finans Müdürü teyit eder', (await sup.query(`SELECT durum FROM banka_hesabi b JOIN kurulus k ON k.kimlik = b.kurulus_ref WHERE k.kimlik = $1`, [firma])).rows[0].durum === 'Geçerli');
+  await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Ödeme Talimatı');
+  await kartKarar(E, 'mfm', h.hakedis_no, 'Onaya Gönder');
+  kontrol('Ticari Sorumlu ödeme talimatını ekrandan hazırlar', (await sup.query(`SELECT count(*)::int n FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref WHERE h.is_emri_ref = $1`, [ie.kimlik])).rows[0].n === 1);
+
+  // Teslim
+  await sup.query(`UPDATE dosya SET asama = 'Teslim' WHERE kimlik = $1`, [d.kimlik]);
+  await dosyaAc(pDs, d.dosyaNo); await tikla(pDs, 'Teslimi Başlat');
+  kontrol('Dosya Sorumlusu teslimi ekrandan başlatır, yat sahibine ONY-27 gider', (await sup.query(`SELECT count(*)::int n FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-27'`, [d.kimlik])).rows[0].n === 1);
   sonuc.push(`DOSYA ${d.dosyaNo}`);
 } catch (e) {
   sonuc.push(`KALDI  beklenmeyen: ${e.message.split('\n')[0]}`);

@@ -369,6 +369,10 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const r = (await b.db.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, giren_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [id, iban.replace(/\s/g, '').toUpperCase(), o.kullanici])).rows[0];
     return { kimlik: r.kimlik, durum: 'Karantina' };
   });
+  s.get('/banka-hesabi/bekleyen', oturumlu, async (i, y) => {
+    if (!(await roller(i.oturum!.kullanici)).includes(MFM)) return y.code(403).send({ hata: 'Teyidi Muhasebe ve Finans Müdürü yapar.' });
+    return (await b.db.query(`SELECT h.kimlik, h.iban, k.ticari_unvan FROM banka_hesabi h JOIN kurulus k ON k.kimlik = h.kurulus_ref WHERE h.durum = 'Karantina' ORDER BY h.olusturma_zamani`)).rows;
+  });
   s.post('/banka-hesabi/:id/teyit', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { kanal } = (i.body ?? {}) as { kanal?: string };
     if (!UUID.test(id)) return yok(y);

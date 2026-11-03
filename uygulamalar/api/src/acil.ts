@@ -116,6 +116,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   const islem = async <T>(f: (c: PoolClient) => Promise<T>) => { const c = await b.db.connect(); try { await c.query('BEGIN'); const r = await f(c); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); } };
 
   // YG-244: çizelgeyi Operasyon Müdür Yardımcısı hazırlar, Operasyon Müdürü onaylar; en az 10 gün önce yayımlanır, ay başına tek yürürlükte.
+  s.get('/nobet/adaylar', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async () => (await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kullanici_grubu = 'LGM İç Rolü' ORDER BY ad_soyad LIMIT 500`)).rows);
   s.post('/nobet/cizelge', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[]; degisiklik?: boolean };
     if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });

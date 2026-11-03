@@ -6,12 +6,13 @@ import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 import { YatSahibiAna } from './Portal';
 import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna } from './Ticari';
+import { FirmaSicil } from './Sicil';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet';
+type Sayfa = 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -47,6 +48,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   const menu: { s: Sayfa; ad: string; ik: string; izin?: string }[] = [
     { s: 'ana', ad: lgm ? 'Bugün' : 'Ana Sayfa', ik: '☀' },
     ...(lgm ? [{ s: 'dosya' as Sayfa, ad: 'Dosyalar', ik: '▣' }, { s: 'nobet' as Sayfa, ad: 'Nöbet ve Acil', ik: '✚' }] : []),
+    { s: 'sicil', ad: 'Firma Sicili', ik: '▦', izin: 'firma.kayit' },
     { s: 'roller', ad: 'Rol Kataloğu', ik: '▤', izin: 'rol_katalogu.goruntule' },
     { s: 'iz', ad: 'İşlem İzi', ik: '☰', izin: 'denetim_izi.goruntule' },
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
@@ -69,7 +71,8 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     dosya: <Dosyalar ben={ben} acikDosya={acikDosya} acildi={() => setAcikDosya(null)} />,
     ara: <AramaSonucu q={araQ} ac={(id) => { setAcikDosya(id); git('dosya'); }} />,
     idari: <IdariIslemler />,
-    nobet: <NobetAcil izinli={ben.izinler.includes('ihbar.kaydet')} dosyaAc={(id) => { setAcikDosya(id); git('dosya'); }} />,
+    sicil: <FirmaSicil ben={ben} />,
+    nobet: <NobetAcil cizelge={ben.izinler.includes('nobet.hazirla')} izinli={ben.izinler.includes('ihbar.kaydet')} dosyaAc={(id) => { setAcikDosya(id); git('dosya'); }} />,
     yardim: <Yakinda ad="Yardım" adim="sonraki adımlar" />,
     roller: <><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır']} /></>,
     iz: <><h1>İşlem İzi</h1><p className="not">Son 100 kayıt. Bu görüntüleme de kayda geçmiştir.</p><Tablo<Iz> yol="/denetim/izler" baslik={['Zaman', 'Kullanıcı', 'İşlem', 'Sonuç', 'Açıklama']} satir={(r) => [tarih(r.olay_zamani), r.aktor, r.eylem, r.sonuc, r.gerekce]} /></>,

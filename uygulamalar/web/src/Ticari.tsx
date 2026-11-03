@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
+import { IbanTeyit, NobetCizelge } from './Sicil';
 
 const eur = (x: string | number | null | undefined) => (x === null || x === undefined ? '—' : `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`);
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
@@ -138,6 +139,22 @@ interface IsEmri { kimlik: string; dosya: string; isEmriNo: string; tur: string;
 interface FirmaAyrinti extends IsEmri { kalemler: { aciklama: string; miktar: string; birim: string; gerceklesen_miktar: string }[] }
 interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum: string; yat_tipi: string | null; olay_turu: string; tehlike: string }
 
+/** YG-371, YG-372, YG-373: izni firma tesisten alır ve belgesini yükler; LGM düzenlemez. Sıcak iş ve kapalı alanda gaz ölçümü istenir. */
+function CalismaIzni({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [f, setF] = useState({ tur: 'Sıcak İş', tesis: '', no: '', veren: '', baslangic: '', bitis: '', belge: '', oksijen: '', yanici: '' });
+  const gaz = /sıcak|kapalı/i.test(f.tur);
+  return <Blok baslik="Çalışma İzni Belgesi">
+    <label htmlFor="ci-t">İzin Türü</label><select id="ci-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Sıcak İş', 'Kapalı Alan', 'Yüksekte Çalışma', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="ci-s">Tesis</label><input id="ci-s" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })} />
+    <label htmlFor="ci-n">İzin No</label><input id="ci-n" value={f.no} onChange={(e) => setF({ ...f, no: e.target.value })} />
+    <label htmlFor="ci-v">İzni Veren</label><input id="ci-v" value={f.veren} onChange={(e) => setF({ ...f, veren: e.target.value })} />
+    <div className="iki-tarih"><div><label htmlFor="ci-b">Başlangıç</label><input id="ci-b" type="datetime-local" value={f.baslangic} onChange={(e) => setF({ ...f, baslangic: e.target.value })} /></div><div><label htmlFor="ci-e">Bitiş (En Çok 12 Saat)</label><input id="ci-e" type="datetime-local" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} /></div></div>
+    {gaz && <div className="iki-tarih"><div><label htmlFor="ci-o">Oksijen (%)</label><input id="ci-o" inputMode="decimal" value={f.oksijen} onChange={(e) => setF({ ...f, oksijen: e.target.value })} /></div><div><label htmlFor="ci-y">Yanıcı Gaz (%)</label><input id="ci-y" inputMode="decimal" value={f.yanici} onChange={(e) => setF({ ...f, yanici: e.target.value })} /></div></div>}
+    <BelgeSec ad="İzin Belgesi" bagTuru="İş Emri" bagKimligi={isEmri} deger={f.belge} sec={(k) => setF({ ...f, belge: k })} />
+    <button className="btn2" disabled={!f.belge} onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/calisma-izni`, { ...f, baslangic: f.baslangic && new Date(f.baslangic).toISOString(), bitis: f.bitis && new Date(f.bitis).toISOString(), oksijen: gaz ? Number(f.oksijen.replace(',', '.')) : undefined, yanici: gaz ? Number(f.yanici.replace(',', '.')) : undefined }), 'İzin belgesi kaydedildi.')}>İzin Belgesini Kaydet</button>
+  </Blok>;
+}
+
 /** YG-430: firma yalnız kendi birim fiyatını girer; müşteri fiyatı görünmez. */
 function FirmaFiyat({ dosya, yap }: { dosya: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
   const [l, setL] = useState<{ kimlik: string; aciklama: string; miktar: string; birim: string }[]>([]); const [f, setF] = useState<Record<string, string>>({});
@@ -184,6 +201,7 @@ export function FirmaAna({ ben }: { ben: Ben }) {
         <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/tamamlandi`, {}))}>İş Tamamlandı</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/durdur`, { neden: not_ }))}>İşi Durdur ve Bildir</button></div>
       </Blok>}
       {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaFiyat dosya={acik.dosya} yap={yap} />}
+      {acik.statu === 'Aktif' && <CalismaIzni isEmri={acik.kimlik} yap={yap} />}
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">
         <BelgeSec ad="Hakediş Kanıtı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
         <div className="iki-tarih"><div><label htmlFor="f-br">Brüt (EUR)</label><input id="f-br" inputMode="decimal" value={brut} onChange={(e) => setBrut(e.target.value)} /></div><div><label htmlFor="f-fn">Fatura No</label><input id="f-fn" value={fat} onChange={(e) => setFat(e.target.value)} /></div></div>
@@ -247,7 +265,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
 const ACIL_TURLER = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
 
 /** YG-263, YG-264, YG-244: Acil Çağrı Aç, nöbetçi görünümü, 112 hatırlatması, nöbet devri. */
-export function NobetAcil({ dosyaAc, izinli }: { dosyaAc: (id: string) => void; izinli: boolean }) {
+export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
   const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null } | null>(null);
   const { yap, Mesaj } = useYap(() => istek<NonNullable<typeof n>>('/nobet/simdi').then(setN));
   useEffect(() => { void istek<NonNullable<typeof n>>('/nobet/simdi').then(setN).catch(() => {}); }, []);
@@ -255,6 +273,7 @@ export function NobetAcil({ dosyaAc, izinli }: { dosyaAc: (id: string) => void; 
   return (
     <>
       <h1>Nöbet ve Acil</h1><Mesaj />
+      {cizelge && <NobetCizelge />}
       {n && <div className="ozet"><div>{n.mesaiIcinde ? 'Mesai İçi' : 'Mesai Dışı'}</div><div>Nöbetçi Dosya Sorumlusu: {n.dosyaSorumlusu ?? '—'}</div><div>Nöbetçi Teknik Uzman: {n.teknikUzman ?? '—'}</div><div>Yönetici Nöbetçisi: {n.yonetici ?? '—'}</div></div>}
       {izinli && <><div className="bolum">Acil Çağrı Aç</div>
         <div className="ozet">
@@ -280,6 +299,7 @@ export function IdariIslemler() {
   return (
     <>
       <h1>İdari İşlemlerim</h1><Mesaj />
+      <IbanTeyit />
       <Blok baslik="İzin Talebi">
         <label htmlFor="iz-t">İzin Türü</label><select id="iz-t" value={iz.tur} onChange={(e) => setIz({ ...iz, tur: e.target.value })}>{['Yıllık', 'Mazeret', 'Ücretsiz', 'Rapor'].map((x) => <option key={x}>{x}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="iz-b">Başlangıç</label><input id="iz-b" type="date" value={iz.baslangic} onChange={(e) => setIz({ ...iz, baslangic: e.target.value })} /></div><div><label htmlFor="iz-s">Bitiş</label><input id="iz-s" type="date" value={iz.bitis} onChange={(e) => setIz({ ...iz, bitis: e.target.value })} /></div></div>
