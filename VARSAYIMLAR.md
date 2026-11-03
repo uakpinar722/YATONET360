@@ -71,3 +71,7 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-65 | 6 | Otomatik sigorta iletileri | BLD-45 ve BLD-72 gibi kendiliğinden üretilen iletilerde son gönderen Dosya Sorumlusu veya Yedek Sorumlu sayılır; teyit gelene kadar ileti gitmez | `sigorta_gonderim.ts` | Kabul (VAR-5, CEO 03.11.2026) |
 | V-66 | 6 | Teyit arası süre | İki teyit arasında en az 2 saniye (parametre); ikinci düğme bu sürede kapalı | `0019` | Kabul (VAR-5, CEO 03.11.2026) |
 | V-67 | 6 | Sigorta tarafı tanımı | Adres dosyanın sigorta tarafı kaydından tanınır; eksper ve sigorta portal kullanıcısının sistem içi bildirimi kapsam dışı | `bildirim.ts` | Kabul (VAR-5, CEO 03.11.2026) |
+| V-68 | 7 | Tedarikçi sipariş kabul kodu | YG-1577 SMS kodu diyor; YG-1150 kurumsal dış kullanıcıya doğrulama uygulaması diyor. Firma ile aynı doğrulama uygulaması kodu kullanıldı (V-45); SMS yalnız uygulamayı kullanamayan için ileride | `portallar.ts` | Sunulacak |
+| V-69 | 7 | Portalsız tedarikçi | Portal kullanıcısı olan tedarikçide malzeme girişi sipariş kabulünden sonra yapılır; kullanıcısı olmayanda Tedarik Sorumlusu kabulsüz giriş açabilir | `tedarik.ts` | Sunulacak |
+| V-70 | 7 | BLD-23 zamanı | Teslim ve taşıma kısıtı bildirimi, dosya için o tesise açılan ilk talepte gider | `portallar.ts` | Sunulacak |
+| V-71 | 7 | Nazik metin kapsamı | YG-1576 sistem hata ve yönlendirme metinlerine uygulandı; onaylı BLD ve ONY metinlerine dokunulmadı | `api/src` | Sunulacak |
