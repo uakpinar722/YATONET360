@@ -104,6 +104,7 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
       await db.query(`UPDATE ayrilis_devri SET durum = 'Birim Amirine Atandı', devralan_ref = $2, zaman = now() WHERE kimlik = $1`, [d.kimlik, amir]);
     }
     await db.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE kimlik = $1`, [a.personel_ref]);
+    await (await import('./mobil.js')).cihazIptal(db, a.personel_ref, 'Ayrılış'); // YG-498
     await db.query(`UPDATE personel_karti SET personel_durumu = 'Ayrıldı', ayrilis_tarihi = $2 WHERE kullanici_ref = $1`, [a.personel_ref, a.son_is_gunu]);
     await db.query(`UPDATE personel_ayrilisi SET durum = 'Kapandı' WHERE kimlik = $1`, [a.kimlik]);
     await kartAc(db, { tur: 'SGK İşten Ayrılış Bildirgesi', kategori: 'islem', baslik: 'SGK İşten Ayrılış Bildirgesi', ozet: 'Bildirgenin 10 gün içinde verilmesi rica olunur.', oncelik: 'Yüksek', sonZaman: new Date(new Date(a.son_is_gunu).getTime() + 10 * 86_400_000), sahipRol: await rolId(db, IKS), nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik }); // YG-933

@@ -109,11 +109,13 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   });
 
   s.post('/kayit/tamamla', async (i, y) => {
-    const g = (i.body ?? {}) as { telefon?: string; kod?: string; ad?: string; eposta?: string; dil?: string };
+    const g = (i.body ?? {}) as { telefon?: string; kod?: string; ad?: string; eposta?: string; dil?: string; yetkili?: { rol?: string; sahipAd?: string; sahipTelefon?: string; sahipEposta?: string } };
     const n = kimlikNormalle(g.telefon ?? '');
     if (!n.telefon) return y.code(400).send({ hata: 'Telefon geçersiz.' });
     if (!g.ad?.trim()) return y.code(400).send({ hata: 'Ad soyad zorunludur.' });
     if (g.eposta && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta)) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
+    const st = g.yetkili ? kimlikNormalle(g.yetkili.sahipTelefon ?? '') : null; // YG-1561
+    if (g.yetkili && (!['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Diğer'].includes(g.yetkili.rol ?? '') || !g.yetkili.sahipAd?.trim() || !st?.telefon)) return y.code(400).send({ hata: 'Rolünüzü ve yat sahibinin adı ile telefonunu girmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -128,6 +130,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
         [GRUP_YAT, g.ad.trim(), n.telefon, g.eposta?.trim() || null, g.dil === 'en' ? 'İngilizce' : 'Türkçe'])).rows[0];
       await c.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1,$2)`, [h.kimlik, await rolId(c, 'Müşteri Portal Kullanıcısı')]);
       await c.query(`DELETE FROM kayit_kodu WHERE telefon = $1`, [n.telefon]);
+      if (g.yetkili) await c.query(`INSERT INTO yat_yetkilisi_kaydi (kullanici_ref, rol, sahip_ad, sahip_telefon, sahip_eposta) VALUES ($1,$2,$3,$4,$5)`, [h.kimlik, g.yetkili.rol, g.yetkili.sahipAd!.trim(), st!.telefon, g.yetkili.sahipEposta?.trim() || null]);
       // YG-463: ihbarda girilen numara hesabı açınca dosya kendiliğinden görünür.
       await c.query(`UPDATE taraf SET kullanici_ref = $2 WHERE telefon = $1 AND kullanici_ref IS NULL`, [n.telefon, h.kimlik]);
       await c.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE telefon = $1 AND kullanici_ref IS NULL AND taraf_rolu = 'Yat Sahibi'`, [n.telefon, h.kimlik]);
@@ -178,8 +181,9 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const red = musteri(o.grup, y); if (red) return red;
     const dosyalar = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.birlestirilen_ana_dosya_ref IS NULL AND (${benimDosyalarim}) ORDER BY d.statu = 'Kapalı', d.acilis_tarihi DESC`, [o.kullanici])).rows;
     const talepler = (await b.db.query(`SELECT t.kimlik, t.talep_no, t.statu, t.kayda_gecis_zamani, y.yat_adi FROM talep t JOIN yat y ON y.kimlik = t.yat_ref WHERE t.olusturan_ref = $1 AND t.dosya_ref IS NULL AND t.statu NOT IN ('Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY t.kayda_gecis_zamani DESC`, [o.kullanici])).rows;
-    const onaylar = (await b.db.query(`SELECT t.kimlik, t.baslik, t.belge_adi, t.son_gecerlilik, d.dosya_no FROM onay_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.alici_kullanici_ref = $1 AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() ORDER BY t.olusturma_zamani DESC`, [o.kullanici])).rows;
-    return { onaylar, dosyalar: await Promise.all(dosyalar.map(kart)), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
+    const yetkili = (await b.db.query(`SELECT rol, sahip_ad, belge_durumu, ust_limit_eur, bitis_tarihi::text, odeme_yetkisi FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.kullanici])).rows[0] ?? null; // YG-1566
+    const onaylar = (await b.db.query(`SELECT t.kimlik, t.ony_kod, t.baslik, t.belge_adi, t.son_gecerlilik, d.dosya_no FROM onay_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.alici_kullanici_ref = $1 AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() ORDER BY t.olusturma_zamani DESC`, [o.kullanici])).rows;
+    return { yetkili, onaylar, dosyalar: await Promise.all(dosyalar.map(kart)), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
   });
 
   s.get('/portal/dosya/:id', oturumlu, async (i, y) => {

@@ -220,6 +220,7 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/kimlik/cikis', { preHandler: tamOturumGerekli(b, true) }, async (i, y) => {
     await oturumKapat(b, i.oturum!.oturum, 'Çıkış');
+    await (await import('./mobil.js')).oturumCihazIptal(b.db, i.oturum!.oturum); // YG-498
     await izYaz(b.db, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Çıkış', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     y.clearCookie(COOKIE_ADI, { path: '/' });
     return { tamam: true };

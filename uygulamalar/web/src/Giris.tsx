@@ -32,7 +32,7 @@ const T = {
   },
 };
 type Dil = keyof typeof T;
-type Adim = 'giris' | 'kod' | 'hesap' | 'unuttum' | 'yatsahibi';
+type Adim = 'giris' | 'kod' | 'hesap' | 'unuttum' | 'yatsahibi' | 'yatyetkili';
 
 export function KodKutulari({ deger, degisti }: { deger: string; degisti: (s: string) => void }) {
   const kutu = useRef<(HTMLInputElement | null)[]>([]);
@@ -154,7 +154,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
             <h2>{t.hb}</h2>
             <div className="not">{t.hn}</div>
             {([['s1', 's1a'], ['s5', 's5a'], ['s2', 's2a'], ['s3', 's3a'], ['s4', 's4a']] as const).map(([b, a]) => (
-              <button key={b} type="button" className="secenek" onClick={() => { if (b === 's1') setAdim('yatsahibi'); else setNot(t.yakinda); }}><b>{t[b]}</b><span>{t[a]}</span></button>
+              <button key={b} type="button" className="secenek" onClick={() => { if (b === 's1') setAdim('yatsahibi'); else if (b === 's5') setAdim('yatyetkili'); else setNot(t.yakinda); }}><b>{t[b]}</b><span>{t[a]}</span></button>
             ))}
             {not && <div className="not orta">{not}</div>}
             <button type="button" className="lnk" onClick={geri}>{t.geri}</button>
@@ -162,6 +162,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
         )}
 
         {adim === 'yatsahibi' && <YatSahibiKayit bitti={girdi} geri={() => setAdim('hesap')} />}
+        {adim === 'yatyetkili' && <YatSahibiKayit yetkili bitti={girdi} geri={() => setAdim('hesap')} />}
 
         <div className="alt">
           <span className="dil">

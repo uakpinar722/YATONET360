@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "YATONET 360",
+    "slug": "yatonet360",
+    "version": "0.1.0",
+    "orientation": "default",
+    "android": { "package": "com.limitglobalmarine.yatonet360", "permissions": ["ACCESS_FINE_LOCATION", "CAMERA"] },
+    "ios": { "bundleIdentifier": "com.limitglobalmarine.yatonet360", "supportsTablet": true },
+    "plugins": [["expo-sqlite", { "useSQLCipher": true }], "expo-secure-store", "expo-notifications", "expo-location"]
+  }
+}

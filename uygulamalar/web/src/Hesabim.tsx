@@ -48,7 +48,7 @@ const izinAdi = (z: Izin) => z.amac ?? z.kanal ?? z.tur.replace('Özel gün – 
 export function Profilim() {
   const [p, setP] = useState<Profil | null>(null);
   const [hata, setHata] = useState(''); const [not, setNot] = useState('');
-  const [eski, setEski] = useState(''); const [yeni, setYeni] = useState('');
+  const [kapat, setKapat] = useState(false); const [eski, setEski] = useState(''); const [yeni, setYeni] = useState('');
   const yukle = () => istek<Profil>('/profil').then(setP).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, []);
   const yap = async (f: () => Promise<unknown>, n: string) => {
@@ -105,6 +105,12 @@ export function Profilim() {
         {kanal.length > 0 && <div className="kanallar">{kanal.map(kutu)}</div>}
       </>)}
 
+      {p.dis && <>
+        <h2 className="ara">Hesabımı Kapat</h2>
+        <div className="not">Hesabınız kapatılır; dosya kayıtları yasal saklama süresince korunur.</div>
+        <label className="kutu"><input type="checkbox" checked={kapat} onChange={(e) => setKapat(e.target.checked)} /><span>Hesabımın kapatılacağını anladım.</span></label>
+        <button className="btn hayir" disabled={!kapat} onClick={() => void yap(() => istek('/hesabim/kapatma-talebi', { onay: true }).then(() => { window.location.reload(); }), 'Hesabınız kapatıldı.')}>Hesabımı Kapat</button>
+      </>}
       <h2 className="ara">Parola Değiştir</h2>
       <form className="dar-form" onSubmit={(e) => { e.preventDefault(); void yap(async () => { await istek('/kimlik/parola', { eski, yeni }); setEski(''); setYeni(''); }, 'Parolanız değiştirilmiştir.'); }}>
         <label htmlFor="pe">Mevcut Parola</label>

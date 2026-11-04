@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek, type Ben } from './api';
+import { BelgeSec } from './Kalite';
 
 interface Kart { kimlik: string; dosyaNo: string; yat: string; durum: string; renk: string; ilerleme?: number; dosyaSorumlusu?: string | null }
 interface OnayKart { kimlik: string; baslik: string; belge_adi: string; dosya_no: string | null }
-interface Ana { onaylar: OnayKart[]; dosyalar: Kart[]; talepler: Kart[] }
+interface Yetkili { rol: string; sahip_ad: string; belge_durumu: string; ust_limit_eur: string | null; bitis_tarihi: string | null; odeme_yetkisi: boolean }
+interface Ana { yetkili: Yetkili | null; onaylar: (OnayKart & { ony_kod?: string })[]; dosyalar: Kart[]; talepler: Kart[] }
 interface OnayEkran { baslik: string; metin: string; dugme: string; kutular: { ad: string; zorunlu?: boolean }[]; formTuru: string | null; durum: string; epostaKodu: boolean; telefonSonu: string | null; dosyaNo: string | null; onyKod: string }
 
 const Durum = ({ k }: { k: Kart }) => <span className={`m-durum m-${k.renk === 'kırmızı' ? 'k' : k.renk === 'sarı' ? 's' : k.renk === 'gri' ? 'g' : 'y'}`}>{k.durum}</span>;
@@ -22,9 +24,12 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
     <>
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
-      {v && v.onaylar.length > 0 && <>
+      {v?.yetkili && <div className="not">{v.yetkili.rol} · {v.yetkili.sahip_ad}</div>}
+      {v?.onaylar.filter((o) => o.ony_kod === 'ONY-30').map((o) => <div className="hata" key={o.kimlik} role="alert"><b>⚠ Yata Erişim İzni</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<div>Acil müdahale için ekibin yata erişmesine izin vermeniz istenmektedir.</div><button className="btn" onClick={() => setOnay(o.kimlik)}>İncele</button></div>)}
+      {v?.yetkili && <Yetkilerim ben={ben} y={v.yetkili} yenile={() => void yukle()} />}
+      {v && v.onaylar.some((o) => o.ony_kod !== 'ONY-30') && <>
         <div className="bolum">Onayınızı Bekleyenler</div>
-        {v.onaylar.map((o) => <div className="ozet" key={o.kimlik}><b>{o.belge_adi}</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<button className="btn" onClick={() => void istek<{ belirtec: string }>(`/portal/onay/${o.kimlik}/ac`, {}).then((r) => setOnay(r.belirtec)).catch((e) => setHata(e.message))}>İncele ve Onayla</button></div>)}
+        {v.onaylar.filter((o) => o.ony_kod !== 'ONY-30').map((o) => <div className="ozet" key={o.kimlik}><b>{o.belge_adi}</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<button className="btn" onClick={() => void istek<{ belirtec: string }>(`/portal/onay/${o.kimlik}/ac`, {}).then((r) => setOnay(r.belirtec)).catch((e) => setHata(e.message))}>İncele ve Onayla</button></div>)}
       </>}
       <div className="bolum">Dosyalarım</div>
       {v && v.dosyalar.length + v.talepler.length === 0 && <div className="ozet bos">Dosyanız bulunmamaktadır.</div>}
@@ -191,13 +196,28 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
 }
 
 /** Y1: Yat Sahibi Kaydı: telefon, kod, bilgiler. Koşul, aydınlatma ve izin adımları kayıt sonrası ilk giriş akışında gelir. */
-export function YatSahibiKayit({ bitti, geri }: { bitti: () => void; geri: () => void }) {
+/** YG-1566: metinler A2 taslağından. */
+function Yetkilerim({ ben, y, yenile }: { ben: Ben; y: Yetkili; yenile: () => void }) {
+  const [b, setB] = useState(''); const [h, setH] = useState('');
+  return <>
+    <div className="bolum">Yetkilerim</div>
+    <div className="ozet">{y.sahip_ad} adına yapabileceğiniz işlemler aşağıda gösterilmiştir.
+      {y.belge_durumu === 'Geçerli' ? <div>Yetki Belgesi Geçerli{y.ust_limit_eur ? ` · Üst Limit: ${y.ust_limit_eur} EUR` : ''}{y.bitis_tarihi ? ` · Bitiş: ${y.bitis_tarihi}` : ''}{!y.odeme_yetkisi && <div>Yetki belgeniz ödeme ve onay yetkisi içermediğinden onay işlemleri yat sahibine iletilecektir.</div>}<div>Yetki sınırınızı aşan veya yetki belgenizde yer almayan işlemler yat sahibinin onayına iletilir.</div></div>
+        : y.belge_durumu === 'Kontrolde' ? <div>Yetki belgeniz kontrol edilmektedir.</div>
+        : <><div><b>Yetki Belgesi Bekleniyor</b></div><div>Yetki belgeniz sisteme ulaşana kadar dosyaları, teknik raporu ve fiyat teklifini görüntüleyebilirsiniz; bu sürede onay işlemleri yat sahibine iletilecektir.</div><div>Vekâletname, yetki yazısı veya yat yönetim sözleşmesi (PDF ya da fotoğraf).</div>
+          {h && <div className="hata" role="alert">{h}</div>}<BelgeSec ad="Yetki Belgesi" bagTuru="Yat Yetkilisi" bagKimligi={ben.kimlik} deger={b} sec={setB} /><button className="btn2" disabled={!b} onClick={() => void istek('/yetkilerim/belge', { belge: b }).then(yenile).catch((e) => setH(e.message))}>Yetki Belgesi Yükle</button></>}
+    </div>
+  </>;
+}
+
+export function YatSahibiKayit({ bitti, geri, yetkili }: { bitti: () => void; geri: () => void; yetkili?: boolean }) {
+  const [yt, setYt] = useState({ rol: '', sahipAd: '', sahipTelefon: '+90', sahipEposta: '' });
   const [adim, setAdim] = useState<'tel' | 'kod'>('tel'); const [tel, setTel] = useState('+90'); const [kod, setKod] = useState(''); const [ad, setAd] = useState(''); const [ep, setEp] = useState(''); const [hata, setHata] = useState('');
   const kodAl = async (e: FormEvent) => { e.preventDefault(); setHata(''); try { await istek('/kayit/kod', { telefon: tel }); setAdim('kod'); } catch (x) { setHata((x as Error).message); } };
-  const tamam = async (e: FormEvent) => { e.preventDefault(); setHata(''); try { await istek('/kayit/tamamla', { telefon: tel, kod, ad, eposta: ep || undefined }); bitti(); } catch (x) { setHata((x as Error).message); } };
+  const tamam = async (e: FormEvent) => { e.preventDefault(); setHata(''); try { await istek('/kayit/tamamla', { telefon: tel, kod, ad, eposta: ep || undefined, yetkili: yetkili ? { ...yt, sahipEposta: yt.sahipEposta || undefined } : undefined }); bitti(); } catch (x) { setHata((x as Error).message); } };
   return (
     <div>
-      <h2>Yat Sahibi Kaydı</h2>
+      <h2>{yetkili ? 'Yat Sahibi Adına İşlem Yapıyorum' : 'Yat Sahibi Kaydı'}</h2>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {adim === 'tel' ? (
         <form onSubmit={(e) => void kodAl(e)}>
@@ -211,7 +231,15 @@ export function YatSahibiKayit({ bitti, geri }: { bitti: () => void; geri: () =>
           <label htmlFor="y-a">Ad Soyad</label><input id="y-a" value={ad} onChange={(e) => setAd(e.target.value)} />
           <label htmlFor="y-e">E-Posta</label><input id="y-e" type="email" value={ep} onChange={(e) => setEp(e.target.value)} />
           <div className="not">Teklif ve belgeleriniz PDF olarak bu adrese de gönderilecektir.</div>
-          <button className="btn" disabled={kod.length !== 6 || !ad.trim()}>Hesabımı Oluştur</button>
+          {yetkili && <>
+            <label htmlFor="yy-r">Yat Sahibine Göre Rolünüz</label><select id="yy-r" value={yt.rol} onChange={(e) => setYt({ ...yt, rol: e.target.value })}><option value="">Seçiniz</option>{['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+            <div className="not">Adına işlem yaptığınız yat sahibinin bilgilerini giriniz. Yat sahibine bilgilendirme mesajı gönderilecektir.</div>
+            <label htmlFor="yy-a">Yat Sahibinin Adı Soyadı / Unvanı</label><input id="yy-a" value={yt.sahipAd} onChange={(e) => setYt({ ...yt, sahipAd: e.target.value })} />
+            <label htmlFor="yy-t">Yat Sahibinin Cep Telefonu</label><input id="yy-t" inputMode="tel" value={yt.sahipTelefon} onChange={(e) => setYt({ ...yt, sahipTelefon: e.target.value })} />
+            <label htmlFor="yy-e">Yat Sahibinin E-Postası</label><input id="yy-e" type="email" value={yt.sahipEposta} onChange={(e) => setYt({ ...yt, sahipEposta: e.target.value })} />
+            <div className="not">Yetki belgesi olmadan talep açabilir ve dosyayı izleyebilirsiniz. Teklif onayı gibi işlemler yalnız yetki belgesinde yazılı kapsam, tutar ve süre içinde yapılabilir.</div>
+          </>}
+          <button className="btn" disabled={kod.length !== 6 || !ad.trim() || (yetkili && (!yt.rol || !yt.sahipAd.trim()))}>Hesabımı Oluştur</button>
         </form>
       )}
       <button type="button" className="lnk" onClick={geri}>← Geri</button>
