@@ -411,6 +411,22 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
 
 /** YG-948, YG-920: İdari İşlemlerim: izin ve masraf. Metin sağlık veya tanı bilgisi içermez (YG-952). */
 /** YG-845, YG-918: tedarikçi faturaları vade sırasıyla; ödeme yalnız üçlü eşleşmeden sonra kaydedilir. */
+/** YG-830: onaylı firma ödeme talimatı bankada ödenince kaydedilir. */
+function FirmaOdemeleri() {
+  const [l, setL] = useState<{ kimlik: string; tutar_eur: string; hakedis_no: string; firma_fatura_no: string; ticari_unvan: string; plan: string; tahsilataBagli: boolean }[]>([]); const [ref, setRef] = useState<Record<string, string>>({});
+  const yukle = () => istek<typeof l>('/firma-odemeleri').then(setL);
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { void yap(yukle); }, []);
+  return (
+    <Blok baslik="Çözüm Ortağı Ödemeleri"><Mesaj />
+      {l.length === 0 && <div className="not">Onaylı ödeme talimatı bulunmamaktadır.</div>}
+      {l.map((t) => <div className="soru" key={t.kimlik}><span><b className="koyu">{t.hakedis_no}</b> · {t.ticari_unvan} · Fatura: {t.firma_fatura_no} · {eur(t.tutar_eur)} · Plan: {t.plan.split('-').reverse().join('.')}{t.tahsilataBagli ? ' · Tahsilata Bağlı' : ''}</span>
+        <div className="tam"><label htmlFor={`fo-${t.kimlik}`}>Banka İşlem Referansı</label><input id={`fo-${t.kimlik}`} value={ref[t.kimlik] ?? ''} onChange={(e) => setRef({ ...ref, [t.kimlik]: e.target.value })} /><button className="btn evet" disabled={!ref[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-odemeleri/${t.kimlik}/odendi`, { referans: ref[t.kimlik] }))}>Ödendi Olarak Kaydet</button></div>
+      </div>)}
+    </Blok>
+  );
+}
+
 export function TedarikciOdemeleri() {
   const [l, setL] = useState<{ kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; vade: string; ticari_unvan: string; siparis_no: string; eslestirme: string | null }[]>([]);
   const yukle = () => istek<typeof l>('/tedarikci-odemeleri').then(setL);
@@ -419,6 +435,7 @@ export function TedarikciOdemeleri() {
   return (
     <>
       <h1>Tedarikçi Ödemeleri</h1><Mesaj />
+      <FirmaOdemeleri />
       <Blok baslik="Açık Faturalar">
         {l.length === 0 && <div className="not">Açık fatura bulunmamaktadır.</div>}
         {l.map((f) => <div className="soru" key={f.kimlik}><span><b className="koyu">{f.fatura_no}</b> · {f.ticari_unvan} · {f.siparis_no} · {eur(f.tutar_eur)} · Vade: {f.vade.split('-').reverse().join('.')} · Üçlü Eşleşme: {f.eslestirme ?? 'Bekleniyor'}</span><button className="btn2 kucuk" disabled={f.eslestirme !== 'Eşleşti'} onClick={() => void yap(() => istek(`/tedarikci-odemeleri/${f.kimlik}/odendi`, {}))}>Ödendi Olarak Kaydet</button></div>)}

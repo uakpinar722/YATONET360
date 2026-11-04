@@ -4,7 +4,7 @@ import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ik: 'İnsan Kaynakları Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ik: 'İnsan Kaynakları Sorumlusu', my: 'Muhasebe ve Finans Yöneticisi' };
 let o: Ortam; let firma: string; let firmaC: string;
 const IBAN_OK = 'TR330006100519786457841326';
 
@@ -192,6 +192,18 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
     expect((await o.karar(k.kimlik, 'mfm', 'Onaya Gönder')).statusCode).toBe(200);
     expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM odeme_talimati WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Onaylandı');
+    // YG-830: hazırlayan, onaylayan ve ödeyen farklı; plan tarihi gelmeden kaydedilmez; ödenince hakediş kapanış kapısından çıkar
+    const u = `/api/firma-odemeleri/${r.json().kimlik}/odendi`; const my = await o.gir('my');
+    expect((await o.ist('POST', u, await o.gir('ds'), { referans: 'B1' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ts, { referans: 'B1' })).json().hata).toContain('hazırlayan');
+    expect((await o.ist('POST', u, await o.gir('mfm'), { referans: 'B1' })).json().hata).toContain('hazırlayan');
+    expect((await o.ist('POST', u, my, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', u, my, { referans: 'B1' })).json().hata).toContain('planı tarihi');
+    expect((await o.ist('GET', '/api/firma-odemeleri', my)).json().some((x: { kimlik: string }) => x.kimlik === r.json().kimlik)).toBe(true);
+    await o.sup.query(`UPDATE odeme_talimati SET olusturma_zamani = now() - interval '121 days' WHERE kimlik = $1`, [r.json().kimlik]);
+    const od = await o.ist('POST', u, my, { referans: `B-${Date.now()}` }); expect(od.statusCode, od.body).toBe(200);
+    expect((await o.sup.query(`SELECT statu FROM hakedis WHERE kimlik = $1`, [h])).rows[0].statu).toBe('Ödendi');
+    expect((await o.ist('POST', u, my, { referans: 'B2' })).statusCode).toBe(409);
   });
 });
 

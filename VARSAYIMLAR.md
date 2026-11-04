@@ -134,3 +134,4 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-128 | 5 | Kurumsal kurum tanımı | Kurumu ve ilk yetkiliyi A53 Müşteri ve Paydaş İlişkileri Müdürü tanımlar; ilk yetkili Onaylayan olur; kullanıcıyı yalnız kurum yetkilisi ekler ve kapatır | `kurumsal.ts` | Kabul (VAR-20, CEO) |
 | V-129 | 5 | Kurumsal roller | İzleyici görür; Talep Açan talep de açar; Onaylayan onay da verir; Ek-2 onay sınırı kurum düzeyinde tek tutar olarak tutulur | `kurumsal.ts` | Kabul (VAR-20, CEO) |
 | V-130 | 5 | Kurum dosyaları | Kurum kullanıcısı, yat sahibi kurum olan yatların dosyalarını görür | `portal.ts` | Kabul (VAR-20, CEO) |
+| V-131 | 5 | Firma ödeme kaydı | Onaylı talimatı, hazırlayan, onaylayan ve teknik kabulü veren dışındaki muhasebe kadrosu banka referansıyla kaydeder. Plan tarihinden önce kaydedilmez; tahsilat geldiyse plan tahsilat tarihinden yeniden hesaplanır. Firmaya portal bildirimi gider | `kurum_hesap.ts` | Bekliyor (VAR-21) |

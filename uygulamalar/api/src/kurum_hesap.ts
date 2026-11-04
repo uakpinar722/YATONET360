@@ -6,7 +6,8 @@ import { davetOlustur } from './ilk_giris.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { bankaHesabiAc, ibanGecerli } from './ticari.js';
+import { bankaHesabiAc, firmaOdemePlani, ibanGecerli } from './ticari.js';
+import { parametre } from './teklif.js';
 import { dosyaErisimi } from './dosya.js';
 import { UUID } from './yat.js';
 
@@ -204,6 +205,42 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     const kisiler = (await b.db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [f.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
     await bildir(b.db, { olay: `tedarikci-odeme:${id}`, kullanicilar: kisiler, baslik: `Fatura ${f.fatura_no} Ödendi` });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Tedarikçi Ödemesi', nesneTuru: 'Tedarikçi Faturası', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { durum: 'Ödendi' };
+  });
+
+  // YG-830: onaylı talimat bankada ödenince kaydedilir; plan tahsilat geldiyse güncel tahsilat tarihinden yeniden hesaplanır (V-131).
+  const planTarihi = async (dosya: string, olusturma: Date) => {
+    const th = (await b.db.query(`SELECT max(tarih) t FROM tahsilat WHERE dosya_ref = $1`, [dosya])).rows[0].t;
+    return firmaOdemePlani(th ? new Date(th) : null, olusturma, await parametre(b.db, 'firma_odeme_gun'), await parametre(b.db, 'firma_odeme_azami_gun'));
+  };
+  s.get('/firma-odemeleri', oturumlu, async (i, y) => {
+    if (!(await muhasebeMi(i.oturum!.kullanici))) return yok(y);
+    const l = (await b.db.query(`SELECT t.kimlik, t.tutar_eur, t.olusturma_zamani, h.hakedis_no, h.dosya_ref, h.firma_fatura_no, u.ticari_unvan FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref JOIN kurulus u ON u.kimlik = t.kurulus_ref WHERE t.durum = 'Onaylandı' ORDER BY t.olusturma_zamani`)).rows;
+    return Promise.all(l.map(async (x) => { const p = await planTarihi(x.dosya_ref, x.olusturma_zamani); return { kimlik: x.kimlik, tutar_eur: x.tutar_eur, hakedis_no: x.hakedis_no, firma_fatura_no: x.firma_fatura_no, ticari_unvan: x.ticari_unvan, plan: p.tarih.toISOString().slice(0, 10), tahsilataBagli: p.tahsilataBagli }; }));
+  });
+  s.post('/firma-odemeleri/:id/odendi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const referans = ((i.body ?? {}) as { referans?: string }).referans?.trim();
+    if (!UUID.test(id) || !(await muhasebeMi(o.kullanici))) return yok(y);
+    const t = (await b.db.query(`SELECT t.*, h.dosya_ref, h.hakedis_no, e.teknik_kabul_eden_ref FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE t.kimlik = $1`, [id])).rows[0];
+    if (!t) return yok(y);
+    if (t.durum !== 'Onaylandı') return y.code(409).send({ hata: 'Ödeme talimatı onaylı değildir.' });
+    if (!referans) return y.code(400).send({ hata: 'Banka işlem referansını yazmanızı rica ederiz.' });
+    const onaylayan = (await b.db.query(`SELECT 1 FROM is_karti_adim a JOIN is_karti k ON k.kimlik = a.is_ref WHERE k.tur = 'Firma Ödeme Talimatı' AND k.nesne_kimligi = $1 AND a.yapan_ref = $2 LIMIT 1`, [id, o.kullanici])).rowCount;
+    if (o.kullanici === t.hazirlayan_ref || onaylayan || o.kullanici === t.teknik_kabul_eden_ref) return y.code(409).send({ hata: 'Talimatı hazırlayan, onaylayan veya teknik kabulü veren kişi ödemeyi kaydedemez; başka bir yetkiliden işlem bekleniyor.' }); // YG-827, YG-830
+    if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli banka hesabı bekleniyor.' }); // YG-928
+    const p = await planTarihi(t.dosya_ref, t.olusturma_zamani);
+    if (p.tarih.getTime() > Date.now()) return y.code(409).send({ hata: `Ödeme planı tarihi ${p.tarih.toISOString().slice(0, 10).split('-').reverse().join('.')} olup bu tarih bekleniyor.` });
+    if ((await b.db.query(`SELECT 1 FROM odeme_talimati WHERE banka_referansi = $1`, [referans])).rowCount) return y.code(409).send({ hata: 'Bu banka referansıyla kayıt vardır; mükerrer ödeme engellendi.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE odeme_talimati SET durum = 'Ödendi', odeyen_ref = $2, odeme_zamani = now(), banka_referansi = $3 WHERE kimlik = $1`, [id, o.kullanici, referans]);
+      await c.query(`UPDATE hakedis SET statu = 'Ödendi' WHERE kimlik = $1`, [t.hakedis_ref]);
+      const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [t.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
+      await bildir(c, { olay: `firma-odeme:${id}`, kullanicilar: kisiler, baslik: `${t.hakedis_no} Ödendi` });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Ödemesi', nesneTuru: 'Ödeme Talimatı', nesneKimligi: id, yeni: { referans }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
     return { durum: 'Ödendi' };
   });
 }
