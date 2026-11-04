@@ -9,7 +9,7 @@ import { parolaOzetle } from '../src/parola.js';
 import { DenemeKutusu } from '../src/sms.js';
 import { sunucuKur } from '../src/sunucu.js';
 
-const PAROLA = 'Sinama-Parolasi-2026!'; const D = '@deneme.yatonet.local';
+export const PAROLA = 'Sinama-Parolasi-2026!'; const D = '@deneme.yatonet.local';
 const H = { 'x-yatonet': '1' };
 const ckr = (r: any) => r.cookies.find((c: any) => c.name === COOKIE_ADI)?.value as string;
 
@@ -32,6 +32,7 @@ export async function ortamKur(vt: string, kadro: Record<string, string>): Promi
   await a.connect(); await a.query(`DROP DATABASE IF EXISTS ${vt} WITH (FORCE)`); await a.end();
   const sup = await kurVeritabani(vt, { superParola: e.POSTGRES_SUPER_PAROLA!, uygulamaParola: e.YATONET_DB_PAROLA!, denemeHesap: false });
   await denemeHesaplari(sup, null);
+  await sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sozlesme_kapisi'`); // YG-923: yalnız alacak.test.ts açar
   const oz = await parolaOzetle(PAROLA); const K: Record<string, string> = {};
   for (const [k, rol] of Object.entries(kadro)) {
     const { rows } = await sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi) VALUES ('İç Kullanıcı','LGM İç Rolü',$1,$2,$2,$3,'Doğrulama uygulaması (6 haneli kod)') RETURNING kimlik`, [`Deneme ${rol} ${k}`, k + D, oz]);

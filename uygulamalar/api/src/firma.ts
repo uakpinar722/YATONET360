@@ -13,6 +13,7 @@ import { altNumara, sayac } from './sure.js';
 import { belgeUret } from './belge_uret.js';
 import { performansOlayIsle } from './karne.js';
 import { isBasiAvansEngeli } from './tedarik.js';
+import { isAcmaEngeli as blokeSozlesmeDisi, sozlesmeEngeli } from './alacak.js';
 import { baslangicToplantiEngeli, isDurduBildir } from './saha_kayit.js';
 import { ekonomikKilitEngeli } from './yat_degeri.js';
 import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
@@ -204,6 +205,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     }
     // YG-211: sigortasız dosyada keşif, Keşif ve Söküm İzni onaylanmadan KN iş emri açılmaz.
     if (g.tur === 'KN' && d.dosya_niteligi !== 'Sigorta bağlantılı' && !(await b.db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod IN ('ONY-01', 'ONY-24') AND durum = 'Onaylandı'`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için yat sahibinin keşif izni bekleniyor.' });
+    { const e1 = await sozlesmeEngeli(b.db, g.firma!) ?? await blokeSozlesmeDisi(b.db, id, g.tur!); if (e1) return y.code(409).send({ hata: e1 }); } // YG-923, YG-909, YG-1490
     // YG-1487: bireyselde Keşif Ücreti keşiften önce ödenir.
     if (g.tur === 'KN' && d.musteri_turu === 'Bireysel Müşteri' && (await b.db.query(`SELECT 1 FROM odeme_talebi WHERE dosya_ref = $1 AND tur = 'Keşif Ücreti' AND durum = 'Gönderildi' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için Keşif Ücreti ödemesi bekleniyor.' });
     return islem(async (c) => {

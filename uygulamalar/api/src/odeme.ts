@@ -12,6 +12,7 @@ import { sayac } from './sure.js';
 import { parasalZincir, parametre, sonMakam } from './teklif.js';
 import { firmaOdemePlani, hakedisSonuc, tahsilatOrani } from './ticari.js';
 import { UUID } from './yat.js';
+import { blokeEngeli } from './alacak.js';
 
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
@@ -138,6 +139,7 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
     const t = (await b.db.query(`SELECT t.*, h.dosya_ref, h.hakedis_no, h.net, h.firma_fatura_no, h.firma_fatura_kuru, e.teknik_kabul_eden_ref, a.dosya_ref AS avans_dosya FROM odeme_talimati t LEFT JOIN hakedis h ON h.kimlik = t.hakedis_ref LEFT JOIN is_emri e ON e.kimlik = h.is_emri_ref LEFT JOIN firma_malzeme_avansi a ON a.kimlik = t.avans_ref WHERE t.kimlik = $1`, [id])).rows[0];
     if (!t) return yok(y);
     if (t.durum !== 'Onaylandı') return y.code(409).send({ hata: 'Ödeme talimatı onaylı değildir.' });
+    { const bl = await blokeEngeli(b.db, t.kurulus_ref); if (bl) return y.code(409).send({ hata: bl }); } // YG-915
     if (!referans) return y.code(400).send({ hata: 'Banka işlem referansını yazmanızı rica ederiz.' });
     const onay = [...await kartKararcilari(b.db, 'Firma Ödeme Talimatı', id), ...await kartKararcilari(b.db, 'Acil Ödeme İstisnası', id), ...(t.avans_ref ? await kartKararcilari(b.db, 'Malzeme Avansı', t.avans_ref) : [])];
     if (o.kullanici === t.hazirlayan_ref || onay.includes(o.kullanici) || o.kullanici === t.teknik_kabul_eden_ref) return y.code(409).send({ hata: 'Talimatı hazırlayan, onaylayan veya teknik kabulü veren kişi ödemeyi kaydedemez; başka bir yetkiliden işlem bekleniyor.' });

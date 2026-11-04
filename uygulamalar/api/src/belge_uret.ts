@@ -10,7 +10,7 @@ import { pdfUret, type BelgeTanim, type Bolum } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -140,6 +140,26 @@ async function sorumlulukTanim(db: Db, id: string, kod: string, web: string) {
   return { ...v, t: { ...v.t, ad: en ? 'Payment Responsibility Notice' : 'Ödeme Sorumluluğu Bildirimi', kod: 'FR-TIC-013', matbuBas: [govde], bolumler: [{ baslik: en ? 'Items' : 'Kalemler', tur: 'tablo', sutunlar: [{ ad: en ? 'Item' : 'Kalem' }, { ad: en ? 'Description' : 'Açıklama' }, { ad: en ? 'Amount (EUR)' : 'Tutar (EUR)', hiza: 'sag' }], satirlar: kl.map((k) => [k.tur, k.aciklama, tutar(Number(k.tutar_eur), dil)]) } as Bolum, ...(v.t.bolumler as Bolum[])] } };
 }
 
+/** YG-107, FR-KLT-012: dosyanın onay, SMS, teslim, fatura ve yazışma kayıtları tek belgede. Belge asılları bu paketin içine gömülmez, dosyada kalır. */
+export async function uyusmazlikTanim(db: Db, id: string, kod: string) {
+  const u = (await db.query(`SELECT u.*, d.dosya_no, y.yat_adi FROM uyusmazlik_kaydi u JOIN dosya d ON d.kimlik = u.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE u.kimlik = $1`, [id])).rows[0];
+  const q = (s: string) => db.query(s, [u.dosya_ref]).then((r) => r.rows);
+  const onay = await q(`SELECT ony_kod, durum, tutar_eur, olusturma_zamani FROM onay_talebi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`);
+  const teslim = await q(`SELECT durum, olusturma_zamani FROM teslim_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`);
+  const fatura = await q(`SELECT proforma_no, fatura_no, durum, toplam_eur, tahsil_edilen_eur FROM musteri_faturasi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`);
+  const belge = await q(`SELECT ad, belge_turu, belge_tarihi FROM belge WHERE bag_turu = 'Dosya' AND bag_kimligi = $1::text ORDER BY belge_tarihi`);
+  const sat = (s: unknown) => (s === null || s === undefined ? '-' : s instanceof Date ? gunAy(s) : String(s));
+  const bolumler: Bolum[] = [
+    { baslik: 'Uyuşmazlık', tur: 'alanlar', alanlar: [{ et: 'Merci', deger: u.merci }, { et: 'Esas No', deger: u.esas_no }, { et: 'Savunma Son Günü', deger: u.savunma_son ? gunAy(u.savunma_son) : null }, { et: 'Karar', deger: u.karar }] },
+    { baslik: 'Onay Kayıtları', tur: 'tablo', sutunlar: [{ ad: 'Onay' }, { ad: 'Durum' }, { ad: 'Tutar (EUR)', hiza: 'sag' }, { ad: 'Tarih' }], satirlar: onay.map((x) => [x.ony_kod, x.durum, x.tutar_eur === null ? '-' : tutar(Number(x.tutar_eur)), sat(x.olusturma_zamani)]) },
+    { baslik: 'Teslim Kayıtları', tur: 'tablo', sutunlar: [{ ad: 'Durum' }, { ad: 'Tarih' }], satirlar: teslim.map((x) => [x.durum, sat(x.olusturma_zamani)]) },
+    { baslik: 'Faturalar', tur: 'tablo', sutunlar: [{ ad: 'Proforma' }, { ad: 'Fatura' }, { ad: 'Durum' }, { ad: 'Toplam (EUR)', hiza: 'sag' }, { ad: 'Tahsil (EUR)', hiza: 'sag' }], satirlar: fatura.map((x) => [x.proforma_no, sat(x.fatura_no), x.durum, tutar(Number(x.toplam_eur)), tutar(Number(x.tahsil_edilen_eur))]) },
+    { baslik: 'Dosyadaki Belgeler', tur: 'tablo', sutunlar: [{ ad: 'Belge' }, { ad: 'Tür' }, { ad: 'Tarih' }], satirlar: belge.map((x) => [x.ad, x.belge_turu, sat(x.belge_tarihi)]) },
+  ];
+  const no = await altNumara(db, u.dosya_no, 'UP');
+  return { dosyaAdi: `${no}.pdf`, sinif: 'Kritik', t: { ad: 'Uyuşmazlık Dışa Aktarım Paketi', kod: 'FR-KLT-012', no, dosyaNo: u.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, yat: u.yat_adi, icKayit: true, bolumler, kodEk: kod } };
+}
+
 async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
   const e = (await db.query(`SELECT e.*, k.ticari_unvan, d.oncelik, f.teklif_no, f.surum_no AS teklif_surum FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref JOIN dosya d ON d.kimlik = e.dosya_ref LEFT JOIN fiyat_teklifi f ON f.kimlik = e.teklif_ref WHERE e.kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, e.dosya_ref, ''); const dil: Dil = 'tr'; const bt = { ...b, dil };
@@ -235,7 +255,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       const pdf = await pdfUret(v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);
       const anahtar = depo.yerlestir(al.yol, al.ozet);

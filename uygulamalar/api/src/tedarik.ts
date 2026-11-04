@@ -8,6 +8,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { tutar } from './metin.js';
 import { altNumara } from './sure.js';
 import { parametre, parasalZincir, sonMakam } from './teklif.js';
+import { sozlesmeEngeli } from './alacak.js';
 import { avansHesapla } from './ticari.js';
 import { UUID } from './yat.js';
 
@@ -64,7 +65,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     const f = (await b.db.query(`SELECT kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE kimlik = $1`, [g.tedarikci])).rows[0];
     if (!f || f.kayit_rolu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kayıt tedarikçi değildir.' });
     if (f.ag_statusu !== 'Aktif' || !['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return y.code(409).send({ hata: 'Sipariş için onaylı ve aktif bir tedarikçi seçmenizi rica ederiz.' });
-    const eng = await parcaOdemeEngeli(b.db, id);
+    const eng = await parcaOdemeEngeli(b.db, id) ?? await sozlesmeEngeli(b.db, g.tedarikci);
     if (eng) return y.code(409).send({ hata: eng });
     const matrah = R2(kl.reduce((a, k) => a + R2(Number(k.miktar) * Number(k.bedel)), 0)); const kdv = R2((matrah * await parametre(b.db, 'kdv_orani')) / 100);
     return islem(async (c) => {

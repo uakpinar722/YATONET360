@@ -19,7 +19,7 @@ const totp = (g) => {
   return String((m.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0');
 };
 const sup = new pg.Client({ host: 'localhost', user: 'postgres', password: env.POSTGRES_SUPER_PAROLA, database: 'yatonet360' });
-await sup.connect();
+await sup.connect(); await sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sozlesme_kapisi'`); // Deneme ortamı: sözleşme kapısı api sınamasında
 const tek = randomBytes(3).toString('hex');
 const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = []; const hatalar = [];
