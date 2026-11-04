@@ -72,8 +72,23 @@ function AcilDugmesi() {
   );
 }
 
+/** YG-482: parça bazında seçim; sigortalıda önce sigorta talimatı. */
+function SokulenParcalar({ id }: { id: string }) {
+  const [l, setL] = useState<{ kimlik: string; parca_adi: string; secim: string | null; son_tarih: string }[]>([]); const [h, setH] = useState('');
+  const yukle = () => istek<typeof l>(`/dosya/${id}/sokulen-parca`).then(setL).catch(() => {});
+  useEffect(() => { void yukle(); }, [id]);
+  if (!l.length) return null;
+  return <><div className="bolum">Sökülen Parçalar</div><div className="ozet">{h && <div className="hata" role="alert">{h}</div>}{l.map((p) => <div key={p.kimlik}><label htmlFor={`sp-${p.kimlik}`}>{p.parca_adi} · Son: {p.son_tarih.split('-').reverse().join('.')}</label><select id={`sp-${p.kimlik}`} value={p.secim ?? ''} onChange={(e) => { setH(''); void istek(`/sokulen-parca/${p.kimlik}/secim`, { secim: e.target.value }).then(yukle).catch((x) => setH(x.message)); }}><option value="">Seçiniz</option>{['İade', 'Montaj', 'Süreli Bekletme', 'Hurda-Bertaraf'].map((x) => <option key={x}>{x}</option>)}</select></div>)}</div></>;
+}
+
+/** YG-458: portaldan garanti talebi. */
+function GarantiTalebi({ id }: { id: string }) {
+  const [b, setB] = useState(''); const [m, setM] = useState('');
+  return <div className="ozet">{m && <div className="not" role="status">{m}</div>}<label htmlFor="gt-b">Sorunu Kısaca Yazınız</label><input id="gt-b" value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2" disabled={!b.trim()} onClick={() => void istek(`/portal/dosya/${id}/garanti-talebi`, { belirti: b }).then(() => { setB(''); setM('Talebiniz Dosya Sorumlunuza iletildi.'); }).catch((x) => setM(x.message))}>Garanti Talebi Gönder</button></div>;
+}
+
 function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
-  const [d, setD] = useState<(Kart & { belgeler: { kimlik: string; ad: string; surum_no: number }[]; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
+  const [d, setD] = useState<(Kart & { belgeler: { kimlik: string; ad: string; surum_no: number }[]; faturalar: { fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
   useEffect(() => { void istek<NonNullable<typeof d>>(`/portal/dosya/${id}`).then(setD).catch((e) => setHata(e.message)); }, [id]);
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   return (
@@ -82,6 +97,11 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       <h1>{d.yat} · {d.dosyaNo}</h1>
       <div className="ozet"><div><Durum k={d} /></div>{d.dosyaSorumlusu && <div>Dosya Sorumlunuz: {d.dosyaSorumlusu}</div>}</div>
       {d.teklifler.length > 0 && <><div className="bolum">Teklifler</div><div className="ozet">{d.teklifler.map((t) => <div key={t.teklif_no + t.surum_no}><b className="koyu">{t.teklif_no} Rev.{t.surum_no}</b> · {t.teklif_turu} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {t.genel_toplam_eur} EUR{t.kalemler.map((k) => <div key={k.sira_no} className="not">{k.aciklama} · {k.miktar} {k.birim} · {k.tutar_eur} EUR</div>)}</div>)}</div></>}
+      {d.teslim?.teslime_hazir_zamani && <div className="uyari">Yatınız teslime hazırdır. Teslim için kalan gün: {d.teslim.kalan_gun}. Bu süreden sonraki barınma gideri tarafınıza aittir.</div>}
+      {d.faturalar.length > 0 && <><div className="bolum">Faturalar</div><div className="ozet">{d.faturalar.map((f) => <div key={f.fatura_no}>{f.fatura_no} · {f.fatura_tarihi?.split('-').reverse().join('.')} · {f.toplam_eur} EUR{f.toplam_tl ? ` · ${f.toplam_tl} TL` : ''} · {f.durum}</div>)}</div></>}
+      <SokulenParcalar id={id} />
+      <div className="bolum">Garanti Talebi</div>
+      <GarantiTalebi id={id} />
       <div className="bolum">Belgelerim</div>
       <div className="ozet">{d.belgeler.length === 0 ? 'Belge bulunmamaktadır.' : d.belgeler.map((b) => <div key={b.kimlik}><a href={`/api/belge/${b.kimlik}/surum/${b.surum_no}/indir`}>{b.ad}</a></div>)}</div>
     </>
@@ -131,11 +151,12 @@ function HasarBildirimi({ bitti }: { bitti: () => void }) {
 
 /** YG-1433, YG-1448, YG-1507: bağlantı açılınca metin, varsa kutular, tek düğme ve kod. Uygulama kurmak gerekmez. */
 export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomulu?: boolean; geri?: () => void }) {
+  const [tkr, setTkr] = useState('Kabul'); const [cek, setCek] = useState('');
   const [t, setT] = useState<OnayEkran | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState(''); const [kutu, setKutu] = useState<Record<string, boolean>>({}); const [kod, setKod] = useState(''); const [son, setSon] = useState<{ durum: string; onayKodu: string } | null>(null);
   const [m, setM] = useState(''); const [tk, setTk] = useState<string[]>([]); const [lehtar, setLehtar] = useState('');
   useEffect(() => { void istek<OnayEkran>(`/onay/${belirtec}`).then(setT).catch((e) => setHata(e.message)); }, [belirtec]);
   const kodIste = async (kanal: string) => { setHata(''); setNot(''); try { await istek(`/onay/${belirtec}/kod`, { kanal }); setNot(kanal === 'E-posta' ? 'Kod e-posta adresinize gönderilmiştir.' : `Kod ••${t?.telefonSonu ?? ''} ile biten telefonunuza gönderilmiştir.`); } catch (x) { setHata((x as Error).message); } };
-  const karar = async () => { setHata(''); try { setSon(await istek<{ durum: string; onayKodu: string }>(`/onay/${belirtec}/karar`, { kod, kutular: kutu, form: t?.formTuru ? { mulkiyet: m, takyidat: tk, lehtar } : undefined })); } catch (x) { setHata((x as Error).message); } };
+  const karar = async () => { setHata(''); try { setSon(await istek<{ durum: string; onayKodu: string }>(`/onay/${belirtec}/karar`, { kod, kutular: kutu, form: t?.formTuru === 'Teslim Kararı' ? { teslimKarar: tkr, cekince: cek } : t?.formTuru ? { mulkiyet: m, takyidat: tk, lehtar } : undefined })); } catch (x) { setHata((x as Error).message); } };
   const tumKutu = (t?.kutular ?? []).every((k) => !k.zorunlu || kutu[k.ad]);
   const icerik = !t ? (hata ? <div className="hata" role="alert">{hata}</div> : null) : son ? (
     <div className="ozet"><h2>Onayınız Alınmıştır</h2><div>Onay Kodu: <b>{son.onayKodu}</b></div><div>Değerli onayınız için teşekkür ederiz.</div>{geri && <button className="btn" onClick={geri}>Ana Sayfaya Dön</button>}</div>
@@ -146,6 +167,10 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
       <h2>{t.baslik}</h2>
       {t.dosyaNo && <div className="not">Dosya No: {t.dosyaNo}</div>}
       {t.metin.split('\n').filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
+      {t.formTuru === 'Teslim Kararı' && <>
+        <label htmlFor="o-tk">Teslim Kararı</label><select id="o-tk" value={tkr} onChange={(e) => setTkr(e.target.value)}><option value="Kabul">Kabul</option><option value="Koşullu Kabul">Koşullu Kabul (çekinceli)</option></select>
+        {tkr === 'Koşullu Kabul' && <><label htmlFor="o-c">Çekince</label><input id="o-c" value={cek} onChange={(e) => setCek(e.target.value)} /></>}
+      </>}
       {t.formTuru === 'Mülkiyet Beyanı' && <>
         <label htmlFor="o-m">Mülkiyet Türü</label><select id="o-m" value={m} onChange={(e) => setM(e.target.value)}><option value="">Seçiniz</option>{MULKIYET.map((x) => <option key={x}>{x}</option>)}</select>
         <label>Takyidat</label>{TAKYIDAT.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={tk.includes(x)} onChange={(e) => setTk((o) => (e.target.checked ? [...o, x] : o.filter((y) => y !== x)))} /><span>{x}</span></label>)}

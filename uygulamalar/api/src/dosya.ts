@@ -374,9 +374,15 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1530: eksik bilgi tamamlanınca teknik atama kartı açılır.
   s.post('/dosya/:id/yat-bilgisi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { boy?: number; govde?: string; tahrik?: string; kaynak?: string; teyit?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { boy?: number; govde?: string; tahrik?: string; kaynak?: string; teyit?: string; genislik?: number; derinlik?: number };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
+    // YG-1707: kalıp genişliği ve derinliği GMO tarifeli kalemler için.
+    if (g.genislik !== undefined || g.derinlik !== undefined) {
+      if ((g.genislik !== undefined && !(g.genislik > 0)) || (g.derinlik !== undefined && !(g.derinlik > 0))) return y.code(400).send({ hata: 'Genişlik veya derinlik geçersiz.' });
+      await b.db.query(`UPDATE yat SET genislik_m = coalesce($2, genislik_m), derinlik_m = coalesce($3, derinlik_m) WHERE kimlik = $1`, [d.yat_ref, g.genislik ?? null, g.derinlik ?? null]);
+      if (g.boy === undefined && !g.govde && !g.tahrik && !g.teyit) return { tamam: true };
+    }
     const eski = (await b.db.query(`SELECT tam_boy_m, govde_malzemesi, tahrik_turu, katalog_teyit FROM yat WHERE kimlik = $1`, [d.yat_ref])).rows[0];
     const kaynak = ['Ruhsat', 'Telefon (kaptan / yat sahibi)', 'Teknik Uzman keşfi'].includes(g.kaynak ?? '') ? g.kaynak! : null;
     if ((g.boy !== undefined || g.govde) && !kaynak) return y.code(400).send({ hata: 'Bilginin kaynağını seçiniz.' });

@@ -196,7 +196,8 @@ kapanisKapisi(async (db, d, cikis) => {
 
 onaySonucKaydet('ONY-27', async (c, t, karar, k) => {
   if (karar !== 'Onaylandı') return;
-  const ts = (await c.query(`UPDATE teslim_kaydi SET durum = 'Teslim Edildi', teslim_alan = $2, teslim_zamani = $3 WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' RETURNING kimlik`, [t.dosya_ref, t.alici_ad, k.zaman])).rows[0];
+  // YG-475, YG-414: Kabul veya Koşullu Kabul (çekinceli); çekince kayda geçer.
+  const ts = (await c.query(`UPDATE teslim_kaydi SET durum = 'Teslim Edildi', teslim_alan = $2, teslim_zamani = $3, alici_turu = 'Yat Sahibi', karar = $4, cekince = $5 WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' RETURNING kimlik`, [t.dosya_ref, t.alici_ad, k.zaman, k.form?.teslimKarar === 'Koşullu Kabul' ? 'Koşullu Kabul' : 'Kabul', k.form?.cekince?.trim() || null])).rows[0];
   if (ts) await belgeUret(c, { tur: 'Teslim Tutanağı', nesne: ts.kimlik, dosya: t.dosya_ref });
   await tesisSerbestBirak(c, t.dosya_ref, t.alici_ad); // YG-554
 });
@@ -396,7 +397,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const alan = { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': b.webAdresi, link: b.webAdresi, Yat: d.yat_adi, Yacht: d.yat_adi, 'tarih saat': zaman, 'date time': zaman };
       const kut = kutuAyikla(s0.metin).kutular.map((k) => ({ ad: k.replace(/\[([^\]]+)\]/g, (_t, a: string) => (alan as Record<string, string>)[a] ?? a), zorunlu: true }));
       await c.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref) VALUES ($1,$2)`, [id, o.kullanici]);
-      await onayTalebiAc(c, { dosya: id, ony: 'ONY-27', dil, alanlar: alan, baslikAlanlari: alan, kutular: kut, taraf: sah.kimlik, kullanici: sah.kullanici_ref, aliciAd: sah.kisi_adi_soyadi, telefon: sah.telefon, eposta: sah.eposta, belgeAdi: 'Teslim Tutanağı', hazirlayan: o.kullanici, gun: 7, webAdresi: b.webAdresi });
+      await onayTalebiAc(c, { dosya: id, ony: 'ONY-27', dil, alanlar: alan, baslikAlanlari: alan, kutular: kut, formTuru: 'Teslim Kararı', taraf: sah.kimlik, kullanici: sah.kullanici_ref, aliciAd: sah.kisi_adi_soyadi, telefon: sah.telefon, eposta: sah.eposta, belgeAdi: 'Teslim Tutanağı', hazirlayan: o.kullanici, gun: 7, webAdresi: b.webAdresi });
       return { durum: 'Teslim Onayı Bekleniyor' };
     });
   });

@@ -7,6 +7,7 @@ import { beklemedeIsle, sureIsle } from './dosya.js';
 import { acilIsle } from './acil.js';
 import { nobetCagriIsle } from './acil_ek.js';
 import { mutabakatIsle } from './onay_ek.js';
+import { teslimIsle } from './teslim_ek.js';
 import { sigortaSureIsle } from './sigorta.js';
 import { teklifSureIsle } from './teklif.js';
 import { alacakIsle } from './ticari.js';
@@ -28,7 +29,7 @@ const baglam = { db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anah
 setInterval(() => { kuyrukIsle(baglam).catch((h) => s.log.error(h.message)); }, 30_000);
 setInterval(() => { onayHatirlat(db).catch((h) => s.log.error(h.message)); }, 300_000);
 setInterval(() => { toplantiHatirlat(db).catch((h) => s.log.error(h.message)); }, 60_000);
-setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); mutabakatIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); mutabakatIsle(db).catch((h) => s.log.error(h.message)); teslimIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);

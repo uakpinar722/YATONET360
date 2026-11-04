@@ -208,6 +208,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
   const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
   const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bKanit, setBKanit] = useState('');
   const [oYeni, setOYeni] = useState(''); const [oGerekce, setOGerekce] = useState(''); const [aGerekce, setAGerekce] = useState('');
+  const [gnsl, setGnsl] = useState(''); const [drn, setDrn] = useState('');
   const [kBaslik, setKBaslik] = useState(''); const [kSahip, setKSahip] = useState(''); const [kTarih, setKTarih] = useState(''); const [boy, setBoy] = useState(''); const [govde, setGovde] = useState(''); const [tahrik, setTahrik] = useState(''); const [kaynak, setKaynak] = useState('Ruhsat');
   const yukle = () => Promise.all([istek<DosyaAyrinti>(`/dosya/${id}`).then(setD), istek<Belge[]>(`/belge?bagTuru=Dosya&bagKimligi=${id}`).then(setBelgeler).catch(() => setBelgeler([]))]).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, [id]);
@@ -248,7 +249,8 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         {d.yat.gecici_kayit && <div className="not">Geçici Yat Kaydı</div>}
         <div className="iki-tarih"><div><label htmlFor="y-b">Boy (m)</label><input id="y-b" inputMode="decimal" value={boy} onChange={(e) => setBoy(e.target.value)} /></div><div><label htmlFor="y-g">Gövde</label><select id="y-g" value={govde} onChange={(e) => setGovde(e.target.value)}><option value="">Seçiniz</option>{['Fiber', 'Ahşap', 'Çelik', 'Alüminyum'].map((x) => <option key={x}>{x}</option>)}</select></div></div>
         <div className="iki-tarih"><div><label htmlFor="y-t">Tahrik</label><input id="y-t" value={tahrik} onChange={(e) => setTahrik(e.target.value)} /></div><div><label htmlFor="y-k">Kaynak</label><select id="y-k" value={kaynak} onChange={(e) => setKaynak(e.target.value)}>{['Ruhsat', 'Telefon (kaptan / yat sahibi)', 'Teknik Uzman keşfi'].map((x) => <option key={x}>{x}</option>)}</select></div></div>
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/yat-bilgisi`, { boy: boy ? Number(boy.replace(',', '.')) : undefined, govde: govde || undefined, tahrik: tahrik || undefined, kaynak }))}>Yat Bilgisini Kaydet</button>
+        <div className="iki-tarih"><div><label htmlFor="y-gn">Kalıp Genişliği (m)</label><input id="y-gn" inputMode="decimal" value={gnsl} onChange={(e) => setGnsl(e.target.value)} /></div><div><label htmlFor="y-dr">Kalıp Derinliği (m)</label><input id="y-dr" inputMode="decimal" value={drn} onChange={(e) => setDrn(e.target.value)} /></div></div>
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/yat-bilgisi`, { boy: boy ? Number(boy.replace(',', '.')) : undefined, govde: govde || undefined, tahrik: tahrik || undefined, kaynak, genislik: gnsl ? Number(gnsl.replace(',', '.')) : undefined, derinlik: drn ? Number(drn.replace(',', '.')) : undefined }))}>Yat Bilgisini Kaydet</button>
       </Blok>
       <Blok baslik="Dosya Ekibi">
         {d.ekip.length === 0 && <div className="not">Henüz atama yapılmadı.</div>}
@@ -306,7 +308,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
 
 interface Saha {
   kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null }[];
-  bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string }[];
+  bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null }[];
   gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
   kontrolListeleri: { kimlik: string; kayit_no: string; statu: string }[];
@@ -367,7 +369,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         </>}
       </Blok>
       <Blok baslik="Bulgular">
-        {v.bulgular.map((b) => <div key={b.kimlik}>{b.bulgu_no} · {b.hasar_onem_derecesi}{b.bolge_kodu ? ` · ${b.bolge_kodu}` : ''} · {b.konum_referansi} · {b.aciklama}</div>)}
+        {v.bulgular.map((b) => <div key={b.kimlik}>{b.bulgu_no} · {b.hasar_onem_derecesi}{b.bolge_kodu ? ` · ${b.bolge_kodu}` : ''} · {b.konum_referansi} · {b.aciklama}{(b.beyanla_celisen || b.tam_ziya_onerisi) && (b.sigortaciya_bildirim_zamani ? ' · Sigortaya Bildirildi' : <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/bulgu/${b.kimlik}/sigorta-bildirimi`, {}))}>Sigortaya Bildirildi</button>)}</div>)}
         <label htmlFor="bg-k">Konum Referansı</label><input id="bg-k" value={bKonum} onChange={(e) => setBKonum(e.target.value)} placeholder="Baştan 8 m, sancak" />
         <div className="iki-tarih"><div><label htmlFor="bg-b">Bölge Kodu</label><input id="bg-b" value={bBolge} onChange={(e) => setBBolge(e.target.value)} placeholder="S1" /></div><div><label htmlFor="bg-o">Önem</label><select id="bg-o" value={bOnem} onChange={(e) => setBOnem(e.target.value)}>{['Kritik', 'Yüksek', 'Orta', 'Düşük', 'Gözlem'].map((x) => <option key={x}>{x}</option>)}</select></div></div>
         <label htmlFor="bg-a">Açıklama</label><input id="bg-a" value={bAcik} onChange={(e) => setBAcik(e.target.value)} />

@@ -287,6 +287,11 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-189: firma kaynaklı hatada kalem firmaya iade; LGM kaynaklı hatada firma belgesine dayalı düzeltme, Müdür onayı.
+  s.get('/firma-teklif/:id/kalemler', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(i.oturum!.kullanici, [TICARI]))) return yok(y);
+    return (await b.db.query(`SELECT x.kimlik, x.birim_fiyat_eur, x.eski_fiyat_eur, x.iade_gerekcesi, s.satir_kodu, s.aciklama FROM firma_fiyat_kalemi x JOIN kapsam_satiri s ON s.kimlik = x.satir_ref WHERE x.teklif_ref = $1 ORDER BY s.satir_kodu`, [id])).rows;
+  });
   s.post('/firma-kalem/:id/iade', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = ((i.body ?? {}) as { gerekce?: string }).gerekce?.trim();
     if (!UUID.test(id) || !(await rolVar(o.kullanici, [TICARI]))) return yok(y);

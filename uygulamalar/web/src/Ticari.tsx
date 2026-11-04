@@ -122,6 +122,7 @@ function MasrafKalemi({ dosya, teklif, yap }: { dosya: string; teklif: string; y
 /** YG-195, YG-230, YG-301, YG-302, YG-884: dosya içinde kapsam, teklif, iş emri ve mali akış. */
 export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; rollerim: string[]; roller: string[]; asama: string | null }) {
   const [v, setV] = useState<Kayitlar | null>(null); const [m, setM] = useState<Mali | null>(null); const [firmalar, setFirmalar] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]);
+  const [acilT, setAcilT] = useState(false);
   const yukle = () => Promise.all([istek<Kayitlar>(`/dosya/${id}/teklifler`).then(setV), istek<Mali>(`/dosya/${id}/mali`).then(setM)]);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); }, [id]);
@@ -177,7 +178,8 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {ticari && <>
           <label htmlFor="t-f">Firma Fiyat Teklifi</label><select id="t-f" value={ft} onChange={(e) => setFt(e.target.value)}><option value="">Seçiniz</option>{v.firma.map((f) => <option key={f.kimlik} value={f.kimlik}>{f.teklif_no} · {eur(f.toplam_eur)} · {f.durum}</option>)}</select>
           {v.teklifler.some((t) => t.statu === 'Karar') && <><label htmlFor="t-a">Ek Fiyat Teklifi İçin Ana Teklif</label><select id="t-a" value={ek} onChange={(e) => setEk(e.target.value)}><option value="">Ek Teklif Değil</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
-          <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft, ekTeklif: ek || undefined }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
+          <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft, ekTeklif: ek || undefined, acilTedbir: acilT || undefined }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
+          <label className="kutu"><input type="checkbox" checked={acilT} onChange={(e) => setAcilT(e.target.checked)} /><span>Acil Tedbir Fiyat Teklifi</span></label>
           <label htmlFor="t-s">Ödeme Son Tarihi</label><input id="t-s" type="date" value={sonTarih} onChange={(e) => setSonTarih(e.target.value)} />
         </>}
       </Blok>
@@ -230,7 +232,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {m.hakedisler.map((h) => <div key={h.kimlik} className="soru"><span>{h.hakedis_no} · Brüt {eur(h.bu_donem_brut)} · Kesinti {eur(h.kesinti)} · Net {eur(h.net)} · {h.statu}</span><div className="dugmeler">{h.statu === 'Doğrulama Bekliyor' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/dogrula`, {}))}>Doğrula</button>}{h.statu === 'Doğrulandı' && ticari && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/odeme-talimati`, {}), 'Talimat onaya gönderildi.')}>Ödeme Talimatı</button>}</div></div>)}
         {asama === 'Teslim' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2" disabled={Boolean(m.teslimEngeli)} onClick={() => void yap(() => istek(`/dosya/${id}/teslim`, {}), 'Teslim onayı yat sahibine gönderildi.')}>Teslimi Başlat</button>}
       </Blok>}
-      {v && m && <DosyaEkIslemler id={id} teklifler={v.teklifler} sigortali={m.sigortali} ticari={ticari} ds={rollerim.includes('Dosya Sorumlusu')} firmalar={[...new Map(m.isEmirleri.map((x) => [x.kurulus_ref, x])).values()]} />}
+      {v && m && <DosyaEkIslemler id={id} firmaTeklifleri={v.firma} teklifler={v.teklifler} sigortali={m.sigortali} ticari={ticari} ds={rollerim.includes('Dosya Sorumlusu')} firmalar={[...new Map(m.isEmirleri.map((x) => [x.kurulus_ref, x])).values()]} />}
     </>
   );
 }
