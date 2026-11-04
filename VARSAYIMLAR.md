@@ -131,6 +131,6 @@ Katalogda veya kararlarda cevabı olmayan konularda kodda alınan varsayımlar. 
 | V-125 | 5 | Teslim uyuşmazlığı | Süre kaynakta yok: Teslim Talebi 24 saatte sonuçlanmazsa Operasyon Müdürüne görev açılır | `saha_kayit.ts` | Kabul (VAR-19, CEO) |
 | V-126 | 5 | Yeniden değerlendirme | Tarih kabul kararından; statü, aşama veya risk kararı verilince yenilenir; karne özeti çeyrekte bir A39 Firma Yönetimi Müdürüne bildirim | `saha_kayit.ts` | Kabul (VAR-19, CEO) |
 | V-127 | 5 | Uygunsuzluk kapanışında başlama | Uygunsuzluk kapanınca duran iş kendiliğinden başlar; emniyet işaretli ise başlamaz, Teknik Müdür başlatır | `kalite.ts` | Kabul (VAR-19, CEO) |
-| V-128 | 5 | Kurumsal kurum tanımı | Kurumu ve ilk yetkiliyi A53 Müşteri ve Paydaş İlişkileri Müdürü tanımlar; ilk yetkili Onaylayan olur; kullanıcıyı yalnız kurum yetkilisi ekler ve kapatır | `kurumsal.ts` | Bekliyor (VAR-20) |
-| V-129 | 5 | Kurumsal roller | İzleyici görür; Talep Açan talep de açar; Onaylayan onay da verir; Ek-2 onay sınırı kurum düzeyinde tek tutar olarak tutulur | `kurumsal.ts` | Bekliyor (VAR-20) |
-| V-130 | 5 | Kurum dosyaları | Kurum kullanıcısı, yat sahibi kurum olan yatların dosyalarını görür | `portal.ts` | Bekliyor (VAR-20) |
+| V-128 | 5 | Kurumsal kurum tanımı | Kurumu ve ilk yetkiliyi A53 Müşteri ve Paydaş İlişkileri Müdürü tanımlar; ilk yetkili Onaylayan olur; kullanıcıyı yalnız kurum yetkilisi ekler ve kapatır | `kurumsal.ts` | Kabul (VAR-20, CEO) |
+| V-129 | 5 | Kurumsal roller | İzleyici görür; Talep Açan talep de açar; Onaylayan onay da verir; Ek-2 onay sınırı kurum düzeyinde tek tutar olarak tutulur | `kurumsal.ts` | Kabul (VAR-20, CEO) |
+| V-130 | 5 | Kurum dosyaları | Kurum kullanıcısı, yat sahibi kurum olan yatların dosyalarını görür | `portal.ts` | Kabul (VAR-20, CEO) |
