@@ -41,7 +41,34 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
       <div className="dugmeler"><button className="btn2" onClick={() => setForm(true)}>Hasar Bildir</button></div>
       <div className="bolum">Acil Durum</div>
       <div className="uyari">Yat su alıyor, sürükleniyor, yangın sonrası durum varsa veya bağlama emniyeti tehlikedeyse hemen arayınız. Acil durumlarda lütfen önce 112&apos;yi arayınız.</div>
+      <AcilDugmesi />
     </>
+  );
+}
+
+/** YG-1658: konum 10 dakikada bir iletilir; izin yoksa yatın kayıtlı konumu; kullanıcı her an durdurabilir. */
+function AcilDugmesi() {
+  const TUR = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
+  const [f, setF] = useState({ tur: TUR[1]!, yatAdi: '', konum: '', aciklama: '' }); const [t, setT] = useState<string | null>(null); const [msg, setMsg] = useState(''); const [hata, setHata] = useState('');
+  useEffect(() => {
+    if (!t) return;
+    const gonder = () => {
+      const yolla = (g: object) => void istek<{ durdu: boolean }>(`/portal/acil/${t}/konum`, g).then((r) => { if (r.durdu) { setT(null); setMsg('Konum gönderimi durduruldu.'); } }).catch(() => {});
+      if (navigator.geolocation) navigator.geolocation.getCurrentPosition((p) => yolla({ enlem: p.coords.latitude, boylam: p.coords.longitude }), () => yolla({})); else yolla({});
+    };
+    gonder(); const z = setInterval(gonder, 600_000); return () => clearInterval(z);
+  }, [t]);
+  if (t) return <div className="ozet"><div>{msg}</div><div className="not">Konumunuzun iletilmesi için lütfen bu sayfayı açık tutunuz.</div><button className="btn2" onClick={() => void istek(`/portal/acil/${t}/konum-durdur`, {}).then(() => { setT(null); setMsg('Konum gönderimi durduruldu.'); })}>Konum Göndermeyi Durdur</button></div>;
+  return (
+    <div className="ozet">
+      {hata && <div className="hata" role="alert">{hata}</div>}{msg && <div>{msg}</div>}
+      <label htmlFor="pa-t">Acil Durum Türü</label><select id="pa-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{TUR.map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="pa-y">Yat</label><input id="pa-y" value={f.yatAdi} onChange={(e) => setF({ ...f, yatAdi: e.target.value })} />
+      <label htmlFor="pa-k">Konum</label><input id="pa-k" value={f.konum} onChange={(e) => setF({ ...f, konum: e.target.value })} />
+      <label htmlFor="pa-a">Açıklama</label><input id="pa-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <div className="not">Acil Durum düğmesini kullandığınızda cihazınızın konumu Aydınlatma Metnimizde açıklandığı şekilde işlenir; konum izni vermezseniz yatın kayıtlı konumu iletilir.</div>
+      <button className="btn hayir" disabled={!f.yatAdi.trim() || !f.konum.trim()} onClick={() => { setHata(''); void istek<{ talep: string; talepNo: string; uyari112: string }>('/portal/acil', f).then((r) => { setMsg(`${r.talepNo} · ${r.uyari112}`); setT(r.talep); }).catch((e) => setHata(e.message)); }}>Acil Durum</button>
+    </div>
   );
 }
 

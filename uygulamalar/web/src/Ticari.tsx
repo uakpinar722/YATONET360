@@ -386,6 +386,37 @@ export function SigortaAna({ ben }: { ben: Ben }) {
 const ACIL_TURLER = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
 
 /** YG-263, YG-264, YG-244: Acil Çağrı Aç, nöbetçi görünümü, 112 hatırlatması, nöbet devri. */
+/** YG-243 nöbet çağrısı; YG-261 olay komutası; YG-1658 acil konum; YG-1489 olağanüstü dönem. */
+function NobetCagrilari() {
+  const tarih = (x: string) => new Date(x).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+  const [l, setL] = useState<{ kimlik: string; hat: string; arayan: string; telefon: string | null; ozet: string; sorumlu_rol: string; son_zaman: string; gecikti: boolean }[]>([]); const [k, setK] = useState<{ talep_ref: string; talep_no: string; enlem: string | null; boylam: string | null; kaynak: string | null; metin: string | null; zaman: string | null }[]>([]);
+  const [f, setF] = useState({ hat: 'Operasyon', arayan: '', telefon: '', ozet: '' }); const [n, setN] = useState<Record<string, string>>({}); const [o, setO] = useState({ tur: 'İş Kazası', ozet: '' }); const [d, setD] = useState({ bolge: '', olay: '' });
+  const yukle = () => Promise.all([istek<typeof l>('/nobet/cagrilar').then(setL), istek<typeof k>('/acil-konum').then(setK)]);
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { void yukle().catch(() => {}); }, []);
+  return (<>
+    <div className="bolum">Nöbet Çağrıları</div><Mesaj />
+    <div className="ozet">
+      {l.map((c) => <div className="soru" key={c.kimlik}><span className={c.gecikti ? 'uyari' : ''}>{c.gecikti ? '⚠ ' : ''}{c.arayan} · {c.telefon ?? ''} · {c.ozet} · {c.hat} · {c.sorumlu_rol} · Son: {tarih(c.son_zaman)}</span><div className="tam"><label htmlFor={`nc-${c.kimlik}`}>Görüşme Notu</label><input id={`nc-${c.kimlik}`} value={n[c.kimlik] ?? ''} onChange={(e) => setN({ ...n, [c.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!n[c.kimlik]?.trim()} onClick={() => void yap(() => istek(`/nobet/cagri/${c.kimlik}/donus`, { not: n[c.kimlik] }))}>Dönüldü</button></div></div>)}
+      <label htmlFor="nc-h">Hat</label><select id="nc-h" value={f.hat} onChange={(e) => setF({ ...f, hat: e.target.value })}><option>Operasyon</option><option>Teknik</option></select>
+      <label htmlFor="nc-a">Arayan</label><input id="nc-a" value={f.arayan} onChange={(e) => setF({ ...f, arayan: e.target.value })} />
+      <label htmlFor="nc-t">Arayan Telefonu</label><input id="nc-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
+      <label htmlFor="nc-o">Çağrı Özeti</label><input id="nc-o" value={f.ozet} onChange={(e) => setF({ ...f, ozet: e.target.value })} />
+      <button className="btn2" disabled={!f.arayan.trim() || !f.ozet.trim()} onClick={() => void yap(() => istek('/nobet/cagri', f).then(() => { setF({ hat: 'Operasyon', arayan: '', telefon: '', ozet: '' }); return { uyari: 'Çağrı kaydedildi; 15 dakika başladı.' }; }))}>Çağrıyı Kaydet</button>
+    </div>
+    {k.length > 0 && <><div className="bolum">Acil Konumlar</div><div className="ozet">{k.map((x) => <div className="soru" key={x.talep_ref}><span>{x.talep_no} · {x.kaynak ?? 'Bekleniyor'}{x.enlem ? <> · <a href={`https://www.openstreetmap.org/?mlat=${x.enlem}&mlon=${x.boylam}#map=14/${x.enlem}/${x.boylam}`} target="_blank" rel="noreferrer">{x.enlem}, {x.boylam}</a></> : x.metin ? ` · ${x.metin}` : ''}{x.zaman ? ` · ${tarih(x.zaman)}` : ''}</span><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/acil-konum/${x.talep_ref}/durdur`, {}))}>Durdur</button></div>)}</div></>}
+    <div className="bolum">Olay Komutası</div>
+    <div className="ozet">
+      <label htmlFor="ok-t">Olay Türü</label><select id="ok-t" value={o.tur} onChange={(e) => setO({ ...o, tur: e.target.value })}>{['Saha veya Deniz Acili', 'İş Kazası', 'BT Kesintisi veya Veri İhlali', 'Kurumsal Kriz'].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="ok-o">Olay Özeti</label><input id="ok-o" value={o.ozet} onChange={(e) => setO({ ...o, ozet: e.target.value })} />
+      <button className="btn hayir" disabled={!o.ozet.trim()} onClick={() => void yap(() => istek('/olay-komutasi', o).then(() => ({ uyari: 'Olay Komutası bilgilendirildi.' })))}>Olayı Bildir</button>
+      <label htmlFor="ood-b">Olağanüstü Dönem Bölgesi</label><input id="ood-b" value={d.bolge} onChange={(e) => setD({ ...d, bolge: e.target.value })} />
+      <label htmlFor="ood-o">Olağanüstü Olay</label><input id="ood-o" value={d.olay} onChange={(e) => setD({ ...d, olay: e.target.value })} />
+      <div className="dugmeler"><button className="btn2" disabled={!d.bolge.trim() || !d.olay.trim()} onClick={() => void yap(() => istek('/olaganustu/oneri', d).then(() => ({ uyari: 'Öneri onaya gönderildi.' })))}>Dönem Öner</button><button className="btn2" onClick={() => void yap(() => istek('/olaganustu/bitir', {}).then(() => ({ uyari: 'Dönem kapatıldı.' })))}>Dönemi Kapat</button></div>
+    </div>
+  </>);
+}
+
 export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
   const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null } | null>(null);
   const { yap, Mesaj } = useYap(() => istek<NonNullable<typeof n>>('/nobet/simdi').then(setN));
@@ -396,6 +427,7 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
       <h1>Nöbet ve Acil</h1><Mesaj />
       {cizelge && <NobetCizelge />}
       {n && <div className="ozet"><div>{n.mesaiIcinde ? 'Mesai İçi' : 'Mesai Dışı'}</div><div>Nöbetçi Dosya Sorumlusu: {n.dosyaSorumlusu ?? '—'}</div><div>Nöbetçi Teknik Uzman: {n.teknikUzman ?? '—'}</div><div>Yönetici Nöbetçisi: {n.yonetici ?? '—'}</div></div>}
+      <NobetCagrilari />
       {izinli && <><div className="bolum">Acil Çağrı Aç</div>
         <div className="ozet">
           <div className="uyari">Can tehlikesi yoksa da kaptana 112&apos;yi hatırlatınız. Kaptan yoksa 112&apos;yi nöbetçi arar.</div>

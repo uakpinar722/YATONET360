@@ -19,6 +19,7 @@ import { izinGerekli } from './yetki.js';
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
 const ACIL_ALICILAR = ['Operasyon Müdürü', 'Teknik Müdür', 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO'];
+import { acilEkipBildirimi, omAramaGorevi, tedbirSonrasiGorevler } from './acil_ek.js';
 const ACIL_TURLER = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
 const CAN_CEVRE = ['Can Güvenliği', 'Kirlilik'];
 const DEVIR_LISTESI = ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu'];
@@ -196,6 +197,8 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       const al: string[] = []; for (const rl of ACIL_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, rl))); if (mesaiDisi && yon) al.push(yon);
       await bildir(c, { olay: `acil-tedbir:${d.kimlik}`, kullanicilar: al, baslik: `Acil İlk Tedbir: ${d.dosya_no}`, ozet: `${g.olayTuru} · ${g.yatAdi} · ${g.konum} · Eşiğe kalan: ${tutar(await parametre(c, 'acil_sinir_eur'))} EUR`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
       const cagri = await cagriGonder(c, d.kimlik, simdi);
+      if (mesaiDisi && canCevre) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Can veya çevre riski'); // YG-1481
+      if (mesaiDisi && !cagri) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Müsait sağlayıcı yok');
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Acil Çağrı Açıldı', nesneTuru: 'Dosya', nesneKimligi: d.kimlik, yeni: { tur: g.olayTuru }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: d.kimlik, dosyaNo: d.dosya_no, cagri, uyari112: "Acil durumlarda lütfen önce 112'yi arayınız." };
     });
@@ -236,6 +239,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const no = await altNumara(c, a.dosya_no, 'AC');
     const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, firma_yaniti, firma_kabul_eden_ref, firma_kabul_zamani, yayim_zamani, hazirlayan_ref) VALUES ($1,'AC',$2,$3,$4,$5,'Aktif','Kabul',$6,$7,$7,(SELECT talimat_veren_ref FROM acil_mudahale WHERE dosya_ref = $2)) RETURNING kimlik`,
       [no, a.dosya_ref, firma, a.konum, `Acil ilk tedbir: ${a.kisa_teknik_tanim}`, kim, simdi])).rows[0];
+    await acilEkipBildirimi(c, a.dosya_ref, b.webAdresi); // D-046, BLD-54
     const t = await tutarIsle(c, a.dosya_ref, tahmini, simdi);
     return { isEmri: e.kimlik, isEmriNo: no, ...t };
   }
@@ -251,6 +255,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const al = [m.dosya_sorumlusu_ref].filter(Boolean);
     if (h.durum === 'Ön Uyarı' && m.sinir_durumu === 'Sınır Altında') await bildir(c, { olay: `acil-onuyari:${dosya}`, kullanicilar: al, baslik: `Acil Tutar Ön Uyarı: ${m.dosya_no}`, ozet: `${tutar(h.yansiyan)} EUR`, oncelik: 'Kritik', acil: true }, simdi);
     if (h.durum === 'Onay Bekliyor' && !durumKilitli) {
+      if (!mesaiIcinde(simdi)) await omAramaGorevi(c, dosya, m.dosya_no, '2.500,00 EUR aşımı'); // YG-1481
       await bildir(c, { olay: `acil-sinir:${dosya}`, kullanicilar: al, baslik: `Acil Tutar Sınırı Aşıldı: ${m.dosya_no}`, ozet: `${tutar(h.yansiyan)} EUR`, oncelik: 'Kritik', acil: true, sms: true }, simdi);
       if (m.dosya_niteligi === 'Sigorta bağlantılı') await c.query(`UPDATE acil_mudahale SET sinir_durumu = 'Sınır Altında' WHERE dosya_ref = $1`, [dosya]); // K-217: sigortalıda aşım onayı istenmez; ödenmeyen kalem ayrı teklif.
       else {
@@ -301,6 +306,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       const t = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu IN ('Yat Sahibi', 'Kaptan') AND aktif ORDER BY taraf_rolu = 'Yat Sahibi' DESC LIMIT 1`, [dosya])).rows[0];
       const saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
       const alan = { Yat: m.yat_adi, Yacht: m.yat_adi, saat, time: saat, özet: g.sonuc!.trim(), summary: g.sonuc!.trim() };
+      await tedbirSonrasiGorevler(c, dosya, m.dosya_no, (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [dosya])).rows[0].r, ilkIsGunu12(new Date())); // YG-1506
       if (t) await yatTarafinaYaz(c, { olay: `bld55:${dosya}`, kod: 'BLD-55', dil: dilKod(m.yazisma_dili), konu: `${m.dosya_no} Acil Tedbir`, telefon: t.telefon, eposta: t.eposta, acil: true, alanlar: alan });
       return { tamam: true };
     });
@@ -346,7 +352,8 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       const r = await ihbarKaydet(c, { kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: 'Yat Sahibi', telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum!, yatDurumu: g.tur!, ihtiyac: g.aciklama?.trim() || g.tur!, acil: true, yat: { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, cevaplar: {} }, o.kullanici, { ilkSorumlu: ilk }, simdi);
       if ('hata' in r) throw Object.assign(new Error(r.hata), { statusCode: 400 });
       await bildir(c, { olay: `portal-acil:${r.kimlik}`, kullanicilar: [ilk], baslik: `Acil İhbar: ${r.talepNo}`, ozet: `${g.tur} · ${g.yatAdi} · ${g.konum}`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
-      return { talepNo: r.talepNo, uyari112: "Acil durumlarda lütfen önce 112'yi arayınız." };
+      await c.query(`INSERT INTO acil_konum (talep_ref, kullanici_ref) VALUES ($1,$2)`, [r.kimlik, o.kullanici]); // YG-1658
+      return { talep: r.kimlik, talepNo: r.talepNo, uyari112: "Acil durumlarda lütfen önce 112'yi arayınız." };
     });
   });
 }

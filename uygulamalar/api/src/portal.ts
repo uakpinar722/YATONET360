@@ -188,7 +188,8 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $2 AND (${benimDosyalarim})`, [o.kullanici, id])).rows[0];
     if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
     const belgeler = (await b.db.query(`SELECT e.kimlik, e.ad, s.surum_no FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.bag_turu = 'Dosya' AND e.bag_kimligi = $1 AND s.durum = 'Yürürlükte' AND e.bilgi_sinifi <> 'Kritik' ORDER BY e.olusturma_zamani DESC`, [id])).rows;
-    return { ...(await kart(d)), belgeler };
+    const kurtarma = (await b.db.query(`SELECT k.hizmet_turu, k.baslama_zamani, CASE WHEN k.saglayici_aciklama_onayi THEN u.ticari_unvan END AS saglayici FROM kurtarma_operasyonu k JOIN kurulus u ON u.kimlik = k.saglayici_ref WHERE k.dosya_ref = $1`, [d.kimlik])).rows; // YG-486
+    return { ...(await kart(d)), belgeler, kurtarma };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

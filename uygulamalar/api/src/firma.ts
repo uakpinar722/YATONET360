@@ -26,8 +26,8 @@ import { izinGerekli } from './yetki.js';
 type Db = Pool | PoolClient;
 const GRUP = 'İş Birliği Firması';
 const ARA_ISLEM = ['Operasyon Müdür Yardımcısı', 'Operasyon Müdürü'];
-/** YG-326: firmanın iş emrine yanıt süresi (takvim saati). */
-const YANIT_SAAT: Record<string, number> = { Kritik: 1, Yüksek: 4, Normal: 24, Planlı: 48 };
+/** YG-1483: firmanın iş emri kabul süresi önceliğin ilk yanıt süresidir (takvim saati). */
+const YANIT_SAAT: Record<string, number> = { Kritik: 0.5, Yüksek: 2, Normal: 4, Planlı: 8 };
 
 /** BLD-02 metninde [tarih] iki kez geçer: başlangıç ve planlanan teslim. */
 export function bld02Alanlari(yat: string, bas: Date, teslim: Date | string | null, web: string): Record<string, string | string[]> {

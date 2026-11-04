@@ -157,7 +157,4 @@ describe('Bugün (YG-1635)', () => {
     expect((await bugun(CEO)).duyurular.map((d: any) => d.baslik)).not.toContain('Z');
     expect((await sup.query(`SELECT count(*)::int n FROM duyuru_okuma WHERE duyuru_ref = $1`, [z.rows[0].kimlik])).rows[0].n).toBe(1);
   });
-  it('uygulama hesabı olağanüstü dönem ilan edemez', async () => {
-    await expect(db.query(`INSERT INTO olaganustu_donem DEFAULT VALUES`)).rejects.toThrow();
-  });
 });

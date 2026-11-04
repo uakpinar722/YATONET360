@@ -341,7 +341,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (sinir) {
         const yuk = await kapasiteYuku(c, g.kullanici, g.rol!);
         const ek = g.rol === 'Saha Sorumlusu' ? 1 : Number(d.zorluk_katsayisi);
-        if (yuk + ek > sinir) return dur(409, 'Kişinin kapasitesi doludur; başka birini seçiniz.');
+        const ood = (await c.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL LIMIT 1`)).rowCount; // YG-1489: dönemde kapasite kilidi uyarıya döner
+        if (yuk + ek > sinir && !ood) return dur(409, 'Kişinin kapasitesi doludur; başka birini seçiniz.');
         if ((yuk + ek) / sinir >= 0.8) uyari = `Kişinin kapasitesi %${Math.round(((yuk + ek) / sinir) * 100)} dolu.`;
       }
       if (t.tekil) {
