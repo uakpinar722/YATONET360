@@ -348,7 +348,7 @@ try {
   const pH = await firmaIsEmri(ie.is_emri_no);
   await pH.getByLabel('Hakediş Kanıtı').setInputFiles(TEMP.replace('.pdf', '3.pdf'));
   await pH.getByText('Dosya yüklendi.').first().waitFor();
-  await pH.getByLabel('Brüt (EUR)').fill('510'); await pH.getByLabel('Fatura No').fill(`H${tek}`);
+  await pH.getByLabel('Brüt (EUR)').fill('510'); await pH.getByLabel('Fatura No').fill(`H${tek}`); await pH.getByLabel('Fatura Tarihi').fill('2026-11-10'); await pH.getByLabel('TCMB Satış Kuru').fill('40,1234');
   await tikla(pH, 'Hakediş Gönder');
   const h = (await sup.query(`SELECT hakedis_no FROM hakedis WHERE is_emri_ref = $1`, [ie.kimlik])).rows[0];
   kontrol('firma hakedişi kanıtla portaldan gönderir', Boolean(h));
@@ -372,6 +372,22 @@ try {
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Ödeme Talimatı');
   await kartKarar(E, 'mfm', h.hakedis_no, 'Onaya Gönder');
   kontrol('Ticari Sorumlu ödeme talimatını ekrandan hazırlar', (await sup.query(`SELECT count(*)::int n FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref WHERE h.is_emri_ref = $1`, [ie.kimlik])).rows[0].n === 1);
+  // Ödeme Listesi (YG-830): plan tarihi geçmiş talimat listeye alınır, liste iki kademe onaylanır, ödeme kaydı ekranda açılır.
+  await kartKarar(E, 'tid', h.hakedis_no, 'Onayla');
+  await sup.query(`UPDATE tahsilat SET tarih = current_date - 50 WHERE dosya_ref = $1`, [d.kimlik]);
+  await dosyaAc(pTs, d.dosyaNo);
+  kontrol('Ticari Sorumlu dosyada mahsup ve malzeme avansı formunu görür', await pTs.getByRole('button', { name: 'Mahsup Öner' }).waitFor({ timeout: 8000 }).then(() => true, () => false));
+  await pTs.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).click();
+  const satirOd = pTs.locator('.soru', { hasText: h.hakedis_no });
+  await satirOd.getByLabel('Listeye Al').check();
+  await tikla(pTs, 'Ödeme Listesi Oluştur');
+  await tasmaYok(pTs, 'odeme_listesi');
+  const lst = (await sup.query(`SELECT l.liste_no, l.kimlik FROM odeme_listesi l JOIN odeme_talimati t ON t.odeme_listesi_ref = l.kimlik JOIN hakedis h ON h.kimlik = t.hakedis_ref WHERE h.is_emri_ref = $1`, [ie.kimlik])).rows[0];
+  kontrol('Ticari Sorumlu onaylı talimatı ödeme listesine alır', Boolean(lst));
+  await kartKarar(E, 'mfy', lst.liste_no, 'Onaya Gönder'); await kartKarar(E, 'tid', lst.liste_no, 'Onayla');
+  await pTs.reload(); await pTs.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).click();
+  await pTs.getByText(`${lst.liste_no}: Onaylandı`).waitFor();
+  kontrol('liste onaylanınca banka referansı alanı açılır', await pTs.locator('.soru', { hasText: h.hakedis_no }).getByLabel('Banka İşlem Referansı').isVisible());
 
   // Teslim
   await sup.query(`UPDATE dosya SET asama = 'Teslim' WHERE kimlik = $1`, [d.kimlik]);
@@ -422,6 +438,7 @@ try {
   kontrol('Kalite Kontrolör uygunsuzluğu ekrandan açar', (await sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d2.kimlik])).rows[0].n === 1);
   await dosyaAc(pT2, d2.dosyaNo);
   await pT2.locator('#kk-e').selectOption(ie2.kimlik); await pT2.locator('#kk-b').fill(new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)); await pT2.locator('#kk-t').fill('Rötuş'); await pT2.locator('#kk-i').fill('Görsel'); await pT2.locator('#kk-h').fill(new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10));
+  await pT2.locator('#kk-bd').fill('0');
   await tikla(pT2, 'Koşullu Kabul Ver');
   kontrol('Teknik Uzman koşullu kabulü ekrandan verir', (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].s === 'Koşullu Kabul');
   // Tedarik

@@ -11,7 +11,7 @@ import { onayTalebiAc } from './onay.js';
 import { altNumara, sureBaslat, sureBitir } from './sure.js';
 import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
-import { bildir, disGonder } from './bildirim.js';
+import { birKez, bildir, disGonder } from './bildirim.js';
 import { sigortaAdresiBekleniyor, sigortayaHazirla } from './sigorta_gonderim.js';
 import { metinGetir } from './metin.js';
 import { rolSahipleri } from './makam.js';
@@ -500,7 +500,10 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (k.kayit_turu.includes('Şikâyet') && g.sikayetSonucu && !['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].includes(g.sikayetSonucu)) return y.code(400).send({ hata: 'Şikâyet sonucunu seçiniz.' });
     await b.db.query(`UPDATE garanti_sikayet SET karar = coalesce($2, karar), sikayet_sonucu = coalesce($3, sikayet_sonucu), karar_gerekcesi = $4, karar_veren_ref = $5, duzeltme_maliyeti = coalesce($6, duzeltme_maliyeti), kok_neden_tamam = kok_neden_tamam OR $7, statu = $8, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`,
       [id, g.karar ?? null, g.sikayetSonucu ?? null, g.gerekce.trim(), o.kullanici, g.maliyet ?? null, Boolean(g.kokNeden), g.kapat ? 'Kapalı' : 'Karar']);
-    if (g.karar === 'Garanti') await garantiKarneIsle(b.db, k.dosya_ref); // Ek I §7.5
+    if (g.karar === 'Garanti') {
+      await garantiKarneIsle(b.db, k.dosya_ref); // Ek I §7.5
+      if (await birKez(b.db, 'garanti_masraf', id)) await kartAc(b.db, { tur: 'Garanti Masrafı', kategori: 'islem', baslik: `${k.kayit_no} · Garanti Yan Masrafı`, ozet: 'Karaya alma, çekek ve ulaşım masrafını LGM ödediyse firma hakedişinden mahsup önermenizi rica ederiz.', sahipRol: await rolId(b.db, 'Muhasebe ve Finans Müdürü'), nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref }); // YG-1418
+    }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Garanti/Şikâyet Kararı', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, yeni: { karar: g.karar, sonuc: g.sikayetSonucu }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

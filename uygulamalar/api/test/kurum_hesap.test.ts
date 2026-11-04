@@ -4,7 +4,7 @@ import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', hd: 'Hukuk ve Uyum Direktörü', tu: 'Teknik Uzman', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', ty: 'Teknik Yönetici', tm: 'Teknik Müdür' };
+const KADRO = { ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', ds: 'Dosya Sorumlusu', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', hd: 'Hukuk ve Uyum Direktörü', tu: 'Teknik Uzman', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', ty: 'Teknik Yönetici', tm: 'Teknik Müdür' };
 const P = 'Sinama-Parolasi-2026!'; const H = { 'x-yatonet': '1' };
 let o: Ortam; let fir: string; let ted: string; let firC: string; let firK: string; let ikiC: string; let ikiK: string; let tedC: string;
 const disGir = async (ad: string, grup: string, rol: string, kurulus: string) => {
@@ -188,6 +188,10 @@ describe('tedarikçi ödeme durumu (YG-298, YG-845)', () => {
     const h = await o.ist('POST', u(e), m, {}); expect(h.statusCode).toBe(409); expect(h.json().hata).toContain('banka hesabı');
     await o.sup.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, durum, giren_ref) VALUES ($1,'TR330006100519786457841326','Geçerli',$2)`, [ted, o.K.ds]);
     expect((await o.ist('GET', '/api/tedarikci-odemeleri', m)).json().map((x: { fatura_no: string }) => x.fatura_no)).toContain('F3');
+    expect((await o.ist('POST', u(e), m, {})).json().hata).toContain('Ödeme Listesi'); // YG-830
+    const ts = await o.gir('ts'); const l = await o.ist('POST', '/api/odeme-listesi', ts, { faturalar: [e] }); expect(l.statusCode, l.body).toBe(200);
+    const k = await o.kart('Ödeme Listesi', l.json().kimlik); await o.karar(k.kimlik, 'mfy', 'Onaya Gönder'); await o.karar(k.kimlik, 'tid', 'Onayla');
+    expect((await o.ist('POST', u(e), ts, {})).json().hata).toContain('hazırlayan');
     expect((await o.ist('POST', u(e), m, {})).statusCode).toBe(200);
     expect((await durum('F3')).odeme_durumu).toBe('Ödendi');
     expect((await o.ist('POST', u(e), m, {})).statusCode).toBe(409);

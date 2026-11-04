@@ -6,8 +6,8 @@ import { davetOlustur } from './ilk_giris.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { bankaHesabiAc, firmaOdemePlani, ibanGecerli } from './ticari.js';
-import { parametre } from './teklif.js';
+import { bankaHesabiAc, ibanGecerli } from './ticari.js';
+import { listeEngeli, listeTamamla } from './odeme.js';
 import { dosyaErisimi } from './dosya.js';
 import { UUID } from './yat.js';
 
@@ -133,9 +133,10 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
   s.get('/firma-portal/cari', oturumlu, async (i, y) => {
     const u = await kurumum(i.oturum!.kullanici);
     if (!u) return yok(y);
-    const satirlar = (await b.db.query(`SELECT h.hakedis_no, e.is_emri_no, h.bu_donem_brut, h.kesinti, h.net, h.statu, h.firma_fatura_no, t.planlanan_tarih::text, t.durum AS talimat, (SELECT max(x.tarih)::text FROM tahsilat x WHERE x.dosya_ref = h.dosya_ref) AS tahsilat_tarihi FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref LEFT JOIN odeme_talimati t ON t.hakedis_ref = h.kimlik WHERE e.kurulus_ref = $1 ORDER BY h.olusturma_zamani DESC`, [u.kimlik])).rows;
+    const satirlar = (await b.db.query(`SELECT h.hakedis_no, e.is_emri_no, h.bu_donem_brut, h.kesinti, h.net, h.statu, h.firma_fatura_no, t.planlanan_tarih::text, t.durum AS talimat, t.mahsup_eur, t.tutulan_eur, (SELECT max(x.tarih)::text FROM tahsilat x WHERE x.dosya_ref = h.dosya_ref) AS tahsilat_tarihi FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref LEFT JOIN LATERAL (SELECT * FROM odeme_talimati x WHERE x.hakedis_ref = h.kimlik ORDER BY x.olusturma_zamani DESC LIMIT 1) t ON true WHERE e.kurulus_ref = $1 ORDER BY h.olusturma_zamani DESC`, [u.kimlik])).rows;
+    const mahsuplar = (await b.db.query(`SELECT tur, tutar_eur, kalan_eur, aciklama, olusturma_zamani::date::text AS tarih FROM hakedis_mahsubu WHERE kurulus_ref = $1 AND statu = 'Onaylandı' ORDER BY olusturma_zamani DESC`, [u.kimlik])).rows;
     const acik = satirlar.filter((x) => x.statu !== 'Reddedildi' && x.statu !== 'Ödendi').reduce((a, x) => a + Number(x.net), 0);
-    return { satirlar, acikNet: Math.round(acik * 100) / 100 };
+    return { satirlar, mahsuplar, acikNet: Math.round(acik * 100) / 100 };
   });
 
   // YG-202: gerçekleşen teslimlerden parça bazında ortalama tedarik süresi; Dosya Sorumlusu teklifte tahmini süre olarak görür.
@@ -191,56 +192,22 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
   // YG-845: tedarikçi ödemesi tahsilattan bağımsız, faturadan 60 gün vadeli planlanır; üçlü eşleşme tamamlanmadan ödenmez.
   s.get('/tedarikci-odemeleri', oturumlu, async (i, y) => {
     if (!(await muhasebeMi(i.oturum!.kullanici))) return yok(y);
-    return (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.tarih::text, f.tutar_eur, (f.tarih + 60)::text AS vade, u.ticari_unvan, s.siparis_no, (SELECT e.sonuc FROM uclu_eslestirme e WHERE e.siparis_ref = f.siparis_ref AND e.fatura_no = f.fatura_no LIMIT 1) AS eslestirme FROM tedarikci_faturasi f JOIN kurulus u ON u.kimlik = f.kurulus_ref JOIN tedarik_siparisi s ON s.kimlik = f.siparis_ref WHERE f.odeme_zamani IS NULL ORDER BY f.tarih`)).rows;
+    return (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.tarih::text, f.tutar_eur, (f.tarih + 60)::text AS vade, u.ticari_unvan, s.siparis_no, (SELECT l.liste_no FROM odeme_listesi l WHERE l.kimlik = f.odeme_listesi_ref) AS liste_no, (SELECT l.durum FROM odeme_listesi l WHERE l.kimlik = f.odeme_listesi_ref) AS liste_durumu, (SELECT e.sonuc FROM uclu_eslestirme e WHERE e.siparis_ref = f.siparis_ref AND e.fatura_no = f.fatura_no LIMIT 1) AS eslestirme FROM tedarikci_faturasi f JOIN kurulus u ON u.kimlik = f.kurulus_ref JOIN tedarik_siparisi s ON s.kimlik = f.siparis_ref WHERE f.odeme_zamani IS NULL ORDER BY f.tarih`)).rows;
   });
   s.post('/tedarikci-odemeleri/:id/odendi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await muhasebeMi(o.kullanici))) return yok(y);
-    const f = (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.kurulus_ref, f.odeme_zamani, (SELECT e.sonuc FROM uclu_eslestirme e WHERE e.siparis_ref = f.siparis_ref AND e.fatura_no = f.fatura_no LIMIT 1) AS eslestirme FROM tedarikci_faturasi f WHERE f.kimlik = $1`, [id])).rows[0];
+    const f = (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.kurulus_ref, f.odeme_zamani, f.odeme_listesi_ref, (SELECT e.sonuc FROM uclu_eslestirme e WHERE e.siparis_ref = f.siparis_ref AND e.fatura_no = f.fatura_no LIMIT 1) AS eslestirme FROM tedarikci_faturasi f WHERE f.kimlik = $1`, [id])).rows[0];
     if (!f) return yok(y);
     if (f.odeme_zamani) return y.code(409).send({ hata: 'Bu fatura ödenmiştir.' });
     if (f.eslestirme !== 'Eşleşti') return y.code(409).send({ hata: 'Üçlü eşleşme tamamlanmadan ödeme kaydedilmemektedir.' });
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [f.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Tedarikçinin teyitli banka hesabı bekleniyor.' }); // YG-928
+    const le = await listeEngeli(b.db, o.kullanici, f.odeme_listesi_ref); if (le) return y.code(409).send({ hata: le }); // YG-830
     await b.db.query(`UPDATE tedarikci_faturasi SET odeme_zamani = now(), odeyen_ref = $2 WHERE kimlik = $1`, [id, o.kullanici]);
+    await listeTamamla(b.db, f.odeme_listesi_ref);
     const kisiler = (await b.db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [f.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
     await bildir(b.db, { olay: `tedarikci-odeme:${id}`, kullanicilar: kisiler, baslik: `Fatura ${f.fatura_no} Ödendi` });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Tedarikçi Ödemesi', nesneTuru: 'Tedarikçi Faturası', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { durum: 'Ödendi' };
-  });
-
-  // YG-830: onaylı talimat bankada ödenince kaydedilir; plan tahsilat geldiyse güncel tahsilat tarihinden yeniden hesaplanır (V-131).
-  const planTarihi = async (dosya: string, olusturma: Date) => {
-    const th = (await b.db.query(`SELECT max(tarih) t FROM tahsilat WHERE dosya_ref = $1`, [dosya])).rows[0].t;
-    return firmaOdemePlani(th ? new Date(th) : null, olusturma, await parametre(b.db, 'firma_odeme_gun'), await parametre(b.db, 'firma_odeme_azami_gun'));
-  };
-  s.get('/firma-odemeleri', oturumlu, async (i, y) => {
-    if (!(await muhasebeMi(i.oturum!.kullanici))) return yok(y);
-    const l = (await b.db.query(`SELECT t.kimlik, t.tutar_eur, t.olusturma_zamani, h.hakedis_no, h.dosya_ref, h.firma_fatura_no, u.ticari_unvan FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref JOIN kurulus u ON u.kimlik = t.kurulus_ref WHERE t.durum = 'Onaylandı' ORDER BY t.olusturma_zamani`)).rows;
-    return Promise.all(l.map(async (x) => { const p = await planTarihi(x.dosya_ref, x.olusturma_zamani); return { kimlik: x.kimlik, tutar_eur: x.tutar_eur, hakedis_no: x.hakedis_no, firma_fatura_no: x.firma_fatura_no, ticari_unvan: x.ticari_unvan, plan: p.tarih.toISOString().slice(0, 10), tahsilataBagli: p.tahsilataBagli }; }));
-  });
-  s.post('/firma-odemeleri/:id/odendi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const referans = ((i.body ?? {}) as { referans?: string }).referans?.trim();
-    if (!UUID.test(id) || !(await muhasebeMi(o.kullanici))) return yok(y);
-    const t = (await b.db.query(`SELECT t.*, h.dosya_ref, h.hakedis_no, e.teknik_kabul_eden_ref FROM odeme_talimati t JOIN hakedis h ON h.kimlik = t.hakedis_ref JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE t.kimlik = $1`, [id])).rows[0];
-    if (!t) return yok(y);
-    if (t.durum !== 'Onaylandı') return y.code(409).send({ hata: 'Ödeme talimatı onaylı değildir.' });
-    if (!referans) return y.code(400).send({ hata: 'Banka işlem referansını yazmanızı rica ederiz.' });
-    const onaylayan = (await b.db.query(`SELECT 1 FROM is_karti_adim a JOIN is_karti k ON k.kimlik = a.is_ref WHERE k.tur = 'Firma Ödeme Talimatı' AND k.nesne_kimligi = $1 AND a.yapan_ref = $2 LIMIT 1`, [id, o.kullanici])).rowCount;
-    if (o.kullanici === t.hazirlayan_ref || onaylayan || o.kullanici === t.teknik_kabul_eden_ref) return y.code(409).send({ hata: 'Talimatı hazırlayan, onaylayan veya teknik kabulü veren kişi ödemeyi kaydedemez; başka bir yetkiliden işlem bekleniyor.' }); // YG-827, YG-830
-    if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli banka hesabı bekleniyor.' }); // YG-928
-    const p = await planTarihi(t.dosya_ref, t.olusturma_zamani);
-    if (p.tarih.getTime() > Date.now()) return y.code(409).send({ hata: `Ödeme planı tarihi ${p.tarih.toISOString().slice(0, 10).split('-').reverse().join('.')} olup bu tarih bekleniyor.` });
-    if ((await b.db.query(`SELECT 1 FROM odeme_talimati WHERE banka_referansi = $1`, [referans])).rowCount) return y.code(409).send({ hata: 'Bu banka referansıyla kayıt vardır; mükerrer ödeme engellendi.' });
-    const c = await b.db.connect();
-    try {
-      await c.query('BEGIN');
-      await c.query(`UPDATE odeme_talimati SET durum = 'Ödendi', odeyen_ref = $2, odeme_zamani = now(), banka_referansi = $3 WHERE kimlik = $1`, [id, o.kullanici, referans]);
-      await c.query(`UPDATE hakedis SET statu = 'Ödendi' WHERE kimlik = $1`, [t.hakedis_ref]);
-      const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [t.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
-      await bildir(c, { olay: `firma-odeme:${id}`, kullanicilar: kisiler, baslik: `${t.hakedis_no} Ödendi` });
-      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Ödemesi', nesneTuru: 'Ödeme Talimatı', nesneKimligi: id, yeni: { referans }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-      await c.query('COMMIT');
-    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
     return { durum: 'Ödendi' };
   });
 }

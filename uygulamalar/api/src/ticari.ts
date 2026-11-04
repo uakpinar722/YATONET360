@@ -39,6 +39,18 @@ export function hakedisKesintisi(brut: number, isEmriBedeli: number, esik = 1000
 }
 
 /** YG-843: firma ödemesi tahsilattan 45 gün sonra, tahsil edilen oranda; tahsilat olmasa da teknik kabul ve faturadan en geç 120. günde. */
+/** YG-843: tahsil edilen / faturalanan; kısmi tahsilatta firma ödemesi bu oranda. */
+export async function tahsilatOrani(db: Db, dosya: string): Promise<number> {
+  const f = Number((await db.query(`SELECT coalesce(sum(toplam_eur), 0) t FROM musteri_faturasi WHERE dosya_ref = $1 AND fatura_no IS NOT NULL`, [dosya])).rows[0].t);
+  const t = Number((await db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM tahsilat WHERE dosya_ref = $1`, [dosya])).rows[0].t);
+  return f > 0 ? Math.min(1, t / f) : 1;
+}
+
+/** Ödenen ve mahsup edilen bedel neti karşılayınca hakediş kapanır; kalan varsa yeni talimat için döner (YG-841, YG-843). */
+export async function hakedisSonuc(c: Db, hakedis: string) {
+  await c.query(`UPDATE hakedis h SET statu = CASE WHEN (SELECT coalesce(sum(t.tutar_eur + t.mahsup_eur), 0) FROM odeme_talimati t WHERE t.hakedis_ref = h.kimlik AND t.durum = 'Ödendi') >= h.net THEN 'Ödendi' ELSE 'Doğrulandı' END WHERE h.kimlik = $1`, [hakedis]);
+}
+
 export function firmaOdemePlani(tahsilatTarihi: Date | null, kabulFaturaTarihi: Date, odemeGun = 45, azamiGun = 120) {
   const azami = new Date(kabulFaturaTarihi.getTime() + azamiGun * 86_400_000);
   if (!tahsilatTarihi) return { tarih: azami, tahsilataBagli: false };
@@ -122,10 +134,10 @@ kapanisKaydet('Proforma', async (c, k, karar) => {
 });
 
 kapanisKaydet('Firma Ödeme Talimatı', async (c, k, karar) => {
-  const t = (await c.query(`SELECT kimlik, hakedis_ref FROM odeme_talimati WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0];
+  const t = (await c.query(`SELECT kimlik, hakedis_ref FROM odeme_talimati WHERE kimlik = $1::uuid`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   if (karar === 'Onayla') await c.query(`UPDATE odeme_talimati SET durum = 'Onaylandı' WHERE kimlik = $1`, [t.kimlik]);
-  else if (karar === 'Reddet') { await c.query(`UPDATE odeme_talimati SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]); await c.query(`UPDATE hakedis SET statu = 'Doğrulandı' WHERE kimlik = $1`, [t.hakedis_ref]); }
+  else if (karar === 'Reddet') { await c.query(`UPDATE odeme_talimati SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]); await c.query(`UPDATE hakedis SET statu = 'Doğrulandı' WHERE kimlik = $1`, [t.hakedis_ref]); await c.query(`UPDATE hakedis_mahsubu m SET kalan_eur = m.kalan_eur + x.tutar_eur FROM talimat_mahsubu x WHERE x.mahsup_ref = m.kimlik AND x.talimat_ref = $1`, [t.kimlik]); }
 });
 
 kapanisKaydet('Teslim İstisnası', async (c, k, karar) => {
@@ -342,7 +354,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-835, YG-836, YG-838: firma hakediş girer; kanıt zorunlu ve tek; kümülatif iş emri bedelini aşamaz; kesinti sistemce.
   s.post('/firma-portal/is-emri/:id/hakedis', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { brut?: number; belge?: string; faturaNo?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { brut?: number; belge?: string; faturaNo?: string; faturaTarihi?: string; faturaKuru?: number };
     const f = await firmam(o.kullanici);
     if (!f || !UUID.test(id)) return yok(y);
     const e = (await b.db.query(`SELECT e.*, d.dosya_no FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
@@ -357,9 +369,21 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const kes = hakedisKesintisi(Number(g.brut), bedel, await parametre(c, 'hakedis_kesinti_esik_eur'), await parametre(c, 'hakedis_kesinti_orani'));
       const no = await altNumara(c, e.dosya_no, 'HK');
       const sira = (await c.query(`SELECT coalesce(max(sira_no), 0) + 1 n FROM hakedis WHERE is_emri_ref = $1`, [id])).rows[0].n;
-      const r = (await c.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, kesinti, net, kanit_belge_ref, firma_fatura_no, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [no, id, e.dosya_ref, sira, g.brut, R2(kum + Number(g.brut)), kes, R2(Number(g.brut) - kes), g.belge, g.faturaNo ?? null, o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, kesinti, net, kanit_belge_ref, firma_fatura_no, firma_fatura_tarihi, firma_fatura_kuru, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`, [no, id, e.dosya_ref, sira, g.brut, R2(kum + Number(g.brut)), kes, R2(Number(g.brut) - kes), g.belge, g.faturaNo ?? null, g.faturaTarihi || null, Number(g.faturaKuru) > 0 ? g.faturaKuru : null, o.kullanici])).rows[0];
       return { kimlik: r.kimlik, hakedisNo: no, kesinti: kes, net: R2(Number(g.brut) - kes) };
     });
+  });
+  // YG-846, K-193: firma, fatura düzenleme bildiriminden sonra fatura no, tarih ve kuru girer.
+  s.post('/firma-portal/hakedis/:id/fatura', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { no?: string; tarih?: string; kur?: number };
+    const f = await firmam(o.kullanici);
+    if (!f || !UUID.test(id)) return yok(y);
+    const h = (await b.db.query(`SELECT h.statu FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE h.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
+    if (!h) return yok(y);
+    if (!['Doğrulama Bekliyor', 'Doğrulandı'].includes(h.statu)) return y.code(409).send({ hata: 'Bu aşamada fatura bilgisi değiştirilemez.' });
+    if (!g.no?.trim() || !g.tarih || !(Number(g.kur) > 0)) return y.code(400).send({ hata: 'Fatura no, tarih ve kuru girmenizi rica ederiz.' });
+    await b.db.query(`UPDATE hakedis SET firma_fatura_no = $2, firma_fatura_tarihi = $3, firma_fatura_kuru = $4 WHERE kimlik = $1`, [id, g.no.trim(), g.tarih, g.kur]);
+    return { tamam: true };
   });
   // YG-834: Saha Sorumlusu, atanmamışsa Dosya Sorumlusu doğrular.
   s.post('/hakedis/:id/dogrula', oturumlu, async (i, y) => {
@@ -380,7 +404,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Ödeme talimatını Ticari Sorumlu hazırlar.' });
-    const h = (await b.db.query(`SELECT h.*, e.kurulus_ref, e.teknik_kabul_sonucu, e.is_emri_no FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE h.kimlik = $1`, [id])).rows[0];
+    const h = (await b.db.query(`SELECT h.*, e.kurulus_ref, e.teknik_kabul_sonucu, e.teknik_kabul_eden_ref, e.is_emri_no FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE h.kimlik = $1`, [id])).rows[0];
     if (!h) return yok(y);
     if (h.statu !== 'Doğrulandı') return y.code(409).send({ hata: 'Hakediş doğrulanmamıştır.' });
     if (!h.teknik_kabul_sonucu || h.teknik_kabul_sonucu === 'Ret') return y.code(409).send({ hata: 'Ödeme planı için Teknik kabul bekleniyor.' });
@@ -389,13 +413,35 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [h.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli IBAN kaydı yoktur.' });
     const dolu = (await b.db.query(`SELECT tur FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%SGK%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [h.kurulus_ref])).rows[0];
     if (!dolu) return y.code(409).send({ hata: 'SGK borcu yoktur yazısı olmadan hakediş ödemesi bekletilir.' }); // YG-341, YG-839
+    // YG-846: firma faturası Esas Müşteri Faturası ile aynı tarih ve kurda olmalı.
+    if (!h.firma_fatura_tarihi || !h.firma_fatura_kuru) return y.code(409).send({ hata: 'Firma faturasının tarih ve kuru bekleniyor.' });
+    const esas = (await b.db.query(`SELECT fatura_tarihi::text AS tarih, kur FROM musteri_faturasi WHERE dosya_ref = $1 AND fatura_no IS NOT NULL`, [h.dosya_ref])).rows;
+    if (!esas.length) return y.code(409).send({ hata: 'Esas Müşteri Faturası bekleniyor.' });
+    const ft = (await b.db.query(`SELECT $1::date::text AS t`, [h.firma_fatura_tarihi])).rows[0].t;
+    if (!esas.some((x) => x.tarih === ft && Number(x.kur) === Number(h.firma_fatura_kuru))) return y.code(409).send({ hata: 'Firma faturasının tarihi veya kuru Esas Müşteri Faturası ile aynı değildir.' });
     const th = (await b.db.query(`SELECT max(t.tarih) t FROM tahsilat t WHERE t.dosya_ref = $1`, [h.dosya_ref])).rows[0].t;
-    const plan = firmaOdemePlani(th ? new Date(th) : null, new Date(), await parametre(b.db, 'firma_odeme_gun'), await parametre(b.db, 'firma_odeme_azami_gun'));
+    const ilk = (await b.db.query(`SELECT min(olusturma_zamani) t FROM odeme_talimati WHERE hakedis_ref = $1 AND durum <> 'Reddedildi'`, [id])).rows[0].t;
+    const plan = firmaOdemePlani(th ? new Date(th) : null, ilk ? new Date(ilk) : new Date(), await parametre(b.db, 'firma_odeme_gun'), await parametre(b.db, 'firma_odeme_azami_gun'));
+    // YG-841 açık iş bedeli ayrı tutulur; YG-843 tahsilat oranı; YG-840 onaylı mahsuplar düşülür.
+    const once = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur + mahsup_eur), 0) t FROM odeme_talimati WHERE hakedis_ref = $1 AND durum <> 'Reddedildi'`, [id])).rows[0].t);
+    const kalan = R2(Number(h.net) - once);
+    const acik = Number((await b.db.query(`SELECT coalesce(sum(bedel_eur), 0) t FROM acik_is_kalemi WHERE is_emri_ref = $1 AND kapanis_zamani IS NULL`, [h.is_emri_ref])).rows[0].t);
+    const tutulan = R2(Math.min(kalan, acik));
+    let odenebilir = R2(kalan - tutulan);
+    if (plan.tahsilataBagli) odenebilir = R2(Math.min(odenebilir, Math.max(0, R2(Number(h.net) * await tahsilatOrani(b.db, h.dosya_ref)) - once)));
+    if (odenebilir <= 0) return y.code(409).send({ hata: 'Açık iş bedeli veya tahsilat nedeniyle ödenecek tutar bulunmamaktadır; kapanması bekleniyor.' });
     return islem(async (c) => {
-      const r = (await c.query(`INSERT INTO odeme_talimati (hakedis_ref, kurulus_ref, tutar_eur, planlanan_tarih, tahsilata_bagli, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [id, h.kurulus_ref, h.net, gun(plan.tarih), plan.tahsilataBagli, o.kullanici])).rows[0];
-      await c.query(`UPDATE hakedis SET statu = 'Ödeme Talimatında' WHERE kimlik = $1`, [id]);
-      await kartAc(c, { tur: 'Firma Ödeme Talimatı', baslik: `${h.hakedis_no} · Ödeme Talimatı`, ozet: `${tutar(Number(h.net))} EUR`, hazirlayan: o.kullanici, zincir: [await rolId(c, MFM), await rolId(c, 'Ticari İşler Direktörü')], nesneTuru: 'Ödeme Talimatı', nesneKimligi: r.kimlik });
-      return { kimlik: r.kimlik, planlanan: gun(plan.tarih), tahsilataBagli: plan.tahsilataBagli };
+      const ml = (await c.query(`SELECT kimlik, kalan_eur FROM hakedis_mahsubu WHERE kurulus_ref = $1 AND statu = 'Onaylandı' AND kalan_eur > 0 ORDER BY olusturma_zamani FOR UPDATE`, [h.kurulus_ref])).rows;
+      let mahsup = 0; const dusum: { kimlik: string; t: number }[] = [];
+      for (const m of ml) { const t = R2(Math.min(Number(m.kalan_eur), R2(odenebilir - mahsup))); if (t <= 0) break; dusum.push({ kimlik: m.kimlik, t }); mahsup = R2(mahsup + t); }
+      const tut = R2(odenebilir - mahsup);
+      const r = (await c.query(`INSERT INTO odeme_talimati (hakedis_ref, kurulus_ref, tutar_eur, mahsup_eur, tutulan_eur, planlanan_tarih, tahsilata_bagli, hazirlayan_ref, durum, odeme_zamani) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [id, h.kurulus_ref, tut, mahsup, tutulan, gun(plan.tarih), plan.tahsilataBagli, o.kullanici, tut > 0 ? 'İç Onayda' : 'Ödendi', tut > 0 ? null : new Date()])).rows[0];
+      for (const m of dusum) { await c.query(`UPDATE hakedis_mahsubu SET kalan_eur = kalan_eur - $2 WHERE kimlik = $1`, [m.kimlik, m.t]); await c.query(`INSERT INTO talimat_mahsubu (talimat_ref, mahsup_ref, tutar_eur) VALUES ($1,$2,$3)`, [r.kimlik, m.kimlik, m.t]); }
+      if (tut > 0) {
+        await c.query(`UPDATE hakedis SET statu = 'Ödeme Talimatında' WHERE kimlik = $1`, [id]);
+        await kartAc(c, { tur: 'Firma Ödeme Talimatı', baslik: `${h.hakedis_no} · Ödeme Talimatı`, ozet: `${tutar(tut)} EUR${mahsup ? ` · Mahsup: ${tutar(mahsup)} EUR` : ''}${tutulan ? ` · Tutulan: ${tutar(tutulan)} EUR` : ''}`, hazirlayan: o.kullanici, zincir: [await rolId(c, MFM), await rolId(c, 'Ticari İşler Direktörü')], ayrik: h.teknik_kabul_eden_ref ? [h.teknik_kabul_eden_ref] : [], nesneTuru: 'Ödeme Talimatı', nesneKimligi: r.kimlik });
+      } else await hakedisSonuc(c, id);
+      return { kimlik: r.kimlik, planlanan: gun(plan.tarih), tahsilataBagli: plan.tahsilataBagli, tutar: tut, mahsup, tutulan };
     });
   });
   // YG-928: IBAN karantinada başlar; talep kanalından farklı kanalla geri aranarak teyit ve iki farklı kişi.
@@ -480,6 +526,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       odemeTalepleri: await q(`SELECT kimlik, tur, tutar_eur, son_tarih::text, durum FROM odeme_talebi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       faturalar: await q(`SELECT kimlik, proforma_no, durum, fatura_no, fatura_tarihi::text, toplam_eur, toplam_tl, vade::text, tahsil_edilen_eur FROM musteri_faturasi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       hakedisler: await q(`SELECT kimlik, hakedis_no, bu_donem_brut, kesinti, net, statu FROM hakedis WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
+      isEmirleri: await q(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, k.ticari_unvan FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti') ORDER BY e.olusturma_zamani`),
       teslimEngeli: await teslimEngeli(b.db, id),
     };
   });

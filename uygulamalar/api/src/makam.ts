@@ -47,13 +47,14 @@ export async function rolSahipleri(db: Db, rol: string): Promise<string[]> {
 /**
  * YG-1034: hazırlayan kendi kaydını onaylayamaz. Makamda ondan başka kimse yoksa kayıt bir sonraki yetkiliye düşer; zincirin sonunda CEO kalır.
  */
-export async function zinciriDuzelt(db: Db, zincir: string[], hazirlayan?: string | null): Promise<string[]> {
-  if (!hazirlayan) return zincir;
+export async function zinciriDuzelt(db: Db, zincir: string[], hazirlayan?: string | null, ayrik: string[] = []): Promise<string[]> {
+  const kisiler = [...(hazirlayan ? [hazirlayan] : []), ...ayrik];
+  if (!kisiler.length) return zincir;
   const sonuc: string[] = [];
   for (let rol of zincir) {
     for (let i = 0; i < 6; i++) {
       const s = await rolSahipleri(db, rol);
-      if (!(s.length === 1 && s[0] === hazirlayan)) break;
+      if (!(s.length === 1 && kisiler.includes(s[0]!))) break; // YG-828: tek sahibi görev ayrılığına takılan makam üste çıkar
       const ust = await onayMakami(db, rol);
       if (ust === rol) break;
       rol = ust;

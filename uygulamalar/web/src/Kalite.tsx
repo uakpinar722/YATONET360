@@ -54,7 +54,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string }>>({});
   const [gk, setGk] = useState<Record<string, string>>({});
   const [ie, setIe] = useState<{ kimlik: string; is_emri_no: string; statu: string; teknik_kabul?: string | null }[]>([]); const [kpk, setKpk] = useState<Record<string, string>>({});
-  const [kp, setKp] = useState({ isEmri: '', tur: 'Bekletme', ozellik: '', olcut: '', zaman: '', eksperKlas: false }); const [kk, setKk] = useState({ isEmri: '', bitis: '', tanim: '', etki: '', hedef: '' });
+  const [kp, setKp] = useState({ isEmri: '', tur: 'Bekletme', ozellik: '', olcut: '', zaman: '', eksperKlas: false }); const [kk, setKk] = useState({ isEmri: '', bitis: '', tanim: '', etki: '', hedef: '', bedel: '' });
   useEffect(() => { void istek<{ isEmirleri: typeof ie }>(`/dosya/${id}/teklifler`).then((r) => setIe(r.isEmirleri)).catch(() => {}); }, [id, v]);
   if (!v) return null;
   const kalite = roller.includes(KM) || roller.includes(KK);
@@ -126,7 +126,8 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
         <label htmlFor="kk-t">Açık İş</label><input id="kk-t" value={kk.tanim} onChange={(e) => setKk({ ...kk, tanim: e.target.value })} />
         <label htmlFor="kk-i">Etki</label><input id="kk-i" value={kk.etki} onChange={(e) => setKk({ ...kk, etki: e.target.value })} />
         <label htmlFor="kk-h">Hedef Tarih</label><input id="kk-h" type="date" value={kk.hedef} onChange={(e) => setKk({ ...kk, hedef: e.target.value })} />
-        <button className="btn2" disabled={!kk.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kk.isEmri}/kosullu-kabul`, { bitis: kk.bitis, kalemler: [{ tanim: kk.tanim, etki: kk.etki, hedef: kk.hedef }] }), 'Koşullu kabul kaydedildi.')}>Koşullu Kabul Ver</button>
+        <label htmlFor="kk-bd">Açık İş Bedeli (EUR)</label><input id="kk-bd" inputMode="decimal" value={kk.bedel ?? ''} onChange={(e) => setKk({ ...kk, bedel: e.target.value })} />
+        <button className="btn2" disabled={!kk.isEmri || !kk.bedel} onClick={() => void yap(() => istek(`/is-emri/${kk.isEmri}/kosullu-kabul`, { bitis: kk.bitis, kalemler: [{ tanim: kk.tanim, etki: kk.etki, hedef: kk.hedef, bedel: Number(String(kk.bedel).replace(',', '.')) }] }), 'Koşullu kabul kaydedildi.')}>Koşullu Kabul Ver</button>
       </Blok>}
       <Blok baslik="Testler">
         {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '' }; return (

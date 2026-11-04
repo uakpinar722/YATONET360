@@ -138,7 +138,7 @@ describe('test (YG-286, YG-396, YG-397)', () => {
 describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
   it('açık Majör koşullu kabulü, açık Minör tam kabulü durdurur; koşullu kabul 30 gün, bir uzatma, süre dolunca Beklemede', async () => {
     const d = await dosya(); const e = await isEmri(d, 'Tamamlandı'); const tu = await o.gir('tu'); const km = await o.gir('km'); const u = `/api/is-emri/${e}/kosullu-kabul`;
-    const P = { bitis: ileri(30), kalemler: [{ tanim: 'T', etki: 'E', hedef: ileri(10) }] };
+    const P = { bitis: ileri(30), kalemler: [{ tanim: 'T', etki: 'E', hedef: ileri(10), bedel: 0 }] };
     const mj = (await ncr(d, { sinif: 'Majör', isEmri: e })).json().kimlik;
     expect((await o.ist('POST', u, tu, P)).json().hata).toContain('Majör');
     await o.sup.query(`UPDATE uygunsuzluk SET statu = 'Kapalı' WHERE kimlik = $1`, [mj]);

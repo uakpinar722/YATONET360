@@ -336,7 +336,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-287, YG-290: koşullu kabul en geç 30 gün; Kalite Müdürü bir kez 15 gün uzatır; çekince açık iş kalemine bağlanır.
   s.post('/is-emri/:id/kosullu-kabul', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { bitis?: string; kalemler?: { tanim?: string; etki?: string; hedef?: string }[] };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { bitis?: string; kalemler?: { tanim?: string; etki?: string; hedef?: string; bedel?: number }[] };
     if (!UUID.test(id)) return yok(y);
     const e = (await b.db.query(`SELECT kimlik, dosya_ref, statu FROM is_emri WHERE kimlik = $1`, [id])).rows[0];
     if (!e || !(await erisim(e.dosya_ref, o.kullanici))) return yok(y);
@@ -345,11 +345,11 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const eng = await kabulEngeli(b.db, e, 'Koşullu Kabul');
     if (eng) return y.code(409).send({ hata: eng });
     const kl = g.kalemler ?? [];
-    if (!kl.length || kl.some((x) => !x.tanim?.trim() || !x.etki?.trim() || !x.hedef)) return y.code(400).send({ hata: 'Her açık iş tanım, etki ve hedef tarih taşır.' });
+    if (!kl.length || kl.some((x) => !x.tanim?.trim() || !x.etki?.trim() || !x.hedef || !(Number(x.bedel) >= 0) || x.bedel === undefined)) return y.code(400).send({ hata: 'Her açık iş tanım, etki, hedef tarih ve bedel taşır.' }); // YG-841
     if (!g.bitis || (new Date(`${g.bitis}T23:59:59+03:00`).getTime() - Date.now()) / 86_400_000 > 31) return y.code(400).send({ hata: 'Koşul bitişi en geç 30 gündür.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO kabul_kaydi (dosya_ref, is_emri_ref, kabul_turu, kosul_bitis, kaydeden_ref) VALUES ($1,$2,'Koşullu Kabul',$3,$4) RETURNING kimlik`, [e.dosya_ref, id, g.bitis, o.kullanici])).rows[0];
-      for (const x of kl) await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih) VALUES ($1,$2,$3,$4,$5)`, [r.kimlik, id, x.tanim!.trim(), x.etki!.trim(), x.hedef]);
+      for (const x of kl) await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur) VALUES ($1,$2,$3,$4,$5,$6)`, [r.kimlik, id, x.tanim!.trim(), x.etki!.trim(), x.hedef, x.bedel]);
       await c.query(`UPDATE is_emri SET teknik_kabul_sonucu = 'Koşullu Kabul', teknik_kabul_eden_ref = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
       return { kimlik: r.kimlik };
     });

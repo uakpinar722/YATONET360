@@ -13,7 +13,7 @@ export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade E
 
 export interface KartGirdisi {
   tur: string; baslik: string; ozet?: string; oncelik?: string; hazirlayan?: string | null; zincir?: string[];
-  sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string; simdi?: Date;
+  sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string; simdi?: Date; ayrik?: string[];
 }
 
 export { rolSahipleri };
@@ -21,7 +21,7 @@ export { rolSahipleri };
 /** Modüllerin ortak giriş noktası (YG-1143): iş kartı açar ve sıradaki makama bildirir. */
 export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<string> {
   const kategori = g.kategori ?? (g.zincir?.length ? 'onay' : 'islem');
-  if (g.zincir?.length) g = { ...g, zincir: await zinciriDuzelt(db, g.zincir, g.hazirlayan) };
+  if (g.zincir?.length) g = { ...g, zincir: await zinciriDuzelt(db, g.zincir, g.hazirlayan, g.ayrik) };
   // YG-228: mesai dışında Kritik onay, son makam Direktör, GMY veya CEO ise ara kademeler beklenmeden son makama gider; ara kademeler bilgilenir.
   let ilkKademe = 0;
   if (kategori === 'onay' && g.oncelik === 'Kritik' && g.zincir!.length > 1 && !MESLEKI.has(g.tur) && !mesaiIcinde(g.simdi ?? new Date())) {
@@ -29,9 +29,9 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
     if (son && (son.kademe === 'Direktör' || son.rol_adi === 'Genel Müdür Yardımcısı' || son.rol_adi === 'CEO')) ilkKademe = g.zincir!.length - 1;
   }
   const { rows } = await db.query(
-    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`,
-    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe]);
+    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe, ayrik_kullanicilar)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`,
+    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe, g.ayrik ?? []]);
   const id = rows[0].kimlik as string;
   if (ilkKademe) { const ara: string[] = []; for (const r of g.zincir!.slice(0, ilkKademe)) ara.push(...await rolSahipleri(db, r)); await bildir(db, { olay: `kart-ara:${id}`, kullanicilar: ara, baslik: `Bilgi: Doğrudan Son Makama Gitti: ${g.baslik}`, oncelik: g.oncelik, isRef: id }); }
   const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![ilkKademe]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
@@ -104,6 +104,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       const k = rows[0];
       const dur = async (kod: number, hata: string) => { await c.query('ROLLBACK'); return y.code(kod).send({ hata }); };
       if (!k) return dur(404, 'Kayıt bulunamadı.');
+      if (k.ayrik_kullanicilar?.includes(o.kullanici)) return dur(403, 'Görev ayrılığı gereği bu kaydı onaylayamazsınız; teknik kabulü veren kişi ödemeyi onaylamaz.'); // YG-827, YG-1036
       const makam: string | undefined = k.zincir[k.kademe];
       const sonMakam = k.kademe === k.zincir.length - 1;
       let yeni: { durum: string; kademe: number; kapanir: boolean };

@@ -96,7 +96,7 @@ interface Kayitlar {
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string }[];
   isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null }[];
 }
-interface Mali { odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
+interface Mali { isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
 
 /** YG-386: firmanın girdiği ilerlemeyi Teknik Uzman veya Saha Sorumlusu doğrular; kabul bundan sonra verilir. */
 function IlerlemeDogrula({ isEmri }: { isEmri: string }) {
@@ -222,6 +222,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <div className="iki-tarih"><div><label htmlFor="f-k">TCMB Satış Kuru</label><input id="f-k" inputMode="decimal" value={fKur} onChange={(e) => setFKur(e.target.value)} /></div><div><label htmlFor="f-kt">Kur Tarihi</label><input id="f-kt" type="date" value={fKurT} onChange={(e) => setFKurT(e.target.value)} /></div></div>
           <div className="iki-tarih"><div><label htmlFor="h-t">Tahsilat (EUR)</label><input id="h-t" inputMode="decimal" value={thTutar} onChange={(e) => setThTutar(e.target.value)} /></div><div><label htmlFor="h-d">Tahsilat Tarihi</label><input id="h-d" type="date" value={thTarih} onChange={(e) => setThTarih(e.target.value)} /></div></div>
         </>}
+        {ticari && <MahsupAvans dosya={id} isEmirleri={m.isEmirleri} yap={yap} />}
         {m.hakedisler.map((h) => <div key={h.kimlik} className="soru"><span>{h.hakedis_no} · Brüt {eur(h.bu_donem_brut)} · Kesinti {eur(h.kesinti)} · Net {eur(h.net)} · {h.statu}</span><div className="dugmeler">{h.statu === 'Doğrulama Bekliyor' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/dogrula`, {}))}>Doğrula</button>}{h.statu === 'Doğrulandı' && ticari && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/odeme-talimati`, {}), 'Talimat onaya gönderildi.')}>Ödeme Talimatı</button>}</div></div>)}
         {asama === 'Teslim' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2" disabled={Boolean(m.teslimEngeli)} onClick={() => void yap(() => istek(`/dosya/${id}/teslim`, {}), 'Teslim onayı yat sahibine gönderildi.')}>Teslimi Başlat</button>}
       </Blok>}
@@ -288,7 +289,7 @@ function FirmaUygunsuzluk({ yap }: { yap: (f: () => Promise<any>, t?: string) =>
 
 /** YG-1574 A7 Çözüm Ortağı: İşleminizi Bekleyenler, acil çağrı, iş emirleri, kabul kodla, ilerleme ve hakediş. Müşteri bilgisi ve müşteri fiyatı yoktur (YG-294). */
 export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'isemri' }) {
-  const [l, setL] = useState<IsEmri[] | null>(null); const [ac, setAc] = useState<AcilCagri[]>([]); const [acik, setAcik] = useState<FirmaAyrinti | null>(null); const [kod, setKod] = useState(''); const [not_, setNot_] = useState(''); const [tahmini, setTahmini] = useState(''); const [brut, setBrut] = useState(''); const [fat, setFat] = useState(''); const [kalem, setKalem] = useState(''); const [miktar, setMiktar] = useState(''); const [belge, setBelge] = useState('');
+  const [l, setL] = useState<IsEmri[] | null>(null); const [ac, setAc] = useState<AcilCagri[]>([]); const [acik, setAcik] = useState<FirmaAyrinti | null>(null); const [kod, setKod] = useState(''); const [not_, setNot_] = useState(''); const [tahmini, setTahmini] = useState(''); const [brut, setBrut] = useState(''); const [fat, setFat] = useState(''); const [fatT, setFatT] = useState(''); const [fatK, setFatK] = useState(''); const [kalem, setKalem] = useState(''); const [miktar, setMiktar] = useState(''); const [belge, setBelge] = useState('');
   const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setL([])); }, []);
@@ -322,7 +323,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">
         <BelgeSec ad="Hakediş Kanıtı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
         <div className="iki-tarih"><div><label htmlFor="f-br">Brüt (EUR)</label><input id="f-br" inputMode="decimal" value={brut} onChange={(e) => setBrut(e.target.value)} /></div><div><label htmlFor="f-fn">Fatura No</label><input id="f-fn" value={fat} onChange={(e) => setFat(e.target.value)} /></div></div>
-        <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/hakedis`, { brut: Number(brut.replace(',', '.')), faturaNo: fat, belge }), 'Hakediş doğrulamaya gönderildi.')}>Hakediş Gönder</button>
+        <div className="iki-tarih"><div><label htmlFor="f-ft">Fatura Tarihi</label><input id="f-ft" type="date" value={fatT} onChange={(e) => setFatT(e.target.value)} /></div><div><label htmlFor="f-fk">TCMB Satış Kuru</label><input id="f-fk" inputMode="decimal" value={fatK} onChange={(e) => setFatK(e.target.value)} /></div></div>
+        <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/hakedis`, { brut: Number(brut.replace(',', '.')), faturaNo: fat, faturaTarihi: fatT || undefined, faturaKuru: fatK ? Number(fatK.replace(',', '.')) : undefined, belge }), 'Hakediş doğrulamaya gönderildi.')}>Hakediş Gönder</button>
       </Blok>}
     </>
   );
@@ -411,24 +413,51 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
 
 /** YG-948, YG-920: İdari İşlemlerim: izin ve masraf. Metin sağlık veya tanı bilgisi içermez (YG-952). */
 /** YG-845, YG-918: tedarikçi faturaları vade sırasıyla; ödeme yalnız üçlü eşleşmeden sonra kaydedilir. */
-/** YG-830: onaylı firma ödeme talimatı bankada ödenince kaydedilir. */
+/** YG-840, YG-1418, YG-353 mahsup önerisi; YG-842 malzeme avansı. */
+function MahsupAvans({ dosya, isEmirleri, yap }: { dosya: string; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; yap: (f: () => Promise<unknown>, m?: string) => Promise<void> }) {
+  const [e, setE] = useState(''); const [tur, setTur] = useState('Garanti Masrafı'); const [t, setT] = useState(''); const [a, setA] = useState(''); const [bl, setBl] = useState('');
+  const sayi = Number(t.replace(',', '.')); const ie = isEmirleri.find((x) => x.kimlik === e);
+  if (!isEmirleri.length) return null;
+  return (
+    <div className="soru"><span><b className="koyu">Mahsup ve Malzeme Avansı</b></span>
+      <div className="tam">
+        <label htmlFor="ma-e">İş Emri</label><select id="ma-e" value={e} onChange={(x) => setE(x.target.value)}><option value="">Seçiniz</option>{isEmirleri.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.is_emri_no} · {x.ticari_unvan}</option>)}</select>
+        <label htmlFor="ma-t">Tutar (EUR)</label><input id="ma-t" inputMode="decimal" value={t} onChange={(x) => setT(x.target.value)} />
+        <label htmlFor="ma-a">Açıklama</label><input id="ma-a" value={a} onChange={(x) => setA(x.target.value)} />
+        <label htmlFor="ma-k">Mahsup Türü</label><select id="ma-k" value={tur} onChange={(x) => setTur(x.target.value)}>{['Garanti Masrafı', 'Başka Firmaya Verilen Zarar', 'Çevre Cezası', 'Kusur Cezası', 'Temizlik Bedeli', 'İşi Bırakma Maliyet Farkı'].map((x) => <option key={x}>{x}</option>)}</select>
+        <BelgeSec ad="Mahsup Dayanağı" bagTuru="Dosya" bagKimligi={dosya} deger={bl} sec={setBl} />
+        <div className="dugmeler">
+          <button className="btn2 kucuk" disabled={!ie || !(sayi > 0) || !a.trim()} onClick={() => void yap(() => istek(`/dosya/${dosya}/mahsup`, { kurulus: ie!.kurulus_ref, tur, tutar: sayi, belge: bl, aciklama: a }), 'Mahsup önerisi onaya gönderildi.')}>Mahsup Öner</button>
+          <button className="btn2 kucuk" disabled={!ie || !(sayi > 0) || !a.trim()} onClick={() => void yap(() => istek(`/is-emri/${e}/malzeme-avansi`, { tutar: sayi, gerekce: a }), 'Malzeme avansı onaya gönderildi.')}>Malzeme Avansı İste</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** YG-830, YG-833, YG-844: onaylı talimat listeye alınır, liste onaylanınca bankada ödenir ve kaydedilir; acil istisna en çok 5.000,00 EUR. */
 function FirmaOdemeleri() {
-  const [l, setL] = useState<{ kimlik: string; tutar_eur: string; hakedis_no: string; firma_fatura_no: string; ticari_unvan: string; plan: string; tahsilataBagli: boolean }[]>([]); const [ref, setRef] = useState<Record<string, string>>({});
+  const [l, setL] = useState<{ kimlik: string; tutar_eur: string; mahsup_eur: string; tutulan_eur: string; belge_no: string; firma_fatura_no: string | null; ticari_unvan: string; plan: string; tahsilataBagli: boolean; durumAdi: string; liste_no: string | null; liste_durumu: string | null; acil_onayli: boolean }[]>([]); const [ref, setRef] = useState<Record<string, string>>({}); const [sec, setSec] = useState<string[]>([]); const [coz, setCoz] = useState(''); const [ac, setAc] = useState<Record<string, string>>({});
   const yukle = () => istek<typeof l>('/firma-odemeleri').then(setL);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); }, []);
   return (
     <Blok baslik="Çözüm Ortağı Ödemeleri"><Mesaj />
       {l.length === 0 && <div className="not">Onaylı ödeme talimatı bulunmamaktadır.</div>}
-      {l.map((t) => <div className="soru" key={t.kimlik}><span><b className="koyu">{t.hakedis_no}</b> · {t.ticari_unvan} · Fatura: {t.firma_fatura_no} · {eur(t.tutar_eur)} · Plan: {t.plan.split('-').reverse().join('.')}{t.tahsilataBagli ? ' · Tahsilata Bağlı' : ''}</span>
-        <div className="tam"><label htmlFor={`fo-${t.kimlik}`}>Banka İşlem Referansı</label><input id={`fo-${t.kimlik}`} value={ref[t.kimlik] ?? ''} onChange={(e) => setRef({ ...ref, [t.kimlik]: e.target.value })} /><button className="btn evet" disabled={!ref[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-odemeleri/${t.kimlik}/odendi`, { referans: ref[t.kimlik] }))}>Ödendi Olarak Kaydet</button></div>
+      {l.map((t) => <div className="soru" key={t.kimlik}><span><b className="koyu">{t.belge_no}</b> · {t.ticari_unvan}{t.firma_fatura_no ? ` · Fatura: ${t.firma_fatura_no}` : ''} · {eur(t.tutar_eur)}{Number(t.mahsup_eur) > 0 ? ` · Mahsup: ${eur(t.mahsup_eur)}` : ''}{Number(t.tutulan_eur) > 0 ? ` · Tutulan: ${eur(t.tutulan_eur)}` : ''} · Plan: {t.plan.split('-').reverse().join('.')} · {t.durumAdi}{t.tahsilataBagli ? ' · Tahsilata Bağlı' : ''}{t.liste_no ? ` · ${t.liste_no}: ${t.liste_durumu}` : ''}{t.acil_onayli ? ' · Acil İstisna' : ''}</span>
+        {!t.liste_no && !t.acil_onayli && <div className="tam"><label><input type="checkbox" checked={sec.includes(t.kimlik)} onChange={(e) => setSec(e.target.checked ? [...sec, t.kimlik] : sec.filter((x) => x !== t.kimlik))} /> Listeye Al</label><label htmlFor={`fa-${t.kimlik}`}>Acil Ödeme Gerekçesi</label><input id={`fa-${t.kimlik}`} value={ac[t.kimlik] ?? ''} onChange={(e) => setAc({ ...ac, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!ac[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/odeme-talimati/${t.kimlik}/acil`, { gerekce: ac[t.kimlik] }))}>Acil İstisna İste</button></div>}
+        {(t.liste_durumu === 'Onaylandı' || t.acil_onayli) && <div className="tam"><label htmlFor={`fo-${t.kimlik}`}>Banka İşlem Referansı</label><input id={`fo-${t.kimlik}`} value={ref[t.kimlik] ?? ''} onChange={(e) => setRef({ ...ref, [t.kimlik]: e.target.value })} /><button className="btn evet" disabled={!ref[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-odemeleri/${t.kimlik}/odendi`, { referans: ref[t.kimlik] }))}>Ödendi Olarak Kaydet</button></div>}
       </div>)}
+      {sec.length > 0 && <>
+        <label htmlFor="ol-c">Mükerrerlik İnceleme Sonucu</label><input id="ol-c" value={coz} onChange={(e) => setCoz(e.target.value)} />
+        <button className="btn2" onClick={() => void yap(() => istek('/odeme-listesi', { talimatlar: sec, mukerrerlikCozumu: coz || undefined }).then(() => { setSec([]); setCoz(''); return { uyari: 'Ödeme Listesi onaya gönderildi.' }; }))}>Ödeme Listesi Oluştur</button>
+      </>}
     </Blok>
   );
 }
 
 export function TedarikciOdemeleri() {
-  const [l, setL] = useState<{ kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; vade: string; ticari_unvan: string; siparis_no: string; eslestirme: string | null }[]>([]);
+  const [l, setL] = useState<{ kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; vade: string; ticari_unvan: string; siparis_no: string; eslestirme: string | null; liste_no: string | null; liste_durumu: string | null }[]>([]); const [sec, setSec] = useState<string[]>([]);
   const yukle = () => istek<typeof l>('/tedarikci-odemeleri').then(setL);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); }, []);
@@ -438,7 +467,11 @@ export function TedarikciOdemeleri() {
       <FirmaOdemeleri />
       <Blok baslik="Açık Faturalar">
         {l.length === 0 && <div className="not">Açık fatura bulunmamaktadır.</div>}
-        {l.map((f) => <div className="soru" key={f.kimlik}><span><b className="koyu">{f.fatura_no}</b> · {f.ticari_unvan} · {f.siparis_no} · {eur(f.tutar_eur)} · Vade: {f.vade.split('-').reverse().join('.')} · Üçlü Eşleşme: {f.eslestirme ?? 'Bekleniyor'}</span><button className="btn2 kucuk" disabled={f.eslestirme !== 'Eşleşti'} onClick={() => void yap(() => istek(`/tedarikci-odemeleri/${f.kimlik}/odendi`, {}))}>Ödendi Olarak Kaydet</button></div>)}
+        {l.map((f) => <div className="soru" key={f.kimlik}><span><b className="koyu">{f.fatura_no}</b> · {f.ticari_unvan} · {f.siparis_no} · {eur(f.tutar_eur)} · Vade: {f.vade.split('-').reverse().join('.')} · Üçlü Eşleşme: {f.eslestirme ?? 'Bekleniyor'}{f.liste_no ? ` · ${f.liste_no}: ${f.liste_durumu}` : ''}</span>
+          {!f.liste_no && f.eslestirme === 'Eşleşti' && <label><input type="checkbox" checked={sec.includes(f.kimlik)} onChange={(e) => setSec(e.target.checked ? [...sec, f.kimlik] : sec.filter((x) => x !== f.kimlik))} /> Listeye Al</label>}
+          {f.liste_durumu === 'Onaylandı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/tedarikci-odemeleri/${f.kimlik}/odendi`, {}))}>Ödendi Olarak Kaydet</button>}
+        </div>)}
+        {sec.length > 0 && <button className="btn2" onClick={() => void yap(() => istek('/odeme-listesi', { faturalar: sec }).then(() => { setSec([]); return { uyari: 'Ödeme Listesi onaya gönderildi.' }; }))}>Faturalar İçin Ödeme Listesi Oluştur</button>}
       </Blok>
     </>
   );
