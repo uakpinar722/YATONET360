@@ -452,6 +452,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const yanitSon = sikayet ? await isGunuEkle(c, simdi, 10) : null;
       const k = (await c.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, konum, belirti, oncelik, tekrarlayan, sikayet_konusu, kesif_son, yanit_son, sikayet_takip_ref, sikayet_sonuc_ref, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`,
         [no, id, turler, g.kanal, g.bildirimZamani ? new Date(g.bildirimZamani) : simdi, g.konum?.trim() || d.konum, g.belirti?.trim() || null, g.oncelik, Boolean(g.tekrarlayan), g.konu?.trim() || null, kesifSon, yanitSon, takip ?? null, sonuc ?? null, o.kullanici])).rows[0];
+      await c.query(`UPDATE garanti_sikayet g SET kurulus_ref = (SELECT e.kurulus_ref FROM is_emri e WHERE e.dosya_ref = $2 AND e.is_emri_turu IN ('ON', 'EK') ORDER BY e.olusturma_zamani DESC LIMIT 1) WHERE g.kimlik = $1`, [k.kimlik, id]); // YG-335: ayıp bildirimi işi yapan firmaya bağlanır
       if (takip) await kartAc(c, { tur: 'Şikâyet Takibi', kategori: 'islem', baslik: `${no} · Şikâyet Kaydı ve İlk Teyit`, ozet: g.konu!.trim().slice(0, 200), sahipKullanici: takip, sonZaman: yanitSon, nesneTuru: 'Garanti Şikâyet', nesneKimligi: k.kimlik });
       if (garanti && d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Garanti Keşfi', kategori: 'gorev', baslik: `${no} · Garanti Keşfi`, ozet: g.belirti!.trim().slice(0, 200), oncelik: g.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sonZaman: kesifSon, sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Garanti Şikâyet', nesneKimligi: k.kimlik });
       // YG-1423, BLD-62, BLD-63: alındı bildirimi otomatik; gönderim kayda geçer. Metin alanları kataloğa göre doldurulur.
@@ -498,6 +499,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       return { durum: 'Onay Bekleniyor', makam };
     }
     if (k.kayit_turu.includes('Şikâyet') && g.sikayetSonucu && !['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].includes(g.sikayetSonucu)) return y.code(400).send({ hata: 'Şikâyet sonucunu seçiniz.' });
+    await b.db.query(`UPDATE garanti_sikayet SET karar_zamani = coalesce(karar_zamani, now()) WHERE kimlik = $1`, [id]);
     await b.db.query(`UPDATE garanti_sikayet SET karar = coalesce($2, karar), sikayet_sonucu = coalesce($3, sikayet_sonucu), karar_gerekcesi = $4, karar_veren_ref = $5, duzeltme_maliyeti = coalesce($6, duzeltme_maliyeti), kok_neden_tamam = kok_neden_tamam OR $7, statu = $8, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`,
       [id, g.karar ?? null, g.sikayetSonucu ?? null, g.gerekce.trim(), o.kullanici, g.maliyet ?? null, Boolean(g.kokNeden), g.kapat ? 'Kapalı' : 'Karar']);
     if (g.karar === 'Garanti') {

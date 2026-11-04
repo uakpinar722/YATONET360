@@ -9,6 +9,7 @@ import { tutar } from './metin.js';
 import { altNumara } from './sure.js';
 import { parametre, parasalZincir, sonMakam } from './teklif.js';
 import { sozlesmeEngeli } from './alacak.js';
+import { muadilEngeli } from './firma_ek.js';
 import { avansHesapla } from './ticari.js';
 import { UUID } from './yat.js';
 
@@ -56,7 +57,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-823, YG-906: Tedarik Sorumlusu hazırlar; Tedarik Müdürü → T&O Direktörü uygun görüş → limite göre son makam.
   s.post('/dosya/:id/siparis', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tedarikci?: string; teklifRef?: string; kullanim?: string; teslimTarihi?: string; teslimYeri?: string; kismi?: boolean; olcut?: string; gerekce?: string; kalemler?: { tanim?: string; parcaNo?: string; miktar?: number; birim?: string; bedel?: number }[] };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tedarikci?: string; teklifRef?: string; kullanim?: string; teslimTarihi?: string; teslimYeri?: string; kismi?: boolean; olcut?: string; gerekce?: string; kalemler?: { muadilOrijinal?: string; tanim?: string; parcaNo?: string; miktar?: number; birim?: string; bedel?: number }[] };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await tedarikSorumlusu(o.kullanici))) return y.code(403).send({ hata: 'Siparişi Tedarik Sorumlusu hazırlar.' });
     if (!g.tedarikci || !UUID.test(g.tedarikci) || !g.teklifRef?.trim() || !g.kullanim?.trim() || !g.teslimTarihi || !g.teslimYeri?.trim() || !g.olcut?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Tedarikçi, teklif, kullanım yeri, teslim, kabul ölçütü ve seçim gerekçesi zorunludur.' });
@@ -65,6 +66,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     const f = (await b.db.query(`SELECT kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE kimlik = $1`, [g.tedarikci])).rows[0];
     if (!f || f.kayit_rolu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kayıt tedarikçi değildir.' });
     if (f.ag_statusu !== 'Aktif' || !['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return y.code(409).send({ hata: 'Sipariş için onaylı ve aktif bir tedarikçi seçmenizi rica ederiz.' });
+    for (const m of kl) if (m.muadilOrijinal) { const me = await muadilEngeli(b.db, id, m.muadilOrijinal, m.parcaNo!, m.tanim!); if (me) return y.code(409).send({ hata: me }); } // YG-867
     const eng = await parcaOdemeEngeli(b.db, id) ?? await sozlesmeEngeli(b.db, g.tedarikci);
     if (eng) return y.code(409).send({ hata: eng });
     const matrah = R2(kl.reduce((a, k) => a + R2(Number(k.miktar) * Number(k.bedel)), 0)); const kdv = R2((matrah * await parametre(b.db, 'kdv_orani')) / 100);
@@ -73,7 +75,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
       const no = await altNumara(c, d.dosya_no, 'SP');
       const r = (await c.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kismi_teslim_izni, kabul_olcutu, secim_gerekcesi, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`, [no, id, g.tedarikci, g.teklifRef!.trim(), g.kullanim!.trim(), matrah, kdv, R2(matrah + kdv), g.teslimTarihi, g.teslimYeri!.trim(), Boolean(g.kismi), g.olcut!.trim(), g.gerekce!.trim(), o.kullanici])).rows[0];
       let n = 0;
-      for (const k of kl) await c.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [r.kimlik, ++n, k.tanim!.trim(), k.parcaNo!.trim(), k.miktar, k.birim!.trim(), k.bedel, R2(Number(k.miktar) * Number(k.bedel))]);
+      for (const k of kl) await c.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur, muadil_orijinal_no) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [r.kimlik, ++n, k.tanim!.trim(), k.parcaNo!.trim(), k.miktar, k.birim!.trim(), k.bedel, R2(Number(k.miktar) * Number(k.bedel)), k.muadilOrijinal?.trim() || null]);
       // YG-824: aynı dosyada aynı tedarikçiye bölünmüş sipariş kümülatif tutarla onaya gider.
       await kartAc(c, { tur: 'Tedarik Siparişi', baslik: `${no} · Tedarik Siparişi`, ozet: `${tutar(matrah)} EUR`, hazirlayan: o.kullanici, zincir: await parasalZincir(c, ['Tedarik Yönetimi Müdürü', 'Teknik ve Operasyon Direktörü'], await sonMakam(c, Number((await c.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM tedarik_siparisi WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu <> 'İptal'`, [id, g.tedarikci])).rows[0].t))), nesneTuru: 'Sipariş', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, siparisNo: no, kdvHaric: matrah, toplam: R2(matrah + kdv) };

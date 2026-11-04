@@ -83,6 +83,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <button className="btn2 kucuk" disabled={!ku.saglayici} onClick={() => void yap(() => istek(`/dosya/${id}/kurtarma`, ku), 'Kurtarma operasyonu açıldı; yat sahibi onayı gönderildi.')}>Operasyon Aç</button>
 
       <TeslimIslemleri id={id} yap={yap} />
+      <SahaIslemleri id={id} yap={yap} />
 
       <div className="bolum">Acil Temas Kaydı</div>
       {tem.map((x, n) => <div key={n}>{x.tur} · {x.ozet} · {new Date(x.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}</div>)}
@@ -149,6 +150,35 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   </>);
 }
 
+/** İP-7: geçici onarım, kaldırma ve taşıma, hiza, kaptan görevlendirme. */
+function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
+  const [g, setG] = useState({ islem: '', uygulama: '', kullanim: '', son: '', suAlma: false }); const [l, setL] = useState<{ kimlik: string; islem: string; son_gecerlilik: string; uzatma_sayisi: number; durum: string }[]>([]); const [uz, setUz] = useState(''); const [t, setT] = useState({ tur: 'Kaldırma', ekipman: '', kapasite: '', agirlik: '', yeniHasar: false }); const [hz, setHz] = useState(''); const [kp, setKp] = useState<{ kimlik: string; ad_soyad: string; ticari_unvan: string; gecerli: boolean }[]>([]); const [ks, setKs] = useState(''); const [hg, setHg] = useState('');
+  const yk = () => istek<typeof l>(`/dosya/${id}/gecici-onarim`).then(setL);
+  useEffect(() => { void yk().catch(() => {}); void istek<typeof kp>('/kaptanlar').then(setKp).catch(() => {}); }, [id]);
+  return (<>
+    <div className="bolum">Geçici Onarım</div>
+    {l.map((x) => <div className="soru" key={x.kimlik}><span>{x.islem} · Son: {gun(x.son_gecerlilik)} · Uzatma: {x.uzatma_sayisi}/2 · {x.durum}</span>{x.durum === 'Açık' && <div className="tam"><label htmlFor={`gu-${x.kimlik}`}>Yeni Son Tarih</label><input id={`gu-${x.kimlik}`} type="date" value={uz} onChange={(e) => setUz(e.target.value)} /><div className="dugmeler"><button className="btn2 kucuk" disabled={!uz} onClick={() => void yap(() => istek(`/gecici-onarim/${x.kimlik}/uzat`, { son: uz }).then(yk), 'Süre uzatıldı.')}>Uzat</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/gecici-onarim/${x.kimlik}/kapat`, {}).then(yk), 'Geçici onarım kapatıldı.')}>Kapat</button></div></div>}</div>)}
+    <label htmlFor="go-i">Geçici İşlem</label><input id="go-i" value={g.islem} onChange={(e) => setG({ ...g, islem: e.target.value })} />
+    <label htmlFor="go-k">İzin Verilen Kullanım</label><input id="go-k" value={g.kullanim} onChange={(e) => setG({ ...g, kullanim: e.target.value })} />
+    <div className="iki-tarih"><div><label htmlFor="go-u">Uygulama Tarihi</label><input id="go-u" type="date" value={g.uygulama} onChange={(e) => setG({ ...g, uygulama: e.target.value })} /></div><div><label htmlFor="go-s">Son Geçerlilik</label><input id="go-s" type="date" value={g.son} onChange={(e) => setG({ ...g, son: e.target.value })} /></div></div>
+    <label className="kutu"><input type="checkbox" checked={g.suAlma} onChange={(e) => setG({ ...g, suAlma: e.target.checked })} /><span>Su Alma Riski</span></label>
+    <button className="btn2 kucuk" disabled={!g.islem.trim() || !g.uygulama || !g.son || !g.kullanim.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/gecici-onarim`, g).then(yk), 'Geçici onarım kaydedildi.')}>Geçici Onarım Kaydet</button>
+
+    <div className="bolum">Kaldırma ve Taşıma</div>
+    <label htmlFor="kt-t">İşlem</label><select id="kt-t" value={t.tur} onChange={(e) => setT({ ...t, tur: e.target.value })}>{['Kaldırma', 'Taşıma', 'Tesis Değişikliği'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="kt-e">Ekipman</label><input id="kt-e" value={t.ekipman} onChange={(e) => setT({ ...t, ekipman: e.target.value })} />
+    <div className="iki-tarih"><div><label htmlFor="kt-k">Kapasite (ton)</label><input id="kt-k" inputMode="decimal" value={t.kapasite} onChange={(e) => setT({ ...t, kapasite: e.target.value })} /></div><div><label htmlFor="kt-a">Yat Ağırlığı (ton)</label><input id="kt-a" inputMode="decimal" value={t.agirlik} onChange={(e) => setT({ ...t, agirlik: e.target.value })} /></div></div>
+    <label className="kutu"><input type="checkbox" checked={t.yeniHasar} onChange={(e) => setT({ ...t, yeniHasar: e.target.checked })} /><span>Yeni Hasar Oluştu</span></label>
+    <button className="btn2 kucuk" disabled={!t.ekipman.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/kaldirma-tasima`, { tur: t.tur, ekipman: t.ekipman, kapasite: t.kapasite ? sayi(t.kapasite) : undefined, agirlik: t.agirlik ? sayi(t.agirlik) : undefined, yeniHasar: t.yeniHasar }), 'Kaydedildi.')}>Kaydı Gir</button>
+    <label htmlFor="kt-h">Hukuk Onayı Gerekçesi</label><input id="kt-h" value={hg} onChange={(e) => setHg(e.target.value)} /><button className="btn2 kucuk" disabled={!hg.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/tasima-onayi`, { gerekce: hg }), 'Hukuk ve Uyum Direktörü onayına gönderildi.')}>Taşıma Onayı İste</button>
+
+    <div className="bolum">Deniz Denemesi ve Kaptan</div>
+    <BelgeSec ad="Ana Makine Hiza Ölçümü" bagTuru="Dosya" bagKimligi={id} deger={hz} sec={setHz} /><button className="btn2 kucuk" disabled={!hz} onClick={() => void yap(() => istek(`/dosya/${id}/hiza-kontrolu`, { belge: hz }), 'Hiza kontrolü kaydedildi.')}>Hiza Kontrolünü Kaydet</button>
+    <label htmlFor="kp-s">Kaptan</label><select id="kp-s" value={ks} onChange={(e) => setKs(e.target.value)}><option value="">Seçiniz</option>{kp.map((x) => <option key={x.kimlik} value={x.kimlik} disabled={!x.gecerli}>{x.ad_soyad} · {x.ticari_unvan}{x.gecerli ? '' : ' · Belge Süresi Dolmuş'}</option>)}</select>
+    <button className="btn2 kucuk" disabled={!ks} onClick={() => void yap(() => istek(`/dosya/${id}/kaptan-gorevlendirme`, { kaptan: ks }), 'Kaptan görevlendirildi.')}>Kaptan Görevlendir</button>
+  </>);
+}
+
 /** YG-456: Ticari İşler Direktörü mutabakat raporunu gönderir; ikili teyit sonrası itiraz süresi başlar. */
 export function MutabakatRaporlari() {
   const [l, setL] = useState<{ kimlik: string; sigortaci_adi: string; donem: string; kesim_tarihi: string; itiraz_son: string | null; durum: string; satirlar: { kimlik: string; dosya_no: string; fatura_no: string; acik_bakiye: string; itiraz_edildi: boolean; mutabik: boolean }[] }[] | null>(null); const [not, setNot] = useState<Record<string, string>>({});
@@ -171,10 +201,15 @@ export function MutabakatRaporlari() {
 
 /** YG-210, YG-273: firma kurtarma onayı ve acil müsaitlik. */
 export function FirmaAcilIslemleri({ yap }: { yap: Yap }) {
+  const [it, setIt] = useState<{ garanti: { kimlik: string; kayit_no: string; firma_itiraz: string | null }[]; mahsup: { kimlik: string; tur: string; tutar_eur: string; aciklama: string; firma_itiraz: string | null }[] } | null>(null); const [ig, setIg] = useState<Record<string, string>>({});
+  const yi = () => istek<NonNullable<typeof it>>('/firma-portal/itirazlar').then(setIt);
+  useEffect(() => { void yi().catch(() => {}); }, []);
   const [l, setL] = useState<{ kimlik: string; hizmet_turu: string; acil: boolean; firma_onay_zamani: string | null; dosya_no: string }[]>([]); const [kod, setKod] = useState(''); const [m, setM] = useState({ musait: true, dk: '' });
   useEffect(() => { void istek<typeof l>('/firma-portal/kurtarma').then(setL).catch(() => {}); }, []);
   return (<>
     {l.filter((x) => !x.firma_onay_zamani).map((x) => <div className="ozet" key={x.kimlik}><div>{x.dosya_no} · {x.hizmet_turu}{x.acil ? ' · Acil' : ''} Sözleşmesi</div><label htmlFor={`fk-${x.kimlik}`}>Onay Kodu</label><input id={`fk-${x.kimlik}`} inputMode="numeric" value={kod} onChange={(e) => setKod(e.target.value)} /><button className="btn2" disabled={!kod} onClick={() => void yap(() => istek(`/firma-portal/kurtarma/${x.kimlik}/onay`, { kod }).then(() => istek<typeof l>('/firma-portal/kurtarma').then(setL)), 'Onayınız kaydedildi.')}>Sözleşmeyi Onayla</button></div>)}
+    {it?.garanti.filter((x) => !x.firma_itiraz).map((x) => <div className="ozet" key={x.kimlik}><div>Garanti Kararı: {x.kayit_no} (2 iş günü içinde itiraz edebilirsiniz)</div><label htmlFor={`gi-${x.kimlik}`}>İtiraz Gerekçesi</label><input id={`gi-${x.kimlik}`} value={ig[x.kimlik] ?? ''} onChange={(e) => setIg({ ...ig, [x.kimlik]: e.target.value })} /><button className="btn2" disabled={!ig[x.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/garanti/${x.kimlik}/itiraz`, { gerekce: ig[x.kimlik] }).then(yi), 'İtirazınız alındı.')}>İtiraz Et</button></div>)}
+    {it?.mahsup.filter((x) => !x.firma_itiraz).map((x) => <div className="ozet" key={x.kimlik}><div>Rücu ve Mahsup: {x.tur} · {x.tutar_eur} EUR · {x.aciklama} (5 iş günü içinde itiraz edebilirsiniz)</div><label htmlFor={`mi-${x.kimlik}`}>İtiraz Gerekçesi</label><input id={`mi-${x.kimlik}`} value={ig[x.kimlik] ?? ''} onChange={(e) => setIg({ ...ig, [x.kimlik]: e.target.value })} /><button className="btn2" disabled={!ig[x.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/mahsup/${x.kimlik}/itiraz`, { gerekce: ig[x.kimlik] }).then(yi), 'İtirazınız alındı.')}>İtiraz Et</button></div>)}
     <div className="ozet"><label className="kutu"><input type="checkbox" checked={m.musait} onChange={(e) => setM({ ...m, musait: e.target.checked })} /><span>Acil Göreve Müsaitim</span></label><label htmlFor="fk-dk">Yanıt Süresi (Dakika)</label><input id="fk-dk" inputMode="numeric" value={m.dk} onChange={(e) => setM({ ...m, dk: e.target.value })} /><button className="btn2" disabled={!m.dk} onClick={() => void yap(() => istek('/firma-portal/acil-musaitlik', { musait: m.musait, yanitDk: Number(m.dk) }), 'Müsaitlik kaydedildi.')}>Müsaitliği Kaydet</button></div>
   </>);
 }

@@ -50,7 +50,7 @@ kapanisKaydet('Acil Ödeme İstisnası', async (c, k, karar) => {
 });
 kapanisKaydet('Hakediş Mahsubu', async (c, k, karar) => {
   if (karar === 'Onayla') {
-    const m = (await c.query(`UPDATE hakedis_mahsubu SET statu = 'Onaylandı', kalan_eur = tutar_eur WHERE kimlik = $1::uuid RETURNING kurulus_ref, tur, tutar_eur`, [k.nesne_kimligi])).rows[0];
+    const m = (await c.query(`UPDATE hakedis_mahsubu SET statu = 'Onaylandı', kalan_eur = tutar_eur, onay_zamani = now() WHERE kimlik = $1::uuid RETURNING kurulus_ref, tur, tutar_eur`, [k.nesne_kimligi])).rows[0];
     if (m) await bildir(c, { olay: `mahsup:${k.nesne_kimligi}`, kullanicilar: await firmaKisileri(c, m.kurulus_ref), baslik: `Hakediş Mahsubu: ${m.tur}`, ozet: `${tutar(Number(m.tutar_eur))} EUR` });
   } else if (karar === 'Reddet') await c.query(`UPDATE hakedis_mahsubu SET statu = 'Reddedildi' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });

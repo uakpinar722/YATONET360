@@ -54,6 +54,7 @@ belgeBagiKaydet('Dosya', async (db, k, id) => {
 
 export async function statuYaz(c: Db, d: { kimlik: string; statu: string; asama: string | null }, yeni: { statu: string; asama: string | null }, gerekce: string, yapan: string | null, sonrakiRol?: string) {
   await c.query(`UPDATE dosya SET statu = $2, asama = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [d.kimlik, yeni.statu, yeni.asama]);
+  if (yeni.statu === 'Kapalı' && d.statu !== 'Kapalı') await (await import('./firma_ek.js')).dosyaKapanisIsleri(c, d.kimlik); // YG-312, YG-416
   await c.query(`INSERT INTO dosya_statu_gecmisi (dosya_ref, onceki_statu, onceki_asama, yeni_statu, yeni_asama, gerekce, sonraki_sorumlu_rol, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [d.kimlik, d.statu, d.asama, yeni.statu, yeni.asama, gerekce, sonrakiRol ?? null, yapan]);
 }
 

@@ -9,6 +9,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { gunAy, tutar } from './metin.js';
 import { onayFormKaydet, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { UUID } from './yat.js';
+import { hizaEngeli } from './firma_ek.js';
 
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
@@ -81,6 +82,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (g.ony === 'ONY-09' && !g.zaman) return y.code(400).send({ hata: 'Deneme tarih ve saatini yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-10' && !g.kayitNo?.trim()) return y.code(400).send({ hata: 'Garanti kayıt numarasını yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-06' && !g.teklifNo?.trim()) return y.code(400).send({ hata: 'Teklif numarasını yazmanızı rica ederiz.' });
+    if (g.ony === 'ONY-09') { const he = await hizaEngeli(b.db, id); if (he) return y.code(409).send({ hata: he }); } // YG-409
     const d = await dosya(id); const t = await sahip(id);
     if (!t) return y.code(409).send({ hata: 'Yat sahibi kaydı bulunamadı.' });
     const dil = dilKod(d.yazisma_dili); const web = b.webAdresi; const ts = tutar(Number(g.tutar ?? 0), dil);

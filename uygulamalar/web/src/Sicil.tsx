@@ -120,7 +120,7 @@ export function NobetCizelge() {
 
 /** YG-923: imzalı nüsha ve birlikte imza olmadan sözleşme yürürlüğe girmez; YG-915 haciz ihbarı Hukuk ve Uyum Direktörünce girilir. */
 function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, m: string) => Promise<void> }) {
-  const [hz, setHz] = useState({ no: '', teblig: '', cevapSon: '' }); const [aS, setAS] = useState('');
+  const [hz, setHz] = useState({ no: '', teblig: '', cevapSon: '' }); const [aS, setAS] = useState(''); const [se, setSe] = useState({ marka: '', kapasite: '', taraf: '' }); const [kq, setKq] = useState({ ad: '', belge: '', belgeBitis: '', police: '', policeBitis: '' }); const [ag, setAg] = useState('');
   const [l, setL] = useState<{ kimlik: string; sozlesme_turu: string; yururluk: string; bitis: string | null; durum: string }[]>([]); const [f, setF] = useState({ tur: 'İş Birliği Firması Çerçeve Sözleşmesi', yururluk: '', bitis: '' }); const [bl, setBl] = useState(''); const [imza, setImza] = useState(false);
   const yukle = () => istek<typeof l>(`/firma/${id}/sozlesme`).then(setL).catch(() => setL([]));
   useEffect(() => { void yukle(); }, [id]);
@@ -132,6 +132,17 @@ function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown
     {l.map((s) => <div className="soru" key={s.kimlik}><span>{s.sozlesme_turu} · {s.yururluk.split('-').reverse().join('.')} · {s.durum}</span>
       {s.durum === 'Taslak' && <div className="tam"><BelgeSec ad={`İmzalı Nüsha ${s.sozlesme_turu}`} bagTuru="Kuruluş" bagKimligi={id} deger={bl} sec={setBl} /><label><input type="checkbox" checked={imza} onChange={(e) => setImza(e.target.checked)} /> Birlikte imza tamamlandı</label><button className="btn2 kucuk" disabled={!bl || !imza} onClick={() => void yap(() => istek(`/sozlesme/${s.kimlik}/yururluk`, { belge: bl, birlikteImza: imza }).then(yukle), 'Sözleşme yürürlüğe girdi.')}>Yürürlüğe Al</button></div>}
     </div>)}
+    <label htmlFor="se-m">Yetkili Servis Markası</label><input id="se-m" value={se.marka} onChange={(e) => setSe({ ...se, marka: e.target.value })} />
+    <label htmlFor="se-k">İş Kapasitesi</label><input id="se-k" inputMode="numeric" value={se.kapasite} onChange={(e) => setSe({ ...se, kapasite: e.target.value })} />
+    <label htmlFor="se-t">Çıkar Çatışması: Taraf No</label><input id="se-t" value={se.taraf} onChange={(e) => setSe({ ...se, taraf: e.target.value })} />
+    <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/sicil-ek`, { marka: se.marka || undefined, kapasite: Number(se.kapasite) || undefined, cikarTaraf: se.taraf || undefined }), 'Sicil bilgisi kaydedildi.')}>Sicil Bilgisini Kaydet</button>
+    <label htmlFor="kq-a">Kaptan Adı</label><input id="kq-a" value={kq.ad} onChange={(e) => setKq({ ...kq, ad: e.target.value })} />
+    <label htmlFor="kq-b">Yeterlilik Belgesi</label><input id="kq-b" value={kq.belge} onChange={(e) => setKq({ ...kq, belge: e.target.value })} />
+    <label htmlFor="kq-bb">Belge Geçerliliği</label><input id="kq-bb" type="date" value={kq.belgeBitis} onChange={(e) => setKq({ ...kq, belgeBitis: e.target.value })} />
+    <label htmlFor="kq-p">Mesleki Sorumluluk Poliçesi</label><input id="kq-p" value={kq.police} onChange={(e) => setKq({ ...kq, police: e.target.value })} />
+    <label htmlFor="kq-pb">Poliçe Bitişi</label><input id="kq-pb" type="date" value={kq.policeBitis} onChange={(e) => setKq({ ...kq, policeBitis: e.target.value })} />
+    <button className="btn2" disabled={!kq.ad.trim() || !kq.belgeBitis || !kq.policeBitis} onClick={() => void yap(() => istek(`/firma/${id}/kaptan`, kq), 'Kaptan kaydedildi.')}>Kaptan Ekle</button>
+    <label htmlFor="ka-g">Kalıcı Askı Gerekçesi</label><input id="ka-g" value={ag} onChange={(e) => setAg(e.target.value)} /><button className="btn hayir" disabled={!ag.trim()} onClick={() => void yap(() => istek(`/firma/${id}/kalici-aski-onerisi`, { gerekce: ag }), 'Görüşler istendi.')}>Kalıcı Askı Öner</button>
     <label htmlFor="ac-s">Acil Arama Sırası</label><input id="ac-s" inputMode="numeric" value={aS} onChange={(e) => setAS(e.target.value)} />
     <button className="btn2" disabled={!aS} onClick={() => void yap(() => istek(`/firma/${id}/acil-bilgi`, { hizmetVerir: true, aramaSirasi: Number(aS) }), 'Firma acil hizmet verir olarak kaydedildi.')}>Acil Hizmet Ver</button>
     <label htmlFor="hz-n">Haciz İhbarname No</label><input id="hz-n" value={hz.no} onChange={(e) => setHz({ ...hz, no: e.target.value })} />

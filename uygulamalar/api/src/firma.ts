@@ -14,6 +14,7 @@ import { belgeUret } from './belge_uret.js';
 import { performansOlayIsle } from './karne.js';
 import { isBasiAvansEngeli } from './tedarik.js';
 import { kosulEngeli } from './onay_ek.js';
+import { gorevlendirmeKontrolu, ON_KOSULLAR } from './firma_ek.js';
 import { ilaveIsYetkiEngeli, yabanciBayrakEngeli } from './teslim_ek.js';
 import { isAcmaEngeli as blokeSozlesmeDisi, sozlesmeEngeli } from './alacak.js';
 import { baslangicToplantiEngeli, isDurduBildir } from './saha_kayit.js';
@@ -176,7 +177,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   // YG-435: KN, ON, EK Operasyon Yöneticisi; GR Teknik Yönetici çıkarır. YG-322: mali ve kapsam doğrulanmadan yayımlanmaz.
   s.post('/dosya/:id/is-emri', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { tur?: string; firma?: string; yer?: string; kapsam?: string; bedel?: number; baslangic?: string; bitis?: string; teklif?: string; siralar?: number[]; ana?: string; tehlikeliAtik?: boolean; brans?: string };
+    const g = (i.body ?? {}) as { tur?: string; firma?: string; yer?: string; kapsam?: string; bedel?: number; baslangic?: string; bitis?: string; teklif?: string; siralar?: number[]; ana?: string; tehlikeliAtik?: boolean; brans?: string; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT * FROM dosya WHERE kimlik = $1`, [id])).rows[0];
     if (d.statu !== 'Aktif') return y.code(409).send({ hata: 'İş emri yalnız Aktif dosyada verilir.' });
@@ -191,6 +192,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.firma || !UUID.test(g.firma)) return y.code(400).send({ hata: 'Firmayı seçiniz.' });
     const engel = await firmaUygunlugu(b.db, g.firma, g.brans ?? null);
     if (engel) return y.code(409).send({ hata: engel });
+    // YG-306: görevlendirme kontrolü; Ret engeller, Koşullu Kabul uyarıyla geçer.
+    const gk = await gorevlendirmeKontrolu(b.db, { firma: g.firma, dosya: id, brans: g.brans ?? null, tutar: g.bedel ?? null, cokBrans: g.cokBrans, anaSistem: g.anaSistem, kritik: g.kritik });
+    await b.db.query(`INSERT INTO gorevlendirme_kontrolu (dosya_ref, kurulus_ref, gorev_sinifi, sonuc, engeller, uyarilar, yapan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, g.firma, gk.sinif, gk.sonuc, gk.engeller, gk.uyarilar, o.kullanici]);
+    if (gk.sonuc === 'Ret') return y.code(409).send({ hata: gk.engeller[0] });
     if ((g.tur === 'EK' || g.tur === 'GR') && (!g.ana || !UUID.test(g.ana) || !(await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND dosya_ref = $2`, [g.ana, id])).rowCount)) return y.code(400).send({ hata: 'Ek İş ve Garanti iş emri bir ana iş emrine bağlanır.' }); // YG-316
     const karar = (g.tur === 'ON' || g.tur === 'EK' || g.tur === 'PH');
     let kalemler: { kimlik: string; aciklama: string; miktar: string; birim: string; satir_ref: string | null }[] = [];
@@ -211,6 +216,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     // YG-1487: bireyselde Keşif Ücreti keşiften önce ödenir.
     if (g.tur === 'KN' && d.musteri_turu === 'Bireysel Müşteri' && (await b.db.query(`SELECT 1 FROM odeme_talebi WHERE dosya_ref = $1 AND tur = 'Keşif Ücreti' AND durum = 'Gönderildi' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için Keşif Ücreti ödemesi bekleniyor.' });
     return islem(async (c) => {
+      if (['ON', 'EK'].includes(g.tur!) && g.brans && /yapı|gövde|makine|yangın/i.test(g.brans)) { // YG-334
+        const kl = (await c.query(`SELECT y.klas_durumu, y.tabi_kod FROM yat y WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
+        if (kl?.klas_durumu === 'Evet' || kl?.tabi_kod) await kartAc(c, { tur: 'Klas Kuruluşu Bildirimi', kategori: 'islem', baslik: `${d.dosya_no} · Sörveyör Katılımı Gerekir`, ozet: 'Klas kuruluşuna en az 48 saat önce bildirim yapınız.', oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref ?? o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
+      }
       const no = await altNumara(c, d.dosya_no, g.tur!);
       const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, ana_is_emri_ref, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, baslangic_tarihi, hedef_bitis_tarihi, tehlikeli_atik, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [no, g.tur, g.ana ?? null, id, g.teklif ?? null, g.firma, g.yer!.trim(), g.kapsam!.trim(), g.bedel ?? null, g.baslangic ?? null, g.bitis ?? null, Boolean(g.tehlikeliAtik), o.kullanici])).rows[0];
@@ -345,14 +354,18 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-369: başlangıç kontrolü firma kabulünden sonra; Başlanabilir / Koşullu Başlanabilir / Bekletilir. BLD-02 yat sahibine.
   s.post('/is-emri/:id/baslangic', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc } = (i.body ?? {}) as { sonuc?: string };
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc, onKosul, gerekce } = (i.body ?? {}) as { sonuc?: string; onKosul?: string[]; gerekce?: string };
     if (!e) return yok(y);
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, TEKNIK))) return y.code(403).send({ hata: 'Başlangıç kontrolünü Saha Sorumlusu veya Teknik Uzman yapar.' });
     if (e.statu !== 'Başlangıç Kontrolünde') return y.code(409).send({ hata: 'İş emri başlangıç kontrolünde değildir.' });
     if (!['Başlanabilir', 'Koşullu Başlanabilir', 'Bekletilir'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    // YG-368: eksik ön koşulla başlama ancak Koşullu ve gerekçeyle; Başlanabilir yalnız tamamı işaretliyse.
+    const eksikOn = ON_KOSULLAR.filter((x) => !(onKosul ?? []).includes(x));
+    if (sonuc === 'Başlanabilir' && eksikOn.length) return y.code(409).send({ hata: `Başlama ön koşulu eksiktir: ${eksikOn.join(', ')}. Sapma gerekçesiyle Koşullu Başlanabilir seçmenizi rica ederiz.`, eksikler: eksikOn });
+    if (sonuc === 'Koşullu Başlanabilir' && eksikOn.length && !gerekce?.trim()) return y.code(400).send({ hata: 'Eksik ön koşul için sapma gerekçesini yazmanızı rica ederiz.' });
     if (sonuc !== 'Bekletilir') { const pe = await planEngeli(b.db, e.dosya_ref, e.is_emri_turu) ?? await baslangicToplantiEngeli(b.db, e.kimlik, e.is_emri_turu) ?? (e.is_emri_turu === 'ON' ? await isBasiAvansEngeli(b.db, e.dosya_ref) : null); if (pe) return y.code(409).send({ hata: pe }); }
     return islem(async (c) => {
-      await c.query(`UPDATE is_emri SET baslangic_sonucu = $2, statu = CASE WHEN $2 = 'Bekletilir' THEN statu ELSE 'Aktif' END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc]);
+      await c.query(`UPDATE is_emri SET baslangic_sonucu = $2, statu = CASE WHEN $2 = 'Bekletilir' THEN statu ELSE 'Aktif' END, eksik_on_kosullar = $3, on_kosul_gerekcesi = $4, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, eksikOn, gerekce?.trim() || null]);
       if (sonuc !== 'Bekletilir' && e.is_emri_turu !== 'KN') {
         const t = (await c.query(`SELECT t.telefon, t.eposta, y.yat_adi FROM dosya_tarafi t JOIN dosya d ON d.kimlik = t.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE t.dosya_ref = $1 AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif AND NOT d.vefat_isareti LIMIT 1`, [e.dosya_ref])).rows[0];
         if (t) await yatTarafinaYaz(c, { olay: `bld02:${e.kimlik}`, kod: 'BLD-02', dil: dilKod(e.yazisma_dili), konu: `${e.dosya_no} İşe Başlandı`, telefon: t.telefon, eposta: t.eposta, alanlar: bld02Alanlari(t.yat_adi, new Date(), e.hedef_bitis_tarihi, b.webAdresi) });

@@ -36,6 +36,7 @@ import { alacakYollari } from './alacak.js';
 import { acilEkYollari } from './acil_ek.js';
 import { onayEkYollari } from './onay_ek.js';
 import { teslimEkYollari } from './teslim_ek.js';
+import { firmaEkYollari } from './firma_ek.js';
 import { sahaYollari } from './saha.js';
 import { teklifYollari } from './teklif.js';
 import { toplantiYollari } from './toplanti.js';
@@ -59,6 +60,6 @@ export async function sunucuKur(b: Baglam) {
     y.code(kod && kod < 500 ? kod : 500).send({ hata: isKurali ? e.message : 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { sigortaEk2Yollari(a, b); kurumHesapYollari(a, b); karneYollari(a, b); sahaKayitYollari(a, b); kurumsalYollari(a, b); odemeYollari(a, b); vergiYollari(a, b); alacakYollari(a, b); acilEkYollari(a, b); onayEkYollari(a, b); teslimEkYollari(a, b); kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); sigortaGonderimYollari(a, b); tesisTedarikciYollari(a, b); raporYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { sigortaEk2Yollari(a, b); kurumHesapYollari(a, b); karneYollari(a, b); sahaKayitYollari(a, b); kurumsalYollari(a, b); odemeYollari(a, b); vergiYollari(a, b); alacakYollari(a, b); acilEkYollari(a, b); onayEkYollari(a, b); teslimEkYollari(a, b); firmaEkYollari(a, b); kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); sigortaGonderimYollari(a, b); tesisTedarikciYollari(a, b); raporYollari(a, b); }, { prefix: '/api' });
   return s;
 }

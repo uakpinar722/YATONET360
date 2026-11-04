@@ -13,6 +13,7 @@ afterAll(async () => { await o.kapat(); });
 describe('onay ekranları (YG-471, YG-474, YG-472, YG-1500)', () => {
   it('altı varyant onaylı metinle açılır; eksik alan reddedilir', async () => {
     const d = await dosya(); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/onay-iste`;
+    await o.sup.query(`UPDATE dosya SET hiza_kontrol_zamani = now() WHERE kimlik = $1`, [d.kimlik]);
     expect((await o.ist('POST', u, ds, { ony: 'ONY-99' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, ds, { ony: 'ONY-07' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, ds, { ony: 'ONY-08', parca: 'P' })).statusCode).toBe(400);

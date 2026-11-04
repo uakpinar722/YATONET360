@@ -14,6 +14,7 @@ import { onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { sigortayaHazirla } from './sigorta_gonderim.js';
 import { parametre } from './teklif.js';
 import { UUID } from './yat.js';
+import { kurtarmaBelgeEngeli } from './firma_ek.js';
 
 type Db = Pool | PoolClient;
 const OPM = 'Operasyon Müdürü'; const GMY = 'Genel Müdür Yardımcısı'; const TOD = 'Teknik ve Operasyon Direktörü';
@@ -252,6 +253,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     const yt = (await b.db.query(`SELECT t.kimlik, t.kisi_adi_soyadi, t.telefon, t.eposta, t.kullanici_ref FROM dosya_tarafi t WHERE t.dosya_ref = $1 AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif LIMIT 1`, [id])).rows[0];
     if (!yt) return y.code(409).send({ hata: 'Yat sahibi kaydı bulunamadı.' });
     if (!(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1`, [g.saglayici])).rowCount) return yok(y);
+    { const kb = await kurtarmaBelgeEngeli(b.db, g.saglayici, g.hizmet!); if (kb) return y.code(409).send({ hata: kb }); } // YG-337
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO kurtarma_operasyonu (dosya_ref, hizmet_turu, saglayici_ref, acil, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, g.hizmet, g.saglayici, Boolean(g.acil), o.kullanici])).rows[0];
       const on = await onayTalebiAc(c, { dosya: id, ony: 'ONY-30', dil: dilKod(d.yazisma_dili), alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': b.webAdresi, link: b.webAdresi }, aliciAd: yt.kisi_adi_soyadi, telefon: yt.telefon, eposta: yt.eposta, kullanici: yt.kullanici_ref, nesneTuru: 'Kurtarma', nesneKimligi: r.kimlik, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: `${d.dosya_no} Kurtarma Sözleşmesi` });

@@ -119,6 +119,15 @@ function MasrafKalemi({ dosya, teklif, yap }: { dosya: string; teklif: string; y
   </div>;
 }
 
+/** YG-368: ön koşullar; eksikte Koşullu ve gerekçe. */
+function BaslangicKontrolu({ kimlik, yap }: { kimlik: string; yap: (f: () => Promise<unknown>, m?: string) => Promise<unknown> }) {
+  const ON = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'];
+  const [s, setS] = useState<string[]>([]); const [g, setG] = useState('');
+  return <div className="tam">{ON.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={s.includes(x)} onChange={(e) => setS(e.target.checked ? [...s, x] : s.filter((y) => y !== x))} /><span>{x}</span></label>)}
+    <label htmlFor={`bk-${kimlik}`}>Sapma Gerekçesi</label><input id={`bk-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${kimlik}/baslangic`, { sonuc: 'Başlanabilir', onKosul: s }))}>Başlanabilir</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${kimlik}/baslangic`, { sonuc: 'Koşullu Başlanabilir', onKosul: s, gerekce: g }))}>Koşullu Başlanabilir</button></div></div>;
+}
+
 /** YG-195, YG-230, YG-301, YG-302, YG-884: dosya içinde kapsam, teklif, iş emri ve mali akış. */
 export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; rollerim: string[]; roller: string[]; asama: string | null }) {
   const [v, setV] = useState<Kayitlar | null>(null); const [m, setM] = useState<Mali | null>(null); const [firmalar, setFirmalar] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]);
@@ -189,7 +198,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <div key={e.kimlik} className="soru">
             <span>{e.ana_is_emri_ref ? '↳ ' : ''}{e.is_emri_no} · {e.firma} · {e.statu}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
             <div className="dugmeler">
-              {e.statu === 'Başlangıç Kontrolünde' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/baslangic`, { sonuc: 'Başlanabilir' }))}>Başlanabilir</button>}
+              {e.statu === 'Başlangıç Kontrolünde' && tu && <BaslangicKontrolu kimlik={e.kimlik} yap={yap} />}
               {['Aktif', 'Tamamlandı'].includes(e.statu) && tu && <IlerlemeDogrula isEmri={e.kimlik} />}
               {!['Taslak', 'İç Onayda', 'İptal'].includes(e.statu) && <SahaKayitlari isEmri={e.kimlik} />}
               {e.statu === 'Tamamlandı' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/teknik-kabul`, { sonuc: 'Kabul' }), 'Teknik kabul kaydedildi.')}>Teknik Kabul</button>}

@@ -47,8 +47,8 @@ describe('kurallar', () => {
 describe('kalite planı (YG-288)', () => {
   it('plansız onarım başlamaz; keşif başlar; A sınıfı Teknik Müdür onaylar', async () => {
     const d = await dosya(); const on = await isEmri(d, 'Başlangıç Kontrolünde'); const kn = await isEmri(d, 'Başlangıç Kontrolünde', 'KN'); const tu = await o.gir('tu');
-    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir' })).json().hata).toContain('kalite planı');
-    expect((await o.ist('POST', `/api/is-emri/${kn}/baslangic`, tu, { sonuc: 'Başlanabilir' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'] })).json().hata).toContain('kalite planı');
+    expect((await o.ist('POST', `/api/is-emri/${kn}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'] })).statusCode).toBe(200);
     const G = [{ gereklilik: 'Sızdırmazlık', dogrulama: 'Basınç testi' }];
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, await o.gir('ds'), { sinif: 'A', ozet: 'Ö', gereklilikler: G })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'A', ozet: 'Ö', gereklilikler: [{ gereklilik: 'X' }] })).statusCode).toBe(400);
@@ -57,9 +57,9 @@ describe('kalite planı (YG-288)', () => {
     const k = await o.kart('Kalite Planı', p.json().kimlik);
     expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).not.toBe(200);
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
-    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir' })).json().hata).toContain('toplantısı');
+    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'] })).json().hata).toContain('toplantısı');
     await o.sup.query(`INSERT INTO baslangic_toplantisi (is_emri_ref, tarih, katilimcilar, konusulanlar, kaydeden_ref) VALUES ($1,current_date,'K','K',$2)`, [on, o.K.ds]);
-    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'] })).statusCode).toBe(200);
     expect((await ncr(d, { sinif: 'Minör' })).json().hata).toContain('A sınıfı');
   });
 });
