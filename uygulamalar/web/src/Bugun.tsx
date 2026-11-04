@@ -45,9 +45,10 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   const son = k.kademe === k.kademe_sayisi - 1;
   // YG-1649: dış kullanıcı hesap kurtarmasında makam "Teyit Et" / "Gerekçeyle İade Et" kullanır.
   const teyit = k.tur === 'Hesap Kurtarma Teyidi';
+  const [kod, setKod] = useState(''); const [kodIste, setKodIste] = useState(false); // YG-222
   const ver = async (karar: string, g?: string) => {
     setHata(''); setMesgul(true);
-    try { await istek(`/is/${k.kimlik}/karar`, { karar, gerekce: g }); yenile(); } catch (e) { setHata((e as Error).message); setMesgul(false); }
+    try { await istek(`/is/${k.kimlik}/karar`, { karar, gerekce: g, kod: kod || undefined }); yenile(); } catch (e) { setHata((e as Error).message); setKodIste(/doğrulama kodunu/.test((e as Error).message)); setMesgul(false); }
   };
   return (
     <div className="ozet kart-sol">
@@ -55,6 +56,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
       {k.vekaleten && <div><Rozet s="gri" c="Vekâleten" /></div>}
       <div className="not">Kademe {k.kademe + 1} / {k.kademe_sayisi}{k.hazirlayan_adi ? ` · Hazırlayan: ${k.hazirlayan_adi}` : ''}</div>
       {hata && <div className="hata" role="alert">{hata}</div>}
+      {kodIste && <><label htmlFor={`kd-${k.kimlik}`}>Doğrulama Kodu</label><input id={`kd-${k.kimlik}`} inputMode="numeric" autoComplete="one-time-code" value={kod} onChange={(e) => setKod(e.target.value)} /></>}
       {acik ? (
         <div className="gerekce">
           <label htmlFor={`g${k.kimlik}`}>{acik === 'iade' ? 'İade Gerekçesi' : 'Red Gerekçesi'}</label>

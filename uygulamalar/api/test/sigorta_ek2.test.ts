@@ -35,10 +35,10 @@ describe('Sigorta Ek-2 onay adresi (YG-219, YG-1522)', () => {
     const ok = await karar(t, d.kimlik, ONAY.toUpperCase()); expect(ok.statusCode, ok.body).toBe(200);
     expect((await o.sup.query(`SELECT gonderen_eposta FROM sigorta_onayi WHERE teklif_ref = $1`, [t])).rows[0].gonderen_eposta).toBe(ONAY.toUpperCase());
   });
-  it('kanal YATONET 360 ise Ek-2 aranmaz; Ek-2 yoksa e-posta kanalı kabul edilmez; süresi dolan yetki geçmez', async () => {
+  it('kanal KEP ise Ek-2 aranmaz; Ek-2 yoksa e-posta kanalı kabul edilmez; süresi dolan yetki geçmez', async () => {
     const d = await dosya('Listesiz Sigorta'); const t = await teklif(d);
     expect((await karar(t, d.kimlik, ONAY)).json().hata).toContain('Ek-2 listesi kayıtlı değildir');
-    expect((await o.ist('POST', `/api/teklif/${t}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'YATONET 360', yetkili: 'Y' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/teklif/${t}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', 'KEP Onayı'), yetkili: 'Y' })).statusCode).toBe(200);
     await o.sup.query(`UPDATE sigorta_ek2_adres SET gecerlilik_bitis = current_date - 1 WHERE eposta = $1`, [ONAY]);
     const d2 = await dosya(); const t2 = await teklif(d2);
     expect((await karar(t2, d2.kimlik, ONAY)).json().hata).toContain('süresi dolmuştur');

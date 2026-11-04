@@ -19,7 +19,7 @@ const totp = (g) => {
   return String((m.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0');
 };
 const sup = new pg.Client({ host: 'localhost', user: 'postgres', password: env.POSTGRES_SUPER_PAROLA, database: 'yatonet360' });
-await sup.connect(); await sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sozlesme_kapisi'`); // Deneme ortamı: sözleşme kapısı api sınamasında
+await sup.connect(); await sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sozlesme_kapisi'`); await sup.query(`UPDATE sistem_parametresi SET deger = NULL WHERE kod = 'onay_kod_esik_eur'`); // Deneme ortamı: sözleşme kapısı api sınamasında
 const tek = randomBytes(3).toString('hex');
 const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = []; const hatalar = [];
@@ -216,6 +216,7 @@ try {
   const ydKart = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
   await ydKart.getByLabel('Kalem Seç 1').check();
   await ydKart.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
+  await ydKart.getByLabel(/Onay Belgesi/).setInputFiles(TEMP); await pDs.getByText('Dosya yüklendi.').first().waitFor();
   await ydKart.getByRole('button', { name: 'Seçilenlerle Kısmi Onay Kaydet' }).click(); await pDs.waitForTimeout(600); await hataVarsa(pDs, 'Kısmi onay');
   kontrol('kısmi onay ekrandan kaydedilir', (await sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [yd])).rows[0].karar === 'Kısmi Onay');
   await ydKart.getByLabel('Kalem Seç 2').check();
@@ -229,6 +230,7 @@ try {
   const ydSon = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
   await ydSon.getByLabel('Kalem Seç 2').check();
   await ydSon.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
+  await ydSon.getByLabel(/Onay Belgesi/).setInputFiles(dosyaYaz('yd')); await pDs.getByText('Dosya yüklendi.').first().waitFor();
   await ydSon.getByRole('button', { name: 'Yeniden Değerlendirme Sonucunu Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme sonucu');
   kontrol('yeniden değerlendirme sonucu kalemi onaylar', (await sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = 2`, [yd])).rows[0].onay_durumu === 'Onaylandı');
   await sup.query(`UPDATE fiyat_teklifi SET statu = 'Yerine Geçti' WHERE kimlik = $1`, [yd]);

@@ -1,3 +1,4 @@
+import { coz, totpDogrula } from './kripto.js';
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
@@ -13,7 +14,7 @@ export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade E
 
 export interface KartGirdisi {
   tur: string; baslik: string; ozet?: string; oncelik?: string; hazirlayan?: string | null; zincir?: string[];
-  sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string; simdi?: Date; ayrik?: string[];
+  sahipKullanici?: string; sahipRol?: string; kategori?: 'onay' | 'islem' | 'gorev'; sonZaman?: Date | null; nesneTuru?: string; nesneKimligi?: string; simdi?: Date; ayrik?: string[]; tutar?: number | null; belgeSurumu?: string | null;
 }
 
 export { rolSahipleri };
@@ -29,9 +30,9 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
     if (son && (son.kademe === 'Direktör' || son.rol_adi === 'Genel Müdür Yardımcısı' || son.rol_adi === 'CEO')) ilkKademe = g.zincir!.length - 1;
   }
   const { rows } = await db.query(
-    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe, ayrik_kullanicilar)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`,
-    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe, g.ayrik ?? []]);
+    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe, ayrik_kullanicilar, tutar_eur, belge_surumu)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`,
+    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe, g.ayrik ?? [], g.tutar ?? null, g.belgeSurumu ?? null]);
   const id = rows[0].kimlik as string;
   if (ilkKademe) { const ara: string[] = []; for (const r of g.zincir!.slice(0, ilkKademe)) ara.push(...await rolSahipleri(db, r)); await bildir(db, { olay: `kart-ara:${id}`, kullanicilar: ara, baslik: `Bilgi: Doğrudan Son Makama Gitti: ${g.baslik}`, oncelik: g.oncelik, isRef: id }); }
   const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![ilkKademe]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
@@ -92,7 +93,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/is/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const { karar, gerekce } = (i.body ?? {}) as { karar?: Karar; gerekce?: string };
+    const { karar, gerekce, kod } = (i.body ?? {}) as { karar?: Karar; gerekce?: string; kod?: string };
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
     const g = (gerekce ?? '').trim();
     if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet' || karar === 'Kademe Atla') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
@@ -150,6 +151,14 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
           hedef = await rolSahipleri(c, k.zincir[k.kademe + 1]); baslik = `Onayınızı Bekliyor: ${k.baslik}`;
         } else if (karar === 'Onayla' || karar === 'Reddet') {
           if (!sonMakam) return dur(400, 'Ara kademede "Onaya Gönder" veya "Gerekçeyle İade Et" kullanılır.');
+          // YG-222: limit üstü son onayda doğrulama kodu yeniden istenir.
+          const esik = (await c.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'onay_kod_esik_eur'`)).rows[0]?.deger;
+          if (karar === 'Onayla' && esik !== null && esik !== undefined && k.tutar_eur !== null && Number(k.tutar_eur) > Number(esik)) {
+            const h = (await c.query(`SELECT totp_gizli_sifreli, totp_son_adim FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
+            const adim = h?.totp_gizli_sifreli && /^\d{6}$/.test(kod ?? '') ? totpDogrula(coz(h.totp_gizli_sifreli, b.anahtar), kod!, Number(h.totp_son_adim)) : null;
+            if (!adim) { await c.query('ROLLBACK'); return y.code(401).send({ hata: 'Bu onay için doğrulama kodunu girmenizi rica ederiz.', kodGerekli: true }); }
+            await c.query(`UPDATE kullanici_hesabi SET totp_son_adim = $2 WHERE kimlik = $1`, [o.kullanici, adim]);
+          }
           yeni = { durum: karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi', kademe: k.kademe, kapanir: true };
           hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `${yeni.durum}: ${k.baslik}`;
         } else return dur(400, 'Geçersiz karar.');

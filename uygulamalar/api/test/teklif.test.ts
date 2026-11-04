@@ -109,15 +109,14 @@ describe('kartela ve cetvel (YG-195, YG-198, YG-1706)', () => {
     const r = (await o.ist('GET', '/api/kartela/ara?q=KESIF-01.01', firmaC)).json();
     expect(r.length).toBeGreaterThan(0); expect(r[0].maliyet_eur).toBeUndefined();
   });
-  it('cetveli Teknik Uzman hazırlar; nitelik, bedel, miktar zorunlu; sigortalıda Yat Sahibi Talebi seçilemez', async () => {
+  it('cetveli Teknik Uzman hazırlar; nitelik, bedel, miktar zorunlu; Yat Sahibi Talebi kısıtı teklif muhatabında', async () => {
     const d = await o.dosyaAc({ sigortaci: 'SG', hasarNo: 'H1' }, { musteriTuru: 'Sigorta Şirketi' }); await o.ekipKur(d.kimlik); const tu = await o.gir('tu');
     const c = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, tu, { satirlar: [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat', ...x }] });
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('ds'), { satirlar: [{}] })).statusCode).toBe(403);
     expect((await c({ nitelik: 'Yanlış' })).statusCode).toBe(400);
     expect((await c({ bedel: 'Yanlış' })).statusCode).toBe(400);
     expect((await c({ miktar: 0 })).statusCode).toBe(400);
-    expect((await c({ nitelik: 'Yat Sahibi Talebi' })).statusCode).toBe(400);
-    expect((await c({ kartela: 'YOK-01' })).statusCode).toBe(400);
+        expect((await c({ kartela: 'YOK-01' })).statusCode).toBe(400);
     expect((await c({})).statusCode).toBe(200);
   });
 });
@@ -316,15 +315,15 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
   });
   it('tam onay dosyayı Uygulama aşamasına alır, BLD-38 gider', async () => {
     const { d, t } = await gonder();
-    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'YATONET 360', yetkili: 'Y' });
+    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' });
     expect(r.json()).toMatchObject({ durum: 'Tam Onay', onaylananTutar: 260 });
     expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).toBe('Uygulama');
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBeGreaterThan(0);
   });
   it('kısmi onayda kalem silinmez, işaretlenir; iş emrine yalnız onaylılar geçer; onaylanmayanlar için görev açılır', async () => {
     const { d, t } = await gonder();
-    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Kısmi Onay', kanal: 'YATONET 360', yetkili: 'Y' })).statusCode).toBe(400);
-    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Kısmi Onay', kanal: 'YATONET 360', yetkili: 'Y', onaylananSiralar: [1] });
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Kısmi Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Kısmi Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y', onaylananSiralar: [1] });
     expect(r.json().onaylananTutar).toBe(130);
     expect((await o.sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows.map((x) => x.onay_durumu)).toEqual(['Onaylandı', 'Onaylanmadı']);
     expect(await o.kart('Fiyat Teklifi Hazırla', t.kimlik)).toBeDefined();
@@ -356,7 +355,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const d = await hazir({ sigortaci: 'SG', hasarNo: 'H1' }, { musteriTuru: 'Sigorta Şirketi' }); const t = await teklifAc(d); await onayla(t.kimlik);
     const gn = (await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).json().gonderim;
     await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 1 }); await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 2 });
-    await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'YATONET 360', yetkili: 'Y' });
+    await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' });
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'Marmaris', kapsam: 'Onarım', teklif: t.kimlik, bedel, tehlikeliAtik: true });
     expect(r.statusCode, r.body).toBe(200);
     const k = await o.kart('İş Emri', r.json().kimlik);

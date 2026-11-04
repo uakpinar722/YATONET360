@@ -73,7 +73,7 @@ function AcilDugmesi() {
 }
 
 function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
-  const [d, setD] = useState<(Kart & { belgeler: { kimlik: string; ad: string; surum_no: number }[] }) | null>(null); const [hata, setHata] = useState('');
+  const [d, setD] = useState<(Kart & { belgeler: { kimlik: string; ad: string; surum_no: number }[]; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
   useEffect(() => { void istek<NonNullable<typeof d>>(`/portal/dosya/${id}`).then(setD).catch((e) => setHata(e.message)); }, [id]);
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   return (
@@ -81,6 +81,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       <button className="lnk" onClick={geri}>← Ana Sayfa</button>
       <h1>{d.yat} · {d.dosyaNo}</h1>
       <div className="ozet"><div><Durum k={d} /></div>{d.dosyaSorumlusu && <div>Dosya Sorumlunuz: {d.dosyaSorumlusu}</div>}</div>
+      {d.teklifler.length > 0 && <><div className="bolum">Teklifler</div><div className="ozet">{d.teklifler.map((t) => <div key={t.teklif_no + t.surum_no}><b className="koyu">{t.teklif_no} Rev.{t.surum_no}</b> · {t.teklif_turu} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {t.genel_toplam_eur} EUR{t.kalemler.map((k) => <div key={k.sira_no} className="not">{k.aciklama} · {k.miktar} {k.birim} · {k.tutar_eur} EUR</div>)}</div>)}</div></>}
       <div className="bolum">Belgelerim</div>
       <div className="ozet">{d.belgeler.length === 0 ? 'Belge bulunmamaktadır.' : d.belgeler.map((b) => <div key={b.kimlik}><a href={`/api/belge/${b.kimlik}/surum/${b.surum_no}/indir`}>{b.ad}</a></div>)}</div>
     </>

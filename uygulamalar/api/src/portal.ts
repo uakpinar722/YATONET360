@@ -189,7 +189,10 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
     const belgeler = (await b.db.query(`SELECT e.kimlik, e.ad, s.surum_no FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.bag_turu = 'Dosya' AND e.bag_kimligi = $1 AND s.durum = 'Yürürlükte' AND e.bilgi_sinifi <> 'Kritik' ORDER BY e.olusturma_zamani DESC`, [id])).rows;
     const kurtarma = (await b.db.query(`SELECT k.hizmet_turu, k.baslama_zamani, CASE WHEN k.saglayici_aciklama_onayi THEN u.ticari_unvan END AS saglayici FROM kurtarma_operasyonu k JOIN kurulus u ON u.kimlik = k.saglayici_ref WHERE k.dosya_ref = $1`, [d.kimlik])).rows; // YG-486
-    return { ...(await kart(d)), belgeler, kurtarma };
+    // YG-206: teklif yat sahibinden saklanmaz, salt okunur; firma ve maliyet bilgisi yoktur.
+    const teklifler = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.teklif_muhatabi, f.statu, f.karar, f.genel_toplam_eur FROM fiyat_teklifi f WHERE f.dosya_ref = $1 AND f.statu IN ('Gönderildi', 'Karar') ORDER BY f.olusturma_zamani`, [d.kimlik])).rows;
+    const kalemler = (await b.db.query(`SELECT teklif_ref, sira_no, aciklama, miktar, birim, tutar_eur, onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = ANY($1::uuid[]) ORDER BY sira_no`, [teklifler.map((x) => x.kimlik)])).rows;
+    return { ...(await kart(d)), belgeler, kurtarma, teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

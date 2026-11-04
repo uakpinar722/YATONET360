@@ -1,3 +1,4 @@
+import { otomatikKabulKontrolu } from './onay_ek.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, disGonder } from './bildirim.js';
@@ -47,6 +48,7 @@ export async function sigortaSureIsle(db: Pool, simdi = new Date()): Promise<num
         await c.query('BEGIN');
         const hepsi = (await c.query(`SELECT sira_no FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows.map((r) => r.sira_no as number);
         await kararUygula(c, t, hepsi, 'Çerçeve Sözleşme Süresi', 'Süre dolumu (5 iş günü)', t.hazirlayan_ref, simdi);
+        await otomatikKabulKontrolu(c, { kimlik: t.kimlik, teklif_no: t.teklif_no, dosya_ref: t.dosya_ref }, t.dosya_sorumlusu_ref); // YG-062
         if (t.dosya_sorumlusu_ref) await bildir(c, { olay: `sigorta-sure:${t.kimlik}`, kullanicilar: [t.dosya_sorumlusu_ref], baslik: `Teklif Süre Dolumuyla Onaylandı: ${t.teklif_no}`, eposta: true }, simdi);
         await izYaz(c, { eylem: 'Sigorta Süre Dolumu Onayı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı' });
         await c.query('COMMIT'); n++;

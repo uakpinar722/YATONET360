@@ -21,6 +21,7 @@ import { izinGerekli } from './yetki.js';
 import { kdvBelirle, kdvHesapla } from './vergi.js';
 import { alacakYoluAc, blokeEngeli, gecikmeFaizi, krediDurumu, krediUyarilari } from './alacak.js';
 import { sigortayaHazirla } from './sigorta_gonderim.js';
+import { yurtDisiAvans, yurtDisiMi } from './onay_ek.js';
 import { disGonder } from './bildirim.js';
 import { metinGetir } from './metin.js';
 
@@ -257,6 +258,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const c = (await b.db.query(`SELECT erken_ifa_onayi, cayma_bitis FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [t.kimlik])).rows[0];
       if (c && !c.erken_ifa_onayi && new Date(c.cayma_bitis) > new Date()) return y.code(409).send({ hata: 'Erken başlama onayı yokken cayma süresinde avans istenmez.' });
       tut = avansHesapla(t.musteri_turu, Number(t.genel_toplam_eur), t.oncelik === 'Kritik', await parametre(b.db, 'avans_orani'), await parametre(b.db, 'sigorta_avans_esik_eur'));
+      if (await yurtDisiMi(b.db, t.dosya_ref)) tut = await yurtDisiAvans(b.db, t.kimlik, Number(t.genel_toplam_eur), await parametre(b.db, 'avans_orani')); // YG-1461
       if (tut === 0) return y.code(409).send({ hata: 'Bu dosyada avans alınmaz; ayrıca talep gerekmez.' });
     } else if (!(tut > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
     return islem(async (c) => {
@@ -489,7 +491,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       for (const m of dusum) { await c.query(`UPDATE hakedis_mahsubu SET kalan_eur = kalan_eur - $2 WHERE kimlik = $1`, [m.kimlik, m.t]); await c.query(`INSERT INTO talimat_mahsubu (talimat_ref, mahsup_ref, tutar_eur) VALUES ($1,$2,$3)`, [r.kimlik, m.kimlik, m.t]); }
       if (tut > 0) {
         await c.query(`UPDATE hakedis SET statu = 'Ödeme Talimatında' WHERE kimlik = $1`, [id]);
-        await kartAc(c, { tur: 'Firma Ödeme Talimatı', baslik: `${h.hakedis_no} · Ödeme Talimatı`, ozet: `${tutar(tut)} EUR${mahsup ? ` · Mahsup: ${tutar(mahsup)} EUR` : ''}${tutulan ? ` · Tutulan: ${tutar(tutulan)} EUR` : ''}`, hazirlayan: o.kullanici, zincir: [await rolId(c, MFM), await rolId(c, 'Ticari İşler Direktörü')], ayrik: h.teknik_kabul_eden_ref ? [h.teknik_kabul_eden_ref] : [], nesneTuru: 'Ödeme Talimatı', nesneKimligi: r.kimlik });
+        await kartAc(c, { tur: 'Firma Ödeme Talimatı', baslik: `${h.hakedis_no} · Ödeme Talimatı`, ozet: `${tutar(tut)} EUR${mahsup ? ` · Mahsup: ${tutar(mahsup)} EUR` : ''}${tutulan ? ` · Tutulan: ${tutar(tutulan)} EUR` : ''}`, tutar: tut, hazirlayan: o.kullanici, zincir: [await rolId(c, MFM), await rolId(c, 'Ticari İşler Direktörü')], ayrik: h.teknik_kabul_eden_ref ? [h.teknik_kabul_eden_ref] : [], nesneTuru: 'Ödeme Talimatı', nesneKimligi: r.kimlik });
       } else await hakedisSonuc(c, id);
       return { kimlik: r.kimlik, planlanan: gun(plan.tarih), tahsilataBagli: plan.tahsilataBagli, tutar: tut, mahsup, tutulan };
     });
