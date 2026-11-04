@@ -14,7 +14,7 @@ interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string;
 interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string }[] }
 interface DosyaAyrinti extends DosyaSatir {
   musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
-  yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null };
+  kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
@@ -243,7 +243,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       {d.yapilacaklar.length > 0 && <Blok baslik="Yapılacaklar">{d.yapilacaklar.map((y) => <div key={y.is} className={y.engel ? 'uyari' : ''}>{y.is} · {y.sorumlu}</div>)}</Blok>}
       {d.sureler.length > 0 && <Blok baslik="Süreler">{d.sureler.map((s) => <div key={s.tur}>{s.tur}: <Sayac s={s} /></div>)}</Blok>}
       <Blok baslik="Yat">
-        <div>{d.yat.tur ?? '—'} · {d.yat.marka ?? '—'} {d.yat.model ?? ''} · {d.yat.tam_boy_m ?? '—'} m · {d.yat.govde_malzemesi ?? '—'} · Tahrik: {d.yat.tahrik_turu ?? '—'} · Bayrak: {d.yat.bayrak ?? '—'}</div>
+        <div>{d.yat.tur ?? '—'} · {d.yat.marka ?? '—'} {d.yat.model ?? ''} · {d.yat.tam_boy_m ?? '—'} m · {d.yat.govde_malzemesi ?? '—'}{d.kapsam_6502 ? ' · 6502 Kapsamı' : ''} · Tahrik: {d.yat.tahrik_turu ?? '—'} · Bayrak: {d.yat.bayrak ?? '—'}</div>
         {d.yat.katalog_teyit && <div className="not">{d.yat.katalog_teyit}</div>}
         {d.yat.gecici_kayit && <div className="not">Geçici Yat Kaydı</div>}
         <div className="iki-tarih"><div><label htmlFor="y-b">Boy (m)</label><input id="y-b" inputMode="decimal" value={boy} onChange={(e) => setBoy(e.target.value)} /></div><div><label htmlFor="y-g">Gövde</label><select id="y-g" value={govde} onChange={(e) => setGovde(e.target.value)}><option value="">Seçiniz</option>{['Fiber', 'Ahşap', 'Çelik', 'Alüminyum'].map((x) => <option key={x}>{x}</option>)}</select></div></div>

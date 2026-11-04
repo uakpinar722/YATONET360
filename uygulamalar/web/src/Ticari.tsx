@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
+import { DosyaEkIslemler, FirmaAcilIslemleri, MutabakatRaporlari } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
@@ -229,6 +230,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {m.hakedisler.map((h) => <div key={h.kimlik} className="soru"><span>{h.hakedis_no} · Brüt {eur(h.bu_donem_brut)} · Kesinti {eur(h.kesinti)} · Net {eur(h.net)} · {h.statu}</span><div className="dugmeler">{h.statu === 'Doğrulama Bekliyor' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/dogrula`, {}))}>Doğrula</button>}{h.statu === 'Doğrulandı' && ticari && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/odeme-talimati`, {}), 'Talimat onaya gönderildi.')}>Ödeme Talimatı</button>}</div></div>)}
         {asama === 'Teslim' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2" disabled={Boolean(m.teslimEngeli)} onClick={() => void yap(() => istek(`/dosya/${id}/teslim`, {}), 'Teslim onayı yat sahibine gönderildi.')}>Teslimi Başlat</button>}
       </Blok>}
+      {v && m && <DosyaEkIslemler id={id} teklifler={v.teklifler} sigortali={m.sigortali} ticari={ticari} ds={rollerim.includes('Dosya Sorumlusu')} firmalar={[...new Map(m.isEmirleri.map((x) => [x.kurulus_ref, x])).values()]} />}
     </>
   );
 }
@@ -334,6 +336,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   return (
     <>
       <h1>{bolum === 'isemri' ? 'İş Emirleri' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      {bolum === 'ana' && <FirmaAcilIslemleri yap={yap} />}
       {bolum === 'ana' && <><div className="bolum">İşleminizi Bekleyenler</div>
       {ac.length === 0 && <div className="ozet bos">Acil çağrı bulunmamaktadır.</div>}
       {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div><div>Yanıt Son: {saat(c.son_zaman)}</div>
@@ -672,6 +675,7 @@ export function IdariIslemler() {
   return (
     <>
       <h1>İdari İşlemlerim</h1><Mesaj />
+      <MutabakatRaporlari />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
         <label htmlFor="iz-t">İzin Türü</label><select id="iz-t" value={iz.tur} onChange={(e) => setIz({ ...iz, tur: e.target.value })}>{['Yıllık', 'Mazeret', 'Ücretsiz', 'Rapor'].map((x) => <option key={x}>{x}</option>)}</select>

@@ -345,6 +345,7 @@ try {
   await tikla(pTs, 'Havale Tahsilatı');
   kontrol('proforma, fatura bilgisi ve tahsilat ekrandan tamamlanır', (await sup.query(`SELECT durum FROM musteri_faturasi WHERE proforma_no = $1`, [pf])).rows[0].durum === 'Tahsil Edildi');
   await tasmaYok(pTs, 'mali_bolum');
+  kontrol('Dosya İşlemleri ekranda: koşul, protokol, kurtarma, temas', await pTs.getByRole('button', { name: 'Protokol Aç' }).isVisible() && await pTs.getByRole('button', { name: 'Operasyon Aç' }).isVisible() && await pTs.getByRole('button', { name: 'Temas Kaydet' }).isVisible());
 
   // Hakediş, IBAN, ödeme talimatı
   const pH = await firmaIsEmri(ie.is_emri_no);

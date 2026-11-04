@@ -7,8 +7,9 @@ import { dilKod, rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { rolSahipleri } from './makam.js';
-import { tutar } from './metin.js';
+import { gunAy, metinGetir, tutar } from './metin.js';
+import { belgeUret } from './belge_uret.js';
+import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import { onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { altNumara } from './sure.js';
 import { parametre, isGunuSonu } from './teklif.js';
@@ -63,6 +64,17 @@ export async function mutabakatIsle(db: Pool, simdi = new Date()): Promise<numbe
 export async function otomatikKabulKontrolu(c: Db, t: { kimlik: string; teklif_no: string; dosya_ref: string }, ds: string | null) {
   if (ds && await birKez(c, 'otomatik_kabul', t.kimlik)) await kartAc(c, { tur: 'Otomatik Kabul Kontrolü', kategori: 'islem', baslik: `${t.teklif_no} · Süre Dolumuyla Kabul Kontrolü`, ozet: 'Yanlış uygulandıysa Ticari İşler Direktöründen geri alma isteyiniz.', sahipKullanici: ds, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
 }
+
+gonderimIsleyici('Mutabakat Raporu', async (c, g) => {
+  const gun = await parametre(c, 'mutabakat_itiraz_gun');
+  const r = (await c.query(`UPDATE sigorta_mutabakat_raporu SET durum = 'Gönderildi', gonderim_zamani = now(), itiraz_son = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int WHERE kimlik = $1 AND durum = 'Hazır' RETURNING sigortaci_adi, donem, itiraz_son`, [g.nesne_kimligi, gun])).rows[0];
+  if (!r) throw Object.assign(new Error('Rapor gönderilmiştir.'), { statusCode: 409 });
+  await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Sigorta Mutabakat Raporu' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.nesne_kimligi]);
+  const metin = await metinGetir(c, 'BLD-87', 'tr', { Kurum: r.sigortaci_adi, dönem: r.donem, 'itiraz son tarihi': gunAy(r.itiraz_son) });
+  const dosya = (await c.query(`SELECT dosya_ref FROM sigorta_mutabakat_satiri WHERE rapor_ref = $1 LIMIT 1`, [g.nesne_kimligi])).rows[0]?.dosya_ref;
+  if (g.alici && dosya) await belgeUret(c, { tur: 'Mutabakat Raporu', nesne: g.nesne_kimligi!, dosya, gonder: { olay: `sigorta:${g.kimlik}`, eposta: g.alici, konu: g.konu, metin, sigortaTeyitli: true } });
+  return { metin, ekli: true };
+});
 
 kapanisKaydet('Koşul Risk Kabulü', async (c, k, karar, yapan) => {
   if (karar === 'Onayla') await c.query(`UPDATE teklif_kosulu SET durum = 'Risk Kabulü', risk_kabul_eden_ref = $2 WHERE kimlik = $1::uuid AND durum = 'Açık'`, [k.nesne_kimligi, yapan]);
@@ -258,11 +270,13 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
     if (!(await rolVar(o.kullanici, [TID]))) return y.code(403).send({ hata: 'Raporu Ticari İşler Direktörü gönderir.' });
-    const gun = await parametre(b.db, 'mutabakat_itiraz_gun');
-    const r = await b.db.query(`UPDATE sigorta_mutabakat_raporu SET durum = 'Gönderildi', gonderim_zamani = now(), gonderen_ref = $2, itiraz_son = (now() AT TIME ZONE 'Europe/Istanbul')::date + $3::int WHERE kimlik = $1 AND durum = 'Hazır' RETURNING itiraz_son::text`, [id, o.kullanici, gun]);
-    if (!r.rowCount) return y.code(409).send({ hata: 'Rapor gönderilmiştir.' });
-    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Sigorta Mutabakat Raporu' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
-    return { itirazSon: r.rows[0].itiraz_son };
+    const r = (await b.db.query(`SELECT r.sigortaci_adi, r.durum, r.donem, (SELECT t.eposta FROM dosya_sigorta_kaydi s JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE s.sigortaci_adi = r.sigortaci_adi AND t.eposta IS NOT NULL LIMIT 1) AS eposta FROM sigorta_mutabakat_raporu r WHERE r.kimlik = $1`, [id])).rows[0];
+    if (!r) return yok(y);
+    if (r.durum !== 'Hazır') return y.code(409).send({ hata: 'Rapor gönderilmiştir.' });
+    if (!r.eposta) return y.code(409).send({ hata: 'Sigorta şirketinin e-posta adresi bekleniyor.' });
+    // K-241: sigortaya gönderim ikili teyitten geçer; itiraz süresi ikinci teyitte başlar.
+    const gonderim = await sigortayaHazirla(b.db, { tur: 'Mutabakat Raporu', nesne: id, alici: r.eposta, konu: `${r.sigortaci_adi} ${r.donem} Mutabakat Raporu`, sorumlu: o.kullanici });
+    return { gonderim };
   });
   s.post('/mutabakat-satiri/:id/itiraz', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const not = ((i.body ?? {}) as { not?: string }).not?.trim();
@@ -321,5 +335,3 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 }
-
-export const roleSahipleri = rolSahipleri;

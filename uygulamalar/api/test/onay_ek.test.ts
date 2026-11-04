@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { kapsam6502, kosulEngeli, mutabakatIsle, otomatikKabulKontrolu, sigortaBildirimEngeli, yurtDisiAvans } from '../src/onay_ek.js';
+import { mutabakatTanim } from '../src/belge_uret.js';
+import { GMO_KALEMLERI, gmoCarpan, gmoMaliyet } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', hud: 'Hukuk ve Uyum Direktörü' };
@@ -122,10 +124,30 @@ describe('mutabakat (YG-456)', () => {
     const sat = (await o.sup.query(`SELECT kimlik, acik_bakiye FROM sigorta_mutabakat_satiri WHERE fatura_ref = $1`, [f])).rows[0]; expect(sat.acik_bakiye).toBe('1000.00');
     const tid = await o.gir('tid');
     expect((await o.ist('POST', `/api/mutabakat/${r[0].kimlik}/gonder`, await o.gir('ds'))).statusCode).toBe(403);
-    expect((await o.ist('POST', `/api/mutabakat/${r[0].kimlik}/gonder`, tid)).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/mutabakat/${r[0].kimlik}/gonder`, tid)).json().hata).toContain('e-posta');
+    const st = (await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, eposta, olusturan_ref) VALUES ($1,'Sigorta Şirketi','S','mt@sg.local',$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`UPDATE dosya_sigorta_kaydi SET sigorta_taraf_ref = $2 WHERE dosya_ref = $1`, [d.kimlik, st]);
+    const gr = await o.ist('POST', `/api/mutabakat/${r[0].kimlik}/gonder`, tid); expect(gr.statusCode, gr.body).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM sigorta_mutabakat_raporu WHERE kimlik = $1`, [r[0].kimlik])).rows[0].durum).toBe('Hazır'); // ikili teyit bekler
+    await o.ist('POST', `/api/sigorta-gonderim/${gr.json().gonderim}/teyit`, tid, { adim: 1 }); const g2 = await o.ist('POST', `/api/sigorta-gonderim/${gr.json().gonderim}/teyit`, tid, { adim: 2 }); expect(g2.statusCode, g2.body).toBe(200);
+    expect((await o.sup.query(`SELECT durum, itiraz_son IS NOT NULL AS son FROM sigorta_mutabakat_raporu WHERE kimlik = $1`, [r[0].kimlik])).rows[0]).toEqual({ durum: 'Gönderildi', son: true });
+    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Mutabakat Raporu' AND nesne = $1`, [r[0].kimlik])).rowCount).toBe(1);
+    expect(JSON.stringify((await mutabakatTanim(o.db, r[0].kimlik)).t.bolumler)).toContain('1.000,00');
     await o.sup.query(`UPDATE sigorta_mutabakat_raporu SET itiraz_son = '2026-01-01' WHERE kimlik = $1`, [r[0].kimlik]);
     await mutabakatIsle(o.db, new Date('2026-11-25T08:00:00Z'));
     expect((await o.sup.query(`SELECT mutabik FROM sigorta_mutabakat_satiri WHERE kimlik = $1`, [sat.kimlik])).rows[0].mutabik).toBe(true);
+  });
+});
+
+describe('GMO tarifesi (YG-1707)', () => {
+  it('referans yatta kartela tutarı aynen; boyutla orantılı; eksik ölçü ve 50 m engeli', async () => {
+    expect(GMO_KALEMLERI).toHaveLength(3); expect(gmoCarpan(20, 5.5, 2.8)).toBeCloseTo(13080);
+    const d = await dosya(); const yt = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref; const set = (l: number, g: number | null, de: number | null) => o.sup.query(`UPDATE yat SET tam_boy_m = $2, genislik_m = $3, derinlik_m = $4 WHERE kimlik = $1`, [yt, l, g, de]);
+    await set(20, null, null); await expect(gmoMaliyet(o.db, d.kimlik, 2633)).rejects.toThrow('kalıp genişliği');
+    await set(20, 5.5, 2.8); expect(await gmoMaliyet(o.db, d.kimlik, 2633)).toBe(2633);
+    // 30 x 7 x 3,5: (900*7*3,5)/2 + 10000 = 21025; 2633 x 21025 / 13080 = 4232,33
+    await set(30, 7, 3.5); expect(await gmoMaliyet(o.db, d.kimlik, 2633)).toBe(4232.33);
+    await set(50, 9, 4); await expect(gmoMaliyet(o.db, d.kimlik, 2633)).rejects.toThrow('50 m');
   });
 });
 

@@ -67,6 +67,17 @@ export async function dosyaTaahhudu(db: Db, dosya: string, haric?: string): Prom
 export interface KalemHesap { birimSatis: number; tutar: number; bantDisi: boolean; bant: { alt: number; ust: number } | null }
 
 /** YG-185, YG-187, YG-232, YG-1709: satış fiyatı firma fiyatından kural ile yazılır, elle değişmez, yuvarlanmaz (2 hane). Bant yalnız kartelalı kalemde. */
+/** YG-1707, GMO Y12-02 Madde 3: 50 m altı yatta tutar (L² x B x D)/2 + sabit ile orantılıdır; K, t ve kur kartela tutarının içindedir. Oran, onaylı kartela tutarını referans yatta aynen verir. */
+export const GMO_KALEMLERI = ['STABILITE-01.05.01-01', 'YENILEME-01.03.01-01', 'ATIK-01.04.01-02'];
+export const gmoCarpan = (l: number, gn: number, d: number, sabit = 10000) => (l * l * gn * d) / 2 + sabit;
+export async function gmoMaliyet(db: Db, dosya: string, kartela: number): Promise<number> {
+  const y = (await db.query(`SELECT y.tam_boy_m, y.genislik_m, y.derinlik_m FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
+  if (!y?.tam_boy_m || !y.genislik_m || !y.derinlik_m) throw Object.assign(new Error('GMO tarifeli kalem için yatın tam boy, kalıp genişliği ve kalıp derinliği bekleniyor.'), { statusCode: 409 });
+  if (Number(y.tam_boy_m) >= await parametre(db, 'gmo_azami_boy')) throw Object.assign(new Error('50 m ve üzeri yatta GMO tarifeli kalem hesaplanmaz; fiyat elle değerlendirilir.'), { statusCode: 409 });
+  const s = await parametre(db, 'gmo_sabit');
+  return R2((kartela * gmoCarpan(Number(y.tam_boy_m), Number(y.genislik_m), Number(y.derinlik_m), s)) / gmoCarpan(await parametre(db, 'gmo_ref_boy'), await parametre(db, 'gmo_ref_genislik'), await parametre(db, 'gmo_ref_derinlik'), s));
+}
+
 export function kalemHesapla(firmaBirim: number, miktar: number, katsayi: number, bantOrani: number, kartelaMaliyet: number | null): KalemHesap {
   const birimSatis = R2(firmaBirim * katsayi);
   const bant = kartelaMaliyet === null ? null : { alt: R2(kartelaMaliyet * katsayi * (1 - bantOrani)), ust: R2(kartelaMaliyet * katsayi * (1 + bantOrani)) };
@@ -273,7 +284,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       let n = 0; const hesap: { tutar_eur: number; opsiyon: boolean }[] = []; const kodlar: string[] = []; let bantDisi = 0;
       for (const r of satirlar) {
         const k = r.kartela_kodu ? (await c.query(`SELECT maliyet_eur FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [r.kartela_kodu, sur])).rows[0] : null;
-        const h = kalemHesapla(Number(r.birim_fiyat_eur), Number(r.miktar), kat, bant, k ? Number(k.maliyet_eur) : null);
+        // YG-1707: GMO tarifeli kalemin maliyeti yatın boyutlarından hesaplanır.
+        const kMaliyet = k && GMO_KALEMLERI.includes(r.kartela_kodu) ? await gmoMaliyet(c, id, Number(k.maliyet_eur)) : k ? Number(k.maliyet_eur) : null;
+        const h = kalemHesapla(Number(r.birim_fiyat_eur), Number(r.miktar), kat, bant, kMaliyet);
         if (h.bantDisi) bantDisi++;
         if (r.kartela_kodu) kodlar.push(r.kartela_kodu);
         hesap.push({ tutar_eur: h.tutar, opsiyon: false });
