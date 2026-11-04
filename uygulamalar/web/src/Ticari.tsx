@@ -96,7 +96,7 @@ interface Kayitlar {
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string }[];
   isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null }[];
 }
-interface Mali { isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
+interface Mali { sigortali: boolean; ayriKalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
 
 /** YG-386: firmanın girdiği ilerlemeyi Teknik Uzman veya Saha Sorumlusu doğrular; kabul bundan sonra verilir. */
 function IlerlemeDogrula({ isEmri }: { isEmri: string }) {
@@ -223,6 +223,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <div className="iki-tarih"><div><label htmlFor="h-t">Tahsilat (EUR)</label><input id="h-t" inputMode="decimal" value={thTutar} onChange={(e) => setThTutar(e.target.value)} /></div><div><label htmlFor="h-d">Tahsilat Tarihi</label><input id="h-d" type="date" value={thTarih} onChange={(e) => setThTarih(e.target.value)} /></div></div>
         </>}
         {ticari && <MahsupAvans dosya={id} isEmirleri={m.isEmirleri} yap={yap} />}
+        {(ticari || m.sigortali) && <KesifVeAyriKalem dosya={id} ticari={ticari} sigortali={m.sigortali} kalemler={m.ayriKalemler} yap={yap} />}
         {m.hakedisler.map((h) => <div key={h.kimlik} className="soru"><span>{h.hakedis_no} · Brüt {eur(h.bu_donem_brut)} · Kesinti {eur(h.kesinti)} · Net {eur(h.net)} · {h.statu}</span><div className="dugmeler">{h.statu === 'Doğrulama Bekliyor' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/dogrula`, {}))}>Doğrula</button>}{h.statu === 'Doğrulandı' && ticari && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/odeme-talimati`, {}), 'Talimat onaya gönderildi.')}>Ödeme Talimatı</button>}</div></div>)}
         {asama === 'Teslim' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2" disabled={Boolean(m.teslimEngeli)} onClick={() => void yap(() => istek(`/dosya/${id}/teslim`, {}), 'Teslim onayı yat sahibine gönderildi.')}>Teslimi Başlat</button>}
       </Blok>}
@@ -413,6 +414,53 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
 
 /** YG-948, YG-920: İdari İşlemlerim: izin ve masraf. Metin sağlık veya tanı bilgisi içermez (YG-952). */
 /** YG-845, YG-918: tedarikçi faturaları vade sırasıyla; ödeme yalnız üçlü eşleşmeden sonra kaydedilir. */
+/** YG-879, YG-881: dayanak belgesiz kayıt yok; yalnız Muhasebe ve Finans Müdürü. */
+function VergiKayitlari() {
+  const [l, setL] = useState<{ sigortaci_adi: string; kdv_uygulamasi: string; tevkifat_pay: number | null; tevkifat_payda: number | null; yururluk: string }[] | null>(null);
+  const [p, setP] = useState({ sigortaci: '', uygulama: 'Standart KDV', pay: '', payda: '', yururluk: '', belge: '' }); const [t, setT] = useState({ tarafNo: '', bitis: '', belge: '' });
+  const yukle = () => istek<NonNullable<typeof l>>('/sigorta-vergi-profili').then(setL).catch(() => setL(null));
+  const { yap, Mesaj } = useYap(yukle);
+  useEffect(() => { void yukle(); }, []);
+  if (!l) return null;
+  return (
+    <Blok baslik="KDV ve Vergi Profili"><Mesaj />
+      {l.map((x) => <div key={x.sigortaci_adi + x.yururluk}>{x.sigortaci_adi} · {x.kdv_uygulamasi}{x.tevkifat_pay ? ` ${x.tevkifat_pay}/${x.tevkifat_payda}` : ''} · Yürürlük: {x.yururluk.split('-').reverse().join('.')}</div>)}
+      <label htmlFor="vp-s">Sigorta Şirketi</label><input id="vp-s" value={p.sigortaci} onChange={(e) => setP({ ...p, sigortaci: e.target.value })} />
+      <label htmlFor="vp-u">KDV Uygulaması</label><select id="vp-u" value={p.uygulama} onChange={(e) => setP({ ...p, uygulama: e.target.value })}><option>Standart KDV</option><option>KDV tevkifatlı</option></select>
+      {p.uygulama === 'KDV tevkifatlı' && <div className="iki-tarih"><div><label htmlFor="vp-p">Tevkifat Payı</label><input id="vp-p" inputMode="numeric" value={p.pay} onChange={(e) => setP({ ...p, pay: e.target.value })} /></div><div><label htmlFor="vp-d">Tevkifat Paydası</label><input id="vp-d" inputMode="numeric" value={p.payda} onChange={(e) => setP({ ...p, payda: e.target.value })} /></div></div>}
+      <label htmlFor="vp-y">Yürürlük Tarihi</label><input id="vp-y" type="date" value={p.yururluk} onChange={(e) => setP({ ...p, yururluk: e.target.value })} />
+      {p.sigortaci.trim() && <BelgeSec ad="Vergi Profili Dayanağı" bagTuru="Vergi Dayanağı" bagKimligi={p.sigortaci.trim()} deger={p.belge} sec={(x) => setP({ ...p, belge: x })} />}
+      <button className="btn2" disabled={!p.belge || !p.yururluk} onClick={() => void yap(() => istek('/sigorta-vergi-profili', { sigortaci: p.sigortaci, uygulama: p.uygulama, pay: Number(p.pay) || undefined, payda: Number(p.payda) || undefined, yururluk: p.yururluk, belge: p.belge }).then(() => { setP({ sigortaci: '', uygulama: 'Standart KDV', pay: '', payda: '', yururluk: '', belge: '' }); return { uyari: 'Vergi profili kaydedildi.' }; }))}>Profili Kaydet</button>
+      <label htmlFor="ki-t">Taraf No (KDV İstisna Yazısı)</label><input id="ki-t" value={t.tarafNo} onChange={(e) => setT({ ...t, tarafNo: e.target.value })} />
+      <label htmlFor="ki-b">Geçerlilik Bitişi</label><input id="ki-b" type="date" value={t.bitis} onChange={(e) => setT({ ...t, bitis: e.target.value })} />
+      {t.tarafNo.trim() && <BelgeSec ad="KDV İstisna Yazısı" bagTuru="Vergi Dayanağı" bagKimligi={t.tarafNo.trim()} deger={t.belge} sec={(x) => setT({ ...t, belge: x })} />}
+      <button className="btn2" disabled={!t.belge || !t.bitis} onClick={() => void yap(() => istek('/taraf-kdv-istisna', t).then(() => { setT({ tarafNo: '', bitis: '', belge: '' }); return { uyari: 'İstisna yazısı kaydedildi.' }; }))}>İstisna Yazısını Kaydet</button>
+    </Blok>
+  );
+}
+
+/** YG-864, YG-865 keşif bedeli; YG-894 sigorta kararına bağlı ayrı kalemler. */
+function KesifVeAyriKalem({ dosya, ticari, kalemler, sigortali, yap }: { dosya: string; ticari: boolean; sigortali: boolean; kalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; yap: (f: () => Promise<unknown>, m?: string) => Promise<void> }) {
+  const [t, setT] = useState(''); const [son, setSon] = useState(''); const [f, setF] = useState({ tur: 'Acil Tedbir', aciklama: '', tutar: '' }); const sayi = (x: string) => Number(x.replace(',', '.'));
+  return (
+    <div className="soru"><span><b className="koyu">Keşif Bedeli ve Ayrı Kalemler</b></span>
+      <div className="tam">
+        <label htmlFor="ka-s">Son Ödeme Tarihi</label><input id="ka-s" type="date" value={son} onChange={(e) => setSon(e.target.value)} />
+        {ticari && <><label htmlFor="ka-t">{sigortali ? 'Keşif Bedeli (EUR)' : 'Bölge Dışı Ulaşım ve Konaklama (EUR)'}</label><input id="ka-t" inputMode="decimal" value={t} onChange={(e) => setT(e.target.value)} />
+          {sigortali ? <button className="btn2 kucuk" disabled={!(sayi(t) > 0)} onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-faturasi`, { tutar: sayi(t) }), 'Keşif bedeli proforması onaya gönderildi.')}>Keşif Bedeli Proforması</button>
+            : <button className="btn2 kucuk" disabled={!son} onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-ucreti`, { sonTarih: son, bolgeDisi: t ? sayi(t) : undefined }), 'Keşif Ücreti talebi onaya gönderildi.')}>Keşif Ücreti Talebi</button>}</>}
+        {sigortali && <>
+          <label htmlFor="ka-k">Ayrı Kalem Türü</label><select id="ka-k" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Acil Tedbir', 'Keşif Söküm-Montaj', 'Bekleme ve Muhafaza'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="ka-a">Kalem Açıklaması</label><input id="ka-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+          <label htmlFor="ka-u">Kalem Tutarı (EUR)</label><input id="ka-u" inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+          <button className="btn2 kucuk" disabled={!f.aciklama.trim() || !(sayi(f.tutar) > 0)} onClick={() => void yap(() => istek(`/dosya/${dosya}/ayri-kalem`, { tur: f.tur, aciklama: f.aciklama, tutar: sayi(f.tutar) }), 'Kalem kaydedildi.')}>Kalemi Kaydet</button>
+          {kalemler.map((k) => <div key={k.kimlik}>{k.tur} · {k.aciklama} · {eur(k.tutar_eur)} · {k.durum}{k.durum === 'Sigorta Kararı Bekleniyor' && <span className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/ayri-kalem/${k.kimlik}/karar`, { karar: 'Sigorta Öder' }))}>Sigorta Öder</button><button className="btn hayir" disabled={!son} onClick={() => void yap(() => istek(`/ayri-kalem/${k.kimlik}/karar`, { karar: 'Sigorta Ödemez', sonTarih: son }))}>Sigorta Ödemez</button></span>}</div>)}
+        </>}
+      </div>
+    </div>
+  );
+}
+
 /** YG-840, YG-1418, YG-353 mahsup önerisi; YG-842 malzeme avansı. */
 function MahsupAvans({ dosya, isEmirleri, yap }: { dosya: string; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; yap: (f: () => Promise<unknown>, m?: string) => Promise<void> }) {
   const [e, setE] = useState(''); const [tur, setTur] = useState('Garanti Masrafı'); const [t, setT] = useState(''); const [a, setA] = useState(''); const [bl, setBl] = useState('');
@@ -465,6 +513,7 @@ export function TedarikciOdemeleri() {
     <>
       <h1>Tedarikçi Ödemeleri</h1><Mesaj />
       <FirmaOdemeleri />
+      <VergiKayitlari />
       <Blok baslik="Açık Faturalar">
         {l.length === 0 && <div className="not">Açık fatura bulunmamaktadır.</div>}
         {l.map((f) => <div className="soru" key={f.kimlik}><span><b className="koyu">{f.fatura_no}</b> · {f.ticari_unvan} · {f.siparis_no} · {eur(f.tutar_eur)} · Vade: {f.vade.split('-').reverse().join('.')} · Üçlü Eşleşme: {f.eslestirme ?? 'Bekleniyor'}{f.liste_no ? ` · ${f.liste_no}: ${f.liste_durumu}` : ''}</span>

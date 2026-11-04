@@ -7,7 +7,7 @@ import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { tutar } from './metin.js';
+import { gunAy, metinGetir, tutar } from './metin.js';
 import { sayac } from './sure.js';
 import { parasalZincir, parametre, sonMakam } from './teklif.js';
 import { firmaOdemePlani, hakedisSonuc, tahsilatOrani } from './ticari.js';
@@ -96,7 +96,7 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
       if (!t || t.durum !== 'Onaylandı' || t.odeme_listesi_ref) return y.code(409).send({ hata: 'Listeye yalnız onaylı ve listeye alınmamış talimat eklenir.' });
       if (t.h_dosya) { const p = await plan(t.h_dosya, t.olusturma_zamani); if (p.tarih.getTime() > Date.now()) return y.code(409).send({ hata: `${t.hakedis_no} için ödeme planı tarihi ${tarihTr(p.tarih)} olup bu tarih bekleniyor.` }); }
       toplam += Number(t.tutar_eur);
-      if ((await b.db.query(`SELECT 1 FROM odeme_talimati x JOIN odeme_talimati y ON y.kimlik = $1 WHERE x.kimlik <> y.kimlik AND x.kurulus_ref = y.kurulus_ref AND x.tutar_eur = y.tutar_eur AND coalesce(x.odeme_zamani, now()) > now() - interval '90 days' AND (x.durum = 'Ödendi' OR x.odeme_listesi_ref IS NOT NULL OR x.kimlik = ANY($2::uuid[])) LIMIT 1`, [id, tl])).rowCount) uyari.push(t.ticari_unvan);
+      if ((await b.db.query(`SELECT 1 FROM odeme_talimati x JOIN odeme_talimati y ON y.kimlik = $1 WHERE x.kimlik <> y.kimlik AND x.kurulus_ref = y.kurulus_ref AND x.tutar_eur = y.tutar_eur AND coalesce(x.odeme_zamani, now()) > now() - interval '120 days' AND (x.durum = 'Ödendi' OR x.odeme_listesi_ref IS NOT NULL OR x.kimlik = ANY($2::uuid[])) LIMIT 1`, [id, tl])).rowCount) uyari.push(t.ticari_unvan);
     }
     for (const id of fl) {
       const f = (await b.db.query(`SELECT f.fatura_no, f.tutar_eur, f.odeme_zamani, f.odeme_listesi_ref, f.kurulus_ref, (SELECT e.sonuc FROM uclu_eslestirme e WHERE e.siparis_ref = f.siparis_ref AND e.fatura_no = f.fatura_no LIMIT 1) AS eslestirme FROM tedarikci_faturasi f WHERE f.kimlik = $1`, [id])).rows[0];
@@ -135,7 +135,7 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
   s.post('/firma-odemeleri/:id/odendi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const referans = ((i.body ?? {}) as { referans?: string }).referans?.trim();
     if (!UUID.test(id) || !(await rolVar(o.kullanici, MUHASEBE))) return yok(y);
-    const t = (await b.db.query(`SELECT t.*, h.dosya_ref, h.hakedis_no, h.net, e.teknik_kabul_eden_ref, a.dosya_ref AS avans_dosya FROM odeme_talimati t LEFT JOIN hakedis h ON h.kimlik = t.hakedis_ref LEFT JOIN is_emri e ON e.kimlik = h.is_emri_ref LEFT JOIN firma_malzeme_avansi a ON a.kimlik = t.avans_ref WHERE t.kimlik = $1`, [id])).rows[0];
+    const t = (await b.db.query(`SELECT t.*, h.dosya_ref, h.hakedis_no, h.net, h.firma_fatura_no, h.firma_fatura_kuru, e.teknik_kabul_eden_ref, a.dosya_ref AS avans_dosya FROM odeme_talimati t LEFT JOIN hakedis h ON h.kimlik = t.hakedis_ref LEFT JOIN is_emri e ON e.kimlik = h.is_emri_ref LEFT JOIN firma_malzeme_avansi a ON a.kimlik = t.avans_ref WHERE t.kimlik = $1`, [id])).rows[0];
     if (!t) return yok(y);
     if (t.durum !== 'Onaylandı') return y.code(409).send({ hata: 'Ödeme talimatı onaylı değildir.' });
     if (!referans) return y.code(400).send({ hata: 'Banka işlem referansını yazmanızı rica ederiz.' });
@@ -160,7 +160,7 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
         await c.query(`INSERT INTO hakedis_mahsubu (kurulus_ref, dosya_ref, tur, tutar_eur, kalan_eur, aciklama, statu, hazirlayan_ref) VALUES ($1,$2,'Malzeme Avansı',$3,$3,'Ödenen malzeme avansı','Onaylandı',$4)`, [t.kurulus_ref, t.avans_dosya, t.tutar_eur, o.kullanici]);
       }
       await listeTamamla(c, t.odeme_listesi_ref);
-      await bildir(c, { olay: `firma-odeme:${id}`, kullanicilar: await firmaKisileri(c, t.kurulus_ref), baslik: `${t.hakedis_no ?? 'Malzeme Avansı'} Ödendi` });
+      await bildir(c, { olay: `firma-odeme:${id}`, kullanicilar: await firmaKisileri(c, t.kurulus_ref), baslik: `${t.hakedis_no ?? 'Malzeme Avansı'} Ödendi`, ozet: t.firma_fatura_no && t.firma_fatura_kuru ? await metinGetir(c, 'BLD-81', 'tr', { 'fatura no': t.firma_fatura_no, tutar: tutar(R2(Number(t.tutar_eur) * Number(t.firma_fatura_kuru))), tarih: gunAy(new Date()) }) : null }); // BLD-81 portal bildirimi
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Ödemesi', nesneTuru: 'Ödeme Talimatı', nesneKimligi: id, yeni: { referans }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     });
     return { durum: 'Ödendi' };

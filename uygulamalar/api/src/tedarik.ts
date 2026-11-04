@@ -13,6 +13,13 @@ import { UUID } from './yat.js';
 
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
 
+/** YG-908: iş başı avansı gerekiyorsa tahsil edilmeden onarım iş emri aktif olmaz; hesap parça kuralıyla aynıdır. */
+export async function isBasiAvansEngeli(db: Pool | PoolClient, dosya: string): Promise<string | null> {
+  const d = (await db.query(`SELECT d.musteri_turu, d.oncelik, (SELECT max(genel_toplam_eur) FROM fiyat_teklifi t WHERE t.dosya_ref = d.kimlik AND t.statu = 'Karar') tutar FROM dosya d WHERE d.kimlik = $1`, [dosya])).rows[0];
+  if (avansHesapla(d.musteri_turu, Number(d.tutar ?? 0), d.oncelik === 'Kritik', await parametre(db, 'avans_orani'), await parametre(db, 'sigorta_avans_esik_eur')) === 0) return null;
+  return (await db.query(`SELECT 1 FROM odeme_talebi WHERE dosya_ref = $1 AND tur = 'Avans' AND durum = 'Ödendi' LIMIT 1`, [dosya])).rowCount ? null : 'İş başı avansı tahsil edilmeden iş emri başlatılamaz.';
+}
+
 /** YG-906: parça bedeli siparişten önce alınır; avans alınmayan dosyada aranmaz (sigorta eşik altı; acil ve kritikte sigorta ve kurumsal). */
 export async function parcaOdemeEngeli(db: Pool | PoolClient, dosya: string): Promise<string | null> {
   const d = (await db.query(`SELECT d.musteri_turu, d.oncelik, (SELECT max(genel_toplam_eur) FROM fiyat_teklifi t WHERE t.dosya_ref = d.kimlik AND t.statu = 'Karar') tutar FROM dosya d WHERE d.kimlik = $1`, [dosya])).rows[0];

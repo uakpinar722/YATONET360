@@ -5,12 +5,12 @@ import { bildir, disGonder } from './bildirim.js';
 import { Depo } from './depo.js';
 import { kartAc } from './is_motoru.js';
 import type { Baglam } from './kimlik.js';
-import { gunAy, tutar, type Dil } from './metin.js';
+import { gunAy, metinGetir, tutar, type Dil } from './metin.js';
 import { pdfUret, type BelgeTanim, type Bolum } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -115,7 +115,7 @@ async function onayTanim(db: Db, id: string, kod: string, web: string) {
 }
 
 async function odemeTanim(db: Db, tur: 'Proforma' | 'Ödeme Talebi', id: string, kod: string, web: string) {
-  const f = tur === 'Proforma' ? (await db.query(`SELECT m.proforma_no AS no, m.dosya_ref, m.teklif_ref, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.vade, 'Nihai' AS talep_turu, t.teklif_no, t.kdv_orani FROM musteri_faturasi m JOIN fiyat_teklifi t ON t.kimlik = m.teklif_ref WHERE m.kimlik = $1`, [id])).rows[0]
+  const f = tur === 'Proforma' ? (await db.query(`SELECT m.proforma_no AS no, m.dosya_ref, m.teklif_ref, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.vade, 'Nihai' AS talep_turu, t.teklif_no, t.kdv_orani FROM musteri_faturasi m LEFT JOIN fiyat_teklifi t ON t.kimlik = m.teklif_ref WHERE m.kimlik = $1`, [id])).rows[0]
     : (await db.query(`SELECT NULL AS no, o.dosya_ref, o.teklif_ref, o.tutar_eur AS toplam_eur, o.son_tarih AS vade, o.tur AS talep_turu, t.teklif_no, t.kdv_orani FROM odeme_talebi o LEFT JOIN fiyat_teklifi t ON t.kimlik = o.teklif_ref WHERE o.kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, f.dosya_ref, ''); const dil = b.dil; const e = E[dil];
   const onceki = tur === 'Proforma' ? Number((await db.query(`SELECT coalesce(sum(tutar_eur), 0) n FROM tahsilat WHERE dosya_ref = $1`, [f.dosya_ref])).rows[0].n) : 0;
@@ -129,6 +129,15 @@ async function odemeTanim(db: Db, tur: 'Proforma' | 'Ödeme Talebi', id: string,
   else bolumler.push({ baslik: e.talep, tur: 'alanlar', alanlar: [{ et: e.aciklama, deger: f.talep_turu }, { et: e.genel, deger: para(f.toplam_eur, dil) }] });
   bolumler.push(ekipBolumu({ ...b, ekip: b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu') }));
   return { dosyaAdi: `${no}.pdf`, sinif: 'Kritik', t: { ad: e.Odeme, kod: 'FR-TIC-010', no, dosyaNo: b.d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: b.d.yat_adi, matbuBas: [hitap(b, e.Odeme), ...(f.talep_turu === 'Nihai' ? [dil === 'en' ? `The final payment request for the work completed and accepted with your approval under file no. ${b.d.dosya_no} is set out below for your information. This document is a pro forma and is not an invoice.` : `${b.d.dosya_no} numaralı dosyanızda tamamlanan ve onayınızla kabul edilen işlere ilişkin nihai ödeme talebi aşağıda bilgilerinize sunulmuştur. Bu belge proforma niteliğindedir ve fatura yerine geçmez.`] : [e.proforma])], bolumler, matbuSon: [dil === 'en' ? 'Amounts are in EUR; VAT is shown separately. This document is a pro forma and does not replace an invoice; your invoice will be sent separately by our Accounting Department in TRY at the CBRT foreign exchange selling rate of the business day preceding the invoice date.' : 'Tutarlar EUR cinsindendir; KDV ayrıca gösterilmiştir. Bu belge proforma niteliğindedir, fatura yerine geçmez; faturanız Muhasebe Birimimizce, fatura tarihinden önceki iş gününe ait TCMB döviz satış kuruyla TL olarak ayrıca iletilecektir.', dogrula(dil, kod, web), tesekkur(dil)], onay: kapanis ? { rol: kapanis.rol_adi ?? '', zaman: anSaat(kapanis.zaman), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim };
+}
+
+/** YG-896, FR-TIC-013: kalem, tutar ve son tarih; gerekçe yorumu yok, gövde onaylı BLD-30 metnidir. */
+async function sorumlulukTanim(db: Db, id: string, kod: string, web: string) {
+  const v = await odemeTanim(db, 'Ödeme Talebi', id, kod, web);
+  const kl = (await db.query(`SELECT tur, aciklama, tutar_eur FROM odeme_sorumlulugu_kalemi WHERE odeme_talebi_ref = $1`, [id])).rows;
+  const dil = v.t.dil as Dil; const en = dil === 'en';
+  const govde = await metinGetir(db, 'BLD-30', dil, { 'Dosya No': v.t.dosyaNo as string, 'File No': v.t.dosyaNo as string, 'bağlantı': web, link: web });
+  return { ...v, t: { ...v.t, ad: en ? 'Payment Responsibility Notice' : 'Ödeme Sorumluluğu Bildirimi', kod: 'FR-TIC-013', matbuBas: [govde], bolumler: [{ baslik: en ? 'Items' : 'Kalemler', tur: 'tablo', sutunlar: [{ ad: en ? 'Item' : 'Kalem' }, { ad: en ? 'Description' : 'Açıklama' }, { ad: en ? 'Amount (EUR)' : 'Tutar (EUR)', hiza: 'sag' }], satirlar: kl.map((k) => [k.tur, k.aciklama, tutar(Number(k.tutar_eur), dil)]) } as Bolum, ...(v.t.bolumler as Bolum[])] } };
 }
 
 async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
@@ -226,7 +235,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       const pdf = await pdfUret(v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);
       const anahtar = depo.yerlestir(al.yol, al.ozet);

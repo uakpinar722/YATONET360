@@ -12,6 +12,7 @@ import { coz, totpDogrula } from './kripto.js';
 import { altNumara, sayac } from './sure.js';
 import { belgeUret } from './belge_uret.js';
 import { performansOlayIsle } from './karne.js';
+import { isBasiAvansEngeli } from './tedarik.js';
 import { baslangicToplantiEngeli, isDurduBildir } from './saha_kayit.js';
 import { ekonomikKilitEngeli } from './yat_degeri.js';
 import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
@@ -203,6 +204,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     }
     // YG-211: sigortasız dosyada keşif, Keşif ve Söküm İzni onaylanmadan KN iş emri açılmaz.
     if (g.tur === 'KN' && d.dosya_niteligi !== 'Sigorta bağlantılı' && !(await b.db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod IN ('ONY-01', 'ONY-24') AND durum = 'Onaylandı'`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için yat sahibinin keşif izni bekleniyor.' });
+    // YG-1487: bireyselde Keşif Ücreti keşiften önce ödenir.
+    if (g.tur === 'KN' && d.musteri_turu === 'Bireysel Müşteri' && (await b.db.query(`SELECT 1 FROM odeme_talebi WHERE dosya_ref = $1 AND tur = 'Keşif Ücreti' AND durum = 'Gönderildi' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için Keşif Ücreti ödemesi bekleniyor.' });
     return islem(async (c) => {
       const no = await altNumara(c, d.dosya_no, g.tur!);
       const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, ana_is_emri_ref, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, baslangic_tarihi, hedef_bitis_tarihi, tehlikeli_atik, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
@@ -343,7 +346,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, TEKNIK))) return y.code(403).send({ hata: 'Başlangıç kontrolünü Saha Sorumlusu veya Teknik Uzman yapar.' });
     if (e.statu !== 'Başlangıç Kontrolünde') return y.code(409).send({ hata: 'İş emri başlangıç kontrolünde değildir.' });
     if (!['Başlanabilir', 'Koşullu Başlanabilir', 'Bekletilir'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
-    if (sonuc !== 'Bekletilir') { const pe = await planEngeli(b.db, e.dosya_ref, e.is_emri_turu) ?? await baslangicToplantiEngeli(b.db, e.kimlik, e.is_emri_turu); if (pe) return y.code(409).send({ hata: pe }); }
+    if (sonuc !== 'Bekletilir') { const pe = await planEngeli(b.db, e.dosya_ref, e.is_emri_turu) ?? await baslangicToplantiEngeli(b.db, e.kimlik, e.is_emri_turu) ?? (e.is_emri_turu === 'ON' ? await isBasiAvansEngeli(b.db, e.dosya_ref) : null); if (pe) return y.code(409).send({ hata: pe }); }
     return islem(async (c) => {
       await c.query(`UPDATE is_emri SET baslangic_sonucu = $2, statu = CASE WHEN $2 = 'Bekletilir' THEN statu ELSE 'Aktif' END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc]);
       if (sonuc !== 'Bekletilir' && e.is_emri_turu !== 'KN') {

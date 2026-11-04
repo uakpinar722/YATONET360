@@ -18,6 +18,9 @@ import { emniyetEngeli } from './kalite.js';
 import { tesisSerbestBirak } from './portallar.js';
 import { belgeUret } from './belge_uret.js';
 import { izinGerekli } from './yetki.js';
+import { kdvBelirle, kdvHesapla } from './vergi.js';
+import { disGonder } from './bildirim.js';
+import { metinGetir } from './metin.js';
 
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
@@ -108,14 +111,30 @@ export async function alacakIsle(db: Pool, simdi = new Date()): Promise<number> 
       if (gecen < g) continue;
       const r = await db.query(`INSERT INTO alacak_takip_adimi (fatura_ref, basamak, sorumlu_rol) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING kimlik`, [f.kimlik, ad, rol]);
       if (!r.rowCount) continue;
+      if (g === 1 && f.musteri_turu !== 'Sigorta Şirketi') { // YG-897, D-194: vade ertesi gün Ödeme Hatırlatması (BLD-28)
+        const yt = (await db.query(`SELECT t.telefon, t.eposta, d.yazisma_dili FROM dosya d JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [f.dosya_ref])).rows[0];
+        if (yt) await yatTarafinaYaz(db, { olay: `bld28:${f.kimlik}`, kod: 'BLD-28', dil: dilKod(yt.yazisma_dili), konu: `${f.dosya_no} Ödeme Hatırlatması`, telefon: yt.telefon, eposta: yt.eposta, alanlar: { 'Dosya No': f.dosya_no, 'File No': f.dosya_no, vade: gunAy(f.vade), 'due date': gunAy(f.vade), 'bağlantı': webAdresi, link: webAdresi } });
+      }
       await kartAc(db, { tur: 'Alacak Takibi', kategori: 'islem', baslik: `${f.dosya_no} · Alacak Takibi: ${ad}`, ozet: f.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta şirketine yazılı ihtar gönderilmez; muhatabı arayınız.' : f.proforma_no, oncelik: g >= 30 ? 'Yüksek' : 'Normal', sahipRol: await rolId(db, rol), nesneTuru: 'Fatura', nesneKimligi: f.kimlik });
       n++;
     }
+  }
+  // YG-908: 30 günü aşan açık avans için erken uyarı.
+  for (const a of (await db.query(`SELECT o.kimlik, o.tutar_eur, d.dosya_no FROM odeme_talebi o JOIN dosya d ON d.kimlik = o.dosya_ref WHERE o.tur = 'Avans' AND o.durum = 'Gönderildi' AND o.olusturma_zamani < $1::timestamptz - interval '30 days'`, [simdi])).rows) {
+    if (await birKez(db, 'acik_avans_30', a.kimlik)) { await kartAc(db, { tur: 'Açık Avans', kategori: 'islem', baslik: `${a.dosya_no} · 30 Günü Aşan Açık Avans`, ozet: `${tutar(Number(a.tutar_eur))} EUR`, oncelik: 'Yüksek', sahipRol: await rolId(db, MFM), nesneTuru: 'Ödeme Talebi', nesneKimligi: a.kimlik }); n++; }
   }
   return n;
 }
 
 let webAdresi = '';
+/** YG-897: Ödeme Alındı (BLD-27); sigortaya ve vefat işaretli dosyaya gitmez. */
+async function odemeAlindi(c: Db, dosya: string, muhatap: string, tarih: string) {
+  if (muhatap === 'Sigorta Şirketi') return;
+  const d = (await c.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, t.telefon, t.eposta FROM dosya d LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [dosya])).rows[0];
+  if (!d || d.vefat_isareti || (!d.telefon && !d.eposta)) return;
+  await yatTarafinaYaz(c, { olay: `bld27:${dosya}:${tarih}:${Math.random()}`, kod: 'BLD-27', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Ödemeniz Alındı`, telefon: d.telefon, eposta: d.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, tarih: gunAy(tarih), date: gunAy(tarih), 'bağlantı': webAdresi, link: webAdresi } });
+}
+
 
 kapanisKaydet('Ödeme Talebi', async (c, k, karar) => {
   const t = (await c.query(`SELECT o.*, d.dosya_no, d.yazisma_dili, d.vefat_isareti FROM odeme_talebi o JOIN dosya d ON d.kimlik = o.dosya_ref WHERE o.kimlik = $1`, [k.nesne_kimligi])).rows[0];
@@ -249,12 +268,16 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (t.teklif_muhatabi === 'Sigorta Şirketi' && !(await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigortaya fatura için Hasar dosya numarası bekleniyor.' }); // YG-451
     const hk = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı'`, [t.kimlik])).rows[0].t);
     const indirim = Number(t.ara_toplam_eur) > 0 ? R2((hk * Number(t.indirim_tutari_eur)) / Number(t.ara_toplam_eur)) : 0;
-    const matrah = R2(hk - indirim - Number(t.kesif_mahsubu_eur)); const kdv = R2((matrah * Number(t.kdv_orani)) / 100);
+    const matrah = R2(hk - indirim - Number(t.kesif_mahsubu_eur));
+    // YG-878, YG-881: KDV durumu sistemce belirlenir; istisnada yalnız parça ve malzeme KDV'li kalır.
+    const malz = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' AND bedel_turu = 'Malzeme'`, [t.kimlik])).rows[0].t);
+    const malzNet = hk > 0 ? R2(malz - (malz * indirim) / hk) : 0;
+    const ks = await kdvBelirle(b.db, t.dosya_ref, t.teklif_muhatabi); const kh = kdvHesapla(matrah, malzNet, Number(t.kdv_orani), ks); const kdv = kh.kdv;
     return islem(async (c) => {
       const no = await altNumara(c, t.dosya_no, 'OT');
-      const r = (await c.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [no, t.dosya_ref, t.kimlik, t.teklif_muhatabi, matrah, kdv, R2(matrah + kdv), o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, kdv_durumu, kdv_orani, kdv_matrahi_eur, tevkifat_orani, tevkifat_eur, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`, [no, t.dosya_ref, t.kimlik, t.teklif_muhatabi, matrah, kdv, kh.toplam, ks.durum, t.kdv_orani, kh.taban, ks.tevkifat ? `${ks.tevkifat.pay}/${ks.tevkifat.payda}` : null, kh.tevkifat, o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Proforma', baslik: `${no} · Proforma Onayı`, ozet: `${tutar(matrah)} EUR (KDV hariç)`, hazirlayan: o.kullanici, zincir: await parasalZincir(c, [MFM], await sonMakam(c, matrah)), nesneTuru: 'Fatura', nesneKimligi: r.kimlik });
-      return { kimlik: r.kimlik, proformaNo: no, kdvHaric: matrah, kdv, toplam: R2(matrah + kdv) };
+      return { kimlik: r.kimlik, proformaNo: no, kdvHaric: matrah, kdv, toplam: kh.toplam, kdvDurumu: ks.durum };
     });
   });
 
@@ -282,8 +305,20 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE fatura_no = $1`, [g.no.trim()])).rowCount) return y.code(409).send({ hata: 'Bu fatura numarası kayıtlıdır.' });
     const vadeGun = f.muhatap === 'Sigorta Şirketi' ? await parametre(b.db, 'sigorta_vade_gun') : 0;
     const vade = new Date(`${g.tarih}T12:00:00Z`); vade.setUTCDate(vade.getUTCDate() + vadeGun);
-    const tl = R2(Number(f.toplam_eur) * Number(g.kur));
-    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10)]);
+    // YG-874: KDV TL matrah üzerinden hesaplanır.
+    const matrahTl = R2(Number(f.kdv_haric_eur) * Number(g.kur)); const oranK = f.kdv_orani === null ? (Number(f.kdv_haric_eur) > 0 ? (Number(f.kdv_eur) / Number(f.kdv_haric_eur)) * 100 : 0) : Number(f.kdv_orani);
+    const kdvTl = R2((R2(Number(f.kdv_matrahi_eur ?? f.kdv_haric_eur) * Number(g.kur)) * oranK) / 100);
+    const tevTl = Number(f.kdv_eur) > 0 ? R2((kdvTl * Number(f.tevkifat_eur)) / Number(f.kdv_eur)) : 0;
+    const tl = R2(matrahTl + kdvTl - tevTl);
+    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl]);
+    // YG-421, K-193: firmaya Fatura Düzenleme Bildirimi (BLD-80).
+    for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, coalesce((SELECT sum(h.bu_donem_brut) FROM hakedis h WHERE h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi'), e.firma_bedeli_eur) AS tutar FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [f.dosya_ref])).rows) {
+      if (!(Number(e.tutar) > 0)) continue;
+      const kisi = (await b.db.query(`SELECT u.kullanici_ref, h.e_posta FROM kurulus_kullanici u JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE u.kurulus_ref = $1`, [e.kurulus_ref])).rows;
+      const metin = await metinGetir(b.db, 'BLD-80', 'tr', { 'İş Emri No': e.is_emri_no, tarih: gunAy(g.tarih), 'kur tarihi': gunAy(g.kurTarihi), kur: String(g.kur).replace('.', ','), tutar: tutar(Number(e.tutar)), 'bağlantı': webAdresi });
+      await bildir(b.db, { olay: `bld80:${f.kimlik}:${e.kimlik}`, kullanicilar: kisi.map((x) => x.kullanici_ref), baslik: `${e.is_emri_no} · Fatura Düzenleme Bildirimi`, ozet: metin });
+      for (const x of kisi) if (x.e_posta) await disGonder(b.db, { olay: `bld80:${f.kimlik}:${e.kimlik}:${x.kullanici_ref}`, eposta: x.e_posta, konu: `${e.is_emri_no} Fatura Düzenleme Bildirimi`, metin });
+    }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Fatura Bilgisi Girildi', nesneTuru: 'Fatura', nesneKimligi: f.kimlik, yeni: { no: g.no, kur: g.kur, tl }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { toplamTl: tl, vade: vade.toISOString().slice(0, 10) };
   });
@@ -304,6 +339,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
         await c.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, referans, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [f.kimlik, f.dosya_ref, g.tutar, g.tarih, g.kanal, g.referans ?? null, o.kullanici]);
         const durum = yeni === Number(f.toplam_eur) ? 'Tahsil Edildi' : 'Kısmi Tahsil';
         await c.query(`UPDATE musteri_faturasi SET tahsil_edilen_eur = $2, durum = $3 WHERE kimlik = $1`, [f.kimlik, yeni, durum]);
+        await odemeAlindi(c, f.dosya_ref, f.muhatap, g.tarih!);
         return { durum, kalan: R2(Number(f.toplam_eur) - yeni) };
       }
       const t = g.odemeTalebi ? (await c.query(`SELECT * FROM odeme_talebi WHERE kimlik = $1 FOR UPDATE`, [g.odemeTalebi])).rows[0] : undefined;
@@ -311,6 +347,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`INSERT INTO tahsilat (odeme_talebi_ref, dosya_ref, tutar_eur, tarih, kanal, referans, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [t.kimlik, t.dosya_ref, g.tutar, g.tarih, g.kanal, g.referans ?? null, o.kullanici]);
       const top = Number((await c.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM tahsilat WHERE odeme_talebi_ref = $1`, [t.kimlik])).rows[0].t);
       if (top >= Number(t.tutar_eur)) await c.query(`UPDATE odeme_talebi SET durum = 'Ödendi' WHERE kimlik = $1`, [t.kimlik]);
+      await odemeAlindi(c, t.dosya_ref, t.muhatap, g.tarih!);
       return { durum: top >= Number(t.tutar_eur) ? 'Ödendi' : 'Kısmi', kalan: R2(Math.max(0, Number(t.tutar_eur) - top)) };
     });
   });
@@ -524,7 +561,9 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const q = (t: string) => b.db.query(t, [id]).then((r) => r.rows);
     return {
       odemeTalepleri: await q(`SELECT kimlik, tur, tutar_eur, son_tarih::text, durum FROM odeme_talebi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
-      faturalar: await q(`SELECT kimlik, proforma_no, durum, fatura_no, fatura_tarihi::text, toplam_eur, toplam_tl, vade::text, tahsil_edilen_eur FROM musteri_faturasi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
+      sigortali: (await b.db.query(`SELECT dosya_niteligi FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.dosya_niteligi === 'Sigorta bağlantılı',
+      ayriKalemler: await q(`SELECT kimlik, tur, aciklama, tutar_eur, durum FROM odeme_sorumlulugu_kalemi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
+      faturalar: await q(`SELECT kimlik, proforma_no, durum, fatura_no, fatura_tarihi::text, toplam_eur, toplam_tl, vade::text, tahsil_edilen_eur, kdv_durumu, kdv_eur, kdv_tl, tevkifat_orani, tevkifat_eur, aciklama FROM musteri_faturasi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       hakedisler: await q(`SELECT kimlik, hakedis_no, bu_donem_brut, kesinti, net, statu FROM hakedis WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       isEmirleri: await q(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, k.ticari_unvan FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti') ORDER BY e.olusturma_zamani`),
       teslimEngeli: await teslimEngeli(b.db, id),
