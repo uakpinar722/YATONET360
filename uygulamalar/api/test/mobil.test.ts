@@ -86,7 +86,8 @@ describe('ret bağlantısı (YG-484), hesap kapatma (YG-492), Yat Yetkilisi (YG-
     expect((await kayitOl('+905551110002', { yetkili: { rol: 'Yatın Kaptanı' } })).statusCode).toBe(400);
     const k = await kayitOl('+905551110003', { yetkili: { rol: 'Yatın Kaptanı', sahipAd: 'Sahip S', sahipTelefon: '+905551110099' } }); expect(k.statusCode, k.body).toBe(200); const c = await hazirla(k);
     const a = (await o.ist('GET', '/api/portal/ana', c)).json(); expect(a.yetkili).toMatchObject({ rol: 'Yatın Kaptanı', sahip_ad: 'Sahip S', belge_durumu: 'Bekleniyor' });
-    expect((await o.sup.query(`SELECT sahip_bilgilendirme_zamani FROM yat_yetkilisi_kaydi WHERE sahip_ad = 'Sahip S'`)).rows[0].sahip_bilgilendirme_zamani).toBeNull();
+    expect((await o.sup.query(`SELECT sahip_bilgilendirme_zamani FROM yat_yetkilisi_kaydi WHERE sahip_ad = 'Sahip S'`)).rows[0].sahip_bilgilendirme_zamani).not.toBeNull();
+    const giden = o.sms.gidenler.at(-1)!; expect(giden.telefon).toBe('+905551110099'); expect(giden.metin).toContain('Kaptan K, Yatın Kaptanı sıfatıyla'); expect(giden.metin).toContain('LGM sizden kod istemez');
     expect((await o.ist('POST', '/api/yetkilerim/belge', c, { belge: crypto.randomUUID() })).statusCode).toBe(400);
     const kid = (await o.sup.query(`SELECT kullanici_ref FROM yat_yetkilisi_kaydi WHERE sahip_ad = 'Sahip S'`)).rows[0].kullanici_ref;
     const be = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Vekâletname','Yetki','Gizli','Yat Yetkilisi',$1,'Sistem',current_date,$1) RETURNING kimlik`, [kid])).rows[0].kimlik;

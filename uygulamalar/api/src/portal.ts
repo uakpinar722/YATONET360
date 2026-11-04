@@ -13,6 +13,7 @@ import { rolSahipleri } from './makam.js';
 import { onayFormKaydet, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { tarafNo, UUID } from './yat.js';
 import { onayEngeli, talepEngeli } from './kurumsal.js';
+import { metinGetir } from './metin.js';
 
 type Db = Pool | PoolClient;
 export const GRUP_YAT = 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)';
@@ -139,6 +140,12 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`INSERT INTO oturum (kullanici_ref, belirtec_ozeti, asama, azami_bitis_zamani, son_islem_zamani, kaynak_adres) VALUES ($1,$2,'Tamam', now() + make_interval(hours => $3), now(), $4)`, [h.kimlik, ozet(bel), KURAL.azamiOturumSaat, i.ip.slice(0, 100)]);
       await izYaz(c, { aktor: h.kimlik, eylem: 'Yat Sahibi Hesabı Açıldı', nesneTuru: 'Kullanıcı', nesneKimligi: h.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
+      if (g.yetkili) { // YG-1561, YY-M1: gönderim kaydı engellemez, gitmezse zaman boş kalır.
+        try {
+          await b.sms.gonder(st!.telefon!, await metinGetir(b.db, 'BLD-88', 'tr', { 'Ad Soyad': g.ad.trim(), Rol: g.yetkili.rol! }));
+          await b.db.query(`UPDATE yat_yetkilisi_kaydi SET sahip_bilgilendirme_zamani = now() WHERE kullanici_ref = $1`, [h.kimlik]);
+        } catch (e) { i.log.error(e); }
+      }
       cerezYaz(y, b, bel);
       return { tamam: true };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
