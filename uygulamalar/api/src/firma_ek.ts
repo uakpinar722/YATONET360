@@ -10,7 +10,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
-const FYM = 'Firma Yönetimi Müdürü'; const TM = 'Teknik Müdür'; const HUD = 'Hukuk ve Uyum Direktörü'; const OPM = 'Operasyon Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü';
+const FYM = 'Firma Yönetimi Müdürü'; const TM = 'Teknik Müdür'; const HUD = 'Hukuk ve Uyum Direktörü'; const OPM = 'Operasyon Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'; const TID = 'Ticari İşler Direktörü'; const TIC = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)';
 export const ON_KOSULLAR = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'];
 const SICIL_ROLLER = ['Sicil Sorumlusu', FYM, 'Firma Yönetimi Müdür Yardımcısı'];
 
@@ -191,8 +191,30 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (m.firma_itiraz) return y.code(409).send({ hata: 'İtirazınız alınmıştır.' });
     if (m.onay_zamani && isGunuGecti(new Date(m.onay_zamani), 5)) return y.code(409).send({ hata: 'Beş iş günlük itiraz süresi dolmuştur.' });
     await b.db.query(`UPDATE hakedis_mahsubu SET firma_itiraz = $2, firma_itiraz_zamani = now() WHERE kimlik = $1`, [id, g]);
-    await kartAc(b.db, { tur: 'Mahsup İtirazı', kategori: 'islem', baslik: `${m.tur} · Firma İtirazı`, ozet: g, oncelik: 'Yüksek', sahipRol: await rolId(b.db, 'Ticari İşler Direktörü'), nesneTuru: 'Hakediş Mahsubu', nesneKimligi: id });
+    await kartAc(b.db, { tur: 'Mahsup İtirazı', kategori: 'islem', baslik: `${m.tur} · Firma İtirazı`, ozet: g, oncelik: 'Yüksek', sahipRol: await rolId(b.db, TID), nesneTuru: 'Hakediş Mahsubu', nesneKimligi: id });
     return { durum: 'İtiraz Alındı' };
+  });
+
+  // V-186: itiraz sonuçlanana kadar mahsup durur. Kabulde mahsup iptal edilir, önceden düşülen tutar için iade görevi açılır; retle kaldığı yerden sürer.
+  s.get('/mahsup-itirazlar', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, [TID]))) return y.code(403).send({ hata: 'Mahsup itirazlarını Ticari İşler Direktörü görür.' });
+    return (await b.db.query(`SELECT m.kimlik, m.tur, m.tutar_eur, m.kalan_eur, m.aciklama, m.firma_itiraz, u.ticari_unvan, d.dosya_no FROM hakedis_mahsubu m JOIN kurulus u ON u.kimlik = m.kurulus_ref JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.firma_itiraz IS NOT NULL AND m.itiraz_sonucu IS NULL ORDER BY m.firma_itiraz_zamani`)).rows;
+  });
+  s.post('/mahsup/:id/itiraz-karar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    if (!(await rolVar(o.kullanici, [TID]))) return y.code(403).send({ hata: 'İtiraz kararını Ticari İşler Direktörü verir.' });
+    if (!['Kabul', 'Ret'].includes(g.karar ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar ve gerekçeyi girmenizi rica ederiz.' });
+    const m = (await b.db.query(`SELECT m.kurulus_ref, m.dosya_ref, m.tur, m.tutar_eur, m.kalan_eur, d.dosya_no FROM hakedis_mahsubu m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.kimlik = $1 AND m.firma_itiraz IS NOT NULL AND m.itiraz_sonucu IS NULL`, [id])).rows[0];
+    if (!m) return y.code(409).send({ hata: 'Karar bekleyen itiraz bulunmamaktadır.' });
+    const dusulen = Math.round((Number(m.tutar_eur) - Number(m.kalan_eur)) * 100) / 100;
+    await b.db.query(`UPDATE hakedis_mahsubu SET itiraz_sonucu = $2, itiraz_gerekcesi = $3, itiraz_karar_veren_ref = $4, itiraz_karar_zamani = now(), statu = CASE WHEN $2 = 'Kabul' THEN 'Reddedildi' ELSE statu END, kalan_eur = CASE WHEN $2 = 'Kabul' THEN 0 ELSE kalan_eur END WHERE kimlik = $1`, [id, g.karar, g.gerekce.trim(), o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Mahsup İtirazı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    if (g.karar === 'Kabul' && dusulen > 0) await kartAc(b.db, { tur: 'Mahsup İadesi', kategori: 'islem', baslik: `${m.dosya_no} · Mahsup İadesi`, ozet: `İtiraz kabul edildi; ödemeden düşülen ${dusulen.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR firmaya iade edilecektir.`, oncelik: 'Yüksek', sahipRol: await rolId(b.db, TIC), nesneTuru: 'Hakediş Mahsubu', nesneKimligi: id });
+    const ku = (await b.db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [m.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
+    if (ku.length) await bildir(b.db, { olay: `mahsup-itiraz:${id}`, kullanicilar: ku, baslik: `${m.tur} · İtiraz Sonucu: ${g.karar === 'Kabul' ? 'Kabul Edildi' : 'Reddedildi'}`, ozet: g.gerekce.trim() });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Mahsup İtiraz Kararı', nesneTuru: 'Hakediş Mahsubu', nesneKimligi: id, yeni: { karar: g.karar, iade: dusulen }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { durum: g.karar, iade: g.karar === 'Kabul' ? dusulen : 0 };
   });
 
   // YG-1660: görüşleri Firma Yönetimi Müdürü ister; Teknik Müdür, Hukuk ve Uyum, Operasyon Müdürü sırayla görüş verir, Direktör karar verir.

@@ -127,6 +127,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     for (const v of g.vardiyalar) {
       if (!['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'].includes(v.katman ?? '') || !v.kullanici || !v.baslangic || !v.bitis || new Date(v.bitis) <= new Date(v.baslangic)) return y.code(400).send({ hata: 'Vardiya katman, kişi ve zaman içermelidir.' });
     }
+    { const e3 = await (await import('./ik.js')).ek3Engeli(b.db, g.vardiyalar.map((v) => v.kullanici!), Number(g.donem!.slice(0, 4))); if (e3) return y.code(409).send({ hata: e3 }); } // Yönetmelik 4.1
     return islem(async (c) => {
       const sur = (await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM nobet_cizelgesi WHERE donem = $1`, [g.donem])).rows[0].n;
       const t = (await c.query(`INSERT INTO nobet_cizelgesi (donem, surum, durum, hazirlayan_ref) VALUES ($1,$2,'Onayda',$3) RETURNING kimlik`, [g.donem, sur, o.kullanici])).rows[0];

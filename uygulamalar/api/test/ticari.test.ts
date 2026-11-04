@@ -217,8 +217,8 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     expect((await o.ist('POST', '/api/izin', c, I)).statusCode).toBe(409);
     await o.sup.query(`INSERT INTO izin_bakiyesi VALUES ($1, 2027, 14, 12)`, [o.K.ik]);
     expect((await o.ist('POST', '/api/izin', c, I)).json().hata).toContain('kalan 2');
-    await o.sup.query(`UPDATE izin_bakiyesi SET kullanilan = 0 WHERE personel_ref = $1`, [o.K.ik]);
-    const r = await o.ist('POST', '/api/izin', c, I);
+    await o.sup.query(`UPDATE izin_bakiyesi SET kullanilan = 0, hak = 20 WHERE personel_ref = $1`, [o.K.ik]);
+    const r = await o.ist('POST', '/api/izin', c, { ...I, bolunmus: true });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().gun).toBe(5);
     const k = await o.kart('İzin Talebi', r.json().kimlik);
     expect(k.ozet).toBe('5 gün');

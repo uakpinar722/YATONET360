@@ -178,6 +178,7 @@ kapanisKaydet('İzin Talebi', async (c, k, karar) => {
   if (karar === 'Onayla') {
     await c.query(`UPDATE izin_talebi SET durum = 'Onaylandı' WHERE kimlik = $1`, [t.kimlik]);
     if (t.izin_turu === 'Yıllık') await c.query(`UPDATE izin_bakiyesi SET kullanilan = kullanilan + $3 WHERE personel_ref = $1 AND yil = $2`, [t.personel_ref, new Date(t.baslangic).getUTCFullYear(), t.gun]);
+    await (await import('./ik.js')).izinPuantaja(c, t); // YG-953
   } else if (karar === 'Reddet') await c.query(`UPDATE izin_talebi SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]);
 });
 
@@ -484,7 +485,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (plan.tahsilataBagli) odenebilir = R2(Math.min(odenebilir, Math.max(0, R2(Number(h.net) * await tahsilatOrani(b.db, h.dosya_ref)) - once)));
     if (odenebilir <= 0) return y.code(409).send({ hata: 'Açık iş bedeli veya tahsilat nedeniyle ödenecek tutar bulunmamaktadır; kapanması bekleniyor.' });
     return islem(async (c) => {
-      const ml = (await c.query(`SELECT kimlik, kalan_eur FROM hakedis_mahsubu WHERE kurulus_ref = $1 AND statu = 'Onaylandı' AND kalan_eur > 0 ORDER BY olusturma_zamani FOR UPDATE`, [h.kurulus_ref])).rows;
+      const ml = (await c.query(`SELECT kimlik, kalan_eur FROM hakedis_mahsubu WHERE kurulus_ref = $1 AND statu = 'Onaylandı' AND kalan_eur > 0 AND (firma_itiraz IS NULL OR itiraz_sonucu = 'Ret') ORDER BY olusturma_zamani FOR UPDATE`, [h.kurulus_ref])).rows;
       let mahsup = 0; const dusum: { kimlik: string; t: number }[] = [];
       for (const m of ml) { const t = R2(Math.min(Number(m.kalan_eur), R2(odenebilir - mahsup))); if (t <= 0) break; dusum.push({ kimlik: m.kimlik, t }); mahsup = R2(mahsup + t); }
       const tut = R2(odenebilir - mahsup);
@@ -525,7 +526,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-948, YG-950, YG-951, YG-1614: izin; gün sistemce; bakiye negatif olamaz; açık dosyası olanda vekil zorunlu; İK sonra birim amiri.
   s.post('/izin', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; baslangic?: string; bitis?: string; vekil?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; baslangic?: string; bitis?: string; vekil?: string; bolunmus?: boolean };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     if (!g.tur?.trim() || !g.baslangic || !g.bitis || g.bitis < g.baslangic) return y.code(400).send({ hata: 'İzin türü ve geçerli tarih aralığı zorunludur.' });
     const tatil = new Set((await b.db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil`)).rows.map((r) => r.t as string));
@@ -536,10 +537,11 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const bk = (await b.db.query(`SELECT hak, kullanilan FROM izin_bakiyesi WHERE personel_ref = $1 AND yil = $2`, [o.kullanici, yil])).rows[0];
       if (!bk) return y.code(409).send({ hata: 'İzin bakiyeniz tanımlı değildir; İnsan Kaynaklarına başvurunuz.' });
       if (bk.hak - bk.kullanilan < n) return y.code(409).send({ hata: `Bakiye yetersiz: kalan ${bk.hak - bk.kullanilan} gün.` });
+      const be = await (await import('./ik.js')).izinBolumEngeli(b.db, o.kullanici, { baslangic: g.baslangic, bitis: g.bitis, gun: n, bolunmus: g.bolunmus }, bk.hak, bk.kullanilan); if (be) return y.code(409).send({ hata: be }); // YG-949
     }
     if ((await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi a JOIN dosya d ON d.kimlik = a.dosya_ref WHERE a.kullanici_ref = $1 AND a.bitis_zamani IS NULL AND d.statu IN ('Açılış Kontrolünde', 'Aktif', 'Kontrollü Askıda') LIMIT 1`, [o.kullanici])).rowCount && !g.vekil) return y.code(400).send({ hata: 'Açık dosyanız var; vekil belirleyiniz.' });
     return islem(async (c) => {
-      const r = (await c.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, vekil_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [o.kullanici, g.tur, g.baslangic, g.bitis, n, g.vekil ?? null])).rows[0];
+      const r = (await c.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, vekil_ref, bolunmus) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [o.kullanici, g.tur, g.baslangic, g.bitis, n, g.vekil ?? null, Boolean(g.bolunmus)])).rows[0];
       const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
       const amir = await onayMakami(c, rl.kimlik);
       const ik = await rolId(c, 'İnsan Kaynakları Sorumlusu');

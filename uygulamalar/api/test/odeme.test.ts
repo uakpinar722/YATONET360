@@ -84,6 +84,24 @@ describe('mahsup, açık iş, avans, oran, kur', () => {
     expect((await o.sup.query(`SELECT kalan_eur FROM hakedis_mahsubu WHERE kimlik = $1`, [m.json().kimlik])).rows[0].kalan_eur).toBe('200.00');
     await o.sup.query(`UPDATE hakedis_mahsubu SET kalan_eur = 0 WHERE kimlik = $1`, [m.json().kimlik]);
   });
+  it('V-186: itirazlı mahsup durur; ret sürdürür, kabul iptal eder ve düşüleni iade görevine çevirir', async () => {
+    await o.sup.query(`UPDATE hakedis_mahsubu SET kalan_eur = 0 WHERE kurulus_ref = $1`, [firma]);
+    const { d, h } = await kur({ net: 100 }); const ts = await o.gir('ts'); const tid = await o.gir('tid');
+    const m = await o.ist('POST', `/api/dosya/${d.kimlik}/mahsup`, ts, { kurulus: firma, tur: 'Kusur Cezası', tutar: 300, aciklama: 'Kusur', belge: await belge(d.kimlik) }); expect(m.statusCode, m.body).toBe(200); const id = m.json().kimlik;
+    const k = await o.kart('Hakediş Mahsubu', id); await o.karar(k.kimlik, 'mfm', 'Onaya Gönder'); await o.karar(k.kimlik, 'tid', 'Onayla');
+    await o.sup.query(`UPDATE hakedis_mahsubu SET firma_itiraz = 'Kusur yok', firma_itiraz_zamani = now() WHERE kimlik = $1`, [id]);
+    expect((await talimatYap(h)).json()).toMatchObject({ mahsup: 0, tutar: 100 });
+    expect((await o.ist('POST', `/api/mahsup/${id}/itiraz-karar`, ts, { karar: 'Ret', gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/mahsup/${id}/itiraz-karar`, tid, { karar: 'Ret' })).statusCode).toBe(400);
+    expect((await o.ist('GET', '/api/mahsup-itirazlar', tid)).json().some((x: { kimlik: string }) => x.kimlik === id)).toBe(true);
+    expect((await o.ist('POST', `/api/mahsup/${id}/itiraz-karar`, tid, { karar: 'Ret', gerekce: 'Kanıt var' })).json().durum).toBe('Ret');
+    const b2 = await kur({ net: 100 }); expect((await talimatYap(b2.h)).json()).toMatchObject({ mahsup: 100, tutar: 0 });
+    await o.sup.query(`UPDATE hakedis_mahsubu SET firma_itiraz = 'Yeni', itiraz_sonucu = NULL WHERE kimlik = $1`, [id]);
+    const r = await o.ist('POST', `/api/mahsup/${id}/itiraz-karar`, tid, { karar: 'Kabul', gerekce: 'Haklı' }); expect(r.json()).toEqual({ durum: 'Kabul', iade: 100 });
+    expect((await o.sup.query(`SELECT statu, kalan_eur FROM hakedis_mahsubu WHERE kimlik = $1`, [id])).rows[0]).toEqual({ statu: 'Reddedildi', kalan_eur: '0.00' });
+    expect((await o.kart('Mahsup İadesi', id)).ozet).toContain('100,00 EUR');
+    expect((await o.ist('POST', `/api/mahsup/${id}/itiraz-karar`, tid, { karar: 'Kabul', gerekce: 'X' })).statusCode).toBe(409);
+  });
   it('YG-841: açık iş bedeli ödemeden ayrı tutulur, kapanınca kalan için talimat açılır', async () => {
     const { d, e, h } = await kur(); const kb = (await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, is_emri_ref, kabul_turu, kosul_bitis, kaydeden_ref) VALUES ($1,$2,'Koşullu Kabul','2099-01-01',$3) RETURNING kimlik`, [d.kimlik, e, o.K.tu])).rows[0].kimlik;
     const a = (await o.sup.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur) VALUES ($1,$2,'T','E','2099-01-01',400) RETURNING kimlik`, [kb, e])).rows[0].kimlik;

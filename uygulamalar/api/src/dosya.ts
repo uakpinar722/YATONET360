@@ -336,6 +336,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (!d) return dur(404, 'Dosya bulunamadı.');
       if (['Kapalı'].includes(d.statu)) return dur(409, 'Kapalı dosyada atama yapılamaz.');
       if (!(await rolSahipleri(c, await rolId(c, t.rol))).includes(g.kullanici)) return dur(400, `Seçilen kişi ${t.rol} rolünde değildir.`);
+      { const be = await (await import('./ik.js')).personelBelgeEngeli(c, g.kullanici); if (be) return dur(409, be); } // YG-941
       if (g.rol === 'Yedek Sorumlu' && d.dosya_sorumlusu_ref === g.kullanici) return dur(400, 'Yedek sorumlu Dosya Sorumlusundan farklı olmalıdır.');
       if (g.rol === 'Dosya Sorumlusu' && d.yedek_sorumlu_ref === g.kullanici) return dur(400, 'Dosya Sorumlusu yedek sorumluyla aynı olamaz.');
       if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') if (await boyGovdeEksik(c, id)) return dur(409, 'Boy ve gövde malzemesi dolmadan Teknik Uzman atanamaz. Eksik bilgiyi tamamlayınız.');

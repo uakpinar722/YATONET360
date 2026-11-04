@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { DosyaEkIslemler, FirmaAcilIslemleri, MutabakatRaporlari } from './DosyaEk';
@@ -560,6 +561,17 @@ function KesifVeAyriKalem({ dosya, ticari, kalemler, sigortali, yap }: { dosya: 
   );
 }
 
+/** V-186: itirazlı mahsup durur; Ticari İşler Direktörü karar verir. */
+function MahsupItirazlari() {
+  const { yap, Mesaj } = useYap(() => undefined);
+  const [l, setL] = useState<{ kimlik: string; tur: string; tutar_eur: string; aciklama: string; firma_itiraz: string; ticari_unvan: string; dosya_no: string }[]>([]); const [g, setG] = useState<Record<string, string>>({});
+  const yk = () => istek<typeof l>('/mahsup-itirazlar').then(setL);
+  useEffect(() => { void yk().catch(() => {}); }, []);
+  if (!l.length) return null;
+  const k = (id: string, karar: string) => void yap(() => istek(`/mahsup/${id}/itiraz-karar`, { karar, gerekce: g[id] }).then(yk), 'İtiraz kararı kaydedildi.');
+  return <div className="soru"><span><b className="koyu">Mahsup İtirazları</b></span><Mesaj />{l.map((x) => <div className="tam" key={x.kimlik}><div>{x.dosya_no} · {x.ticari_unvan} · {x.tur} · {eur(x.tutar_eur)}</div><div>İtiraz: {x.firma_itiraz}</div><label htmlFor={`mk-${x.kimlik}`}>Karar Gerekçesi</label><input id={`mk-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} /><div className="dugmeler"><button className="btn2 kucuk" disabled={!g[x.kimlik]?.trim()} onClick={() => k(x.kimlik, 'Kabul')}>İtirazı Kabul Et</button><button className="btn hayir" disabled={!g[x.kimlik]?.trim()} onClick={() => k(x.kimlik, 'Ret')}>İtirazı Reddet</button></div></div>)}</div>;
+}
+
 /** YG-840, YG-1418, YG-353 mahsup önerisi; YG-842 malzeme avansı. */
 function MahsupAvans({ dosya, isEmirleri, yap }: { dosya: string; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; yap: (f: () => Promise<unknown>, m?: string) => Promise<void> }) {
   const [e, setE] = useState(''); const [tur, setTur] = useState('Garanti Masrafı'); const [t, setT] = useState(''); const [a, setA] = useState(''); const [bl, setBl] = useState('');
@@ -611,6 +623,7 @@ export function TedarikciOdemeleri() {
   return (
     <>
       <h1>Tedarikçi Ödemeleri</h1><Mesaj />
+      <MahsupItirazlari />
       <FirmaOdemeleri />
       <VergiKayitlari />
       <Blok baslik="Açık Faturalar">
@@ -682,16 +695,19 @@ export function SigortaEk2() {
 
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
-  const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '' });
+  const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '' });
   return (
     <>
       <h1>İdari İşlemlerim</h1><Mesaj />
+      <PersonelIslemlerim yap={yap} />
+      <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
+        <label className="kutu"><input type="checkbox" checked={bl} onChange={(e) => setBl(e.target.checked)} /><span>Bölünmüş İzin Talebi</span></label>
         <label htmlFor="iz-t">İzin Türü</label><select id="iz-t" value={iz.tur} onChange={(e) => setIz({ ...iz, tur: e.target.value })}>{['Yıllık', 'Mazeret', 'Ücretsiz', 'Rapor'].map((x) => <option key={x}>{x}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="iz-b">Başlangıç</label><input id="iz-b" type="date" value={iz.baslangic} onChange={(e) => setIz({ ...iz, baslangic: e.target.value })} /></div><div><label htmlFor="iz-s">Bitiş</label><input id="iz-s" type="date" value={iz.bitis} onChange={(e) => setIz({ ...iz, bitis: e.target.value })} /></div></div>
-        <button className="btn2" onClick={() => void yap(() => istek<{ gun: number }>('/izin', iz).then((r) => ({ uyari: `İzin talebiniz gönderildi: ${r.gun} gün.` })))}>İzin Talep Et</button>
+        <button className="btn2" onClick={() => void yap(() => istek<{ gun: number }>('/izin', { ...iz, bolunmus: bl }).then((r) => ({ uyari: `İzin talebiniz gönderildi: ${r.gun} gün.` })))}>İzin Talep Et</button>
       </Blok>
       <Blok baslik="Masraf Fişi">
         <label htmlFor="ms-t">Masraf Türü</label><select id="ms-t" value={m.tur} onChange={(e) => setM({ ...m, tur: e.target.value })}>{['Yemek', 'Konaklama', 'Km', 'Ulaşım', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>

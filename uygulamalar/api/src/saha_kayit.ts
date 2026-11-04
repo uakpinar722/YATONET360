@@ -17,7 +17,7 @@ const SAHA_ROLLERI = ['Saha Sorumlusu', 'Teknik Uzman', 'Sorumlu Teknik Uzman (K
 const PARCA_ROLLERI = ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Kalite Uzmanı (Kalite Kontrolör)', 'Tedarik Sorumlusu'];
 const DENETIM_ROLLERI = ['Kalite Uzmanı (Kalite Kontrolör)', 'Kalite Müdürü', 'Firma Yönetimi Müdürü'];
 
-export const EMNIYET_ALICILAR = ['Teknik Müdür', 'Operasyon Müdürü', 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO', 'İSG Uzmanı', 'Risk ve Kalite Direktörü'];
+export const EMNIYET_ALICILAR = ['Teknik Müdür', 'Operasyon Müdürü', 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO', 'İSG Sorumlusu', 'Risk ve Kalite Direktörü'];
 type Db = Pool | PoolClient;
 
 /** YG-1437: işi durdurma ayrı olaydır, DS, TU ve OY'ye sistem içi ve e-posta. YG-262: emniyet durdurmasında üst alıcılara SMS ile. */
