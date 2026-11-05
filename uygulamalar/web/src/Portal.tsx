@@ -94,7 +94,7 @@ function GarantiTalebi({ id }: { id: string }) {
 
 function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
   const [bilgi, setBilgi] = useState('');
-  const [d, setD] = useState<(Kart & { cayma?: boolean; belgeler: { kimlik: string; ad: string; surum_no: number }[]; faturalar: { fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
+  const [d, setD] = useState<(Kart & { cayma?: boolean; belgeler: { kimlik: string; ad: string; surum_no: number }[]; faturalar: { kimlik: string; fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
   useEffect(() => { void istek<NonNullable<typeof d>>(`/portal/dosya/${id}`).then(setD).catch((e) => setHata(e.message)); }, [id]);
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   return (
@@ -106,7 +106,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       <div className="ozet"><div><Durum k={d} /></div>{d.dosyaSorumlusu && <div>Dosya Sorumlunuz: {d.dosyaSorumlusu}</div>}</div>
       {d.teklifler.length > 0 && <><div className="bolum">Teklifler</div><div className="ozet">{d.teklifler.map((t) => <div key={t.teklif_no + t.surum_no}><b className="koyu">{t.teklif_no} Rev.{t.surum_no}</b> · {t.teklif_turu} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {t.genel_toplam_eur} EUR{t.kalemler.map((k) => <div key={k.sira_no} className="not">{k.aciklama} · {k.miktar} {k.birim} · {k.tutar_eur} EUR</div>)}</div>)}</div></>}
       {d.teslim?.teslime_hazir_zamani && <div className="uyari">Yatınız teslime hazırdır. Teslim için kalan gün: {d.teslim.kalan_gun}. Bu süreden sonraki barınma gideri tarafınıza aittir.</div>}
-      {d.faturalar.length > 0 && <><div className="bolum">Faturalar</div><div className="ozet">{d.faturalar.map((f) => <div key={f.fatura_no}>{f.fatura_no} · {f.fatura_tarihi?.split('-').reverse().join('.')} · {f.toplam_eur} EUR{f.toplam_tl ? ` · ${f.toplam_tl} TL` : ''} · {f.durum}</div>)}</div></>}
+      {d.faturalar.length > 0 && <><div className="bolum">Faturalar</div><div className="ozet">{d.faturalar.map((f) => <div key={f.fatura_no}>{f.fatura_no} · {f.fatura_tarihi?.split('-').reverse().join('.')} · {f.toplam_eur} EUR{f.toplam_tl ? ` · ${f.toplam_tl} TL` : ''} · {f.durum} <FaturaItiraz id={f.kimlik} /></div>)}</div></>}
       <SokulenParcalar id={id} />
       <div className="bolum">Garanti Talebi</div>
       <GarantiTalebi id={id} />
@@ -248,4 +248,11 @@ export function YatSahibiKayit({ bitti, geri, yetkili }: { bitti: () => void; ge
       <button type="button" className="lnk" onClick={geri}>← Geri</button>
     </div>
   );
+}
+
+/** YG-887: kalem, tutar ve gerekçe; itiraz edilmeyen kısım ödenince teslim yapılır. */
+function FaturaItiraz({ id }: { id: string }) {
+  const [ac, setAc] = useState(false); const [f, setF] = useState({ kalem: '', tutar: '', gerekce: '' }); const [m, setM] = useState('');
+  if (!ac) return <button className="lnk" onClick={() => setAc(true)}>İtiraz Et</button>;
+  return <><label htmlFor={`fi-k-${id}`}>İtiraz Edilen Kalem</label><input id={`fi-k-${id}`} value={f.kalem} onChange={(e) => setF({ ...f, kalem: e.target.value })} /><label htmlFor={`fi-t-${id}`}>Tutar (EUR)</label><input id={`fi-t-${id}`} value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} /><label htmlFor={`fi-g-${id}`}>Gerekçe</label><input id={`fi-g-${id}`} value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} /><button className="btn2 kucuk" onClick={() => void istek(`/fatura/${id}/itiraz`, { kalem: f.kalem, gerekce: f.gerekce, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')) }).then(() => setM('İtirazınız alındı; yanıt bekleniyor.')).catch((e) => setM(e.message))}>İtirazı Gönder</button>{m && <div className="not" role="status">{m}</div>}</>;
 }

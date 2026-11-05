@@ -410,6 +410,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const alan = { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': b.webAdresi, link: b.webAdresi, Yat: d.yat_adi, Yacht: d.yat_adi, 'tarih saat': zaman, 'date time': zaman };
       const kut = kutuAyikla(s0.metin).kutular.map((k) => ({ ad: k.replace(/\[([^\]]+)\]/g, (_t, a: string) => (alan as Record<string, string>)[a] ?? a), zorunlu: true }));
       await c.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref) VALUES ($1,$2)`, [id, o.kullanici]);
+      await (await import('./uyum.js')).uyumOlay(c, 'teslim', 'Dosya', id); // YG-1546
       await onayTalebiAc(c, { dosya: id, ony: 'ONY-27', dil, alanlar: alan, baslikAlanlari: alan, kutular: kut, formTuru: 'Teslim Kararı', taraf: sah.kimlik, kullanici: sah.kullanici_ref, aliciAd: sah.kisi_adi_soyadi, telefon: sah.telefon, eposta: sah.eposta, belgeAdi: 'Teslim Tutanağı', hazirlayan: o.kullanici, gun: 7, webAdresi: b.webAdresi });
       return { durum: 'Teslim Onayı Bekleniyor' };
     });
@@ -537,6 +538,12 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-948, YG-950, YG-951, YG-1614: izin; gün sistemce; bakiye negatif olamaz; açık dosyası olanda vekil zorunlu; İK sonra birim amiri.
+  s.post('/izin/:id/belge', oturumlu, async (i, y) => { // YG-952
+    const o = i.oturum!; const { id } = i.params as { id: string }; const be = ((i.body ?? {}) as { belge?: string }).belge;
+    if (!UUID.test(id) || !be || !UUID.test(be)) return y.code(400).send({ hata: 'Belgeyi yüklemenizi rica ederiz.' });
+    const r = await b.db.query(`UPDATE izin_talebi SET belge_ref = $2 WHERE kimlik = $1 AND personel_ref = $3`, [id, be, o.kullanici]);
+    return r.rowCount ? { tamam: true } : yok(y);
+  });
   s.post('/izin', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; baslangic?: string; bitis?: string; vekil?: string; bolunmus?: boolean };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });

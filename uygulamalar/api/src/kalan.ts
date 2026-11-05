@@ -62,6 +62,14 @@ kapanisKaydet('Cayma İadesi', async (c, k, karar) => {
   } else if (karar === 'Reddet') await c.query(`UPDATE on_bilgilendirme_cayma_kaydi SET iade_durumu = 'Hesap Bekliyor' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
 
+/** YG-1493: beyanı Dosya Sorumlusu 8 saat içinde kaydeder; geç kayıt Ticari İşler Direktörüne bildirilir. */
+export async function caymaGecKayit(db: Db, kayit: string, beyan: string | undefined, simdi = new Date()): Promise<boolean> {
+  if (!beyan || simdi.getTime() - new Date(beyan).getTime() <= 8 * 3_600_000) return false;
+  const d = (await db.query(`SELECT d.dosya_no FROM on_bilgilendirme_cayma_kaydi k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.kimlik = $1`, [kayit])).rows[0];
+  await bildir(db, { olay: `cayma-gec:${kayit}`, kullanicilar: await rolSahipleri(db, await rolId(db, TID)), baslik: `⚠ ${d.dosya_no} · Cayma Beyanı 8 Saat Sonra Kaydedildi`, ozet: `Beyan: ${new Date(beyan).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}`, oncelik: 'Yüksek' });
+  return true;
+}
+
 /** YG-1493: iade süresi yaklaşınca uyarı. */
 export async function caymaSureIsle(db: Pool): Promise<number> {
   let n = 0;

@@ -25,6 +25,21 @@ export async function teknikKabulAyrimi(db: Db, e: { kimlik: string; dosya_ref: 
 }
 
 /** YG-1623, YG-1167, YG-1074: dışa giden metinde firma adı müşteriye, sigorta bilgisi firmaya gitmez. Son savunma hattı: kaçak ileti durdurulur, görev açılır. */
+/** YG-1074, YG-1167, YG-1174, YG-1623: üretilen belge son denetimden geçer. Müşteri ve sigorta belgesinde dosyadaki firma adı, firma belgesinde sigorta bilgisi, hiçbir dış belgede lehtar adı bulunmaz. */
+export async function belgeMaskeEngeli(db: Db, tur: string, dosya: string, metin: string): Promise<string | null> {
+  const var_ = (l: (string | null)[]) => l.find((x) => x && x.length >= 4 && metin.includes(x));
+  const musteri = ['Fiyat Teklifi', 'Teknik Rapor', 'Onay Belgesi', 'Proforma', 'Ödeme Talebi', 'Teslim Tutanağı', 'Ödeme Sorumluluğu'];
+  if (![...musteri, 'İş Emri'].includes(tur)) return null;
+  const lehtar = (await db.query(`SELECT y.lehtar_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0]?.lehtar_adi as string | null;
+  if (var_([lehtar])) return 'Belgede lehtar bilgisi yer alamaz.';
+  if (tur === 'İş Emri') {
+    const s = (await db.query(`SELECT sigorta_hasar_dosya_no n FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [dosya])).rows.map((r) => r.n as string | null);
+    return var_(s) ? 'Sigorta bilgisi firma belgesinde yer alamaz.' : null;
+  }
+  const f = (await db.query(`SELECT u.ticari_unvan n FROM is_emri e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND u.kayit_rolu <> 'Tesis'`, [dosya])).rows.map((r) => r.n as string);
+  return var_(f) ? 'Firma kimliği müşteri ve sigorta belgesinde yer alamaz.' : null;
+}
+
 export async function disMetinEngeli(db: Db, g: { telefon?: string | null; eposta?: string | null; metin: string; konu: string }): Promise<string | null> {
   const a = (await db.query(`SELECT kayit_rolu FROM kurulus WHERE ($1::text IS NOT NULL AND lower(kurumsal_eposta) = lower($1)) OR ($2::text IS NOT NULL AND kurumsal_telefon = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0]
     ?? (await db.query(`SELECT u.kayit_rolu FROM kullanici_hesabi h JOIN kurulus_kullanici k ON k.kullanici_ref = h.kimlik JOIN kurulus u ON u.kimlik = k.kurulus_ref WHERE ($1::text IS NOT NULL AND lower(h.e_posta) = lower($1)) OR ($2::text IS NOT NULL AND h.cep_telefonu = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0];

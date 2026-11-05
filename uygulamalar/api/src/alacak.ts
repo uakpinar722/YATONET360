@@ -149,7 +149,8 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kalem?: string; tutar?: number; gerekce?: string; belge?: string };
     if (!UUID.test(id)) return yok(y);
     const f = (await b.db.query(`SELECT f.*, d.dosya_no FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [id])).rows[0];
-    if (!f || !(await dosyaErisimi(b.db, o.kullanici, f.dosya_ref))) return yok(y);
+    // YG-887: yat sahibi kendi faturasına portaldan itiraz eder.
+    if (!f || !(await dosyaErisimi(b.db, o.kullanici, f.dosya_ref) || (await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND aktif LIMIT 1`, [f.dosya_ref, o.kullanici])).rowCount)) return yok(y);
     if (!f.fatura_no) return y.code(409).send({ hata: 'İtiraz fatura bilgisi girilen kayda açılır.' });
     if (!g.kalem?.trim() || !g.gerekce?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Kalem, tutar ve gerekçeyi girmenizi rica ederiz.' });
     const once = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fatura_itirazi WHERE fatura_ref = $1 AND durum <> 'Ret'`, [id])).rows[0].t);
@@ -285,6 +286,7 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
     if (!turler.includes(g.tur ?? '') || !g.yururluk) return y.code(400).send({ hata: 'Sözleşme türü ve yürürlük tarihini girmenizi rica ederiz.' });
     if (g.bitis && g.bitis < g.yururluk) return y.code(400).send({ hata: 'Bitiş tarihi yürürlükten önce olamaz.' });
     if (!(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1`, [id])).rowCount) return yok(y);
+    await (await import('./uyum.js')).uyumOlay(b.db, 'sozlesme', 'Kuruluş', id); // YG-1546
     const r = await b.db.query(`INSERT INTO sozlesme_kaydi (kurulus_ref, sozlesme_turu, yururluk, bitis, kaydeden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, g.tur, g.yururluk, g.bitis || null, o.kullanici]);
     return { kimlik: r.rows[0].kimlik };
   });

@@ -125,6 +125,7 @@ describe('disiplin (YG-954)', () => {
 describe('ayrılış (YG-975, YG-979, YG-933)', () => {
   it('devir, beyan, onay, tazminat kapısı; son gün hesap kapanır, kalan amire düşer', async () => {
     const iks = await o.gir('iks'); const ikm = await o.gir('ikm');
+    await o.sup.query(`INSERT INTO egitim_kaydi (personel_ref, tur, ad, tamamlanma_tarihi, kaydeden_ref) SELECT kimlik, 'İSG', 'Temel', '2026-01-01', kimlik FROM kullanici_hesabi`);
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); await kart('ds2', { brut: 30000 });
     await o.sup.query(`UPDATE personel_karti SET ise_giris_tarihi = '2020-01-01' WHERE kullanici_ref = $1`, [o.K.ds2]);
     await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Yedek Sorumlu',$3)`, [d.kimlik, o.K.ds2, o.K.opm]);

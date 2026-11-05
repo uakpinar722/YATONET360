@@ -55,6 +55,8 @@ export function netDakika(giris: string | null | undefined, cikis: string | null
 
 /** YG-941: süresi dolan ve yenilenmeyen belge yeni görevlendirmeyi engeller; geçmiş işe dokunmaz. */
 export async function personelBelgeEngeli(db: Db, kullanici: string): Promise<string | null> {
+  // YG-944: personel kartı olan çalışanda geçerli İSG eğitimi kaydı olmadan yeni görev verilmez.
+  if ((await db.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1`, [kullanici])).rowCount && !(await db.query(`SELECT 1 FROM egitim_kaydi WHERE personel_ref = $1 AND tur = 'İSG' AND (gecerlilik_sonu IS NULL OR gecerlilik_sonu >= current_date) LIMIT 1`, [kullanici])).rowCount) return 'Personelin İSG eğitimi kaydı bekleniyor.';
   const r = (await db.query(`SELECT e.ad FROM egitim_kaydi e WHERE e.personel_ref = $1 AND e.gecerlilik_sonu < current_date AND NOT EXISTS (SELECT 1 FROM egitim_kaydi x WHERE x.personel_ref = e.personel_ref AND x.tur = e.tur AND x.ad = e.ad AND (x.gecerlilik_sonu IS NULL OR x.gecerlilik_sonu >= current_date)) LIMIT 1`, [kullanici])).rows[0];
   return r ? `Personelin ${r.ad} belgesinin süresi dolmuştur; yenilenmesi bekleniyor.` : null;
 }

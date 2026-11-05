@@ -613,7 +613,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (new Date(k.cayma_bitis) < new Date()) return y.code(409).send({ hata: 'Cayma süresi dolmuştur.' });
     if (k.cayma_zamani) return y.code(409).send({ hata: 'Cayma daha önce kaydedilmiştir.' });
     const gun = await parametre(b.db, 'cayma_gun');
-    void gun; await (await import('./kalan.js')).caymaIsle(b.db, k.kimlik, 'Dosya Sorumlusu Kaydı'); // YG-1493: WhatsApp beyanı dahil
+    void gun; { const ka = await import('./kalan.js'); await ka.caymaIsle(b.db, k.kimlik, 'Dosya Sorumlusu Kaydı'); await ka.caymaGecKayit(b.db, k.kimlik, ((i.body ?? {}) as { beyanZamani?: string }).beyanZamani); } // YG-1493: WhatsApp beyanı dahil
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Cayma Kaydı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

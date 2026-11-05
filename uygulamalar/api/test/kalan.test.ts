@@ -98,3 +98,40 @@ describe('vefat, ön kayıt, izin belgesi (YG-1521, YG-344, YG-952)', () => {
     expect((await o.sup.query(`SELECT calisan_sayisi, hizmet_bolgeleri FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ calisan_sayisi: 12, hizmet_bolgeleri: ['Muğla'] });
   });
 });
+
+describe('merkezi belge maskesi, eğitim kapısı, geç cayma kaydı, portal itirazı (YG-1074, YG-1174, YG-1623, YG-944, YG-1493, YG-887)', () => {
+  it('müşteri belgesinde firma adı, firma belgesinde hasar no, dış belgede lehtar durur', async () => {
+    const { belgeMaskeEngeli } = await import('../src/yetki_ek.js');
+    const d = await o.dosyaAc({}, {}); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-MK','Gizli Firma Ltd','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'KN',$2,$3,'Y','K',$4)`, [`${d.dosyaNo}-KN01`, d.kimlik, f, o.K.ds]);
+    expect(await belgeMaskeEngeli(o.db, 'Fiyat Teklifi', d.kimlik, 'temiz metin')).toBeNull();
+    expect(await belgeMaskeEngeli(o.db, 'Fiyat Teklifi', d.kimlik, 'Gizli Firma Ltd kalemi')).toContain('Firma kimliği');
+    expect(await belgeMaskeEngeli(o.db, 'İş Emri', d.kimlik, 'Gizli Firma Ltd kalemi')).toBeNull();
+    await o.sup.query(`UPDATE yat SET lehtar_adi = 'Lehtar Banka' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    expect(await belgeMaskeEngeli(o.db, 'Proforma', d.kimlik, 'Lehtar Banka A.Ş.')).toContain('lehtar');
+    expect(await belgeMaskeEngeli(o.db, 'Kurtarma Sözleşmesi', d.kimlik, 'Lehtar Banka Gizli Firma Ltd')).toBeNull();
+  });
+  it('kartı olan personelde geçerli İSG eğitimi yoksa görev verilmez', async () => {
+    const { personelBelgeEngeli } = await import('../src/ik.js');
+    expect(await personelBelgeEngeli(o.db, o.K.tu!)).toBeNull();
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1,'2026-01-01',$2)`, [o.K.tu, o.K.ds]);
+    expect(await personelBelgeEngeli(o.db, o.K.tu!)).toContain('İSG');
+    await o.sup.query(`INSERT INTO egitim_kaydi (personel_ref, tur, ad, tamamlanma_tarihi, kaydeden_ref) VALUES ($1,'İSG','Temel','2026-01-01',$2)`, [o.K.tu, o.K.ds]);
+    expect(await personelBelgeEngeli(o.db, o.K.tu!)).toBeNull();
+  });
+  it('8 saatten geç kayıt bildirilir, zamanında kayıt bildirilmez', async () => {
+    const { caymaGecKayit } = await import('../src/kalan.js');
+    const d = await o.dosyaAc({}, {}); const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days') RETURNING kimlik`, [t, d.kimlik])).rows[0].kimlik;
+    expect(await caymaGecKayit(o.db, k, new Date(Date.now() - 3_600_000).toISOString())).toBe(false);
+    expect(await caymaGecKayit(o.db, k, new Date(Date.now() - 9 * 3_600_000).toISOString())).toBe(true);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`cayma-gec:${k}`, o.K.tid])).rowCount).toBe(1);
+  });
+  it('yat sahibi kendi faturasına itiraz eder, başkası edemez', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik, o.K.iks]);
+    const f = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, fatura_no, fatura_tarihi, dosya_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, hazirlayan_ref) VALUES ($1,$2,current_date,$3,'Yat Sahibi',100,20,120,'Faturalandı',$4) RETURNING kimlik`, [`PF-${++n}`, `F-${n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const g = { kalem: 'İşçilik', tutar: 20, gerekce: 'Fazla' };
+    expect((await o.ist('POST', `/api/fatura/${f}/itiraz`, await o.gir('sc'), g)).statusCode).toBe(404);
+    const r = await o.ist('POST', `/api/fatura/${f}/itiraz`, await o.gir('iks'), g); expect(r.statusCode, r.body).toBe(200);
+  });
+});

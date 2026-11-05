@@ -274,7 +274,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       </Blok>}
       <Blok baslik="Belgeler">
         {belgeler.length === 0 && <div className="not">Belge bulunmamaktadır.</div>}
-        {belgeler.map((b) => <div key={b.kimlik}>{b.ad} · {b.belge_turu} · {b.surumler[0]?.durum} · <a href={`/api/belge/${b.kimlik}/surum/${b.surumler[0]?.no}/indir`}>İndir</a></div>)}
+        {belgeler.map((b) => <div key={b.kimlik}>{b.ad} · {b.belge_turu} · {b.surumler[0]?.durum} · <a href={`/api/belge/${b.kimlik}/surum/${b.surumler[0]?.no}/indir`}>İndir</a> <Paylas belge={b.kimlik} no={b.surumler[0]?.no} /></div>)}
         <label htmlFor="b-y">Belge Yükle</label><input id="b-y" type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void yap(() => yukleBelge(f)); }} />
       </Blok>
       {d.statu !== 'Kapalı' && <Blok baslik="Beklemede İşareti">
@@ -424,4 +424,11 @@ export function AramaSonucu({ q, ac }: { q: string; ac: (id: string) => void }) 
       {r && r.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Dosya No</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{r.map((d) => <tr key={d.kimlik}><td data-ad="Dosya No">{d.dosya_no}{d.ana_no ? ` → ${d.ana_no}` : ''}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Durum"><Oncelik o={d.oncelik} /> {d.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => ac(d.ana_kimlik ?? d.kimlik)}>Aç</button></td></tr>)}</tbody></table></div>}
     </>
   );
+}
+
+/** YG-611, YG-1166: alıcısı ve süresi belli bağlantı; varsayılan 7 gün. */
+function Paylas({ belge, no }: { belge: string; no?: number }) {
+  const [ac, setAc] = useState(false); const [f, setF] = useState({ alici: '', gun: 7 }); const [m, setM] = useState('');
+  if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Paylaş</button>;
+  return <span className="ozet"><label htmlFor={`p-a-${belge}`}>Alıcı E-Posta</label><input id={`p-a-${belge}`} value={f.alici} onChange={(e) => setF({ ...f, alici: e.target.value })} /><label htmlFor={`p-g-${belge}`}>Süre (Gün, En Çok 30)</label><input id={`p-g-${belge}`} type="number" min={1} max={30} value={f.gun} onChange={(e) => setF({ ...f, gun: Number(e.target.value) })} /><button className="btn2 kucuk" disabled={!f.alici.trim()} onClick={() => void istek<{ baglanti?: string }>(`/belge/${belge}/surum/${no}/paylas`, f).then((r) => setM(r.baglanti ? `Bağlantı: ${r.baglanti}` : 'Paylaşım sigorta teyidine gönderildi.')).catch((e) => setM(e.message))}>Bağlantı Oluştur</button>{m && <span className="not" role="status">{m}</span>}</span>;
 }

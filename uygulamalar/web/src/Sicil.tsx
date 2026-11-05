@@ -38,6 +38,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: oneri, gerekce }), 'Karar kaydedildi.')}>Öneriyi Karara Bağla</button>
           </>}
           <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} />
+          <OnKayit id={secili} yap={yap} />
           <label htmlFor="fs-t">Geçerlilik Bitişi</label><input id="fs-t" type="date" value={belge.bitis} onChange={(e) => setBelge({ ...belge, bitis: e.target.value })} />
           <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/belge`, { tur: belge.tur, bitis: belge.bitis || undefined }), 'Belge kaydedildi.')}>Belge Kaydet</button>
           <label htmlFor="fs-i">IBAN</label><input id="fs-i" value={iban} onChange={(e) => setIban(e.target.value)} />
@@ -150,4 +151,12 @@ function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown
     <label htmlFor="hz-c">Cevap Son Günü</label><input id="hz-c" type="date" value={hz.cevapSon} onChange={(e) => setHz({ ...hz, cevapSon: e.target.value })} />
     <button className="btn hayir" disabled={!hz.no.trim() || !hz.teblig || !hz.cevapSon} onClick={() => void yap(() => istek(`/firma/${id}/haciz-ihbari`, hz), 'Firma carisi bloke edildi.')}>Haciz İhbarını Kaydet</button>
   </>);
+}
+
+/** YG-344: FR-SCL-001 ön kayıt alanları. */
+function OnKayit({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [f, setF] = useState({ mersis: '', mahalle: '', konumTuru: '', yetkili: '', tali: '', bolgeler: '', calisan: '', referanslar: '' });
+  const A = (k: keyof typeof f, et: string) => <><label htmlFor={`ok-${k}`}>{et}</label><input id={`ok-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
+  const dizi = (x: string) => (x.trim() ? x.split(',').map((s) => s.trim()).filter(Boolean) : undefined); const bos = (x: string) => x.trim() || undefined;
+  return <>{A('mersis', 'MERSİS No')}{A('mahalle', 'Mahalle')}{A('konumTuru', 'Konum Türü')}{A('yetkili', 'Yetkili Kişi')}{A('tali', 'Tali Branşlar (Virgülle)')}{A('bolgeler', 'Hizmet Bölgeleri (Virgülle)')}{A('calisan', 'Çalışan Sayısı')}{A('referanslar', 'Referanslar')}<button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/on-kayit`, { mersis: bos(f.mersis), mahalle: bos(f.mahalle), konumTuru: bos(f.konumTuru), yetkili: bos(f.yetkili), taliBranslar: dizi(f.tali), bolgeler: dizi(f.bolgeler), calisan: f.calisan ? Number(f.calisan) : undefined, referanslar: bos(f.referanslar) }), 'Ön kayıt bilgileri kaydedildi.')}>Ön Kaydı Kaydet</button></>;
 }
