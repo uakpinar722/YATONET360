@@ -418,3 +418,19 @@ describe('rıza metni ve arama kapsamı (YG-1205, YG-1210, YG-1220)', () => {
     expect((await o.ist('GET', '/api/ilk-giris/metin/aydinlatma?dil=tr', c)).json().dil).toBe('tr');
   });
 });
+
+describe('keşif mahsubu satırı ve klas hatırlatması (YG-864, YG-334)', () => {
+  it('proforma mahsup satırını ayrı gösterir, mahsup yoksa göstermez', async () => {
+    const { odemeTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc({}, {}); const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, kesif_mahsubu_eur, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,150,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'İşçilik','Onarım','İşçilik',1,'Adet',500,1000,1000,'Onaylandı')`, [t]);
+    const f = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',850,170,1020,$4) RETURNING kimlik`, [`PF-${++n}`, d.kimlik, t, o.K.ts])).rows[0].kimlik;
+    const m = JSON.stringify((await odemeTanim(o.db, 'Proforma', f, 'KOD', 'http://x')).t); expect(m).toContain('Keşif Ücreti Mahsubu'); expect(m).toContain('− 150,00');
+    await o.sup.query(`UPDATE fiyat_teklifi SET kesif_mahsubu_eur = 0 WHERE kimlik = $1`, [t]);
+    expect(JSON.stringify((await odemeTanim(o.db, 'Proforma', f, 'KOD', 'http://x')).t)).not.toContain('Keşif Ücreti Mahsubu');
+  });
+  it('klas bildirimi başlangıçtan 48 saat önce biter', async () => {
+    const { klasBildirimSonu } = await import('../src/firma_ek.js');
+    expect(klasBildirimSonu('2027-03-10T12:00:00Z')?.toISOString()).toBe('2027-03-08T12:00:00.000Z'); expect(klasBildirimSonu(null)).toBeUndefined();
+  });
+});

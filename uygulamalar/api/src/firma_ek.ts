@@ -24,6 +24,9 @@ export function gorevSinifi(g: { tutar?: number | null; cokBrans?: boolean; anaS
 }
 
 /** YG-304, YG-306, YG-307, YG-332: belgeler dışında sözleşme, yetkinlik, garanti, çıkar ve kapasite birlikte; en ucuz veya en yakın otomatik seçilmez. */
+/** YG-334: klas kuruluşuna bildirim, işe başlamadan 48 saat önce; tarih yoksa son zaman konmaz. */
+export const klasBildirimSonu = (baslangic?: string | null): Date | undefined => (baslangic ? new Date(new Date(baslangic).getTime() - 48 * 3_600_000) : undefined);
+
 export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: string; brans?: string | null; tutar?: number | null; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean }) {
   const engeller: string[] = []; const uyarilar: string[] = []; const { sinif, asgari } = gorevSinifi(g);
   const f = (await db.query(`SELECT risk_derecesi, kapasite_is FROM kurulus WHERE kimlik = $1`, [g.firma])).rows[0];

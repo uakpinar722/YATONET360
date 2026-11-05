@@ -14,7 +14,7 @@ import { belgeUret } from './belge_uret.js';
 import { performansOlayIsle } from './karne.js';
 import { isBasiAvansEngeli } from './tedarik.js';
 import { kosulEngeli } from './onay_ek.js';
-import { gorevlendirmeKontrolu, ON_KOSULLAR } from './firma_ek.js';
+import { gorevlendirmeKontrolu, klasBildirimSonu, ON_KOSULLAR } from './firma_ek.js';
 import { ilaveIsYetkiEngeli, yabanciBayrakEngeli } from './teslim_ek.js';
 import { isAcmaEngeli as blokeSozlesmeDisi, sozlesmeEngeli } from './alacak.js';
 import { baslangicToplantiEngeli, isDurduBildir } from './saha_kayit.js';
@@ -221,7 +221,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       if (['ON', 'EK'].includes(g.tur!) && g.brans && /yapı|gövde|makine|yangın/i.test(g.brans)) { // YG-334
         const kl = (await c.query(`SELECT y.klas_durumu, y.tabi_kod FROM yat y WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
-        if (kl?.klas_durumu === 'Evet' || kl?.tabi_kod) await kartAc(c, { tur: 'Klas Kuruluşu Bildirimi', kategori: 'islem', baslik: `${d.dosya_no} · Sörveyör Katılımı Gerekir`, ozet: 'Klas kuruluşuna en az 48 saat önce bildirim yapınız.', oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref ?? o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
+        if (kl?.klas_durumu === 'Evet' || kl?.tabi_kod) await kartAc(c, { tur: 'Klas Kuruluşu Bildirimi', kategori: 'islem', baslik: `${d.dosya_no} · Sörveyör Katılımı Gerekir`, ozet: 'Klas kuruluşuna en az 48 saat önce bildirim yapınız.', oncelik: 'Yüksek', sonZaman: klasBildirimSonu(g.baslangic), sahipKullanici: d.dosya_sorumlusu_ref ?? o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
       }
       const no = await altNumara(c, d.dosya_no, g.tur!);
       const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, ana_is_emri_ref, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, baslangic_tarihi, hedef_bitis_tarihi, tehlikeli_atik, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
