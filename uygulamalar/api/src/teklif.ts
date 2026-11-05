@@ -85,6 +85,24 @@ export function kalemHesapla(firmaBirim: number, miktar: number, katsayi: number
 }
 
 /** YG-190: ara toplam, opsiyon, indirim, KDV ve genel toplam sistemce; KDV indirimli matrahtan. */
+/** YG-189: düzeltilen firma fiyatı taslak teklife sistemce yansır; gönderilmiş teklifte yeni sürüm görevi açılır, eski değer kayıtta kalır. */
+export async function firmaFiyatYansit(c: Db, firmaKalem: string): Promise<number> {
+  const fiyat = Number((await c.query(`SELECT birim_fiyat_eur FROM firma_fiyat_kalemi WHERE kimlik = $1`, [firmaKalem])).rows[0].birim_fiyat_eur);
+  const [kat, bant] = [await parametre(c, 'fiyat_katsayisi'), await parametre(c, 'bant_orani')];
+  let n = 0;
+  for (const f of (await c.query(`SELECT DISTINCT f.kimlik, f.statu, f.teklif_no, f.hazirlayan_ref, f.indirim_orani, f.kesif_mahsubu_eur, f.kdv_orani FROM fiyat_teklifi f JOIN fiyat_teklifi_kalemi k ON k.teklif_ref = f.kimlik WHERE k.firma_kalem_ref = $1 AND f.statu <> 'Yerine Geçti'`, [firmaKalem])).rows) {
+    if (f.statu !== 'Taslak') { await kartAc(c, { tur: 'Teklif Revizyonu', kategori: 'islem', baslik: `${f.teklif_no} · Yeni Teklif Sürümü Bekleniyor`, ozet: 'Firma fiyatı düzeltildi; müşteriye gönderilmiş teklifte düzeltme yeni sürümle yapılır.', oncelik: 'Yüksek', sahipKullanici: f.hazirlayan_ref, nesneTuru: 'Teklif', nesneKimligi: f.kimlik }); n++; continue; }
+    for (const k of (await c.query(`SELECT x.kimlik, x.miktar, m.maliyet_eur FROM fiyat_teklifi_kalemi x LEFT JOIN kartela_kalemi m ON m.kod = x.kartela_kodu AND m.surum = x.kartela_surumu WHERE x.teklif_ref = $1 AND x.firma_kalem_ref = $2`, [f.kimlik, firmaKalem])).rows) {
+      const h = kalemHesapla(fiyat, Number(k.miktar), kat, bant, k.maliyet_eur === null ? null : Number(k.maliyet_eur));
+      await c.query(`UPDATE fiyat_teklifi_kalemi SET birim_maliyet_eur = $2, birim_satis_fiyati_eur = $3, tutar_eur = $4, bant_disi = $5 WHERE kimlik = $1`, [k.kimlik, fiyat, h.birimSatis, h.tutar, h.bantDisi]);
+    }
+    const top = toplamlar((await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [f.kimlik])).rows, f.indirim_orani === null ? null : Number(f.indirim_orani), Number(f.kesif_mahsubu_eur ?? 0), Number(f.kdv_orani));
+    await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [f.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
+    n++;
+  }
+  return n;
+}
+
 export function toplamlar(kalemler: { tutar_eur: number | string; opsiyon: boolean }[], indirimOrani: number | null, kesifMahsubu: number, kdvOrani: number) {
   const ara = R2(kalemler.filter((k) => !k.opsiyon).reduce((a, k) => a + Number(k.tutar_eur), 0));
   const ops = R2(kalemler.filter((k) => k.opsiyon).reduce((a, k) => a + Number(k.tutar_eur), 0));

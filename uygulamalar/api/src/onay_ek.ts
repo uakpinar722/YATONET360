@@ -12,7 +12,7 @@ import { belgeUret } from './belge_uret.js';
 import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import { onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { altNumara } from './sure.js';
-import { parametre, isGunuSonu } from './teklif.js';
+import { firmaFiyatYansit, parametre, isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
@@ -87,7 +87,7 @@ kapanisKaydet('Firma Fiyatı Düzeltme', async (c, k, karar) => {
   if (karar === 'Reddet') { await c.query(`UPDATE firma_fiyat_duzeltme SET durum = 'Reddedildi' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]); return; }
   if (karar !== 'Onayla') return;
   const d = (await c.query(`UPDATE firma_fiyat_duzeltme SET durum = 'Onaylandı' WHERE kimlik = $1::uuid RETURNING kalem_ref, yeni_fiyat_eur, gerekce`, [k.nesne_kimligi])).rows[0];
-  if (d) await c.query(`UPDATE firma_fiyat_kalemi SET eski_fiyat_eur = birim_fiyat_eur, birim_fiyat_eur = $2, duzeltme_gerekcesi = $3 WHERE kimlik = $1`, [d.kalem_ref, d.yeni_fiyat_eur, d.gerekce]);
+  if (d) { await c.query(`UPDATE firma_fiyat_kalemi SET eski_fiyat_eur = birim_fiyat_eur, birim_fiyat_eur = $2, duzeltme_gerekcesi = $3 WHERE kimlik = $1`, [d.kalem_ref, d.yeni_fiyat_eur, d.gerekce]); await firmaFiyatYansit(c, d.kalem_ref); }
 });
 onaySonucKaydet('ONY-05', async (c, t, karar) => {
   await c.query(`UPDATE degisiklik_protokolu SET durum = $2 WHERE onay_talebi_ref = $1`, [t.kimlik, karar === 'Onaylandı' ? 'Onaylandı' : 'Reddedildi']);
@@ -307,6 +307,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     if (!(Number(fiyat) >= 0) || fiyat === undefined) return y.code(400).send({ hata: 'Fiyatı girmenizi rica ederiz.' });
     const r = await b.db.query(`UPDATE firma_fiyat_kalemi x SET eski_fiyat_eur = x.birim_fiyat_eur, birim_fiyat_eur = $2, duzeltme_gerekcesi = x.iade_gerekcesi, iade_gerekcesi = NULL FROM firma_fiyat_teklifi t JOIN kurulus_kullanici u ON u.kurulus_ref = t.kurulus_ref WHERE x.kimlik = $1 AND t.kimlik = x.teklif_ref AND u.kullanici_ref = $3 AND x.iade_gerekcesi IS NOT NULL`, [id, fiyat, o.kullanici]);
+    if (r.rowCount) await firmaFiyatYansit(b.db, id);
     return r.rowCount ? { tamam: true } : yok(y);
   });
   s.post('/firma-kalem/:id/lgm-duzeltme', oturumlu, async (i, y) => {

@@ -146,3 +146,30 @@ describe('ön bilgilendirme PDF (YG-618, YG-619)', () => {
     expect((await pdfUret(v.t)).length).toBeGreaterThan(5000);
   });
 });
+
+describe('firma fiyatı yansıması ve teslim yetkisi (YG-189, YG-1086)', () => {
+  it('taslakta yeniden hesaplar, gönderilmişte yeni sürüm görevi açar, eski fiyat kalır', async () => {
+    const { firmaFiyatYansit, kalemHesapla, parametre } = await import('../src/teklif.js');
+    const d = await o.dosyaAc({}, {}); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'FF','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-FF${++n}`, o.K.ds])).rows[0].kimlik;
+    const ce = (await o.sup.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref) VALUES ($1,1,'Onaylı',$2) RETURNING kimlik`, [d.kimlik, o.K.tu])).rows[0].kimlik;
+    const sa = (await o.sup.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim) VALUES ($1,'S1','İşçilik','Onarım','Sabit',2,'Adet') RETURNING kimlik`, [ce])).rows[0].kimlik;
+    const ft = (await o.sup.query(`INSERT INTO firma_fiyat_teklifi (teklif_no, dosya_ref, kurulus_ref, gecerlilik, giren_ref) VALUES ($1,$2,$3,'2099-01-01',$4) RETURNING kimlik`, [`FT-${n}`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    const ka = (await o.sup.query(`INSERT INTO firma_fiyat_kalemi (teklif_ref, satir_ref, birim_fiyat_eur) VALUES ($1,$2,100) RETURNING kimlik`, [ft, sa])).rows[0].kimlik;
+    const tk = async (statu: string) => { const x = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref, statu) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3,$4) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts, statu])).rows[0].kimlik; await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,1,'İşçilik','Onarım','Sabit',2,'Adet',$2,100,100,200)`, [x, ka]); return x as string; };
+    const taslak = await tk('Taslak'); const giden = await tk('Gönderildi');
+    await o.sup.query(`UPDATE firma_fiyat_kalemi SET eski_fiyat_eur = birim_fiyat_eur, birim_fiyat_eur = 150 WHERE kimlik = $1`, [ka]);
+    expect(await firmaFiyatYansit(o.db, ka)).toBe(2);
+    const h = kalemHesapla(150, 2, await parametre(o.db, 'fiyat_katsayisi'), await parametre(o.db, 'bant_orani'), null);
+    const k1 = (await o.sup.query(`SELECT tutar_eur, birim_maliyet_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [taslak])).rows[0]; expect(Number(k1.tutar_eur)).toBe(h.tutar); expect(Number(k1.birim_maliyet_eur)).toBe(150);
+    expect(Number((await o.sup.query(`SELECT ara_toplam_eur a FROM fiyat_teklifi WHERE kimlik = $1`, [taslak])).rows[0].a)).toBe(h.tutar);
+    expect(Number((await o.sup.query(`SELECT tutar_eur t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [giden])).rows[0].t)).toBe(200);
+    expect((await o.kart('Teklif Revizyonu', giden)).durum).toBe('Bekliyor');
+    expect(Number((await o.sup.query(`SELECT eski_fiyat_eur e FROM firma_fiyat_kalemi WHERE kimlik = $1`, [ka])).rows[0].e)).toBe(100);
+  });
+  it('yetkisi doğrulanmamış dosyada teslim durur, doğrulanınca açılır', async () => {
+    const { teslimYetkiEngeli } = await import('../src/teslim_ek.js');
+    const d = await o.dosyaAc({}, {}); const u = `UPDATE talep SET ihbar_yetki_durumu = $2 WHERE kimlik = (SELECT talep_ref FROM dosya WHERE kimlik = $1)`;
+    await o.sup.query(u, [d.kimlik, 'Doğrulandı']); expect(await teslimYetkiEngeli(o.db, d.kimlik)).toBeNull();
+    await o.sup.query(u, [d.kimlik, 'Beklemede']); expect(await teslimYetkiEngeli(o.db, d.kimlik)).toContain('Yetki');
+  });
+});

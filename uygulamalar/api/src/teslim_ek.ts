@@ -27,6 +27,12 @@ onaySonucKaydet('ONY-03', async (c, t, karar) => {
   if (d?.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Sigorta Belge Desteği', kategori: 'islem', baslik: `${d.dosya_no} · Sigorta Belge Desteği`, ozet: 'Sigorta şirketinin isteyebileceği rapor ve belgeler için destek.', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref });
 });
 
+/** YG-1086: teslim öncesinde yetki yeniden kontrol edilir. */
+export async function teslimYetkiEngeli(db: Db, dosya: string): Promise<string | null> {
+  const t = (await db.query(`SELECT t.ihbar_yetki_durumu FROM dosya d JOIN talep t ON t.kimlik = d.talep_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
+  return t && t.ihbar_yetki_durumu !== 'Doğrulandı' ? 'Yetki doğrulanmadan teslim yapılamaz; yetki belgesi bekleniyor.' : null;
+}
+
 /** YG-473: yetkisi doğrulanmamış ihbar edenin (kaptan) sözlü onayıyla ilave iş başlamaz; dosya yetki belgesi gelene kadar bekler. */
 export async function ilaveIsYetkiEngeli(db: Db, dosya: string, tur: string): Promise<string | null> {
   if (tur !== 'EK' && tur !== 'ON') return null; // YG-1086: kapsam, ilave iş ve iş emrinde yeniden kontrol

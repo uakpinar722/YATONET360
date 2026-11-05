@@ -399,7 +399,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT d.*, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [id])).rows[0];
     if (d.asama !== 'Teslim') return y.code(409).send({ hata: 'Dosya Teslim aşamasında değildir.' });
-    const engel = await teslimEngeli(b.db, id);
+    const engel = await teslimEngeli(b.db, id) ?? await (await import('./teslim_ek.js')).teslimYetkiEngeli(b.db, id);
     if (engel) return y.code(409).send({ hata: engel });
     const sah = (await b.db.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [id])).rows[0];
     if (!sah) return y.code(409).send({ hata: 'Yat sahibi kaydı yoktur.' });
