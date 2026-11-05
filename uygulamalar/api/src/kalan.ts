@@ -59,7 +59,7 @@ export async function onBilgiTanim(db: Db, teklif: string, kod: string): Promise
 
 /** YG-1070, D-135: Ek-2 onaylı sözleşme metniyle kayıttan üretilir. Kaptan satırı yalnız yetki varsa dolar; "Fatura / Rapor Alıcısı" satırı yoktur. */
 export async function ek2Tanim(db: Db, kurum: string, dil: 'tr' | 'en'): Promise<{ t: BelgeTanim; dosyaAdi: string } | null> {
-  const e = (await db.query(`SELECT e.*, c.unvan FROM kurumsal_ek2 e JOIN kurumsal_kurum c ON c.kimlik = e.kurum_ref WHERE e.kurum_ref = $1 ORDER BY e.surum DESC LIMIT 1`, [kurum])).rows[0];
+  const e = (await db.query(`SELECT e.*, c.unvan FROM kurumsal_ek2 e JOIN kurumsal_kurum c ON c.kimlik = e.kurum_ref WHERE e.kurum_ref = $1 AND e.durum = 'Yürürlükte' ORDER BY e.surum DESC LIMIT 1`, [kurum])).rows[0];
   if (!e) return null;
   const m = JSON.parse(readFileSync(join(KOK, 'veri', 'sablon', 'kurumsal_ek2.json'), 'utf8'))[dil] as { ad: string; sutun: string[]; satir: Record<string, string>; kapsamNot: string; lgmSatir: string[]; dayanak: string; gunluk: string; resmi: string; kural: string; yatlar: string; islem: string; bitis: string; bilgi: string; limit: string; belge: string; surum: string; bilgiDeger: Record<string, string> };
   const s = e.satirlar as Record<string, { ad?: string; iletisim?: string; limit?: number; belge?: string; not?: string } | undefined>;
@@ -73,6 +73,29 @@ export async function ek2Tanim(db: Db, kurum: string, dil: 'tr' | 'en'): Promise
   ];
   const no = `EK2-${String(e.unvan).replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 24).replace(/-+$/, '')}-${e.surum}`;
   return { dosyaAdi: `${no}.pdf`, t: { ad: m.ad, no, tarih: gunAy(new Date(e.zaman)), surum: `${m.surum} ${e.surum}`, dil, bolumler } };
+}
+
+// Kurumsal Çerçeve m.26.4, ONY-15: temsilci SMS koduyla onaylayınca sürüm yürürlüğe girer ve sınır kuruma yansır; reddederse önceki sürüm kalır.
+onaySonucKaydet('ONY-15', async (c, t, karar) => {
+  if (!t.nesne_kimligi) return;
+  const e = (await c.query(`UPDATE kurumsal_ek2 SET durum = $2 WHERE kimlik = $1 AND durum = 'Onay Bekliyor' RETURNING kurum_ref, satirlar, surum, kaydeden_ref`, [t.nesne_kimligi, karar === 'Onaylandı' ? 'Yürürlükte' : 'Reddedildi'])).rows[0];
+  if (!e) return;
+  if (karar === 'Onaylandı') await c.query(`UPDATE kurumsal_kurum SET ek2_onay_siniri = $2 WHERE kimlik = $1`, [e.kurum_ref, Number(e.satirlar.fiyat.limit)]);
+  await bildir(c, { olay: `ek2-karar:${t.nesne_kimligi}`, kullanicilar: [e.kaydeden_ref], baslik: `Kurumsal Ek-2 Sürüm ${e.surum}: ${karar}` });
+});
+
+/** Kurumsal Çerçeve Ek-2: limiti aşan onay, kurumda yeterli limiti olan Onaylayana geçer (YG-1070). */
+export async function limitYonlendir(db: Db, onay: string, kullanici: string, tutarEur: number, simdi = new Date()): Promise<string> {
+  const u = (await db.query(`SELECT k.kurum_ref, k.onay_siniri, c.ek2_onay_siniri FROM kurumsal_kullanici k JOIN kurumsal_kurum c ON c.kimlik = k.kurum_ref WHERE k.kullanici_ref = $1`, [kullanici])).rows[0];
+  const h = (await db.query(`SELECT tercih_dili FROM kullanici_hesabi WHERE kimlik = $1`, [kullanici])).rows[0]; const dil = dilKod(h?.tercih_dili);
+  const s = (await db.query(`SELECT metin FROM sablon_metni WHERE kod = 'ONY-17' AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil])).rows[0];
+  const limit = Math.min(Number(u?.onay_siniri ?? 0), Number(u?.ek2_onay_siniri ?? 0));
+  const yer = /\[0[.,]000[.,]00\]/; const metin = String(s.metin).replace(yer, tutar(tutarEur, dil)).replace(yer, tutar(limit, dil));
+  const ad = (await db.query(`SELECT h.kimlik, h.ad_soyad, h.cep_telefonu, h.e_posta FROM kurumsal_kullanici k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.kurum_ref = $1 AND k.rol = 'Onaylayan' AND k.kullanici_ref <> $2 AND h.hesap_durumu = 'Aktif' AND least(coalesce(k.onay_siniri, 0), $3::numeric) >= $4 ORDER BY k.onay_siniri LIMIT 1`, [u?.kurum_ref, kullanici, Number(u?.ek2_onay_siniri ?? 0), tutarEur])).rows[0];
+  if (!ad) return metin;
+  const r = await db.query(`UPDATE onay_talebi SET alici_kullanici_ref = $2, alici_ad = $3, telefon = $4, eposta = $5 WHERE kimlik = $1 AND durum = 'Bekliyor' AND alici_kullanici_ref = $6`, [onay, ad.kimlik, ad.ad_soyad, ad.cep_telefonu, ad.e_posta, kullanici]);
+  if (r.rowCount) await bildir(db, { olay: `limit-yon:${onay}`, kullanicilar: [ad.kimlik], baslik: 'Onayınız Bekleniyor', ozet: 'Limit nedeniyle bir onay size yönlendirildi; Onayınızı Bekleyenler bölümünden görebilirsiniz.', oncelik: 'Yüksek', sms: true }, simdi);
+  return `${metin} ${dil === 'en' ? 'The approval has been forwarded to your authorised colleague.' : 'Onay, kurumunuzun yetkili kişisine iletilmiştir.'}`;
 }
 
 /** Cayma: kayıt, ONY-19 bildirimi, iade hesabı görevi (YG-1450, YG-1493). */
@@ -216,25 +239,30 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1070, D-135: A53 Müşteri ve Paydaş İlişkileri Müdürü Ek-2'yi kaydeder; her değişiklik yeni sürüm, sınır kuruma yansır.
   const mpm = (k: string) => rolVar(k, ['Müşteri ve Paydaş İlişkileri Müdürü']);
-  s.get('/kurumsal-kurumlar', oturumlu, async (i, y) => (await mpm(i.oturum!.kullanici)) ? (await b.db.query(`SELECT c.kimlik, c.unvan, c.ek2_onay_siniri, (SELECT max(e.surum) FROM kurumsal_ek2 e WHERE e.kurum_ref = c.kimlik) surum FROM kurumsal_kurum c ORDER BY c.unvan`)).rows : y.code(403).send({ hata: 'Bu listeyi Müşteri ve Paydaş İlişkileri Müdürü görür.' }));
+  s.get('/kurumsal-kurumlar', oturumlu, async (i, y) => (await mpm(i.oturum!.kullanici)) ? (await b.db.query(`SELECT c.kimlik, c.unvan, c.ek2_onay_siniri, (SELECT max(e.surum) FROM kurumsal_ek2 e WHERE e.kurum_ref = c.kimlik AND e.durum = 'Yürürlükte') surum, EXISTS (SELECT 1 FROM kurumsal_ek2 e WHERE e.kurum_ref = c.kimlik AND e.durum = 'Onay Bekliyor') onayda FROM kurumsal_kurum c ORDER BY c.unvan`)).rows : y.code(403).send({ hata: 'Bu listeyi Müşteri ve Paydaş İlişkileri Müdürü görür.' }));
   s.post('/kurumsal-kurum/:id/ek2', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { satirlar?: Record<string, { ad?: string; iletisim?: string; limit?: number; belge?: string; not?: string }>; dayanak?: string; gunluk?: string; resmi?: string; yatlar?: string[]; islemler?: string[]; bitis?: string; bilgi?: string[] };
     if (!UUID.test(id) || !(await mpm(o.kullanici))) return y.code(403).send({ hata: 'Ek-2’yi Müşteri ve Paydaş İlişkileri Müdürü kaydeder.' });
     const st = g.satirlar ?? {}; const fy = Number(st.fiyat?.limit);
     if (!st.muhatap?.ad?.trim() || !st.fiyat?.ad?.trim() || !(fy >= 0)) return y.code(400).send({ hata: 'Sözleşme muhatabı, fiyat ve ödeme yetkilisi ile üst limiti girmenizi rica ederiz.' });
     if (g.bilgi?.some((x) => !['Sörveyör', 'Broker', 'Lehtar', 'Klas Kuruluşu'].includes(x))) return y.code(400).send({ hata: 'Bilgi paylaşım izni geçersizdir.' });
-    if (!(await b.db.query(`SELECT 1 FROM kurumsal_kurum WHERE kimlik = $1`, [id])).rowCount) return yok(y);
+    const kr = (await b.db.query(`SELECT unvan FROM kurumsal_kurum WHERE kimlik = $1`, [id])).rows[0]; if (!kr) return yok(y);
+    if ((await b.db.query(`SELECT 1 FROM kurumsal_ek2 WHERE kurum_ref = $1 AND durum = 'Onay Bekliyor'`, [id])).rowCount) return y.code(409).send({ hata: 'Temsilcinin onayını bekleyen bir sürüm bulunmaktadır.' });
+    const tm = (await b.db.query(`SELECT h.kimlik, h.ad_soyad, h.cep_telefonu, h.e_posta, h.tercih_dili FROM kurumsal_kullanici k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.kurum_ref = $1 AND k.yetkili AND h.hesap_durumu = 'Aktif' ORDER BY k.olusturma_zamani LIMIT 1`, [id])).rows[0];
+    if (!tm?.cep_telefonu) return y.code(409).send({ hata: 'Ek-2 temsilcinin SMS kodlu onayıyla kabul edilir; kurum yetkilisinin cep telefonu kayıtlı olmalıdır.' });
     // Kaptanda yetki yoksa satır boş, limit sıfır.
     const kp = st.kaptan; const kaptan = kp?.ad?.trim() && Number(kp.limit) > 0 ? { ad: kp.ad.trim(), iletisim: kp.iletisim?.trim(), limit: Number(kp.limit) } : undefined;
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
       const n = Number((await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM kurumsal_ek2 WHERE kurum_ref = $1`, [id])).rows[0].n);
-      await c.query(`INSERT INTO kurumsal_ek2 (kurum_ref, surum, satirlar, dayanak, gunluk_kanal, resmi_kanal, yatlar, islem_turleri, bitis, bilgi_izni, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id, n, JSON.stringify({ ...st, kaptan }), g.dayanak?.trim() || null, g.gunluk?.trim() || null, g.resmi?.trim() || null, g.yatlar ?? [], g.islemler ?? [], g.bitis || null, g.bilgi ?? [], o.kullanici]);
-      await c.query(`UPDATE kurumsal_kurum SET ek2_onay_siniri = $2 WHERE kimlik = $1`, [id, fy]);
+      const e2 = (await c.query(`INSERT INTO kurumsal_ek2 (kurum_ref, surum, satirlar, dayanak, gunluk_kanal, resmi_kanal, yatlar, islem_turleri, bitis, bilgi_izni, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [id, n, JSON.stringify({ ...st, kaptan }), g.dayanak?.trim() || null, g.gunluk?.trim() || null, g.resmi?.trim() || null, g.yatlar ?? [], g.islemler ?? [], g.bitis || null, g.bilgi ?? [], o.kullanici])).rows[0];
+      const dl = dilKod(tm.tercih_dili); const ks = (x?: { ad?: string; limit?: number }) => (x?.ad ? `${x.ad}${x.limit !== undefined && x.limit !== null ? ` · ${tutar(Number(x.limit), dl)} EUR` : ''}` : '—');
+      const on = await onayTalebiAc(c, { ony: 'ONY-15', dil: dl, alanlar: { Şirket: kr.unvan, Company: kr.unvan }, baslikAlanlari: { 'Müşteri Sözleşme Muhatabı': ks(st.muhatap), 'Teknik Kapsam Onayı': ks(st.kapsam), 'Fiyat ve Ödeme Onayı': ks(st.fiyat), 'Yat Teslim/İade Yetkilisi': ks(st.teslim), 'Yatın Kaptanı / Yat Yetkilisi': ks(kaptan), Yatlar: (g.yatlar ?? []).join(', ') || '—', 'Bitiş Tarihi': g.bitis || '—', Sürüm: String(n) }, aliciAd: tm.ad_soyad, kullanici: tm.kimlik, telefon: tm.cep_telefonu, eposta: tm.e_posta, nesneTuru: 'Kurumsal Ek-2', nesneKimligi: e2.kimlik, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: `${kr.unvan} Ek-2` });
+      await c.query(`UPDATE kurumsal_ek2 SET onay_ref = $2 WHERE kimlik = $1`, [e2.kimlik, on.kimlik]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Ek-2 Sürümü', nesneTuru: 'Kurumsal Kurum', nesneKimligi: id, yeni: { surum: n, sinir: fy }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
-      return { surum: n };
+      return { surum: n, durum: 'Onay Bekliyor' };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   s.get('/kurumsal-kurum/:id/ek2.pdf', oturumlu, async (i, y) => {

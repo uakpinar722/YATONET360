@@ -222,7 +222,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Onay bulunamadı.' });
     await (await import('./yetki_ek.js')).yetkiliyeDevret(b.db, id, o.kullanici); // YG-1031, YG-1070: kapsam, limit, süre içindeyse kod yetkiliye gider.
     const ot = (await b.db.query(`SELECT tutar_eur FROM onay_talebi WHERE kimlik = $1 AND alici_kullanici_ref = $2`, [id, o.kullanici])).rows[0];
-    if (ot) { const oe = await onayEngeli(b.db, o.kullanici, ot.tutar_eur === null ? null : Number(ot.tutar_eur)); if (oe) return y.code(403).send({ hata: oe }); }
+    if (ot) { const oe = await onayEngeli(b.db, o.kullanici, ot.tutar_eur === null ? null : Number(ot.tutar_eur)); if (oe) { if (ot.tutar_eur !== null && /sınırınızın üzerinde/.test(oe)) return y.code(403).send({ hata: await (await import('./kalan.js')).limitYonlendir(b.db, id, o.kullanici, Number(ot.tutar_eur)) }); return y.code(403).send({ hata: oe }); } }
     const bel = rastgeleBelirtec();
     const r = await b.db.query(`UPDATE onay_talebi SET portal_belirtec_ozeti = $3 WHERE kimlik = $1 AND alici_kullanici_ref = $2 AND durum = 'Bekliyor' RETURNING kimlik`, [id, o.kullanici, ozet(bel)]);
     if (!r.rowCount) return y.code(404).send({ hata: 'Onay bulunamadı.' });

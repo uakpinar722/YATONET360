@@ -280,23 +280,47 @@ describe('giriş kodu kesintide (V-258)', () => {
   });
 });
 
-describe('kurumsal Ek-2 (D-135, YG-1070)', () => {
-  it('yalnız MPM kaydeder; sürüm artar, sınır yansır; kaptan yetkisizse satır boş; PDF üretilir', async () => {
+describe('kurumsal Ek-2 (D-135, YG-1070, Çerçeve m.26.4)', () => {
+  const onayla = async (on: string, karar?: string) => {
+    const bel = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${on}`])).rows[0].metin.match(/#onay=([\w-]+)/)[1];
+    await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
+    const r = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {}, karar }); expect(r.statusCode, r.body).toBe(200);
+  };
+  it('MPM kaydeder, temsilci SMS koduyla onaylayınca yürürlüğe girer; reddederse önceki kalır; kaptan yetkisizse satır boş', async () => {
     const { ek2Tanim } = await import('../src/kalan.js'); const { pdfUret } = await import('../src/pdf.js');
     const tr = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref) VALUES ($1,'Tüzel kişi','Kurumsal Müşteri','Filo A.Ş.','{Yat Sahibi}',$2) RETURNING kimlik`, [`TR-E${++n}`, o.K.ds])).rows[0].kimlik;
     const k = (await o.sup.query(`INSERT INTO kurumsal_kurum (taraf_ref, unvan, ek2_onay_siniri, kaydeden_ref) VALUES ($1,'Filo A.Ş.',100,$2) RETURNING kimlik`, [tr, o.K.ds])).rows[0].kimlik; const u = `/api/kurumsal-kurum/${k}/ek2`;
     const g = { satirlar: { muhatap: { ad: 'Muhatap Kişi', iletisim: 'm@filo.local' }, fiyat: { ad: 'Fiyat Kişi', limit: 25000 }, kaptan: { ad: 'Kaptan Kişi', limit: 0 } }, yatlar: ['Mavi'], bilgi: ['Sörveyör'] };
     expect((await o.ist('POST', u, await o.gir('ds'), g)).statusCode).toBe(403);
     const c = await o.gir('mpm'); expect((await o.ist('POST', u, c, { satirlar: {} })).statusCode).toBe(400); expect((await o.ist('POST', u, c, { ...g, bilgi: ['X'] })).statusCode).toBe(400);
-    expect((await o.ist('POST', u, c, g)).json().surum).toBe(1);
+    expect((await o.ist('POST', u, c, g)).statusCode).toBe(409); // temsilci yok
+    await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = '+905550003301' WHERE kimlik = $1`, [o.K.tm]);
+    await o.sup.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, yetkili, ekleyen_ref) VALUES ($1,$2,'Onaylayan',100,true,$3)`, [o.K.tm, k, o.K.ds]);
+    const r1 = await o.ist('POST', u, c, g); expect(r1.json()).toMatchObject({ surum: 1, durum: 'Onay Bekliyor' });
+    expect((await o.ist('POST', u, c, g)).statusCode).toBe(409); // bekleyen var
+    expect(await ek2Tanim(o.db, k, 'tr')).toBeNull(); expect(Number((await o.sup.query(`SELECT ek2_onay_siniri s FROM kurumsal_kurum WHERE kimlik = $1`, [k])).rows[0].s)).toBe(100);
+    const on1 = (await o.sup.query(`SELECT onay_ref r FROM kurumsal_ek2 WHERE kurum_ref = $1 AND surum = 1`, [k])).rows[0].r; await onayla(on1);
     expect(Number((await o.sup.query(`SELECT ek2_onay_siniri s FROM kurumsal_kurum WHERE kimlik = $1`, [k])).rows[0].s)).toBe(25000);
     const v = await ek2Tanim(o.db, k, 'tr'); const m = JSON.stringify(v!.t); expect(m).toContain('Muhatap Kişi'); expect(m).toContain('25.000,00 EUR'); expect(m).not.toContain('Kaptan Kişi'); expect(m).not.toContain('[●]'); expect(m).not.toContain('Fatura / Rapor'); expect(m).toContain('noter');
     expect(m).toContain('ticari@limitglobalmarine.com.tr'); expect(m).toContain('Hizmet Sağlayıcı Muhatabı'); expect(v!.t.bolumler[0]).toMatchObject({ satirlar: expect.arrayContaining([expect.arrayContaining(['Yatın Kaptanı / Yat Yetkilisi', '', '', ''])]) });
-    expect((await o.ist('POST', u, c, { ...g, satirlar: { ...g.satirlar, kaptan: { ad: 'Kaptan Kişi', limit: 500 } } })).json().surum).toBe(2);
-    expect(JSON.stringify((await ek2Tanim(o.db, k, 'en'))!.t)).toContain('Kaptan Kişi');
-    expect(Number((await o.sup.query(`SELECT count(*) n FROM kurumsal_ek2 WHERE kurum_ref = $1`, [k])).rows[0].n)).toBe(2);
+    expect((await o.ist('POST', u, c, { ...g, satirlar: { ...g.satirlar, fiyat: { ad: 'Fiyat Kişi', limit: 90000 }, kaptan: { ad: 'Kaptan Kişi', limit: 500 } } })).json().surum).toBe(2);
+    const on2 = (await o.sup.query(`SELECT onay_ref r FROM kurumsal_ek2 WHERE kurum_ref = $1 AND surum = 2`, [k])).rows[0].r; await onayla(on2, 'Reddet');
+    expect(Number((await o.sup.query(`SELECT ek2_onay_siniri s FROM kurumsal_kurum WHERE kimlik = $1`, [k])).rows[0].s)).toBe(25000); expect(JSON.stringify((await ek2Tanim(o.db, k, 'en'))!.t)).not.toContain('Kaptan Kişi');
     expect((await pdfUret(v!.t)).length).toBeGreaterThan(5000);
     const pdf = await o.ist('GET', `${u}.pdf?dil=en`, c); expect(pdf.statusCode).toBe(200); expect(pdf.headers['content-type']).toContain('pdf');
     expect((await o.ist('GET', `${u}.pdf`, await o.gir('ds'))).statusCode).toBe(404);
   }, 120_000);
+  it('limit aşımı ONY-17 metniyle uyarır ve onayı yeterli limitli kişiye geçirir; yoksa üzerinde kalır', async () => {
+    const { limitYonlendir } = await import('../src/kalan.js');
+    const tr = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref) VALUES ($1,'Tüzel kişi','Kurumsal Müşteri','Filo B',$2,$3) RETURNING kimlik`.replace("$2,$3", "'{Yat Sahibi}',$2"), [`TR-E${++n}`, o.K.ds])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO kurumsal_kurum (taraf_ref, unvan, ek2_onay_siniri, kaydeden_ref) VALUES ($1,'Filo B',50000,$2) RETURNING kimlik`, [tr, o.K.ds])).rows[0].kimlik;
+    const ek = (kl: string, s: number) => o.sup.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, ekleyen_ref) VALUES ($1,$2,'Onaylayan',$3,$4)`, [kl, k, s, o.K.ds]);
+    await ek(o.K.ty!, 1000); await ek(o.K.opm!, 40000);
+    const d = await o.dosyaAc({}, {});
+    const on = (await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, alici_kullanici_ref, telefon, belirtec_ozeti, son_gecerlilik, tutar_eur) VALUES ($1,'ONY-23','k','m','d','A',$2,'+905550003302',$3,now() + interval '1 day',5000) RETURNING kimlik`, [d.kimlik, o.K.ty, `oz-${n}`])).rows[0].kimlik;
+    const m = await limitYonlendir(o.db, on, o.K.ty!, 5000); expect(m).toContain('5.000,00'); expect(m).toContain('1.000,00'); expect(m).toContain('iletilmiştir');
+    expect((await o.sup.query(`SELECT alici_kullanici_ref a FROM onay_talebi WHERE kimlik = $1`, [on])).rows[0].a).toBe(o.K.opm);
+    const m2 = await limitYonlendir(o.db, on, o.K.opm!, 45000); expect(m2).not.toContain('iletilmiştir');
+    expect((await o.sup.query(`SELECT alici_kullanici_ref a FROM onay_talebi WHERE kimlik = $1`, [on])).rows[0].a).toBe(o.K.opm);
+  });
 });
