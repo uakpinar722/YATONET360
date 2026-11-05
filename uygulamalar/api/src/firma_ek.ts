@@ -104,7 +104,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);
   const firmam = async (k: string) => (await b.db.query(`SELECT kurulus_ref FROM kurulus_kullanici WHERE kullanici_ref = $1 LIMIT 1`, [k])).rows[0]?.kurulus_ref as string | undefined;
   const dosyaBelgesi = async (belge: string | undefined, dosya: string) => Boolean(belge && UUID.test(belge) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi::text = $2`, [belge, dosya])).rowCount);
-  const isGunuGecti = (t: Date, gun: number) => { let d = new Date(t); let n = 0; while (n < gun) { d = new Date(d.getTime() + 86_400_000); if (d.getDay() !== 0 && d.getDay() !== 6) n++; } return Date.now() > d.getTime(); };
+  const isGunuGecti = (t: Date, gun: number) => { let d = new Date(t); let n = 0; while (n < gun) { d = new Date(d.getTime() + 86_400_000); if (d.getDay() !== 0) n++; } return Date.now() > d.getTime(); };
 
   // Sicil: yetkili servis, çıkar beyanı, kapasite, kaptan.
   s.post('/firma/:id/sicil-ek', oturumlu, async (i, y) => {

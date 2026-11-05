@@ -93,12 +93,15 @@ function GarantiTalebi({ id }: { id: string }) {
 }
 
 function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
-  const [d, setD] = useState<(Kart & { belgeler: { kimlik: string; ad: string; surum_no: number }[]; faturalar: { fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
+  const [bilgi, setBilgi] = useState('');
+  const [d, setD] = useState<(Kart & { cayma?: boolean; belgeler: { kimlik: string; ad: string; surum_no: number }[]; faturalar: { fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
   useEffect(() => { void istek<NonNullable<typeof d>>(`/portal/dosya/${id}`).then(setD).catch((e) => setHata(e.message)); }, [id]);
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   return (
     <>
       <button className="lnk" onClick={geri}>← Ana Sayfa</button>
+      {d.cayma && !bilgi && <button className="btn2 kucuk" onClick={() => void istek<{ kimlik: string }>(`/portal/dosya/${id}/cayma`, {}).then(() => setBilgi('Cayma bildirimi Onayınızı Bekleyenler bölümüne eklendi; onayınız bekleniyor.')).catch((e) => setHata(e.message))}>Cayma Hakkımı Kullanmak İstiyorum</button>}
+      {bilgi && <div className="not" role="status">{bilgi}</div>}
       <h1>{d.yat} · {d.dosyaNo}</h1>
       <div className="ozet"><div><Durum k={d} /></div>{d.dosyaSorumlusu && <div>Dosya Sorumlunuz: {d.dosyaSorumlusu}</div>}</div>
       {d.teklifler.length > 0 && <><div className="bolum">Teklifler</div><div className="ozet">{d.teklifler.map((t) => <div key={t.teklif_no + t.surum_no}><b className="koyu">{t.teklif_no} Rev.{t.surum_no}</b> · {t.teklif_turu} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {t.genel_toplam_eur} EUR{t.kalemler.map((k) => <div key={k.sira_no} className="not">{k.aciklama} · {k.miktar} {k.birim} · {k.tutar_eur} EUR</div>)}</div>)}</div></>}

@@ -209,7 +209,9 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     // YG-458: fatura bilgisi; belgeyi muhasebe iletir, burada yalnız kayıt görünür.
     const faturalar = (await b.db.query(`SELECT fatura_no, fatura_tarihi::text, toplam_eur, toplam_tl, durum FROM musteri_faturasi WHERE dosya_ref = $1 AND fatura_no IS NOT NULL AND muhatap <> 'Sigorta Şirketi' ORDER BY fatura_tarihi`, [d.kimlik])).rows;
     const teslim = (await b.db.query(`SELECT teslime_hazir_zamani, teslim_son_tarihi::text, GREATEST(teslim_son_tarihi - current_date, 0) AS kalan_gun FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]; // YG-481
-    return { ...(await kart(d)), belgeler, kurtarma, faturalar, teslim, teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
+    // YG-1450: düğme yalnız süresi içinde ve bireysel kayıtta görünür.
+    const cayma = Boolean((await b.db.query(`SELECT 1 FROM on_bilgilendirme_cayma_kaydi WHERE dosya_ref = $1 AND cayma_zamani IS NULL AND cayma_bitis > now() LIMIT 1`, [id])).rowCount);
+    return { ...(await kart(d)), cayma, belgeler, kurtarma, faturalar, teslim, teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

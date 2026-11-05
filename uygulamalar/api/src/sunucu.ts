@@ -44,6 +44,10 @@ import { yetkiEkYollari } from './yetki_ek.js';
 import { guvenlikYollari } from './guvenlik.js';
 import { yedekYollari } from './yedek.js';
 import { istekBaglami } from './denetim.js';
+import { alanYollari } from './alan.js';
+import { uyumYollari } from './uyum.js';
+import { kalanYollari } from './kalan.js';
+import { kritikAnahtari } from './depo.js';
 import { sahaYollari } from './saha.js';
 import { teklifYollari } from './teklif.js';
 import { toplantiYollari } from './toplanti.js';
@@ -53,6 +57,7 @@ export async function sunucuKur(b: Baglam) {
   // YG-1146: her istek ilişki kimliğiyle izlenir. YG-1147: istek gövdesi günlüğe yazılmaz.
   const s = Fastify({ logger: process.env.VITEST ? false : { level: 'info', serializers: { req: (r) => ({ method: r.method, url: r.url.split('?')[0] }) } }, genReqId: () => randomUUID(), bodyLimit: 64 * 1024 });
   await s.register(cookie);
+  kritikAnahtari(b.anahtar); // DEP-1a
   s.addHook('onRequest', (_i, _y, done) => { istekBaglami.run({}, done); }); // YG-1183
   s.addHook('onSend', async (i, y) => { y.header('X-Iliski-Kimligi', i.id); });
   // Çerez SameSite=Strict; ek olarak durum değiştiren istek bu üst bilgiyi taşımalıdır.
@@ -68,6 +73,6 @@ export async function sunucuKur(b: Baglam) {
     y.code(kod && kod < 500 ? kod : 500).send({ hata: isKurali ? e.message : 'İşlem tamamlanamadı; yeniden deneyiniz.', iliski: i.id });
   });
   s.get('/saglik', async () => ({ durum: 'çalışıyor' }));
-  await s.register(async (a) => { sigortaEk2Yollari(a, b); kurumHesapYollari(a, b); karneYollari(a, b); sahaKayitYollari(a, b); kurumsalYollari(a, b); odemeYollari(a, b); vergiYollari(a, b); alacakYollari(a, b); acilEkYollari(a, b); onayEkYollari(a, b); teslimEkYollari(a, b); firmaEkYollari(a, b); ikYollari(a, b); mobilYollari(a, b); kvkkYollari(a, b); yetkiEkYollari(a, b); guvenlikYollari(a, b); yedekYollari(a, b); kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); sigortaGonderimYollari(a, b); tesisTedarikciYollari(a, b); raporYollari(a, b); }, { prefix: '/api' });
+  await s.register(async (a) => { sigortaEk2Yollari(a, b); kurumHesapYollari(a, b); karneYollari(a, b); sahaKayitYollari(a, b); kurumsalYollari(a, b); odemeYollari(a, b); vergiYollari(a, b); alacakYollari(a, b); acilEkYollari(a, b); onayEkYollari(a, b); teslimEkYollari(a, b); firmaEkYollari(a, b); ikYollari(a, b); mobilYollari(a, b); kvkkYollari(a, b); yetkiEkYollari(a, b); guvenlikYollari(a, b); yedekYollari(a, b); alanYollari(a, b); uyumYollari(a, b); kalanYollari(a, b); kimlikYollari(a, b); ilkGirisYollari(a, b); hesabimYollari(a, b); yetkiYollari(a, b); isYollari(a, b); erisimYollari(a, b); hesapKurtarmaYollari(a, b); vekaletYollari(a, b); iletisimYollari(a, b); belgeYollari(a, b); toplantiYollari(a, b); yatYollari(a, b); ihbarYollari(a, b); dosyaYollari(a, b); onayYollari(a, b); portalYollari(a, b); sahaYollari(a, b); teklifYollari(a, b); firmaYollari(a, b); acilYollari(a, b); sigortaYollari(a, b); ticariYollari(a, b); kaliteYollari(a, b); tedarikYollari(a, b); yatDegeriYollari(a, b); sigortaGonderimYollari(a, b); tesisTedarikciYollari(a, b); raporYollari(a, b); }, { prefix: '/api' });
   return s;
 }

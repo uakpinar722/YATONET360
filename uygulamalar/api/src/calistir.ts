@@ -14,6 +14,8 @@ import { konumTemizle } from './mobil.js';
 import { kvkkIsle } from './kvkk.js';
 import { yetkiIsle } from './yetki_ek.js';
 import { olayIsle } from './guvenlik.js';
+import { uyumIsle } from './uyum.js';
+import { caymaSureIsle } from './kalan.js';
 import { saglikIzle, yedekIsle } from './yedek.js';
 import { join } from 'node:path';
 import { KOK } from './ayarlar.js';
@@ -38,7 +40,7 @@ const baglam = { db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anah
 setInterval(() => { kuyrukIsle(baglam).catch((h) => s.log.error(h.message)); }, 30_000);
 setInterval(() => { onayHatirlat(db).catch((h) => s.log.error(h.message)); }, 300_000);
 setInterval(() => { toplantiHatirlat(db).catch((h) => s.log.error(h.message)); }, 60_000);
-setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); mutabakatIsle(db).catch((h) => s.log.error(h.message)); teslimIsle(db).catch((h) => s.log.error(h.message)); geciciOnarimIsle(db).catch((h) => s.log.error(h.message)); personelDurumIsle(db).catch((h) => s.log.error(h.message)); konumTemizle(db).catch((h) => s.log.error(h.message)); kvkkIsle(db).catch((h) => s.log.error(h.message)); yetkiIsle(db).catch((h) => s.log.error(h.message)); olayIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); mutabakatIsle(db).catch((h) => s.log.error(h.message)); teslimIsle(db).catch((h) => s.log.error(h.message)); geciciOnarimIsle(db).catch((h) => s.log.error(h.message)); personelDurumIsle(db).catch((h) => s.log.error(h.message)); konumTemizle(db).catch((h) => s.log.error(h.message)); kvkkIsle(db).catch((h) => s.log.error(h.message)); yetkiIsle(db).catch((h) => s.log.error(h.message)); olayIsle(db).catch((h) => s.log.error(h.message)); uyumIsle(db).catch((h) => s.log.error(h.message)); caymaSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 // YG-1274: yedek ve YG-1186: sağlık izleme
 const YEDEK = { veritabani: 'yatonet360', superParola: e.POSTGRES_SUPER_PAROLA!, anahtar: e.YATONET_SIFRELEME_ANAHTARI!, klasor: e.YATONET_YEDEK_KLASORU || join(KOK, '.yedek'), ikinciKlasor: e.YATONET_YEDEK_IKINCI || undefined, depoKok: e.YATONET_DEPO || join(KOK, '.veri', 'belgeler') };
 setInterval(() => { saglikIzle(db, YEDEK.klasor).catch((h) => s.log.error(h.message)); yedekIsle(db, YEDEK).catch((h) => s.log.error(h.message)); }, 1_800_000);

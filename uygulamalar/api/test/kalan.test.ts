@@ -1,0 +1,100 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { araOdemeHesapla, caymaIsle, caymaSureIsle, kurtarmaTanim, teslimBakiyesi } from '../src/kalan.js';
+import { teslimEngeli } from '../src/ticari.js';
+import { isGunuSonu } from '../src/teklif.js';
+import { ortamKur, type Ortam } from './yardimci.js';
+
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu' };
+let o: Ortam; let n = 0;
+beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
+afterAll(async () => { await o.kapat(); });
+
+describe('avans ve ara ödeme (YG-906)', () => {
+  it('dilim formülü: dilim − avans × dilim / toplam', () => {
+    expect(araOdemeHesapla({ toplam: 15000, avans: 0, ilerleme: 50, onceki: 0 })).toBe(0);
+    expect(araOdemeHesapla({ toplam: 60000, avans: 30000, ilerleme: 40, onceki: 0 })).toBe(10000);
+    expect(araOdemeHesapla({ toplam: 60000, avans: 30000, ilerleme: 70, onceki: 10000 })).toBe(10000);
+    expect(araOdemeHesapla({ toplam: 60000, avans: 30000, ilerleme: 30, onceki: 0 })).toBe(0);
+    expect(teslimBakiyesi(10000, 5000)).toBe(5000);
+  });
+});
+
+describe('iş günü (YG-1472)', () => {
+  it('Cumartesi iş günü, Pazar değil', async () => {
+    const r = await isGunuSonu(o.db, new Date('2027-03-05T09:00:00Z'), 2); expect(r.toISOString().slice(0, 10)).toBe('2027-03-08');
+  });
+});
+
+describe('teslim (YG-087)', () => {
+  it('kurumsalda yalnız vadesi gelen tutar engeller', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET musteri_turu = 'Kurumsal Müşteri' WHERE kimlik = $1`, [d.kimlik]);
+    const f = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, vade, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',100,20,120,'Faturalandı','2099-01-01',$3) RETURNING kimlik`, [`PF-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    expect(await teslimEngeli(o.db, d.kimlik)).toBeNull();
+    await o.sup.query(`UPDATE musteri_faturasi SET vade = '2020-01-01' WHERE kimlik = $1`, [f]);
+    expect(await teslimEngeli(o.db, d.kimlik)).toContain('Ödeme bekleniyor');
+  });
+});
+
+describe('kurtarma sözleşmesi (YG-590, YG-620, YG-694)', () => {
+  it('fiyat yok, LGM ayrıca iletir, koordinatör imzası', async () => {
+    const d = await o.dosyaAc({}, {}); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-KR','Sağlayıcı A','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO kurtarma_operasyonu (dosya_ref, hizmet_turu, saglayici_ref, hazirlayan_ref) VALUES ($1,'Kurtarma',$2,$3) RETURNING kimlik`, [d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    const v = await kurtarmaTanim(o.db, k, 'ABC'); const m = JSON.stringify(v.t);
+    expect(m).toContain('Sağlayıcı A'); expect(m).toContain('LGM tarafından ayrıca iletilir'); expect(m).toContain('Hizmetin Koordinasyonu'); expect(m).not.toMatch(/\d[\d.,]* EUR/);
+  });
+});
+
+describe('cayma (YG-1450, YG-1493)', () => {
+  it('iade: Ticari Sorumlu hesaplar, TİD onaylar, MFM öder; süre uyarısı', async () => {
+    const d = await o.dosyaAc({}, {});
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days') RETURNING kimlik`, [t, d.kimlik])).rows[0].kimlik;
+    expect(await caymaIsle(o.db, k, 'YATONET 360')).toBe(true); expect(await caymaIsle(o.db, k, 'YATONET 360')).toBe(false);
+    expect((await o.kart('Cayma İade Hesabı', k)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', `/api/cayma/${k}/iade-hesabi`, await o.gir('ds'), { tutar: 10 })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/cayma/${k}/iade-hesabi`, await o.gir('ts'), { tutar: 100 })).json().durum).toBe('Onayda');
+    const c = await o.kart('Cayma İadesi', k); expect((await o.karar(c.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/cayma/${k}/iade-odendi`, await o.gir('ts'), {})).statusCode).toBe(403);
+    await o.sup.query(`UPDATE on_bilgilendirme_cayma_kaydi SET iade_son_tarihi = current_date + 1 WHERE kimlik = $1`, [k]); expect(await caymaSureIsle(o.db)).toBeGreaterThan(0);
+    expect((await o.ist('POST', `/api/cayma/${k}/iade-odendi`, await o.gir('mfm'), {})).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT iade_durumu FROM on_bilgilendirme_cayma_kaydi WHERE kimlik = $1`, [k])).rows[0].iade_durumu).toBe('Ödendi');
+  });
+});
+
+describe('yat sahibi cayma düğmesi (YG-1450)', () => {
+  it('yalnız yat sahibi açar; ONY-18 onayı cayma ve iade görevi doğurur', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik, o.K.iks]);
+    await o.sup.query(`UPDATE kullanici_hesabi SET kullanici_grubu = 'Kurumsal Müşteri', izin_adimi_zamani = now() WHERE kimlik = $1`, [o.K.iks]);
+    await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) VALUES ($1,'Çalışan','KVKK-04','R00','Türkçe','Web')`, [o.K.iks]);
+    await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [o.K.iks]);
+    const c = await o.gir('iks'); const u = `/api/portal/dosya/${d.kimlik}/cayma`;
+    expect((await o.ist('POST', u, await o.gir('ds'), {})).statusCode).toBe(404);
+    expect((await o.ist('POST', u, c, {})).statusCode).toBe(409);
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days') RETURNING kimlik`, [t, d.kimlik])).rows[0].kimlik;
+    expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().cayma).toBe(true);
+    const r = await o.ist('POST', u, c, {}); expect(r.statusCode, r.body).toBe(200);
+    const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${r.json().kimlik}`])).rows[0].metin; const bel = m.match(/#onay=([\w-]+)/)[1];
+    await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
+    const kr = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {} }); expect(kr.statusCode, kr.body).toBe(200);
+    expect((await o.sup.query(`SELECT iade_durumu FROM on_bilgilendirme_cayma_kaydi WHERE kimlik = $1`, [k])).rows[0].iade_durumu).toBe('Hesap Bekliyor');
+    expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().cayma).toBe(false);
+    expect((await o.ist('POST', u, c, {})).statusCode).toBe(409);
+  });
+});
+
+describe('vefat, ön kayıt, izin belgesi (YG-1521, YG-344, YG-952)', () => {
+  it('temsilci kaydı askıyı kaldırır', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET vefat_isareti = true WHERE kimlik = $1`, [d.kimlik]);
+    const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('M','K','Gizli','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat-temsilci`, await o.gir('ds'), { temsilci: 'T', belge: bl })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat-temsilci`, await o.gir('hud'), { temsilci: 'T', belge: bl })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT vefat_isareti, vefat_temsilci FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]).toEqual({ vefat_isareti: false, vefat_temsilci: 'T' });
+  });
+  it('MERSİS 16 hane; alanlar kaydedilir', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-ON','F','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik; const c = await o.gir('sc');
+    expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { mersis: '123' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { mersis: '1234567890123456', calisan: 12, bolgeler: ['Muğla'] })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT calisan_sayisi, hizmet_bolgeleri FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ calisan_sayisi: 12, hizmet_bolgeleri: ['Muğla'] });
+  });
+});

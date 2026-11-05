@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { BelgeSec } from './Kalite';
 
 const OLAY = ['Yanlış alıcıya e-posta', 'Açık paylaşım bağlantısı', 'Kayıp çıktı', 'Yetkisiz görüntüleme', 'Cihaz kaybı veya çalınması', 'Teknik güvenlik olayı', 'Diğer'];
 const HAK = ['İşlenip işlenmediğini öğrenme', 'İşlenmişse bilgi talep etme', 'Amacını ve amaca uygun kullanımı öğrenme', 'Aktarıldığı üçüncü kişileri bilme', 'Düzeltme isteme', 'Silme veya yok etme isteme', 'Düzeltme/silmenin üçüncü kişilere bildirilmesi', 'Otomatik analiz sonucuna itiraz', 'Zararın giderilmesi', 'Pazarlama onayını geri alma'];
@@ -47,6 +48,15 @@ export function DenetimArama() {
     {v?.degisiklikler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{new Date(x.zaman).toLocaleString('tr-TR')} · {x.aktor ?? 'Sistem'} · {x.tablo} · {JSON.stringify(x.degisen).slice(0, 300)}</div>)}</>;
 }
 
+/** YG-1546, YG-1547: görev, kanıt, doğrulama. */
+function UyumGorevleri() {
+  const { yap, Mesaj } = useYap(); const [l, setL] = useState<{ kimlik: string; ad: string; son_tarih: string; sorumlu_rol: string; dogrulayan_rol: string; gerekli_kanit: string; durum: string }[]>([]); const [b, setB] = useState<Record<string, string>>({});
+  const yk = () => istek<typeof l>('/uyum-gorevleri').then(setL);
+  useEffect(() => { void yk().catch(() => {}); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Uyum Görevleri</div><Mesaj />{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad} · Son: {x.son_tarih} · {x.durum}<br />Kanıt: {x.gerekli_kanit}</span><div className="tam">{x.durum === 'Açık' && <><BelgeSec ad="Uyum Kanıtı" bagTuru="Uyum Görevi" bagKimligi={x.kimlik} deger={b[x.kimlik] ?? ''} sec={(z: string) => setB({ ...b, [x.kimlik]: z })} /><button className="btn2 kucuk" disabled={!b[x.kimlik]} onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/kanit`, { belge: b[x.kimlik] }).then(yk), 'Kanıt yüklendi.')}>Kanıtı Kaydet</button></>}{x.durum === 'Kanıt Yüklendi' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/dogrula`, {}).then(yk), 'Görev kapatıldı.')}>Doğrula ve Kapat</button>}</div></div>)}</>;
+}
+
 /** YG-1276, YG-1642 */
 function Yedekler() {
   const [v, setV] = useState<{ yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null }[]; testler: { tur: string; sonuc: string; zaman: string }[] } | null>(null);
@@ -65,6 +75,7 @@ export function KvkkEkrani() {
   return (<>
     <h1>KVKK ve Uyum</h1><Mesaj />
     <Yedekler />
+    <UyumGorevleri />
     {y.ihlal && <><div className="bolum">Veri İhlali Kayıtları</div>
       {iv.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
       {iv.map((v) => <div className="soru" key={v.kimlik}><span><b className="koyu">{v.olay_no}</b> · {v.olay_turu} · {v.ozet} · {v.durum}{v.durum === 'Açık' && !v.kurul_bildirim_zamani && v.bildirim_karari !== 'Bildirim Gerekmez' ? <b className="hata"> ⚠ {kalan(v.ogrenme_zamani)}</b> : ''}</span>

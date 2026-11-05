@@ -98,7 +98,7 @@ describe('gecikme faizi (YG-872)', () => {
 
 describe('fatura itirazı (YG-887)', () => {
   it('8 gün; açık tutarı aşamaz; TİD yanıtlar; teslimde itiraz edilen kısım aranmaz', async () => {
-    const { d } = await kurumsal(); const f = await fatura(d, { toplam: 1000 }); const ds = await o.gir('ds'); const u = `/api/fatura/${f}/itiraz`;
+    const { d } = await kurumsal(); const f = await fatura(d, { toplam: 1000, vade: '2026-01-01' }); const ds = await o.gir('ds'); const u = `/api/fatura/${f}/itiraz`;
     expect((await o.ist('POST', u, ds, { kalem: 'K', gerekce: 'G' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, ds, { kalem: 'K', gerekce: 'G', tutar: 1000.01 })).statusCode).toBe(409);
     expect(await teslimEngeli(o.db, d.kimlik)).toContain('1.000,00');

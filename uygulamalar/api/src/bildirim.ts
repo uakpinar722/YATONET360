@@ -105,7 +105,7 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
     for (const g of rows) {
       try {
         if (g.kanal === 'E-posta') {
-          const ek = g.ek_surumler?.length ? (await c.query(`SELECT dosya_adi, depo_anahtari FROM belge_surum WHERE kimlik = ANY($1)`, [g.ek_surumler])).rows.map((r) => ({ ad: r.dosya_adi as string, yol: join((b.depo ?? new Depo()).kok, r.depo_anahtari as string) })) : undefined;
+          const ek = g.ek_surumler?.length ? (await c.query(`SELECT dosya_adi, depo_anahtari FROM belge_surum WHERE kimlik = ANY($1) AND depo_anahtari NOT LIKE 'kritik/%'`, [g.ek_surumler])).rows.map((r) => ({ ad: r.dosya_adi as string, yol: join((b.depo ?? new Depo()).kok, r.depo_anahtari as string) })) : undefined;
           await b.eposta.gonder(g.hedef, g.metin, ek);
         }
         else await b.sms.gonder(g.hedef, g.metin); // WhatsApp sağlayıcısı bağlanana kadar deneme kutusu

@@ -97,7 +97,7 @@ export async function teslimEngeli(db: Db, dosya: string): Promise<string | null
   if ((d.takyidat as string[]).some((x) => x === 'Haciz' || x.startsWith('İhtiyati')) && !(await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Takyidat Değerlendirmesi' AND nesne_kimligi = $1 AND durum = 'Tamamlandı'`, [dosya])).rowCount) return 'Takyidatlı yatın teslimi için Hukuk ve Uyum değerlendirmesi bekleniyor.';
   if (d.teslim_istisnasi) return null;
   if (d.musteri_turu === 'Sigorta Şirketi') return null;
-  const borc = Number((await db.query(`SELECT coalesce(sum(toplam_eur - tahsil_edilen_eur), 0) - coalesce((SELECT sum(x.tutar_eur) FROM fatura_itirazi x JOIN musteri_faturasi m ON m.kimlik = x.fatura_ref WHERE m.dosya_ref = $1 AND x.durum = 'Açık'), 0) b FROM musteri_faturasi WHERE dosya_ref = $1 AND durum IN ('Faturalandı', 'Kısmi Tahsil')`, [dosya])).rows[0].b); // K-169: itiraz edilmeyen kısım ödenince teslim
+  const borc = Number((await db.query(`SELECT coalesce(sum(toplam_eur - tahsil_edilen_eur), 0) - coalesce((SELECT sum(x.tutar_eur) FROM fatura_itirazi x JOIN musteri_faturasi m ON m.kimlik = x.fatura_ref WHERE m.dosya_ref = $1 AND x.durum = 'Açık' AND ($2 <> 'Kurumsal Müşteri' OR m.vade IS NULL OR m.vade <= current_date)), 0) b FROM musteri_faturasi WHERE dosya_ref = $1 AND durum IN ('Faturalandı', 'Kısmi Tahsil') AND ($2 <> 'Kurumsal Müşteri' OR vade IS NULL OR vade <= current_date)`, [dosya, d.musteri_turu])).rows[0].b); // YG-087; K-169: itiraz edilmeyen kısım ödenince teslim
   const talep = Number((await db.query(`SELECT coalesce(sum(tutar_eur), 0) b FROM odeme_talebi WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [dosya])).rows[0].b);
   return borc + talep > 0 ? `Ödeme bekleniyor: ${tutar(R2(borc + talep))} EUR.` : null;
 }
@@ -263,6 +263,16 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       tut = avansHesapla(t.musteri_turu, Number(t.genel_toplam_eur), t.oncelik === 'Kritik', await parametre(b.db, 'avans_orani'), await parametre(b.db, 'sigorta_avans_esik_eur'));
       if (await yurtDisiMi(b.db, t.dosya_ref)) tut = await yurtDisiAvans(b.db, t.kimlik, Number(t.genel_toplam_eur), await parametre(b.db, 'avans_orani')); // YG-1461
       if (tut === 0) return y.code(409).send({ hata: 'Bu dosyada avans alınmaz; ayrıca talep gerekmez.' });
+    } else if (g.tur === 'Ara Ödeme' && Number(t.genel_toplam_eur) > 20000) { // YG-906: dilim formülü
+      const av = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM odeme_talebi WHERE teklif_ref = $1 AND tur = 'Avans' AND durum <> 'Reddedildi'`, [t.kimlik])).rows[0].t);
+      const ara = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM odeme_talebi WHERE teklif_ref = $1 AND tur = 'Ara Ödeme' AND durum <> 'Reddedildi'`, [t.kimlik])).rows[0].t);
+      const il = Number((await b.db.query(`SELECT ilerleme_yuzdesi i FROM dosya WHERE kimlik = $1`, [t.dosya_ref])).rows[0].i ?? 0);
+      tut = (await import('./kalan.js')).araOdemeHesapla({ toplam: Number(t.genel_toplam_eur), avans: av, ilerleme: il, onceki: ara });
+      if (!(tut > 0)) return y.code(409).send({ hata: 'Tamamlanan yeni dilim bulunmamaktadır.' });
+    } else if (g.tur === 'Nihai' && t.musteri_turu === 'Kurumsal Müşteri' && !(Number(g.tutar) > 0)) { // YG-906: kurumsalda teslimde kalan
+      const od = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM odeme_talebi WHERE teklif_ref = $1 AND durum <> 'Reddedildi'`, [t.kimlik])).rows[0].t);
+      tut = (await import('./kalan.js')).teslimBakiyesi(Number(t.genel_toplam_eur), od);
+      if (!(tut > 0)) return y.code(409).send({ hata: 'Kalan bakiye bulunmamaktadır.' });
     } else if (!(tut > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO odeme_talebi (dosya_ref, teklif_ref, tur, tutar_eur, muhatap, son_tarih, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [t.dosya_ref, t.kimlik, g.tur, tut, t.teklif_muhatabi, g.sonTarih, o.kullanici])).rows[0];
@@ -323,6 +333,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const kdvTl = R2((R2(Number(f.kdv_matrahi_eur ?? f.kdv_haric_eur) * Number(g.kur)) * oranK) / 100);
     const tevTl = Number(f.kdv_eur) > 0 ? R2((kdvTl * Number(f.tevkifat_eur)) / Number(f.kdv_eur)) : 0;
     const tl = R2(matrahTl + kdvTl - tevTl);
+    await (await import('./uyum.js')).uyumOlay(b.db, 'fatura', 'Fatura No', g.no.trim()); // YG-1546
     await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl]);
     // YG-421, K-193: firmaya Fatura Düzenleme Bildirimi (BLD-80).
     for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, coalesce((SELECT sum(h.bu_donem_brut) FROM hakedis h WHERE h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi'), e.firma_bedeli_eur) AS tutar FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [f.dosya_ref])).rows) {

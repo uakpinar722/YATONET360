@@ -151,7 +151,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
         e = (await c.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, kaynak_kisi, belge_tarihi, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`,
           [ad.trim(), tur.trim(), sinif ?? 'Gizli', bagTuru, bagKimligi, kaynak, kaynakKisi?.trim() || null, belgeTarihi || null, o.kullanici])).rows[0];
       }
-      const anahtar = depo.yerlestir(al.yol, al.ozet);
+      const anahtar = sinif === 'Kritik' ? depo.yerlestirKritik(al.yol, al.ozet) : depo.yerlestir(al.yol, al.ozet); // DEP-1a
       const r = (await c.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, degisiklik_gerekcesi, yukleyen_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`,
         [e.kimlik, no, dosya.trim(), uzanti, al.boyut, al.ozet, anahtar, tarayici.ad, gerekce?.trim() || null, o.kullanici])).rows[0];
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Yüklendi', nesneTuru: 'belge', nesneKimligi: e.kimlik, yeni: { surum: no, ozet: al.ozet, boyut: al.boyut }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

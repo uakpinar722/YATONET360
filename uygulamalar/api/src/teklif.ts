@@ -33,7 +33,7 @@ const ARA = ['Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yard�
 export async function isGunuSonu(db: Db, d: Date, gun: number): Promise<Date> {
   const tatil = new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil`)).rows.map((r) => r.t as string));
   const x = new Date(d.getTime()); let k = 0;
-  while (k < gun) { x.setUTCDate(x.getUTCDate() + 1); const y = new Date(x.getTime() + 180 * 60_000); const g = y.getUTCDay(); if (g !== 0 && g !== 6 && !tatil.has(y.toISOString().slice(0, 10))) k++; }
+  while (k < gun) { x.setUTCDate(x.getUTCDate() + 1); const y = new Date(x.getTime() + 180 * 60_000); const g = y.getUTCDay(); if (g !== 0 && !tatil.has(y.toISOString().slice(0, 10))) k++; }
   return x;
 }
 
@@ -613,7 +613,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (new Date(k.cayma_bitis) < new Date()) return y.code(409).send({ hata: 'Cayma süresi dolmuştur.' });
     if (k.cayma_zamani) return y.code(409).send({ hata: 'Cayma daha önce kaydedilmiştir.' });
     const gun = await parametre(b.db, 'cayma_gun');
-    await b.db.query(`UPDATE on_bilgilendirme_cayma_kaydi SET cayma_zamani = now(), iade_son_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int WHERE kimlik = $1`, [k.kimlik, gun]);
+    void gun; await (await import('./kalan.js')).caymaIsle(b.db, k.kimlik, 'Dosya Sorumlusu Kaydı'); // YG-1493: WhatsApp beyanı dahil
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Cayma Kaydı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

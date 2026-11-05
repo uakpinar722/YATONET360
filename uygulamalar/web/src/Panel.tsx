@@ -56,7 +56,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
     { s: 'kurtarma', ad: 'Hesap Kurtarma', ik: '⚿', izin: 'hesap_kurtarma.ac' },
     ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }, { s: 'vekalet' as Sayfa, ad: 'Vekâlet', ik: '⇄' }, { s: 'duyuru' as Sayfa, ad: 'Duyuru Yayımla', ik: '📣' }, { s: 'toplanti' as Sayfa, ad: 'Toplantılar', ik: '▦' }] : []),
-    ...(ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı', 'Bilgi İşlem Müdürü', 'Sistem Yöneticisi', 'Genel Müdür Yardımcısı', 'CEO'].includes(r.rol_adi)) ? [{ s: 'kvkk' as Sayfa, ad: 'KVKK ve Uyum', ik: '⚖' }] : []),
+    ...(ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı', 'Bilgi İşlem Müdürü', 'Sistem Yöneticisi', 'Genel Müdür Yardımcısı', 'CEO', 'Muhasebe ve Finans Müdürü', 'Ticari İşler Direktörü', 'Operasyon Müdürü', 'Teknik Müdür', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'].includes(r.rol_adi)) ? [{ s: 'kvkk' as Sayfa, ad: 'KVKK ve Uyum', ik: '⚖' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Müşteri ve Paydaş İlişkileri Müdürü') ? [{ s: 'ek2' as Sayfa, ad: 'Sigorta Ek-2', ik: '✉' }] : []),
     ...(ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) ? [{ s: 'tedodeme' as Sayfa, ad: 'Tedarikçi Ödemeleri', ik: '₺' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Teknik ve Operasyon Direktörü') ? [{ s: 'karnepar' as Sayfa, ad: 'Karne Parametreleri', ik: '⚙' }] : []),

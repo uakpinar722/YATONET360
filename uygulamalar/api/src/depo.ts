@@ -1,12 +1,15 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readSync, closeSync, renameSync, rmSync } from 'node:fs';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
+import { createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 
 const VARSAYILAN = process.env.YATONET_DEPO ?? resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '.veri', 'belgeler');
 
 export class BoyutAsimi extends Error {}
+
+let KRITIK_ANAHTAR: Buffer | null = null;
+export const kritikAnahtari = (a: string) => { KRITIK_ANAHTAR = createHash('sha256').update(`${a}:kritik-belge`).digest(); };
 
 /** Yerel klasörde içerik adresli depo. Üretimde nesne depolama aynı arayüzle bağlanır (YG-1270). Aynı içerik tek kopya, üzerine yazma yoktur. */
 export class Depo {
@@ -35,7 +38,19 @@ export class Depo {
     else { mkdirSync(dirname(hedef), { recursive: true }); renameSync(gecici, hedef); }
     return anahtar;
   }
-  bagla(anahtar: string): Readable { return createReadStream(join(this.kok, anahtar)); }
+  /** DEP-1a: Kritik belge diskte AES-256-GCM ile şifreli durur; aynı içerik başka belgeyle paylaşılmaz. */
+  yerlestirKritik(gecici: string, ozet: string): string {
+    if (!KRITIK_ANAHTAR) throw new Error('Kritik belge anahtarı tanımsız');
+    const anahtar = `kritik/${ozet}-${randomUUID()}`; const hedef = join(this.kok, anahtar); const iv = randomBytes(12); const c = createCipheriv('aes-256-gcm', KRITIK_ANAHTAR, iv); const g = Buffer.concat([c.update(readFileSync(gecici)), c.final()]);
+    mkdirSync(dirname(hedef), { recursive: true }); writeFileSync(hedef, Buffer.concat([iv, c.getAuthTag(), g])); gecisiciSil(gecici);
+    return anahtar;
+  }
+  bagla(anahtar: string): Readable {
+    if (!anahtar.startsWith('kritik/')) return createReadStream(join(this.kok, anahtar));
+    if (!KRITIK_ANAHTAR) throw new Error('Kritik belge anahtarı tanımsız');
+    const v = readFileSync(join(this.kok, anahtar)); const d = createDecipheriv('aes-256-gcm', KRITIK_ANAHTAR, v.subarray(0, 12)); d.setAuthTag(v.subarray(12, 28));
+    return Readable.from((function* () { yield Buffer.concat([d.update(v.subarray(28)), d.final()]); })());
+  }
   vazgec(gecici: string) { gecisiciSil(gecici); }
 }
 

@@ -10,7 +10,7 @@ import { pdfUret, type BelgeTanim, type Bolum } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -75,7 +75,7 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
     dosyaAdi: `${f.teklif_no}.pdf`, sinif: 'Gizli',
     t: { ad: e.Teklif, kod: 'FR-TIC-008', no: f.teklif_no, dosyaNo: b.d.dosya_no, tarih: gunAy(f.gonderim_zamani ?? new Date()), surum: `Rev.${f.surum_no}`, dil, yat: b.d.yat_adi,
       matbuBas: [hitap(b, e.Teklif)], bolumler,
-      matbuSon: [dil === 'en' ? 'This quotation is valid for 15 days from its date of issue. Amounts are in EUR; VAT is shown separately; invoices are issued in TRY at the CBRT foreign exchange selling rate of the business day preceding the invoice date. Work not included in this quotation is performed only upon separate approval.' : 'Bu teklif, düzenlendiği tarihten itibaren 15 gün geçerlidir. Tutarlar EUR cinsindendir; KDV ayrıca gösterilmiştir; fatura, fatura tarihinden önceki iş gününe ait TCMB döviz satış kuruyla TL olarak düzenlenir. Teklifte yer almayan işler ancak ayrıca onaylanırsa yapılır.', sozlesme(b.d, dil), gizli(dil), dogrula(dil, kod, web), tesekkur(dil)],
+      matbuSon: [dil === 'en' ? 'This quotation is valid for 15 days from its date of issue. Amounts are in EUR; VAT is shown separately; invoices are issued in TRY at the CBRT foreign exchange selling rate of the business day preceding the invoice date. The invoice is final; no exchange difference invoice is issued. Work not included in this quotation is performed only upon separate approval.' : 'Bu teklif, düzenlendiği tarihten itibaren 15 gün geçerlidir. Tutarlar EUR cinsindendir; KDV ayrıca gösterilmiştir; fatura, fatura tarihinden önceki iş gününe ait TCMB döviz satış kuruyla TL olarak düzenlenir. Fatura nihaidir; kur farkı faturası düzenlenmez. Teklifte yer almayan işler ancak ayrıca onaylanırsa yapılır.', sozlesme(b.d, dil), gizli(dil), dogrula(dil, kod, web), tesekkur(dil)],
       onay: kapanis ? { rol: kapanis.rol_adi ?? '', zaman: anSaat(kapanis.zaman), kanal: 'YATONET 360', kod } : undefined },
   };
 }
@@ -269,7 +269,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       const pdf = await pdfUret(v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);
       const anahtar = depo.yerlestir(al.yol, al.ozet);

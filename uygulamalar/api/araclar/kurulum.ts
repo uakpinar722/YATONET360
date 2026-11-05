@@ -110,6 +110,12 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   };
   for (const [kod, tr, en] of tsv('matbu_M1_M10.tsv')) { await metin(kod!, 'tr', 'Matbu', null, tr); await metin(kod!, 'en', 'Matbu', null, en); }
   for (const r of tsv('bildirim_katalog.tsv')) { await metin(r[0]!, 'tr', 'Bildirim', `${r[1]} · ${r[2]}`, r[4]); await metin(r[0]!, 'en', 'Bildirim', `${r[1]} · ${r[2]}`, r[5]); }
+  // YG-1545: Mevzuat Uyum Matrisi kuralları
+  const OLAY: [RegExp, string][] = [[/İşe alım/, 'personel_kaydi'], [/Dalış/, 'is_emri_dalis'], [/Sıcak iş/, 'is_emri_sicak'], [/Liman sahasında/, 'is_emri_sicak'], [/ağa kabul/, 'firma_kabulu'], [/Sözleşme/, 'sozlesme'], [/[Ff]atura/, 'fatura'], [/Hizmet tamamlanması/, 'teslim']];
+  for (const l of readFileSync(join(KOK, 'veri', 'uyum_kurallari.tsv'), 'utf8').split(/\r?\n/).filter(Boolean)) {
+    const r = l.split('\t'); const olay = OLAY.find(([x]) => x.test(r[5] ?? ''))?.[1] ?? null; const g = /(\d+)\s*(?:iş\s*)?gün/.exec(r[7] ?? ''); const on = /öncesi/.test(r[7] ?? '') ? 1 : g ? Number(g[1]) : 30;
+    await c.query(`INSERT INTO uyum_kurali (mum_no, alan, mevzuat, madde, yukumluluk, tetikleyici, sorumlu_rol, sure_metni, gerekli_kanit, dogrulayan_rol, kayit, belge, dogrulama, not_metni, engelleyici, olay_kodu, sure_gun) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (mum_no) DO UPDATE SET yukumluluk = EXCLUDED.yukumluluk, tetikleyici = EXCLUDED.tetikleyici, sorumlu_rol = EXCLUDED.sorumlu_rol, sure_metni = EXCLUDED.sure_metni, gerekli_kanit = EXCLUDED.gerekli_kanit, dogrulayan_rol = EXCLUDED.dogrulayan_rol, engelleyici = EXCLUDED.engelleyici, olay_kodu = EXCLUDED.olay_kodu, sure_gun = EXCLUDED.sure_gun`, [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], r[10], r[11], r[12], r[13], (r[14] ?? '').startsWith('E'), olay, on]);
+  }
   for (const r of tsv('onay_ekran_metinleri.tsv')) {
     await metin(r[0]!, 'tr', 'Onay', r[3] ?? null, r[4]); await metin(r[0]!, 'en', 'Onay', r[5] ?? null, r[6]);
     for (const [dil, d] of [['tr', r[7]], ['en', r[8]]] as const) await c.query(`UPDATE sablon_metni SET dugme = $3, dogan_gorev = $4 WHERE kod = $1 AND dil = $2`, [r[0], dil, d && d !== '—' ? d : null, r[9] && r[9] !== '—' ? r[9] : null]);

@@ -180,6 +180,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if (g.brut !== undefined && !(Number(g.brut) > 0)) return y.code(400).send({ hata: 'Brüt ücreti kontrol etmenizi rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1`, [id])).rowCount) return yok(y);
     await b.db.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, brut_aylik_tl, ek3_yil, ek3_serbest_zaman, guncelleyen_ref) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (kullanici_ref) DO UPDATE SET ise_giris_tarihi = EXCLUDED.ise_giris_tarihi, brut_aylik_tl = coalesce(EXCLUDED.brut_aylik_tl, personel_karti.brut_aylik_tl), ek3_yil = coalesce(EXCLUDED.ek3_yil, personel_karti.ek3_yil), ek3_serbest_zaman = EXCLUDED.ek3_serbest_zaman, guncelleyen_ref = EXCLUDED.guncelleyen_ref, guncelleme_zamani = now()`, [id, g.iseGiris, g.brut ?? null, g.ek3Yil ?? null, Boolean(g.ek3Serbest), o.kullanici]);
+    await (await import('./uyum.js')).uyumOlay(b.db, 'personel_kaydi', 'Personel', id); // YG-1546
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Personel Kartı', nesneTuru: 'Personel', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     await esikKontrol(b.db);
     return { tamam: true };

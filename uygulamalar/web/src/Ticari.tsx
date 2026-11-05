@@ -729,6 +729,7 @@ export function IdariIslemler() {
         <label className="kutu"><input type="checkbox" checked={bl} onChange={(e) => setBl(e.target.checked)} /><span>Bölünmüş İzin Talebi</span></label>
         <label htmlFor="iz-t">İzin Türü</label><select id="iz-t" value={iz.tur} onChange={(e) => setIz({ ...iz, tur: e.target.value })}>{['Yıllık', 'Mazeret', 'Ücretsiz', 'Rapor'].map((x) => <option key={x}>{x}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="iz-b">Başlangıç</label><input id="iz-b" type="date" value={iz.baslangic} onChange={(e) => setIz({ ...iz, baslangic: e.target.value })} /></div><div><label htmlFor="iz-s">Bitiş</label><input id="iz-s" type="date" value={iz.bitis} onChange={(e) => setIz({ ...iz, bitis: e.target.value })} /></div></div>
+        <div className="not">Rapor veya belgeyi izin kaydından sonra yükleyebilirsiniz; belgeyi yalnız İnsan Kaynakları görür. Açıklamaya sağlık bilgisi yazmayınız.</div>
         <button className="btn2" onClick={() => void yap(() => istek<{ gun: number }>('/izin', { ...iz, bolunmus: bl }).then((r) => ({ uyari: `İzin talebiniz gönderildi: ${r.gun} gün.` })))}>İzin Talep Et</button>
       </Blok>
       <Blok baslik="Masraf Fişi">
