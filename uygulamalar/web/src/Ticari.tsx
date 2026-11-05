@@ -213,6 +213,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {iskrtYazar && <>
           <label htmlFor="e-t">Tür</label><select id="e-t" value={ie.tur} onChange={(x) => setIe({ ...ie, tur: x.target.value })}>{[['KN', 'Keşif'], ['ON', 'Onarım'], ['EK', 'Ek İş'], ['GR', 'Garanti ve Düzeltme'], ['PH', 'Planlı Hizmet']].map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select>
           <label htmlFor="e-f">Firma</label><select id="e-f" value={ie.firma} onChange={(x) => setIe({ ...ie, firma: x.target.value })}><option value="">Seçiniz</option>{firmalar.map((f) => <option key={f.kimlik} value={f.kimlik} disabled={Boolean(f.engel)}>{f.ticari_unvan}{f.engel ? ` · ${f.engel}` : ''}</option>)}</select>
+          <FirmaAdaylari dosya={id} sec={(k) => setIe({ ...ie, firma: k })} />
           <label htmlFor="e-y">Uygulama Yeri</label><input id="e-y" value={ie.yer} onChange={(x) => setIe({ ...ie, yer: x.target.value })} />
           <label htmlFor="e-k">Kapsam</label><input id="e-k" value={ie.kapsam} onChange={(x) => setIe({ ...ie, kapsam: x.target.value })} />
           {ie.tur !== 'KN' && <><label htmlFor="e-b">Firma Bedeli (EUR)</label><input id="e-b" inputMode="decimal" value={ie.bedel} onChange={(x) => setIe({ ...ie, bedel: x.target.value })} /></>}
@@ -757,4 +758,10 @@ function BantOnayi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any
 function CaymaKaydi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
   const [z, setZ] = useState('');
   return <><label htmlFor={`ck-${teklif}`}>Cayma Beyanının Geldiği Zaman</label><input id={`ck-${teklif}`} type="datetime-local" value={z} onChange={(e) => setZ(e.target.value)} /><button className="btn2 kucuk" disabled={!z} onClick={() => void yap(() => istek(`/teklif/${teklif}/cayma`, { beyanZamani: new Date(z).toISOString() }), 'Cayma kaydedildi.')}>Cayma Beyanını Kaydet</button></>;
+}
+
+/** YG-304: kapsamaya göre süzülmüş liste; seçim kişidedir, fiyat ve mesafe sıralamaya girmez. */
+function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void }) {
+  const [b, setB] = useState(''); const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; kapsama: string; sonuc: string; engeller: string[]; uyarilar: string[] }[] | null>(null); const [h, setH] = useState('');
+  return <><label htmlFor={`fa-${dosya}`}>Branş (Uygun Firmaları Listelemek İçin)</label><input id={`fa-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}`).then(setL).catch((e) => setH(e.message)); }}>Uygun Firmaları Listele</button>{h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve bölgede uygun firma bulunmamaktadır.</div>}{l?.map((f) => <div key={f.kimlik}>{f.ticari_unvan} · {f.kapsama} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
 }

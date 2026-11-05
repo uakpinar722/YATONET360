@@ -26,6 +26,7 @@ export async function kapanisEksikleri(db: PoolClient | Baglam['db'], d: { kimli
   const l: string[] = [];
   if ((await db.query(`SELECT 1 FROM acik_konu WHERE dosya_ref = $1 AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [d.kimlik])).rowCount) l.push('Açık Görev');
   if ((await db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL LIMIT 1`, [d.kimlik])).rowCount) l.push('Beklemede işareti açık');
+  if ((await db.query(`SELECT 1 FROM tedarik_siparisi WHERE dosya_ref = $1 AND statu IN ('Onay Bekliyor', 'Verildi', 'Kısmi Teslim') LIMIT 1`, [d.kimlik])).rowCount) l.push('Açık Tedarik Siparişi'); // YG-416
   if (neden === 'Tamamlandı' && !(await db.query(`SELECT 1 FROM kesif WHERE dosya_ref = $1 AND durum = 'Tamamlandı' LIMIT 1`, [d.kimlik])).rowCount) l.push('Teknik Eksik');
   if (neden === 'Tamamlandı' && (await db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK') LIMIT 1`, [d.kimlik])).rowCount && !(await db.query(`SELECT 1 FROM teslim_kaydi WHERE dosya_ref = $1 AND durum LIKE 'Teslim Edildi%' LIMIT 1`, [d.kimlik])).rowCount) l.push('Kabul Bekliyor'); // YG-148
   return l;
@@ -57,7 +58,10 @@ kapanisKaydet('Dosya Kapanışı', async (c, k, karar, yapan) => {
   if (karar === 'Reddet') { await c.query(`UPDATE kapanis_kontrolu SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]); return; }
   if (karar !== 'Onayla') return;
   await c.query(`UPDATE kapanis_kontrolu SET durum = 'Onaylandı', onaylayan_ref = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.kimlik, yapan]);
-  if (t.cikis_statusu === 'Kapalı') await c.query(`UPDATE dosya SET kapanma_nedeni = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.dosya_ref, t.kapanma_nedeni]);
+  if (t.cikis_statusu === 'Kapalı') {
+    await c.query(`UPDATE dosya SET kapanma_nedeni = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.dosya_ref, t.kapanma_nedeni]);
+    await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE p.surum_ref = s.kimlik AND p.iptal_zamani IS NULL AND e.bag_turu = 'Dosya' AND e.bag_kimligi = $1::text`, [t.dosya_ref]); // YG-416
+  }
   // YG-086: kanuni sorumluluk bitişi teslim + 24 ay; elle değiştirilmez.
   if (t.cikis_statusu === 'Teknik Kapalı') await c.query(`UPDATE dosya SET teslim_tarihi = current_date, kanuni_sorumluluk_bitis = current_date + interval '24 months' WHERE kimlik = $1`, [t.dosya_ref]);
   await statuYaz(c, { kimlik: t.dosya_ref, statu: t.statu, asama: t.asama }, { statu: t.cikis_statusu, asama: t.asama }, `Kapanış onayı${t.kapanma_nedeni ? `: ${t.kapanma_nedeni}` : ''}`, yapan);

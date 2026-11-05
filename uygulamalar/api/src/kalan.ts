@@ -8,6 +8,8 @@ import { bildir, birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
 import { dilKod, rolId, yatTarafinaYaz } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
+import { dosyaErisimi } from './dosya.js';
+import { gorevlendirmeKontrolu } from './firma_ek.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
@@ -153,6 +155,18 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE is_karti k SET durum = 'Tamamlandı', kapanma_zamani = now() FROM musteri_faturasi f WHERE k.tur = 'Vefat Alacak Askısı' AND k.durum = 'Bekliyor' AND k.nesne_kimligi = f.kimlik::text AND f.dosya_ref = $1`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vefat Temsilcisi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
+  });
+
+  // YG-304: atama listesi kapsamadan süzülür, tüm kapılar birlikte değerlendirilir; en yakın veya en ucuz otomatik seçilmez, fiyat ve mesafe sıralamaya girmez.
+  s.get('/dosya/:id/firma-adaylari', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const brans = ((i.query ?? {}) as { brans?: string }).brans?.trim();
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!brans) return y.code(400).send({ hata: 'Branşı seçiniz.' });
+    const konum = String((await b.db.query(`SELECT konum FROM dosya WHERE kimlik = $1`, [id])).rows[0].konum).toLocaleLowerCase('tr');
+    const l = (await b.db.query(`SELECT u.kimlik, u.ticari_unvan, y.kapsama, y.bolge FROM brans_yetkinligi y JOIN kurulus u ON u.kimlik = y.kurulus_ref WHERE y.ana_brans = $1 AND y.durum = 'Aktif' AND u.kayit_rolu = 'Çözüm Ortağı' AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [brans])).rows.filter((f) => f.kapsama !== 'Bölge' || !f.bolge || konum.includes(String(f.bolge).toLocaleLowerCase('tr')));
+    const S = { Kabul: 0, 'Koşullu Kabul': 1, Ret: 2 } as const; const sonuc = [];
+    for (const f of l) { const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, sonuc: k.sonuc, engeller: k.engeller, uyarilar: k.uyarilar }); }
+    return sonuc.sort((a, c) => S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
   });
 
   // YG-344: FR-SCL-001 ön kayıt alanları.

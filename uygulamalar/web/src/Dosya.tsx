@@ -16,7 +16,7 @@ interface DosyaAyrinti extends DosyaSatir {
   musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
   kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
-  taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null }[];
+  taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
   ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean }[];
   gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null }[];
@@ -300,7 +300,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <TesisIslemleri id={id} ds={d.rollerim.includes('Dosya Sorumlusu')} />
       <TeklifTalebiBolumu id={id} roller={roller} />
       <TedarikBolumu id={id} roller={roller} />
-      <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik}>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '—'} · {t.eposta ?? '—'}</div>)}</Blok>
+      <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik}>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '—'} · {t.eposta ?? '—'}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</div>)}</Blok>
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
     </>
   );

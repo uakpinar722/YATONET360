@@ -173,3 +173,29 @@ describe('firma fiyatı yansıması ve teslim yetkisi (YG-189, YG-1086)', () => 
     await o.sup.query(u, [d.kimlik, 'Beklemede']); expect(await teslimYetkiEngeli(o.db, d.kimlik)).toContain('Yetki');
   });
 });
+
+describe('firma adayları, tarama alanı, kapanış (YG-304, YG-916, YG-416)', () => {
+  it('kapsamadan süzer, çıkar çatışması Ret; yetkisiz göremez', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); await o.sup.query(`UPDATE dosya SET konum = 'Marmaris Muğla' WHERE kimlik = $1`, [d.kimlik]);
+    const fk = async (ad: string, kapsama: string, bolge: string | null) => { const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı','Onaylı','Aktif',$3) RETURNING kimlik`, [`S-A${++n}`, ad, o.K.ds])).rows[0].kimlik as string; await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama, bolge) VALUES ($1,'BranşX',$2,$3)`, [f, kapsama, bolge]); return f; };
+    await fk('Bodrum Firma', 'Bölge', 'Bodrum'); const m = await fk('Muğla Firma', 'Bölge', 'Muğla'); await fk('Ulusal Firma', 'Ulusal', null);
+    const c = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/firma-adaylari?brans=${encodeURIComponent('BranşX')}`;
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/firma-adaylari`, c)).statusCode).toBe(400);
+    const a = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a.map((x) => x.ticari_unvan).sort()).toEqual(['Muğla Firma', 'Ulusal Firma']);
+    const ta = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref) VALUES ($1,'Gerçek kişi','Bireysel Müşteri','Sahip','{Yat Sahibi}',$2) RETURNING kimlik`, [`TR-A${++n}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`UPDATE yat SET yat_sahibi_ref = $2 WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik, ta]);
+    await o.sup.query(`INSERT INTO cikar_beyani (kurulus_ref, taraf_ref, aciklama, kaydeden_ref) VALUES ($1,$2,'X',$3)`, [m, ta, o.K.ds]);
+    const a2 = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a2.at(-1)).toMatchObject({ ticari_unvan: 'Muğla Firma', sonuc: 'Ret' });
+    expect((await o.ist('GET', u, await o.gir('sc'))).statusCode).toBe(404);
+  });
+  it('tarama sonucu yetkisiz role görünmez; açık sipariş kapanışı durdurur', async () => {
+    const { alanSuz } = await import('../src/alan.js'); const { kapanisEksikleri } = await import('../src/saha.js');
+    const kr = new Map((await o.sup.query(`SELECT alan, davranis, yasak_gruplar, yalniz_roller FROM alan_erisim_kurali`)).rows.map((r) => [r.alan as string, r]));
+    expect(alanSuz({ tarama_sonucu: 'Temiz' }, kr, { grup: 'LGM İç Rolü', roller: ['Dosya Sorumlusu'] })).toEqual({});
+    expect(alanSuz({ tarama_sonucu: 'Temiz' }, kr, { grup: 'LGM İç Rolü', roller: ['Ticari İşler Direktörü'] })).toEqual({ tarama_sonucu: 'Temiz' });
+    const d = await o.dosyaAc({}, {}); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'TD','Tedarikçi',$2) RETURNING kimlik`, [`S-T${++n}`, o.K.ds])).rows[0].kimlik;
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).not.toContain('Açık Tedarik Siparişi');
+    await o.sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, statu) VALUES ($1,$2,$3,'T','Y',1,0,1,'2099-01-01','Y','K','G',$4,'Verildi')`, [`SP-${n}`, d.kimlik, f, o.K.ds]);
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).toContain('Açık Tedarik Siparişi');
+  });
+});
