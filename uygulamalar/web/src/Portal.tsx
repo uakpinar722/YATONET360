@@ -44,6 +44,7 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
       ))}
       <div className="bolum">Hızlı İşlemler</div>
       <div className="dugmeler"><button className="btn2" onClick={() => setForm(true)}>Hasar Bildir</button></div>
+      <YetkiliAtama />
       <div className="bolum">Acil Durum</div>
       <div className="uyari">Yat su alıyor, sürükleniyor, yangın sonrası durum varsa veya bağlama emniyeti tehlikedeyse hemen arayınız. Acil durumlarda lütfen önce 112&apos;yi arayınız.</div>
       <AcilDugmesi />
@@ -255,4 +256,12 @@ function FaturaItiraz({ id }: { id: string }) {
   const [ac, setAc] = useState(false); const [f, setF] = useState({ kalem: '', tutar: '', gerekce: '' }); const [m, setM] = useState('');
   if (!ac) return <button className="lnk" onClick={() => setAc(true)}>İtiraz Et</button>;
   return <><label htmlFor={`fi-k-${id}`}>İtiraz Edilen Kalem</label><input id={`fi-k-${id}`} value={f.kalem} onChange={(e) => setF({ ...f, kalem: e.target.value })} /><label htmlFor={`fi-t-${id}`}>Tutar (EUR)</label><input id={`fi-t-${id}`} value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} /><label htmlFor={`fi-g-${id}`}>Gerekçe</label><input id={`fi-g-${id}`} value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} /><button className="btn2 kucuk" onClick={() => void istek(`/fatura/${id}/itiraz`, { kalem: f.kalem, gerekce: f.gerekce, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')) }).then(() => setM('İtirazınız alındı; yanıt bekleniyor.')).catch((e) => setM(e.message))}>İtirazı Gönder</button>{m && <div className="not" role="status">{m}</div>}</>;
+}
+
+/** YG-1070, ONY-14: sizi yat sahibi gösteren yetkililer; atama SMS kodlu ekranda onaylanır. */
+function YetkiliAtama() {
+  const [l, setL] = useState<{ kullanici_ref: string; rol: string; ad_soyad: string; belge_durumu: string; ust_limit_eur: string | null; bitis_tarihi: string | null }[]>([]); const [ac, setAc] = useState(''); const [f, setF] = useState({ yatlar: '', limit: '', bitis: '' }); const [m, setM] = useState('');
+  useEffect(() => { void istek<typeof l>('/portal/yetkililerim').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Yetkililerim</div>{m && <div className="not" role="status">{m}</div>}{l.map((y) => <div className="ozet" key={y.kullanici_ref}><div>{y.ad_soyad} · {y.rol} · {y.belge_durumu}{y.ust_limit_eur !== null ? ` · ${y.ust_limit_eur} EUR` : ''}{y.bitis_tarihi ? ` · Bitiş: ${y.bitis_tarihi.split('-').reverse().join('.')}` : ''}</div>{ac === y.kullanici_ref ? <><label htmlFor="ya-y">Kapsadığı Yatlar (Virgülle)</label><input id="ya-y" value={f.yatlar} onChange={(e) => setF({ ...f, yatlar: e.target.value })} /><label htmlFor="ya-l">Tek İşlem Üst Limiti (EUR){y.rol === 'Yatın Kaptanı' ? ' · Boşsa Sıfır' : ''}</label><input id="ya-l" value={f.limit} onChange={(e) => setF({ ...f, limit: e.target.value })} /><label htmlFor="ya-b">Bitiş Tarihi</label><input id="ya-b" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} /><button className="btn2 kucuk" onClick={() => void istek(`/portal/yetkili/${y.kullanici_ref}/atama`, { yatlar: f.yatlar.split(',').map((s) => s.trim()).filter(Boolean), islemler: ['ONY-23', 'ONY-25', 'ONY-27'], limit: f.limit ? Number(f.limit.replace(/\./g, '').replace(',', '.')) : undefined, bitis: f.bitis }).then(() => { setAc(''); setM('Atama, onayınız için Onayınızı Bekleyenler bölümüne eklendi.'); }).catch((e) => setM(e.message))}>Atamayı Onaya Gönder</button></> : <button className="btn2 kucuk" onClick={() => setAc(y.kullanici_ref)}>Yetki Ata</button>}</div>)}</>;
 }

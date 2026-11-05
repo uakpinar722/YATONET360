@@ -220,3 +220,22 @@ describe('yasal ayıp raporu ve onay kaydı (YG-1078, YG-161)', () => {
     const k = (await o.sup.query(`SELECT temsil_sifati, tutar_eur FROM yatonet_onay_kaydi WHERE onay_talebi_ref = $1`, [on])).rows[0]; expect(k.temsil_sifati).toBe('Yat Sahibi'); expect(Number(k.tutar_eur)).toBe(123);
   });
 });
+
+describe('yetkili atama (YG-1070, ONY-14)', () => {
+  it('yalnız gösterilen yat sahibi atar; kaptanda limit yoksa sıfır, ödeme yetkisi yok; onayla geçerli olur', async () => {
+    const tel = '+905551112233'; await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = $2 WHERE kimlik = $1`, [o.K.iks, tel]);
+    await o.sup.query(`INSERT INTO yat_yetkilisi_kaydi (kullanici_ref, rol, sahip_ad, sahip_telefon) VALUES ($1,'Yatın Kaptanı','Sahip',$2)`, [o.K.sc, tel]);
+    const u = `/api/portal/yetkili/${o.K.sc}/atama`; const g = { yatlar: ['Mavi'], islemler: ['ONY-23'], bitis: '2099-01-01', odeme: true };
+    expect((await o.ist('POST', u, await o.gir('ds'), g)).statusCode).toBe(404);
+    const c = await o.gir('iks');
+    expect((await o.ist('GET', '/api/portal/yetkililerim', c)).json()).toHaveLength(1);
+    expect((await o.ist('POST', u, c, { ...g, yatlar: [] })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, g); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT belge_durumu FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.sc])).rows[0].belge_durumu).toBe('Bekleniyor');
+    const on = r.json().kimlik; const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${on}`])).rows[0].metin; const bel = m.match(/#onay=([\w-]+)/)[1];
+    await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
+    const kr = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {} }); expect(kr.statusCode, kr.body).toBe(200);
+    const k = (await o.sup.query(`SELECT belge_durumu, ust_limit_eur, odeme_yetkisi, yatlar, atama_taslak FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.sc])).rows[0];
+    expect(k).toMatchObject({ belge_durumu: 'Geçerli', odeme_yetkisi: false, yatlar: ['Mavi'], atama_taslak: null }); expect(Number(k.ust_limit_eur)).toBe(0);
+  });
+});

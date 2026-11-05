@@ -78,6 +78,14 @@ kapanisKaydet('Cayma İadesi', async (c, k, karar) => {
   } else if (karar === 'Reddet') await c.query(`UPDATE on_bilgilendirme_cayma_kaydi SET iade_durumu = 'Hesap Bekliyor' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
 
+// YG-1070, ONY-14: yat sahibi atamayı SMS kodlu ekranda onaylar; noter vekâleti istenmez, belge kontrolü gerekmez.
+onaySonucKaydet('ONY-14', async (c, t, karar) => {
+  if (karar !== 'Onaylandı' || !t.nesne_kimligi) return;
+  const r = (await c.query(`SELECT atama_taslak a FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [t.nesne_kimligi])).rows[0]?.a; if (!r) return;
+  await c.query(`UPDATE yat_yetkilisi_kaydi SET belge_durumu = 'Geçerli', islem_turleri = $2, ust_limit_eur = $3, bitis_tarihi = $4, odeme_yetkisi = $5, bilgi_paylasim_izni = $6, yatlar = $7, atama_onay_ref = $8, atama_taslak = NULL WHERE kullanici_ref = $1`, [t.nesne_kimligi, r.islemler, r.limit, r.bitis, r.odeme, r.bilgi, r.yatlar, t.kimlik]);
+  await bildir(c, { olay: `yetki-atama:${t.kimlik}`, kullanicilar: [t.nesne_kimligi], baslik: 'Yetkiniz Kaydedildi', ozet: 'Yetkilerinizi Yetkilerim sayfasından görebilirsiniz.' });
+});
+
 /** YG-1493: beyanı Dosya Sorumlusu 8 saat içinde kaydeder; geç kayıt Ticari İşler Direktörüne bildirilir. */
 export async function caymaGecKayit(db: Db, kayit: string, beyan: string | undefined, simdi = new Date()): Promise<boolean> {
   if (!beyan || simdi.getTime() - new Date(beyan).getTime() <= 8 * 3_600_000) return false;
@@ -167,6 +175,25 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const S = { Kabul: 0, 'Koşullu Kabul': 1, Ret: 2 } as const; const sonuc = [];
     for (const f of l) { const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, sonuc: k.sonuc, engeller: k.engeller, uyarilar: k.uyarilar }); }
     return sonuc.sort((a, c) => S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
+  });
+
+  // YG-1070: yat sahibi kendisini gösteren yetkili kayıtlarını görür ve atar. Kaptanda limit girilmezse sıfırdır.
+  const sahibim = async (k: string) => (await b.db.query(`SELECT y.kullanici_ref, y.rol, h.ad_soyad, y.belge_durumu, y.ust_limit_eur, y.bitis_tarihi::text, y.yatlar, y.islem_turleri FROM yat_yetkilisi_kaydi y JOIN kullanici_hesabi h ON h.kimlik = y.kullanici_ref JOIN kullanici_hesabi s ON s.cep_telefonu = y.sahip_telefon WHERE s.kimlik = $1 ORDER BY h.ad_soyad`, [k])).rows;
+  s.get('/portal/yetkililerim', oturumlu, async (i) => sahibim(i.oturum!.kullanici));
+  s.post('/portal/yetkili/:id/atama', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { yatlar?: string[]; islemler?: string[]; limit?: number; bitis?: string; odeme?: boolean; bilgi?: boolean };
+    const k = (await sahibim(o.kullanici)).find((x) => x.kullanici_ref === id);
+    if (!k) return yok(y);
+    if (k.rol !== 'Yatın Kaptanı' && g.limit === undefined) return y.code(400).send({ hata: 'Tek işlem üst limitini girmenizi rica ederiz.' });
+    const limit = g.limit === undefined ? 0 : Number(g.limit);
+    if (!g.yatlar?.length || !g.islemler?.length || !g.bitis || !(limit >= 0)) return y.code(400).send({ hata: 'Yat, işlem türü ve bitiş tarihini girmenizi rica ederiz.' });
+    if (!g.islemler.every((x) => /^ONY-\d{2}$/.test(x))) return y.code(400).send({ hata: 'İşlem türü geçersizdir.' });
+    if (g.bitis < new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Bitiş tarihi geçmişte olamaz.' });
+    const h = (await b.db.query(`SELECT ad_soyad, cep_telefonu, e_posta, tercih_dili FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
+    await b.db.query(`UPDATE yat_yetkilisi_kaydi SET atama_taslak = $2 WHERE kullanici_ref = $1`, [id, JSON.stringify({ yatlar: g.yatlar, islemler: g.islemler, limit, bitis: g.bitis, odeme: Boolean(g.odeme) && limit > 0, bilgi: Boolean(g.bilgi) })]);
+    const dil = dilKod(h.tercih_dili); const lt = tutar(limit, dil);
+    const on = await onayTalebiAc(b.db, { ony: 'ONY-14', dil, alanlar: { 'Ad Soyad': h.ad_soyad, 'Full name': h.ad_soyad, '0.000,00': lt, '0,000.00': lt }, baslikAlanlari: { Kişi: k.ad_soyad, Rol: k.rol, Yatlar: g.yatlar.join(', '), 'İşlem Türü': g.islemler.join(', '), 'Bitiş Tarihi': g.bitis }, aliciAd: h.ad_soyad, kullanici: o.kullanici, telefon: h.cep_telefonu, eposta: h.e_posta, nesneTuru: 'Yat Yetkilisi', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: 'Yetkili Temsilci Atama Beyanı' });
+    return { kimlik: on.kimlik };
   });
 
   // YG-1078: yasal ayıp ve rücu listesi yalnız Direktör ve üstü; Müdürler göremez.
