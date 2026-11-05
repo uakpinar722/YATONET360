@@ -94,7 +94,7 @@ export function hesabimYollari(s: FastifyInstance, b: Baglam) {
     const prm = [o.kullanici, sec.tur, sec.amac, sec.kanal];
     if (ver) {
       if (!(await b.db.query(`SELECT 1 FROM acik_riza WHERE ${kos}`, prm)).rowCount) {
-        await b.db.query(`INSERT INTO acik_riza (ilgili_kisi_ref, riza_turu, amac, kanal, kaynak, metin_surumu) VALUES ($1,$2,$3,$4,'Profil','R00')`, prm);
+        await b.db.query(`INSERT INTO acik_riza (ilgili_kisi_ref, riza_turu, amac, kanal, kaynak, metin_surumu, onay_adimi) VALUES ($1,$2,$3,$4,'Profil','R00','Profil')`, prm);
       }
     } else {
       await b.db.query(`UPDATE acik_riza SET durum = 'Geri Alındı', geri_alma_zamani = now(), geri_alma_kanali = 'YATONET 360 profili', gonderim_engeli = true WHERE ${kos}`, prm);

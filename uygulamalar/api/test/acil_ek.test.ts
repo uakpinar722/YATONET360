@@ -57,7 +57,7 @@ describe('olağanüstü dönem (YG-1459, YG-1489, YG-265)', () => {
   it('öneri Operasyon Müdürü; GMY görüş sonrası CEO ulaşılamazsa GMY ilan eder; kapanış; aciliyet sırası', async () => {
     expect((await o.ist('POST', '/api/olaganustu/oneri', await o.gir('ds'), { bolge: 'Muğla', olay: 'Fırtına' })).statusCode).toBe(403);
     const r = await o.ist('POST', '/api/olaganustu/oneri', await o.gir('opm'), { bolge: 'Muğla', olay: 'Fırtına' }); expect(r.statusCode, r.body).toBe(200);
-    const k = await o.kart('Olağanüstü Dönem İlanı', r.json().kimlik); expect(k.zincir).toHaveLength(2);
+    const k = await o.kart('Olağanüstü Dönem İlanı', r.json().kimlik); expect(k.zincir).toHaveLength(2); await o.sup.query(`UPDATE is_karti SET kademe = 0 WHERE kimlik = $1`, [k.kimlik]); // Mesai dışında YG-228 son makama atlar; görüş adımı saatten bağımsız sınanır.
     expect((await o.karar(k.kimlik, 'gmy', 'Onaya Gönder')).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/olaganustu/oneri/${r.json().kimlik}/gmy-ilan`, await o.gir('gmy'), {})).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/olaganustu/oneri/${r.json().kimlik}/gmy-ilan`, await o.gir('ds'), { gerekce: 'G' })).statusCode).toBe(404);

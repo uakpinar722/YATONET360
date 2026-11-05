@@ -179,6 +179,7 @@ kapanisKaydet('İzin Talebi', async (c, k, karar) => {
     await c.query(`UPDATE izin_talebi SET durum = 'Onaylandı' WHERE kimlik = $1`, [t.kimlik]);
     if (t.izin_turu === 'Yıllık') await c.query(`UPDATE izin_bakiyesi SET kullanilan = kullanilan + $3 WHERE personel_ref = $1 AND yil = $2`, [t.personel_ref, new Date(t.baslangic).getUTCFullYear(), t.gun]);
     await (await import('./ik.js')).izinPuantaja(c, t); // YG-953
+  } else if (karar === 'Onaya Gönder') { await c.query(`UPDATE izin_talebi SET durum = 'İK Kontrolünde' WHERE kimlik = $1`, [t.kimlik]);
   } else if (karar === 'Reddet') await c.query(`UPDATE izin_talebi SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]);
 });
 
@@ -541,11 +542,11 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     }
     if ((await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi a JOIN dosya d ON d.kimlik = a.dosya_ref WHERE a.kullanici_ref = $1 AND a.bitis_zamani IS NULL AND d.statu IN ('Açılış Kontrolünde', 'Aktif', 'Kontrollü Askıda') LIMIT 1`, [o.kullanici])).rowCount && !g.vekil) return y.code(400).send({ hata: 'Açık dosyanız var; vekil belirleyiniz.' });
     return islem(async (c) => {
-      const r = (await c.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, vekil_ref, bolunmus) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [o.kullanici, g.tur, g.baslangic, g.bitis, n, g.vekil ?? null, Boolean(g.bolunmus)])).rows[0];
+      const r = (await c.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, vekil_ref, bolunmus, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,'Birim Amirinde') RETURNING kimlik`, [o.kullanici, g.tur, g.baslangic, g.bitis, n, g.vekil ?? null, Boolean(g.bolunmus)])).rows[0];
       const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
       const amir = await onayMakami(c, rl.kimlik);
       const ik = await rolId(c, 'İnsan Kaynakları Sorumlusu');
-      const zincir = (await rolSahipleri(c, ik)).length ? [ik, amir] : [amir];
+      const zincir = (await rolSahipleri(c, ik)).length ? [amir, ik] : [amir]; // KT-1: önce birim amiri, sonra İnsan Kaynakları
       await kartAc(c, { tur: 'İzin Talebi', baslik: 'İzin Talebi', ozet: `${n} gün`, hazirlayan: o.kullanici, zincir, nesneTuru: 'İzin', nesneKimligi: r.kimlik }); // YG-952: içerik taşımaz.
       return { kimlik: r.kimlik, gun: n };
     });

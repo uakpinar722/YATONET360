@@ -142,7 +142,9 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       if (g.yetkili) { // YG-1561, YY-M1: gönderim kaydı engellemez, gitmezse zaman boş kalır.
         try {
-          await b.sms.gonder(st!.telefon!, await metinGetir(b.db, 'BLD-88', 'tr', { 'Ad Soyad': g.ad.trim(), Rol: g.yetkili.rol! }));
+          const en = !st!.telefon!.startsWith('+90'); // YG-1896
+          const rolEn: Record<string, string> = { 'Yatın Kaptanı': 'Captain of the Yacht', 'Yat Sahibinin Yetkili Temsilcisi': "Owner's Authorized Representative", 'Yat Yönetim Şirketi / İşletmeci': 'Yacht Management Company / Operator', 'Diğer': 'Authorized Person' };
+          await b.sms.gonder(st!.telefon!, await metinGetir(b.db, 'BLD-88', en ? 'en' : 'tr', en ? { 'Full Name': g.ad.trim(), Role: rolEn[g.yetkili.rol!]! } : { 'Ad Soyad': g.ad.trim(), Rol: g.yetkili.rol! }));
           await b.db.query(`UPDATE yat_yetkilisi_kaydi SET sahip_bilgilendirme_zamani = now() WHERE kullanici_ref = $1`, [h.kimlik]);
         } catch (e) { i.log.error(e); }
       }

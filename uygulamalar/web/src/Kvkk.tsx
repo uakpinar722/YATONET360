@@ -1,0 +1,77 @@
+import { useEffect, useState } from 'react';
+import { istek } from './api';
+
+const OLAY = ['Yanlış alıcıya e-posta', 'Açık paylaşım bağlantısı', 'Kayıp çıktı', 'Yetkisiz görüntüleme', 'Cihaz kaybı veya çalınması', 'Teknik güvenlik olayı', 'Diğer'];
+const HAK = ['İşlenip işlenmediğini öğrenme', 'İşlenmişse bilgi talep etme', 'Amacını ve amaca uygun kullanımı öğrenme', 'Aktarıldığı üçüncü kişileri bilme', 'Düzeltme isteme', 'Silme veya yok etme isteme', 'Düzeltme/silmenin üçüncü kişilere bildirilmesi', 'Otomatik analiz sonucuna itiraz', 'Zararın giderilmesi', 'Pazarlama onayını geri alma'];
+
+function useYap() {
+  const [hata, setHata] = useState(''); const [not, setNot] = useState('');
+  const yap = async (f: () => Promise<unknown>, tamam: string) => { setHata(''); setNot(''); try { await f(); setNot(tamam); } catch (e) { setHata((e as Error).message); } };
+  const Mesaj = () => <>{hata && <div className="hata" role="alert">{hata}</div>}{not && <div className="not">{not}</div>}</>;
+  return { yap, Mesaj };
+}
+
+/** YG-1201: her ekrandan erişilir. */
+export function IhlalBildir({ kapat }: { kapat: () => void }) {
+  const { yap, Mesaj } = useYap(); const [t, setT] = useState(OLAY[0]!); const [o, setO] = useState('');
+  return <div className="ozet"><b>⚠ Veri İhlali Bildir</b> (FR-HUK-002)<Mesaj />
+    <label htmlFor="vi-t">Olay Türü</label><select id="vi-t" value={t} onChange={(e) => setT(e.target.value)}>{OLAY.map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="vi-o">Kısa Açıklama</label><textarea id="vi-o" value={o} onChange={(e) => setO(e.target.value)} />
+    <div className="dugmeler"><button className="btn2" disabled={!o.trim()} onClick={() => void yap(() => istek('/veri-ihlali', { olayTuru: t, ozet: o }).then(() => setO('')), 'Bildiriminiz Bilgi İşlem Müdürü ile Hukuk ve Uyum Direktörüne iletildi.')}>Bildir</button><button className="btn2" onClick={kapat}>Kapat</button></div>
+  </div>;
+}
+
+type Ihlal = { kimlik: string; olay_no: string; ozet: string; olay_turu: string; ogrenme_zamani: string; ust_yonetim_bilgi_zamani: string | null; bulgu_surumu: number; bildirim_karari: string | null; kurul_bildirim_zamani: string | null; durum: string };
+type Basvuru = { kimlik: string; basvuru_no: string; basvuran_ad_soyad: string; son_yanit_tarihi: string; kimlik_dogrulandi: boolean; karar: string | null; durum: string; arama_sonucu: Record<string, number> | null };
+type Liste = { kimlik: string; yil: number; imha_donemi: string; durum: string; kalemler: { kimlik: string; grup: string; ozet: string; durum: string; sorumlu_unvan: string }[] };
+
+function kalan(z: string) { const s = (new Date(z).getTime() + 72 * 3_600_000 - Date.now()) / 3_600_000; return s < 0 ? '72 saat aşıldı' : `${Math.floor(s)} saat kaldı`; }
+
+export function KvkkEkrani() {
+  const { yap, Mesaj } = useYap(); const [y, setY] = useState<{ ihlal: boolean; hud: boolean; uzman: boolean } | null>(null); const [iv, setIv] = useState<Ihlal[]>([]); const [bs, setBs] = useState<Basvuru[]>([]); const [il, setIl] = useState<Liste[]>([]); const [m, setM] = useState<Record<string, string>>({}); const [f, setF] = useState({ ad: '', iletisim: '', kanal: 'KEP', yanitKanali: '', talep: HAK[0]!, alinma: '' });
+  const sec = (k: string) => m[k] ?? ''; const yz = (k: string, v: string) => setM({ ...m, [k]: v });
+  const yukle = (r = y) => { if (!r) return; if (r.ihlal) void istek<Ihlal[]>('/veri-ihlali').then(setIv).catch(() => {}); if (r.hud || r.uzman) { void istek<Basvuru[]>('/kvkk-basvuru').then(setBs).catch(() => {}); void istek<Liste[]>('/imha-listesi').then(setIl).catch(() => {}); } };
+  useEffect(() => { void istek<NonNullable<typeof y>>('/kvkk/yetki').then((r) => { setY(r); yukle(r); }); }, []);
+  if (!y) return null;
+  const is = (yol: string, g: object, t: string) => void yap(() => istek(yol, g).then(() => yukle()), t);
+  return (<>
+    <h1>KVKK ve Uyum</h1><Mesaj />
+    {y.ihlal && <><div className="bolum">Veri İhlali Kayıtları</div>
+      {iv.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
+      {iv.map((v) => <div className="soru" key={v.kimlik}><span><b className="koyu">{v.olay_no}</b> · {v.olay_turu} · {v.ozet} · {v.durum}{v.durum === 'Açık' && !v.kurul_bildirim_zamani && v.bildirim_karari !== 'Bildirim Gerekmez' ? <b className="hata"> ⚠ {kalan(v.ogrenme_zamani)}</b> : ''}</span>
+        {v.durum === 'Açık' && y.hud && <div className="tam">
+          {!v.ust_yonetim_bilgi_zamani && <button className="btn2 kucuk" onClick={() => is(`/veri-ihlali/${v.kimlik}/degerlendir`, {}, 'Üst yönetim bilgilendirildi.')}>Değerlendirmeyi Başlat</button>}
+          <label htmlFor={`b-${v.kimlik}`}>Bildirim Gerekmez Gerekçesi</label><input id={`b-${v.kimlik}`} value={sec(`b${v.kimlik}`)} onChange={(e) => yz(`b${v.kimlik}`, e.target.value)} />
+          <div className="dugmeler"><button className="btn2 kucuk" onClick={() => is(`/veri-ihlali/${v.kimlik}/bildirim-karari`, { karar: 'Bildirilecek' }, 'Karar kaydedildi.')}>Kurula Bildirilecek</button><button className="btn2 kucuk" disabled={!sec(`b${v.kimlik}`).trim()} onClick={() => is(`/veri-ihlali/${v.kimlik}/bildirim-karari`, { karar: 'Bildirim Gerekmez', gerekce: sec(`b${v.kimlik}`) }, 'Karar kaydedildi.')}>Bildirim Gerekmez</button></div>
+          <label htmlFor={`g-${v.kimlik}`}>Gecikme Gerekçesi (72 saat aşıldıysa)</label><input id={`g-${v.kimlik}`} value={sec(`g${v.kimlik}`)} onChange={(e) => yz(`g${v.kimlik}`, e.target.value)} />
+          <button className="btn2 kucuk" onClick={() => is(`/veri-ihlali/${v.kimlik}/kurul-bildirimi`, { zaman: new Date().toISOString(), gecikme: sec(`g${v.kimlik}`) || undefined }, 'Kurul bildirimi kaydedildi.')}>Kurula Bildirildi</button>
+          <button className="btn2 kucuk" onClick={() => is(`/veri-ihlali/${v.kimlik}/ilgili-kisi-bildirimi`, { zaman: new Date().toISOString() }, 'Kaydedildi.')}>İlgili Kişilere Bildirildi</button>
+        </div>}
+      </div>)}</>}
+    {(y.hud || y.uzman) && <><div className="bolum">İlgili Kişi Başvuruları</div>
+      {y.uzman && <>
+        <label htmlFor="kb-a">Başvuran</label><input id="kb-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+        <label htmlFor="kb-i">İletişim</label><input id="kb-i" value={f.iletisim} onChange={(e) => setF({ ...f, iletisim: e.target.value })} />
+        <label htmlFor="kb-k">Başvuru Kanalı</label><select id="kb-k" value={f.kanal} onChange={(e) => setF({ ...f, kanal: e.target.value })}>{['KEP', 'Yazılı başvuru (adres)', 'Sistemde kayıtlı e-posta'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="kb-y">Güvenli Yanıt Kanalı</label><input id="kb-y" value={f.yanitKanali} onChange={(e) => setF({ ...f, yanitKanali: e.target.value })} />
+        <label htmlFor="kb-t">Talep Türü</label><select id="kb-t" value={f.talep} onChange={(e) => setF({ ...f, talep: e.target.value })}>{HAK.map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="kb-d">Alınma Tarihi</label><input id="kb-d" type="date" value={f.alinma} onChange={(e) => setF({ ...f, alinma: e.target.value })} />
+        <button className="btn2" disabled={!f.ad.trim() || !f.alinma} onClick={() => is('/kvkk-basvuru', { ...f, talepler: [f.talep] }, 'Başvuru kaydedildi.')}>Başvuruyu Kaydet</button></>}
+      {bs.map((a) => <div className="soru" key={a.kimlik}><span><b className="koyu">{a.basvuru_no}</b> · {a.basvuran_ad_soyad} · Son Yanıt: {a.son_yanit_tarihi} · {a.durum}{a.karar ? ` · ${a.karar}` : ''}</span>
+        {y.uzman && a.durum === 'İncelemede' && <div className="tam">
+          {!a.kimlik_dogrulandi && <button className="btn2 kucuk" onClick={() => is(`/kvkk-basvuru/${a.kimlik}/dogrula`, {}, 'Kimlik doğrulandı.')}>Kimlik Doğrulandı</button>}
+          <label htmlFor={`t-${a.kimlik}`}>Arama Terimi (ad, telefon, e-posta)</label><input id={`t-${a.kimlik}`} value={sec(`t${a.kimlik}`)} onChange={(e) => yz(`t${a.kimlik}`, e.target.value)} />
+          <button className="btn2 kucuk" disabled={sec(`t${a.kimlik}`).length < 3} onClick={() => is(`/kvkk-basvuru/${a.kimlik}/arama`, { terim: sec(`t${a.kimlik}`), elleKontrol: ['Dışa Aktarımlar', 'Entegrasyon Kayıtları', 'Arşiv', 'Dış Hizmetler'] }, 'Arama tamamlandı.')}>Veri Ara</button>
+          {a.arama_sonucu && <div>{Object.entries(a.arama_sonucu).map(([k, n]) => `${k}: ${n}`).join(' · ')}</div>}
+          <label htmlFor={`g2-${a.kimlik}`}>Karar Gerekçesi</label><input id={`g2-${a.kimlik}`} value={sec(`k${a.kimlik}`)} onChange={(e) => yz(`k${a.kimlik}`, e.target.value)} />
+          <div className="dugmeler">{['Kabul', 'Kısmi Kabul', 'Ret'].map((x) => <button key={x} className="btn2 kucuk" disabled={!sec(`k${a.kimlik}`).trim()} onClick={() => is(`/kvkk-basvuru/${a.kimlik}/karar`, { karar: x, gerekce: sec(`k${a.kimlik}`) }, 'Karar onaya gönderildi.')}>{x}</button>)}</div>
+        </div>}
+      </div>)}
+      <div className="bolum">İmha Listeleri</div>
+      {il.length === 0 && <div className="ozet bos">İmha listesi bulunmamaktadır; listeler Ocak ve Temmuz aylarında oluşur.</div>}
+      {il.map((l) => <div className="soru" key={l.kimlik}><span><b className="koyu">{l.yil} {l.imha_donemi}</b> · {l.durum} · {l.kalemler.filter((x) => x.durum === 'Listede').length} kayıt</span><div className="tam">
+        {l.kalemler.map((x) => <div key={x.kimlik}>{x.grup} · {x.ozet} · {x.durum}{x.durum === 'Listede' && l.durum !== 'Onayda' && l.durum !== 'Uygulandı' && <><input aria-label="Çıkarma Gerekçesi" value={sec(`c${x.kimlik}`)} onChange={(e) => yz(`c${x.kimlik}`, e.target.value)} /><button className="btn2 kucuk" disabled={!sec(`c${x.kimlik}`).trim()} onClick={() => is(`/imha-kalemi/${x.kimlik}/cikar`, { gerekce: sec(`c${x.kimlik}`) }, 'Listeden çıkarıldı.')}>Listeden Çıkar</button></>}</div>)}
+        {y.uzman && l.durum === 'Hazırlanıyor' && <button className="btn2 kucuk" onClick={() => is(`/imha-listesi/${l.kimlik}/birime-gonder`, {}, 'Birim kontrolüne gönderildi.')}>Birim Kontrolüne Gönder</button>}
+      </div></div>)}</>}
+  </>);
+}

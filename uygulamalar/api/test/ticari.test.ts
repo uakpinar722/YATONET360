@@ -223,7 +223,8 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     const k = await o.kart('İzin Talebi', r.json().kimlik);
     expect(k.ozet).toBe('5 gün');
     const ikm = (await o.sup.query(`SELECT 1 FROM rol WHERE rol_adi = 'İnsan Kaynakları Müdürü'`)).rowCount; expect(ikm).toBe(1);
-    expect((await o.sup.query(`SELECT durum FROM izin_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('İK Kontrolünde');
+    expect((await o.sup.query(`SELECT durum FROM izin_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Birim Amirinde');
+    expect(k.zincir[0]).not.toBe((await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'İnsan Kaynakları Sorumlusu'`)).rows[0].kimlik); // KT-1
     expect((await o.sup.query(`SELECT kullanilan FROM izin_bakiyesi WHERE personel_ref = $1`, [o.K.ik])).rows[0].kullanilan).toBe(0);
     const d = await dosya();
     await o.sup.query(`UPDATE dosya_ekibi_atamasi SET kullanici_ref = $2 WHERE dosya_ref = $1 AND rol = 'Dosya Sorumlusu'`, [d.kimlik, o.K.ik]);

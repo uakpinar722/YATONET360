@@ -5,6 +5,7 @@ import { AramaSonucu, Dosyalar } from './Dosya';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 import { YatSahibiAna } from './Portal';
+import { IhlalBildir, KvkkEkrani } from './Kvkk';
 import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
 import { KarneParametreleri, FirmaSicil } from './Sicil';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
@@ -13,7 +14,7 @@ import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'kvkk' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -38,7 +39,7 @@ const Yakinda = ({ ad, adim }: { ad: string; adim: string }) => <><h1>{ad}</h1><
 
 // Menüde yalnız yetkili sayfalar görünür; asıl denetim sunucudadır (YG-988, YG-1113).
 export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
-  const [sayfa, setSayfa] = useState<Sayfa>('ana');
+  const [sayfa, setSayfa] = useState<Sayfa>('ana'); const [ihlal, setIhlal] = useState(false);
   const [veri, setVeri] = useState<BugunVeri | null>(null);
   const [hata, setHata] = useState('');
   const [araQ, setAraQ] = useState(''); const [acikDosya, setAcikDosya] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     { s: 'erisimrol', ad: 'Erişim ve Rol', ik: '⚿', izin: 'erisim.uygula' },
     { s: 'kurtarma', ad: 'Hesap Kurtarma', ik: '⚿', izin: 'hesap_kurtarma.ac' },
     ...(lgm ? [{ s: 'erisim' as Sayfa, ad: 'Erişim Talebi', ik: '＋' }, { s: 'vekalet' as Sayfa, ad: 'Vekâlet', ik: '⇄' }, { s: 'duyuru' as Sayfa, ad: 'Duyuru Yayımla', ik: '📣' }, { s: 'toplanti' as Sayfa, ad: 'Toplantılar', ik: '▦' }] : []),
+    ...(ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı', 'Bilgi İşlem Müdürü', 'Genel Müdür Yardımcısı', 'CEO'].includes(r.rol_adi)) ? [{ s: 'kvkk' as Sayfa, ad: 'KVKK ve Uyum', ik: '⚖' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Müşteri ve Paydaş İlişkileri Müdürü') ? [{ s: 'ek2' as Sayfa, ad: 'Sigorta Ek-2', ik: '✉' }] : []),
     ...(ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) ? [{ s: 'tedodeme' as Sayfa, ad: 'Tedarikçi Ödemeleri', ik: '₺' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Teknik ve Operasyon Direktörü') ? [{ s: 'karnepar' as Sayfa, ad: 'Karne Parametreleri', ik: '⚙' }] : []),
@@ -79,6 +81,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     dosya: <Dosyalar ben={ben} acikDosya={acikDosya} acildi={() => setAcikDosya(null)} />,
     ara: <AramaSonucu q={araQ} ac={(id) => { setAcikDosya(id); git('dosya'); }} />,
     idari: <IdariIslemler />,
+    kvkk: <KvkkEkrani />,
     ek2: <SigortaEk2 />,
     firmaisemri: <FirmaAna ben={ben} bolum="isemri" />,
     karnepar: <KarneParametreleri />,
@@ -108,6 +111,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
         <div className="ara-bag">
           <button className="ust-bag" onClick={() => git('mesaj')}>✉ Mesajlar <em className="sayi">{veri?.okunmamisMesaj ?? 0}</em></button>
           {lgm && <button className="ust-bag" onClick={() => git('idari')}>İdari İşlemlerim</button>}
+          <button className="ust-bag" onClick={() => setIhlal(!ihlal)}>⚠ Veri İhlali Bildir</button>
           <button className="ust-bag" onClick={() => git('profil')}>☺ Profil</button>
         </div>
       </div>
@@ -121,7 +125,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
           ))}
         </nav>
         <main>
-          {icerik[sayfa]}
+          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{icerik[sayfa]}
           <footer><span className="ayrac" aria-hidden="true" /><img src="/yatonet.png" alt="YATONET 360" /></footer>
         </main>
       </div>

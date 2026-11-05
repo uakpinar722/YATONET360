@@ -531,6 +531,27 @@ try {
   await al('ds', E); const iadeK = pDs.locator('.ozet', { hasText: iadeB }); await iadeK.waitFor();
   await iadeK.getByRole('button', { name: 'Geri Çek' }).click(); await iadeK.waitFor({ state: 'detached' });
   kontrol('hazırlayan iade edileni Bugün ekranından geri çeker', (await sup.query(`SELECT durum FROM is_karti WHERE baslik = $1`, [iadeB])).rows[0].durum === 'Geri Çekildi');
+  // İP-7, İP-8, İP-10 ekranları
+  const pDs3 = await al('ds', E);
+  await pDs3.getByRole('button', { name: /Veri İhlali Bildir/ }).click();
+  const ihAd = `E2E İhlal ${tek}`; await pDs3.locator('#vi-o').fill(ihAd); await tikla(pDs3, 'Bildir'); await pDs3.waitForTimeout(600); await hataVarsa(pDs3, 'İhlal');
+  kontrol('kullanıcı üst menüden veri ihlali bildirir', (await sup.query(`SELECT 1 FROM veri_ihlali WHERE ozet = $1`, [ihAd])).rowCount === 1);
+  E.hud2 = await hesap('hud2', 'Hukuk ve Uyum Direktörü'); E.huu2 = await hesap('huu2', 'Hukuk ve Uyum Uzmanı'); E.iks2 = await hesap('iks2', 'İnsan Kaynakları Sorumlusu');
+  const pHud = await al('hud2', E); await pHud.getByRole('button', { name: /KVKK ve Uyum/ }).first().click();
+  const ihK = pHud.locator('.soru', { hasText: ihAd }); await ihK.waitFor(); await ihK.getByRole('button', { name: 'Değerlendirmeyi Başlat' }).click(); await pHud.waitForTimeout(600); await hataVarsa(pHud, 'Değerlendirme');
+  kontrol('Hukuk ve Uyum Direktörü ekrandan değerlendirmeyi başlatır', (await sup.query(`SELECT ust_yonetim_bilgi_zamani z FROM veri_ihlali WHERE ozet = $1`, [ihAd])).rows[0].z !== null);
+  const pHuu = await al('huu2', E); await pHuu.getByRole('button', { name: /KVKK ve Uyum/ }).first().click();
+  const bsAd = `E2E Başvuran ${tek}`; await pHuu.locator('#kb-a').fill(bsAd); await pHuu.locator('#kb-i').fill('a@b.local'); await pHuu.locator('#kb-y').fill('KEP'); await pHuu.locator('#kb-d').fill('2026-11-05'); await tikla(pHuu, 'Başvuruyu Kaydet'); await pHuu.waitForTimeout(600); await hataVarsa(pHuu, 'Başvuru');
+  kontrol('Hukuk ve Uyum Uzmanı başvuruyu ekrandan kaydeder', (await sup.query(`SELECT son_yanit_tarihi::text s FROM ilgili_kisi_basvurusu WHERE basvuran_ad_soyad = $1`, [bsAd])).rows[0]?.s === '2026-12-05');
+  const pIk = await al('iks2', E); await pIk.getByRole('button', { name: 'İdari İşlemlerim' }).click(); await pIk.locator('#pk-k').waitFor();
+  await pIk.locator('#pk-k').selectOption(kimlikler.ds); await pIk.locator('#pk-g').fill('2024-01-01'); await pIk.locator('#pk-b').fill('50000'); await pIk.locator('#pk-e').fill('2026'); await tikla(pIk, 'Kartı Kaydet'); await pIk.waitForTimeout(600); await hataVarsa(pIk, 'Kart');
+  kontrol('İnsan Kaynakları personel kartını ekrandan girer', (await sup.query(`SELECT ek3_yil FROM personel_karti WHERE kullanici_ref = $1`, [kimlikler.ds])).rows[0]?.ek3_yil === 2026);
+  await pDs3.getByRole('button', { name: 'İdari İşlemlerim' }).click(); await pDs3.locator('#pu-t').waitFor();
+  await pDs3.locator('#pu-t').fill('2026-11-02'); await pDs3.locator('#pu-i').fill('09:00'); await pDs3.locator('#pu-c').fill('18:00'); await tikla(pDs3, 'Puantaj Kaydet'); await pDs3.waitForTimeout(600); await hataVarsa(pDs3, 'Puantaj');
+  kontrol('personel puantajı ekrandan girer', (await sup.query(`SELECT net_dakika n FROM puantaj_kaydi WHERE personel_ref = $1 AND tarih = '2026-11-02'`, [kimlikler.ds])).rows[0]?.n === 480);
+  const pDs4 = await al('ds', E); await dosyaAc(pDs4, d.dosyaNo);
+  await pDs4.locator('#go-i').fill('Yama'); await pDs4.locator('#go-k').fill('Limanda'); await pDs4.locator('#go-u').fill('2026-11-05'); await pDs4.locator('#go-s').fill('2026-11-20'); await tikla(pDs4, 'Geçici Onarım Kaydet'); await pDs4.waitForTimeout(600); await hataVarsa(pDs4, 'Geçici onarım');
+  kontrol('geçici onarım ekrandan kaydedilir', (await sup.query(`SELECT 1 FROM gecici_onarim WHERE dosya_ref = $1`, [d.kimlik])).rowCount === 1);
   sonuc.push(`DOSYA ${d2.dosyaNo}`);
 } catch (e) {
   sonuc.push(`KALDI  beklenmeyen: ${e.message.split('\n')[0]}`);

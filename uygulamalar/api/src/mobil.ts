@@ -56,8 +56,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
     const r = await b.db.query(`UPDATE mobil_cihaz SET durum = 'Kayıp', iptal_nedeni = 'Cihaz Kaybı', iptal_zamani = now() WHERE kimlik = $1 AND kullanici_ref = $2 AND durum <> 'Kayıp' RETURNING kimlik`, [id, o.kullanici]);
     if (!r.rowCount) return yok(y);
     await b.db.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Güvenlik sınırlaması' WHERE kullanici_ref = $1 AND bitis_zamani IS NULL AND kimlik <> $2`, [o.kullanici, o.oturum]);
-    const ol = (await b.db.query(`INSERT INTO olay_kaydi (olay_turu, ozet, acan_ref) VALUES ('BT Kesintisi veya Veri İhlali','Mobil cihaz kaybı veya çalınması',$1) RETURNING kimlik`, [o.kullanici])).rows[0];
-    await kartAc(b.db, { tur: 'Veri İhlali İncelemesi', kategori: 'islem', baslik: 'Mobil Cihaz Kaybı · Veri İhlali İncelemesi', oncelik: 'Kritik', sahipRol: await rolId(b.db, 'Hukuk ve Uyum Direktörü'), nesneTuru: 'Olay', nesneKimligi: ol.kimlik });
+    const ol = await (await import('./kvkk.js')).ihlalAc(b.db, { ozet: 'Mobil cihaz kaybı veya çalınması', olayTuru: 'Cihaz kaybı veya çalınması', farkEden: o.kullanici });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Cihaz Kaybı', nesneTuru: 'Mobil Cihaz', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { olay: ol.kimlik };
   });

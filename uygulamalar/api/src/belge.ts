@@ -181,6 +181,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     if (!a) return yok(y);
     const r = (await b.db.query(`SELECT dosya_adi, depo_anahtari, boyut, durum FROM belge_surum WHERE belge_ref = $1 AND surum_no = $2`, [id, Number(no) || 0])).rows[0];
     if (!r || (!a.tum && r.durum !== 'Yürürlükte')) return yok(y);
+    if ((await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND imha_zamani IS NOT NULL`, [id])).rowCount) return yok(y); // YG-1233
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İndirildi', nesneTuru: 'belge', nesneKimligi: id, yeni: { surum: Number(no) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return y.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; ${dosyaAdi(r.dosya_adi)}`).header('x-content-type-options', 'nosniff').send(depo.bagla(r.depo_anahtari));
   });
