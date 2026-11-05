@@ -35,6 +35,14 @@ export async function ihlalAc(db: Db, g: { ozet: string; olayTuru: string; ogren
 
 const hukukiKorumaVar = async (db: Db, grup: string, a: { dosya?: string | null; kurulus?: string | null; kullanici?: string | null }): Promise<boolean> => Boolean((await db.query(`SELECT 1 FROM hukuki_koruma WHERE kaldirma_tarihi IS NULL AND (cardinality(kapsam_gruplari) = 0 OR $1 = ANY(kapsam_gruplari)) AND (dosya_ref = $2::uuid OR kurulus_ref = $3::uuid OR kullanici_ref = $4) LIMIT 1`, [grup, a.dosya ?? null, a.kurulus ?? null, a.kullanici ?? null])).rowCount);
 
+/** YG-1222: mali 10 yıl, sözleşme 10 yıl, ticari 10 yıl; kalanlar operasyon kaydı 5 yıl. */
+export function saklamaGrubu(tur: string): string {
+  if (['Proforma', 'Ödeme Talebi', 'Ödeme Sorumluluğu', 'Mutabakat Raporu'].includes(tur) || /fatura|makbuz|dekont/i.test(tur)) return 'MAL-10';
+  if (['Onay Belgesi', 'Kurtarma Sözleşmesi', 'Ön Bilgilendirme Formu', 'Teslim Tutanağı'].includes(tur) || /sözleşme/i.test(tur)) return 'SOZ-10';
+  if (tur === 'Fiyat Teklifi' || /teklif/i.test(tur)) return 'TIC-10';
+  return 'OPS-5';
+}
+
 /** YG-1230, YG-1231, YG-1223: süresi dolan kayıtlar listeye girer; hukuki koruma veya açık garanti süreci olanlar girmez. */
 export async function imhaListesiUret(db: Pool, simdi = new Date()): Promise<string | null> {
   const ay = simdi.getUTCMonth(); if (ay !== 0 && ay !== 6) return null;
@@ -51,6 +59,8 @@ export async function imhaListesiUret(db: Pool, simdi = new Date()): Promise<str
   }
   for (const h of (await db.query(`SELECT kimlik, kullanici_adi, kullanici_grubu FROM kullanici_hesabi WHERE imha_zamani IS NULL AND hesap_durumu = 'Kapalı' AND ((kullanici_grubu = 'LGM İç Rolü' AND kapanma_zamani < $1) OR (kullanici_grubu <> 'LGM İç Rolü' AND kapanma_zamani < $2))`, [sinir(120), sinir(60)])).rows) if (!(await hukukiKorumaVar(db, 'HSP', { kullanici: h.kimlik }))) await ekle('HSP', 'Kullanıcı', h.kimlik, 'Kapanmış hesap');
   for (const r of (await db.query(`SELECT kimlik, ilgili_kisi_ref FROM acik_riza WHERE imha_zamani IS NULL AND riza_turu IN ('Pazarlama açık rızası', 'Ticari elektronik ileti onayı') AND (durum = 'Geri Alındı' OR onay_zamani < $1)`, [sinir(60)])).rows) if (!(await hukukiKorumaVar(db, 'RIZA', { kullanici: r.ilgili_kisi_ref }))) await ekle('RIZA', 'Rıza', r.kimlik, 'Pazarlama verisi');
+  for (const e of (await db.query(`SELECT b.kimlik, b.ad, b.saklama_grubu, b.bag_kimligi FROM belge b WHERE b.imha_zamani IS NULL AND b.saklama_grubu IN ('MAL-10', 'SOZ-10', 'TIC-10') AND b.saklama_bitis < $1`, [simdi])).rows) if (!(await hukukiKorumaVar(db, e.saklama_grubu, { dosya: e.bag_kimligi }))) await ekle(e.saklama_grubu, 'Belge', e.kimlik, e.ad);
+  for (const p of (await db.query(`SELECT kullanici_ref FROM personel_karti WHERE ayrilis_tarihi < $1 AND brut_aylik_tl IS NOT NULL`, [sinir(120)])).rows) if (!(await hukukiKorumaVar(db, 'OZL-10', { kullanici: p.kullanici_ref }))) await ekle('OZL-10', 'Personel', p.kullanici_ref, 'Özlük kaydı');
   for (const o of (await db.query(`SELECT o.kimlik FROM olay_kaydi o WHERE o.olusturma_zamani < $1 AND o.ozet <> $2`, [sinir(60), IMHA_METNI])).rows) await ekle('DST-5', 'Olay', o.kimlik, 'Olay kaydı');
   for (const v of (await db.query(`SELECT kimlik, olay_no FROM veri_ihlali WHERE durum = 'Kapalı' AND kapanis_zamani < $1`, [sinir(120)])).rows) await ekle('IHL-10', 'Veri İhlali', v.kimlik, v.olay_no);
   const n = Number((await db.query(`SELECT count(*) n FROM imha_kalemi WHERE liste_ref = $1`, [l])).rows[0].n);
@@ -60,8 +70,8 @@ export async function imhaListesiUret(db: Pool, simdi = new Date()): Promise<str
 
 /** YG-1233: imha kullanıcılar için erişilemez kılma ve kalıcı silmedir; mali kayıtlar kendi süresinde kalır. */
 async function kalemUygula(c: Db, k: { grup_kod: string; nesne_turu: string; nesne_kimligi: string }, depoKok?: string) {
-  const belgeIptal = async (bag: string, id: string) => {
-    for (const e of (await c.query(`UPDATE belge SET imha_zamani = now() WHERE bag_turu = $1 AND bag_kimligi = $2 AND imha_zamani IS NULL AND (saklama_grubu IS NULL OR saklama_grubu NOT IN ('MAL-10', 'SOZ-10', 'TIC-10')) RETURNING kimlik`, [bag, id])).rows) {
+  const belgeIptal = async (bag: string, id: string, tek = false) => {
+    for (const e of (await c.query(tek ? `UPDATE belge SET imha_zamani = now() WHERE $1::text IS NOT NULL AND kimlik = $2::uuid AND imha_zamani IS NULL RETURNING kimlik` : `UPDATE belge SET imha_zamani = now() WHERE bag_turu = $1 AND bag_kimligi = $2 AND imha_zamani IS NULL AND (saklama_grubu IS NULL OR saklama_grubu NOT IN ('MAL-10', 'SOZ-10', 'TIC-10')) RETURNING kimlik`, [bag, id])).rows) {
       await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum u WHERE u.belge_ref = $1 AND p.surum_ref = u.kimlik AND p.iptal_zamani IS NULL`, [e.kimlik]);
       // İçerik adresli depo: aynı dosyayı kullanan başka etkin belge yoksa fiziksel olarak silinir.
       for (const s of (await c.query(`SELECT depo_anahtari FROM belge_surum WHERE belge_ref = $1`, [e.kimlik])).rows) if (depoKok && !(await c.query(`SELECT 1 FROM belge_surum u JOIN belge b ON b.kimlik = u.belge_ref WHERE u.depo_anahtari = $1 AND b.imha_zamani IS NULL LIMIT 1`, [s.depo_anahtari])).rowCount) rmSync(join(depoKok, s.depo_anahtari), { force: true });
@@ -80,6 +90,10 @@ async function kalemUygula(c: Db, k: { grup_kod: string; nesne_turu: string; nes
     await c.query(`UPDATE kurulus SET ticari_unvan = $2, vergi_no = NULL, kurumsal_eposta = NULL, kurumsal_telefon = NULL, il = NULL, ilce = NULL, imha_zamani = now() WHERE kimlik = $1::uuid`, [id, IMHA_METNI]);
   } else if (k.nesne_turu === 'Kullanıcı') {
     await c.query(`UPDATE kullanici_hesabi SET ad_soyad = $2, kullanici_adi = 'imha-' || kimlik, e_posta = NULL, cep_telefonu = NULL, imha_zamani = now() WHERE kimlik = $1`, [id, IMHA_METNI]);
+  } else if (k.nesne_turu === 'Belge') {
+    await belgeIptal('Belge', id, true);
+  } else if (k.nesne_turu === 'Personel') {
+    await c.query(`UPDATE personel_karti SET brut_aylik_tl = NULL WHERE kullanici_ref = $1`, [id]);
   } else if (k.nesne_turu === 'Rıza') {
     await c.query(`UPDATE acik_riza SET amac = NULL, kanal = NULL, gonderim_engeli = true, imha_zamani = now() WHERE kimlik = $1::uuid`, [id]);
   } else if (k.nesne_turu === 'Olay') {
@@ -106,7 +120,11 @@ export async function kvkkIsle(db: Pool, simdi = new Date()): Promise<number> {
   }
   for (const k of (await db.query(`SELECT kimlik, basvuru_no, son_yanit_tarihi, hazirlayan_ref FROM ilgili_kisi_basvurusu WHERE durum <> 'Yanıtlandı' AND son_yanit_tarihi <= ($1::date + 7)`, [simdi.toISOString().slice(0, 10)])).rows) if (await birKez(db, 'basvuru_son', k.kimlik)) { await bildir(db, { olay: `basvuru-son:${k.kimlik}`, kullanicilar: [k.hazirlayan_ref, ...await rolKisileri(db, HUD)], baslik: `⚠ ${k.basvuru_no} · Yanıt Süresi Yaklaşıyor`, ozet: `Son yanıt: ${new Date(k.son_yanit_tarihi).toLocaleDateString('tr-TR')}`, oncelik: 'Yüksek' }); n++; }
   await db.query(`DELETE FROM bildirim WHERE zaman < $1`, [ayEkle(simdi, -24)]);
-  for (const g of (await db.query(`SELECT b.kimlik, d.kapanis_zamani FROM belge b JOIN dosya d ON d.kimlik::text = b.bag_kimligi WHERE b.bag_turu = 'Dosya' AND b.saklama_bitis IS NULL AND d.kapanis_zamani IS NOT NULL LIMIT 500`)).rows) await db.query(`UPDATE belge SET saklama_grubu = coalesce(saklama_grubu, 'OPS-5'), saklama_bitis = $2 WHERE kimlik = $1`, [g.kimlik, ayEkle(new Date(g.kapanis_zamani), 60)]); // YG-608
+  // YG-608, YG-1222: belge türüne göre grup; birden çok gruba giriyorsa en uzun süre. Mali kayıt takvim yılı sonundan başlar.
+  for (const g of (await db.query(`SELECT b.kimlik, b.belge_turu, b.saklama_grubu, d.kapanis_zamani FROM belge b JOIN dosya d ON d.kimlik::text = b.bag_kimligi WHERE b.bag_turu = 'Dosya' AND b.saklama_bitis IS NULL AND d.kapanis_zamani IS NOT NULL LIMIT 500`)).rows) {
+    const grup = (g.saklama_grubu as string | null) ?? saklamaGrubu(g.belge_turu); const k = new Date(g.kapanis_zamani);
+    await db.query(`UPDATE belge SET saklama_grubu = $3, saklama_bitis = $2 WHERE kimlik = $1`, [g.kimlik, grup === 'OPS-5' ? ayEkle(k, 60) : ayEkle(grup === 'MAL-10' ? new Date(Date.UTC(k.getUTCFullYear(), 11, 31)) : k, 120), grup]);
+  }
   if (await imhaListesiUret(db, simdi)) n++;
   n += await imhaYenidenUygula(db);
   return n;

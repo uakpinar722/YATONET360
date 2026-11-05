@@ -109,3 +109,16 @@ describe('saklama, hukuki koruma, imha (YG-608, YG-1222, YG-1223, YG-1228, YG-12
     await o.sup.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Aktif' WHERE kimlik = $1`, [o.K.tu]);
   });
 });
+
+describe('saklama grubu (YG-1222)', () => {
+  it('fatura belgesi 10 yıl ve yıl sonundan, rapor 5 yıl', async () => {
+    const { saklamaGrubu } = await import('../src/kvkk.js');
+    expect(saklamaGrubu('Proforma')).toBe('MAL-10'); expect(saklamaGrubu('Fiyat Teklifi')).toBe('TIC-10'); expect(saklamaGrubu('Kurtarma Sözleşmesi')).toBe('SOZ-10'); expect(saklamaGrubu('Teknik Rapor')).toBe('OPS-5');
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET kapanis_zamani = '2020-06-01', statu = 'Kapalı', kapanma_nedeni = 'Tamamlandı' WHERE kimlik = $1`, [d.kimlik]);
+    const b = async (tur: string) => (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,$2,'Gizli','Dosya',$3,'Sistem',current_date,$4) RETURNING kimlik`, [`${tur}-${d.kimlik}`, tur, d.kimlik, Object.values(o.K)[0]])).rows[0].kimlik as string;
+    const pr = await b('Proforma'); const ra = await b('Teknik Rapor'); await kvkkIsle(o.db);
+    const g = async (id: string) => (await o.sup.query(`SELECT saklama_grubu, saklama_bitis::text s FROM belge WHERE kimlik = $1`, [id])).rows[0];
+    expect((await g(pr)).saklama_grubu).toBe('MAL-10'); expect((await g(pr)).s).toContain('2030-12-3');
+    expect((await g(ra)).saklama_grubu).toBe('OPS-5'); expect((await g(ra)).s).toContain('2025-0');
+  });
+});
