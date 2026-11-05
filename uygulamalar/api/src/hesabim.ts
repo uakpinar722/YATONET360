@@ -5,7 +5,9 @@ import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { kimlikNormalle } from './kimlik.js';
 import { ozet, rastgeleBelirtec } from './kripto.js';
-import { parolaKuraliHatasi, parolaOzetle } from './parola.js';
+import { metinGetir } from './metin.js';
+import { randomInt } from 'node:crypto';
+import { parolaDogrula, parolaKuraliHatasi, parolaOzetle } from './parola.js';
 
 const AMACLAR = ['Bakım ve sezon hatırlatmaları', 'Hizmet ve kampanya tanıtımları'];
 const KANALLAR = ['SMS', 'E-posta', 'Telefon', 'WhatsApp'];
@@ -85,6 +87,31 @@ export function hesabimYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-1211: tek adımda verilir veya geri alınır; önceki kayıt silinmez (YG-1210).
+  // YG-1156, EP-M1: kod yeni adrese, uyarı eski adrese.
+  s.post('/profil/eposta-talep', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { yeni?: string; parola?: string };
+    if (!g.yeni || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.yeni)) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
+    const h = (await b.db.query(`SELECT e_posta, cep_telefonu, parola_ozeti FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
+    if (h.parola_ozeti && !(await parolaDogrula(h.parola_ozeti, g.parola ?? ''))) { await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'E-posta Değişikliği Talebi', sonuc: 'Başarısız', adres: i.ip, iliski: i.id }); return y.code(403).send({ hata: 'Parola doğrulanamadı.' }); }
+    if ((await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta) = lower($1)`, [g.yeni])).rowCount) return y.code(409).send({ hata: 'Bu e-posta kullanılamaz.' });
+    const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    await b.db.query(`INSERT INTO eposta_degisikligi (kullanici_ref, yeni_eposta, kod_ozeti, son_gecerlilik) VALUES ($1,$2,$3, now() + interval '15 minutes') ON CONFLICT (kullanici_ref) DO UPDATE SET yeni_eposta = EXCLUDED.yeni_eposta, kod_ozeti = EXCLUDED.kod_ozeti, son_gecerlilik = EXCLUDED.son_gecerlilik, deneme = 0`, [o.kullanici, g.yeni, ozet(`${o.kullanici}${kod}`)]);
+    await b.eposta.gonder(g.yeni, await metinGetir(b.db, 'BLD-89', 'tr', { Kod: kod }));
+    const uyari = await metinGetir(b.db, 'BLD-90', 'tr'); if (h.e_posta) await b.eposta.gonder(h.e_posta, uyari); else if (h.cep_telefonu) await b.sms.gonder(h.cep_telefonu, uyari);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'E-posta Değişikliği Talebi', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  s.post('/profil/eposta-onay', oturumlu, async (i, y) => {
+    const o = i.oturum!; const kod = ((i.body ?? {}) as { kod?: string }).kod ?? '';
+    const r = (await b.db.query(`SELECT yeni_eposta, kod_ozeti, deneme FROM eposta_degisikligi WHERE kullanici_ref = $1 AND son_gecerlilik > now()`, [o.kullanici])).rows[0];
+    if (!r || r.deneme >= 5) return y.code(400).send({ hata: 'Kod hatalı veya süresi dolmuş.' });
+    if (ozet(`${o.kullanici}${kod}`) !== r.kod_ozeti) { await b.db.query(`UPDATE eposta_degisikligi SET deneme = deneme + 1 WHERE kullanici_ref = $1`, [o.kullanici]); return y.code(400).send({ hata: 'Kod hatalı veya süresi dolmuş.' }); }
+    await b.db.query(`UPDATE kullanici_hesabi SET e_posta = $2 WHERE kimlik = $1`, [o.kullanici, r.yeni_eposta]);
+    await b.db.query(`DELETE FROM eposta_degisikligi WHERE kullanici_ref = $1`, [o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'E-posta Değiştirildi', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   s.post('/profil/izin', oturumlu, async (i, y) => {
     const o = i.oturum!;
     const { tur, amac, kanal, ver } = (i.body ?? {}) as { tur?: string; amac?: string | null; kanal?: string | null; ver?: boolean };

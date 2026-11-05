@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { belgeBagiKaydet } from './belge.js';
-import { bildir } from './bildirim.js';
+import { bildir, mesaiIcinde } from './bildirim.js';
 import { izYaz } from './denetim.js';
 import { dosyaErisimi } from './dosya.js';
 import { rolId } from './ihbar.js';
@@ -103,6 +103,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
     if (!g.dosya || !UUID.test(g.dosya) || !(await dosyaErisimi(b.db, o.kullanici, g.dosya))) return yok(y);
     if (!(Math.abs(Number(g.enlem)) <= 90) || !(Math.abs(Number(g.boylam)) <= 180)) return y.code(400).send({ hata: 'Konum geçersiz.' });
     if (!(await b.db.query(`SELECT 1 FROM mobil_izin WHERE kullanici_ref = $1 AND tur = 'Konum' AND geri_alma_zamani IS NULL`, [o.kullanici])).rowCount) return y.code(409).send({ hata: 'Konum izni bekleniyor.' });
+    if (!mesaiIcinde(new Date())) return y.code(409).send({ hata: 'Konum yalnız mesai saatinde kaydedilir.' }); // YG-1237
     await b.db.query(`INSERT INTO saha_konum_kaydi (kullanici_ref, dosya_ref, enlem, boylam) VALUES ($1,$2,$3,$4)`, [o.kullanici, g.dosya, g.enlem, g.boylam]);
     return { tamam: true };
   });

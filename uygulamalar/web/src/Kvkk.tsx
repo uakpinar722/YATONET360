@@ -35,6 +35,26 @@ function RizaKayitlari() {
   return <><div className="bolum">Rıza ve Ticari İleti Kayıtları</div>{l.slice(0, 50).map((x) => <div className="ozet" key={x.kimlik}>{x.ad_soyad} · {x.riza_turu}{x.amac ? ` · ${x.amac}` : ''}{x.kanal ? ` · ${x.kanal}` : ''} · {x.durum} · {x.kaynak}</div>)}</>;
 }
 
+/** YG-1187: amaç ve dönemle arama. */
+export function DenetimArama() {
+  const { yap, Mesaj } = useYap(); const [f, setF] = useState({ amac: '', baslangic: '', bitis: '', eylem: '', tablo: '' }); const [v, setV] = useState<{ izler: { kimlik: string; olay_zamani: string; eylem: string; aktor: string | null; gerekce: string | null }[]; degisiklikler: { kimlik: string; zaman: string; tablo: string; nesne: string | null; aktor: string | null; degisen: object }[] } | null>(null);
+  return <><div className="bolum">Amaçlı Denetim Araması</div><Mesaj />
+    <label htmlFor="dn-a">Amaç</label><input id="dn-a" value={f.amac} onChange={(e) => setF({ ...f, amac: e.target.value })} />
+    <div className="iki-tarih"><div><label htmlFor="dn-b">Başlangıç</label><input id="dn-b" type="date" value={f.baslangic} onChange={(e) => setF({ ...f, baslangic: e.target.value })} /></div><div><label htmlFor="dn-s">Bitiş</label><input id="dn-s" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} /></div></div>
+    <label htmlFor="dn-e">Eylem</label><input id="dn-e" value={f.eylem} onChange={(e) => setF({ ...f, eylem: e.target.value })} /><label htmlFor="dn-t">Tablo</label><input id="dn-t" value={f.tablo} onChange={(e) => setF({ ...f, tablo: e.target.value })} />
+    <button className="btn2" disabled={!f.amac.trim() || !f.baslangic || !f.bitis} onClick={() => void yap(() => istek<NonNullable<typeof v>>(`/denetim/arama?${new URLSearchParams(f).toString()}`).then(setV), 'Arama kayda geçti.')}>Ara</button>
+    {v?.izler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{new Date(x.olay_zamani).toLocaleString('tr-TR')} · {x.aktor ?? 'Sistem'} · {x.eylem}{x.gerekce ? ` · ${x.gerekce}` : ''}</div>)}
+    {v?.degisiklikler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{new Date(x.zaman).toLocaleString('tr-TR')} · {x.aktor ?? 'Sistem'} · {x.tablo} · {JSON.stringify(x.degisen).slice(0, 300)}</div>)}</>;
+}
+
+/** YG-1276, YG-1642 */
+function Yedekler() {
+  const [v, setV] = useState<{ yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null }[]; testler: { tur: string; sonuc: string; zaman: string }[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/yedekler').then(setV).catch(() => {}); }, []);
+  if (!v) return null;
+  return <><div className="bolum">Yedekler</div>{v.yedekler.length === 0 && <div className="ozet bos">Yedek kaydı bulunmamaktadır.</div>}{v.yedekler.slice(0, 20).map((x) => <div className={x.durum === 'Başarısız' || x.durum === 'Eksik Set' ? 'hata' : 'ozet'} key={x.kimlik}>{new Date(x.baslangic).toLocaleString('tr-TR')} · {x.tur} · {x.durum}{x.hata ? ` · ${x.hata}` : ''}</div>)}{v.testler.map((x, i) => <div className="ozet" key={i}>{x.tur} · {x.sonuc} · {new Date(x.zaman).toLocaleDateString('tr-TR')}</div>)}</>;
+}
+
 export function KvkkEkrani() {
   const { yap, Mesaj } = useYap(); const [y, setY] = useState<{ ihlal: boolean; hud: boolean; uzman: boolean } | null>(null); const [iv, setIv] = useState<Ihlal[]>([]); const [bs, setBs] = useState<Basvuru[]>([]); const [il, setIl] = useState<Liste[]>([]); const [m, setM] = useState<Record<string, string>>({}); const [f, setF] = useState({ ad: '', iletisim: '', kanal: 'KEP', yanitKanali: '', talep: HAK[0]!, alinma: '' });
   const sec = (k: string) => m[k] ?? ''; const yz = (k: string, v: string) => setM({ ...m, [k]: v });
@@ -44,6 +64,7 @@ export function KvkkEkrani() {
   const is = (yol: string, g: object, t: string) => void yap(() => istek(yol, g).then(() => yukle()), t);
   return (<>
     <h1>KVKK ve Uyum</h1><Mesaj />
+    <Yedekler />
     {y.ihlal && <><div className="bolum">Veri İhlali Kayıtları</div>
       {iv.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
       {iv.map((v) => <div className="soru" key={v.kimlik}><span><b className="koyu">{v.olay_no}</b> · {v.olay_turu} · {v.ozet} · {v.durum}{v.durum === 'Açık' && !v.kurul_bildirim_zamani && v.bildirim_karari !== 'Bildirim Gerekmez' ? <b className="hata"> ⚠ {kalan(v.ogrenme_zamani)}</b> : ''}</span>

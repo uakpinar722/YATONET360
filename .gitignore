@@ -5,6 +5,7 @@
 
 # Yerel araçlar ve veritabanı
 .araclar/
+.yedek/
 node_modules/
 
 # Derleme çıktıları

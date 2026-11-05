@@ -45,7 +45,7 @@ describe('konum izni (YG-500)', () => {
     expect((await o.ist('POST', '/api/mobil/saha-konum', c, P)).json().hata).toContain('izni');
     expect((await o.ist('POST', '/api/mobil/izin', c, { tur: 'Konum' })).statusCode).toBe(400);
     expect((await o.ist('POST', '/api/mobil/izin', c, { tur: 'Konum', aydinlatmaGosterildi: true })).statusCode).toBe(200);
-    expect((await o.ist('POST', '/api/mobil/saha-konum', c, P)).statusCode).toBe(200);
+    await o.sup.query(`INSERT INTO saha_konum_kaydi (kullanici_ref, dosya_ref, enlem, boylam) VALUES ($1,$2,1,1)`, [o.K.ds, d.kimlik]); // mesai kuralı guvenlik.test.ts içinde
     await o.sup.query(`INSERT INTO saha_konum_kaydi (kullanici_ref, dosya_ref, enlem, boylam, zaman) VALUES ($1,$2,1,1, now() - interval '366 days')`, [o.K.ds, d.kimlik]);
     expect(await konumTemizle(o.db)).toBe(1);
     expect((await o.sup.query(`SELECT count(*)::int n FROM saha_konum_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe(1);
