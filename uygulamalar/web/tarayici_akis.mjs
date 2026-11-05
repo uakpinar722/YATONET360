@@ -552,6 +552,8 @@ try {
   const pDs4 = await al('ds', E); await dosyaAc(pDs4, d.dosyaNo);
   await pDs4.locator('#go-i').fill('Yama'); await pDs4.locator('#go-k').fill('Limanda'); await pDs4.locator('#go-u').fill('2026-11-05'); await pDs4.locator('#go-s').fill('2026-11-20'); await tikla(pDs4, 'Geçici Onarım Kaydet'); await pDs4.waitForTimeout(600); await hataVarsa(pDs4, 'Geçici onarım');
   kontrol('geçici onarım ekrandan kaydedilir', (await sup.query(`SELECT 1 FROM gecici_onarim WHERE dosya_ref = $1`, [d.kimlik])).rowCount === 1);
+  const pFirA = await al('fir', E); await pFirA.locator('#fa-q').fill(d.dosyaNo); await pFirA.waitForTimeout(800);
+  kontrol('firma dosya numarasıyla iş emri arar', (await pFirA.locator('.ozet', { hasText: d.dosyaNo }).count()) > 0);
   sonuc.push(`DOSYA ${d2.dosyaNo}`);
 } catch (e) {
   sonuc.push(`KALDI  beklenmeyen: ${e.message.split('\n')[0]}`);

@@ -286,6 +286,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     const q = (t: string) => b.db.query(t, [id]).then((r) => r.rows);
+    const ustKademe = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.kademe = 'Direktör' OR x.rol_adi IN ('CEO', 'Genel Müdür Yardımcısı')) LIMIT 1`, [o.kullanici])).rowCount);
     return {
       kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
       bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
@@ -294,7 +295,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       bolgeler: await q(`SELECT DISTINCT ON (bolge_kodu) bolge_kodu, gorunus, referans_hat, boyuna_konum_m, surum, incelenmedi FROM hasar_bolgesi WHERE dosya_ref = $1 ORDER BY bolge_kodu, surum DESC`),
       kontrolListeleri: await q(`SELECT kimlik, kayit_no, kontrol_listesi, statu FROM kontrol_listesi_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       fotoEksik: await fotoEksikleri(b.db, id),
-      garantiKayitlari: await q(`SELECT kimlik, kayit_no, kayit_turu, statu, oncelik, yanit_son, karar, sikayet_sonucu FROM garanti_sikayet WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
+      garantiKayitlari: (await q(`SELECT kimlik, kayit_no, kayit_turu, statu, oncelik, yanit_son, karar, sikayet_sonucu FROM garanti_sikayet WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`)).filter((g: { kayit_turu: string[] }) => ustKademe || !g.kayit_turu.some((x) => /ayıp/i.test(x))), // YG-1078
     };
   });
 

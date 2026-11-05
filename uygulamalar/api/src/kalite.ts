@@ -272,6 +272,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const gereken = SERBEST_ROLLERI[k.kabul_sinifi ?? p?.kabul_sinifi ?? 'D']!;
     const benimRol = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2)`, [o.kullanici, gereken])).rows.map((r) => r.rol_adi as string);
     if (!benimRol.length) return y.code(403).send({ hata: `Bu noktayı ${gereken.join(' ve ')} serbest bırakır.` });
+    if ((await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND teknik_kabul_eden_ref = $2`, [k.is_emri_ref, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Görev ayrılığı gereği teknik kabulü veren kalite kontrolünü doğrulayamaz.' }); // YG-1037
+    await b.db.query(`UPDATE kontrol_noktasi SET dogrulayanlar = array_append(dogrulayanlar, $2) WHERE kimlik = $1 AND NOT ($2 = ANY(dogrulayanlar))`, [id, o.kullanici]);
     if (g.sonuc !== 'Uygun' && g.sonuc !== 'Koşullu uygun') { await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4 WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null]); return { sonuc: g.sonuc, serbest: false, uygunsuzlukGerekli: true }; }
     const onay = [...new Set([...(k.onaylar as string[]), ...benimRol])];
     const tam = gereken.every((r) => onay.includes(r));

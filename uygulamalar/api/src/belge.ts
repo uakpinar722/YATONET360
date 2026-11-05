@@ -90,7 +90,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const e = (await b.db.query(`SELECT * FROM belge WHERE kimlik = $1`, [id])).rows[0];
     if (!e) return null;
     if (e.olusturan_ref === kullanici) return { e, tum: true };
-    if (e.bilgi_sinifi === 'Kritik') return null;
+    if (e.bilgi_sinifi === 'Kritik' && !(await b.db.query(`SELECT 1 FROM belge_erisim_grubu WHERE belge_ref = $1 AND kullanici_ref = $2`, [id, kullanici])).rowCount) return null; // YG-1160
     const bag = BAGLAR.get(e.bag_turu);
     if (!bag || (await bag(b.db, kullanici, e.bag_kimligi)) !== 'tamam') return null;
     return { e, tum: grup === 'LGM İç Rolü' };

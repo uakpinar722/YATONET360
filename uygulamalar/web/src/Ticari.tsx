@@ -305,6 +305,26 @@ function FirmaUygunsuzluk({ yap }: { yap: (f: () => Promise<any>, t?: string) =>
 }
 
 /** YG-1574 A7 Çözüm Ortağı: İşleminizi Bekleyenler, acil çağrı, iş emirleri, kabul kodla, ilerleme ve hakediş. Müşteri bilgisi ve müşteri fiyatı yoktur (YG-294). */
+/** YG-1624: Dosya No, İş Emri No veya Yat Adı. */
+function FirmaArama() {
+  const [q, setQ] = useState(''); const [l, setL] = useState<{ kimlik: string; is_emri_no: string; statu: string; dosya_no: string; yat_adi: string }[]>([]);
+  return <><label htmlFor="fa-q">Dosya No, İş Emri No veya Yat Adı</label><input id="fa-q" value={q} onChange={(e) => { setQ(e.target.value); if (e.target.value.trim().length >= 2) void istek<typeof l>(`/firma-portal/ara?q=${encodeURIComponent(e.target.value.trim())}`).then(setL).catch(() => setL([])); else setL([]); }} />
+    {l.map((x) => <div className="ozet" key={x.kimlik}>{x.is_emri_no} · {x.dosya_no} · {x.yat_adi} · {x.statu}</div>)}</>;
+}
+
+/** YG-1566, YG-1070: Yat Yetkilisi belgesinin kontrolü; onay türleri belgede yazılı olanlar. */
+function YetkiBelgeleri() {
+  const ONY: [string, string][] = [['ONY-05', 'Değişiklik Onayı'], ['ONY-06', 'Ek İş Ret Beyanı'], ['ONY-07', 'Muadil Parça Onayı'], ['ONY-08', 'İadesi Mümkün Olmayan Parça'], ['ONY-09', 'Deniz Denemesi'], ['ONY-10', 'Garanti İşi Planı'], ['ONY-23', 'Fiyat Teklifi ve Sözleşme'], ['ONY-24', 'Keşif Teklifi'], ['ONY-25', 'Ek Fiyat Teklifi'], ['ONY-27', 'Teslim Tutanağı'], ['ONY-30', 'Yata Erişim ve Kurtarma']];
+  const { yap, Mesaj } = useYap(() => undefined); const [l, setL] = useState<{ kullanici_ref: string; ad_soyad: string; rol: string; sahip_ad: string }[]>([]); const [f, setF] = useState<Record<string, { islemler: string[]; limit: string; bitis: string; odeme: boolean }>>({});
+  const yk = () => istek<typeof l>('/yat-yetkilisi/bekleyen').then(setL);
+  useEffect(() => { void yk().catch(() => {}); }, []);
+  if (!l.length) return null;
+  return <Blok baslik="Yetki Belgesi Kontrolü"><Mesaj />{l.map((x) => { const v = f[x.kullanici_ref] ?? { islemler: [], limit: '', bitis: '', odeme: false }; const d = (z: Partial<typeof v>) => setF({ ...f, [x.kullanici_ref]: { ...v, ...z } }); return <div className="soru" key={x.kullanici_ref}><span>{x.ad_soyad} · {x.rol} · {x.sahip_ad}</span><div className="tam">
+    {ONY.map(([k, a]) => <label className="kutu" key={k}><input type="checkbox" checked={v.islemler.includes(k)} onChange={(e) => d({ islemler: e.target.checked ? [...v.islemler, k] : v.islemler.filter((y) => y !== k) })} /><span>{a}</span></label>)}
+    <div className="iki-tarih"><div><label htmlFor={`yb-l-${x.kullanici_ref}`}>Tek İşlem Limiti (EUR)</label><input id={`yb-l-${x.kullanici_ref}`} inputMode="decimal" value={v.limit} onChange={(e) => d({ limit: e.target.value })} /></div><div><label htmlFor={`yb-b-${x.kullanici_ref}`}>Bitiş Tarihi</label><input id={`yb-b-${x.kullanici_ref}`} type="date" value={v.bitis} onChange={(e) => d({ bitis: e.target.value })} /></div></div>
+    <button className="btn2 kucuk" disabled={!v.islemler.length || !v.limit || !v.bitis} onClick={() => void yap(() => istek(`/yat-yetkilisi/${x.kullanici_ref}/dogrula`, { islemler: v.islemler, limit: Number(v.limit.replace(',', '.')), bitis: v.bitis, odeme: v.odeme }).then(yk).then(() => ({ uyari: 'Yetki kaydedildi.' })))}>Yetkiyi Kaydet</button></div></div>; })}</Blok>;
+}
+
 export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'isemri' }) {
   const [l, setL] = useState<IsEmri[] | null>(null); const [ac, setAc] = useState<AcilCagri[]>([]); const [acik, setAcik] = useState<FirmaAyrinti | null>(null); const [kod, setKod] = useState(''); const [not_, setNot_] = useState(''); const [tahmini, setTahmini] = useState(''); const [brut, setBrut] = useState(''); const [fat, setFat] = useState(''); const [fatT, setFatT] = useState(''); const [fatK, setFatK] = useState(''); const [kalem, setKalem] = useState(''); const [miktar, setMiktar] = useState(''); const [belge, setBelge] = useState('');
   const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
@@ -348,6 +368,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   return (
     <>
       <h1>{bolum === 'isemri' ? 'İş Emirleri' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      <FirmaArama />
       {bolum === 'ana' && <FirmaAcilIslemleri yap={yap} />}
       {bolum === 'ana' && <><div className="bolum">İşleminizi Bekleyenler</div>
       {ac.length === 0 && <div className="ozet bos">Acil çağrı bulunmamaktadır.</div>}
@@ -667,6 +688,7 @@ export function SigortaEk2() {
   return (
     <>
       <h1>Sigorta Ek-2 Listesi</h1><Mesaj />
+      <YetkiBelgeleri />
       {hata && <div className="hata" role="alert">{hata}</div>}
       <Blok baslik="Kayıtlı Listeler">
         {l.length === 0 && <div className="not">Kayıtlı liste bulunmamaktadır.</div>}

@@ -60,13 +60,13 @@ export function ErisimTalebi() {
 /** A33-2: onaylı talepler; kendi hesabına yetki engellidir. */
 export function ErisimVeRol() {
   const [l, setL] = useState<Uygulanacak[] | null>(null);
-  const [hata, setHata] = useState(''); const [not, setNot] = useState('');
+  const [hata, setHata] = useState(''); const [not, setNot] = useState(''); const [risk, setRisk] = useState<Record<string, { sahip: string; gerekce: string; telafi: string; yenidenInceleme: string }>>({});
   const yukle = () => istek<Uygulanacak[]>('/erisim/uygulanacak').then(setL).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, []);
   const uygula = async (id: string) => {
     setHata(''); setNot('');
     try {
-      const r = await istek<{ izinDogrulandi: boolean }>(`/erisim/${id}/uygula`, {});
+      const rk = risk[id]; const r = await istek<{ izinDogrulandi: boolean }>(`/erisim/${id}/uygula`, rk ? { riskKabulu: rk } : {});
       setNot(r.izinDogrulandi ? `${id} uygulanmış, gerçek yetki onay kaydıyla karşılaştırılmıştır; kullanıcıya bildirim gönderilmiştir.` : `${id} uygulandı ancak yetki doğrulanamadı; kaydı kontrol ediniz.`);
       void yukle();
     } catch (x) { setHata((x as Error).message); }
@@ -86,6 +86,11 @@ export function ErisimVeRol() {
           <div className="not">Gerekçe: {t.is_gerekcesi}</div>
           <div className="not">Onaylayan: {t.onaylayan}</div>
           {t.cakisma && <div className="uyari"><b>Çakışan Rol:</b> {t.cakisma}</div>}
+          {t.cakisma && (() => { const v = risk[t.kimlik] ?? { sahip: '', gerekce: '', telafi: '', yenidenInceleme: '' }; const d = (x: Partial<typeof v>) => setRisk({ ...risk, [t.kimlik]: { ...v, ...x } }); return <>
+            <label htmlFor={`rk-s-${t.kimlik}`}>Risk Kabulü Sahibi</label><input id={`rk-s-${t.kimlik}`} value={v.sahip} onChange={(e) => d({ sahip: e.target.value })} />
+            <label htmlFor={`rk-g-${t.kimlik}`}>Gerekçe</label><input id={`rk-g-${t.kimlik}`} value={v.gerekce} onChange={(e) => d({ gerekce: e.target.value })} />
+            <label htmlFor={`rk-t-${t.kimlik}`}>Telafi Kontrolü</label><input id={`rk-t-${t.kimlik}`} value={v.telafi} onChange={(e) => d({ telafi: e.target.value })} />
+            <label htmlFor={`rk-y-${t.kimlik}`}>Yeniden İnceleme</label><input id={`rk-y-${t.kimlik}`} type="date" value={v.yenidenInceleme} onChange={(e) => d({ yenidenInceleme: e.target.value })} /></>; })()}
           {t.kendi && <div className="uyari">Kendi hesabınıza yetki tanımlayamazsınız.</div>}
           <div className="dugmeler"><button className="btn" disabled={t.kendi} onClick={() => void uygula(t.kimlik)}>Uygula ve Kullanıcıya Bildir</button></div>
         </div>

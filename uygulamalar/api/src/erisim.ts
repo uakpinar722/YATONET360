@@ -90,6 +90,12 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
       const dur = async (kod: number, hata: string) => { await c.query('ROLLBACK'); return y.code(kod).send({ hata }); };
       if (!t) return dur(404, 'Kayıt bulunamadı.');
       if (t.talep_asamasi !== 'Teknik Atama') return dur(409, 'Bu talep uygulamaya hazır değildir.');
+      // YG-1041: çakışan rol ancak sahipli, gerekçeli, telafi kontrollü ve yeniden inceleme tarihli risk kabulüyle atanır.
+      if ((await c.query(`SELECT 1 FROM rol_atamasi a JOIN rol_cakisma z ON (z.rol_a = $2 AND z.rol_b = a.rol_ref) OR (z.rol_b = $2 AND z.rol_a = a.rol_ref) WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [t.kullanici_ref, t.rol_ref])).rowCount) {
+        const rk = ((i.body ?? {}) as { riskKabulu?: { sahip?: string; gerekce?: string; telafi?: string; yenidenInceleme?: string } }).riskKabulu;
+        if (!rk?.sahip?.trim() || !rk.gerekce?.trim() || !rk.telafi?.trim() || !rk.yenidenInceleme) return dur(409, 'Çakışan rol için risk kabulü zorunludur: sahip, gerekçe, telafi kontrolü ve yeniden inceleme tarihi.');
+        await c.query(`INSERT INTO risk_kabulu (kullanici_ref, rol_ref, sahip_rol, gerekce, telafi_kontrolu, yeniden_inceleme, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [t.kullanici_ref, t.rol_ref, rk.sahip.trim(), rk.gerekce.trim(), rk.telafi.trim(), rk.yenidenInceleme, o.kullanici]);
+      }
       if (t.kullanici_ref === o.kullanici) return dur(403, 'Kendi hesabınıza yetki tanımlayamazsınız.');
       if (t.talep_eden_ref === o.kullanici || t.is_onayi_veren === o.kullanici) return dur(403, 'Talep eden veya onaylayan kişi atamayı yapamaz.');
       await c.query(

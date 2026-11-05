@@ -21,7 +21,11 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
   async function uygunMu(asil: Satir, aday: Satir) {
     if (aday.kullanici === asil.kullanici) return false;
     if (aday.rol === asil.rol) return true;
-    if (asil.rol_adi === 'CEO') return aday.rol_adi === 'Genel Müdür Yardımcısı' || aday.rol_adi === 'Teknik ve Operasyon Direktörü';
+    if (asil.rol_adi === 'CEO') { // YG-1058: T&O Direktörü yalnız CEO ve GMY birlikte yokken.
+      if (aday.rol_adi === 'Genel Müdür Yardımcısı') return true;
+      if (aday.rol_adi !== 'Teknik ve Operasyon Direktörü') return false;
+      return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik JOIN rol x ON x.kimlik = a.rol_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE x.rol_adi = 'Genel Müdür Yardımcısı' AND a.atama_durumu = 'Aktif' AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif')) LIMIT 1`)).rowCount);
+    }
     if (aday.birim === asil.birim && aday.kademe === asil.kademe) return true;
     const cift = new Set(['Müdür', 'Müdür Yardımcısı']);
     if (aday.birim === asil.birim && cift.has(aday.kademe) && cift.has(asil.kademe)) return true;

@@ -105,6 +105,7 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
     }
     await db.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE kimlik = $1`, [a.personel_ref]);
     await (await import('./mobil.js')).cihazIptal(db, a.personel_ref, 'Ayrılış'); // YG-498
+    await hesapKapanisGorevi(db, a.kimlik); // YG-1050
     await db.query(`UPDATE personel_karti SET personel_durumu = 'Ayrıldı', ayrilis_tarihi = $2 WHERE kullanici_ref = $1`, [a.personel_ref, a.son_is_gunu]);
     await db.query(`UPDATE personel_ayrilisi SET durum = 'Kapandı' WHERE kimlik = $1`, [a.kimlik]);
     await kartAc(db, { tur: 'SGK İşten Ayrılış Bildirgesi', kategori: 'islem', baslik: 'SGK İşten Ayrılış Bildirgesi', ozet: 'Bildirgenin 10 gün içinde verilmesi rica olunur.', oncelik: 'Yüksek', sonZaman: new Date(new Date(a.son_is_gunu).getTime() + 10 * 86_400_000), sahipRol: await rolId(db, IKS), nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik }); // YG-933
@@ -115,6 +116,11 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
   }
   await esikKontrol(db);
   return n;
+}
+
+/** YG-1050: sistem dışı erişimler görevle kapatılır. */
+async function hesapKapanisGorevi(db: Db, ayrilis: string) {
+  await kartAc(db, { tur: 'Hesap Kapanış Kontrolü', kategori: 'islem', baslik: 'Hesap Kapanış Kontrolü', ozet: 'API anahtarı, veri tabanı erişimi, uzak bağlantı ve acil erişim sırrının kapatılması; ortak şifre kullanıldıysa yenilenmesi rica olunur.', oncelik: 'Yüksek', sonZaman: new Date(Date.now() + 86_400_000), sahipRol: await rolId(db, 'Sistem Yöneticisi'), nesneTuru: 'Ayrılış', nesneKimligi: ayrilis });
 }
 
 /** YG-972, MUM-059–061: 28 ve 48 çalışanda Hukuk ve Uyum Direktörü ile Genel Müdür Yardımcısı uyarılır. */
@@ -382,6 +388,18 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if ((await birimAmiri(b.db, a.personel_ref)) !== o.kullanici) return y.code(403).send({ hata: 'Teslim onayını yönetici verir.' });
     if (!a.cihaz_beyan_zamani) return y.code(409).send({ hata: 'Personel beyanı bekleniyor.' });
     await b.db.query(`UPDATE personel_ayrilisi SET cihaz_onay_ref = $2 WHERE kimlik = $1`, [a.kimlik, o.kullanici]);
+    return { tamam: true };
+  });
+  s.post('/ayrilis/:id/derhal-kapat', oturumlu, async (i, y) => { // YG-1052: riskli ayrılış
+    const o = i.oturum!; const a = await ayrilisGetir((i.params as { id: string }).id); const g = ((i.body ?? {}) as { gerekce?: string }).gerekce?.trim();
+    if (!a) return yok(y);
+    if (!(await rolVar(o.kullanici, [IKM, HUD]))) return y.code(403).send({ hata: 'Derhal kapatmayı İnsan Kaynakları Müdürü veya Hukuk ve Uyum Direktörü yapar.' });
+    if (!g) return y.code(400).send({ hata: 'Gerekçeyi yazmanızı rica ederiz.' });
+    await b.db.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE kimlik = $1`, [a.personel_ref]);
+    await b.db.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Güvenlik sınırlaması' WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [a.personel_ref]);
+    await (await import('./mobil.js')).cihazIptal(b.db, a.personel_ref, 'Riskli Ayrılış');
+    await hesapKapanisGorevi(b.db, a.kimlik);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Riskli Ayrılışta Hesap Kapatma', nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik, gerekce: g, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
   s.post('/ayrilis/:id/tazminat', oturumlu, async (i, y) => { // YG-979

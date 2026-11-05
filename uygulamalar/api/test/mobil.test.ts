@@ -94,8 +94,8 @@ describe('ret bağlantısı (YG-484), hesap kapatma (YG-492), Yat Yetkilisi (YG-
     const kid = (await o.sup.query(`SELECT kullanici_ref FROM yat_yetkilisi_kaydi WHERE sahip_ad = 'Sahip S'`)).rows[0].kullanici_ref;
     const be = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Vekâletname','Yetki','Gizli','Yat Yetkilisi',$1,'Sistem',current_date,$1) RETURNING kimlik`, [kid])).rows[0].kimlik;
     expect((await o.ist('POST', '/api/yetkilerim/belge', c, { belge: be })).json().durum).toBe('Kontrolde');
-    expect((await o.ist('POST', `/api/yat-yetkilisi/${kid}/dogrula`, await o.gir('ds'), { islemler: ['Teklif Onayı'], bitis: '2099-01-01' })).statusCode).toBe(403);
-    expect((await o.ist('POST', `/api/yat-yetkilisi/${kid}/dogrula`, await o.gir('mp'), { islemler: ['Teklif Onayı'], limit: 5000, bitis: '2099-01-01' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/yat-yetkilisi/${kid}/dogrula`, await o.gir('ds'), { islemler: ['ONY-23'], bitis: '2099-01-01' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/yat-yetkilisi/${kid}/dogrula`, await o.gir('mp'), { islemler: ['ONY-23'], limit: 5000, bitis: '2099-01-01' })).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/yetkilerim', c)).json()).toMatchObject({ belge_durumu: 'Geçerli', ust_limit_eur: '5000.00' });
   });
 });

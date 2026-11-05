@@ -192,6 +192,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     const talepler = (await b.db.query(`SELECT t.kimlik, t.talep_no, t.statu, t.kayda_gecis_zamani, y.yat_adi FROM talep t JOIN yat y ON y.kimlik = t.yat_ref WHERE t.olusturan_ref = $1 AND t.dosya_ref IS NULL AND t.statu NOT IN ('Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY t.kayda_gecis_zamani DESC`, [o.kullanici])).rows;
     const yetkili = (await b.db.query(`SELECT rol, sahip_ad, belge_durumu, ust_limit_eur, bitis_tarihi::text, odeme_yetkisi FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.kullanici])).rows[0] ?? null; // YG-1566
     const onaylar = (await b.db.query(`SELECT t.kimlik, t.ony_kod, t.baslik, t.belge_adi, t.son_gecerlilik, d.dosya_no FROM onay_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.alici_kullanici_ref = $1 AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() ORDER BY t.olusturma_zamani DESC`, [o.kullanici])).rows;
+    if (yetkili?.belge_durumu === 'Geçerli') { const var0 = new Set(onaylar.map((x) => x.kimlik)); for (const x of await (await import('./yetki_ek.js')).yetkiliOnaylari(b.db, o.kullanici)) if (!var0.has(x.kimlik)) onaylar.push(x); } // YG-1566
     return { yetkili, onaylar, dosyalar: await Promise.all(dosyalar.map(kart)), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
   });
 
@@ -215,6 +216,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   s.post('/portal/onay/:id/ac', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Onay bulunamadı.' });
+    await (await import('./yetki_ek.js')).yetkiliyeDevret(b.db, id, o.kullanici); // YG-1031, YG-1070: kapsam, limit, süre içindeyse kod yetkiliye gider.
     const ot = (await b.db.query(`SELECT tutar_eur FROM onay_talebi WHERE kimlik = $1 AND alici_kullanici_ref = $2`, [id, o.kullanici])).rows[0];
     if (ot) { const oe = await onayEngeli(b.db, o.kullanici, ot.tutar_eur === null ? null : Number(ot.tutar_eur)); if (oe) return y.code(403).send({ hata: oe }); }
     const bel = rastgeleBelirtec();

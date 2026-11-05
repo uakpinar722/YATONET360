@@ -399,6 +399,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']))) return y.code(403).send({ hata: 'Teknik kabulü Teknik Uzman verir.' });
     if (e.statu !== 'Tamamlandı') return y.code(409).send({ hata: 'Firma işi tamamlandı bildirmemiştir.' });
     if (!['Kabul', 'Koşullu Kabul', 'Ret'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    { const ga = await (await import('./yetki_ek.js')).teknikKabulAyrimi(b.db, e, o.kullanici); if (ga) return y.code(403).send({ hata: ga }); } // YG-1036, YG-1037
     const ke = await kabulEngeli(b.db, e, sonuc!); if (ke) return y.code(409).send({ hata: ke });
     if (sonuc === 'Koşullu Kabul') return y.code(400).send({ hata: 'Koşullu kabul açık iş listesiyle ayrı kaydedilir.' });
     const sonuclanmamis = (await b.db.query(`SELECT count(*)::int n FROM is_emri_ilerleme WHERE is_emri_ref = $1 AND NOT dogrulandi`, [e.kimlik])).rows[0].n;

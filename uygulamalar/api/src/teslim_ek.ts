@@ -29,9 +29,9 @@ onaySonucKaydet('ONY-03', async (c, t, karar) => {
 
 /** YG-473: yetkisi doğrulanmamış ihbar edenin (kaptan) sözlü onayıyla ilave iş başlamaz; dosya yetki belgesi gelene kadar bekler. */
 export async function ilaveIsYetkiEngeli(db: Db, dosya: string, tur: string): Promise<string | null> {
-  if (tur !== 'EK') return null;
+  if (tur !== 'EK' && tur !== 'ON') return null; // YG-1086: kapsam, ilave iş ve iş emrinde yeniden kontrol
   const t = (await db.query(`SELECT t.ihbar_yetki_durumu FROM dosya d JOIN talep t ON t.kimlik = d.talep_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
-  return t && t.ihbar_yetki_durumu !== 'Doğrulandı' ? 'Yetki belgesi gelmeden ilave iş başlatılamaz; dosyayı Beklemede işaretlemenizi rica ederiz.' : null;
+  return t && t.ihbar_yetki_durumu !== 'Doğrulandı' ? (tur === 'EK' ? 'Yetki belgesi gelmeden ilave iş başlatılamaz; dosyayı Beklemede işaretlemenizi rica ederiz.' : 'Yetki doğrulanmadan onarım iş emri açılamaz; dosyayı Beklemede işaretlemenizi rica ederiz.') : null;
 }
 
 /** YG-099: yabancı bayraklı yatta belge ve kalış süresi işi kapsamalı. */

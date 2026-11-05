@@ -27,6 +27,14 @@ type Liste = { kimlik: string; yil: number; imha_donemi: string; durum: string; 
 
 function kalan(z: string) { const s = (new Date(z).getTime() + 72 * 3_600_000 - Date.now()) / 3_600_000; return s < 0 ? '72 saat aşıldı' : `${Math.floor(s)} saat kaldı`; }
 
+/** YG-1027 */
+function RizaKayitlari() {
+  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; riza_turu: string; amac: string | null; kanal: string | null; durum: string; kaynak: string }[]>([]);
+  useEffect(() => { void istek<typeof l>('/riza-kayitlari').then(setL).catch(() => {}); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Rıza ve Ticari İleti Kayıtları</div>{l.slice(0, 50).map((x) => <div className="ozet" key={x.kimlik}>{x.ad_soyad} · {x.riza_turu}{x.amac ? ` · ${x.amac}` : ''}{x.kanal ? ` · ${x.kanal}` : ''} · {x.durum} · {x.kaynak}</div>)}</>;
+}
+
 export function KvkkEkrani() {
   const { yap, Mesaj } = useYap(); const [y, setY] = useState<{ ihlal: boolean; hud: boolean; uzman: boolean } | null>(null); const [iv, setIv] = useState<Ihlal[]>([]); const [bs, setBs] = useState<Basvuru[]>([]); const [il, setIl] = useState<Liste[]>([]); const [m, setM] = useState<Record<string, string>>({}); const [f, setF] = useState({ ad: '', iletisim: '', kanal: 'KEP', yanitKanali: '', talep: HAK[0]!, alinma: '' });
   const sec = (k: string) => m[k] ?? ''; const yz = (k: string, v: string) => setM({ ...m, [k]: v });
@@ -67,6 +75,7 @@ export function KvkkEkrani() {
           <div className="dugmeler">{['Kabul', 'Kısmi Kabul', 'Ret'].map((x) => <button key={x} className="btn2 kucuk" disabled={!sec(`k${a.kimlik}`).trim()} onClick={() => is(`/kvkk-basvuru/${a.kimlik}/karar`, { karar: x, gerekce: sec(`k${a.kimlik}`) }, 'Karar onaya gönderildi.')}>{x}</button>)}</div>
         </div>}
       </div>)}
+      <RizaKayitlari />
       <div className="bolum">İmha Listeleri</div>
       {il.length === 0 && <div className="ozet bos">İmha listesi bulunmamaktadır; listeler Ocak ve Temmuz aylarında oluşur.</div>}
       {il.map((l) => <div className="soru" key={l.kimlik}><span><b className="koyu">{l.yil} {l.imha_donemi}</b> · {l.durum} · {l.kalemler.filter((x) => x.durum === 'Listede').length} kayıt</span><div className="tam">

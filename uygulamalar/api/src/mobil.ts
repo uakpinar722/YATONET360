@@ -46,7 +46,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { platform?: string; belirtec?: string };
     if (!['iOS', 'Android'].includes(g.platform ?? '') || !g.belirtec?.trim()) return y.code(400).send({ hata: 'Platform ve bildirim belirteci zorunludur.' });
     // Devredilen cihazda eski alıcının mesajı görünmez: aynı belirteç yeni kullanıcıya geçer.
-    const r = await b.db.query(`INSERT INTO mobil_cihaz (kullanici_ref, oturum_ref, platform, bildirim_belirteci) VALUES ($1,$2,$3,$4) ON CONFLICT (bildirim_belirteci) DO UPDATE SET kullanici_ref = EXCLUDED.kullanici_ref, oturum_ref = EXCLUDED.oturum_ref, durum = 'Aktif', iptal_nedeni = NULL, iptal_zamani = NULL RETURNING kimlik`, [o.kullanici, o.oturum, g.platform, g.belirtec.trim()]);
+    const r = await b.db.query(`INSERT INTO mobil_cihaz (kullanici_ref, oturum_ref, platform, bildirim_belirteci) VALUES ($1,$2,$3,$4) ON CONFLICT (bildirim_belirteci) DO UPDATE SET kullanici_ref = EXCLUDED.kullanici_ref, oturum_ref = EXCLUDED.oturum_ref, durum = 'Aktif', iptal_nedeni = NULL, iptal_zamani = NULL, son_dogrulama = now() RETURNING kimlik`, [o.kullanici, o.oturum, g.platform, g.belirtec.trim()]);
     return { kimlik: r.rows[0].kimlik };
   });
   s.get('/mobil/cihazlarim', oturumlu, async (i) => (await b.db.query(`SELECT kimlik, platform, durum, olusturma_zamani FROM mobil_cihaz WHERE kullanici_ref = $1 ORDER BY olusturma_zamani DESC`, [i.oturum!.kullanici])).rows);
@@ -151,7 +151,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
   s.post('/yat-yetkilisi/:id/dogrula', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { islemler?: string[]; limit?: number; bitis?: string; odeme?: boolean; bilgi?: boolean };
     if (!(await rolSahipleri(b.db, await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Kontrolü Müşteri ve Paydaş İlişkileri Müdürü yapar.' });
-    if (!g.islemler?.length || !g.bitis) return y.code(400).send({ hata: 'Belgede yazılı işlem türleri ve bitiş tarihini girmenizi rica ederiz.' });
+    if (!g.islemler?.length || !g.bitis || g.limit === undefined || !(Number(g.limit) >= 0) || !g.islemler.every((x) => /^ONY-\d{2}$/.test(x))) return y.code(400).send({ hata: 'Belgede yazılı işlem türleri, tek işlem limiti ve bitiş tarihini girmenizi rica ederiz; genel yetki verilmez.' }); // YG-1072
     const r = await b.db.query(`UPDATE yat_yetkilisi_kaydi SET belge_durumu = 'Geçerli', islem_turleri = $2, ust_limit_eur = $3, bitis_tarihi = $4, odeme_yetkisi = $5, bilgi_paylasim_izni = $6, dogrulayan_ref = $7 WHERE kullanici_ref = $1 AND belge_durumu = 'Kontrolde'`, [id, g.islemler, g.limit ?? null, g.bitis, Boolean(g.odeme), Boolean(g.bilgi), o.kullanici]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Kontrol bekleyen belge bulunmamaktadır.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Yetki Belgesi Kontrolü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
