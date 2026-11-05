@@ -169,6 +169,16 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     return sonuc.sort((a, c) => S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
   });
 
+  // YG-1078: yasal ayıp ve rücu listesi yalnız Direktör ve üstü; Müdürler göremez.
+  s.get('/rapor/yasal-ayip', oturumlu, async (i, y) => {
+    const r = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.rol_adi LIKE '%Direktörü' OR x.rol_adi IN ('Genel Müdür Yardımcısı', 'CEO')) LIMIT 1`, [i.oturum!.kullanici])).rowCount;
+    if (!r) return yok(y);
+    const ayip = (await b.db.query(`SELECT g.kayit_no, d.dosya_no, g.kayit_turu, g.statu, g.karar, g.olusturma_zamani::date::text tarih FROM garanti_sikayet g JOIN dosya d ON d.kimlik = g.dosya_ref WHERE EXISTS (SELECT 1 FROM unnest(g.kayit_turu) x WHERE x ILIKE '%ayıp%') ORDER BY g.olusturma_zamani DESC LIMIT 500`)).rows;
+    const rucu = (await b.db.query(`SELECT d.dosya_no, u.ticari_unvan, m.tur, m.tutar_eur, m.kalan_eur, m.statu, m.olusturma_zamani::date::text tarih FROM hakedis_mahsubu m JOIN dosya d ON d.kimlik = m.dosya_ref JOIN kurulus u ON u.kimlik = m.kurulus_ref ORDER BY m.olusturma_zamani DESC LIMIT 500`)).rows;
+    await izYaz(b.db, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Yasal Ayıp Raporu', nesneTuru: 'Rapor', nesneKimligi: 'yasal-ayip', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { ayip, rucu };
+  });
+
   // YG-344: FR-SCL-001 ön kayıt alanları.
   s.post('/firma/:id/on-kayit', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { mersis?: string; mahalle?: string; konumTuru?: string; yetkili?: string; taliBranslar?: string[]; bolgeler?: string[]; calisan?: number; referanslar?: string };

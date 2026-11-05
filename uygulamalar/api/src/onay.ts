@@ -145,6 +145,8 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
         if (t.dosya_ref) await belgeUret(c, { tur: 'Onay Belgesi', nesne: t.kimlik, dosya: t.dosya_ref, gonder: { ...gon, ekle: t.ony_kod === 'ONY-23' ? ['Fiyat Teklifi', 'Ön Bilgilendirme Formu'] : t.ony_kod === 'ONY-27' ? ['Teslim Tutanağı'] : undefined } });
         else await disGonder(c, gon);
       }
+      // YG-161: kim, hangi sıfatla, hangi dayanakla, hangi tutarı onayladı.
+      await c.query(`UPDATE yatonet_onay_kaydi SET tutar_eur = $2, temsil_sifati = (SELECT taraf_rolu FROM dosya_tarafi WHERE kimlik = $3), yetki_dayanagi = (SELECT y.yetki_dayanagi_turu FROM yetki_kaydi y WHERE y.dosya_tarafi_ref = $3 ORDER BY y.belge_tarihi DESC LIMIT 1) WHERE onay_talebi_ref = $1`, [t.kimlik, t.tutar_eur ?? null, t.alici_taraf_ref ?? null]);
       if (t.hazirlayan_ref) await bildir(c, { olay: `onay-karar:${t.kimlik}`, kullanicilar: [t.hazirlayan_ref], baslik: `${karar}: ${t.belge_adi}`, ozet: t.dosya_no, eposta: true });
       await izYaz(c, { eylem: `YATONET 360 Onayı: ${karar}`, aktor: t.alici_kullanici_ref, nesneTuru: 'Onay Talebi', nesneKimligi: t.kimlik, yeni: { ony: t.ony_kod, kod }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Bağlantı' });
       await c.query('COMMIT');

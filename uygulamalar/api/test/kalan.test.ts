@@ -199,3 +199,24 @@ describe('firma adayları, tarama alanı, kapanış (YG-304, YG-916, YG-416)', (
     expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).toContain('Açık Tedarik Siparişi');
   });
 });
+
+describe('yasal ayıp raporu ve onay kaydı (YG-1078, YG-161)', () => {
+  it('Direktör görür, Müdür ve Dosya Sorumlusu göremez', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, olusturan_ref) VALUES ($1,$2,'{Yasal Ayıp}','Telefon',now(),'Normal',$3)`, [`GS-${++n}`, d.kimlik, o.K.ds]);
+    expect((await o.ist('GET', '/api/rapor/yasal-ayip', await o.gir('mfm'))).statusCode).toBe(404);
+    expect((await o.ist('GET', '/api/rapor/yasal-ayip', await o.gir('ds'))).statusCode).toBe(404);
+    const r = await o.ist('GET', '/api/rapor/yasal-ayip', await o.gir('tid')); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().ayip.map((x: { kayit_no: string }) => x.kayit_no)).toContain(`GS-${n}`);
+  });
+  it('onay kaydı sıfat ve tutarı tutar', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik, o.K.iks]);
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days')`, [t, d.kimlik]);
+    const r = await o.ist('POST', `/api/portal/dosya/${d.kimlik}/cayma`, await o.gir('iks'), {}); expect(r.statusCode, r.body).toBe(200); const on = r.json().kimlik;
+    await o.sup.query(`UPDATE onay_talebi SET tutar_eur = 123 WHERE kimlik = $1`, [on]);
+    const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${on}`])).rows[0].metin; const bel = m.match(/#onay=([\w-]+)/)[1];
+    await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
+    expect((await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {} })).statusCode).toBe(200);
+    const k = (await o.sup.query(`SELECT temsil_sifati, tutar_eur FROM yatonet_onay_kaydi WHERE onay_talebi_ref = $1`, [on])).rows[0]; expect(k.temsil_sifati).toBe('Yat Sahibi'); expect(Number(k.tutar_eur)).toBe(123);
+  });
+});

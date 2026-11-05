@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
-import { DosyaEkIslemler, FirmaAcilIslemleri, MutabakatRaporlari } from './DosyaEk';
+import { DosyaEkIslemler, FirmaAcilIslemleri, MutabakatRaporlari, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
@@ -729,6 +729,7 @@ export function IdariIslemler() {
       <PersonelIslemlerim yap={yap} />
       <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
+      <YasalAyipRaporu />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
         <label className="kutu"><input type="checkbox" checked={bl} onChange={(e) => setBl(e.target.checked)} /><span>Bölünmüş İzin Talebi</span></label>

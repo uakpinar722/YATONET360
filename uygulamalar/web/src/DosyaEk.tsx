@@ -213,3 +213,11 @@ export function FirmaAcilIslemleri({ yap }: { yap: Yap }) {
     <div className="ozet"><label className="kutu"><input type="checkbox" checked={m.musait} onChange={(e) => setM({ ...m, musait: e.target.checked })} /><span>Acil Göreve Müsaitim</span></label><label htmlFor="fk-dk">Yanıt Süresi (Dakika)</label><input id="fk-dk" inputMode="numeric" value={m.dk} onChange={(e) => setM({ ...m, dk: e.target.value })} /><button className="btn2" disabled={!m.dk} onClick={() => void yap(() => istek('/firma-portal/acil-musaitlik', { musait: m.musait, yanitDk: Number(m.dk) }), 'Müsaitlik kaydedildi.')}>Müsaitliği Kaydet</button></div>
   </>);
 }
+
+/** YG-1078: Direktör ve üstü; diğer kullanıcılara bölüm görünmez. */
+export function YasalAyipRaporu() {
+  const [v, setV] = useState<{ ayip: { kayit_no: string; dosya_no: string; statu: string; karar: string | null; tarih: string }[]; rucu: { dosya_no: string; ticari_unvan: string; tur: string; tutar_eur: string; kalan_eur: string; statu: string; tarih: string }[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/rapor/yasal-ayip').then(setV).catch(() => setV(null)); }, []);
+  if (!v) return null;
+  return <><div className="bolum">Yasal Ayıp ve Rücu Kayıtları</div><div className="ozet">{v.ayip.length === 0 && v.rucu.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{v.ayip.map((a) => <div key={a.kayit_no}>{a.dosya_no} · {a.kayit_no} · {a.statu}{a.karar ? ` · ${a.karar}` : ''} · {a.tarih}</div>)}{v.rucu.map((r, n) => <div key={n}>{r.dosya_no} · {r.ticari_unvan} · {r.tur} · {r.tutar_eur} EUR · Kalan: {r.kalan_eur} EUR · {r.statu}</div>)}</div></>;
+}
