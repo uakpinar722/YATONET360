@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -322,5 +322,28 @@ describe('kurumsal Ek-2 (D-135, YG-1070, Çerçeve m.26.4)', () => {
     expect((await o.sup.query(`SELECT alici_kullanici_ref a FROM onay_talebi WHERE kimlik = $1`, [on])).rows[0].a).toBe(o.K.opm);
     const m2 = await limitYonlendir(o.db, on, o.K.opm!, 45000); expect(m2).not.toContain('iletilmiştir');
     expect((await o.sup.query(`SELECT alici_kullanici_ref a FROM onay_talebi WHERE kimlik = $1`, [on])).rows[0].a).toBe(o.K.opm);
+  });
+});
+
+describe('karşı taraf bildirimi ve vize (Çerçeve m.13.1, D-025)', () => {
+  it('karşı taraf yazılırsa 12 saatlik görev açılır, yazılmazsa açılmaz', async () => {
+    const r = await o.ist('POST', '/api/veri-ihlali', await o.gir('ds'), { olayTuru: 'Kayıp çıktı', ozet: 'Çıktı kayboldu', karsiTaraf: 'Firma X' }); expect(r.statusCode, r.body).toBe(200);
+    const k = await o.kart('Karşı Tarafa İhlal Bildirimi', r.json().kimlik); expect(k.durum).toBe('Bekliyor');
+    const sn = (await o.sup.query(`SELECT extract(epoch FROM son_zaman - now()) s FROM is_karti WHERE kimlik = $1`, [k.kimlik])).rows[0].s; expect(Number(sn)).toBeGreaterThan(11.9 * 3600); expect(Number(sn)).toBeLessThanOrEqual(12 * 3600);
+    const r2 = await o.ist('POST', '/api/veri-ihlali', await o.gir('ds'), { olayTuru: 'Kayıp çıktı', ozet: 'İkinci' });
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Karşı Tarafa İhlal Bildirimi' AND nesne_kimligi = $1`, [r2.json().kimlik])).rowCount).toBe(0);
+  });
+  it('yurt dışı dosyada yalnız geçerli vize ve pasaportlu kişi önerilir; süresi yaklaşan İK’ya bildirilir', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET yurt_disi = true WHERE kimlik = $1`, [d.kimlik]); await o.ekipKur(d.kimlik);
+    const u = `/api/dosya/${d.kimlik}/ekip-oneri?rol=${encodeURIComponent('Teknik Uzman')}`; const c = await o.gir('opm');
+    const ilk = await o.ist('GET', u, c); expect(ilk.statusCode, ilk.body).toBe(200); expect(ilk.json()).toEqual([]);
+    const ku = o.K.tu!; const gec = new Date(Date.now() + 25 * 86_400_000).toISOString().slice(0, 10);
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1,'2026-01-01',$2) ON CONFLICT (kullanici_ref) DO NOTHING`, [ku, o.K.ds]);
+    await o.sup.query(`UPDATE personel_karti SET vize_bitis = '2020-01-01', pasaport_bitis = '2099-01-01' WHERE kullanici_ref = $1`, [ku]);
+    expect((await o.ist('GET', u, c)).json().map((x: { kimlik: string }) => x.kimlik)).not.toContain(ku);
+    await o.sup.query(`UPDATE personel_karti SET vize_bitis = $2 WHERE kullanici_ref = $1`, [ku, gec]);
+    expect((await o.ist('GET', u, c)).json().map((x: { kimlik: string }) => x.kimlik)).toContain(ku);
+    const { sureUyariIsle } = await import('../src/uyum.js'); await sureUyariIsle(o.db);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`personel_belge:${ku}:Vize:30`, o.K.ikm])).rowCount).toBe(1);
   });
 });

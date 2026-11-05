@@ -14,11 +14,13 @@ function useYap() {
 
 /** YG-1201: her ekrandan erişilir. */
 export function IhlalBildir({ kapat }: { kapat: () => void }) {
+  const [kt, setKt] = useState('');
   const { yap, Mesaj } = useYap(); const [t, setT] = useState(OLAY[0]!); const [o, setO] = useState('');
   return <div className="ozet"><b>⚠ Veri İhlali Bildir</b> (FR-HUK-002)<Mesaj />
     <label htmlFor="vi-t">Olay Türü</label><select id="vi-t" value={t} onChange={(e) => setT(e.target.value)}>{OLAY.map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="vi-o">Kısa Açıklama</label><textarea id="vi-o" value={o} onChange={(e) => setO(e.target.value)} />
-    <div className="dugmeler"><button className="btn2" disabled={!o.trim()} onClick={() => void yap(() => istek('/veri-ihlali', { olayTuru: t, ozet: o }).then(() => setO('')), 'Bildiriminiz Bilgi İşlem Müdürü ile Hukuk ve Uyum Direktörüne iletildi.')}>Bildir</button><button className="btn2" onClick={kapat}>Kapat</button></div>
+    <label htmlFor="ih-kt">Karşı Taraf (verisi etkilenen firma veya kurum, varsa)</label><input id="ih-kt" value={kt} onChange={(e) => setKt(e.target.value)} />
+    <div className="dugmeler"><button className="btn2" disabled={!o.trim()} onClick={() => void yap(() => istek('/veri-ihlali', { olayTuru: t, ozet: o, karsiTaraf: kt || undefined }).then(() => { setO(''); setKt(''); }), 'Bildiriminiz Bilgi İşlem Müdürü ile Hukuk ve Uyum Direktörüne iletildi.')}>Bildir</button><button className="btn2" onClick={kapat}>Kapat</button></div>
   </div>;
 }
 

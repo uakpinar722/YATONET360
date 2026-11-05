@@ -54,6 +54,9 @@ export function netDakika(giris: string | null | undefined, cikis: string | null
 }
 
 /** YG-941: süresi dolan ve yenilenmeyen belge yeni görevlendirmeyi engeller; geçmiş işe dokunmaz. */
+/** D-025: yurt dışı dosyada yalnız geçerli pasaport ve vizesi olan personel önerilir. */
+export const yurtDisiUygunMu = async (db: Db, kullanici: string): Promise<boolean> => Boolean((await db.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1 AND pasaport_bitis >= current_date AND vize_bitis >= current_date`, [kullanici])).rowCount);
+
 export async function personelBelgeEngeli(db: Db, kullanici: string): Promise<string | null> {
   // YG-944: personel kartı olan çalışanda geçerli İSG eğitimi kaydı olmadan yeni görev verilmez.
   if ((await db.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1`, [kullanici])).rowCount && !(await db.query(`SELECT 1 FROM egitim_kaydi WHERE personel_ref = $1 AND tur = 'İSG' AND (gecerlilik_sonu IS NULL OR gecerlilik_sonu >= current_date) LIMIT 1`, [kullanici])).rowCount) return 'Personelin İSG eğitimi kaydı bekleniyor.';
@@ -176,12 +179,13 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT h.kimlik, h.ad_soyad, k.ise_giris_tarihi::text, k.personel_durumu, k.brut_aylik_tl, k.ek3_yil, k.ek3_serbest_zaman FROM kullanici_hesabi h LEFT JOIN personel_karti k ON k.kullanici_ref = h.kimlik WHERE h.kullanici_grubu = 'LGM İç Rolü' AND h.hesap_durumu = 'Aktif' ORDER BY h.ad_soyad`)).rows;
   });
   s.post('/ik/personel/:id', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { iseGiris?: string; brut?: number; ek3Yil?: number; ek3Serbest?: boolean };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { iseGiris?: string; brut?: number; ek3Yil?: number; ek3Serbest?: boolean; vizeBitis?: string; pasaportBitis?: string };
     if (!(await ikMi(o.kullanici))) return y.code(403).send({ hata: 'Personel kaydını İnsan Kaynakları girer.' });
     if (!g.iseGiris) return y.code(400).send({ hata: 'İşe giriş tarihini girmenizi rica ederiz.' });
     if (g.brut !== undefined && !(Number(g.brut) > 0)) return y.code(400).send({ hata: 'Brüt ücreti kontrol etmenizi rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1`, [id])).rowCount) return yok(y);
     await b.db.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, brut_aylik_tl, ek3_yil, ek3_serbest_zaman, guncelleyen_ref) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (kullanici_ref) DO UPDATE SET ise_giris_tarihi = EXCLUDED.ise_giris_tarihi, brut_aylik_tl = coalesce(EXCLUDED.brut_aylik_tl, personel_karti.brut_aylik_tl), ek3_yil = coalesce(EXCLUDED.ek3_yil, personel_karti.ek3_yil), ek3_serbest_zaman = EXCLUDED.ek3_serbest_zaman, guncelleyen_ref = EXCLUDED.guncelleyen_ref, guncelleme_zamani = now()`, [id, g.iseGiris, g.brut ?? null, g.ek3Yil ?? null, Boolean(g.ek3Serbest), o.kullanici]);
+    if (g.vizeBitis !== undefined || g.pasaportBitis !== undefined) await b.db.query(`UPDATE personel_karti SET vize_bitis = coalesce($2, vize_bitis), pasaport_bitis = coalesce($3, pasaport_bitis) WHERE kullanici_ref = $1`, [id, g.vizeBitis || null, g.pasaportBitis || null]); // D-025
     await (await import('./uyum.js')).uyumOlay(b.db, 'personel_kaydi', 'Personel', id); // YG-1546
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Personel Kartı', nesneTuru: 'Personel', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     await esikKontrol(b.db);

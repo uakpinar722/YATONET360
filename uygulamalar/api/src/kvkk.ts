@@ -23,12 +23,17 @@ const ayEkle = (d: Date, ay: number) => { const x = new Date(d); x.setUTCMonth(x
 const rolKisileri = async (db: Db, ad: string) => rolSahipleri(db, await rolId(db, ad));
 
 /** YG-1201, YG-1202: ihlal kaydı ilk kesin bilgi beklenmeden açılır; Bilgi İşlem Müdürü ve Hukuk ve Uyum Direktörü telefon ve sistem içi uyarılır. */
-export async function ihlalAc(db: Db, g: { ozet: string; olayTuru: string; ogrenme?: Date; farkEden: string; veriIsleyen?: boolean; ozelNitelikli?: boolean }) {
+export async function ihlalAc(db: Db, g: { ozet: string; olayTuru: string; ogrenme?: Date; farkEden: string; veriIsleyen?: boolean; ozelNitelikli?: boolean; karsiTaraf?: string }) {
   const ogrenme = g.ogrenme ?? new Date(); const yil = ogrenme.getFullYear();
   const no = `OLY-${yil}-${String(await sayac(db, `veri_ihlali:${yil}`)).padStart(4, '0')}`;
   const r = (await db.query(`INSERT INTO veri_ihlali (olay_no, ozet, olay_turu, ogrenme_zamani, fark_eden_ref, veri_isleyen_kaynakli, ozel_nitelikli_veri) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [no, g.ozet, g.olayTuru, ogrenme, g.farkEden, Boolean(g.veriIsleyen), Boolean(g.ozelNitelikli)])).rows[0];
   const son = new Date(ogrenme.getTime() + (g.veriIsleyen ? VERI_ISLEYEN_SAAT : KURUL_SAAT) * SAAT);
   await kartAc(db, { tur: 'Veri İhlali Şüphesi', kategori: 'islem', baslik: `${no} · Veri İhlali Şüphesi · FR-HUK-002`, ozet: 'Değerlendirmenin başlatılması ve üst yönetimin bilgilendirilmesi rica olunur.', oncelik: 'Kritik', sonZaman: son, sahipRol: await rolId(db, HUD), nesneTuru: 'Veri İhlali', nesneKimligi: r.kimlik });
+  // Kişisel Veri Çerçeve m.13.1: olay doğrulanmamış olsa da sözleşmeli tarafa 12 saat içinde ilk bildirim; Kurul süresini değiştirmez.
+  if (g.karsiTaraf?.trim()) {
+    await db.query(`UPDATE veri_ihlali SET karsi_taraf = $2 WHERE kimlik = $1`, [r.kimlik, g.karsiTaraf.trim()]);
+    await kartAc(db, { tur: 'Karşı Tarafa İhlal Bildirimi', kategori: 'gorev', baslik: `${no} · ${g.karsiTaraf.trim()} · İlk Bildirim`, ozet: 'Sözleşme gereği öğrenmeden itibaren en geç 12 saat içinde ilk bildirim yapılması rica olunur.', oncelik: 'Kritik', sonZaman: new Date(ogrenme.getTime() + 12 * SAAT), sahipRol: await rolId(db, HUD), nesneTuru: 'Veri İhlali', nesneKimligi: r.kimlik });
+  }
   await bildir(db, { olay: `veri-ihlali:${r.kimlik}`, kullanicilar: [...await rolKisileri(db, BIM), ...await rolKisileri(db, HUD)], baslik: `⚠ Veri İhlali Şüphesi · ${no}`, ozet: 'FR-HUK-002 kaydı açıldı; telefonla da aranmanız bekleniyor.', oncelik: 'Kritik', sms: true, acil: true });
   return { kimlik: r.kimlik as string, olayNo: no };
 }
@@ -144,9 +149,9 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1201: her kullanıcı bildirebilir.
   s.post('/veri-ihlali', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { ozet?: string; olayTuru?: string; ogrenme?: string; veriIsleyen?: boolean; ozelNitelikli?: boolean };
+    const o = i.oturum!; const g = (i.body ?? {}) as { ozet?: string; olayTuru?: string; ogrenme?: string; veriIsleyen?: boolean; ozelNitelikli?: boolean; karsiTaraf?: string };
     if (!g.ozet?.trim() || !OLAY.includes(g.olayTuru ?? '')) return y.code(400).send({ hata: 'Olay türünü ve kısa açıklamayı girmenizi rica ederiz.' });
-    const r = await ihlalAc(b.db, { ozet: g.ozet.trim(), olayTuru: g.olayTuru!, ogrenme: g.ogrenme ? new Date(g.ogrenme) : undefined, farkEden: o.kullanici, veriIsleyen: g.veriIsleyen, ozelNitelikli: g.ozelNitelikli });
+    const r = await ihlalAc(b.db, { ozet: g.ozet.trim(), olayTuru: g.olayTuru!, ogrenme: g.ogrenme ? new Date(g.ogrenme) : undefined, farkEden: o.kullanici, veriIsleyen: g.veriIsleyen, ozelNitelikli: g.ozelNitelikli, karsiTaraf: g.karsiTaraf });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Veri İhlali Bildirimi', nesneTuru: 'Veri İhlali', nesneKimligi: r.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return r;
   });

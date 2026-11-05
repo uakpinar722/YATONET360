@@ -313,7 +313,9 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const sahipler = await rolSahipleri(b.db, await rolId(b.db, t.rol));
     const satir = [];
     const sinir = KAPASITE[rol!];
+    const yd = Boolean((await b.db.query(`SELECT yurt_disi FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.yurt_disi);
     for (const k of sahipler) {
+      if (yd && !(await (await import('./ik.js')).yurtDisiUygunMu(b.db, k))) continue; // D-025
       const h = (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [k])).rows[0];
       const yuk = await kapasiteYuku(b.db, k, rol!);
       satir.push({ kimlik: k, ad_soyad: h.ad_soyad, yuk, sinir: sinir ?? null, oran: sinir ? Math.round((yuk / sinir) * 100) : null });

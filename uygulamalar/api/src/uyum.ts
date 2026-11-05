@@ -85,6 +85,11 @@ export async function sureUyariIsle(db: Pool, simdi = new Date()): Promise<numbe
     const k = kalan(c.b); if (k < 0) { await db.query(`UPDATE olcum_cihazi SET kabul = false WHERE kimlik = $1`, [c.kimlik]); n++; continue; } // YG-533: süresi geçen kullanılabilir görünmez
     const e = esik(k, [60, 30]); if (e) await uyar('kalibrasyon', c.kimlik, e, kk, `Kalibrasyon Süresi Doluyor · ${e} Gün`, `${c.ad} · ${c.seri_no} · Son: ${G(c.b)}`);
   }
+  // D-025: personel vize ve pasaport bitişi İnsan Kaynaklarına.
+  const ikl = [...await rolSahipleri(db, await rolId(db, 'İnsan Kaynakları Müdürü')), ...await rolSahipleri(db, await rolId(db, 'İnsan Kaynakları Sorumlusu'))];
+  for (const p of (await db.query(`SELECT k.kullanici_ref, h.ad_soyad, k.vize_bitis, k.pasaport_bitis FROM personel_karti k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.personel_durumu <> 'Ayrıldı' AND (k.vize_bitis IS NOT NULL OR k.pasaport_bitis IS NOT NULL)`)).rows) {
+    for (const [tur, d] of [['Vize', p.vize_bitis], ['Pasaport', p.pasaport_bitis]] as [string, Date | null][]) { if (!d) continue; const e = esik(kalan(d), [60, 30]); if (e) await uyar('personel_belge', `${p.kullanici_ref}:${tur}`, e, ikl, `${tur} Süresi Doluyor · ${e} Gün`, `${p.ad_soyad} · Bitiş: ${G(d)}`); }
+  }
   for (const v of (await db.query(`SELECT kimlik, ad, bitis FROM bt_varligi`)).rows) { const e = esik(kalan(v.bitis), [30]); if (e) await uyar('bt_varligi', v.kimlik, e, sy, 'BT Varlığı veya Lisans Bitişi · 30 Gün', `${v.ad} · Bitiş: ${G(v.bitis)}`); }
   return n;
 }
