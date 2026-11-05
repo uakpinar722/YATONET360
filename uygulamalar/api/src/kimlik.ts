@@ -117,7 +117,7 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
     }
     const n = kimlikNormalle(kimlik);
     const { rows } = n.eposta || n.telefon
-      ? await b.db.query(`SELECT * FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta) = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon])
+      ? await b.db.query(`SELECT * FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta COLLATE "C") = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon])
       : { rows: [] as any[] };
     const h = rows[0];
     if (!h || !h.parola_ozeti) {

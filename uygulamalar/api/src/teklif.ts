@@ -382,6 +382,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Masraf kalemi taslak teklife eklenir.' });
     const kilit = await ekonomikKilitEngeli(b.db, t.dosya_ref); if (kilit) return y.code(409).send({ hata: kilit });
     if (!g.aciklama?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Açıklama ve tutarı yazmanızı rica ederiz.' });
+    // YG-1418: geçerli garantide yan masraf yat sahibine yazılmaz.
+    if ((await b.db.query(`SELECT 1 FROM garanti_sikayet WHERE dosya_ref = $1 AND karar = 'Garanti' LIMIT 1`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Geçerli garantide bu masraf yat sahibine yazılmaz; firma hakedişinden mahsup edilir.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Tesis teklifi veya tarife belgesini eklemenizi rica ederiz.' });
     return islem(async (c) => {
       const tutarE = R2(Number(g.tutar));

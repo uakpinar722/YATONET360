@@ -126,7 +126,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
       if (!r || new Date(r.son_gecerlilik) <= new Date() || r.deneme >= 5) return dur(401, 'Doğrulama kodu hatalı veya süresi dolmuş.');
       if (ozet(n.telefon + String(g.kod ?? '')) !== r.kod_ozeti) { await c.query(`UPDATE kayit_kodu SET deneme = deneme + 1 WHERE telefon = $1`, [n.telefon]); await c.query('COMMIT'); return y.code(401).send({ hata: 'Doğrulama kodu hatalı veya süresi dolmuş.' }); }
       if ((await c.query(`SELECT 1 FROM kullanici_hesabi WHERE cep_telefonu = $1`, [n.telefon])).rowCount) return dur(409, 'Bu numarayla hesabınız vardır; giriş yapınız.');
-      if (g.eposta && (await c.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta) = lower($1)`, [g.eposta])).rowCount) return dur(409, 'Bu e-postayla hesap vardır; giriş yapınız.');
+      if (g.eposta && (await c.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta COLLATE "C") = lower($1 COLLATE "C")`, [g.eposta])).rowCount) return dur(409, 'Bu e-postayla hesap vardır; giriş yapınız.');
       const h = (await c.query(
         `INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, cep_telefonu, dogrulama_yontemi, tercih_dili) VALUES ('Müşteri/Kurum',$1,$2,$3,$4,$3,'SMS kodu',$5) RETURNING kimlik`,
         [GRUP_YAT, g.ad.trim(), n.telefon, g.eposta?.trim() || null, g.dil === 'en' ? 'İngilizce' : 'Türkçe'])).rows[0];

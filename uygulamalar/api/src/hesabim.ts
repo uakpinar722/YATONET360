@@ -28,7 +28,7 @@ export function hesabimYollari(s: FastifyInstance, b: Baglam) {
   s.post('/kimlik/parola-talep', async (i) => {
     const n = kimlikNormalle(String(((i.body ?? {}) as { kimlik?: string }).kimlik ?? ''));
     const { rows } = n.eposta || n.telefon
-      ? await b.db.query(`SELECT kimlik, e_posta, cep_telefonu, hesap_durumu FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta) = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon])
+      ? await b.db.query(`SELECT kimlik, e_posta, cep_telefonu, hesap_durumu FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta COLLATE "C") = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon])
       : { rows: [] as any[] };
     const h = rows[0];
     if (!h || h.hesap_durumu !== 'Aktif') return { mesaj: GENEL };
@@ -93,7 +93,7 @@ export function hesabimYollari(s: FastifyInstance, b: Baglam) {
     if (!g.yeni || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.yeni)) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
     const h = (await b.db.query(`SELECT e_posta, cep_telefonu, parola_ozeti FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
     if (h.parola_ozeti && !(await parolaDogrula(h.parola_ozeti, g.parola ?? ''))) { await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'E-posta Değişikliği Talebi', sonuc: 'Başarısız', adres: i.ip, iliski: i.id }); return y.code(403).send({ hata: 'Parola doğrulanamadı.' }); }
-    if ((await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta) = lower($1)`, [g.yeni])).rowCount) return y.code(409).send({ hata: 'Bu e-posta kullanılamaz.' });
+    if ((await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta COLLATE "C") = lower($1 COLLATE "C")`, [g.yeni])).rowCount) return y.code(409).send({ hata: 'Bu e-posta kullanılamaz.' });
     const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await b.db.query(`INSERT INTO eposta_degisikligi (kullanici_ref, yeni_eposta, kod_ozeti, son_gecerlilik) VALUES ($1,$2,$3, now() + interval '15 minutes') ON CONFLICT (kullanici_ref) DO UPDATE SET yeni_eposta = EXCLUDED.yeni_eposta, kod_ozeti = EXCLUDED.kod_ozeti, son_gecerlilik = EXCLUDED.son_gecerlilik, deneme = 0`, [o.kullanici, g.yeni, ozet(`${o.kullanici}${kod}`)]);
     await b.eposta.gonder(g.yeni, await metinGetir(b.db, 'BLD-89', 'tr', { Kod: kod }));

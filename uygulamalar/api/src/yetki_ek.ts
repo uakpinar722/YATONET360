@@ -40,9 +40,17 @@ export async function belgeMaskeEngeli(db: Db, tur: string, dosya: string, metin
   return var_(f) ? 'Firma kimliği müşteri ve sigorta belgesinde yer alamaz.' : null;
 }
 
+/** YG-1171: dosya belgesi, dosya tarafı olmayan alıcıya ancak onaylı hasar paylaşım talebiyle paylaşılır. */
+export async function hasarPaylasimEngeli(db: Db, bagTuru: string, dosya: string, alici: string): Promise<string | null> {
+  if (bagTuru !== 'Dosya') return null;
+  if ((await db.query(`SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1::uuid AND lower(eposta COLLATE "C") = lower($2 COLLATE "C") AND aktif LIMIT 1`, [dosya, alici])).rowCount) return null;
+  if ((await db.query(`SELECT 1 FROM hasar_paylasim_talebi WHERE dosya_ref = $1::uuid AND lower(alici COLLATE "C") = lower($2 COLLATE "C") AND durum = 'Onaylandı' LIMIT 1`, [dosya, alici])).rowCount) return null;
+  return 'Bu alıcıyla paylaşım için onaylı hasar bilgisi paylaşım talebi bekleniyor.';
+}
+
 export async function disMetinEngeli(db: Db, g: { telefon?: string | null; eposta?: string | null; metin: string; konu: string }): Promise<string | null> {
-  const a = (await db.query(`SELECT kayit_rolu FROM kurulus WHERE ($1::text IS NOT NULL AND lower(kurumsal_eposta) = lower($1)) OR ($2::text IS NOT NULL AND kurumsal_telefon = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0]
-    ?? (await db.query(`SELECT u.kayit_rolu FROM kullanici_hesabi h JOIN kurulus_kullanici k ON k.kullanici_ref = h.kimlik JOIN kurulus u ON u.kimlik = k.kurulus_ref WHERE ($1::text IS NOT NULL AND lower(h.e_posta) = lower($1)) OR ($2::text IS NOT NULL AND h.cep_telefonu = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0];
+  const a = (await db.query(`SELECT kayit_rolu FROM kurulus WHERE ($1::text IS NOT NULL AND lower(kurumsal_eposta COLLATE "C") = lower($1 COLLATE "C")) OR ($2::text IS NOT NULL AND kurumsal_telefon = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0]
+    ?? (await db.query(`SELECT u.kayit_rolu FROM kullanici_hesabi h JOIN kurulus_kullanici k ON k.kullanici_ref = h.kimlik JOIN kurulus u ON u.kimlik = k.kurulus_ref WHERE ($1::text IS NOT NULL AND lower(h.e_posta COLLATE "C") = lower($1 COLLATE "C")) OR ($2::text IS NOT NULL AND h.cep_telefonu = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0];
   const t = `${g.konu} ${g.metin}`;
   if (a) {
     if (a.kayit_rolu === 'Tesis') return null; // YG-1167: Çözüm Ortağının kimliği marinaya açılabilir.

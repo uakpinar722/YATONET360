@@ -28,7 +28,7 @@ let webAdresiPaylasim = '';
 gonderimIsleyici('Belge Paylaşımı', async (c, r, kim) => {
   const v = r.veri as { surum: string; alici: string; izin: string; gun: number };
   const belirtec = rastgeleBelirtec();
-  await c.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, izin, son_gecerlilik, olusturan_ref) VALUES ($1,$2,lower($3),$4,now() + make_interval(days => $5),$6)`, [v.surum, ozet(belirtec), v.alici, v.izin, v.gun, kim]);
+  await c.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, izin, son_gecerlilik, olusturan_ref) VALUES ($1,$2,lower($3 COLLATE "C"),$4,now() + make_interval(days => $5),$6)`, [v.surum, ozet(belirtec), v.alici, v.izin, v.gun, kim]);
   return { sonuc: { baglanti: `${webAdresiPaylasim}/#paylasim=${belirtec}` } };
 });
 
@@ -233,8 +233,9 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     // K-241: sigorta adresine bağlantı ancak son gönderenin ikili teyidinden sonra üretilir.
     const sg = await sigortaAdresi(b.db, alici);
     if (sg) return { gonderim: await sigortayaHazirla(b.db, { dosya: sg.dosya, tur: 'Belge Paylaşımı', nesne: `${s2.kimlik}:${alici.toLowerCase()}`, alici: null, konu: `${a.e.ad} · ${alici}`, sorumlu: o.kullanici, veri: { surum: s2.kimlik, belge: id, alici, izin, gun } }), durum: 'Teyit Bekliyor' };
+    { const he = await (await import('./yetki_ek.js')).hasarPaylasimEngeli(b.db, a.e.bag_turu, a.e.bag_kimligi, alici); if (he) return y.code(409).send({ hata: he }); }
     const belirtec = rastgeleBelirtec();
-    const r = (await b.db.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, izin, son_gecerlilik, olusturan_ref) VALUES ($1,$2,lower($3),$4,now() + make_interval(days => $5),$6) RETURNING kimlik, son_gecerlilik`, [s2.kimlik, ozet(belirtec), alici, izin, gun, o.kullanici])).rows[0];
+    const r = (await b.db.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, izin, son_gecerlilik, olusturan_ref) VALUES ($1,$2,lower($3 COLLATE "C"),$4,now() + make_interval(days => $5),$6) RETURNING kimlik, son_gecerlilik`, [s2.kimlik, ozet(belirtec), alici, izin, gun, o.kullanici])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Paylaşıldı', nesneTuru: 'belge', nesneKimligi: id, yeni: { alici, gun, izin }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.kimlik, baglanti: `${b.webAdresi}/#paylasim=${belirtec}`, sonGecerlilik: r.son_gecerlilik };
   });

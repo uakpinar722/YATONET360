@@ -46,7 +46,7 @@ export function hesapKurtarmaYollari(s: FastifyInstance, b: Baglam) {
   s.post('/hesap-kurtarma/bul', yetkili, async (i, y) => {
     const n = kimlikNormalle(String(((i.body ?? {}) as { kimlik?: string }).kimlik ?? ''));
     if (!n.eposta && !n.telefon) return y.code(400).send({ hata: 'E-posta veya cep telefonu giriniz.' });
-    const { rows } = await b.db.query(`SELECT kimlik, ad_soyad, kullanici_grubu, hesap_durumu FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta) = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon]);
+    const { rows } = await b.db.query(`SELECT kimlik, ad_soyad, kullanici_grubu, hesap_durumu FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta COLLATE "C") = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon]);
     if (!rows[0]) return y.code(404).send({ hata: 'Bu bilgiyle kayıtlı hesap bulunamadı.' });
     return rows[0];
   });

@@ -74,6 +74,8 @@ describe('kaçak gönderim engeli', () => {
     await teyit(id, 1);
     const son = await teyit(id, 2);
     expect(son.json().baglanti).toContain('#paylasim=');
+    expect((await o.ist('POST', `/api/belge/${b}/surum/1/paylas`, c, { alici: 'baska@deneme.local' })).statusCode).toBe(409); // YG-1171
+    await o.sup.query(`INSERT INTO hasar_paylasim_talebi (dosya_ref, alici, kapsam, talep_eden_ref, durum) SELECT bag_kimligi::uuid, 'baska@deneme.local', 'K', olusturan_ref, 'Onaylandı' FROM belge WHERE kimlik = $1`, [b]);
     expect((await o.ist('POST', `/api/belge/${b}/surum/1/paylas`, c, { alici: 'baska@deneme.local' })).json().baglanti).toContain('#paylasim=');
   });
   it('kaynak kodda BLD-71, 45, 72 doğrudan disGonder ile gönderilmez', () => {

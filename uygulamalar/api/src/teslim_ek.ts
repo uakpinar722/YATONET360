@@ -30,7 +30,10 @@ onaySonucKaydet('ONY-03', async (c, t, karar) => {
 /** YG-1086: teslim öncesinde yetki yeniden kontrol edilir. */
 export async function teslimYetkiEngeli(db: Db, dosya: string): Promise<string | null> {
   const t = (await db.query(`SELECT t.ihbar_yetki_durumu FROM dosya d JOIN talep t ON t.kimlik = d.talep_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
-  return t && t.ihbar_yetki_durumu !== 'Doğrulandı' ? 'Yetki doğrulanmadan teslim yapılamaz; yetki belgesi bekleniyor.' : null;
+  if (t && t.ihbar_yetki_durumu !== 'Doğrulandı') return 'Yetki doğrulanmadan teslim yapılamaz; yetki belgesi bekleniyor.';
+  // YG-1086: yat sahibi tarafındaki kişinin yetki kaydı süresi dolmuş veya geçersizse teslim durur.
+  if ((await db.query(`SELECT 1 FROM yetki_kaydi y JOIN dosya_tarafi t ON t.kimlik = y.dosya_tarafi_ref WHERE y.dosya_ref = $1 AND t.aktif AND t.taraf_rolu = 'Yat Sahibi' AND (y.yetki_durumu <> 'Geçerli' OR y.gecerlilik_bitisi < current_date) AND NOT EXISTS (SELECT 1 FROM yetki_kaydi z WHERE z.dosya_tarafi_ref = y.dosya_tarafi_ref AND z.yetki_durumu = 'Geçerli' AND (z.gecerlilik_bitisi IS NULL OR z.gecerlilik_bitisi >= current_date)) LIMIT 1`, [dosya])).rowCount) return 'Teslim alacak kişinin yetki kaydının süresi dolmuştur; yenilenmesi bekleniyor.';
+  return null;
 }
 
 /** YG-473: yetkisi doğrulanmamış ihbar edenin (kaptan) sözlü onayıyla ilave iş başlamaz; dosya yetki belgesi gelene kadar bekler. */

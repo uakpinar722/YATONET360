@@ -510,7 +510,8 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       [id, g.karar ?? null, g.sikayetSonucu ?? null, g.gerekce.trim(), o.kullanici, g.maliyet ?? null, Boolean(g.kokNeden), g.kapat ? 'Kapalı' : 'Karar']);
     if (g.karar === 'Garanti') {
       await garantiKarneIsle(b.db, k.dosya_ref); // Ek I §7.5
-      if (await birKez(b.db, 'garanti_masraf', id)) await kartAc(b.db, { tur: 'Garanti Masrafı', kategori: 'islem', baslik: `${k.kayit_no} · Garanti Yan Masrafı`, ozet: 'Karaya alma, çekek ve ulaşım masrafını LGM ödediyse firma hakedişinden mahsup önermenizi rica ederiz.', sahipRol: await rolId(b.db, 'Muhasebe ve Finans Müdürü'), nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref }); // YG-1418
+      const gm = Number((await b.db.query(`SELECT coalesce(sum(f.tutar_eur), 0) t FROM tesis_faturasi f JOIN tesis_talebi s ON s.kimlik = f.talep_ref WHERE s.dosya_ref = $1 AND f.kalem = 'Çekek'`, [k.dosya_ref])).rows[0].t);
+      if (await birKez(b.db, 'garanti_masraf', id)) await kartAc(b.db, { tur: 'Garanti Masrafı', kategori: 'islem', baslik: `${k.kayit_no} · Garanti Yan Masrafı`, ozet: `Karaya alma, çekek ve ulaşım masrafını LGM ödediyse firma hakedişinden mahsup önermenizi rica ederiz.${gm > 0 ? ` Kayıtlı çekek faturaları: ${gm.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR.` : ''}`, sahipRol: await rolId(b.db, 'Muhasebe ve Finans Müdürü'), nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref }); // YG-1418
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Garanti/Şikâyet Kararı', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, yeni: { karar: g.karar, sonuc: g.sikayetSonucu }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

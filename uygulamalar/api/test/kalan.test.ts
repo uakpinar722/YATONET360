@@ -347,3 +347,42 @@ describe('karşı taraf bildirimi ve vize (Çerçeve m.13.1, D-025)', () => {
     expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`personel_belge:${ku}:Vize:30`, o.K.ikm])).rowCount).toBe(1);
   });
 });
+
+describe('hasar paylaşım kapısı, yetki süresi, garanti masrafı (YG-1171, YG-1086, YG-1418)', () => {
+  it('dosya tarafı dışına onaysız paylaşım durur; onaylı talep veya taraf geçer', async () => {
+    const { hasarPaylasimEngeli } = await import('../src/yetki_ek.js');
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya_tarafi SET eposta = 'sahip1@d.local' WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]);
+    expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'yabanci@d.local')).toContain('bekleniyor');
+    expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'SAHIP1@d.local')).toBeNull();
+    expect(await hasarPaylasimEngeli(o.db, 'Firma', d.kimlik, 'yabanci@d.local')).toBeNull();
+    await o.sup.query(`INSERT INTO hasar_paylasim_talebi (dosya_ref, alici, kapsam, talep_eden_ref, durum) VALUES ($1,'yabanci@d.local','K',$2,'Onaylandı')`, [d.kimlik, o.K.ds]);
+    expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'yabanci@d.local')).toBeNull();
+  });
+  it('yetki kaydı süresi dolan yat sahibinde teslim durur, yenisi varsa geçer', async () => {
+    const { teslimYetkiEngeli } = await import('../src/teslim_ek.js');
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE talep SET ihbar_yetki_durumu = 'Doğrulandı' WHERE kimlik = (SELECT talep_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    const ta = (await o.sup.query(`SELECT kimlik FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' LIMIT 1`, [d.kimlik])).rows[0].kimlik;
+    const yk = (bit: string) => o.sup.query(`INSERT INTO yetki_kaydi (dosya_ref, dosya_tarafi_ref, yetki_dayanagi_turu, belge_duzenleyen, belge_tarihi, gecerlilik_baslangici, gecerlilik_bitisi, yetkili_islemler, dogrulayan_ref, dogrulama_kaniti, olusturan_ref) VALUES ($1,$2,'Vekâletname','Noter','2020-01-01','2020-01-01',$3,'{Teslim}',$4,'Belge',$4)`, [d.kimlik, ta, bit, o.K.ds]);
+    expect(await teslimYetkiEngeli(o.db, d.kimlik)).toBeNull();
+    await yk('2020-12-31'); expect(await teslimYetkiEngeli(o.db, d.kimlik)).toContain('süresi dolmuştur');
+    await yk('2099-12-31'); expect(await teslimYetkiEngeli(o.db, d.kimlik)).toBeNull();
+  });
+  it('garanti kararlı dosyada yan masraf kalemi eklenmez', async () => {
+    const d = await o.dosyaAc({}, {}); const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const u = `/api/teklif/${t}/masraf-kalemi`; const c = await o.gir('ts'); const g = { aciklama: 'Çekek', nitelik: 'Onarım', tutar: 100 };
+    expect((await o.ist('POST', u, c, g)).json().hata).toContain('belgesini'); // garanti yokken belge sorulur
+    await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, karar, olusturan_ref) VALUES ($1,$2,'{Garanti bildirimi}','Telefon',now(),'Normal','Garanti',$3)`, [`GS-${++n}`, d.kimlik, o.K.ds]);
+    const r = await o.ist('POST', u, c, g); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('mahsup');
+  });
+});
+
+describe('e-posta harf kuralı (Türkçe I)', () => {
+  it('I harfli adres ı olmaz; büyük küçük farkı tek hesap sayılır; paylaşım doğru adrese kaydedilir', async () => {
+    await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, cep_telefonu, dogrulama_yontemi) VALUES ('Müşteri/Kurum','Bireysel Müşteri (Yat Sahibi/Yetkilisi)','A','iks.1','KISI@deneme.local','+905550004401','SMS kodu')`);
+    await expect(o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, cep_telefonu, dogrulama_yontemi) VALUES ('Müşteri/Kurum','Bireysel Müşteri (Yat Sahibi/Yetkilisi)','B','iks.2','kisi@deneme.local','+905550004402','SMS kodu')`)).rejects.toThrow();
+    const { disMetinEngeli } = await import('../src/yetki_ek.js');
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kurumsal_eposta, olusturan_ref) VALUES ($1,'Firma Il','Çözüm Ortağı','BILGI@firma.local',$2) RETURNING kimlik`, [`S-I${++n}`, o.K.ds])).rows[0].kimlik; expect(f).toBeTruthy();
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,'SgX','HASAR-1234',$2)`, [d.kimlik, o.K.ds]);
+    expect(await disMetinEngeli(o.db, { eposta: 'bilgi@firma.local', metin: 'HASAR-1234', konu: 'k' })).toContain('Sigorta bilgisi');
+  });
+});
