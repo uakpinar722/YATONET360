@@ -729,6 +729,7 @@ export function IdariIslemler() {
       <PersonelIslemlerim yap={yap} />
       <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
+      <KurumsalEk2 yap={yap} />
       <YasalAyipRaporu />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
@@ -765,4 +766,20 @@ function CaymaKaydi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<an
 function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void }) {
   const [b, setB] = useState(''); const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; kapsama: string; sonuc: string; engeller: string[]; uyarilar: string[] }[] | null>(null); const [h, setH] = useState('');
   return <><label htmlFor={`fa-${dosya}`}>Branş (Uygun Firmaları Listelemek İçin)</label><input id={`fa-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}`).then(setL).catch((e) => setH(e.message)); }}>Uygun Firmaları Listele</button>{h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve bölgede uygun firma bulunmamaktadır.</div>}{l?.map((f) => <div key={f.kimlik}>{f.ticari_unvan} · {f.kapsama} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
+}
+
+/** YG-1070, D-135: Ek-2 kaydı; her kayıt yeni sürüm, sınır kuruma yansır; PDF kayıttan üretilir. */
+export function KurumsalEk2({ yap }: { yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
+  const [l, setL] = useState<{ kimlik: string; unvan: string; surum: number | null }[]>([]); const [k, setK] = useState('');
+  const [f, setF] = useState({ muhatapAd: '', muhatapIl: '', kapsamAd: '', kapsamIl: '', fiyatAd: '', fiyatIl: '', limit: '', teslimAd: '', teslimIl: '', teslimBelge: '', kaptanAd: '', kaptanIl: '', kaptanLimit: '', lgmAd: '', lgmIl: '', dayanak: '', gunluk: '', resmi: '', yatlar: '', bitis: '' }); const [b, setB] = useState<string[]>([]);
+  const yk = () => istek<typeof l>('/kurumsal-kurumlar').then(setL);
+  useEffect(() => { void yk().catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  const A = (a: keyof typeof f, et: string) => <><label htmlFor={`e2-${a}`}>{et}</label><input id={`e2-${a}`} value={f[a]} onChange={(e) => setF({ ...f, [a]: e.target.value })} /></>;
+  const sayi = (x: string) => (x.trim() ? Number(x.replace(/\./g, '').replace(',', '.')) : undefined);
+  return <Blok baslik="Kurumsal Ek-2"><label htmlFor="e2-k">Kurum</label><select id="e2-k" value={k} onChange={(e) => setK(e.target.value)}><option value="">Seçiniz</option>{l.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.unvan}{x.surum ? ` · Sürüm ${x.surum}` : ''}</option>)}</select>
+    {k && <>{A('muhatapAd', 'Müşteri Sözleşme Muhatabı')}{A('muhatapIl', 'E-Posta / KEP / Telefon')}{A('kapsamAd', 'Teknik Kapsam Onayı')}{A('kapsamIl', 'E-Posta / KEP / Telefon')}{A('fiyatAd', 'Fiyat ve Ödeme Onayı')}{A('fiyatIl', 'E-Posta / KEP / Telefon')}{A('limit', 'Üst Limit (EUR)')}{A('teslimAd', 'Yat Teslim/İade Yetkilisi')}{A('teslimIl', 'E-Posta / KEP / Telefon')}{A('teslimBelge', 'Yetki Belgesi')}{A('kaptanAd', 'Yatın Kaptanı / Yat Yetkilisi (yetki yoksa boş)')}{A('kaptanIl', 'E-Posta / KEP / Telefon')}{A('kaptanLimit', 'Kaptan Üst Limiti (EUR)')}{A('lgmAd', 'Hizmet Sağlayıcı Muhatabı')}{A('lgmIl', 'E-Posta / KEP / Telefon')}{A('dayanak', 'Yetki Belgesi / İmza Sirküleri / Vekâletname')}{A('gunluk', 'Günlük Operasyon Kanalı')}{A('resmi', 'Resmî Bildirim Kanalı')}{A('yatlar', 'Kapsadığı Yatlar (Virgülle)')}{A('bitis', 'Bitiş Tarihi (YYYY-AA-GG)')}
+      {['Sörveyör', 'Broker', 'Lehtar', 'Klas Kuruluşu'].map((x) => <label className="kutu" key={x}><input type="checkbox" checked={b.includes(x)} onChange={(e) => setB(e.target.checked ? [...b, x] : b.filter((z) => z !== x))} /><span>Bilgi Paylaşım İzni: {x}</span></label>)}
+      <button className="btn2" onClick={() => void yap(() => istek(`/kurumsal-kurum/${k}/ek2`, { satirlar: { muhatap: { ad: f.muhatapAd, iletisim: f.muhatapIl }, kapsam: { ad: f.kapsamAd, iletisim: f.kapsamIl }, fiyat: { ad: f.fiyatAd, iletisim: f.fiyatIl, limit: sayi(f.limit) }, teslim: { ad: f.teslimAd, iletisim: f.teslimIl, belge: f.teslimBelge }, kaptan: { ad: f.kaptanAd, iletisim: f.kaptanIl, limit: sayi(f.kaptanLimit) }, lgm: { ad: f.lgmAd, iletisim: f.lgmIl } }, dayanak: f.dayanak, gunluk: f.gunluk, resmi: f.resmi, yatlar: f.yatlar.split(',').map((s) => s.trim()).filter(Boolean), islemler: ['ONY-23', 'ONY-25', 'ONY-27'], bitis: f.bitis, bilgi: b }).then(yk), 'Yeni Ek-2 sürümü kaydedildi.')}>Ek-2 Sürümünü Kaydet</button>
+      {l.find((x) => x.kimlik === k)?.surum && <div className="dugmeler"><a href={`/api/kurumsal-kurum/${k}/ek2.pdf`} target="_blank" rel="noreferrer">Ek-2 PDF (Türkçe)</a> <a href={`/api/kurumsal-kurum/${k}/ek2.pdf?dil=en`} target="_blank" rel="noreferrer">Ek-2 PDF (English)</a></div>}</>}</Blok>;
 }

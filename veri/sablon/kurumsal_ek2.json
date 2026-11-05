@@ -1,0 +1,84 @@
+{
+"tr": {
+"yatlar": "Kapsadığı Yatlar",
+"islem": "İşlem Türü",
+"bitis": "Bitiş Tarihi",
+"bilgi": "Bilgi Paylaşım İzni",
+"limit": "Üst limit",
+"belge": "Yetki belgesi",
+"bilgiDeger": {
+"Sörveyör": "Sörveyör",
+"Broker": "Broker",
+"Lehtar": "Lehtar",
+"Klas Kuruluşu": "Klas Kuruluşu"
+},
+"surum": "Sürüm",
+"ad": "Ek-2. Yetkili Kişiler, Bildirim ve Onay Kanalları",
+"sutun": [
+"Rol / Konu",
+"Ad Soyad / Unvan",
+"E-Posta / KEP / Telefon",
+"Yetki Sınırı / Not"
+],
+"satir": {
+"muhatap": "Müşteri Sözleşme Muhatabı",
+"kapsam": "Teknik Kapsam Onayı",
+"fiyat": "Fiyat Ve Ödeme Onayı",
+"teslim": "Yat Teslim/İade Yetkilisi",
+"kaptan": "Yatın Kaptanı / Yat Yetkilisi",
+"lgm": "Hizmet Sağlayıcı Muhatabı"
+},
+"kapsamNot": "Bedel kabulü ayrıca belirtilir",
+"lgmSatir": [
+"Hizmet Sağlayıcı Mutabakat, Fatura ve Ödeme Yazışmaları",
+"Muhasebe ve Finans Müdürlüğü",
+"ticari@limitglobalmarine.com.tr",
+"Teklif, proforma, ödeme, mutabakat ve fatura yazışmaları"
+],
+"dayanak": "Yetki belgesi / imza sirküleri / vekâletname adı, tarihi ve kapsamı",
+"gunluk": "Günlük operasyon kanalı",
+"resmi": "Resmî bildirim kanalı",
+"kural": "Bu Ek, YATONET 360’taki Yetki ve Onay Sınırı Kaydından üretilir: kişi, rol, kapsadığı yatlar, işlem türü, tek işlem üst limiti (EUR) ve bitiş tarihi; “Yatın Kaptanı / Yat Yetkilisi” satırı yalnız ödeme/onay yetkisi verilmişse limitiyle doldurulur, yetki yoksa satır boş bırakılır ve limit sıfırdır; Bilgi Paylaşım İzni (sörveyör, broker, lehtar, klas kuruluşu) aynı kayıtta gösterilir; limiti aşan onay engellenir ve onay bağlantısı yeterli limiti olan kişiye gider; noter vekâleti istenmez."
+},
+"en": {
+"yatlar": "Yachts Covered",
+"islem": "Transaction Type",
+"bitis": "Expiry Date",
+"bilgi": "Information Sharing Permission",
+"limit": "Upper limit",
+"belge": "Letter of authority",
+"bilgiDeger": {
+"Sörveyör": "Surveyor",
+"Broker": "Broker",
+"Lehtar": "Loss Payee",
+"Klas Kuruluşu": "Classification Society"
+},
+"surum": "Version",
+"ad": "Annex 2. Authorized Persons, Notification and Approval Channels",
+"sutun": [
+"Role / Subject",
+"Full Name / Title",
+"E-mail / KEP / Telephone",
+"Limit of Authority / Note"
+],
+"satir": {
+"muhatap": "Customer Contract Contact",
+"kapsam": "Technical Scope Approval",
+"fiyat": "Price and Payment Approval",
+"teslim": "Authorized Person for Yacht Delivery/Return",
+"kaptan": "Yacht Captain / Yacht Representative",
+"lgm": "Service Provider Contact"
+},
+"kapsamNot": "Price acceptance to be specified separately",
+"lgmSatir": [
+"Service Provider Reconciliation, Invoice and Payment Correspondence",
+"Accounting and Finance Department",
+"ticari@limitglobalmarine.com.tr",
+"Quotation, pro forma, payment, reconciliation and invoice correspondence"
+],
+"dayanak": "Name, date and scope of the letter of authority / signature circular / power of attorney",
+"gunluk": "Day-to-day operational channel",
+"resmi": "Official notification channel",
+"kural": "This Annex is generated from the Authority and Approval Limit Record in YATONET 360: person, role, yachts covered, transaction type, single-transaction limit (EUR) and expiry date; the “Yacht Captain / Yacht Representative” row is completed, with its limit, only if payment/approval authority has been granted; otherwise the row is left blank and the limit is zero; the Information Sharing Permission (surveyor, broker, loss payee, classification society) is shown in the same record; an approval exceeding the limit is blocked and the approval link is sent to a person with a sufficient limit; no notarised power of attorney is required."
+}
+}

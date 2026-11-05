@@ -57,6 +57,24 @@ export async function onBilgiTanim(db: Db, teklif: string, kod: string): Promise
   return { dosyaAdi: `${k.teklif_no}-OB.pdf`, sinif: 'Gizli', t: { ad: m.ad, no: `${k.teklif_no}-OB`, dosyaNo: k.dosya_no, tarih: gunAy(new Date()), surum: `Rev.${k.surum_no}`, dil, yat: k.yat_adi, bolumler, dogrulamaKodu: kod } as unknown as BelgeTanim };
 }
 
+/** YG-1070, D-135: Ek-2 onaylı sözleşme metniyle kayıttan üretilir. Kaptan satırı yalnız yetki varsa dolar; "Fatura / Rapor Alıcısı" satırı yoktur. */
+export async function ek2Tanim(db: Db, kurum: string, dil: 'tr' | 'en'): Promise<{ t: BelgeTanim; dosyaAdi: string } | null> {
+  const e = (await db.query(`SELECT e.*, c.unvan FROM kurumsal_ek2 e JOIN kurumsal_kurum c ON c.kimlik = e.kurum_ref WHERE e.kurum_ref = $1 ORDER BY e.surum DESC LIMIT 1`, [kurum])).rows[0];
+  if (!e) return null;
+  const m = JSON.parse(readFileSync(join(KOK, 'veri', 'sablon', 'kurumsal_ek2.json'), 'utf8'))[dil] as { ad: string; sutun: string[]; satir: Record<string, string>; kapsamNot: string; lgmSatir: string[]; dayanak: string; gunluk: string; resmi: string; kural: string; yatlar: string; islem: string; bitis: string; bilgi: string; limit: string; belge: string; surum: string; bilgiDeger: Record<string, string> };
+  const s = e.satirlar as Record<string, { ad?: string; iletisim?: string; limit?: number; belge?: string; not?: string } | undefined>;
+  const lm = (v?: number) => (v === undefined || v === null ? '' : `${m.limit}: ${tutar(Number(v), dil)} EUR`);
+  const satir = (k: string, not: string) => [m.satir[k]!, s[k]?.ad ?? '', s[k]?.iletisim ?? '', not];
+  const kpt = s.kaptan?.ad && Number(s.kaptan.limit) > 0 ? lm(s.kaptan.limit) : '';
+  const bolumler: Bolum[] = [
+    { baslik: m.ad, tur: 'tablo', sutunlar: m.sutun.map((ad) => ({ ad })), satirlar: [satir('muhatap', s.muhatap?.not ?? ''), satir('kapsam', m.kapsamNot), satir('fiyat', lm(s.fiyat?.limit)), satir('teslim', s.teslim?.belge ? `${m.belge}: ${s.teslim.belge}` : ''), kpt ? satir('kaptan', kpt) : [m.satir.kaptan!, '', '', ''], satir('lgm', ''), m.lgmSatir] },
+    { baslik: dil === 'en' ? 'Authority and Channel Details' : 'Yetki ve Kanal Bilgileri', tur: 'alanlar', numarasiz: true, alanlar: [{ et: m.dayanak, deger: e.dayanak, genis: true }, { et: m.gunluk, deger: e.gunluk_kanal }, { et: m.resmi, deger: e.resmi_kanal }, { et: m.yatlar, deger: (e.yatlar as string[]).join(', ') }, { et: m.islem, deger: (e.islem_turleri as string[]).join(', ') }, { et: m.bitis, deger: e.bitis ? gunAy(new Date(e.bitis)) : null }, { et: m.bilgi, deger: (e.bilgi_izni as string[]).map((x) => m.bilgiDeger[x] ?? x).join(', ') }] },
+    { baslik: dil === 'en' ? 'Authority and Approval Limit Record' : 'Yetki ve Onay Sınırı Kaydı', tur: 'metin', numarasiz: true, metin: m.kural },
+  ];
+  const no = `EK2-${String(e.unvan).replace(/[^\p{L}\p{N}]+/gu, '-').slice(0, 24).replace(/-+$/, '')}-${e.surum}`;
+  return { dosyaAdi: `${no}.pdf`, t: { ad: m.ad, no, tarih: gunAy(new Date(e.zaman)), surum: `${m.surum} ${e.surum}`, dil, bolumler } };
+}
+
 /** Cayma: kayıt, ONY-19 bildirimi, iade hesabı görevi (YG-1450, YG-1493). */
 export async function caymaIsle(c: Db, kayit: string, kanal: string) {
   const k = (await c.query(`SELECT k.*, d.dosya_no, d.yazisma_dili, f.teklif_no, f.surum_no FROM on_bilgilendirme_cayma_kaydi k JOIN dosya d ON d.kimlik = k.dosya_ref JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE k.kimlik = $1`, [kayit])).rows[0];
@@ -194,6 +212,39 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const dil = dilKod(h.tercih_dili); const lt = tutar(limit, dil);
     const on = await onayTalebiAc(b.db, { ony: 'ONY-14', dil, alanlar: { 'Ad Soyad': h.ad_soyad, 'Full name': h.ad_soyad, '0.000,00': lt, '0,000.00': lt }, baslikAlanlari: { Kişi: k.ad_soyad, Rol: k.rol, Yatlar: g.yatlar.join(', '), 'İşlem Türü': g.islemler.join(', '), 'Bitiş Tarihi': g.bitis }, aliciAd: h.ad_soyad, kullanici: o.kullanici, telefon: h.cep_telefonu, eposta: h.e_posta, nesneTuru: 'Yat Yetkilisi', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: 'Yetkili Temsilci Atama Beyanı' });
     return { kimlik: on.kimlik };
+  });
+
+  // YG-1070, D-135: A53 Müşteri ve Paydaş İlişkileri Müdürü Ek-2'yi kaydeder; her değişiklik yeni sürüm, sınır kuruma yansır.
+  const mpm = (k: string) => rolVar(k, ['Müşteri ve Paydaş İlişkileri Müdürü']);
+  s.get('/kurumsal-kurumlar', oturumlu, async (i, y) => (await mpm(i.oturum!.kullanici)) ? (await b.db.query(`SELECT c.kimlik, c.unvan, c.ek2_onay_siniri, (SELECT max(e.surum) FROM kurumsal_ek2 e WHERE e.kurum_ref = c.kimlik) surum FROM kurumsal_kurum c ORDER BY c.unvan`)).rows : y.code(403).send({ hata: 'Bu listeyi Müşteri ve Paydaş İlişkileri Müdürü görür.' }));
+  s.post('/kurumsal-kurum/:id/ek2', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { satirlar?: Record<string, { ad?: string; iletisim?: string; limit?: number; belge?: string; not?: string }>; dayanak?: string; gunluk?: string; resmi?: string; yatlar?: string[]; islemler?: string[]; bitis?: string; bilgi?: string[] };
+    if (!UUID.test(id) || !(await mpm(o.kullanici))) return y.code(403).send({ hata: 'Ek-2’yi Müşteri ve Paydaş İlişkileri Müdürü kaydeder.' });
+    const st = g.satirlar ?? {}; const fy = Number(st.fiyat?.limit);
+    if (!st.muhatap?.ad?.trim() || !st.fiyat?.ad?.trim() || !(fy >= 0)) return y.code(400).send({ hata: 'Sözleşme muhatabı, fiyat ve ödeme yetkilisi ile üst limiti girmenizi rica ederiz.' });
+    if (g.bilgi?.some((x) => !['Sörveyör', 'Broker', 'Lehtar', 'Klas Kuruluşu'].includes(x))) return y.code(400).send({ hata: 'Bilgi paylaşım izni geçersizdir.' });
+    if (!(await b.db.query(`SELECT 1 FROM kurumsal_kurum WHERE kimlik = $1`, [id])).rowCount) return yok(y);
+    // Kaptanda yetki yoksa satır boş, limit sıfır.
+    const kp = st.kaptan; const kaptan = kp?.ad?.trim() && Number(kp.limit) > 0 ? { ad: kp.ad.trim(), iletisim: kp.iletisim?.trim(), limit: Number(kp.limit) } : undefined;
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const n = Number((await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM kurumsal_ek2 WHERE kurum_ref = $1`, [id])).rows[0].n);
+      await c.query(`INSERT INTO kurumsal_ek2 (kurum_ref, surum, satirlar, dayanak, gunluk_kanal, resmi_kanal, yatlar, islem_turleri, bitis, bilgi_izni, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [id, n, JSON.stringify({ ...st, kaptan }), g.dayanak?.trim() || null, g.gunluk?.trim() || null, g.resmi?.trim() || null, g.yatlar ?? [], g.islemler ?? [], g.bitis || null, g.bilgi ?? [], o.kullanici]);
+      await c.query(`UPDATE kurumsal_kurum SET ek2_onay_siniri = $2 WHERE kimlik = $1`, [id, fy]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Ek-2 Sürümü', nesneTuru: 'Kurumsal Kurum', nesneKimligi: id, yeni: { surum: n, sinir: fy }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { surum: n };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  s.get('/kurumsal-kurum/:id/ek2.pdf', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const dil = ((i.query ?? {}) as { dil?: string }).dil === 'en' ? 'en' : 'tr';
+    if (!UUID.test(id)) return yok(y);
+    const benim = (await b.db.query(`SELECT 1 FROM kurumsal_kullanici WHERE kullanici_ref = $1 AND kurum_ref = $2 AND yetkili`, [o.kullanici, id])).rowCount;
+    if (!benim && !(await mpm(o.kullanici))) return yok(y);
+    const v = await ek2Tanim(b.db, id, dil); if (!v) return yok(y);
+    const { pdfUret } = await import('./pdf.js');
+    return y.type('application/pdf').header('Content-Disposition', `inline; filename="${encodeURIComponent(v.dosyaAdi)}"`).send(await pdfUret(v.t));
   });
 
   // YG-1078: yasal ayıp ve rücu listesi yalnız Direktör ve üstü; Müdürler göremez.

@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -278,4 +278,25 @@ describe('giriş kodu kesintide (V-258)', () => {
     } finally { o.sms.gonder = asil; }
     const d = await o.ist('POST', '/api/kimlik/telefon', undefined, { telefon: '+905550002201' }); expect(d.json().kanal).toBe('SMS');
   });
+});
+
+describe('kurumsal Ek-2 (D-135, YG-1070)', () => {
+  it('yalnız MPM kaydeder; sürüm artar, sınır yansır; kaptan yetkisizse satır boş; PDF üretilir', async () => {
+    const { ek2Tanim } = await import('../src/kalan.js'); const { pdfUret } = await import('../src/pdf.js');
+    const tr = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref) VALUES ($1,'Tüzel kişi','Kurumsal Müşteri','Filo A.Ş.','{Yat Sahibi}',$2) RETURNING kimlik`, [`TR-E${++n}`, o.K.ds])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO kurumsal_kurum (taraf_ref, unvan, ek2_onay_siniri, kaydeden_ref) VALUES ($1,'Filo A.Ş.',100,$2) RETURNING kimlik`, [tr, o.K.ds])).rows[0].kimlik; const u = `/api/kurumsal-kurum/${k}/ek2`;
+    const g = { satirlar: { muhatap: { ad: 'Muhatap Kişi', iletisim: 'm@filo.local' }, fiyat: { ad: 'Fiyat Kişi', limit: 25000 }, kaptan: { ad: 'Kaptan Kişi', limit: 0 } }, yatlar: ['Mavi'], bilgi: ['Sörveyör'] };
+    expect((await o.ist('POST', u, await o.gir('ds'), g)).statusCode).toBe(403);
+    const c = await o.gir('mpm'); expect((await o.ist('POST', u, c, { satirlar: {} })).statusCode).toBe(400); expect((await o.ist('POST', u, c, { ...g, bilgi: ['X'] })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, g)).json().surum).toBe(1);
+    expect(Number((await o.sup.query(`SELECT ek2_onay_siniri s FROM kurumsal_kurum WHERE kimlik = $1`, [k])).rows[0].s)).toBe(25000);
+    const v = await ek2Tanim(o.db, k, 'tr'); const m = JSON.stringify(v!.t); expect(m).toContain('Muhatap Kişi'); expect(m).toContain('25.000,00 EUR'); expect(m).not.toContain('Kaptan Kişi'); expect(m).not.toContain('[●]'); expect(m).not.toContain('Fatura / Rapor'); expect(m).toContain('noter');
+    expect(m).toContain('ticari@limitglobalmarine.com.tr'); expect(m).toContain('Hizmet Sağlayıcı Muhatabı'); expect(v!.t.bolumler[0]).toMatchObject({ satirlar: expect.arrayContaining([expect.arrayContaining(['Yatın Kaptanı / Yat Yetkilisi', '', '', ''])]) });
+    expect((await o.ist('POST', u, c, { ...g, satirlar: { ...g.satirlar, kaptan: { ad: 'Kaptan Kişi', limit: 500 } } })).json().surum).toBe(2);
+    expect(JSON.stringify((await ek2Tanim(o.db, k, 'en'))!.t)).toContain('Kaptan Kişi');
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM kurumsal_ek2 WHERE kurum_ref = $1`, [k])).rows[0].n)).toBe(2);
+    expect((await pdfUret(v!.t)).length).toBeGreaterThan(5000);
+    const pdf = await o.ist('GET', `${u}.pdf?dil=en`, c); expect(pdf.statusCode).toBe(200); expect(pdf.headers['content-type']).toContain('pdf');
+    expect((await o.ist('GET', `${u}.pdf`, await o.gir('ds'))).statusCode).toBe(404);
+  }, 120_000);
 });
