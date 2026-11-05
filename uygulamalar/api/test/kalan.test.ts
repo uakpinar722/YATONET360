@@ -386,3 +386,23 @@ describe('e-posta harf kuralı (Türkçe I)', () => {
     expect(await disMetinEngeli(o.db, { eposta: 'bilgi@firma.local', metin: 'HASAR-1234', konu: 'k' })).toContain('Sigorta bilgisi');
   });
 });
+
+describe('temsilciye teslim ve kümülatif değişiklik (YG-414, YG-410)', () => {
+  it('yetki kaydı yoksa temsilciye onaysız teslim durur; varsa geçer', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,'Fotoğraf','Gizli','Dosya',$2,'Sistem',current_date,$3) RETURNING kimlik`, [`F-${d.kimlik}`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref, hatirlatma_zamani) VALUES ($1,$2,now())`, [d.kimlik, o.K.ds]);
+    const u = `/api/dosya/${d.kimlik}/teslim-onaysiz`; const g = { aliciTuru: 'Yetkili Temsilci', alici: 'T Kişi', belge: bl }; const c = await o.gir('ds');
+    const r = await o.ist('POST', u, c, g); expect(r.statusCode, r.body).toBe(409); expect(r.json().hata).toContain('yetki kaydı');
+    const ta = (await o.sup.query(`SELECT kimlik FROM dosya_tarafi WHERE dosya_ref = $1 LIMIT 1`, [d.kimlik])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO yetki_kaydi (dosya_ref, dosya_tarafi_ref, yetki_dayanagi_turu, belge_duzenleyen, belge_tarihi, gecerlilik_baslangici, gecerlilik_bitisi, yetkili_islemler, dogrulayan_ref, dogrulama_kaniti, olusturan_ref) VALUES ($1,$2,'Vekâletname','Noter','2020-01-01','2020-01-01','2099-01-01','{Teslim}',$3,'Belge',$3)`, [d.kimlik, ta, o.K.ds]);
+    const r2 = await o.ist('POST', u, c, g); expect(r2.statusCode, r2.body).toBe(200);
+  });
+  it('değişiklik listesi yalnız onaylıları kümülatif toplar', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const e = (no: string, f: number, dr: string) => o.sup.query(`INSERT INTO degisiklik_protokolu (degisiklik_no, dosya_ref, tur, mevcut, onerilen, bedel_farki_eur, kanal, durum, hazirlayan_ref) VALUES ($1,$2,'İlave İş','A','B',$3,'YATONET 360',$4,$5)`, [`${d.dosyaNo}-${no}`, d.kimlik, f, dr, o.K.ds]);
+    await e('D1', 100, 'Onaylandı'); await new Promise((r) => setTimeout(r, 5)); await e('D2', 50, 'Reddedildi'); await new Promise((r) => setTimeout(r, 5)); await e('D3', 25, 'Onaylandı');
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/degisiklikler`, await o.gir('ds'))).json() as { kumulatif_eur: string }[];
+    expect(l.map((x) => Number(x.kumulatif_eur))).toEqual([100, 100, 125]);
+  });
+});

@@ -67,7 +67,7 @@ export function kurumsalYollari(s: FastifyInstance, b: Baglam) {
     const u = await kurumsalKullanici(b.db, i.oturum!.kullanici);
     if (!u) return yok(y);
     const kullanicilar = (await b.db.query(`SELECT h.kimlik, h.ad_soyad, h.e_posta, h.hesap_durumu, k.rol, k.onay_siniri, k.yetkili FROM kurumsal_kullanici k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.kurum_ref = $1 ORDER BY h.hesap_durumu, h.ad_soyad`, [u.kurum_ref])).rows;
-    return { kurum: u.unvan, ek2Siniri: u.ek2_onay_siniri, yetkili: u.yetkili, rol: u.rol, kullanicilar: kullanicilar.map((x) => ({ ...x, ben: x.kimlik === i.oturum!.kullanici })) };
+    return { kurum: u.unvan, kurumId: u.kurum_ref, ek2Siniri: u.ek2_onay_siniri, yetkili: u.yetkili, rol: u.rol, kullanicilar: kullanicilar.map((x) => ({ ...x, ben: x.kimlik === i.oturum!.kullanici })) };
   });
 
   // YG-1563: onay adımı yok; Müşteri ve Paydaş İlişkileri Müdürüne bilgi gider.

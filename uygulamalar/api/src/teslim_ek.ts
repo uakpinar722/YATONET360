@@ -150,6 +150,8 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (!['Yat Sahibi', 'Yetkili Temsilci', 'Marina veya Tersane'].includes(g.aliciTuru ?? '') || !g.alici?.trim()) return y.code(400).send({ hata: 'Teslim alanı girmenizi rica ederiz.' });
     if (!(await dosyaBelgesi(g.belge, id))) return y.code(400).send({ hata: 'Teslim fotoğrafını eklemenizi rica ederiz.' });
     const d = await dosya(id); const t = await sahip(id);
+    // YG-414: temsilciye teslimde geçerli yetki kaydı aranır; sözlü veya e-posta teyidi yerine geçmez.
+    if (g.aliciTuru === 'Yetkili Temsilci' && !(await b.db.query(`SELECT 1 FROM yetki_kaydi y WHERE y.dosya_ref = $1 AND y.yetki_durumu = 'Geçerli' AND (y.gecerlilik_bitisi IS NULL OR y.gecerlilik_bitisi >= current_date) UNION ALL SELECT 1 FROM yat_yetkilisi_kaydi k WHERE k.sahip_telefon = $2 AND k.belge_durumu = 'Geçerli' AND k.bitis_tarihi >= current_date LIMIT 1`, [id, t?.telefon ?? ''])).rowCount) return y.code(409).send({ hata: 'Yetkili temsilcinin geçerli yetki kaydı bekleniyor.' });
     const k = (await b.db.query(`SELECT kimlik, hatirlatma_zamani FROM teslim_kaydi WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' LIMIT 1`, [id])).rows[0];
     if (!k) return y.code(409).send({ hata: 'Onay bekleyen teslim kaydı yoktur.' });
     if (!k.hatirlatma_zamani) return y.code(409).send({ hata: 'Önce tek hatırlatma gönderilmelidir.' });

@@ -18,7 +18,7 @@ interface TeklifOz { kimlik: string; teklif_no: string; surum_no: number; statu:
 /** İP-4 ve İP-6 dosya işlemleri: hasar no, koşul, kesin teslim, protokol, yurt dışı, kurtarma, acil temas. */
 export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar, firmaTeklifleri }: { firmaTeklifleri: { kimlik: string; teklif_no: string }[]; id: string; teklifler: TeklifOz[]; sigortali: boolean; ticari: boolean; ds: boolean; firmalar: { kurulus_ref: string; ticari_unvan: string }[] }) {
   const [kosul, setKosul] = useState<{ kimlik: string; eylem: string; son_tarih: string; gerceklesmezse: string; durum: string; sorumlu: string; kalan: number }[]>([]);
-  const [deg, setDeg] = useState<{ degisiklik_no: string; tur: string; mevcut: string; onerilen: string; bedel_farki_eur: string; ek_sure_gun: number; kanal: string; sigorta_onayi: string; durum: string }[]>([]);
+  const [deg, setDeg] = useState<{ degisiklik_no: string; tur: string; mevcut: string; onerilen: string; bedel_farki_eur: string; kumulatif_eur: string; ek_sure_gun: number; kanal: string; sigorta_onayi: string; durum: string }[]>([]);
   const [kur, setKur] = useState<{ kimlik: string; hizmet_turu: string; acil: boolean; ticari_unvan: string; yat_sahibi_onay_zamani: string | null; firma_onay_zamani: string | null; koordinator_onay_zamani: string | null; baslama_zamani: string | null }[]>([]);
   const [tem, setTem] = useState<{ tur: string; ozet: string; zaman: string }[]>([]);
   const [ekip, setEkip] = useState<{ kullanici: string; ad_soyad: string; rol: string }[]>([]);
@@ -56,7 +56,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <div className="dugmeler"><button className="btn2 kucuk" disabled={!kt.tarih || !kt.bedel} onClick={() => void yap(() => istek(`/dosya/${id}/kesin-teslim`, { tarih: kt.tarih, gecikmeBedeli: sayi(kt.bedel) }), 'Kesin teslim tarihi Genel Müdür Yardımcısı onayına gönderildi.')}>Onaya Gönder</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/yurt-disi`, {}), 'Yurt dışı işaretlendi; teklif Genel Müdür Yardımcısı onayına gider.')}>Yurt Dışı Yat</button></div>
 
       <div className="bolum">Değişiklik Protokolü</div>
-      {deg.map((x) => <div key={x.degisiklik_no}>{x.degisiklik_no} · {x.tur} · Eski: {x.mevcut} · Yeni: {x.onerilen} · Fark: {x.bedel_farki_eur} EUR · {x.ek_sure_gun} gün · {x.kanal} · Sigorta: {x.sigorta_onayi} · {x.durum}</div>)}
+      {deg.map((x) => <div key={x.degisiklik_no}>{x.degisiklik_no} · {x.tur} · Eski: {x.mevcut} · Yeni: {x.onerilen} · Fark: {x.bedel_farki_eur} EUR · Onaylı Kümülatif: {x.kumulatif_eur} EUR · {x.ek_sure_gun} gün · {x.kanal} · Sigorta: {x.sigorta_onayi} · {x.durum}</div>)}
       <label htmlFor="de-pt">Değişiklik Türü</label><select id="de-pt" value={p.tur} onChange={(e) => setP({ ...p, tur: e.target.value })}>{['Değişiklik', 'İlave İş', 'Süre Uzatımı'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="de-pm">Mevcut Durum</label><input id="de-pm" value={p.mevcut} onChange={(e) => setP({ ...p, mevcut: e.target.value })} />
       <label htmlFor="de-po">Önerilen Durum</label><input id="de-po" value={p.onerilen} onChange={(e) => setP({ ...p, onerilen: e.target.value })} />

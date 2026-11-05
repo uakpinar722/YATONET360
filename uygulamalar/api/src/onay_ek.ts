@@ -237,7 +237,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/degisiklikler', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return yok(y);
-    return (await b.db.query(`SELECT degisiklik_no, tur, mevcut, onerilen, bedel_farki_eur, yeni_toplam_eur, ek_sure_gun, kanal, sigorta_onayi, durum FROM degisiklik_protokolu WHERE dosya_ref = $1 ORDER BY olusturma_zamani`, [id])).rows;
+    return (await b.db.query(`SELECT degisiklik_no, tur, mevcut, onerilen, bedel_farki_eur, yeni_toplam_eur, ek_sure_gun, kanal, sigorta_onayi, durum, sum(CASE WHEN durum = 'Onaylandı' THEN coalesce(bedel_farki_eur, 0) ELSE 0 END) OVER (ORDER BY olusturma_zamani) AS kumulatif_eur FROM degisiklik_protokolu WHERE dosya_ref = $1 ORDER BY olusturma_zamani`, [id])).rows;
   });
 
   // YG-1461: yurt dışı işareti Hukuk ve Uyum izin kontrolü görevini açar.

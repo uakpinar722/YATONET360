@@ -188,7 +188,7 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
   );
 }
 
-interface KurumsalV { kurum: string; ek2Siniri: string; yetkili: boolean; rol: string; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; hesap_durumu: string; rol: string; onay_siniri: string | null; yetkili: boolean; ben: boolean }[] }
+interface KurumsalV { kurum: string; kurumId?: string; ek2Siniri: string; yetkili: boolean; rol: string; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; hesap_durumu: string; rol: string; onay_siniri: string | null; yetkili: boolean; ben: boolean }[] }
 /** YG-1563: kurumsal müşteri kendi kullanıcısını ekler; onay adımı yok; onay sınırı Ek-2 sınırını aşmaz. */
 export function Kullanicilarim() {
   const [v, setV] = useState<KurumsalV | null>(null); const [f, setF] = useState({ ad: '', eposta: '', telefon: '', rol: 'İzleyici', sinir: '' }); const [ge, setGe] = useState<Record<string, string>>({});
@@ -199,7 +199,7 @@ export function Kullanicilarim() {
     <>
       <h1>Kullanıcılarım</h1><Mesaj />
       {v && <>
-        <div className="ozet"><div>{v.kurum} · Ek-2 Onay Sınırı: {eur(v.ek2Siniri)} · Rolünüz: {v.rol}</div></div>
+        <div className="ozet"><div>{v.kurum} · Ek-2 Onay Sınırı: {eur(v.ek2Siniri)} · Rolünüz: {v.rol}</div>{v.yetkili && v.kurumId && <div><a href={`/api/kurumsal-kurum/${v.kurumId}/ek2.pdf`} target="_blank" rel="noreferrer">Ek-2 PDF</a> · <a href={`/api/kurumsal-kurum/${v.kurumId}/ek2.pdf?dil=en`} target="_blank" rel="noreferrer">Annex 2 PDF</a></div>}</div>
         <Blok baslik="Kullanıcılar">
           {v.kullanicilar.map((u) => <div className="soru" key={u.kimlik}><span>{u.ad_soyad} · {u.e_posta} · {u.rol}{u.onay_siniri ? ` · Sınır: ${eur(u.onay_siniri)}` : ''}{u.yetkili ? ' · Kurum Yetkilisi' : ''} · {u.hesap_durumu}</span>
             {v.yetkili && !u.ben && u.hesap_durumu !== 'Kapalı' && <div className="tam"><label htmlFor={`ku-${u.kimlik}`}>Kapatma Nedeni</label><input id={`ku-${u.kimlik}`} value={ge[u.kimlik] ?? ''} onChange={(e) => setGe({ ...ge, [u.kimlik]: e.target.value })} /><button className="btn hayir" disabled={!ge[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/kurumsal/kullanici/${u.kimlik}/kapat`, { gerekce: ge[u.kimlik] }))}>Hesabı Kapat</button></div>}
