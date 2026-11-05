@@ -33,6 +33,7 @@ describe('resmî PDF (YG-665, YG-691)', () => {
     const v = await o.ist('GET', `/api/dogrula/${s.dogrulama_kodu}`);
     expect(v.statusCode, v.body).toBe(200); expect(v.json().durum).toBe('Yürürlükte');
     const m = JSON.stringify((await teklifTanim(o.db, t, 'ABCD-1234', 'http://x')).t);
+    expect(m).toContain('KDV Durumu'); expect(m).toContain('Standart KDV'); // YG-878
     expect(m).toContain('Laminasyon İşçiliği'); expect(m).toContain('1.200,00'); expect(m).toContain('ABCD-1234');
     expect(m).not.toMatch(/maliyet|katsay|teminat|firma/i);
   });

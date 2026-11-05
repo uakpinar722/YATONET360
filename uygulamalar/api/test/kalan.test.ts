@@ -395,8 +395,11 @@ describe('temsilciye teslim ve kümülatif değişiklik (YG-414, YG-410)', () =>
     const u = `/api/dosya/${d.kimlik}/teslim-onaysiz`; const g = { aliciTuru: 'Yetkili Temsilci', alici: 'T Kişi', belge: bl }; const c = await o.gir('ds');
     const r = await o.ist('POST', u, c, g); expect(r.statusCode, r.body).toBe(409); expect(r.json().hata).toContain('yetki kaydı');
     const ta = (await o.sup.query(`SELECT kimlik FROM dosya_tarafi WHERE dosya_ref = $1 LIMIT 1`, [d.kimlik])).rows[0].kimlik;
+    await o.sup.query(`UPDATE dosya_tarafi SET kisi_adi_soyadi = 'Başka Kişi' WHERE kimlik = $1`, [ta]);
     await o.sup.query(`INSERT INTO yetki_kaydi (dosya_ref, dosya_tarafi_ref, yetki_dayanagi_turu, belge_duzenleyen, belge_tarihi, gecerlilik_baslangici, gecerlilik_bitisi, yetkili_islemler, dogrulayan_ref, dogrulama_kaniti, olusturan_ref) VALUES ($1,$2,'Vekâletname','Noter','2020-01-01','2020-01-01','2099-01-01','{Teslim}',$3,'Belge',$3)`, [d.kimlik, ta, o.K.ds]);
-    const r2 = await o.ist('POST', u, c, g); expect(r2.statusCode, r2.body).toBe(200);
+    expect((await o.ist('POST', u, c, g)).statusCode).toBe(409); // kayıt başkasına ait
+    await o.sup.query(`UPDATE dosya_tarafi SET kisi_adi_soyadi = 'T Kişi' WHERE kimlik = $1`, [ta]);
+    const r2 = await o.ist('POST', u, c, { ...g, alici: 't kişi' }); expect(r2.statusCode, r2.body).toBe(200);
   });
   it('değişiklik listesi yalnız onaylıları kümülatif toplar', async () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
@@ -404,5 +407,14 @@ describe('temsilciye teslim ve kümülatif değişiklik (YG-414, YG-410)', () =>
     await e('D1', 100, 'Onaylandı'); await new Promise((r) => setTimeout(r, 5)); await e('D2', 50, 'Reddedildi'); await new Promise((r) => setTimeout(r, 5)); await e('D3', 25, 'Onaylandı');
     const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/degisiklikler`, await o.gir('ds'))).json() as { kumulatif_eur: string }[];
     expect(l.map((x) => Number(x.kumulatif_eur))).toEqual([100, 100, 125]);
+  });
+});
+
+describe('rıza metni ve arama kapsamı (YG-1205, YG-1210, YG-1220)', () => {
+  it('KVKK-02 iki dilde yüklü; aydınlatma metni dil seçimiyle gelir', async () => {
+    const r = (await o.sup.query(`SELECT dil FROM hukuki_metin WHERE kod = 'KVKK-02' ORDER BY dil`)).rows.map((x) => x.dil); expect(r).toEqual(['en', 'tr']);
+    const c = await o.gir('ds');
+    const en = await o.ist('GET', '/api/ilk-giris/metin/riza?dil=en', c); expect(en.statusCode, en.body).toBe(200); expect(en.json().dil).toBe('en'); expect(en.json().govde.join(' ')).toContain('Explicit Consent');
+    expect((await o.ist('GET', '/api/ilk-giris/metin/aydinlatma?dil=tr', c)).json().dil).toBe('tr');
   });
 });

@@ -73,9 +73,9 @@ export function ilkGirisYollari(s: FastifyInstance, b: Baglam) {
   s.get('/ilk-giris/metin/:tur', serbest, async (i, y) => {
     const { tur } = i.params as { tur: string };
     const h = await grubuAl(i.oturum!.kullanici);
-    const kod = tur === 'kosullar' ? 'PRT-01' : tur === 'aydinlatma' ? aydinlatmaKodu(h.kullanici_grubu) : null;
+    const kod = tur === 'kosullar' ? 'PRT-01' : tur === 'aydinlatma' ? aydinlatmaKodu(h.kullanici_grubu) : tur === 'riza' ? 'KVKK-02' : null;
     if (!kod) return y.code(404).send({ hata: 'Metin bulunamadı.' });
-    const surum = await sonSurum(b.db, kod); const dil = dilKodu(h.tercih_dili);
+    const surum = await sonSurum(b.db, kod); const iste = ((i.query ?? {}) as { dil?: string }).dil; const dil = iste === 'en' || iste === 'tr' ? iste : dilKodu(h.tercih_dili); // YG-1205: iki dil de sunulur
     const { rows } = await b.db.query(`SELECT kod, dil, surum, govde FROM hukuki_metin WHERE kod = $1 AND surum = $2 ORDER BY (dil = $3) DESC LIMIT 1`, [kod, surum, dil]);
     return rows[0];
   });
@@ -98,7 +98,7 @@ export function ilkGirisYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const h = await grubuAl(o.kullanici);
     const kod = aydinlatmaKodu(h.kullanici_grubu); const surum = await sonSurum(b.db, kod);
     const grup = h.kullanici_grubu === 'LGM İç Rolü' ? 'Çalışan' : h.kullanici_grubu.startsWith('Bireysel') ? 'Müşteri' : 'İş ortağı (İş Birliği Firması, sigorta brokeri, sigorta acentesi)';
-    await b.db.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) VALUES ($1,$2,$3,$4,$5,'Web')`, [o.kullanici, grup, kod, surum, h.tercih_dili]);
+    await b.db.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali, onay_adimi, islem_amaci) VALUES ($1,$2,$3,$4,$5,'Web','İlk Giriş','YATONET 360 kullanımı')`, [o.kullanici, grup, kod, surum, h.tercih_dili]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Aydınlatma Bilgilendim', nesneKimligi: `${kod} ${surum}`, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { eksik: await eksikAdimlar(b.db, o.kullanici) };
   });
@@ -120,7 +120,7 @@ export function ilkGirisYollari(s: FastifyInstance, b: Baglam) {
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
-      for (const [tur, amac, kanal] of kayitlar) await c.query(`INSERT INTO acik_riza (ilgili_kisi_ref, riza_turu, amac, kanal, kaynak, metin_surumu) VALUES ($1,$2,$3,$4,'İlk Giriş Ekranı','R00')`, [o.kullanici, tur, amac, kanal]);
+      for (const [tur, amac, kanal] of kayitlar) await c.query(`INSERT INTO acik_riza (ilgili_kisi_ref, riza_turu, amac, kanal, kaynak, metin_surumu, onay_adimi) VALUES ($1,$2,$3,$4,'İlk Giriş Ekranı','R00','İlk Giriş')`, [o.kullanici, tur, amac, kanal]);
       await c.query(`UPDATE kullanici_hesabi SET izin_adimi_zamani = now() WHERE kimlik = $1`, [o.kullanici]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İsteğe Bağlı İzinler', yeni: { adet: kayitlar.length }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

@@ -63,13 +63,15 @@ function Kabuk({ adim, toplam, geri, geriYazi, foto, children }: { adim: number;
 function TamMetin({ tur, t }: { tur: string; t: (typeof T)['tr'] }) {
   const [acik, setAcik] = useState(false);
   const [m, setM] = useState<string[] | null>(null);
+  const yukle = async (d?: string) => setM((await istek<{ govde: string[] }>(`/ilk-giris/metin/${tur}${d ? `?dil=${d}` : ''}`)).govde);
   const ac = async () => {
-    if (!m) setM((await istek<{ govde: string[] }>(`/ilk-giris/metin/${tur}`)).govde);
+    if (!m) await yukle();
     setAcik(!acik);
   };
   return (
     <>
       <button type="button" className="lnk" onClick={() => void ac()}>{acik ? t.kapa : t.tam}</button>
+      {acik && m && <div className="dugmeler"><button type="button" className="lnk" onClick={() => void yukle('tr')}>Türkçe</button> <button type="button" className="lnk" onClick={() => void yukle('en')}>English</button></div>}
       {acik && m && <div className="tam-metin" tabIndex={0}>{m.map((p, i) => <p key={i}>{p}</p>)}</div>}
     </>
   );
@@ -208,6 +210,7 @@ export function IlkAdimlar({ ben, bitti }: { ben: Ben; bitti: () => void }) {
     <Kabuk adim={sira} toplam={toplam}>
       <h2>{t.izB}</h2>
       <div className="not">{t.izN}</div>
+      {ben.rizaBicimi !== 'ozel_gun' && <TamMetin tur="riza" t={t} />}
       {ben.rizaBicimi === 'ozel_gun' ? (
         <>{kutu(OZEL[0]!, t.oz1)}{kutu(OZEL[1]!, t.oz2)}{kutu(OZEL[2]!, t.oz3)}</>
       ) : (

@@ -1,4 +1,4 @@
-﻿import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { kurVeritabani } from '../araclar/kurulum.js';
@@ -137,7 +137,7 @@ describe('ilk giriş adımları (KVKK-10)', () => {
   });
   it('metinler Word belgelerinden yüklü', async () => {
     const { rows } = await sup.query(`SELECT kod, dil FROM hukuki_metin ORDER BY kod, dil`);
-    expect(rows.length).toBe(8);
+    expect(rows.length).toBe(10);
     const g = (await sup.query(`SELECT govde FROM hukuki_metin WHERE kod = 'KVKK-05' AND dil = 'tr'`)).rows[0].govde;
     expect(g.length).toBeGreaterThan(50);
   });

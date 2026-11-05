@@ -48,7 +48,7 @@ describe('ilgili kişi başvurusu (YG-1218–1220)', () => {
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'G' })).json().hata).toContain('Kimlik');
     await o.ist('POST', `${a}/dogrula`, u, {});
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'G' })).json().hata).toContain('arama');
-    const ar = await o.ist('POST', `${a}/arama`, u, { terim: 'Dosya', elleKontrol: ['Arşiv', 'Dış Hizmetler'] }); expect(ar.statusCode, ar.body).toBe(200); expect(ar.json().sonuc).toHaveProperty('Mesaj Geçmişi');
+    const ar = await o.ist('POST', `${a}/arama`, u, { terim: 'Dosya', elleKontrol: ['Arşiv', 'Dış Hizmetler'] }); expect(ar.statusCode, ar.body).toBe(200); expect(ar.json().sonuc).toHaveProperty('Mesaj Geçmişi'); expect(ar.json().sonuc).toHaveProperty('Gönderim Kaydı'); expect(ar.json().sonuc).toHaveProperty('Paylaşım Bağlantısı'); expect(ar.json().sonuc).toHaveProperty('Hasar Paylaşım Talebi');
     expect((await o.ist('POST', `${a}/yanit`, u, { tarih: '2026-11-10', kanit: crypto.randomUUID() })).json().hata).toContain('onaylı karar');
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'Uygun' })).json().durum).toBe('Onayda');
     const k = await o.kart('KVKK Başvuru Kararı', r.json().kimlik); expect((await o.karar(k.kimlik, 'hud', 'Onayla')).statusCode).toBe(200);
