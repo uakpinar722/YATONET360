@@ -308,6 +308,13 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       const saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
       const alan = { Yat: m.yat_adi, Yacht: m.yat_adi, saat, time: saat, özet: g.sonuc!.trim(), summary: g.sonuc!.trim() };
       await tedbirSonrasiGorevler(c, dosya, m.dosya_no, (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [dosya])).rows[0].r, ilkIsGunu12(new Date())); // YG-1506
+      // YG-445, BLD-74: tedbir kapanınca sigortaya tutarsız ve firma adsız ilk bilgilendirme taslağı; nöbetçi Dosya Sorumlusu teyit edip gönderir.
+      const sg = (await c.query(`SELECT s.sigortaci_adi, coalesce(s.onay_yetkilisi_eposta, p.eposta) eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1 LIMIT 1`, [dosya])).rows[0];
+      if (sg) {
+        const sgdil = dilKod(m.yazisma_dili); const zmn = new Date(m.baslangic ?? Date.now()).toLocaleString(sgdil === 'en' ? 'en-GB' : 'tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+        const { sigortayaHazirla } = await import('./sigorta_gonderim.js'); const { metinGetir } = await import('./metin.js');
+        await sigortayaHazirla(c, { dosya, tur: 'BLD-74', nesne: dosya, alici: sg.eposta ?? null, acil: true, konu: `${m.dosya_no} Acil İlk Tedbir`, metin: await metinGetir(c, 'BLD-74', sgdil, { Kurum: sg.sigortaci_adi ?? '', Institution: sg.sigortaci_adi ?? '', 'Dosya No': m.dosya_no, 'File No': m.dosya_no, 'tarih saat': zmn, 'date time': zmn, 'tedbir özeti': g.sonuc!.trim(), 'summary of measure': g.sonuc!.trim() }) });
+      }
       if (t) await yatTarafinaYaz(c, { olay: `bld55:${dosya}`, kod: 'BLD-55', dil: dilKod(m.yazisma_dili), konu: `${m.dosya_no} Acil Tedbir`, telefon: t.telefon, eposta: t.eposta, acil: true, alanlar: alan });
       return { tamam: true };
     });

@@ -147,7 +147,7 @@ export function Davet({ belirtec, bitti }: { belirtec: string; bitti: () => void
         <button className="btn" disabled={mesgul || kod.replace(/\s/g, '').length !== 6}>{t.dogrula}</button>
         {bilgi.lgm ? <div className="not">{t.uygLgm}</div> : (
           <div className="not">
-            <button type="button" className="lnk" onClick={() => void calistir(async () => { await istek('/kimlik/sms', {}); setNot(t.smsG); })}>{t.smsL}</button> — {t.smsN}<br />{t.uygDis}
+            <button type="button" className="lnk" onClick={() => void calistir(async () => { const r0 = await istek<{ kanal?: string }>('/kimlik/sms', {}); setNot(r0.kanal === 'E-posta' ? (dil === 'en' ? 'As SMS could not be sent, the code has been sent to your e-mail address.' : 'SMS gönderilemediği için kod e-posta adresinize gönderilmiştir.') : t.smsG); })}>{t.smsL}</button> — {t.smsN}<br />{t.uygDis}
           </div>
         )}
       </form>

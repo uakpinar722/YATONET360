@@ -237,6 +237,10 @@ describe('yetkili atama (YG-1070, ONY-14)', () => {
     const kr = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {} }); expect(kr.statusCode, kr.body).toBe(200);
     const k = (await o.sup.query(`SELECT belge_durumu, ust_limit_eur, odeme_yetkisi, yatlar, atama_taslak FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.sc])).rows[0];
     expect(k).toMatchObject({ belge_durumu: 'Geçerli', odeme_yetkisi: false, yatlar: ['Mavi'], atama_taslak: null }); expect(Number(k.ust_limit_eur)).toBe(0);
+    await o.sup.query(`INSERT INTO yat_yetkilisi_kaydi (kullanici_ref, rol, sahip_ad, sahip_telefon) VALUES ($1,'Yat Sahibinin Yetkili Temsilcisi','Sahip',$2)`, [o.K.tu, tel]);
+    const r2 = await o.ist('POST', `/api/portal/yetkili/${o.K.tu}/atama`, c, { ...g, limit: 500, bilgi: true }); expect(r2.statusCode, r2.body).toBe(200);
+    expect((await o.sup.query(`SELECT atama_taslak a FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.tu])).rows[0].a).toMatchObject({ limit: 500, odeme: true, bilgi: true });
+    expect((await o.ist('POST', `/api/portal/yetkili/${o.K.tu}/atama`, c, { yatlar: ['Mavi'], islemler: ['ONY-23'], bitis: '2099-01-01' })).statusCode).toBe(400);
   });
 });
 

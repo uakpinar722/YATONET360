@@ -152,6 +152,12 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect(y2.statusCode, y2.body).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-29'`, [s.kimlik])).rowCount).toBe(0);
   });
+  it('sigortalı dosyada kapanış BLD-74 taslağı açar; tutar ve firma adı yok; teyitsiz gitmez (YG-445)', async () => {
+    const s = await cagri({ musteriTuru: 'Sigorta Şirketi', sigortaci: 'Deneme Sigorta' });
+    expect((await o.ist('POST', `/api/acil/${s.kimlik}/kapat`, await o.gir('ds'), { sonuc: 'Sızıntı kesildi', risk: 'Kontrol altında' })).statusCode).toBe(200);
+    const g = (await o.sup.query(`SELECT metin, durum FROM sigorta_gonderim WHERE tur = 'BLD-74' AND nesne_kimligi = $1`, [s.kimlik])).rows[0];
+    expect(g.durum).toBe('Teyit Bekliyor'); expect(g.metin).toContain('Deneme Sigorta'); expect(g.metin).toContain('Sızıntı kesildi'); expect(g.metin).not.toMatch(/\d[\d.,]* EUR/); expect(g.metin).not.toContain('[');
+  });
   it('elle kabul sıralı aramayı durdurur; kapanış BLD-55 gönderir, tutar yazmaz', async () => {
     const r = await cagri(); const c = await o.gir('ds');
     await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [r.kimlik, o.K.ds]);
