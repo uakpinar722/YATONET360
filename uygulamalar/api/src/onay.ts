@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { bildir, disGonder } from './bildirim.js';
+import { bildir, birKez, disGonder } from './bildirim.js';
 import { belgeUret } from './belge_uret.js';
 import { izYaz } from './denetim.js';
 import { ozet, rastgeleBelirtec } from './kripto.js';
@@ -76,7 +76,7 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
   const ekran = (t: Record<string, any>) => ({
     baslik: t.baslik, metin: t.metin, dugme: t.dugme, dil: t.dil, kutular: t.kutular, formTuru: t.form_turu, durum: t.durum, onyKod: t.ony_kod, belgeAdi: t.belge_adi, dosyaNo: t.dosya_no ?? null, sonGecerlilik: t.son_gecerlilik,
     // YG-479, K-168: SMS iki kez ulaşmazsa veya yurt dışı numarada e-posta kodu seçilebilir.
-    epostaKodu: Boolean(t.eposta) && (t.sms_gonderim_sayisi >= 2 || !t.telefon || !String(t.telefon).startsWith('+90')),
+    epostaKodu: Boolean(t.eposta) && (t.sms_gonderim_sayisi >= 2 || Boolean(t.sms_hata_zamani) || !t.telefon || !String(t.telefon).startsWith('+90')),
     telefonSonu: t.telefon ? String(t.telefon).slice(-2) : null,
   });
   const gecerli = (t: Record<string, any>) => t.durum === 'Bekliyor' && new Date(t.son_gecerlilik) > new Date() && !t.vefat_isareti;
@@ -100,7 +100,18 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
     const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');
     const baglanti = `${b.webAdresi}/#onay=${(i.params as { belirtec: string }).belirtec}`;
     const metin = await metinGetir(b.db, 'ONY-20', t.dil, { kod, code: kod, 'bağlantı': baglanti, link: baglanti });
-    if (eposta) await b.eposta.gonder(t.eposta, metin); else await b.sms.gonder(t.telefon, metin);
+    if (eposta) await b.eposta.gonder(t.eposta, metin);
+    else {
+      try { await b.sms.gonder(t.telefon, metin); } catch (e) {
+        // ALT-5, YG-1952: tek sağlayıcı kesilince kod e-postayla istenebilir; kesinti görünür olur.
+        await b.db.query(`UPDATE onay_talebi SET sms_hata_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
+        await izYaz(b.db, { eylem: 'Onay Kodu Gönderilemedi', nesneTuru: 'Onay Talebi', nesneKimligi: t.kimlik, sonuc: 'Başarısız', adres: i.ip, iliski: i.id });
+        i.log.error({ hata: (e as Error).message }, 'SMS gönderilemedi');
+        const saat = new Date().toISOString().slice(0, 13);
+        if (await birKez(b.db, 'sms_kesinti', saat)) await bildir(b.db, { olay: `sms-kesinti:${saat}`, kullanicilar: (await b.db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi IN ('Sistem Yöneticisi', 'Bilgi İşlem Müdürü', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')`)).rows.map((r) => r.kullanici_ref as string), baslik: '⚠ SMS Gönderilemiyor', ozet: 'SMS sağlayıcısı hata veriyor; onay kodları e-postayla istenebilir.', oncelik: 'Kritik', eposta: true });
+        return y.code(503).send({ hata: t.eposta ? 'SMS şu anda gönderilemiyor. Kodu e-postayla istemenizi rica ederiz.' : 'SMS şu anda gönderilemiyor. Kayıtlı e-posta adresiniz bulunmadığından Dosya Sorumlunuza başvurmanızı rica ederiz.' });
+      }
+    }
     await b.db.query(`UPDATE onay_talebi SET kod_ozeti = $2, kod_son = now() + make_interval(mins => $3), kod_gonderim = now(), kod_deneme = 0, sms_gonderim_sayisi = sms_gonderim_sayisi + $4 WHERE kimlik = $1`, [t.kimlik, ozet(t.kimlik + kod), KOD_DK, eposta ? 0 : 1]);
     await izYaz(b.db, { eylem: 'Onay Kodu Gönderildi', nesneTuru: 'Onay Talebi', nesneKimligi: t.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { gonderildi: true, kanal: eposta ? 'E-posta' : 'SMS' };

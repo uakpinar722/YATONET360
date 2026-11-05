@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -237,5 +237,26 @@ describe('yetkili atama (YG-1070, ONY-14)', () => {
     const kr = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {} }); expect(kr.statusCode, kr.body).toBe(200);
     const k = (await o.sup.query(`SELECT belge_durumu, ust_limit_eur, odeme_yetkisi, yatlar, atama_taslak FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.sc])).rows[0];
     expect(k).toMatchObject({ belge_durumu: 'Geçerli', odeme_yetkisi: false, yatlar: ['Mavi'], atama_taslak: null }); expect(Number(k.ust_limit_eur)).toBe(0);
+  });
+});
+
+describe('SMS kesintisi (ALT-5, YG-1952)', () => {
+  it('yurt içi numarada SMS gitmezse kod e-postayla istenir, onay tamamlanır, kesinti bildirilir', async () => {
+    const d = await o.dosyaAc({}, {}); const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days')`, [t, d.kimlik]);
+    await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2, telefon = '+905550001122', eposta = 'sahip@deneme.local' WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik, o.K.iks]);
+    await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = '+905550001122', e_posta = 'sahip@deneme.local' WHERE kimlik = $1`, [o.K.iks]);
+    const r = await o.ist('POST', `/api/portal/dosya/${d.kimlik}/cayma`, await o.gir('iks'), {}); expect(r.statusCode, r.body).toBe(200); const on = r.json().kimlik;
+    const bel = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${on}`])).rows[0].metin.match(/#onay=([\w-]+)/)[1];
+    expect((await o.ist('GET', `/api/onay/${bel}`)).json().epostaKodu).toBe(false);
+    expect((await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'E-posta' })).statusCode).toBe(403);
+    const asil = o.sms.gonder; o.sms.gonder = async () => { throw new Error('sağlayıcı kapalı'); };
+    try { const h = await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); expect(h.statusCode).toBe(503); expect(h.json().hata).toContain('e-postayla'); } finally { o.sms.gonder = asil; }
+    expect((await o.ist('GET', `/api/onay/${bel}`)).json().epostaKodu).toBe(true);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari LIKE 'sms-kesinti:%' AND kullanici_ref = $1`, [o.K.sy])).rowCount).toBe(1);
+    expect((await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'E-posta' })).statusCode).toBe(200);
+    const kod = o.posta.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
+    const kr = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: {} }); expect(kr.statusCode, kr.body).toBe(200);
+    expect((await o.sup.query(`SELECT kanal FROM yatonet_onay_kaydi WHERE onay_talebi_ref = $1`, [on])).rows[0].kanal).toBe('E-posta Kodu');
   });
 });
