@@ -41,6 +41,20 @@ export async function kurtarmaTanim(db: Db, id: string, kod: string): Promise<{ 
   return { dosyaAdi: `${k.dosya_no}-KRT.pdf`, sinif: 'Gizli', t: { ad: m.ad, no: `${k.dosya_no}-KRT`, dosyaNo: k.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: k.yat_adi, bolumler, dogrulamaKodu: kod } as unknown as BelgeTanim };
 }
 
+/** YG-618, YG-619: ön bilgilendirme, Ek-1, Ek-2, Ek-3 onaylı metinden; doldurulacak alanlar boş bırakılır. */
+export async function onBilgiTanim(db: Db, teklif: string, kod: string): Promise<{ dosyaAdi: string; sinif: string; t: BelgeTanim }> {
+  const k = (await db.query(`SELECT f.teklif_no, f.surum_no, d.dosya_no, d.yazisma_dili, y.yat_adi, t.kisi_adi_soyadi FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE f.kimlik = $1`, [teklif])).rows[0];
+  const dil = dilKod(k.yazisma_dili); const m = JSON.parse(readFileSync(join(KOK, 'veri', 'sablon', 'bireysel_formlar.json'), 'utf8'))[dil] as { ad: string; saglayici: string; maddeler: string[]; eknot: string; ekler: { ad: string; satirlar: string[][] }[]; et: Record<string, string> };
+  const bos = (x: string) => x.replace(/\[●\]/g, '……………');
+  const bolumler: Bolum[] = [
+    { baslik: m.et.taraflar!, tur: 'alanlar', alanlar: [{ et: m.et.saglayici!, deger: m.saglayici }, { et: m.et.sahip!, deger: k.kisi_adi_soyadi }, { et: m.et.yat!, deger: k.yat_adi }, { et: m.et.dosya!, deger: k.dosya_no }, { et: m.et.teklif!, deger: `${k.teklif_no} / ${k.surum_no}` }] },
+    { baslik: m.et.hukum!, tur: 'metin', metin: m.maddeler.join('\n\n') },
+    { baslik: m.et.ekler!, tur: 'metin', metin: m.eknot },
+    ...m.ekler.map((e): Bolum => ({ baslik: e.ad, tur: 'tablo', sutunlar: [{ ad: m.et.alan! }, { ad: m.et.bilgi! }], satirlar: e.satirlar.map((r) => [bos(r[0]!), bos(r[1]!)]) })),
+  ];
+  return { dosyaAdi: `${k.teklif_no}-OB.pdf`, sinif: 'Gizli', t: { ad: m.ad, no: `${k.teklif_no}-OB`, dosyaNo: k.dosya_no, tarih: gunAy(new Date()), surum: `Rev.${k.surum_no}`, dil, yat: k.yat_adi, bolumler, dogrulamaKodu: kod } as unknown as BelgeTanim };
+}
+
 /** Cayma: kayıt, ONY-19 bildirimi, iade hesabı görevi (YG-1450, YG-1493). */
 export async function caymaIsle(c: Db, kayit: string, kanal: string) {
   const k = (await c.query(`SELECT k.*, d.dosya_no, d.yazisma_dili, f.teklif_no, f.surum_no FROM on_bilgilendirme_cayma_kaydi k JOIN dosya d ON d.kimlik = k.dosya_ref JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE k.kimlik = $1`, [kayit])).rows[0];

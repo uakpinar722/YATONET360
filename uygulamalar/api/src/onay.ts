@@ -142,7 +142,7 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
         const m = await metinGetir(c, 'ONY-21', t.dil, { 'Belge adı': t.belge_adi, 'document name': t.belge_adi, 'Sürüm': 'Rev.1', version: 'Rev.1', 'tarih saat': tarih, 'date time': tarih });
         const gon = { olay: `onay-sonuc:${t.kimlik}`, eposta: t.eposta as string, konu: t.belge_adi as string, metin: `${m} Onay kodu: ${kod}`, acil: true };
         // YG-558: dosyaya bağlı onayda belge PDF olarak eklenir; kuyruk işlenince gider.
-        if (t.dosya_ref) await belgeUret(c, { tur: 'Onay Belgesi', nesne: t.kimlik, dosya: t.dosya_ref, gonder: { ...gon, ekle: t.ony_kod === 'ONY-23' ? ['Fiyat Teklifi'] : t.ony_kod === 'ONY-27' ? ['Teslim Tutanağı'] : undefined } });
+        if (t.dosya_ref) await belgeUret(c, { tur: 'Onay Belgesi', nesne: t.kimlik, dosya: t.dosya_ref, gonder: { ...gon, ekle: t.ony_kod === 'ONY-23' ? ['Fiyat Teklifi', 'Ön Bilgilendirme Formu'] : t.ony_kod === 'ONY-27' ? ['Teslim Tutanağı'] : undefined } });
         else await disGonder(c, gon);
       }
       if (t.hazirlayan_ref) await bildir(c, { olay: `onay-karar:${t.kimlik}`, kullanicilar: [t.hazirlayan_ref], baslik: `${karar}: ${t.belge_adi}`, ozet: t.dosya_no, eposta: true });

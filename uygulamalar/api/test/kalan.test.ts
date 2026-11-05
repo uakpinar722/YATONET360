@@ -135,3 +135,14 @@ describe('merkezi belge maskesi, eğitim kapısı, geç cayma kaydı, portal iti
     const r = await o.ist('POST', `/api/fatura/${f}/itiraz`, await o.gir('iks'), g); expect(r.statusCode, r.body).toBe(200);
   });
 });
+
+describe('ön bilgilendirme PDF (YG-618, YG-619)', () => {
+  it('Ek-1, Ek-2, Ek-3 ve taraflar; boş alan işareti kalmaz; PDF üretilir', async () => {
+    const { onBilgiTanim } = await import('../src/kalan.js'); const { pdfUret } = await import('../src/pdf.js');
+    const d = await o.dosyaAc({}, {}); const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const v = await onBilgiTanim(o.db, t, 'ABC'); const m = JSON.stringify(v.t);
+    for (const x of ['Ek-1. Cayma Formu', 'Ek-2.', 'Ek-3.', `T-${n} / 1`, d.dosyaNo]) expect(m).toContain(x);
+    expect(m).not.toContain('[●]');
+    expect((await pdfUret(v.t)).length).toBeGreaterThan(5000);
+  });
+});

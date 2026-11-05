@@ -322,7 +322,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const d = await dosyam(id, o.kullanici);
     if (!d) return yok(y);
     const cetveller = (await b.db.query(`SELECT c.kimlik, c.surum, c.durum, (SELECT count(*)::int FROM kapsam_satiri s WHERE s.cetvel_ref = c.kimlik) AS satir FROM kapsam_cetveli c WHERE c.dosya_ref = $1 ORDER BY c.surum DESC`, [id])).rows;
-    const teklifler = (await b.db.query(`SELECT kimlik, teklif_no, surum_no, teklif_turu, statu, karar, ara_toplam_eur, genel_toplam_eur, gecerlilik_bitis_tarihi::text, teklif_muhatabi FROM fiyat_teklifi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`, [id])).rows;
+    const teklifler = (await b.db.query(`SELECT kimlik, teklif_no, surum_no, teklif_turu, statu, karar, ara_toplam_eur, genel_toplam_eur, gecerlilik_bitis_tarihi::text, teklif_muhatabi, bant_disi_onay_ref IS NOT NULL AS bant_onayli, EXISTS (SELECT 1 FROM fiyat_teklifi_kalemi x WHERE x.teklif_ref = fiyat_teklifi.kimlik AND x.bant_disi) AS bant_disi FROM fiyat_teklifi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`, [id])).rows;
     const firma = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.durum, f.toplam_eur, f.gecerlilik::text FROM firma_fiyat_teklifi f WHERE f.dosya_ref = $1 ORDER BY f.olusturma_zamani DESC`, [id])).rows;
     const isEmirleri = (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.is_emri_turu, e.statu, e.firma_yaniti, e.ana_is_emri_ref, u.ticari_unvan AS firma FROM is_emri e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 ORDER BY e.olusturma_zamani`, [id])).rows;
     return { cetveller, teklifler, firma, isEmirleri, ekonomikKilit: !(await ekonomikKilitEngeli(b.db, id) === null) };
@@ -442,6 +442,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       // YG-206: sigortaca onaylanmayan kalemlerin teklifi ONY-26 ile onaylanır.
       const anaSigorta = t.ana_teklif_ref ? (await c.query(`SELECT teklif_muhatabi FROM fiyat_teklifi WHERE kimlik = $1`, [t.ana_teklif_ref])).rows[0]?.teklif_muhatabi === 'Sigorta Şirketi' : false;
       const onyKod = anaSigorta ? 'ONY-26' : 'ONY-23';
+      if (t.musteri_turu === 'Bireysel Müşteri') await belgeUret(c, { tur: 'Ön Bilgilendirme Formu', nesne: t.kimlik, dosya: t.dosya_ref }); // YG-618, YG-619
       const s0 = (await c.query(`SELECT metin FROM sablon_metni WHERE kod = $2 AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil, onyKod])).rows[0];
       const { kutular } = kutuAyikla(s0.metin);
       const toplam = tutar(Number(t.genel_toplam_eur), dil);

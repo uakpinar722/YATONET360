@@ -95,7 +95,7 @@ interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string;
 interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
   ekonomikKilit: boolean;
-  teklifler: { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
+  teklifler: { bant_disi?: boolean; bant_onayli?: boolean; kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string }[];
   isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null }[];
 }
@@ -171,6 +171,9 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <div className="dugmeler">
               {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
               {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
+              {t.bant_disi && <span className="hata">{t.bant_onayli ? 'Bant Dışı · Onaylı' : '⚠ Bant Dışı · Ticari İşler Direktörü onayı bekleniyor'}</span>}
+              {ticari && t.statu === 'Taslak' && t.bant_disi && !t.bant_onayli && <BantOnayi teklif={t.kimlik} yap={yap} />}
+              {rollerim.includes('Dosya Sorumlusu') && t.statu === 'Karar' && <CaymaKaydi teklif={t.kimlik} yap={yap} />}
               {t.statu === 'Onaylı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek<{ durum: string }>(`/teklif/${t.kimlik}/gonder`, {}).then((r) => { window.dispatchEvent(new Event('sigorta-gonderim')); return { uyari: r.durum === 'Teyit Bekliyor' ? 'Sigortaya gönderim için iki teyit gereklidir; aşağıdaki bölümden teyit ediniz.' : 'Gönderildi.' }; }))}>Gönder</button>}
               {t.statu === 'Karar' && ticari && <>
                 <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/proforma`, {}), 'Proforma onaya gönderildi.')}>Proforma Hazırla</button>
@@ -717,6 +720,7 @@ export function SigortaEk2() {
 
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
+  const [izId, setIzId] = useState(''); const [izB, setIzB] = useState('');
   const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '' });
   return (
     <>
@@ -730,8 +734,9 @@ export function IdariIslemler() {
         <label htmlFor="iz-t">İzin Türü</label><select id="iz-t" value={iz.tur} onChange={(e) => setIz({ ...iz, tur: e.target.value })}>{['Yıllık', 'Mazeret', 'Ücretsiz', 'Rapor'].map((x) => <option key={x}>{x}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="iz-b">Başlangıç</label><input id="iz-b" type="date" value={iz.baslangic} onChange={(e) => setIz({ ...iz, baslangic: e.target.value })} /></div><div><label htmlFor="iz-s">Bitiş</label><input id="iz-s" type="date" value={iz.bitis} onChange={(e) => setIz({ ...iz, bitis: e.target.value })} /></div></div>
         <div className="not">Rapor veya belgeyi izin kaydından sonra yükleyebilirsiniz; belgeyi yalnız İnsan Kaynakları görür. Açıklamaya sağlık bilgisi yazmayınız.</div>
-        <button className="btn2" onClick={() => void yap(() => istek<{ gun: number }>('/izin', { ...iz, bolunmus: bl }).then((r) => ({ uyari: `İzin talebiniz gönderildi: ${r.gun} gün.` })))}>İzin Talep Et</button>
+        <button className="btn2" onClick={() => void yap(() => istek<{ gun: number; kimlik: string }>('/izin', { ...iz, bolunmus: bl }).then((r) => (setIzId(r.kimlik), { uyari: `İzin talebiniz gönderildi: ${r.gun} gün.` })))}>İzin Talep Et</button>
       </Blok>
+      {izId && <Blok baslik="İzin Belgesi"><BelgeSec ad="Rapor veya Belge" bagTuru="İzin" bagKimligi={izId} deger={izB} sec={(k) => { setIzB(k); void yap(() => istek(`/izin/${izId}/belge`, { belge: k }).then(() => ({ uyari: 'Belge izin talebinize eklendi.' }))); }} /></Blok>}
       <Blok baslik="Masraf Fişi">
         <label htmlFor="ms-t">Masraf Türü</label><select id="ms-t" value={m.tur} onChange={(e) => setM({ ...m, tur: e.target.value })}>{['Yemek', 'Konaklama', 'Km', 'Ulaşım', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="ms-d">Fiş Tarihi</label><input id="ms-d" type="date" value={m.tarih} onChange={(e) => setM({ ...m, tarih: e.target.value })} /></div><div><label htmlFor="ms-n">Belge No</label><input id="ms-n" value={m.belgeOzeti} onChange={(e) => setM({ ...m, belgeOzeti: e.target.value })} /></div></div>
@@ -740,4 +745,16 @@ export function IdariIslemler() {
       </Blok>
     </>
   );
+}
+
+/** YG-234: bant dışı kalemde gerekçeli Ticari İşler Direktörü onayı. */
+function BantOnayi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
+  const [g, setG] = useState('');
+  return <><label htmlFor={`bo-${teklif}`}>Bant Dışı Gerekçesi</label><input id={`bo-${teklif}`} value={g} onChange={(e) => setG(e.target.value)} /><button className="btn2 kucuk" disabled={!g.trim()} onClick={() => void yap(() => istek(`/teklif/${teklif}/bant-onayi`, { gerekce: g }), 'Onay talebi gönderildi.')}>Bant Dışı Onayı İste</button></>;
+}
+
+/** YG-1493: WhatsApp dahil beyan; 8 saatten geç kayıt bildirilir. */
+function CaymaKaydi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
+  const [z, setZ] = useState('');
+  return <><label htmlFor={`ck-${teklif}`}>Cayma Beyanının Geldiği Zaman</label><input id={`ck-${teklif}`} type="datetime-local" value={z} onChange={(e) => setZ(e.target.value)} /><button className="btn2 kucuk" disabled={!z} onClick={() => void yap(() => istek(`/teklif/${teklif}/cayma`, { beyanZamani: new Date(z).toISOString() }), 'Cayma kaydedildi.')}>Cayma Beyanını Kaydet</button></>;
 }
