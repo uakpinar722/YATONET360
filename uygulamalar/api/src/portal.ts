@@ -105,7 +105,8 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     if (son.rowCount) return y.code(429).send({ hata: 'Yeni kod için bir dakika bekleyiniz.' });
     const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await b.db.query(`INSERT INTO kayit_kodu VALUES ($1,$2, now() + make_interval(mins => $3), now(), 0) ON CONFLICT (telefon) DO UPDATE SET kod_ozeti = EXCLUDED.kod_ozeti, son_gecerlilik = EXCLUDED.son_gecerlilik, gonderim_zamani = now(), deneme = 0`, [n.telefon, ozet(n.telefon + kod), KURAL.smsKodGecerlilikDk]);
-    await b.sms.gonder(n.telefon, `YATONET 360 doğrulama kodunuz: ${kod}. LGM kod sormaz; kodu kimseyle paylaşmayınız.`);
+    // Yeni kayıtta e-posta henüz yoktur; SMS kesintisinde destek hattına yönlendirilir (V-258).
+    if (!(await (await import('./bildirim.js')).girisKoduGonder(b, n.telefon, null, `YATONET 360 doğrulama kodunuz: ${kod}. LGM kod sormaz; kodu kimseyle paylaşmayınız.`))) return y.code(503).send({ hata: 'SMS şu anda gönderilemiyor. 7/24 Destek Hattımızı aramanızı rica ederiz.' });
     return { gonderildi: true };
   });
 
@@ -164,8 +165,9 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     cerezYaz(y, b, bel);
     const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await b.db.query(`INSERT INTO sms_kodu (oturum_ref, kod_ozeti, son_gecerlilik) VALUES ($1,$2, now() + make_interval(mins => $3))`, [o.kimlik, ozet(o.kimlik + kod), KURAL.smsKodGecerlilikDk]);
-    await b.sms.gonder(n.telefon, `YATONET 360 doğrulama kodunuz: ${kod}. LGM kod sormaz; kodu kimseyle paylaşmayınız.`);
-    return { asama: 'kod', yontem: 'sms', kurulumGerekli: false, smsAcik: true };
+    const kanal = await (await import('./bildirim.js')).girisKoduGonder(b, n.telefon, h.e_posta, `YATONET 360 doğrulama kodunuz: ${kod}. LGM kod sormaz; kodu kimseyle paylaşmayınız.`);
+    if (!kanal) return y.code(503).send({ hata: 'SMS şu anda gönderilemiyor. 7/24 Destek Hattımızı aramanızı rica ederiz.' });
+    return { asama: 'kod', yontem: 'sms', kurulumGerekli: false, smsAcik: true, kanal };
   });
 
   // YG-1449: muvafakati yat sahibi değil Dosya Sorumlusu girer; ONY-13 durumu yat sahibine görünür.

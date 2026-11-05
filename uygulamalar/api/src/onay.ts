@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { bildir, birKez, disGonder } from './bildirim.js';
+import { bildir, disGonder, smsKesintisiBildir } from './bildirim.js';
 import { belgeUret } from './belge_uret.js';
 import { izYaz } from './denetim.js';
 import { ozet, rastgeleBelirtec } from './kripto.js';
@@ -107,8 +107,7 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
         await b.db.query(`UPDATE onay_talebi SET sms_hata_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
         await izYaz(b.db, { eylem: 'Onay Kodu Gönderilemedi', nesneTuru: 'Onay Talebi', nesneKimligi: t.kimlik, sonuc: 'Başarısız', adres: i.ip, iliski: i.id });
         i.log.error({ hata: (e as Error).message }, 'SMS gönderilemedi');
-        const saat = new Date().toISOString().slice(0, 13);
-        if (await birKez(b.db, 'sms_kesinti', saat)) await bildir(b.db, { olay: `sms-kesinti:${saat}`, kullanicilar: (await b.db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi IN ('Sistem Yöneticisi', 'Bilgi İşlem Müdürü', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')`)).rows.map((r) => r.kullanici_ref as string), baslik: '⚠ SMS Gönderilemiyor', ozet: 'SMS sağlayıcısı hata veriyor; onay kodları e-postayla istenebilir.', oncelik: 'Kritik', eposta: true });
+        await smsKesintisiBildir(b.db);
         return y.code(503).send({ hata: t.eposta ? 'SMS şu anda gönderilemiyor. Kodu e-postayla istemenizi rica ederiz.' : 'SMS şu anda gönderilemiyor. Kayıtlı e-posta adresiniz bulunmadığından Dosya Sorumlunuza başvurmanızı rica ederiz.' });
       }
     }

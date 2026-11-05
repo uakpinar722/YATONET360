@@ -260,3 +260,18 @@ describe('SMS kesintisi (ALT-5, YG-1952)', () => {
     expect((await o.sup.query(`SELECT kanal FROM yatonet_onay_kaydi WHERE onay_talebi_ref = $1`, [on])).rows[0].kanal).toBe('E-posta Kodu');
   });
 });
+
+describe('giriş kodu kesintide (V-258)', () => {
+  it('SMS hata verirse kayıtlı e-postaya gider; e-posta yoksa destek hattına yönlendirir; yeni kayıt da yönlendirir', async () => {
+    const hs = async (tel: string, ep: string | null) => { await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, cep_telefonu, dogrulama_yontemi, hesap_durumu) VALUES ('Müşteri/Kurum','Bireysel Müşteri (Yat Sahibi/Yetkilisi)','S',$1,$2,$1,'SMS kodu','Aktif')`, [tel, ep]); };
+    await hs('+905550002201', 'g1@deneme.local'); await hs('+905550002202', null);
+    const asil = o.sms.gonder; o.sms.gonder = async () => { throw new Error('kapalı'); };
+    try {
+      const a = await o.ist('POST', '/api/kimlik/telefon', undefined, { telefon: '+905550002201' }); expect(a.statusCode, a.body).toBe(200); expect(a.json().kanal).toBe('E-posta');
+      expect(o.posta.gidenler.at(-1)!.telefon).toBe('g1@deneme.local'); expect(o.posta.gidenler.at(-1)!.metin).toMatch(/\d{6}/);
+      const b = await o.ist('POST', '/api/kimlik/telefon', undefined, { telefon: '+905550002202' }); expect(b.statusCode).toBe(503); expect(b.json().hata).toContain('Destek Hattı');
+      const c = await o.ist('POST', '/api/kayit/kod', undefined, { telefon: '+905550002203' }); expect(c.statusCode).toBe(503);
+    } finally { o.sms.gonder = asil; }
+    const d = await o.ist('POST', '/api/kimlik/telefon', undefined, { telefon: '+905550002201' }); expect(d.json().kanal).toBe('SMS');
+  });
+});

@@ -8,7 +8,7 @@ const T = {
     kim: 'E-Posta veya Cep Telefonu', par: 'Parola', gir: 'Giriş', unut: 'Parolamı Unuttum', yeni: 'Hesap Oluştur', veya: 'veya', destek: '7/24 Destek Hattı: [●]', motto: 'Maviye Güç Verir',
     kodb: 'Doğrulama Kodu', kodApp: 'Doğrulama uygulamanızdaki 6 haneli kodu giriniz.', kodAppSms: 'Doğrulama uygulamanızdaki 6 haneli kodu giriniz. Uygulamayı kullanamıyorsanız SMS ile kod isteyiniz.', kodSms: 'Telefonunuza gönderilen 6 haneli kodu giriniz.',
     unutN: 'Kayıtlı e-postanıza veya cep telefonunuza parola yenileme bağlantısı gönderilecektir.', unutD: 'Bağlantı Gönder', bosTek: 'Lütfen e-posta veya cep telefonunuzu giriniz.',
-    kodd: 'Doğrula', sms: 'Kodu SMS ile Gönder', smsTekrar: 'Kodu Yeniden Gönder', smsGitti: 'Kod telefonunuza gönderilmiştir.', geri: '← Geri', bos: 'Lütfen iki alanı da doldurunuz.',
+    kodd: 'Doğrula', sms: 'Kodu SMS ile Gönder', smsTekrar: 'Kodu Yeniden Gönder', smsGitti: 'Kod telefonunuza gönderilmiştir.', epostaGitti: 'SMS gönderilemediği için kod e-posta adresinize gönderilmiştir.', geri: '← Geri', bos: 'Lütfen iki alanı da doldurunuz.',
     kurB: 'Doğrulama Uygulaması Kurulumu', kurN: 'Doğrulama uygulamanızla bu kodu okutunuz, ardından uygulamanın ürettiği 6 haneli kodu giriniz.', kurEl: 'Elle Girilecek Anahtar',
     hb: 'Hesap Oluştur', hn: 'Sizi doğru yere yönlendirelim:', yakinda: 'Bu adım sonraki kod diliminde açılacaktır.',
     s1: 'Yat Sahibiyim', s1a: 'Cep telefonunuzla SMS koduyla hesap açınız; talebinizi veya hasar bildiriminizi iletiniz.',
@@ -21,7 +21,7 @@ const T = {
     kim: 'E-mail or Mobile Phone', par: 'Password', gir: 'Sign In', unut: 'Forgot My Password', yeni: 'Create an Account', veya: 'or', destek: '24/7 Support Line: [●]', motto: 'Powering the Blue',
     kodb: 'Verification Code', kodApp: 'Enter the 6-digit code from your authenticator app.', kodAppSms: 'Enter the 6-digit code from your authenticator app. If you cannot use the app, request a code by SMS.', kodSms: 'Enter the 6-digit code sent to your phone.',
     unutN: 'A password reset link will be sent to your registered e-mail or mobile phone.', unutD: 'Send Link', bosTek: 'Please enter your e-mail or mobile phone.',
-    kodd: 'Verify', sms: 'Send Code by SMS', smsTekrar: 'Resend Code', smsGitti: 'The code has been sent to your phone.', geri: '← Back', bos: 'Please fill in both fields.',
+    kodd: 'Verify', sms: 'Send Code by SMS', smsTekrar: 'Resend Code', smsGitti: 'The code has been sent to your phone.', epostaGitti: 'As SMS could not be sent, the code has been sent to your e-mail address.', geri: '← Back', bos: 'Please fill in both fields.',
     kurB: 'Authenticator App Setup', kurN: 'Scan this code with your authenticator app, then enter the 6-digit code it generates.', kurEl: 'Key for Manual Entry',
     hb: 'Create an Account', hn: 'Let us direct you to the right place:', yakinda: 'This step will open in the next release.',
     s1: 'I Am a Yacht Owner', s1a: 'Open an account with your mobile phone and an SMS code; submit your request or damage notice.',
@@ -71,7 +71,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
     setHata(''); setNot(''); setMesgul(true);
     try { await f(); } catch (e) { setHata((e as Error).message); } finally { setMesgul(false); }
   };
-  const smsGonder = () => calistir(async () => { await istek('/kimlik/sms', {}); setNot(t.smsGitti); });
+  const smsGonder = () => calistir(async () => { const r0 = await istek<{ kanal?: string }>('/kimlik/sms', {}); setNot(r0.kanal === 'E-posta' ? t.epostaGitti : t.smsGitti); });
   const gonder = (e: FormEvent) => {
     e.preventDefault();
     if (!kimlik.trim() || !parola) { setHata(t.bos); return; }
@@ -79,7 +79,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
       const y = await istek<GirisYaniti>('/kimlik/giris', { kimlik, parola });
       setParola(''); setKod(''); setYanit(y); setAdim('kod');
       if (y.kurulumGerekli) setKurulum(await istek('/kimlik/kurulum'));
-      if (y.yontem === 'sms') { await istek('/kimlik/sms', {}); setNot(t.smsGitti); }
+      if (y.yontem === 'sms') { const r0 = await istek<{ kanal?: string }>('/kimlik/sms', {}); setNot(r0.kanal === 'E-posta' ? t.epostaGitti : t.smsGitti); }
     });
   };
   const dogrula = (e: FormEvent) => {
@@ -108,7 +108,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
             {hata && <div className="hata" role="alert">{hata}</div>}
             <button className="btn" disabled={mesgul}>{t.gir}</button>
             <div className="orta"><button type="button" className="lnk" onClick={() => { setHata(''); setNot(''); setAdim('unuttum'); }}>{t.unut}</button></div>
-            <div className="orta"><button type="button" className="lnk" onClick={() => void calistir(async () => { const y = await istek<GirisYaniti>('/kimlik/telefon', { telefon: kimlik }); setYanit(y); setNot(t.smsGitti); setAdim('kod'); })}>{dil === 'tr' ? 'Yat Sahibiyim: Telefonuma Kod Gönder' : 'I am a Yacht Owner: Send a Code to My Phone'}</button></div>
+            <div className="orta"><button type="button" className="lnk" onClick={() => void calistir(async () => { const y = await istek<GirisYaniti>('/kimlik/telefon', { telefon: kimlik }); setYanit(y); setNot((y as { kanal?: string }).kanal === 'E-posta' ? t.epostaGitti : t.smsGitti); setAdim('kod'); })}>{dil === 'tr' ? 'Yat Sahibiyim: Telefonuma Kod Gönder' : 'I am a Yacht Owner: Send a Code to My Phone'}</button></div>
             {not && <div className="not orta">{not}</div>}
             <div className="ayir">{t.veya}</div>
             <button type="button" className="btn2" onClick={() => { setNot(''); setAdim('hesap'); }}>{t.yeni}</button>

@@ -177,9 +177,10 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
     if (son.rowCount) return y.code(429).send({ hata: 'Yeni kod için bir dakika bekleyiniz.' });
     const kod = String(randomInt(0, 1_000_000)).padStart(6, '0');
     await b.db.query(`INSERT INTO sms_kodu (oturum_ref, kod_ozeti, son_gecerlilik) VALUES ($1, $2, now() + make_interval(mins => $3))`, [a.o.oturum, ozet(a.o.oturum + kod), KURAL.smsKodGecerlilikDk]);
-    await b.sms.gonder(a.h.cep_telefonu, `YATONET 360 doğrulama kodunuz: ${kod}. LGM kod sormaz; kodu kimseyle paylaşmayınız.`);
-    await izYaz(b.db, { aktor: a.h.kimlik, oturum: a.o.oturum, eylem: 'SMS Kodu Gönderildi', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { gonderildi: true };
+    const kanal = await (await import('./bildirim.js')).girisKoduGonder(b, a.h.cep_telefonu, a.h.e_posta, `YATONET 360 doğrulama kodunuz: ${kod}. LGM kod sormaz; kodu kimseyle paylaşmayınız.`);
+    if (!kanal) return y.code(503).send({ hata: 'SMS şu anda gönderilemiyor. 7/24 Destek Hattımızı aramanızı rica ederiz.' });
+    await izYaz(b.db, { aktor: a.h.kimlik, oturum: a.o.oturum, eylem: kanal === 'SMS' ? 'SMS Kodu Gönderildi' : 'Giriş Kodu E-postayla Gönderildi', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { gonderildi: true, kanal };
   });
 
   s.post('/kimlik/dogrula', async (i, y) => {

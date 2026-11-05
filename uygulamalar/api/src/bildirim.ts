@@ -89,6 +89,22 @@ async function bildirGizlilikDurdurma(db: Db, olay: string, neden: string) {
 }
 
 /** YG-523: aynı dönem iki kez işlenmez. */
+/** ALT-5, YG-1952: tek sağlayıcı kesilince ilgili BT rollerine saatte bir Kritik bildirim. */
+export async function smsKesintisiBildir(db: Db): Promise<void> {
+  const saat = new Date().toISOString().slice(0, 13);
+  if (!(await birKez(db, 'sms_kesinti', saat))) return;
+  await bildir(db, { olay: `sms-kesinti:${saat}`, kullanicilar: (await db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi IN ('Sistem Yöneticisi', 'Bilgi İşlem Müdürü', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')`)).rows.map((r) => r.kullanici_ref as string), baslik: '⚠ SMS Gönderilemiyor', ozet: 'SMS sağlayıcısı hata veriyor; kodlar e-postayla gönderiliyor.', oncelik: 'Kritik', eposta: true });
+}
+
+/** V-258: giriş kodu SMS'le gider; SMS hata verirse kayıtlı e-postaya gider. İkisi de yoksa null. */
+export async function girisKoduGonder(b: Pick<Baglam, 'db' | 'sms' | 'eposta'>, telefon: string, eposta: string | null | undefined, metin: string): Promise<'SMS' | 'E-posta' | null> {
+  try { await b.sms.gonder(telefon, metin); return 'SMS'; } catch {
+    await smsKesintisiBildir(b.db);
+    if (!eposta) return null;
+    await b.eposta.gonder(eposta, metin); return 'E-posta';
+  }
+}
+
 export async function birKez(db: Db, ad: string, anahtar: string): Promise<boolean> {
   return Boolean((await db.query(`INSERT INTO zamanlanmis_is (ad, anahtar) VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING ad`, [ad, anahtar])).rowCount);
 }
