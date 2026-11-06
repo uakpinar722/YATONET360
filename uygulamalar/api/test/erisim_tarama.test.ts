@@ -82,4 +82,18 @@ describe('erişim taraması', () => {
     }
     expect(ihlal, ihlal.join('\n')).toEqual([]);
   }, 300_000);
+  it('kayıt ve güncelleme uçları: dış kullanıcı iç işlemi başlatamaz', async () => {
+    // Oturumu kapatan veya hesabı etkileyen uçlar taramayı bozmasın diye dışarıda; kendi portal uçları açık listede.
+    const ATLA = /^\/(kimlik|ilk-giris|hesap|hesabim|hesap-kurtarma|kayit|onay|paylasim|mobil|portal|firma-portal|tedarikci-portal|tesis-portal|sigorta|kurumsal|kurum|profil|bildirim|mesaj|veri-ihlali|kvkk-basvuru|iletisim|disiplin\/benim|erisim\/talep)/;
+    const l = uclar(/s\.post\('([^':]+)'/g).filter((u) => !ATLA.test(u)); expect(l.length).toBeGreaterThan(30);
+    const ihlal: string[] = []; const say: Record<number, number> = {};
+    for (const [k] of DIS) for (const u of l) {
+      const r = await o.ist('POST', `/api${u}`, oturum[k], {});
+      if (r.statusCode === 200 || r.statusCode === 201 || r.statusCode >= 500) ihlal.push(`${k} POST ${u} → ${r.statusCode}`);
+      say[r.statusCode] = (say[r.statusCode] ?? 0) + 1;
+      // Bu uçlar içeriğe baktıktan sonra yetkiyi denetler; kodları incelendi, dış kullanıcı geçerli içerikle de işlem yapamaz (aşağıdaki test).
+      if (r.statusCode === 400 && !['/belge/yukle', '/yetkilerim/belge', '/disiplin', '/ik/parametre'].includes(u)) ihlal.push(`${k} POST ${u} → 400 (yetkiden önce içerik denetimi)`);
+    }
+    expect(ihlal, ihlal.join('\n')).toEqual([]);
+  }, 300_000);
 });

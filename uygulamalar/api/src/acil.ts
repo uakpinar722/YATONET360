@@ -144,7 +144,10 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   // YG-246, YG-247: dijital devir; kontrol listesi tamamlanmadan olmaz; devralan onaylar.
   s.post('/nobet/devir', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { devralan?: string; liste?: string[]; acikOlaylar?: string };
+    // Nöbet yalnız LGM personeli arasında devredilir; yetki içerikten önce denetlenir (erişim taraması bulgusu).
+    if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Nöbet devri LGM personeli arasında yapılır.' });
     if (!g.devralan || g.devralan === o.kullanici) return y.code(400).send({ hata: 'Devralan kişiyi seçiniz.' });
+    if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif'`, [g.devralan])).rowCount) return y.code(400).send({ hata: 'Devralan kişi aktif bir LGM personeli olmalıdır.' });
     if (DEVIR_LISTESI.some((m) => !g.liste?.includes(m))) return y.code(400).send({ hata: `Kontrol listesini tamamlayınız: ${DEVIR_LISTESI.filter((m) => !g.liste?.includes(m)).join(', ')}.` });
     const r = (await b.db.query(`INSERT INTO nobet_devri (devreden_ref, devralan_ref, kontrol_listesi, acik_olaylar) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [o.kullanici, g.devralan, JSON.stringify(g.liste), g.acikOlaylar ?? null])).rows[0];
     await bildir(b.db, { olay: `nobet-devir:${r.kimlik}`, kullanicilar: [g.devralan], baslik: 'Nöbet Devri Onayınızı Bekliyor', acil: true, sms: true });
