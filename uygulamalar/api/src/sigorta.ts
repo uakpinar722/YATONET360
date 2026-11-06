@@ -16,11 +16,11 @@ import { UUID } from './yat.js';
 const GIZLI_DURUM = ['Muvafakat Bekleniyor', 'Yasal Bekleme Süresinde', 'Ödeme Bekleniyor'];
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
 
-async function kararUygula(c: PoolClient, t: Record<string, any>, onaylananSira: number[], kanal: string, yetkili: string, kaydeden: string, simdi: Date) {
+async function kararUygula(c: PoolClient, t: Record<string, any>, onaylananSira: number[], kanal: string, yetkili: string, kaydeden: string, simdi: Date, sureDolumu = false) {
   const kalemler = (await c.query(`SELECT * FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows;
   for (const k of kalemler) await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = $2 WHERE kimlik = $1`, [k.kimlik, onaylananSira.includes(k.sira_no) ? 'Onaylandı' : 'Onaylanmadı']);
   const tutar = R2(kalemler.filter((k) => onaylananSira.includes(k.sira_no)).reduce((a, k) => a + Number(k.tutar_eur), 0));
-  const tam = onaylananSira.length === kalemler.length; const karar = tam ? 'Tam Onay' : onaylananSira.length ? 'Kısmi Onay' : 'Ret';
+  const tam = onaylananSira.length === kalemler.length; const karar = sureDolumu ? 'Süre Dolumu Kabulü' : tam ? 'Tam Onay' : onaylananSira.length ? 'Kısmi Onay' : 'Ret';
   await c.query(`INSERT INTO sigorta_onayi (dosya_ref, teklif_ref, karar, onaylanan_tutar_eur, onay_kanali, onay_tarihi, onaylayan_yetkili, kaydi_yapan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [t.dosya_ref, t.kimlik, karar, tutar, kanal, simdi, yetkili, kaydeden]);
   await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = $2, karar_zamani = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar, simdi]);
   if (karar !== 'Ret' && t.d_statu === 'Aktif' && t.asama !== 'Uygulama') await statuYaz(c, { kimlik: t.dosya_ref, statu: 'Aktif', asama: t.asama }, { statu: 'Aktif', asama: 'Uygulama' }, `Sigorta kararı: ${karar}`, kaydeden, 'Operasyon Yöneticisi');
@@ -47,10 +47,10 @@ export async function sigortaSureIsle(db: Pool, simdi = new Date()): Promise<num
       try {
         await c.query('BEGIN');
         const hepsi = (await c.query(`SELECT sira_no FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows.map((r) => r.sira_no as number);
-        await kararUygula(c, t, hepsi, 'Çerçeve Sözleşme Süresi', 'Süre dolumu (5 iş günü)', t.hazirlayan_ref, simdi);
+        await kararUygula(c, t, hepsi, 'Çerçeve Sözleşme Süresi', 'Süre dolumu (5 iş günü)', t.hazirlayan_ref, simdi, true); // SGT-1
         await otomatikKabulKontrolu(c, { kimlik: t.kimlik, teklif_no: t.teklif_no, dosya_ref: t.dosya_ref }, t.dosya_sorumlusu_ref); // YG-062
-        if (t.dosya_sorumlusu_ref) await bildir(c, { olay: `sigorta-sure:${t.kimlik}`, kullanicilar: [t.dosya_sorumlusu_ref], baslik: `Teklif Süre Dolumuyla Onaylandı: ${t.teklif_no}`, eposta: true }, simdi);
-        await izYaz(c, { eylem: 'Sigorta Süre Dolumu Onayı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı' });
+        if (t.dosya_sorumlusu_ref) await bildir(c, { olay: `sigorta-sure:${t.kimlik}`, kullanicilar: [t.dosya_sorumlusu_ref], baslik: `Süre Doldu, Kalemler Sigortaca Karşılanacak Sayıldı: ${t.teklif_no}`, ozet: 'Bu bir sigorta onayı değildir; çerçeve sözleşme gereği itiraz edilmeyen kalemler karşılanacak sayılır.', eposta: true }, simdi);
+        await izYaz(c, { eylem: 'Sigorta Süre Dolumu Kabulü', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı' });
         await c.query('COMMIT'); n++;
       } catch (e) { await c.query('ROLLBACK'); throw e; } finally { c.release(); }
     }

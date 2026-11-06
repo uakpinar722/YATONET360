@@ -254,7 +254,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return yok(y);
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Ödeme talebini Ticari Sorumlu hazırlar.' });
     if (!['Avans', 'Ara Ödeme', 'Nihai', 'Parça', 'Acil Tedbir Bedeli'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'Ödeme türünü seçiniz.' });
-    if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay'].includes(t.karar)) return y.code(409).send({ hata: 'Ödeme talebi onaylı teklife dayanır.' });
+    if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'Ödeme talebi onaylı teklife dayanır.' });
     if (!g.sonTarih) return y.code(400).send({ hata: 'Son ödeme tarihini giriniz.' });
     let tut = Number(g.tutar);
     if (g.tur === 'Avans') {
@@ -286,7 +286,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Proformayı Ticari Sorumlu hazırlar.' });
-    if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay'].includes(t.karar)) return y.code(409).send({ hata: 'Proforma onaylı teklife dayanır.' });
+    if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'Proforma onaylı teklife dayanır.' });
     if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE teklif_ref = $1 AND durum <> 'Reddedildi'`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklifin proforması vardır; mevcut proformayı kullanmanızı rica ederiz.' }); // YG-886
     if (t.teklif_muhatabi === 'Sigorta Şirketi' && !(await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigortaya fatura için Hasar dosya numarası bekleniyor.' }); // YG-451
     const hk = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı'`, [t.kimlik])).rows[0].t);

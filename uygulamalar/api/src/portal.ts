@@ -214,6 +214,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     // YG-1450: düğme yalnız süresi içinde ve bireysel kayıtta görünür.
     const cayma = Boolean((await b.db.query(`SELECT 1 FROM on_bilgilendirme_cayma_kaydi WHERE dosya_ref = $1 AND cayma_zamani IS NULL AND cayma_bitis > now() LIMIT 1`, [id])).rowCount);
     const fotograflar = (await b.db.query(`SELECT kimlik, aciklama, onay_zamani FROM portal_ilerleme_fotografi WHERE dosya_ref = $1 AND kaldirma_zamani IS NULL ORDER BY onay_zamani`, [d.kimlik])).rows; // YG-458
+    for (const x of teklifler) if (x.karar === 'Süre Dolumu Kabulü') x.karar = null; // SGT-1: sigorta onayı olarak gösterilmez
     return { ...(await kart(d)), cayma, belgeler, fotograflar, kurtarma, faturalar, teslim, teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 

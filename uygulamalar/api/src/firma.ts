@@ -208,7 +208,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (karar) {
       if (!g.teklif || !UUID.test(g.teklif)) return y.code(400).send({ hata: 'İş emri onaylı teklife dayanır; teklifi seçiniz.' }); // YG-319
       const t = (await b.db.query(`SELECT statu, karar, gecerlilik_bitis_tarihi FROM fiyat_teklifi WHERE kimlik = $1 AND dosya_ref = $2`, [g.teklif, id])).rows[0];
-      if (!t || t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay'].includes(t.karar)) return y.code(409).send({ hata: 'İş emri için Onaylanmış teklif bekleniyor.' });
+      if (!t || t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'İş emri için Onaylanmış teklif bekleniyor.' });
       const cay = await caymaEngeli(b.db, id);
       if (cay) return y.code(409).send({ hata: cay });
       // YG-324: yalnız onaylanan paketler seçilir.

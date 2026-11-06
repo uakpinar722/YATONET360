@@ -485,7 +485,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   s.get('/teklif/:id/ek-ozet', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
-    const once = Number((await b.db.query(`SELECT coalesce(sum(genel_toplam_eur), 0) n FROM fiyat_teklifi WHERE dosya_ref = $1 AND kimlik <> $2 AND statu = 'Karar' AND karar IN ('Tam Onay', 'Kısmi Onay', 'Koşullu Onay')`, [t.dosya_ref, t.kimlik])).rows[0].n);
+    const once = Number((await b.db.query(`SELECT coalesce(sum(genel_toplam_eur), 0) n FROM fiyat_teklifi WHERE dosya_ref = $1 AND kimlik <> $2 AND statu = 'Karar' AND karar IN ('Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü')`, [t.dosya_ref, t.kimlik])).rows[0].n);
     const bu = Number(t.genel_toplam_eur);
     return { oncekiOnayli: once, buEk: bu, yeniToplam: Math.round((once + bu) * 100) / 100 };
   });

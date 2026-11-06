@@ -225,14 +225,17 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect(r.json()).toEqual({ karar: 'Kısmi Onay', tutar: 150, onaylanmayan: 1 });
     expect((await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [2] })).statusCode).toBe(409);
   });
-  it('süre dolmadan 24 saat kala tek hatırlatma; dolunca tümü onaylı; çerçevesizde süre işlemez', async () => {
+  it('süre dolmadan 24 saat kala tek hatırlatma; dolunca kalemler karşılanacak sayılır, onay kaydı ayrı; çerçevesizde süre işlemez', async () => {
     const { d, t } = await dosyaVeTeklif();
     await o.sup.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = now() + interval '10 hours' WHERE kimlik = $1`, [t]);
     await sigortaSureIsle(o.db); await sigortaSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM sigorta_gonderim WHERE tur = 'BLD-72' AND nesne_kimligi = $1 AND durum = 'Teyit Bekliyor'`, [t])).rows[0].n).toBe(1);
     await o.sup.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = now() - interval '1 minute' WHERE kimlik = $1`, [t]);
     await sigortaSureIsle(o.db);
-    expect((await o.sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [t])).rows[0].karar).toBe('Tam Onay');
+    // SGT-1: kalemler sigortaca karşılanacak sayılır (YG-444) ama karar sigorta onayı olarak kaydedilmez (YG-162, YG-1494).
+    expect((await o.sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [t])).rows[0].karar).toBe('Süre Dolumu Kabulü');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu <> 'Onaylandı'`, [t])).rows[0].n).toBe(0);
+    expect((await o.sup.query(`SELECT karar FROM sigorta_onayi WHERE teklif_ref = $1`, [t])).rows[0].karar).toBe('Süre Dolumu Kabulü');
     expect((await o.sup.query(`SELECT onay_kanali FROM sigorta_onayi WHERE teklif_ref = $1`, [t])).rows[0].onay_kanali).toBe('Çerçeve Sözleşme Süresi');
     void d;
     const b = await dosyaVeTeklif();
