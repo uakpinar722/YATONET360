@@ -49,7 +49,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
 
   /** Kişinin karar verebileceği adaylar: rolü sıradaki makam; kendi hazırladığı ve daha önce karar verdiği kartlar hariç (YG-1034). */
   async function kartlarim(kullanici: string) {
-    const etkin = await etkinRoller(b.db, kullanici); const roller = etkin.map((r) => r.kimlik);
+    const etkin = await etkinRoller(b.db, kullanici, true); const roller = etkin.map((r) => r.kimlik);
     const vekilRoller = etkin.filter((r) => r.vekalet).map((r) => r.kimlik);
     const onay = await b.db.query(
       `SELECT ${SECIM}, h.ad_soyad AS hazirlayan_adi,
@@ -97,7 +97,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
     const g = (gerekce ?? '').trim();
     if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet' || karar === 'Kademe Atla') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
-    const etkin = await etkinRoller(b.db, o.kullanici); const roller = etkin.map((r) => r.kimlik);
+    const etkin = await etkinRoller(b.db, o.kullanici, true); const roller = etkin.map((r) => r.kimlik);
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

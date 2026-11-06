@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -600,5 +600,21 @@ describe('tür bazlı belge erişimi (YG-609, YG-1075)', () => {
     expect(disTurEngeli('Bireysel Müşteri (Yat Sahibi/Yetkilisi)', g('İş Emri'))).toBe(true); expect(disTurEngeli('Bireysel Müşteri (Yat Sahibi/Yetkilisi)', g('Fiyat Teklifi'))).toBe(false);
     expect(disTurEngeli('Sigorta Şirketi / Eksper', g('Uyuşmazlık Paketi'))).toBe(true); expect(disTurEngeli('Sigorta Şirketi / Eksper', g('Fotoğraf', 'Kurumsal'))).toBe(true);
     expect(disTurEngeli('LGM İç Rolü', g('Uyuşmazlık Paketi', 'Kurumsal'))).toBe(false);
+  });
+});
+
+describe('kritik pozisyon vekilleri (YG-1058)', () => {
+  it('Direktöre tablodaki vekil atanır; Hukuk ve Uyum vekili yalnız hazırlık yapar, onay GMY\'ye düşer', async () => {
+    const { kartAc } = await import('../src/is_motoru.js'); const { rolId } = await import('../src/ihbar.js');
+    const g = await o.gir('gmy'); const gun = (x: number) => new Date(Date.now() + x * 86_400_000).toISOString().slice(0, 10);
+    const rol = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
+    const ata = (asil: string, r: string, vekil: string) => o.ist('POST', '/api/vekalet', g, { asil, rol: r, vekil, neden: 'İzin', kapsam: 'Açık işler', baslangic: gun(0), bitis: gun(5) });
+    expect((await ata(o.K.tod!, await rol('Teknik ve Operasyon Direktörü'), o.K.hud!)).statusCode).toBe(400); // tabloda değil
+    const r = await ata(o.K.hud!, await rol('Hukuk ve Uyum Direktörü'), o.K.huu!); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT yalniz_hazirlik FROM vekalet WHERE kimlik = $1`, [r.json().kimlik])).rows[0].yalniz_hazirlik).toBe(true);
+    const k = await kartAc(o.db, { tur: 'Hukuk Onayı Deneme', baslik: 'Deneme', hazirlayan: o.K.ds, zincir: [await rolId(o.db, 'Hukuk ve Uyum Direktörü')] });
+    expect((await o.karar(k, 'huu', 'Onayla')).statusCode).not.toBe(200);
+    const s2 = await o.karar(k, 'gmy', 'Onayla'); expect(s2.statusCode, s2.body).toBe(200);
+    await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı' WHERE kimlik = $1`, [r.json().kimlik]);
   });
 });

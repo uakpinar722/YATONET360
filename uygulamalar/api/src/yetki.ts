@@ -17,10 +17,12 @@ export async function kullaniciRolleri(db: Pool, kullanici: string) {
 const GECERLI_VEKALET = `v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date`;
 
 /** Kişinin asıl rolleri ve vekâlet ettiği roller. Vekâlet bitişte kendiliğinden düşer (YG-1056). */
-export async function etkinRoller(db: Pool | PoolClient, kullanici: string) {
+export async function etkinRoller(db: Pool | PoolClient, kullanici: string, onay = false) {
+  // YG-1058: onay için yalnız hazırlık vekâleti sayılmaz; o sürede makamın onayları GMY'ye düşer.
   const { rows } = await db.query(
     `SELECT r.kimlik, false AS vekalet FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND ${GECERLI}
-     UNION SELECT v.rol_ref, true FROM vekalet v WHERE v.vekil_ref = $1 AND ${GECERLI_VEKALET}`, [kullanici]);
+     UNION SELECT v.rol_ref, true FROM vekalet v WHERE v.vekil_ref = $1 AND ${GECERLI_VEKALET} AND (NOT $2 OR NOT v.yalniz_hazirlik)
+     UNION SELECT v.rol_ref, true FROM vekalet v WHERE $2 AND v.yalniz_hazirlik AND ${GECERLI_VEKALET} AND EXISTS (SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND r.rol_adi = 'Genel Müdür Yardımcısı' AND ${GECERLI})`, [kullanici, onay]);
   const asil = new Set(rows.filter((r) => !r.vekalet).map((r) => r.kimlik));
   return rows.filter((r) => !r.vekalet || !asil.has(r.kimlik)) as { kimlik: string; vekalet: boolean }[];
 }

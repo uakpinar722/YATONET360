@@ -87,6 +87,24 @@ export function guvenlikYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE olay_kaydi SET gecici_cozum_zamani = coalesce(gecici_cozum_zamani, now()) WHERE kimlik = $1`, [v.kimlik]);
     return { tamam: true };
   });
+  // YG-1281: BT ve kriz olaylarının listesi ve kapanışı; açıklama yetkilisi CEO'ca seçilir.
+  const IZLEYEN = [...BT, 'CEO', 'Genel Müdür Yardımcısı', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'];
+  s.get('/olaylar', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, IZLEYEN))) return yok(y);
+    return (await b.db.query(`SELECT o.kimlik, o.olay_turu, o.ozet, o.durum, o.surum, o.etki, o.olusturma_zamani, o.yanit_zamani, o.gecici_cozum_zamani, o.veri_ihlali_ref IS NOT NULL AS ihlal_bagli, a.ad_soyad AS acan, k.ad_soyad AS aciklama_yetkilisi
+      FROM olay_kaydi o JOIN kullanici_hesabi a ON a.kimlik = o.acan_ref LEFT JOIN kullanici_hesabi k ON k.kimlik = o.aciklama_yetkilisi_ref
+      WHERE o.olay_turu IN ('BT Kesintisi veya Veri İhlali', 'Kurumsal Kriz') ORDER BY o.durum, o.olusturma_zamani DESC LIMIT 100`)).rows;
+  });
+  s.post('/olay/:id/kapat', oturumlu, async (i, y) => {
+    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const g = (i.body ?? {}) as { ozet?: string };
+    if (!v) return yok(y);
+    if (!(await rolVar(o.kullanici, BT))) return y.code(403).send({ hata: 'Olayı Bilgi İşlem veya Hukuk ve Uyum kapatır.' });
+    if (!g.ozet?.trim()) return y.code(400).send({ hata: 'Kapanış özetini (kök neden ve alınan önlem) yazmanızı rica ederiz.' });
+    const r = await b.db.query(`UPDATE olay_kaydi SET durum = 'Kapalı', gecici_cozum_zamani = coalesce(gecici_cozum_zamani, now()) WHERE kimlik = $1 AND durum = 'Açık'`, [v.kimlik]);
+    if (!r.rowCount) return y.code(409).send({ hata: 'Olay zaten kapalıdır.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Olay Kapatıldı', nesneTuru: 'Olay', nesneKimligi: v.kimlik, gerekce: g.ozet.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/olay/:id/aciklama-yetkilisi', oturumlu, async (i, y) => {
     const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const k = ((i.body ?? {}) as { kullanici?: string }).kullanici;
     if (!v) return yok(y);

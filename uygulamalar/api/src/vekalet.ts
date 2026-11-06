@@ -26,10 +26,21 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
       if (aday.rol_adi !== 'Teknik ve Operasyon Direktörü') return false;
       return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik JOIN rol x ON x.kimlik = a.rol_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE x.rol_adi = 'Genel Müdür Yardımcısı' AND a.atama_durumu = 'Aktif' AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif')) LIMIT 1`)).rowCount);
     }
+    // YG-1058: GMY ve Direktör vekilleri kritik pozisyon vekil tablosundan (LST_KRITIK_POZISYON_VEKILI); tablo vekili yoksa üst makam.
+    if (asil.kademe === 'Direktör' || asil.rol_adi === 'Genel Müdür Yardımcısı') {
+      const tablo = await kritikVekiller(asil.rol_adi);
+      if (tablo.includes(aday.rol_adi)) return true;
+      return (await onayMakami(b.db, asil.rol)) === aday.rol;
+    }
     if (aday.birim === asil.birim && aday.kademe === asil.kademe) return true;
     const cift = new Set(['Müdür', 'Müdür Yardımcısı']);
     if (aday.birim === asil.birim && cift.has(aday.kademe) && cift.has(asil.kademe)) return true;
     return (await onayMakami(b.db, asil.rol)) === aday.rol;
+  }
+
+  async function kritikVekiller(rolAdi: string): Promise<string[]> {
+    const r = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_KRITIK_POZISYON_VEKILI' AND split_part(deger, ' → ', 1) = $1`, [rolAdi])).rows[0];
+    return r ? String(r.deger).split(' → ')[1]!.split(' / ').map((x) => x.replace(/\s*\(.*\)$/, '').trim()) : [];
   }
 
   /** Vekili birim amiri atar (YG-1478). */
@@ -79,7 +90,9 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
       const cakisan = await c.query(`SELECT 1 FROM vekalet WHERE asil_ref = $1 AND rol_ref = $2 AND durum = 'Aktif' AND baslangic_tarihi <= $4 AND bitis_tarihi >= $3`, [asil, rol, baslangic, bitis]);
       if (cakisan.rowCount) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Bu tarihlerde görevlinin aktif vekâleti bulunmaktadır.' }); }
       const id = await kayitNo(c, 'VKL');
-      await c.query(`INSERT INTO vekalet (kimlik, asil_ref, vekil_ref, rol_ref, vekalet_nedeni, kapsam, baslangic_tarihi, bitis_tarihi, atayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id, asil, vekil, rol, neden, kapsam.trim(), baslangic, bitis, o.kullanici]);
+      // YG-1058: Hukuk ve Uyum Direktörüne aynı rol dışından vekâlet yalnız hazırlıktır; onaylar GMY'ye gider.
+      const hazirlik = a.rol_adi === 'Hukuk ve Uyum Direktörü' && !adaylar.some((k) => k.rol === a.rol);
+      await c.query(`INSERT INTO vekalet (kimlik, asil_ref, vekil_ref, rol_ref, vekalet_nedeni, kapsam, baslangic_tarihi, bitis_tarihi, atayan_ref, yalniz_hazirlik) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id, asil, vekil, rol, neden, kapsam.trim(), baslangic, bitis, o.kullanici, hazirlik]);
       for (const k of [asil, vekil]) await c.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet) VALUES ($1,$2,$3)`, [k, `Vekâlet · ${id}`, `${a.rol_adi} · ${baslangic.split('-').reverse().join('.')} – ${bitis.split('-').reverse().join('.')}`]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vekâlet Atandı', nesneTuru: 'vekalet', nesneKimligi: id, yeni: { asil, vekil, rol, baslangic, bitis }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

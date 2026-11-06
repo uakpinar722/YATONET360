@@ -104,6 +104,11 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect(await olayIsle(o.db)).toBeGreaterThan(0);
     expect((await o.ist('POST', `${u}/yanit`, c, {})).statusCode).toBe(200);
     expect((await o.ist('POST', `${u}/aciklama-yetkilisi`, c, { kullanici: o.K.bim })).statusCode).toBe(403);
+    expect((await o.ist('GET', '/api/olaylar', await o.gir('ds'))).statusCode).toBe(404); // YG-1281
+    expect(((await o.ist('GET', '/api/olaylar', await o.gir('bim'))).json() as { kimlik: string; surum: number }[]).find((x) => x.kimlik === ol)!.surum).toBe(2);
+    expect((await o.ist('POST', `${u}/kapat`, c, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Disk doldu; izleme eşiği düşürüldü' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Tekrar' })).statusCode).toBe(409);
   });
   it('aynı işlem anahtarı ikinci kez işlenmez', async () => {
     const c = await o.gir('sy'); const H = { 'x-yatonet': '1', 'x-islem-anahtari': 'tek-1' }; const P = { tur: 'Örnek Kayıt', kurtarma: 1, kayip: 1, kayitTutarli: true, belge: true, yetki: true };

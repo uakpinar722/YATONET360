@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
-import { SaglayiciMatrisi } from './DosyaEk';
+import { OlayKayitlari, SaglayiciMatrisi } from './DosyaEk';
 
 const OLAY = ['Yanlış alıcıya e-posta', 'Açık paylaşım bağlantısı', 'Kayıp çıktı', 'Yetkisiz görüntüleme', 'Cihaz kaybı veya çalınması', 'Teknik güvenlik olayı', 'Diğer'];
 const HAK = ['İşlenip işlenmediğini öğrenme', 'İşlenmişse bilgi talep etme', 'Amacını ve amaca uygun kullanımı öğrenme', 'Aktarıldığı üçüncü kişileri bilme', 'Düzeltme isteme', 'Silme veya yok etme isteme', 'Düzeltme/silmenin üçüncü kişilere bildirilmesi', 'Otomatik analiz sonucuna itiraz', 'Zararın giderilmesi', 'Pazarlama onayını geri alma'];
@@ -80,6 +80,7 @@ export function KvkkEkrani() {
     <Yedekler />
     <UyumGorevleri />
     <SaglayiciMatrisi />
+    <OlayKayitlari />
     {y.ihlal && <><div className="bolum">Veri İhlali Kayıtları</div>
       {iv.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
       {iv.map((v) => <div className="soru" key={v.kimlik}><span><b className="koyu">{v.olay_no}</b> · {v.olay_turu} · {v.ozet} · {v.durum}{v.durum === 'Açık' && !v.kurul_bildirim_zamani && v.bildirim_karari !== 'Bildirim Gerekmez' ? <b className="hata"> ⚠ {kalan(v.ogrenme_zamani)}</b> : ''}</span>

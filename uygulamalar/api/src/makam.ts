@@ -40,7 +40,10 @@ export async function rolSahipleri(db: Db, rol: string): Promise<string[]> {
       WHERE a.rol_ref = $1 AND a.atama_durumu = 'Aktif' AND a.baslangic_tarihi <= current_date AND (a.bitis_tarihi IS NULL OR a.bitis_tarihi >= current_date) AND h.hesap_durumu = 'Aktif'
      UNION
      SELECT v.vekil_ref FROM vekalet v JOIN kullanici_hesabi h ON h.kimlik = v.vekil_ref
-      WHERE v.rol_ref = $1 AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date AND h.hesap_durumu = 'Aktif'`, [rol]);
+      WHERE v.rol_ref = $1 AND v.durum = 'Aktif' AND NOT v.yalniz_hazirlik AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date AND h.hesap_durumu = 'Aktif'
+     UNION
+     SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref
+      WHERE r.rol_adi = 'Genel Müdür Yardımcısı' AND a.atama_durumu = 'Aktif' AND h.hesap_durumu = 'Aktif' AND EXISTS (SELECT 1 FROM vekalet v WHERE v.rol_ref = $1 AND v.durum = 'Aktif' AND v.yalniz_hazirlik AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date)`, [rol]); // YG-1058: yalnız hazırlık vekâletinde onay GMY'ye
   return rows.map((r) => r.k as string);
 }
 

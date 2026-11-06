@@ -294,3 +294,32 @@ export function KurumBelgeleri() {
     <label htmlFor="kb-y">Yenilenen Belge (varsa)</label><select id="kb-y" value={f.yenilenen} onChange={(e) => setF({ ...f, yenilenen: e.target.value })}><option value="">Yok</option>{l.filter((x) => x.durum === 'Geçerli').map((x) => <option key={x.kimlik} value={x.kimlik}>{x.tur} · {x.ad}</option>)}</select>
     <button className="btn2" onClick={() => void istek('/kurum-belgesi', { ...f, yenilenen: f.yenilenen || undefined }).then(() => { setF({ tur: '', ad: '', karsiTaraf: '', bitis: '', yenilenen: '' }); setM('Belge kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Belge Kaydet</button></>;
 }
+
+/** YG-1281, YG-1283: BT kesintisi ve kurumsal kriz olayları; sürümlü etki, yanıt, geçici çözüm, kapanış. */
+export function OlayKayitlari() {
+  type O = { kimlik: string; olay_turu: string; ozet: string; durum: string; surum: number; olusturma_zamani: string; yanit_zamani: string | null; gecici_cozum_zamani: string | null; ihlal_bagli: boolean; acan: string; aciklama_yetkilisi: string | null };
+  const [l, setL] = useState<O[] | null>(null); const [f, setF] = useState<Record<string, { hizmet: string; kullanici: string; surec: string; veri: string; kisiselVeri: boolean; kapanis: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<O[]>('/olaylar').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  const z = (x: string | null) => (x ? new Date(x).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+  const al = (id: string) => f[id] ?? { hizmet: '', kullanici: '', surec: '', veri: '', kisiselVeri: false, kapanis: '' };
+  const yaz = (id: string, k: string, v: string | boolean) => setF({ ...f, [id]: { ...al(id), [k]: v } });
+  const is = (yol: string, g: object, t: string) => void istek(yol, g).then(() => { setM(t); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kesinti ve Olay Kayıtları</div>{m && <div className="not" role="status">{m}</div>}{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}
+    {l.map((x) => { const v = al(x.kimlik); return <div className="ozet" key={x.kimlik}>
+      <div><b>{x.olay_turu}</b> · {x.ozet} · {x.durum} · Sürüm {x.surum}{x.ihlal_bagli ? ' · Veri ihlali kaydı bağlı' : ''}</div>
+      <div>Başlangıç: {z(x.olusturma_zamani)} · Yanıt: {z(x.yanit_zamani)} · Geçici Çözüm: {z(x.gecici_cozum_zamani)} · Açıklama Yetkilisi: {x.aciklama_yetkilisi ?? '—'}</div>
+      {x.durum === 'Açık' && <>
+        <label htmlFor={`ol-h-${x.kimlik}`}>Etkilenen Hizmet</label><input id={`ol-h-${x.kimlik}`} value={v.hizmet} onChange={(e) => yaz(x.kimlik, 'hizmet', e.target.value)} />
+        <label htmlFor={`ol-k-${x.kimlik}`}>Etkilenen Kullanıcılar</label><input id={`ol-k-${x.kimlik}`} value={v.kullanici} onChange={(e) => yaz(x.kimlik, 'kullanici', e.target.value)} />
+        <label htmlFor={`ol-s-${x.kimlik}`}>Etkilenen Süreç</label><input id={`ol-s-${x.kimlik}`} value={v.surec} onChange={(e) => yaz(x.kimlik, 'surec', e.target.value)} />
+        <label htmlFor={`ol-v-${x.kimlik}`}>Etkilenen Veri</label><input id={`ol-v-${x.kimlik}`} value={v.veri} onChange={(e) => yaz(x.kimlik, 'veri', e.target.value)} />
+        <label className="kutu"><input type="checkbox" checked={v.kisiselVeri} onChange={(e) => yaz(x.kimlik, 'kisiselVeri', e.target.checked)} /><span>Kişisel Veri Etkilendi (veri ihlali kaydı açılır)</span></label>
+        <div className="dugmeler"><button className="btn2 kucuk" onClick={() => is(`/olay/${x.kimlik}/guncelle`, { hizmet: v.hizmet, kullanici: v.kullanici, surec: v.surec, veri: v.veri, kisiselVeri: v.kisiselVeri }, 'Olay güncellendi.')}>Etkiyi Güncelle</button>
+          {!x.yanit_zamani && <button className="btn2 kucuk" onClick={() => is(`/olay/${x.kimlik}/yanit`, {}, 'Yanıt kaydedildi.')}>Yanıt Verildi</button>}
+          {!x.gecici_cozum_zamani && <button className="btn2 kucuk" onClick={() => is(`/olay/${x.kimlik}/gecici-cozum`, {}, 'Geçici çözüm kaydedildi.')}>Geçici Çözüm Uygulandı</button>}</div>
+        <label htmlFor={`ol-z-${x.kimlik}`}>Kapanış Özeti (Kök Neden ve Önlem)</label><input id={`ol-z-${x.kimlik}`} value={v.kapanis} onChange={(e) => yaz(x.kimlik, 'kapanis', e.target.value)} />
+        <button className="btn2 kucuk" disabled={!v.kapanis.trim()} onClick={() => is(`/olay/${x.kimlik}/kapat`, { ozet: v.kapanis }, 'Olay kapatıldı.')}>Olayı Kapat</button></>}
+    </div>; })}</>;
+}
