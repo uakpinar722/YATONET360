@@ -153,6 +153,13 @@ export async function kartelaUyarilari(db: Db, kodlar: string[]) {
 // YG-1468: ek olarak geçici yat kaydıyla teklif yayımlanmaz (YG-214). YG-078: en az bir onaylı kapsam gerekir.
 kapiKaydet('Onay', async (db, d) => ((await db.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu IN ('Gönderildi', 'Karar', 'Onaylı') LIMIT 1`, [d.kimlik])).rowCount ? null : 'Onay aşamasına geçmek için fiyat teklifi iç onaydan geçmelidir.'));
 
+/** YG-1081: taslak kartela sürümü CEO onayıyla yürürlüğe girer; aynı anda tek Yürürlükte sürüm kalır, önceki Arşiv olur. */
+kapanisKaydet('Kartela Sürümü', async (c, k, karar) => {
+  if (karar !== 'Onayla') return;
+  await c.query(`UPDATE kartela_surumu SET durum = 'Arşiv' WHERE durum = 'Yürürlükte'`);
+  await c.query(`UPDATE kartela_surumu SET durum = 'Yürürlükte', yururluk = (now() AT TIME ZONE 'Europe/Istanbul')::date WHERE surum = $1 AND durum = 'Taslak'`, [k.nesne_kimligi]);
+});
+
 kapanisKaydet('Kapsam Cetveli', async (c, k, karar, yapan) => {
   if (karar !== 'Onayla') return;
   await c.query(`UPDATE kapsam_cetveli SET durum = 'Yerine Geçti' WHERE dosya_ref = (SELECT dosya_ref FROM kapsam_cetveli WHERE kimlik = $1) AND durum = 'Onaylı'`, [k.nesne_kimligi]);
@@ -274,6 +281,48 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (q.length < 2) return [];
     const sur = await yururlukSurumu(b.db);
     return (await b.db.query(`SELECT kod, ana_brans, tali_brans, islem, birim FROM kartela_kalemi WHERE surum = $1 AND (kod ILIKE $2 || '%' OR islem ILIKE '%' || $2 || '%') ORDER BY kod LIMIT 30`, [sur, q])).rows;
+  });
+
+  // YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO tarafından görülür ve taslak sürümde girilir.
+  const kartelaYetkili = async (k: string) => (await roller(k)).some((r) => ['Ticari İşler Direktörü', 'CEO'].includes(r));
+  const taslak = async () => (await b.db.query(`SELECT surum FROM kartela_surumu WHERE durum = 'Taslak' ORDER BY surum DESC LIMIT 1`)).rows[0]?.surum as string | undefined;
+  s.get('/kartela/maliyet', oturumlu, async (i, y) => {
+    if (!(await kartelaYetkili(i.oturum!.kullanici))) return yok(y);
+    const q = String((i.query as { q?: string }).q ?? '').trim(); const sur = (await taslak()) ?? await yururlukSurumu(b.db);
+    return { surum: sur, taslak: Boolean(await taslak()), kalemler: (await b.db.query(`SELECT kod, islem, birim, maliyet_eur, maliyet_tarihi::text, kaynak_norm FROM kartela_kalemi WHERE surum = $1 AND ($2 = '' OR kod ILIKE $2 || '%' OR islem ILIKE '%' || $2 || '%') ORDER BY kod LIMIT 50`, [sur, q])).rows };
+  });
+  s.post('/kartela/taslak', oturumlu, async (i, y) => {
+    const o = i.oturum!;
+    if (!(await kartelaYetkili(o.kullanici))) return yok(y);
+    if (await taslak()) return y.code(409).send({ hata: 'Açık taslak sürüm vardır.' });
+    const kaynak = await yururlukSurumu(b.db); if (!kaynak) return y.code(409).send({ hata: 'Yürürlükte kartela sürümü yoktur.' });
+    const yil = new Date().getFullYear(); const n = Number((await b.db.query(`SELECT coalesce(max(split_part(surum, '.', 2)::int), 0) n FROM kartela_surumu WHERE surum ~ ('^' || $1 || '[.][0-9]+$')`, [String(yil)])).rows[0].n) + 1;
+    const sur = `${yil}.${n}`;
+    return islem(async (c) => {
+      await c.query(`INSERT INTO kartela_surumu (surum, durum, hazirlayan_ref) VALUES ($1,'Taslak',$2)`, [sur, o.kullanici]);
+      await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm) SELECT kod, $1, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm FROM kartela_kalemi WHERE surum = $2`, [sur, kaynak]);
+      return { surum: sur };
+    });
+  });
+  s.post('/kartela/taslak/maliyet', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; maliyet?: number; tarih?: string; kaynak?: string };
+    if (!(await kartelaYetkili(o.kullanici))) return yok(y);
+    const sur = await taslak(); if (!sur) return y.code(409).send({ hata: 'Önce taslak sürüm açınız.' });
+    if (!g.kod || !(Number(g.maliyet) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.kaynak?.trim()) return y.code(400).send({ hata: 'Pozitif maliyet, maliyet tarihi ve kaynak norm zorunludur.' });
+    const r = await b.db.query(`UPDATE kartela_kalemi SET maliyet_eur = $3, maliyet_tarihi = $4, kaynak_norm = $5 WHERE kod = $1 AND surum = $2 RETURNING kod`, [g.kod, sur, Number(g.maliyet), g.tarih, g.kaynak.trim()]);
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kalem taslak sürümde bulunamadı.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kartela Maliyeti', nesneTuru: 'Kartela', nesneKimligi: `${g.kod}@${sur}`, yeni: { maliyet: Number(g.maliyet), tarih: g.tarih, kaynak: g.kaynak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  s.post('/kartela/taslak/onaya-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!;
+    if (!(await kartelaYetkili(o.kullanici))) return yok(y);
+    const sur = await taslak(); if (!sur) return y.code(409).send({ hata: 'Taslak sürüm yoktur.' });
+    const eksik = Number((await b.db.query(`SELECT count(*) n FROM kartela_kalemi WHERE surum = $1 AND (maliyet_eur <= 0 OR maliyet_tarihi IS NULL OR kaynak_norm IS NULL)`, [sur])).rows[0].n);
+    if (eksik) return y.code(409).send({ hata: `${eksik} kalemde pozitif maliyet, maliyet tarihi veya kaynak norm eksiktir.` });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Kartela Sürümü' AND nesne_kimligi = $1 AND kapanma_zamani IS NULL`, [sur])).rowCount) return y.code(409).send({ hata: 'Sürüm onaydadır.' });
+    const k = await kartAc(b.db, { tur: 'Kartela Sürümü', baslik: `Kartela ${sur} · Yürürlüğe Alma`, ozet: 'Onayla önceki sürüm arşive düşer.', hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Kartela Sürümü', nesneKimligi: sur });
+    return { kart: k };
   });
 
   // YG-195, YG-198: cetveli Teknik Uzman hazırlar, Teknik Yönetici onaylar; bedel türü ve nitelik satırda seçilir.
@@ -526,7 +575,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const onayli = g.karar === 'Tam Onay' ? kalemler.map((k) => k.sira_no as number) : g.karar === 'Kısmi Onay' ? g.onaylananSiralar! : [];
       for (const k of kalemler) await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = $2 WHERE kimlik = $1`, [k.kimlik, onayli.includes(k.sira_no) ? 'Onaylandı' : 'Onaylanmadı']);
       const tutarOnay = R2(kalemler.filter((k) => onayli.includes(k.sira_no)).reduce((a, k) => a + Number(k.tutar_eur), 0));
-      if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(c, t.dosya_ref, g.gonderen, tutarOnay); if (h) throw Object.assign(new Error(h), { statusCode: g.gonderen ? 409 : 400 }); } // YG-219
+      if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(c, t.dosya_ref, g.gonderen, tutarOnay, o.kullanici); if (h) throw Object.assign(new Error(h), { statusCode: g.gonderen ? 409 : 400 }); } // YG-219
       await c.query(`INSERT INTO sigorta_onayi (dosya_ref, teklif_ref, karar, onaylanan_tutar_eur, onay_kanali, onay_tarihi, onay_belgesi_ref, gonderen_eposta, onaylayan_yetkili, kaydi_yapan_ref) VALUES ($1,$2,$3,$4,$5,now(),$6,$9,$7,$8)`, [t.dosya_ref, t.kimlik, g.karar, tutarOnay, g.kanal, g.belge ?? null, g.yetkili!.trim(), o.kullanici, g.gonderen?.trim() || null]);
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = $2, karar_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, g.karar]);
       if (g.karar === 'Tam Onay' || g.karar === 'Kısmi Onay') {
@@ -630,7 +679,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const onayli = hepsi.filter((k) => k.onay_durumu === 'Onaylandı');
       const karar = onayli.length === hepsi.length ? 'Tam Onay' : onayli.length ? 'Kısmi Onay' : 'Ret';
       const tutarOnay = R2(onayli.reduce((a, k) => a + Number(k.tutar_eur), 0));
-      if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(c, t.dosya_ref, g.gonderen, tutarOnay); if (h) throw Object.assign(new Error(h), { statusCode: g.gonderen ? 409 : 400 }); } // YG-219
+      if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(c, t.dosya_ref, g.gonderen, tutarOnay, o.kullanici); if (h) throw Object.assign(new Error(h), { statusCode: g.gonderen ? 409 : 400 }); } // YG-219
       await c.query(`INSERT INTO sigorta_onayi (dosya_ref, teklif_ref, karar, onaylanan_tutar_eur, onay_kanali, onay_tarihi, onay_belgesi_ref, gonderen_eposta, onaylayan_yetkili, kaydi_yapan_ref) VALUES ($1,$2,$3,$4,$5,now(),$6,$9,$7,$8)`, [t.dosya_ref, t.kimlik, karar, tutarOnay, g.kanal, g.belge ?? null, g.yetkili!.trim(), o.kullanici, g.gonderen?.trim() || null]);
       await c.query(`UPDATE fiyat_teklifi SET karar = $2, karar_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar]);
       await c.query(`UPDATE yeniden_degerlendirme SET durum = 'Sonuçlandı', sonuc_zamani = now(), sonuc_kanali = $2, sonuc_yetkili = $3, sonuc_belge_ref = $4 WHERE kimlik = $1`, [id, g.kanal, g.yetkili!.trim(), g.belge ?? null]);

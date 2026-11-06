@@ -12,7 +12,7 @@ import { belgeKuyruguIsle } from '../src/belge_uret.js';
 import { Depo } from '../src/depo.js';
 import { pdfKapat } from '../src/pdf.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', mfm: 'Muhasebe ve Finans Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', mfm: 'Muhasebe ve Finans Müdürü', bceo: 'CEO' };
 let o: Ortam; let firma: string; let firmaC: string; let firmaGizli: string; let ceo: string;
 const FIRMA_EP = 'firma@deneme.yatonet.local';
 
@@ -429,3 +429,26 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
   }, 60_000);
 });
 void COOKIE_ADI;
+
+describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
+  it('yalnız TİD ve CEO görür ve girer; pozitif maliyet, tarih ve kaynak zorunlu; CEO onayıyla tek yürürlük', async () => {
+    expect((await o.ist('GET', '/api/kartela/maliyet', await o.gir('ts'))).statusCode).toBe(404);
+    const c = await o.gir('tid');
+    const eski = (await o.ist('GET', '/api/kartela/maliyet', c)).json().surum as string;
+    const r = await o.ist('POST', '/api/kartela/taslak', c, {}); expect(r.statusCode, r.body).toBe(200); const sur = r.json().surum as string;
+    expect((await o.ist('POST', '/api/kartela/taslak', c, {})).statusCode).toBe(409);
+    const k = (await o.sup.query(`SELECT kod, maliyet_eur FROM kartela_kalemi WHERE surum = $1 AND maliyet_eur > 0 LIMIT 1`, [sur])).rows[0];
+    const u = '/api/kartela/taslak/maliyet';
+    expect((await o.ist('POST', u, c, { kod: k.kod, maliyet: 0, tarih: '2026-11-06', kaynak: 'Firma teklifi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { kod: k.kod, maliyet: Number(k.maliyet_eur) })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, await o.gir('ts'), { kod: k.kod, maliyet: 1, tarih: '2026-11-06', kaynak: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, c, { kod: k.kod, maliyet: Number(k.maliyet_eur), tarih: '2026-11-06', kaynak: 'Firma teklifi ortalaması' })).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/kartela/taslak/onaya-gonder', c, {})).json().hata).toContain('eksiktir');
+    await o.sup.query(`UPDATE kartela_kalemi SET maliyet_tarihi = '2026-11-06', kaynak_norm = 'Deneme', maliyet_eur = greatest(maliyet_eur, 1) WHERE surum = $1 AND kod <> $2`, [sur, k.kod]);
+    const g = await o.ist('POST', '/api/kartela/taslak/onaya-gonder', c, {}); expect(g.statusCode, g.body).toBe(200);
+    expect((await o.karar(g.json().kart, 'bceo', 'Onayla')).statusCode).toBe(200);
+    const d = (await o.sup.query(`SELECT surum, durum FROM kartela_surumu WHERE surum = ANY($1)`, [[eski, sur]])).rows;
+    expect(Object.fromEntries(d.map((x) => [x.surum, x.durum]))).toEqual({ [eski]: 'Arşiv', [sur]: 'Yürürlükte' });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_surumu WHERE durum = 'Yürürlükte'`)).rows[0].n).toBe(1);
+  });
+});

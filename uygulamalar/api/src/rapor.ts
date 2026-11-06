@@ -42,7 +42,7 @@ kapanisKaydet('Kart Önerisi', async (c, k, karar) => {
   if (karar === 'Reddet') { await c.query(`UPDATE kart_onerisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [o.kimlik]); return; }
   if (karar !== 'Onayla') return;
   const kod = `KO-${String(await sayac(c, 'kart_onerisi')).padStart(5, '0')}`; const sur = await yururlukSurumu(c);
-  await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [kod, sur, o.ana_brans, o.alt_brans, o.tali_brans, o.islem, o.birim, o.maliyet_eur]);
+  await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,(now() AT TIME ZONE 'Europe/Istanbul')::date,'Kart önerisi')`, [kod, sur, o.ana_brans, o.alt_brans, o.tali_brans, o.islem, o.birim, o.maliyet_eur]);
   await c.query(`UPDATE kart_onerisi SET durum = 'Eklendi', kod = $2 WHERE kimlik = $1`, [o.kimlik, kod]);
   await bildir(c, { olay: `kart-oneri:${o.kimlik}`, kullanicilar: [o.hazirlayan_ref], baslik: `Kartela Kodu Hazır: ${kod}` });
 });
@@ -122,7 +122,7 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ana?: string; alt?: string; tali?: string; islem?: string; birim?: string; maliyet?: number; gerekce?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2)`, [o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']])).rowCount) return y.code(403).send({ hata: 'Kart önerisini Teknik Uzman hazırlar.' });
-    if (!g.ana?.trim() || !g.alt?.trim() || !g.tali?.trim() || !g.islem?.trim() || !g.birim?.trim() || !(Number(g.maliyet) >= 0) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Branş, işlem, birim, maliyet ve gerekçeyi yazmanızı rica ederiz.' });
+    if (!g.ana?.trim() || !g.alt?.trim() || !g.tali?.trim() || !g.islem?.trim() || !g.birim?.trim() || !(Number(g.maliyet) > 0) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Branş, işlem, birim, pozitif maliyet ve gerekçeyi yazmanızı rica ederiz.' }); // YG-859
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO kart_onerisi (dosya_ref, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, gerekce, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, g.ana!.trim(), g.alt!.trim(), g.tali!.trim(), g.islem!.trim(), g.birim!.trim(), g.maliyet, g.gerekce!.trim(), o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Kart Önerisi', baslik: `Kartela Önerisi · ${g.islem!.trim()}`, ozet: g.gerekce!.trim(), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Ticari İşler Direktörü')], nesneTuru: 'Kart Önerisi', nesneKimligi: r.kimlik });

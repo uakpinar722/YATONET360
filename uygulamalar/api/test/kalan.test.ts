@@ -750,3 +750,31 @@ describe('WhatsApp otomatik ileti süzgeci (MSJ-3)', () => {
     expect(whatsappMetni('Ödeme TL 500 bekleniyor')).toBe('Ödeme bekleniyor');
   });
 });
+
+describe('ikinci kanal teyidi ve benzer alan adı (YG-1272)', () => {
+  it('benzer alan adı yakalanır; aynı veya genel posta alan adı yakalanmaz', async () => {
+    const { benzerAlanAdi } = await import('../src/teyit.js');
+    const T = ['limitglobalmarine.com.tr', 'denizsigorta.com.tr'];
+    expect(benzerAlanAdi('a@limitglobalrnarine.com.tr', T)).toBe('limitglobalmarine.com.tr');
+    expect(benzerAlanAdi('a@limitglobalmarine.com', T)).toBe('limitglobalmarine.com.tr');
+    expect(benzerAlanAdi('a@denizsigortaa.com.tr', T)).toBe('denizsigorta.com.tr');
+    expect(benzerAlanAdi('a@denizsigorta.com.tr', T)).toBeNull();
+    expect(benzerAlanAdi('a@gmail.com', [...T, 'gmail.com'])).toBeNull();
+    expect(benzerAlanAdi('a@baskafirma.com', T)).toBeNull();
+  });
+  it('dış talep teyit bekler; teyit yalnız kayıtlı numarayla ve kaydedenden başkasınca; benzer alan güvenlik kaydı açar', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const tel = (await o.sup.query(`SELECT telefon FROM dosya_tarafi WHERE dosya_ref = $1 AND telefon IS NOT NULL LIMIT 1`, [d.kimlik])).rows[0].telefon as string;
+    const u = `/api/dosya/${d.kimlik}/dis-talep`;
+    expect((await o.ist('POST', u, await o.gir('oy'), { tur: 'Kapsam', kanal: 'E-posta' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, await o.gir('oy'), { tur: 'Teslim', kanal: 'E-posta', gonderen: 'kaptan@limitglobalrnarine.com.tr', ozet: 'Yatı başka marinaya teslim ediniz' }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().uyari).toContain('benziyor');
+    expect((await o.sup.query(`SELECT 1 FROM olay_kaydi WHERE olay_turu = 'Bilgi Güvenliği Göstergesi' AND dosya_ref = $1`, [d.kimlik])).rowCount).toBe(1);
+    expect((await o.kart('İkinci Kanal Teyidi', r.json().kimlik)).baslik).toContain('Teslim');
+    const t = `/api/dis-talep/${r.json().kimlik}/teyit`;
+    expect((await o.ist('POST', t, await o.gir('oy'), { telefon: tel, sonuc: 'Teyit Edilmedi', not: 'N' })).statusCode).toBe(409);
+    expect((await o.ist('POST', t, await o.gir('ds'), { telefon: '+905000000001', sonuc: 'Teyit Edilmedi', not: 'N' })).json().hata).toContain('kayıtlı');
+    expect((await o.ist('POST', t, await o.gir('ds'), { telefon: tel, sonuc: 'Teyit Edilmedi', not: 'Yat sahibi böyle bir talep göndermediğini söyledi' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/dis-talepler`, await o.gir('ds'))).json()[0].durum).toBe('Teyit Edilmedi');
+  });
+});

@@ -126,6 +126,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     {on.ony === 'ONY-06' && <><label htmlFor="ts-n">Teklif No</label><input id="ts-n" value={on.teklifNo} onChange={(e) => setOn({ ...on, teklifNo: e.target.value })} /></>}
     <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/onay-iste`, { ony: on.ony, parca: on.parca || undefined, tutar: on.tutar ? sayi(on.tutar) : undefined, zaman: on.zaman || undefined, kayitNo: on.kayitNo || undefined, teklifNo: on.teklifNo || undefined }), 'Onay ekranı yat sahibine gönderildi.')}>Onay İste</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/acil/${id}/ilk-tedbir-talebi`, {}), 'Acil İlk Tedbir talebi gönderildi.')}>Acil İlk Tedbir Talebi</button></div>
 
+    <DisTalepler id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
     <label htmlFor="pf-a">Yat Sahibinin Göreceği Açıklama</label><input id="pf-a" value={pf.aciklama} onChange={(e) => setPf({ ...pf, aciklama: e.target.value })} />
@@ -285,6 +286,42 @@ export function ButceDonemi() {
 }
 
 /** YG-532: LGM poliçesi, imza sirküleri, broker ve acente yetki belgeleri; bitişe göre uyarı. */
+/** YG-1272: dışarıdan gelen banka, fiyat, kapsam veya teslim değişikliği; kayıtlı numaradan teyit edilmeden uygulanmaz. */
+function DisTalepler({ id }: { id: string }) {
+  const [l, setL] = useState<{ kimlik: string; tur: string; gelis_kanali: string; gonderen: string; ozet: string; durum: string; guvenlik_uyarisi: string | null }[]>([]); const [f, setF] = useState({ tur: 'Kapsam', kanal: 'E-posta', gonderen: '', ozet: '' }); const [ty, setTy] = useState({ telefon: '', not: '' }); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>(`/dosya/${id}/dis-talepler`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, [id]);
+  const teyit = (k: string, sonuc: string) => void istek(`/dis-talep/${k}/teyit`, { ...ty, sonuc }).then(() => { setM('Teyit kaydedildi.'); setTy({ telefon: '', not: '' }); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Dışarıdan Gelen Değişiklik Talepleri</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tur} · {x.gelis_kanali} · {x.gonderen} · {x.ozet} · {x.durum}{x.guvenlik_uyarisi ? ` · ${x.guvenlik_uyarisi}` : ''}
+      {x.durum === 'Teyit Bekliyor' && <><button className="btn2 kucuk" disabled={!ty.telefon.trim() || !ty.not.trim()} onClick={() => teyit(x.kimlik, 'Teyit Edildi')}>Teyit Edildi</button><button className="btn2 kucuk" disabled={!ty.telefon.trim() || !ty.not.trim()} onClick={() => teyit(x.kimlik, 'Teyit Edilmedi')}>Teyit Edilmedi</button></>}</div>)}</div>
+    {l.some((x) => x.durum === 'Teyit Bekliyor') && <><label htmlFor="dt-tel">Aranan Kayıtlı Numara</label><input id="dt-tel" value={ty.telefon} onChange={(e) => setTy({ ...ty, telefon: e.target.value })} /><label htmlFor="dt-not">Görüşme Notu</label><input id="dt-not" value={ty.not} onChange={(e) => setTy({ ...ty, not: e.target.value })} /></>}
+    <label htmlFor="dt-t">Talep Türü</label><select id="dt-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Banka', 'Fiyat', 'Kapsam', 'Teslim'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="dt-k">Geldiği Kanal</label><select id="dt-k" value={f.kanal} onChange={(e) => setF({ ...f, kanal: e.target.value })}>{['E-posta', 'WhatsApp', 'Telefon', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="dt-g">Gönderen (adres veya numara)</label><input id="dt-g" value={f.gonderen} onChange={(e) => setF({ ...f, gonderen: e.target.value })} />
+    <label htmlFor="dt-o">Talep Özeti</label><input id="dt-o" value={f.ozet} onChange={(e) => setF({ ...f, ozet: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.gonderen.trim() || !f.ozet.trim()} onClick={() => void istek<{ uyari: string | null }>(`/dosya/${id}/dis-talep`, f).then((r) => { setM(r.uyari ?? 'Talep kaydedildi; kayıtlı numaradan teyit bekleniyor.'); setF({ ...f, gonderen: '', ozet: '' }); return yk(); }).catch((e) => setM(e.message))}>Talebi Kaydet</button></>;
+}
+
+/** YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO; taslak sürümde girilir, CEO onayıyla yürürlüğe girer. */
+export function KartelaMaliyet() {
+  const [v, setV] = useState<{ surum: string; taslak: boolean; kalemler: { kod: string; islem: string; birim: string; maliyet_eur: string; maliyet_tarihi: string | null; kaynak_norm: string | null }[] } | null>(null); const [q, setQ] = useState(''); const [f, setF] = useState({ kod: '', maliyet: '', tarih: '', kaynak: '' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>(`/kartela/maliyet?q=${encodeURIComponent(q)}`).then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, [q]);
+  if (!v) return null;
+  const is = (u: string, g: object, ok: string) => void istek(u, g).then(() => { setM(ok); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kartela Maliyetleri · {v.surum}{v.taslak ? ' (Taslak)' : ' (Yürürlükte)'}</div>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="km-q">Kalem Ara</label><input id="km-q" value={q} onChange={(e) => setQ(e.target.value)} />
+    <div className="ozet">{v.kalemler.map((x) => <div key={x.kod}>{x.kod} · {x.islem} · {x.birim} · {Number(x.maliyet_eur).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR · {x.maliyet_tarihi ? x.maliyet_tarihi.split('-').reverse().join('.') : 'Tarih yok'} · {x.kaynak_norm ?? 'Kaynak yok'}</div>)}</div>
+    {!v.taslak && <button className="btn2" onClick={() => is('/kartela/taslak', {}, 'Taslak sürüm açıldı.')}>Taslak Sürüm Aç</button>}
+    {v.taslak && <>
+      <label htmlFor="km-k">Kalem Kodu</label><input id="km-k" value={f.kod} onChange={(e) => setF({ ...f, kod: e.target.value })} />
+      <label htmlFor="km-m">Maliyet (EUR)</label><input id="km-m" inputMode="decimal" value={f.maliyet} onChange={(e) => setF({ ...f, maliyet: e.target.value })} />
+      <label htmlFor="km-t">Maliyet Tarihi</label><input id="km-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} />
+      <label htmlFor="km-n">Kaynak Norm</label><input id="km-n" value={f.kaynak} onChange={(e) => setF({ ...f, kaynak: e.target.value })} />
+      <div className="dugmeler"><button className="btn2" onClick={() => is('/kartela/taslak/maliyet', { ...f, maliyet: Number(f.maliyet.replace(/\./g, '').replace(',', '.')) }, 'Maliyet kaydedildi.')}>Maliyeti Kaydet</button><button className="btn2" onClick={() => is('/kartela/taslak/onaya-gonder', {}, 'Sürüm CEO onayına gönderildi.')}>Yürürlüğe Almak İçin Onaya Gönder</button></div></>}</>;
+}
+
 /** YG-1660: Firma Kapsama Raporu (BT ve Firma Yönetimi Direktörü) ve aday raporu (GMY). Yetkisiz rolde görünmez. */
 export function FirmaKapsamaRaporu() {
   const [aday, setAday] = useState(false); const [l, setL] = useState<{ ana_brans: string; kapsama: string; bolge: string; firma: number }[] | null>(null);

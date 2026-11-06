@@ -14,9 +14,11 @@ const SAHIP = ['Müşteri ve Paydaş İlişkileri Müdürü'];
  * YG-219, YG-1522: e-postayla gelen onay yalnız dosyaya özel onay yetkilisinden (Ek-3), o yoksa yürürlükteki Ek-2 onay adresinden kabul edilir.
  * Süresi geçen yetki ve tek işlem sınırını aşan tutar kabul edilmez. Sorun yoksa null döner.
  */
-export async function ek2Engeli(db: Db, dosya: string, gonderen: string | undefined, tutarEur: number): Promise<string | null> {
+export async function ek2Engeli(db: Db, dosya: string, gonderen: string | undefined, tutarEur: number, kullanici?: string): Promise<string | null> {
   const adres = gonderen?.trim();
   if (!adres || !EPOSTA.test(adres)) return 'Onayın geldiği e-posta adresini yazmanızı rica ederiz.';
+  // YG-1272: benzer alan adlı gönderen kabul edilmez, güvenlik göstergesi açılır.
+  if (kullanici) { const u = await (await import('./teyit.js')).benzerAlanKontrolu(db, adres, kullanici, dosya); if (u) return u; }
   const k = (await db.query(`SELECT sigortaci_adi, onay_yetkilisi_eposta, onay_siniri FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [dosya])).rows[0];
   if (k?.onay_yetkilisi_eposta) {
     if (k.onay_yetkilisi_eposta.toLowerCase() !== adres.toLowerCase()) return 'Bu dosyada onay, Ek-3\'te tanımlı onay yetkilisinin adresinden bekleniyor.';

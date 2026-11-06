@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
-import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
+import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { EkipKarti, GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
@@ -750,6 +750,7 @@ export function IdariIslemler() {
       <MutabakatRaporlari />
       <KurumsalEk2 yap={yap} />
       <MaliParametreler />
+      <KartelaMaliyet />
       <TatilTakvimi />
       <ButceDonemi />
       <KurumBelgeleri />

@@ -83,7 +83,7 @@ export function yatDegeriYollari(s: FastifyInstance, b: Baglam) {
     if (!['YATONET 360', 'KEP', 'E-imza', KURUMSAL_EPOSTA].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Telefon ve WhatsApp onay kanalı sayılmaz; tanımlı kanalı seçmenizi rica ederiz.' });
     if (!g.yetkili?.trim()) return y.code(400).send({ hata: 'Onaylayan yetkiliyi yazmanızı rica ederiz.' });
     if (g.kanal !== 'YATONET 360' && !(g.belge && UUID.test(g.belge) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi::text = $2`, [g.belge, id])).rowCount)) return y.code(400).send({ hata: 'Karar belgesini dosyaya yüklemenizi rica ederiz.' });
-    if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(b.db, id, g.gonderen, 0); if (h) return y.code(409).send({ hata: h }); }
+    if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(b.db, id, g.gonderen, 0, o.kullanici); if (h) return y.code(409).send({ hata: h }); }
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
