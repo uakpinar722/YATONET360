@@ -50,12 +50,13 @@ afterAll(async () => { await s.close(); await db.end(); await sup.end(); });
 beforeEach(() => { posta.gidenler.length = 0; });
 
 describe('katalog (Ek II §1.8)', () => {
-  it('on toplantı, başkan ve düzenleyenleriyle yüklüdür', async () => {
+  it('on iki toplantı (TPL-11/12 yıllık bütçe, CEO 06.11.2026), başkan ve düzenleyenleriyle yüklüdür', async () => {
     const { rows } = await sup.query(`SELECT kod, baskan_rol, duzenleyen_rol FROM toplanti_katalogu ORDER BY kod`);
-    expect(rows).toHaveLength(10);
+    expect(rows).toHaveLength(12);
     expect(rows[1]).toEqual({ kod: 'TPL-02', baskan_rol: 'Teknik ve Operasyon Direktörü', duzenleyen_rol: 'Operasyon Müdürü' });
     expect(rows[2]).toEqual({ kod: 'TPL-03', baskan_rol: 'CEO', duzenleyen_rol: 'CEO Asistanı' });
     expect(rows[9]).toEqual({ kod: 'TPL-10', baskan_rol: null, duzenleyen_rol: null });
+    expect(rows[11]).toEqual({ kod: 'TPL-12', baskan_rol: 'CEO', duzenleyen_rol: 'Muhasebe ve Finans Müdürü' });
   });
   it('katalogdaki tüm rol adları rol tablosunda vardır', async () => {
     const { rows } = await sup.query(`SELECT DISTINCT x FROM toplanti_katalogu, unnest(array_append(array_append(oto_roller, baskan_rol), duzenleyen_rol)) x WHERE x IS NOT NULL AND NOT EXISTS (SELECT 1 FROM rol WHERE rol_adi = x)`);

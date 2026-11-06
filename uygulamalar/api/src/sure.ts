@@ -33,9 +33,9 @@ export function bitisKaydir(bitis: Date, oncelik: string, tatiller: Set<string> 
   if (oncelik === 'Kritik') return { bitis, not: null };
   const y = yerel(bitis); const saat = y.getUTCHours();
   const calisma = (g: Date) => g.getUTCDay() !== 0 && !tatiller.has(gunAnahtari(g));
-  // YG-1472: arife yarım gündür; öğleden sonraya düşen bitiş ilk çalışma günü 12:00'a kayar.
-  if (calisma(y) && saat >= 8 && saat < (arifeler.has(gunAnahtari(y)) ? 12 : 22)) return { bitis, not: null };
-  const arifeOgle = calisma(y) && arifeler.has(gunAnahtari(y)) && saat >= 12 && saat < 22;
+  // YG-1472: arife yarım gündür (tatil 13.00'te başlar); öğleden sonraya düşen bitiş ilk çalışma günü 12:00'a kayar.
+  if (calisma(y) && saat >= 8 && saat < (arifeler.has(gunAnahtari(y)) ? 13 : 22)) return { bitis, not: null };
+  const arifeOgle = calisma(y) && arifeler.has(gunAnahtari(y)) && saat >= 13 && saat < 22;
   const g = new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth(), y.getUTCDate(), 12));
   // Gece yarısından önceki geç saat ertesi güne, sabahın erken saati aynı güne kayar.
   if (saat >= 22 || arifeOgle) g.setUTCDate(g.getUTCDate() + 1);

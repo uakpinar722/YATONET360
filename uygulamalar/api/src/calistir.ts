@@ -16,6 +16,7 @@ import { yetkiIsle } from './yetki_ek.js';
 import { olayIsle } from './guvenlik.js';
 import { uyumIsle } from './uyum.js';
 import { caymaSureIsle, gorevAyriligiIsle } from './kalan.js';
+import { butceDonemiIsle } from './butce.js';
 import { saglikIzle, yedekIsle } from './yedek.js';
 import { join } from 'node:path';
 import { KOK } from './ayarlar.js';
@@ -44,7 +45,7 @@ setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); muta
 // YG-1274: yedek ve YG-1186: sağlık izleme
 const YEDEK = { veritabani: 'yatonet360', superParola: e.POSTGRES_SUPER_PAROLA!, anahtar: e.YATONET_SIFRELEME_ANAHTARI!, klasor: e.YATONET_YEDEK_KLASORU || join(KOK, '.yedek'), ikinciKlasor: e.YATONET_YEDEK_IKINCI || undefined, depoKok: e.YATONET_DEPO || join(KOK, '.veri', 'belgeler') };
 setInterval(() => { saglikIzle(db, YEDEK.klasor).catch((h) => s.log.error(h.message)); yedekIsle(db, YEDEK).catch((h) => s.log.error(h.message)); }, 1_800_000);
-setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); butceDonemiIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);

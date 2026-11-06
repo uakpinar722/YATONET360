@@ -254,3 +254,27 @@ export function TatilTakvimi() {
     <label htmlFor="tt-t">Tarih</label><input id="tt-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} /><label htmlFor="tt-a">Tatil Adı</label><input id="tt-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} /><label className="kutu"><input type="checkbox" checked={f.arife} onChange={(e) => setF({ ...f, arife: e.target.checked })} /><span>Arife (Yarım Gün)</span></label>
     <button className="btn2" onClick={() => void istek('/takvim', f).then(() => { setF({ tarih: '', ad: '', arife: false }); setM('Takvim güncellendi.'); return yk(); }).catch((e) => setM(e.message))}>Takvime Ekle</button></>;
 }
+
+/** CEO 06.11.2026: yıllık bütçe; birimler talep girer, CEO nihai onay toplantısında onaylar. */
+export function ButceDonemi() {
+  const [yil, setYil] = useState(new Date().getFullYear() + 1);
+  const [v, setV] = useState<{ durum: string; talepler: { kimlik: string; birim: string; kategori: string; aciklama: string; tutar_eur: string; gerekce: string }[]; kategoriToplam: { ad: string; tutarEur: number }[]; birimlerim: string[]; kategoriler: string[]; onaylayabilir: boolean } | null>(null);
+  const [f, setF] = useState({ birim: '', kategori: '', aciklama: '', tutar: '', gerekce: '' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>(`/butce/${yil}`).then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, [yil]);
+  if (!v) return null;
+  const para = (x: number) => x.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const toplam = v.kategoriToplam.reduce((a, x) => a + x.tutarEur, 0);
+  return <><div className="bolum">Bütçe Dönemi</div>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="bd-y">Bütçe Yılı</label><input id="bd-y" type="number" value={yil} onChange={(e) => setYil(Number(e.target.value))} />
+    <div className="ozet"><div>Durum: {v.durum}</div>{v.kategoriToplam.map((x) => <div key={x.ad}>{x.ad}: {para(x.tutarEur)} EUR</div>)}<div><b>Toplam: {para(toplam)} EUR</b></div></div>
+    <div className="ozet">{v.talepler.map((x) => <div key={x.kimlik}>{x.birim} · {x.kategori} · {x.aciklama} · {para(Number(x.tutar_eur))} EUR · {x.gerekce}</div>)}</div>
+    {v.durum === 'Hazırlık' && v.birimlerim.length > 0 && <>
+      {v.birimlerim.length > 1 && <><label htmlFor="bd-b">Birim</label><select id="bd-b" value={f.birim} onChange={(e) => setF({ ...f, birim: e.target.value })}><option value="">Seçiniz</option>{v.birimlerim.map((x) => <option key={x}>{x}</option>)}</select></>}
+      <label htmlFor="bd-k">Kategori</label><select id="bd-k" value={f.kategori} onChange={(e) => setF({ ...f, kategori: e.target.value })}><option value="">Seçiniz</option>{v.kategoriler.map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="bd-a">Kalem Açıklaması</label><input id="bd-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <label htmlFor="bd-t">Tutar (EUR)</label><input id="bd-t" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+      <label htmlFor="bd-g">Gerekçe</label><input id="bd-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+      <button className="btn2" onClick={() => void istek(`/butce/${yil}/talep`, { ...f, birim: f.birim || undefined, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')) }).then(() => { setF({ ...f, aciklama: '', tutar: '', gerekce: '' }); setM('Talep eklendi.'); return yk(); }).catch((e) => setM(e.message))}>Talep Ekle</button></>}
+    {v.durum === 'Hazırlık' && v.onaylayabilir && <button className="btn2" onClick={() => void istek(`/butce/${yil}/onay`, {}).then(() => { setM('Bütçe onaylandı.'); return yk(); }).catch((e) => setM(e.message))}>Bütçeyi Onayla</button>}</>;
+}
