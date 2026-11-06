@@ -8,7 +8,7 @@ import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { coz, totpDogrula } from './kripto.js';
 import { metinGetir } from './metin.js';
-import { altNumara } from './sure.js';
+import { disNumara } from './sure.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
@@ -133,8 +133,7 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     const f = (await b.db.query(`SELECT kayit_rolu FROM kurulus WHERE kimlik = $1`, [g.tedarikci])).rows[0];
     if (f?.kayit_rolu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kayıt tedarikçi değildir.' });
     return islem(async (c) => {
-      const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
-      const no = await altNumara(c, d.dosya_no, 'TT');
+      const no = await disNumara(c, 'TT'); // YG-298: dosya kimliği tedarikçiye görünmez
       const r = (await c.query(`INSERT INTO tedarikci_teklif_talebi (talep_no, dosya_ref, kurulus_ref, son_zaman, olusturan_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [no, id, g.tedarikci, g.sonZaman, o.kullanici])).rows[0];
       for (const k of kl) await c.query(`INSERT INTO tedarikci_teklif_kalemi (talep_ref, urun_tanimi, uretici_parca_no, miktar, birim) VALUES ($1,$2,$3,$4,$5)`, [r.kimlik, k.tanim!.trim(), k.parcaNo?.trim() ?? null, k.miktar, k.birim!.trim()]);
       const al = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [g.tedarikci])).rows.map((x) => x.kullanici_ref as string);

@@ -81,6 +81,12 @@ export async function sayac(c: Db, anahtar: string): Promise<number> {
   return (await c.query(`INSERT INTO numara_sayaci VALUES ($1, 1) ON CONFLICT (anahtar) DO UPDATE SET son = numara_sayaci.son + 1 RETURNING son`, [anahtar])).rows[0].son;
 }
 
+/** YG-298: tedarikçiye giden numara dosya numarası taşımaz; yıllık sıra (ör. SP-2026-00001). */
+export async function disNumara(c: Db, ek: string): Promise<string> {
+  const yil = new Date().getUTCFullYear();
+  return `${ek}-${yil}-${String(await sayac(c, `dis:${ek}:${yil}`)).padStart(5, '0')}`;
+}
+
 /** YG-008: dosyaya bağlı kayıt numarası (ör. LGM-2026-10-0001-TK01). */
 export async function altNumara(c: Db, dosyaNo: string, ek: string, hane = 2): Promise<string> {
   return `${dosyaNo}-${ek}${String(await sayac(c, `${dosyaNo}:${ek}`)).padStart(hane, '0')}`;

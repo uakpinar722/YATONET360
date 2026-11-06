@@ -91,6 +91,12 @@ describe('A9 Tedarikçi (YG-298, YG-1088, YG-1577)', () => {
     expect((await o.ist('POST', `/api/tedarikci-portal/siparis/${sid}/sevk`, tedC, { tarih: '2026-12-01', irsaliye: 'İ', tasiyici: 'T', lot: 'L', belge: be })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/tedarikci-portal/siparis/${sid}/fatura`, tedC, { no: 'F1', tarih: '2026-12-05', tutar: 200, belge: be })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/siparis/${sid}/giris`, ts, G)).statusCode).toBe(200);
+    // YG-1623, YG-1076: tedarikçi işin sigortasını, hasar dosya numarasını ve onarım firmasını görmez.
+    await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,'Gizli Sigorta AŞ','HSR-99117',$2) ON CONFLICT DO NOTHING`, [d.kimlik, o.K.ds]);
+    const gf = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-GZL1','Gizli Onarım Ltd','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K',$4)`, [`${d.dosyaNo}-ON91`, d.kimlik, gf, o.K.ds]);
+    const tb = (await o.ist('GET', '/api/tedarikci-portal/ana', tedC)).body;
+    for (const x of ['HSR-99117', 'Gizli Sigorta AŞ', 'Gizli Onarım Ltd', d.dosyaNo]) expect(tb, x).not.toContain(x);
     expect((await o.ist('POST', `/api/tedarikci-portal/talep/${t.json().kimlik}/yanit`, tesisC, {})).statusCode).toBe(404);
   });
 });

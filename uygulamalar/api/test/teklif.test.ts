@@ -387,7 +387,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const j = (await o.ist('GET', `/api/firma-portal/is-emri/${e.kimlik}`, firmaC)).json();
     expect(j.statu).toBe('Kabul Bekliyor'); expect(Number(j.bedel)).toBe(510); expect(j.kalemler).toHaveLength(1);
     const metin = JSON.stringify(j);
-    expect(metin).not.toContain('Sahip'); expect(metin).not.toContain('SG'); expect(metin).not.toContain('795'); expect(metin).not.toContain('663');
+    expect(metin).not.toContain('Sahip'); expect(metin).not.toContain('SG'); expect(metin).not.toMatch(/(?<![0-9a-f])795(?![0-9a-f])/); expect(metin).not.toMatch(/(?<![0-9a-f])663(?![0-9a-f])/); // tutar; rastgele kimlik içindeki rakamlar sayılmaz
     // Kabul kodsuz olmaz; yanıt başlangıcı açar.
     expect((await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/yanit`, firmaC, { yanit: 'Kabul' })).statusCode).toBe(401);
     expect((await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/ilerleme`, firmaC, {})).statusCode).toBe(409);
