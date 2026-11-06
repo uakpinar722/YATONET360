@@ -97,5 +97,10 @@ describe('ret bağlantısı (YG-484), hesap kapatma (YG-492), Yat Yetkilisi (YG-
     expect((await o.ist('POST', `/api/yat-yetkilisi/${kid}/dogrula`, await o.gir('ds'), { islemler: ['ONY-23'], bitis: '2099-01-01' })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/yat-yetkilisi/${kid}/dogrula`, await o.gir('mp'), { islemler: ['ONY-23'], limit: 5000, bitis: '2099-01-01' })).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/yetkilerim', c)).json()).toMatchObject({ belge_durumu: 'Geçerli', ust_limit_eur: '5000.00' });
+    // YG-1031: sigorta brokeri de aynı denetimle kaydolur; belgesi doğrulanmadan onay listesi boştur.
+    const br = await kayitOl('+905551110005', { yetkili: { rol: 'Sigorta Brokeri', sahipAd: 'Sahip B', sahipTelefon: '+905551110098' } }); expect(br.statusCode, br.body).toBe(200);
+    expect(o.sms.gidenler.at(-1)!.metin).toContain('Sigorta Brokeri sıfatıyla');
+    const { yetkiliOnaylari } = await import('../src/yetki_ek.js'); const bid = (await o.sup.query(`SELECT kullanici_ref FROM yat_yetkilisi_kaydi WHERE sahip_ad = 'Sahip B'`)).rows[0].kullanici_ref;
+    expect(await yetkiliOnaylari(o.db, bid)).toEqual([]);
   });
 });

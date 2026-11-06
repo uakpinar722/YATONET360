@@ -236,7 +236,7 @@ export function YatSahibiKayit({ bitti, geri, yetkili }: { bitti: () => void; ge
           <label htmlFor="y-e">E-Posta</label><input id="y-e" type="email" value={ep} onChange={(e) => setEp(e.target.value)} />
           <div className="not">Teklif ve belgeleriniz PDF olarak bu adrese de gönderilecektir.</div>
           {yetkili && <>
-            <label htmlFor="yy-r">Yat Sahibine Göre Rolünüz</label><select id="yy-r" value={yt.rol} onChange={(e) => setYt({ ...yt, rol: e.target.value })}><option value="">Seçiniz</option>{['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+            <label htmlFor="yy-r">Yat Sahibine Göre Rolünüz</label><select id="yy-r" value={yt.rol} onChange={(e) => setYt({ ...yt, rol: e.target.value })}><option value="">Seçiniz</option>{['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Yat Brokeri', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
             <div className="not">Adına işlem yaptığınız yat sahibinin bilgilerini giriniz. Yat sahibine bilgilendirme mesajı gönderilecektir.</div>
             <label htmlFor="yy-a">Yat Sahibinin Adı Soyadı / Unvanı</label><input id="yy-a" value={yt.sahipAd} onChange={(e) => setYt({ ...yt, sahipAd: e.target.value })} />
             <label htmlFor="yy-t">Yat Sahibinin Cep Telefonu</label><input id="yy-t" inputMode="tel" value={yt.sahipTelefon} onChange={(e) => setYt({ ...yt, sahipTelefon: e.target.value })} />

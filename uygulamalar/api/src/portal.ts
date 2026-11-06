@@ -117,7 +117,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     if (!g.ad?.trim()) return y.code(400).send({ hata: 'Ad soyad zorunludur.' });
     if (g.eposta && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta)) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
     const st = g.yetkili ? kimlikNormalle(g.yetkili.sahipTelefon ?? '') : null; // YG-1561
-    if (g.yetkili && (!['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Diğer'].includes(g.yetkili.rol ?? '') || !g.yetkili.sahipAd?.trim() || !st?.telefon)) return y.code(400).send({ hata: 'Rolünüzü ve yat sahibinin adı ile telefonunu girmenizi rica ederiz.' });
+    if (g.yetkili && (!['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Yat Brokeri', 'Diğer'].includes(g.yetkili.rol ?? '') || !g.yetkili.sahipAd?.trim() || !st?.telefon)) return y.code(400).send({ hata: 'Rolünüzü ve yat sahibinin adı ile telefonunu girmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -144,7 +144,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
       if (g.yetkili) { // YG-1561, YY-M1: gönderim kaydı engellemez, gitmezse zaman boş kalır.
         try {
           const en = !st!.telefon!.startsWith('+90'); // YG-1896
-          const rolEn: Record<string, string> = { 'Yatın Kaptanı': 'Captain of the Yacht', 'Yat Sahibinin Yetkili Temsilcisi': "Owner's Authorized Representative", 'Yat Yönetim Şirketi / İşletmeci': 'Yacht Management Company / Operator', 'Diğer': 'Authorized Person' };
+          const rolEn: Record<string, string> = { 'Yatın Kaptanı': 'Captain of the Yacht', 'Yat Sahibinin Yetkili Temsilcisi': "Owner's Authorized Representative", 'Yat Yönetim Şirketi / İşletmeci': 'Yacht Management Company / Operator', 'Sigorta Brokeri': 'Insurance Broker', 'Sigorta Acentesi': 'Insurance Agent', 'Yat Brokeri': 'Yacht Broker', 'Diğer': 'Authorized Person' };
           await b.sms.gonder(st!.telefon!, await metinGetir(b.db, 'BLD-88', en ? 'en' : 'tr', en ? { 'Full Name': g.ad.trim(), Role: rolEn[g.yetkili.rol!]! } : { 'Ad Soyad': g.ad.trim(), Rol: g.yetkili.rol! }));
           await b.db.query(`UPDATE yat_yetkilisi_kaydi SET sahip_bilgilendirme_zamani = now() WHERE kullanici_ref = $1`, [h.kimlik]);
         } catch (e) { i.log.error(e); }
