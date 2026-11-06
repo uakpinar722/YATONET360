@@ -111,6 +111,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       if (g.vergiNo && (await c.query(`SELECT 1 FROM kurulus WHERE vergi_no = $1`, [g.vergiNo])).rowCount) throw Object.assign(new Error('Bu vergi numarasıyla kayıt vardır.'), { statusCode: 409 });
       const no = `LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`;
       const r = (await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, vergi_no, kayit_rolu, kurumsal_eposta, kurumsal_telefon, il, ilce, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [no, g.unvan!.trim(), g.vergiNo ?? null, g.rol, g.eposta ?? null, g.telefon ?? null, g.il ?? null, g.ilce ?? null, o.kullanici])).rows[0];
+      if (g.rol === 'Tesis') await (await import('./firma_tesis.js')).tesisEkle(c, r.kimlik, { ad: g.unvan!, il: g.il ?? null, ilce: g.ilce ?? null }, o.kullanici); // TSK-1: tek yerleşkeli tesis T01
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Kaydı', nesneTuru: 'Kuruluş', nesneKimligi: r.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: r.kimlik, sicilNo: no };
     });

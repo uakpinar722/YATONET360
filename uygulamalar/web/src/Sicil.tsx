@@ -44,6 +44,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <label htmlFor="fs-i">IBAN</label><input id="fs-i" value={iban} onChange={(e) => setIban(e.target.value)} />
           <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/iban`, { iban }), 'IBAN karantinaya alındı; teyit bekliyor.')}>IBAN Ekle</button>
           <FirmaSozlesme id={secili} yap={yap} />
+          <FirmaTesis id={secili} yap={yap} />
           <FirmaEkipman id={secili} yap={yap} />
         </div>
       </>}
@@ -163,6 +164,19 @@ function OnKayit({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: 
 }
 
 /** YG-533: firma ekipmanı bakım ve kalibrasyon geçerliliği; süresi geçen kullanılamaz görünür. */
+/** TSK-1, YG-010: firmaya bağlı tesis/şube; kod sicil numarasına -Tnn eki. */
+function FirmaTesis({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [l, setL] = useState<{ kimlik: string; tesis_kodu: string; ad: string; il: string | null; ilce: string | null; aktif: boolean }[]>([]); const [f, setF] = useState({ ad: '', adres: '', il: '', ilce: '' });
+  const yk = () => istek<typeof l>(`/firma/${id}/tesis`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, [id]);
+  return <><div className="bolum">Tesisler ve Şubeler</div><div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tesis_kodu} · {x.ad}{x.il ? ` · ${x.il}${x.ilce ? ` / ${x.ilce}` : ''}` : ''}{x.aktif ? '' : ' · Pasif'}</div>)}</div>
+    <label htmlFor="ft-a">Tesis Adı</label><input id="ft-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+    <label htmlFor="ft-d">Adres</label><input id="ft-d" value={f.adres} onChange={(e) => setF({ ...f, adres: e.target.value })} />
+    <label htmlFor="ft-i">İl</label><input id="ft-i" value={f.il} onChange={(e) => setF({ ...f, il: e.target.value })} />
+    <label htmlFor="ft-c">İlçe</label><input id="ft-c" value={f.ilce} onChange={(e) => setF({ ...f, ilce: e.target.value })} />
+    <button className="btn2" disabled={!f.ad.trim()} onClick={() => void yap(() => istek(`/firma/${id}/tesis`, f).then(() => { setF({ ad: '', adres: '', il: '', ilce: '' }); return yk(); }), 'Tesis kaydedildi.')}>Tesis Ekle</button></>;
+}
+
 function FirmaEkipman({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
   const [l, setL] = useState<{ kimlik: string; ad: string; seri_no: string; bakim_bitis: string | null; kalibrasyon_bitis: string | null; kullanilabilir: boolean }[]>([]); const [f, setF] = useState({ ad: '', seri: '', bakim: '', kalibrasyon: '' });
   const yk = () => istek<typeof l>(`/firma/${id}/ekipman`).then(setL).catch(() => setL([]));
