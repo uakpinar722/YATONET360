@@ -911,3 +911,33 @@ describe('olay kaydı numarası (YG-010)', () => {
     expect(n).toMatch(/^LGM-OL-\d{5}$/);
   });
 });
+
+describe('destek talebi (YG-1409–1412, YG-1504)', () => {
+  it('seviye etkiden; D1 dışı son an gece veya pazara düşerse ilk çalışma günü 12:00', async () => {
+    const { destekSeviyesi, destekSonAn } = await import('../src/destek.js');
+    const t = { tur: 'Hata', etkilenen: 1, sistemKullanilamiyor: false, kritikSurec: false, guvenlik: false, veriButunlugu: false, musteriMali: false };
+    expect(destekSeviyesi({ ...t, guvenlik: true })).toBe('D1'); expect(destekSeviyesi({ ...t, etkilenen: 12 })).toBe('D2');
+    expect(destekSeviyesi(t)).toBe('D3'); expect(destekSeviyesi({ ...t, tur: 'Öneri' })).toBe('D4');
+    const cuma21 = new Date('2031-01-10T18:00:00Z'); // Cuma 21:00 TSİ
+    expect(destekSonAn(cuma21, 2, 'D2', new Set()).toISOString()).toBe('2031-01-11T09:00:00.000Z'); // 23:00 → Cumartesi 12:00 TSİ
+    expect(destekSonAn(cuma21, 2, 'D1', new Set()).toISOString()).toBe('2031-01-10T20:00:00.000Z');
+    const cmt21 = new Date('2031-01-11T18:00:00Z');
+    expect(destekSonAn(cmt21, 2, 'D3', new Set()).toISOString()).toBe('2031-01-13T09:00:00.000Z'); // Pazar atlanır → Pazartesi 12:00
+  });
+  it('talep açılır, BT görevi düşer; çözüm dört unsursuz kaydedilmez; kullanıcı doğrulamadan kapanmaz; kapalı talep yeniden açılmaz', async () => {
+    const r = await o.ist('POST', '/api/destek', await o.gir('ds'), { tur: 'Hata', belirti: 'Teklif ekranı açılmıyor', etkilenen: 3 }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json()).toMatchObject({ seviye: 'D3' }); expect(r.json().talepNo).toMatch(/^DST-\d{4}-\d{4}$/);
+    const id = r.json().kimlik as string;
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Destek Talebi' AND nesne_kimligi = $1 AND sahip_rol_ref IS NOT NULL`, [id])).rowCount).toBe(1);
+    const bt = await o.gir('btd');
+    expect((await o.ist('POST', `/api/destek/${id}/cozum`, bt, { yapilan: 'Düzeltildi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/destek/${id}/cozum`, await o.gir('mpm'), { yapilan: 'a', degisen: 'b', dogrulama: 'c', sonuc: 'd' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/destek/${id}/cozum`, bt, { yapilan: 'Sorgu düzeltildi', degisen: 'teklif.ts', dogrulama: 'Ekran denendi', sonuc: 'Ekran açılıyor' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM destek_talebi WHERE kimlik = $1`, [id])).rows[0].durum).toBe('Çözüldü');
+    expect((await o.ist('POST', `/api/destek/${id}/kapat`, bt, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/destek/${id}/dogrula`, await o.gir('ds'), { sonuc: 'Çözüldü' })).json().durum).toBe('Kapalı');
+    expect((await o.ist('POST', `/api/destek/${id}/mesaj`, await o.gir('ds'), { metin: 'Tekrar oldu' })).statusCode).toBe(409);
+    const y2 = await o.ist('POST', '/api/destek', await o.gir('ds'), { tur: 'Hata', belirti: 'Yine açılmıyor', ilgili: id }); expect(y2.statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/destek/${y2.json().kimlik}`, await o.gir('ds'))).json().ilgili.map((x: { talep_no: string }) => x.talep_no)).toContain(r.json().talepNo);
+  });
+});

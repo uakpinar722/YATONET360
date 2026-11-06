@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
+import { DestekSayfasi } from './Destek';
 import { Bildirimler, Bugun, type BugunVeri } from './Bugun';
 import { AramaSonucu, Dosyalar } from './Dosya';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
@@ -93,7 +94,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     kurum: <KurumHesap baslik={ben.grup === 'İş Birliği Firması' ? 'Firma' : 'Hesap'} />,
     sicil: <FirmaSicil ben={ben} />,
     nobet: <NobetAcil cizelge={ben.izinler.includes('nobet.hazirla')} izinli={ben.izinler.includes('ihbar.kaydet')} dosyaAc={(id) => { setAcikDosya(id); git('dosya'); }} />,
-    yardim: <Yakinda ad="Yardım" adim="sonraki adımlar" />,
+    yardim: <DestekSayfasi lgm={lgm} />, // YG-1409–1412, YG-1504
     roller: <><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır']} /></>,
     iz: <><DenetimArama /><h1>İşlem İzi</h1><p className="not">Son 100 kayıt. Bu görüntüleme de kayda geçmiştir.</p><Tablo<Iz> yol="/denetim/izler" baslik={['Zaman', 'Kullanıcı', 'İşlem', 'Sonuç', 'Açıklama']} satir={(r) => [tarih(r.olay_zamani), r.aktor, r.eylem, r.sonuc, r.gerekce]} /></>,
   };
