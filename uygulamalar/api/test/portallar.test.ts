@@ -54,6 +54,7 @@ describe('A8 Tesis (YG-297, YG-1575, YG-417, YG-554)', () => {
     const be = await yukle(tesis, tesisC);
     expect((await o.ist('POST', '/api/tesis-portal/fatura', tesisC, { talep: r.json().kimlik, no: 'F1', tarih: '2026-12-02', kalem: 'Bekleme ve Muhafaza', tutar: 100, belge: be })).statusCode).toBe(400);
     expect((await o.ist('POST', '/api/tesis-portal/fatura', tesisC, { talep: r.json().kimlik, no: 'F1', tarih: '2026-12-02', kalem: 'Bekleme ve Muhafaza', gun: 3, tutar: 100, belge: be })).statusCode).toBe(200);
+    { const k = (await o.sup.query(`SELECT son_zaman FROM is_karti WHERE tur = 'Tesis Faturası Kontrolü' ORDER BY olusturma_zamani DESC LIMIT 1`)).rows[0]; expect(Math.round((new Date(k.son_zaman).getTime() - Date.now()) / 86_400_000)).toBe(8); } // YG-887
     expect((await o.ist('POST', '/api/tesis-portal/fatura', tesisC, { talep: r.json().kimlik, no: 'F1', tarih: '2026-12-02', kalem: 'Çekek', tutar: 100, belge: be })).statusCode).toBe(409);
     expect((await o.ist('POST', '/api/tesis-portal/kayit', tesisC, { tur: 'Tarife', baslik: 'T', belge: be })).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/tedarikci-portal/ana', tesisC)).statusCode).toBe(404);

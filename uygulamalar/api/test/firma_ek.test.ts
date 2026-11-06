@@ -22,6 +22,9 @@ describe('görevlendirme kontrolü (YG-304, YG-306, YG-307, YG-332)', () => {
     const r = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 20000 }); expect(r.sonuc).toBe('Ret'); expect(r.engeller[0]).toContain('Y3');
     await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis) VALUES ($1,'Mesleki Sorumluluk Sigortası','2099-01-01')`, [f]);
     expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 })).sonuc).toBe('Kabul');
+    await o.sup.query(`INSERT INTO firma_ekipmani (kurulus_ref, ad, seri_no, kalibrasyon_bitis, kaydeden_ref) VALUES ($1,'Tork Anahtarı','TA-1','2020-01-01',$2)`, [f, o.K.ds]); // YG-304
+    const ke = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 }); expect(ke.sonuc).toBe('Koşullu Kabul'); expect(ke.uyarilar.join(' ')).toContain('Tork Anahtarı (TA-1)');
+    await o.sup.query(`DELETE FROM firma_ekipmani WHERE kurulus_ref = $1`, [f]);
     await o.sup.query(`UPDATE dosya SET garantili_ekipman = true, garantili_ekipman_marka = 'Volvo', garanti_bitis = '2099-01-01' WHERE kimlik = $1`, [d.kimlik]);
     expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik })).engeller[0]).toContain('yetkili servise');
     expect((await o.ist('POST', `/api/firma/${f}/sicil-ek`, await o.gir('ds'), { marka: 'Volvo' })).statusCode).toBe(404);

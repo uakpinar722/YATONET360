@@ -117,7 +117,9 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     if (g.kalem === 'Bekleme ve Muhafaza' && !(Number(g.gun) > 0)) return y.code(400).send({ hata: 'Gün sayısını yazmanızı rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM tesis_talebi WHERE kimlik = $1 AND kurulus_ref = $2`, [g.talep, f])).rowCount) return yok(y);
     if ((await b.db.query(`SELECT 1 FROM tesis_faturasi WHERE kurulus_ref = $1 AND fatura_no = $2`, [f, g.no.trim()])).rowCount) return y.code(409).send({ hata: 'Bu fatura numarası kayıtlıdır.' });
-    await b.db.query(`INSERT INTO tesis_faturasi (kurulus_ref, talep_ref, fatura_no, tarih, kalem, gun, tutar_eur, belge_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [f, g.talep, g.no.trim(), g.tarih, g.kalem, g.gun ?? null, g.tutar, g.belge, o.kullanici]);
+    const tf = (await b.db.query(`INSERT INTO tesis_faturasi (kurulus_ref, talep_ref, fatura_no, tarih, kalem, gun, tutar_eur, belge_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [f, g.talep, g.no.trim(), g.tarih, g.kalem, g.gun ?? null, g.tutar, g.belge, o.kullanici])).rows[0];
+    // YG-887: marina ve tesis faturasına itiraz süresi faturanın alınmasından itibaren 8 gündür; kontrol görevi bu sürede açılır.
+    await kartAc(b.db, { tur: 'Tesis Faturası Kontrolü', kategori: 'gorev', baslik: `Tesis Faturası ${g.no.trim()} · Kontrol`, ozet: `${g.kalem} · ${Number(g.tutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR · İtiraz süresi 8 gün`, sahipRol: (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)'`)).rows[0]?.kimlik, sonZaman: new Date(Date.now() + 8 * 86_400_000), nesneTuru: 'Tesis Faturası', nesneKimligi: tf.kimlik });
     return { tamam: true };
   });
 

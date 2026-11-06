@@ -646,3 +646,17 @@ describe('atama kapanış kontrolü (YG-312)', () => {
     expect((await o.kart('Atama Kapanış Kontrolü', d.kimlik)).sahip_kullanici_ref).toBe(o.K.ds);
   });
 });
+
+describe('vekilin dosya erişimi (YG-1056)', () => {
+  it('vekil vekâlet süresince asılın dosyasına erişir, bitince erişim kapanır', async () => {
+    const { dosyaErisimi } = await import('../src/dosya.js');
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    expect(await dosyaErisimi(o.db, o.K.iks!, d.kimlik)).toBe(false);
+    const rol = (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Dosya Sorumlusu'`)).rows[0].kimlik;
+    const id = `VKL-2026-${String(9000 + (++n)).padStart(4, '0')}`;
+    await o.sup.query(`INSERT INTO vekalet (kimlik, asil_ref, vekil_ref, rol_ref, vekalet_nedeni, kapsam, baslangic_tarihi, bitis_tarihi, atayan_ref) VALUES ($1,$2,$3,$4,'İzin','Açık işler',current_date,current_date + 3,$5)`, [id, o.K.ds, o.K.iks, rol, o.K.opm]);
+    expect(await dosyaErisimi(o.db, o.K.iks!, d.kimlik)).toBe(true);
+    await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı' WHERE kimlik = $1`, [id]);
+    expect(await dosyaErisimi(o.db, o.K.iks!, d.kimlik)).toBe(false);
+  });
+});

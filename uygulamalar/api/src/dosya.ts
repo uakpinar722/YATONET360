@@ -44,7 +44,8 @@ export async function kapasiteYuku(db: Db, kullanici: string, rol: string): Prom
 /** Dosya ekibi ve dosya.tum izni dosyayı görür (LST_ERISIM_SEVIYESI: bilmesi gereken ilkesi). */
 export async function dosyaErisimi(db: Db, kullanici: string, id: string): Promise<boolean> {
   if ((await kullaniciIzinleri(db as Pool, kullanici)).includes('dosya.tum')) return true;
-  return Boolean((await db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL LIMIT 1`, [id, kullanici])).rowCount);
+  // YG-1056: vekil, vekâlet süresince asılın atandığı dosyalara erişir; vekâlet bitince erişim kendiliğinden kapanır.
+  return Boolean((await db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND (kullanici_ref = $2 OR kullanici_ref IN (SELECT v.asil_ref FROM vekalet v WHERE v.vekil_ref = $2 AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date)) LIMIT 1`, [id, kullanici])).rowCount);
 }
 
 belgeBagiKaydet('Dosya', async (db, k, id) => {
