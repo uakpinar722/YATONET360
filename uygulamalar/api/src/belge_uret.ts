@@ -167,6 +167,7 @@ export async function uyusmazlikTanim(db: Db, id: string, kod: string) {
     { baslik: 'Faturalar', tur: 'tablo', sutunlar: [{ ad: 'Proforma' }, { ad: 'Fatura' }, { ad: 'Durum' }, { ad: 'Toplam (EUR)', hiza: 'sag' }, { ad: 'Tahsil (EUR)', hiza: 'sag' }], satirlar: fatura.map((x) => [x.proforma_no, sat(x.fatura_no), x.durum, tutar(Number(x.toplam_eur)), tutar(Number(x.tahsil_edilen_eur))]) },
     { baslik: 'Dosyadaki Belgeler', tur: 'tablo', sutunlar: [{ ad: 'Belge' }, { ad: 'Tür' }, { ad: 'Tarih' }], satirlar: belge.map((x) => [x.ad, x.belge_turu, sat(x.belge_tarihi)]) },
   ];
+  bolumler.push(...await (await import('./uyusmazlik_ek.js')).uyusmazlikEkBolumleri(db, u.dosya_ref)); // YG-107
   const no = await altNumara(db, u.dosya_no, 'UP');
   return { dosyaAdi: `${no}.pdf`, sinif: 'Kritik', t: { ad: 'Uyuşmazlık Dışa Aktarım Paketi', kod: 'FR-KLT-012', no, dosyaNo: u.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, yat: u.yat_adi, icKayit: true, bolumler, kodEk: kod } };
 }

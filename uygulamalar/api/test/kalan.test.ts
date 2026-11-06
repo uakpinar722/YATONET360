@@ -863,3 +863,17 @@ describe('firma rapor ve fiyat sayacı (YG-1483)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Firma Raporu Gecikti' AND nesne_kimligi = $1`, [e])).rows[0].n).toBe(1);
   });
 });
+
+describe('uyuşmazlık paketi ek bölümleri (YG-107)', () => {
+  it('dosyaya giden ileti metni ve belge bütünlük özeti pakette yer alır', async () => {
+    const { uyusmazlikEkBolumleri } = await import('../src/uyusmazlik_ek.js');
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO gonderim (olay_anahtari, kanal, hedef, konu, metin, durum) VALUES ($1,'SMS','05001112233','Bilgi','Yatınız teslime hazırdır','Gönderildi')`, [`uy:${d.kimlik}`]);
+    const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Yazışma','Yazışma','Gizli','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, yukleyen_ref) VALUES ($1,1,'y.pdf','pdf',1,'abc123ozet','x/y','Sistem',$2)`, [bl, o.K.ds]);
+    const b = await uyusmazlikEkBolumleri(o.db, d.kimlik) as { baslik: string; satirlar?: unknown[][] }[];
+    expect(b.find((x) => x.baslik === 'Gönderilen İletiler')!.satirlar!.some((r) => String(r[2]).includes('teslime hazırdır'))).toBe(true);
+    const oz = (await o.sup.query(`SELECT ozet_sha256 FROM belge_surum WHERE belge_ref = $1`, [bl])).rows[0].ozet_sha256;
+    expect(b.find((x) => x.baslik === 'Belge Bütünlük Özetleri')!.satirlar!.some((r) => r[2] === oz)).toBe(true);
+  });
+});
