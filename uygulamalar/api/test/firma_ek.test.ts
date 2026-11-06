@@ -21,6 +21,7 @@ describe('görevlendirme kontrolü (YG-304, YG-306, YG-307, YG-332)', () => {
     expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 5000 })).sonuc).toBe('Koşullu Kabul');
     const r = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 20000 }); expect(r.sonuc).toBe('Ret'); expect(r.engeller[0]).toContain('Y3');
     await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis) VALUES ($1,'Mesleki Sorumluluk Sigortası','2099-01-01')`, [f]);
+    await o.sup.query(`INSERT INTO firma_personeli (kurulus_ref, ad_soyad, gorev, giren_ref) VALUES ($1,'Usta','Usta',$2)`, [f, o.K.ds]); // YG-304: personelsiz firma uyarı alır
     expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 })).sonuc).toBe('Kabul');
     await o.sup.query(`INSERT INTO firma_ekipmani (kurulus_ref, ad, seri_no, kalibrasyon_bitis, kaydeden_ref) VALUES ($1,'Tork Anahtarı','TA-1','2020-01-01',$2)`, [f, o.K.ds]); // YG-304
     const ke = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 }); expect(ke.sonuc).toBe('Koşullu Kabul'); expect(ke.uyarilar.join(' ')).toContain('Tork Anahtarı (TA-1)');

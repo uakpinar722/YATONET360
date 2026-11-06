@@ -184,6 +184,12 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect((await o.ist('POST', '/api/portal/acil', firmaC, { tur: 'Diğer', yatAdi: 'Y', konum: 'K' })).statusCode).toBe(400);
     const r = await o.ist('POST', '/api/portal/acil', firmaC, { tur: 'Yangın', yatAdi: 'Y', konum: 'K' });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().uyari112).toContain('112');
+    // YG-259: nöbetçinin açmasını beklemeden Kritik dosya açılır, acil müdahale kaydı ve ihbar eden yat sahibi tarafı oluşur.
+    const d = (await o.sup.query(`SELECT d.kimlik, d.oncelik, d.statu, d.asama FROM dosya d JOIN talep t ON t.dosya_ref = d.kimlik WHERE t.kimlik = $1`, [r.json().talep])).rows[0];
+    expect(d).toMatchObject({ oncelik: 'Kritik', statu: 'Aktif', asama: 'Keşif' });
+    expect((await o.sup.query(`SELECT olay_turu FROM acil_mudahale WHERE dosya_ref = $1`, [d.kimlik])).rows[0].olay_turu).toBe('Yangın');
+    // Müşteri grubunda olmayan ihbar eden yat sahibi olarak bağlanmaz.
+    expect((await o.sup.query(`SELECT taraf_rolu, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND talep_sahibi_mi`, [d.kimlik])).rows[0]).toMatchObject({ taraf_rolu: 'Kaptan', kullanici_ref: null });
   });
 });
 
@@ -204,6 +210,10 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect((await o.ist('GET', `/api/sigorta/teklif/${t}`, baskaSigortaC)).statusCode).toBe(404);
     const j = (await o.ist('GET', `/api/sigorta/teklif/${t}`, sigortaC)).json();
     expect(j.kalemler[0].birim_maliyet_eur).toBeUndefined(); expect(j.kalemler[0].isin_niteligi).toBe('Onarım');
+    // YG-1076: dosyada çalışan firmanın unvanı ve iş emri numarası sigorta portalına çıkmaz.
+    const fu = `Gizli Onarım Firması ${Date.now()}`; const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı',$3) RETURNING kimlik`, [`S-GZ${Date.now()}`, fu, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON09`, d.kimlik, f, o.K.ds]);
+    for (const u of ['/api/sigorta/ana', `/api/sigorta/teklif/${t}`]) { const b = (await o.ist('GET', u, sigortaC)).body; expect(b).not.toContain(fu); expect(b).not.toContain('-ON09'); }
     expect((await o.ist('GET', '/api/sigorta/ana', await o.gir('ds'))).statusCode).toBe(403);
   });
   it('seçilen kalemler onaylanır, seçilmeyen onaylanmaz; sürüm uyuşmazlığı reddedilir; ikinci karar olmaz', async () => {

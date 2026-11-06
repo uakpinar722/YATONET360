@@ -140,6 +140,8 @@ describe('konum (YG-1658)', () => {
     await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [p]);
     const c = (await giris('p@konum.local')).c;
     const r = await o.ist('POST', '/api/portal/acil', c, { tur: 'Yangın', yatAdi: 'Y', konum: 'Göcek' }); expect(r.statusCode, r.body).toBe(200); const t = r.json().talep as string; expect(t).toBeTruthy();
+    // YG-259: müşteri kendi açtığı acil dosyaya yat sahibi olarak bağlanır; dosya portalında görünür.
+    expect((await o.sup.query(`SELECT x.taraf_rolu FROM dosya_tarafi x JOIN talep q ON q.dosya_ref = x.dosya_ref WHERE q.kimlik = $1 AND x.kullanici_ref = $2`, [t, p])).rows[0].taraf_rolu).toBe('Yat Sahibi');
     expect((await o.ist('POST', `/api/portal/acil/${t}/konum`, await o.gir('ds'), { enlem: 36, boylam: 28 })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/portal/acil/${t}/konum`, c, { enlem: 95, boylam: 28 })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/portal/acil/${t}/konum`, c, { enlem: 36.75, boylam: 28.9 })).statusCode).toBe(200);

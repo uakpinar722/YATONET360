@@ -7,6 +7,8 @@ import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { rolSahipleri } from './makam.js';
+import { dogrulamaKodu } from './belge.js';
+import QRCode from 'qrcode';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
 
@@ -44,6 +46,11 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
   // YG-304, YG-533: süresi geçmiş bakım veya kalibrasyonlu ekipman görevlendirmede uyarı olarak görünür.
   const ek = (await db.query(`SELECT ad, seri_no FROM firma_ekipmani WHERE kurulus_ref = $1 AND (NOT kullanilabilir OR least(bakim_bitis, kalibrasyon_bitis) < current_date OR coalesce(bakim_bitis, kalibrasyon_bitis) < current_date)`, [g.firma])).rows;
   if (ek.length) uyarilar.push(`Firmanın bakım veya kalibrasyon süresi geçmiş ekipmanı vardır: ${ek.map((x) => `${x.ad} (${x.seri_no})`).join(', ')}.`);
+  // YG-304: firma personeli; aktif personel kaydı yoksa ya da İSG eğitimi veya yetki belgesi süresi geçmişse uyarı.
+  const pr = (await db.query(`SELECT ad_soyad, isg_egitim_bitis < current_date AS isg, yetki_belgesi_bitis < current_date AS belge FROM firma_personeli WHERE kurulus_ref = $1 AND aktif`, [g.firma])).rows;
+  if (!pr.length) uyarilar.push('Firmanın kayıtlı aktif personeli yoktur.');
+  const sureli = pr.filter((x) => x.isg || x.belge);
+  if (sureli.length) uyarilar.push(`İSG eğitimi veya yetki belgesi süresi geçmiş personel vardır: ${sureli.map((x) => x.ad_soyad).join(', ')}.`);
   if (f?.kapasite_is && Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma])).rows[0].n) >= f.kapasite_is) uyarilar.push('Firmanın beyan ettiği iş kapasitesi doludur.');
   if (!(await db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%sigorta%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [g.firma])).rowCount) uyarilar.push('Firmanın sorumluluk sigortası kaydı yoktur.');
   return { sinif, asgari, sonuc: engeller.length ? 'Ret' as const : uyarilar.length ? 'Koşullu Kabul' as const : 'Kabul' as const, engeller, uyarilar };
@@ -279,6 +286,58 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (!f) return yok(y);
     const k = await kartAc(b.db, { tur: 'Kalıcı Askı Önerisi', baslik: `${f.ticari_unvan} · Kalıcı Askı Önerisi`, ozet: g, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, TM), await rolId(b.db, HUD), await rolId(b.db, OPM), await rolId(b.db, BTD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
     return { kimlik: k };
+  });
+
+  // YG-304, YG-339: firma kendi personelini kaydeder; ayrılan personelin ekip kartları iptal olur, bağlı hesabı kapanır, geçmiş korunur.
+  s.get('/firma-portal/personel', oturumlu, async (i, y) => {
+    const f = await firmam(i.oturum!.kullanici); if (!f) return yok(y);
+    return (await b.db.query(`SELECT kimlik, ad_soyad, gorev, telefon, isg_egitim_bitis::text, yetki_belgesi, yetki_belgesi_bitis::text, aktif FROM firma_personeli WHERE kurulus_ref = $1 ORDER BY aktif DESC, ad_soyad`, [f])).rows;
+  });
+  s.post('/firma-portal/personel', oturumlu, async (i, y) => {
+    const o = i.oturum!; const f = await firmam(o.kullanici); if (!f) return yok(y);
+    const g = (i.body ?? {}) as { ad?: string; gorev?: string; telefon?: string; isgBitis?: string; belge?: string; belgeBitis?: string; kullanici?: string };
+    const tarih = (x?: string) => !x || /^\d{4}-\d{2}-\d{2}$/.test(x);
+    if (!g.ad?.trim() || !g.gorev?.trim() || !tarih(g.isgBitis) || !tarih(g.belgeBitis)) return y.code(400).send({ hata: 'Ad soyad ve görev zorunludur; tarihleri geçerli giriniz.' });
+    // Personelin portal hesabı varsa bağlanır; ayrılışta hesap da kapanır (YG-339).
+    if (g.kullanici && !(await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kurulus_ref = $1 AND kullanici_ref = $2`, [f, g.kullanici])).rowCount) return y.code(400).send({ hata: 'Hesap firmanıza ait değildir.' });
+    const r = await b.db.query(`INSERT INTO firma_personeli (kurulus_ref, ad_soyad, gorev, telefon, isg_egitim_bitis, yetki_belgesi, yetki_belgesi_bitis, kullanici_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [f, g.ad.trim(), g.gorev.trim(), g.telefon?.trim() || null, g.isgBitis || null, g.belge?.trim() || null, g.belgeBitis || null, g.kullanici || null, o.kullanici]);
+    return { kimlik: r.rows[0].kimlik };
+  });
+  s.post('/firma-portal/personel/:id/ayrildi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const f = await firmam(o.kullanici); const { id } = i.params as { id: string };
+    if (!f || !UUID.test(id)) return yok(y);
+    const p = (await b.db.query(`UPDATE firma_personeli SET aktif = false, ayrilis_zamani = now() WHERE kimlik = $1 AND kurulus_ref = $2 AND aktif RETURNING kullanici_ref`, [id, f])).rows[0];
+    if (!p) return yok(y);
+    await b.db.query(`UPDATE ekip_karti SET iptal_zamani = now() WHERE personel_ref = $1 AND iptal_zamani IS NULL`, [id]);
+    if (p.kullanici_ref) { await b.db.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE kimlik = $1`, [p.kullanici_ref]); await b.db.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Güvenlik sınırlaması' WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [p.kullanici_ref]); }
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Personeli Ayrıldı', nesneTuru: 'Kuruluş', nesneKimligi: f, yeni: { personel: id }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Firma Portalı' });
+    return { tamam: true };
+  });
+  s.get('/firma/:id/personel', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(i.oturum!.kullanici, [...SICIL_ROLLER, BTD, OPM, 'Dosya Sorumlusu', 'Teknik Uzman']))) return yok(y);
+    return (await b.db.query(`SELECT kimlik, ad_soyad, gorev, isg_egitim_bitis::text, yetki_belgesi, yetki_belgesi_bitis::text, aktif FROM firma_personeli WHERE kurulus_ref = $1 ORDER BY aktif DESC, ad_soyad`, [id])).rows;
+  });
+
+  // YG-424: Görevli Ekip Kartı; firma unvanı yazılmaz, QR kodu herkese açık doğrulamaya gider. Geçerlilik iş emrinin hedef bitişi, yoksa 30 gün.
+  s.post('/firma-portal/is-emri/:id/ekip-karti', oturumlu, async (i, y) => {
+    const o = i.oturum!; const f = await firmam(o.kullanici); const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { personel?: string[] };
+    if (!f || !UUID.test(id)) return yok(y);
+    const e = (await b.db.query(`SELECT kimlik, coalesce(hedef_bitis_tarihi, current_date + 30) AS bitis FROM is_emri WHERE kimlik = $1 AND kurulus_ref = $2 AND statu IN ('Başlangıç Kontrolünde', 'Aktif', 'Çekinceli')`, [id, f])).rows[0];
+    if (!e) return yok(y);
+    if (!g.personel?.length || g.personel.some((x) => !UUID.test(x))) return y.code(400).send({ hata: 'Personel seçiniz.' });
+    const p = (await b.db.query(`SELECT kimlik FROM firma_personeli WHERE kimlik = ANY($1::uuid[]) AND kurulus_ref = $2 AND aktif`, [g.personel, f])).rows;
+    if (p.length !== g.personel.length) return y.code(400).send({ hata: 'Seçilen personel firmanızda aktif değildir.' });
+    const kartlar: { personel: string; kod: string; qr: string }[] = [];
+    for (const x of p) { const kod = dogrulamaKodu(); await b.db.query(`INSERT INTO ekip_karti (kod, personel_ref, is_emri_ref, gecerlilik_bitis) VALUES ($1,$2,$3,$4) ON CONFLICT (personel_ref, is_emri_ref) DO UPDATE SET kod = EXCLUDED.kod, gecerlilik_bitis = EXCLUDED.gecerlilik_bitis, iptal_zamani = NULL`, [kod, x.kimlik, id, e.bitis]); kartlar.push({ personel: x.kimlik, kod, qr: await QRCode.toDataURL(`${b.webAdresi}/#ekip=${kod}`, { margin: 1, width: 180 }) }); }
+    return { kartlar };
+  });
+  s.get('/ekip-karti/:kod', async (i, y) => {
+    const { kod } = i.params as { kod: string };
+    if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(kod)) return yok(y);
+    const k = (await b.db.query(`SELECT p.ad_soyad, p.gorev, k.gecerlilik_bitis::text, d.dosya_no, k.iptal_zamani IS NULL AND p.aktif AND k.gecerlilik_bitis >= current_date AND e.statu NOT IN ('İptal', 'Kapalı') AS gecerli FROM ekip_karti k JOIN firma_personeli p ON p.kimlik = k.personel_ref JOIN is_emri e ON e.kimlik = k.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref WHERE k.kod = $1`, [kod])).rows[0];
+    if (!k) return yok(y);
+    return { ifade: 'LİMİT GLOBAL MARINE adına görevli', ad: k.ad_soyad, gorev: k.gorev, gecerlilik: k.gecerlilik_bitis, dosyaNo: k.dosya_no, gecerli: k.gecerli };
   });
 
   // YG-1660: geçici askı iş kararı; öneri öndeğerdir. Güvenli Durdurma iş emrini durdurur, Devir firma değiştirme görevi açar.

@@ -190,6 +190,41 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
 
 interface KurumsalV { kurum: string; kurumId?: string; ek2Siniri: string; yetkili: boolean; rol: string; kullanicilar: { kimlik: string; ad_soyad: string; e_posta: string; hesap_durumu: string; rol: string; onay_siniri: string | null; yetkili: boolean; ben: boolean }[] }
 /** YG-1563: kurumsal müşteri kendi kullanıcısını ekler; onay adımı yok; onay sınırı Ek-2 sınırını aşmaz. */
+/** YG-304, YG-339: firma personeli; ayrılan personelin ekip kartları ve hesabı kapanır. */
+export function FirmaPersoneli() {
+  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; gorev: string; isg_egitim_bitis: string | null; yetki_belgesi: string | null; yetki_belgesi_bitis: string | null; aktif: boolean }[]>([]); const [f, setF] = useState({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/firma-portal/personel').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  const tr = (x: string | null) => x ? x.split('-').reverse().join('.') : '-';
+  return <><div className="bolum">Personelimiz</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.ad_soyad} · {x.gorev} · İSG eğitimi: {tr(x.isg_egitim_bitis)}{x.yetki_belgesi ? ` · ${x.yetki_belgesi}: ${tr(x.yetki_belgesi_bitis)}` : ''}{x.aktif ? <button className="btn2 kucuk" onClick={() => void istek(`/firma-portal/personel/${x.kimlik}/ayrildi`, {}).then(() => { setM('Ayrılış kaydedildi; ekip kartları kapandı.'); return yk(); }).catch((e) => setM(e.message))}>Ayrıldı</button> : ' · Ayrıldı'}</div>)}</div>
+    <label htmlFor="fp-a">Ad Soyad</label><input id="fp-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+    <label htmlFor="fp-g">Görevi</label><input id="fp-g" value={f.gorev} onChange={(e) => setF({ ...f, gorev: e.target.value })} />
+    <label htmlFor="fp-t">Telefon</label><input id="fp-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
+    <label htmlFor="fp-i">İSG Eğitimi Geçerlilik Bitişi</label><input id="fp-i" type="date" value={f.isgBitis} onChange={(e) => setF({ ...f, isgBitis: e.target.value })} />
+    <label htmlFor="fp-b">Yetki Belgesi / Sertifika</label><input id="fp-b" value={f.belge} onChange={(e) => setF({ ...f, belge: e.target.value })} />
+    <label htmlFor="fp-bb">Belge Geçerlilik Bitişi</label><input id="fp-bb" type="date" value={f.belgeBitis} onChange={(e) => setF({ ...f, belgeBitis: e.target.value })} />
+    <button className="btn2" onClick={() => void istek('/firma-portal/personel', { ...f, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button></>;
+}
+
+/** YG-424: Görevli Ekip Kartı; firma unvanı yazılmaz, QR doğrulamaya gider. */
+export function EkipKarti({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; gorev: string; aktif: boolean }[]>([]); const [s, setS] = useState<string[]>([]); const [k, setK] = useState<{ personel: string; kod: string; qr: string }[]>([]);
+  useEffect(() => { void istek<typeof l>('/firma-portal/personel').then((x) => setL(x.filter((y) => y.aktif))).catch(() => setL([])); }, []);
+  return <><div className="bolum">Görevli Ekip Kartı</div>
+    {l.map((x) => <label className="kutu" key={x.kimlik}><input type="checkbox" checked={s.includes(x.kimlik)} onChange={(e) => setS(e.target.checked ? [...s, x.kimlik] : s.filter((y) => y !== x.kimlik))} /><span>{x.ad_soyad} · {x.gorev}</span></label>)}
+    <button className="btn2" disabled={!s.length} onClick={() => void yap(() => istek<{ kartlar: typeof k }>(`/firma-portal/is-emri/${isEmri}/ekip-karti`, { personel: s }).then((r) => setK(r.kartlar)), 'Ekip kartları hazırlandı.')}>Ekip Kartı Oluştur</button>
+    {k.map((x) => { const p = l.find((y) => y.kimlik === x.personel); return <div className="ozet" key={x.kod}><div>LİMİT GLOBAL MARINE adına görevli</div><div>{p?.ad_soyad} · {p?.gorev}</div><img src={x.qr} alt={`Doğrulama kodu ${x.kod}`} width={180} height={180} /><div>{x.kod}</div></div>; })}</>;
+}
+
+/** YG-424: QR ile açılan herkese açık ekip kartı doğrulaması. */
+export function EkipKartiDogrula({ kod }: { kod: string }) {
+  const [v, setV] = useState<{ ifade: string; ad: string; gorev: string; gecerlilik: string; dosyaNo: string; gecerli: boolean } | null | false>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/ekip-karti/${encodeURIComponent(kod)}`).then(setV).catch(() => setV(false)); }, [kod]);
+  if (v === null) return null;
+  return <main className="kart"><h1>Görevli Ekip Kartı Doğrulama</h1>{v === false ? <div className="not" role="alert">Kart bulunamadı.</div> : <div className="ozet"><div>{v.ifade}</div><div>{v.ad} · {v.gorev}</div><div>Dosya No: {v.dosyaNo}</div><div>Geçerlilik: {v.gecerlilik.split('-').reverse().join('.')}</div><div role="status">{v.gecerli ? 'Kart geçerlidir.' : 'Kart geçerli değildir.'}</div></div>}</main>;
+}
+
 export function Kullanicilarim() {
   const [v, setV] = useState<KurumsalV | null>(null); const [f, setF] = useState({ ad: '', eposta: '', telefon: '', rol: 'İzleyici', sinir: '' }); const [ge, setGe] = useState<Record<string, string>>({});
   const yukle = () => istek<KurumsalV>('/kurumsal/kullanicilar').then(setV);
@@ -274,6 +309,7 @@ export function KurumHesap({ baslik }: { baslik: string }) {
         {cari.satirlar.map((x) => <div key={x.hakedis_no}>{x.hakedis_no} · {x.is_emri_no} · Brüt: {eur(x.bu_donem_brut)} · Kesinti: {eur(x.kesinti)} · Net: {eur(x.net)} · {x.statu}{x.firma_fatura_no ? ` · Fatura: ${x.firma_fatura_no}` : ''}{x.tahsilat_tarihi ? ` · Tahsilat: ${tarih(x.tahsilat_tarihi)}` : ''}{x.planlanan_tarih ? ` · Ödeme Günü: ${tarih(x.planlanan_tarih)}` : ''}</div>)}
       </Blok>}
       {k.kayit_rolu === 'Çözüm Ortağı' && <FirmaKarne yap={yap} />}
+      {k.kayit_rolu === 'Çözüm Ortağı' && <FirmaPersoneli />}
       {(v.itirazEdilebilir || v.itiraz) && <Blok baslik="Kabul Kararı İtirazı">
         {v.itiraz && <div>İtiraz Durumu: {v.itiraz.durum}</div>}
         {v.itirazEdilebilir && <><label htmlFor="it-g">İtiraz Gerekçesi</label><input id="it-g" value={itz} onChange={(e) => setItz(e.target.value)} /><button className="btn2" disabled={!itz.trim()} onClick={() => void yap(() => istek('/kurum/kabul-itiraz', { gerekce: itz }))}>İtiraz Et</button></>}

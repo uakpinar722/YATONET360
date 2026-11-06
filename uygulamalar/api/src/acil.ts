@@ -14,6 +14,7 @@ import { onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { altNumara, sureBaslat } from './sure.js';
 import { parametre } from './teklif.js';
 import { UUID } from './yat.js';
+import { GRUP_YAT } from './portal.js';
 import { izinGerekli } from './yetki.js';
 
 type Db = Pool | PoolClient;
@@ -111,6 +112,38 @@ export async function acilIsle(db: Pool, simdi = new Date()): Promise<number> {
   return n;
 }
 
+/** YG-259: acil ihbar (telefon veya portal) beklemeden Kritik dosyaya dönüşür; nöbetçi ekip atanır, sağlayıcı çağrısı ve eskalasyon hemen başlar. */
+async function acilDosyaAc(c: PoolClient, talep: string, g: { konum: string; olay: string; olayTuru: string; yatAdi: string; musteri: string; sigortaci?: string; hatirlatma112?: boolean }, ds: string, yapan: string, simdi: Date, taraf: { rol: string; kullanici?: string }) {
+  const t = (await c.query(`SELECT * FROM talep WHERE kimlik = $1`, [talep])).rows[0];
+  const sigortali = g.musteri === 'Sigorta Şirketi';
+  const d = (await c.query(`INSERT INTO dosya (dosya_no, talep_ref, yat_ref, bildirim_tarihi, konum, kisa_teknik_tanim, musteri_turu, dosya_niteligi, odeme_sorumlusu, oncelik, onerilen_oncelik, acil_gecici_acilis, eksik_alan_gerekcesi, tamamlama_hedef_tarihi, yazisma_dili, dosya_sorumlusu_ref, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Kritik','Kritik',true,'Acil kısa kayıt',$10,$11,$12,$13) RETURNING kimlik, dosya_no`,
+    [t.talep_no, t.kimlik, t.yat_ref, t.bildirim_alinma_zamani, g.konum, g.olay, g.musteri, sigortali ? 'Sigorta bağlantılı' : 'Doğrudan hizmet', sigortali ? ['Sigorta'] : ['Yat sahibi'], ilkIsGunu12(simdi).toISOString().slice(0, 10), t.yazisma_dili, ds, yapan])).rows[0];
+  await c.query(`UPDATE talep SET statu = 'Dosyaya Dönüştü', dosya_ref = $2 WHERE kimlik = $1`, [t.kimlik, d.kimlik]);
+  await c.query(`INSERT INTO dosya_statu_gecmisi (dosya_ref, yeni_statu, yeni_asama, gerekce, sonraki_sorumlu_rol, olusturan_ref) VALUES ($1,'Aktif','Keşif','Acil geçici açılış','Dosya Sorumlusu',$2)`, [d.kimlik, yapan]);
+  await c.query(`UPDATE dosya SET statu = 'Aktif', asama = 'Keşif' WHERE kimlik = $1`, [d.kimlik]);
+  await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND tur = 'İhbar Açılış Kontrolü'`, [t.kimlik]);
+  await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, ds, yapan]);
+  await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, talep_sahibi_mi, olusturan_ref, kullanici_ref) VALUES ($1,$2,$3,$4,true,$5,$6)`, [d.kimlik, taraf.rol, t.talep_sahibi_adi, t.talep_sahibi_telefon, yapan, taraf.kullanici ?? null]);
+  if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,$2,$3)`, [d.kimlik, g.sigortaci ?? null, yapan]);
+  await sureBaslat(c, { tur: 'Sahaya Ulaşma', oncelik: 'Kritik', baslangic: simdi, dosya: d.kimlik });
+  // YG-250, YG-251, YG-252: mesai dışında nöbetçi Uzman atanır; Teknik Müdür ilk iş günü 12:00'ye kadar teyit eder; olağan DS'ye devir aynı süre.
+  const tu = await nobetci(c, 'Teknik Uzman', simdi);
+  const mesaiDisi = !mesaiIcinde(simdi);
+  if (tu) await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Teknik Uzman',$3)`, [d.kimlik, tu, yapan]);
+  const son12 = ilkIsGunu12(simdi);
+  if (mesaiDisi && tu) await kartAc(c, { tur: 'Nöbetçi Uzman Teyidi', kategori: 'islem', baslik: `${d.dosya_no} · Nöbetçi Uzman Teyidi`, ozet: 'Onaylayınız veya değiştiriniz.', sonZaman: son12, sahipRol: await rolId(c, 'Teknik Müdür'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+  if (mesaiDisi) await kartAc(c, { tur: 'Acil Dosya Devri', kategori: 'islem', baslik: `${d.dosya_no} · Olağan Dosya Sorumlusuna Devir`, ozet: 'İlk iş günü 12:00', sonZaman: son12, sahipRol: await rolId(c, 'Operasyon Müdürü'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+  const canCevre = CAN_CEVRE.includes(g.olayTuru!);
+  const yon = (await nobetci(c, 'Yönetici', simdi));
+  await c.query(`INSERT INTO acil_mudahale (dosya_ref, olay_turu, can_cevre_riski, tehlike, talimat_veren_ref, olay_yoneticisi_ref, hatirlatma_112, sinir_durumu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [d.kimlik, g.olayTuru, canCevre, g.olay, yapan, mesaiDisi ? yon : null, Boolean(g.hatirlatma112), canCevre ? 'Sınırsız' : 'Sınır Altında']);
+  const al: string[] = []; for (const rl of ACIL_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, rl))); if (mesaiDisi && yon) al.push(yon);
+  await bildir(c, { olay: `acil-tedbir:${d.kimlik}`, kullanicilar: al, baslik: `Acil İlk Tedbir: ${d.dosya_no}`, ozet: `${g.olayTuru} · ${g.yatAdi} · ${g.konum} · Eşiğe kalan: ${tutar(await parametre(c, 'acil_sinir_eur'))} EUR`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
+  const cagri = await cagriGonder(c, d.kimlik, simdi);
+  if (mesaiDisi && canCevre) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Can veya çevre riski'); // YG-1481
+  if (mesaiDisi && !cagri) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Müsait sağlayıcı yok');
+  return { d, cagri };
+}
+
 export function acilYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
@@ -176,33 +209,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       if ('hata' in r) throw Object.assign(new Error(r.hata), { statusCode: 400 });
       await c.query(`UPDATE talep SET mukerrerlik_sonucu = 'Mükerrer değil' WHERE kimlik = $1`, [r.kimlik]);
       await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
-      const t = (await c.query(`SELECT * FROM talep WHERE kimlik = $1`, [r.kimlik])).rows[0];
-      const sigortali = musteri === 'Sigorta Şirketi';
-      const d = (await c.query(`INSERT INTO dosya (dosya_no, talep_ref, yat_ref, bildirim_tarihi, konum, kisa_teknik_tanim, musteri_turu, dosya_niteligi, odeme_sorumlusu, oncelik, onerilen_oncelik, acil_gecici_acilis, eksik_alan_gerekcesi, tamamlama_hedef_tarihi, yazisma_dili, dosya_sorumlusu_ref, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Kritik','Kritik',true,'Acil kısa kayıt',$10,$11,$12,$13) RETURNING kimlik, dosya_no`,
-        [t.talep_no, t.kimlik, t.yat_ref, t.bildirim_alinma_zamani, g.konum, g.olay, musteri, sigortali ? 'Sigorta bağlantılı' : 'Doğrudan hizmet', sigortali ? ['Sigorta'] : ['Yat sahibi'], ilkIsGunu12(simdi).toISOString().slice(0, 10), t.yazisma_dili, ds, o.kullanici])).rows[0];
-      await c.query(`UPDATE talep SET statu = 'Dosyaya Dönüştü', dosya_ref = $2 WHERE kimlik = $1`, [t.kimlik, d.kimlik]);
-      await c.query(`INSERT INTO dosya_statu_gecmisi (dosya_ref, yeni_statu, yeni_asama, gerekce, sonraki_sorumlu_rol, olusturan_ref) VALUES ($1,'Aktif','Keşif','Acil geçici açılış','Dosya Sorumlusu',$2)`, [d.kimlik, o.kullanici]);
-      await c.query(`UPDATE dosya SET statu = 'Aktif', asama = 'Keşif' WHERE kimlik = $1`, [d.kimlik]);
-      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND tur = 'İhbar Açılış Kontrolü'`, [t.kimlik]);
-      await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, ds, o.kullanici]);
-      await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, talep_sahibi_mi, olusturan_ref) VALUES ($1,'Kaptan',$2,$3,true,$4)`, [d.kimlik, t.talep_sahibi_adi, t.talep_sahibi_telefon, o.kullanici]);
-      if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,$2,$3)`, [d.kimlik, g.sigortaci ?? null, o.kullanici]);
-      await sureBaslat(c, { tur: 'Sahaya Ulaşma', oncelik: 'Kritik', baslangic: simdi, dosya: d.kimlik });
-      // YG-250, YG-251, YG-252: mesai dışında nöbetçi Uzman atanır; Teknik Müdür ilk iş günü 12:00'ye kadar teyit eder; olağan DS'ye devir aynı süre.
-      const tu = await nobetci(c, 'Teknik Uzman', simdi);
-      const mesaiDisi = !mesaiIcinde(simdi);
-      if (tu) await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Teknik Uzman',$3)`, [d.kimlik, tu, o.kullanici]);
-      const son12 = ilkIsGunu12(simdi);
-      if (mesaiDisi && tu) await kartAc(c, { tur: 'Nöbetçi Uzman Teyidi', kategori: 'islem', baslik: `${d.dosya_no} · Nöbetçi Uzman Teyidi`, ozet: 'Onaylayınız veya değiştiriniz.', sonZaman: son12, sahipRol: await rolId(c, 'Teknik Müdür'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
-      if (mesaiDisi) await kartAc(c, { tur: 'Acil Dosya Devri', kategori: 'islem', baslik: `${d.dosya_no} · Olağan Dosya Sorumlusuna Devir`, ozet: 'İlk iş günü 12:00', sonZaman: son12, sahipRol: await rolId(c, 'Operasyon Müdürü'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
-      const canCevre = CAN_CEVRE.includes(g.olayTuru!);
-      const yon = (await nobetci(c, 'Yönetici', simdi));
-      await c.query(`INSERT INTO acil_mudahale (dosya_ref, olay_turu, can_cevre_riski, tehlike, talimat_veren_ref, olay_yoneticisi_ref, hatirlatma_112, sinir_durumu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [d.kimlik, g.olayTuru, canCevre, g.olay, o.kullanici, mesaiDisi ? yon : null, Boolean(g.hatirlatma112), canCevre ? 'Sınırsız' : 'Sınır Altında']);
-      const al: string[] = []; for (const rl of ACIL_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, rl))); if (mesaiDisi && yon) al.push(yon);
-      await bildir(c, { olay: `acil-tedbir:${d.kimlik}`, kullanicilar: al, baslik: `Acil İlk Tedbir: ${d.dosya_no}`, ozet: `${g.olayTuru} · ${g.yatAdi} · ${g.konum} · Eşiğe kalan: ${tutar(await parametre(c, 'acil_sinir_eur'))} EUR`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
-      const cagri = await cagriGonder(c, d.kimlik, simdi);
-      if (mesaiDisi && canCevre) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Can veya çevre riski'); // YG-1481
-      if (mesaiDisi && !cagri) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Müsait sağlayıcı yok');
+      const { d, cagri } = await acilDosyaAc(c, r.kimlik, { konum: g.konum!, olay: g.olay!, olayTuru: g.olayTuru!, yatAdi: g.yatAdi!, musteri, sigortaci: g.sigortaci, hatirlatma112: g.hatirlatma112 }, ds, o.kullanici, simdi, { rol: 'Kaptan' });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Acil Çağrı Açıldı', nesneTuru: 'Dosya', nesneKimligi: d.kimlik, yeni: { tur: g.olayTuru }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: d.kimlik, dosyaNo: d.dosya_no, cagri, uyari112: "Acil durumlarda lütfen önce 112'yi arayınız." };
     });
@@ -364,6 +371,10 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       if ('hata' in r) throw Object.assign(new Error(r.hata), { statusCode: 400 });
       await bildir(c, { olay: `portal-acil:${r.kimlik}`, kullanicilar: [ilk], baslik: `Acil İhbar: ${r.talepNo}`, ozet: `${g.tur} · ${g.yatAdi} · ${g.konum}`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
       await c.query(`INSERT INTO acil_konum (talep_ref, kullanici_ref) VALUES ($1,$2)`, [r.kimlik, o.kullanici]); // YG-1658
+      // YG-259: acil ihbar nöbetçinin açmasını beklemez; Kritik dosya, nöbetçi ekip ve sağlayıcı çağrısı hemen başlar.
+      await c.query(`UPDATE talep SET mukerrerlik_sonucu = 'Mükerrer değil' WHERE kimlik = $1`, [r.kimlik]);
+      await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
+      await acilDosyaAc(c, r.kimlik, { konum: g.konum!, olay: g.aciklama?.trim() || g.tur!, olayTuru: g.tur!, yatAdi: g.yatAdi!, musteri: o.grup === 'Kurumsal Müşteri' ? 'Kurumsal Müşteri' : 'Bireysel Müşteri' }, ilk, ilk, simdi, [GRUP_YAT, 'Kurumsal Müşteri'].includes(o.grup) ? { rol: 'Yat Sahibi', kullanici: o.kullanici } : { rol: 'Kaptan' });
       return { talep: r.kimlik, talepNo: r.talepNo, uyari112: "Acil durumlarda lütfen önce 112'yi arayınız." };
     });
   });

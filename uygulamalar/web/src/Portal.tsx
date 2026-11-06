@@ -95,7 +95,7 @@ function GarantiTalebi({ id }: { id: string }) {
 
 function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
   const [bilgi, setBilgi] = useState('');
-  const [d, setD] = useState<(Kart & { cayma?: boolean; belgeler: { kimlik: string; ad: string; surum_no: number }[]; faturalar: { kimlik: string; fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
+  const [d, setD] = useState<(Kart & { cayma?: boolean; belgeler: { kimlik: string; ad: string; surum_no: number }[]; fotograflar?: { kimlik: string; aciklama: string; onay_zamani: string }[]; faturalar: { kimlik: string; fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
   useEffect(() => { void istek<NonNullable<typeof d>>(`/portal/dosya/${id}`).then(setD).catch((e) => setHata(e.message)); }, [id]);
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   return (
@@ -109,6 +109,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       {d.teslim?.teslime_hazir_zamani && <div className="uyari">Yatınız teslime hazırdır. Teslim için kalan gün: {d.teslim.kalan_gun}. Bu süreden sonraki barınma gideri tarafınıza aittir.</div>}
       {d.faturalar.length > 0 && <><div className="bolum">Faturalar</div><div className="ozet">{d.faturalar.map((f) => <div key={f.fatura_no}>{f.fatura_no} · {f.fatura_tarihi?.split('-').reverse().join('.')} · {f.toplam_eur} EUR{f.toplam_tl ? ` · ${f.toplam_tl} TL` : ''} · {f.durum} <FaturaItiraz id={f.kimlik} /></div>)}</div></>}
       <SokulenParcalar id={id} />
+      {(d.fotograflar?.length ?? 0) > 0 && <><div className="bolum">İlerleme Fotoğrafları</div><div className="ozet">{d.fotograflar!.map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a> · {new Date(f.onay_zamani).toLocaleDateString('tr-TR')}</div>)}</div></>}
       <div className="bolum">Garanti Talebi</div>
       <GarantiTalebi id={id} />
       <div className="bolum">Belgelerim</div>

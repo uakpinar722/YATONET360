@@ -202,3 +202,31 @@ describe('tedarikçi ödeme durumu (YG-298, YG-845)', () => {
     expect((await o.ist('POST', u(e), m, {})).statusCode).toBe(409);
   });
 });
+
+describe('firma personeli ve Görevli Ekip Kartı (YG-304, YG-424, YG-339)', () => {
+  it('firma personelini kaydeder; süresi geçen belge uyarı olur; kart firma unvanı taşımaz; ayrılınca kart ve hesap kapanır', async () => {
+    const { gorevlendirmeKontrolu } = await import('../src/firma_ek.js');
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const once = await gorevlendirmeKontrolu(o.db, { firma: fir, dosya: d.kimlik, brans: 'Yok' });
+    expect(once.uyarilar.some((x) => x.includes('aktif personeli yoktur'))).toBe(true);
+    const u = '/api/firma-portal/personel';
+    expect((await o.ist('POST', u, firC, { ad: 'A' })).statusCode).toBe(400);
+    const uc = await disGir('kf3', 'İş Birliği Firması', 'Firma Yetkilisi', fir);
+    const p1 = (await o.ist('POST', u, firC, { ad: 'Usta Bir', gorev: 'Laminasyon Ustası', isgBitis: '2099-01-01', kullanici: uc.k })).json().kimlik;
+    await o.ist('POST', u, firC, { ad: 'Usta İki', gorev: 'Kaynakçı', belge: 'Kaynak Sertifikası', belgeBitis: '2020-01-01' });
+    expect((await o.ist('POST', u, tedC, { ad: 'X', gorev: 'Y', kullanici: uc.k })).statusCode).toBe(400);
+    const sonra = await gorevlendirmeKontrolu(o.db, { firma: fir, dosya: d.kimlik, brans: 'Yok' });
+    expect(sonra.uyarilar.find((x) => x.includes('süresi geçmiş personel'))).toContain('Usta İki');
+    expect((await o.ist('GET', `/api/firma/${fir}/personel`, await o.gir('fym'))).json()).toHaveLength(2);
+    expect((await o.ist('GET', u, tedC)).json()).toHaveLength(0);
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, fir, o.K.ds])).rows[0].kimlik;
+    const k = await o.ist('POST', `/api/firma-portal/is-emri/${e}/ekip-karti`, firC, { personel: [p1] }); expect(k.statusCode, k.body).toBe(200);
+    const kod = k.json().kartlar[0].kod as string;
+    const dg = await o.s.inject({ method: 'GET', url: `/api/ekip-karti/${kod}`, headers: { 'x-yatonet': '1' } }); expect(dg.statusCode, dg.body).toBe(200);
+    expect(dg.json()).toMatchObject({ ifade: 'LİMİT GLOBAL MARINE adına görevli', ad: 'Usta Bir', gorev: 'Laminasyon Ustası', dosyaNo: d.dosyaNo, gecerli: true });
+    expect(dg.body).not.toContain('Kurum Firma');
+    expect((await o.ist('POST', `/api/firma-portal/personel/${p1}/ayrildi`, firC, {})).statusCode).toBe(200);
+    expect((await o.s.inject({ method: 'GET', url: `/api/ekip-karti/${kod}`, headers: { 'x-yatonet': '1' } })).json().gecerli).toBe(false);
+    expect((await o.sup.query(`SELECT hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [uc.k])).rows[0].hesap_durumu).toBe('Kapalı');
+  });
+});

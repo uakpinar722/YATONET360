@@ -716,3 +716,27 @@ describe('firma işi bıraktı (YG-1660)', () => {
     expect((await o.ist('POST', u, await o.gir('ds'), { gerekce: 'Tekrar' })).statusCode).toBe(409);
   });
 });
+
+describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
+  it('teknik ekip onaylar; yat sahibi yalnız onaylıyı görür, dosya adı gizli; kaldırılınca kapanır', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik, o.K.iks]);
+    await o.sup.query(`UPDATE kullanici_hesabi SET kullanici_grubu = 'Kurumsal Müşteri', izin_adimi_zamani = now() WHERE kimlik = $1`, [o.K.iks]);
+    await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) SELECT $1,'Çalışan','KVKK-04','R00','Türkçe','Web' WHERE NOT EXISTS (SELECT 1 FROM aydinlatma_kaydi WHERE ilgili_kisi_ref = $1 AND aydinlatma_metni = 'KVKK-04')`, [o.K.iks]);
+    await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) SELECT $1,'R00','Türkçe' WHERE NOT EXISTS (SELECT 1 FROM kullanim_kosullari_kabulu WHERE kullanici_ref = $1)`, [o.K.iks]);
+    const foto = await o.belge(d.kimlik, 'ds', 'Firma X Saha Foto', 'jpg'); const pdf = await o.belge(d.kimlik, 'ds', 'Rapor', 'pdf');
+    const u = `/api/dosya/${d.kimlik}/ilerleme-fotografi`;
+    expect((await o.ist('POST', u, await o.gir('oy'), { belge: foto, aciklama: 'Laminasyon tamamlandı' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('tu'), { belge: pdf, aciklama: 'R' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, await o.gir('tu'), { belge: foto, aciklama: 'Laminasyon tamamlandı' }); expect(r.statusCode, r.body).toBe(200);
+    const c = await o.gir('iks');
+    const pr = await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c); expect(pr.statusCode, pr.body).toBe(200); const p = pr.json();
+    expect(p.fotograflar.map((x: { aciklama: string }) => x.aciklama)).toEqual(['Laminasyon tamamlandı']);
+    const ind = await o.ist('GET', `/api/portal/fotograf/${r.json().kimlik}`, c); expect(ind.statusCode).toBe(200);
+    expect(ind.headers['content-disposition']).not.toContain('Firma'); expect(ind.headers['content-disposition']).toMatch(/ilerleme-.*\.jpg/);
+    expect((await o.ist('GET', `/api/portal/fotograf/${r.json().kimlik}`, await o.gir('mpm'))).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/ilerleme-fotografi/${r.json().kimlik}/kaldir`, await o.gir('ds'), {})).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/portal/fotograf/${r.json().kimlik}`, c)).statusCode).toBe(404);
+    expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().fotograflar).toEqual([]);
+  });
+});
