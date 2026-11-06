@@ -200,4 +200,17 @@ describe('iş kazası ve yurt dışı (YG-981, YG-1669, YG-1492, YG-972)', () =>
     await personelDurumIsle(o.db); await personelDurumIsle(o.db);
     expect(await n(48, o.K.gmy)).toBe(1);
   });
+  it('yurt dışı görevlendirmede durum değişir; izindeki kişiye dosya rolü verilmez (YG-1479)', async () => {
+    const b = ileri(20); const s = ileri(22);
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1,'2026-01-01',$1) ON CONFLICT DO NOTHING`, [o.K.tu]);
+    await o.sup.query(`INSERT INTO yurtdisi_gorev (personel_ref, ulke, baslangic, bitis, gun, gunluk_eur, harcirah_eur, durum) VALUES ($1,'Yunanistan',$2,$3,3,100,300,'Onaylandı')`, [o.K.tu, b, s]);
+    const dur = async () => (await o.sup.query(`SELECT personel_durumu FROM personel_karti WHERE kullanici_ref = $1`, [o.K.tu])).rows[0].personel_durumu;
+    await personelDurumIsle(o.db, new Date(`${b}T10:00:00Z`)); expect(await dur()).toBe('Görevlendirmede');
+    await personelDurumIsle(o.db, new Date(new Date(`${s}T10:00:00Z`).getTime() + 86_400_000)); expect(await dur()).toBe('Görevde');
+    await o.sup.query(`UPDATE personel_karti SET personel_durumu = 'Raporlu' WHERE kullanici_ref = $1`, [o.K.tu]);
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET boy_m = 12, govde_malzemesi = 'CTP' WHERE kimlik = $1`, [d.kimlik]).catch(() => {});
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('tm'), { kullanici: o.K.tu, rol: 'Teknik Uzman' });
+    expect(r.statusCode, r.body).toBe(409); expect(r.json().hata).toContain('Raporlu');
+    await o.sup.query(`UPDATE personel_karti SET personel_durumu = 'Görevde' WHERE kullanici_ref = $1`, [o.K.tu]);
+  });
 });

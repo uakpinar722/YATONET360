@@ -102,6 +102,9 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
     }
     await db.query(`UPDATE izin_talebi SET geri_zamani = now() WHERE kimlik = $1`, [t.kimlik]); n++;
   }
+  // YG-1479: onaylı yurt dışı görevlendirme süresince "Görevlendirmede", bitince "Görevde".
+  n += (await db.query(`UPDATE personel_karti k SET personel_durumu = 'Görevlendirmede' FROM yurtdisi_gorev g WHERE g.personel_ref = k.kullanici_ref AND g.durum = 'Onaylandı' AND g.baslangic <= $1 AND g.bitis >= $1 AND k.personel_durumu = 'Görevde'`, [bugun])).rowCount ?? 0;
+  n += (await db.query(`UPDATE personel_karti k SET personel_durumu = 'Görevde' WHERE k.personel_durumu = 'Görevlendirmede' AND NOT EXISTS (SELECT 1 FROM yurtdisi_gorev g WHERE g.personel_ref = k.kullanici_ref AND g.durum = 'Onaylandı' AND g.baslangic <= $1 AND g.bitis >= $1)`, [bugun])).rowCount ?? 0;
   for (const a of (await db.query(`SELECT * FROM personel_ayrilisi WHERE durum = 'Açık' AND son_is_gunu < $1`, [bugun])).rows) {
     const amir = await birimAmiri(db, a.personel_ref);
     for (const d of (await db.query(`SELECT * FROM ayrilis_devri WHERE ayrilis_ref = $1 AND durum = 'Bekliyor'`, [a.kimlik])).rows) {
