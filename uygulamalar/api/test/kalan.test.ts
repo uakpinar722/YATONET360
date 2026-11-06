@@ -778,3 +778,15 @@ describe('ikinci kanal teyidi ve benzer alan adı (YG-1272)', () => {
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/dis-talepler`, await o.gir('ds'))).json()[0].durum).toBe('Teyit Edilmedi');
   });
 });
+
+describe('kısmi başarı: gönderim parçaları (YG-1145)', () => {
+  it('dosyanın gönderimleri tamamlandı, bekliyor ve başarısız olarak ayrı görünür; hedef maskeli', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    for (const [n, du] of [[1, 'Gönderildi'], [2, 'Bekliyor'], [3, 'Başarısız']] as const) await o.sup.query(`INSERT INTO gonderim (olay_anahtari, kanal, hedef, konu, metin, durum) VALUES ($1,'E-posta',$2,'Konu','M',$3)`, [`deneme:${d.kimlik}:${n}`, `kisi${n}@ornek.local`, du]);
+    const r = await o.ist('GET', `/api/dosya/${d.kimlik}/gonderimler`, await o.gir('ds')); expect(r.statusCode, r.body).toBe(200);
+    const oz = r.json().ozet; expect(oz.basarisiz).toBe(1); expect(oz.bekliyor).toBeGreaterThanOrEqual(1); expect(oz.tamamlandi).toBeGreaterThanOrEqual(1);
+    expect(r.json().satirlar.filter((x: { konu: string }) => x.konu === 'Konu').map((x: { parca: string }) => x.parca)).toEqual(expect.arrayContaining(['Bekliyor', 'Başarısız', 'Tamamlandı']));
+    expect(r.body).not.toContain('kisi2@'); expect(r.body).toContain('k***@ornek.local');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/gonderimler`, await o.gir('sy'))).statusCode).toBe(404);
+  });
+});

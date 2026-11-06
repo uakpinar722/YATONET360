@@ -363,6 +363,20 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1299: Sağlayıcı ve Sözleşme Matrisi; yurt dışında KVKK m.9 dayanağı ve maskeleme kuralı zorunlu.
   const matrisci = (k: string) => rolVar(k, ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', HUD, 'Bilgi İşlem Müdürü']);
+  // YG-1145: kayıt tamamlanıp dış gönderim (e-posta, SMS, WhatsApp) beklerse ya da başarısız olursa parçalar ayrı durumla görünür; hedef maskelenir.
+  s.get('/dosya/:id/gonderimler', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const k = (await b.db.query(`SELECT $1::text AS k UNION SELECT talep_ref::text FROM dosya WHERE kimlik = $1::uuid AND talep_ref IS NOT NULL
+      UNION SELECT kimlik::text FROM fiyat_teklifi WHERE dosya_ref = $1::uuid UNION SELECT kimlik::text FROM onay_talebi WHERE dosya_ref = $1::uuid UNION SELECT kimlik::text FROM is_emri WHERE dosya_ref = $1::uuid
+      UNION SELECT kimlik::text FROM teslim_kaydi WHERE dosya_ref = $1::uuid UNION SELECT kimlik::text FROM musteri_faturasi WHERE dosya_ref = $1::uuid UNION SELECT kimlik::text FROM tesis_talebi WHERE dosya_ref = $1::uuid`, [id])).rows.map((r) => r.k as string).filter(Boolean);
+    const r = (await b.db.query(`SELECT kanal, konu, hedef, durum, deneme, plan_zamani, gonderim_zamani FROM gonderim WHERE olay_anahtari ~ $1 ORDER BY olusturma_zamani DESC LIMIT 200`, [`(${k.join('|')})`])).rows;
+    const maske = (h: string) => h.includes('@') ? h.replace(/^(.).*(@.*)$/, '$1***$2') : h.replace(/.(?=.{3})/g, '*');
+    const parca = (d: string) => (d === 'Bekliyor' ? 'Bekliyor' : d === 'Başarısız' ? 'Başarısız' : 'Tamamlandı');
+    const satirlar = r.map((x) => ({ kanal: x.kanal, konu: x.konu, hedef: maske(x.hedef), durum: x.durum, parca: parca(x.durum), deneme: x.deneme, plan: x.plan_zamani, gonderim: x.gonderim_zamani }));
+    return { ozet: { tamamlandi: satirlar.filter((x) => x.parca === 'Tamamlandı').length, bekliyor: satirlar.filter((x) => x.parca === 'Bekliyor').length, basarisiz: satirlar.filter((x) => x.parca === 'Başarısız').length }, satirlar };
+  });
+
   // YG-1660: Firma Kapsama Raporu ve aday raporu ekranda da görülür.
   s.get('/rapor/firma-kapsama', oturumlu, async (i, y) => {
     const aday = (i.query as { aday?: string }).aday === '1';

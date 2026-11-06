@@ -127,6 +127,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/onay-iste`, { ony: on.ony, parca: on.parca || undefined, tutar: on.tutar ? sayi(on.tutar) : undefined, zaman: on.zaman || undefined, kayitNo: on.kayitNo || undefined, teklifNo: on.teklifNo || undefined }), 'Onay ekranı yat sahibine gönderildi.')}>Onay İste</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/acil/${id}/ilk-tedbir-talebi`, {}), 'Acil İlk Tedbir talebi gönderildi.')}>Acil İlk Tedbir Talebi</button></div>
 
     <DisTalepler id={id} />
+    <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
     <label htmlFor="pf-a">Yat Sahibinin Göreceği Açıklama</label><input id="pf-a" value={pf.aciklama} onChange={(e) => setPf({ ...pf, aciklama: e.target.value })} />
@@ -286,6 +287,14 @@ export function ButceDonemi() {
 }
 
 /** YG-532: LGM poliçesi, imza sirküleri, broker ve acente yetki belgeleri; bitişe göre uyarı. */
+/** YG-1145: tamamlanan, bekleyen ve başarısız gönderim parçaları ayrı görünür. */
+function GonderimDurumu({ id }: { id: string }) {
+  const [v, setV] = useState<{ ozet: { tamamlandi: number; bekliyor: number; basarisiz: number }; satirlar: { kanal: string; konu: string; hedef: string; parca: string; deneme: number }[] } | null>(null);
+  return <><div className="bolum">Gönderim Durumu</div>
+    <button className="btn2 kucuk" onClick={() => void istek<NonNullable<typeof v>>(`/dosya/${id}/gonderimler`).then(setV).catch(() => setV(null))}>Gönderimleri Göster</button>
+    {v && <div className="ozet"><div>Tamamlandı: {v.ozet.tamamlandi} · Bekliyor: {v.ozet.bekliyor} · Başarısız: {v.ozet.basarisiz}</div>{v.satirlar.map((x, n) => <div key={n}>{x.parca} · {x.kanal} · {x.konu} · {x.hedef}{x.deneme > 1 ? ` · ${x.deneme} deneme` : ''}</div>)}</div>}</>;
+}
+
 /** YG-1272: dışarıdan gelen banka, fiyat, kapsam veya teslim değişikliği; kayıtlı numaradan teyit edilmeden uygulanmaz. */
 function DisTalepler({ id }: { id: string }) {
   const [l, setL] = useState<{ kimlik: string; tur: string; gelis_kanali: string; gonderen: string; ozet: string; durum: string; guvenlik_uyarisi: string | null }[]>([]); const [f, setF] = useState({ tur: 'Kapsam', kanal: 'E-posta', gonderen: '', ozet: '' }); const [ty, setTy] = useState({ telefon: '', not: '' }); const [m, setM] = useState('');
