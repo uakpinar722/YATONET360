@@ -740,3 +740,13 @@ describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
     expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().fotograflar).toEqual([]);
   });
 });
+
+describe('WhatsApp otomatik ileti süzgeci (MSJ-3)', () => {
+  it('tutar ve doğrulama kodu ayıklanır; dosya numarası kalır', async () => {
+    const { whatsappMetni } = await import('../src/bildirim.js');
+    expect(whatsappMetni('Acil İlk Tedbir: LGM-2026-11-0001')).toBe('Acil İlk Tedbir: LGM-2026-11-0001');
+    expect(whatsappMetni('Teklif 1.234,56 EUR onayınızda')).toBe('Teklif onayınızda');
+    expect(whatsappMetni('Kodunuz 482913')).toBe('Kodunuz');
+    expect(whatsappMetni('Ödeme TL 500 bekleniyor')).toBe('Ödeme bekleniyor');
+  });
+});

@@ -57,10 +57,15 @@ export async function bildir(db: Db, b: Bildirimi, simdi = new Date()): Promise<
     if (b.eposta && ana === 'E-posta' && h.e_posta) await kuyruk(db, b.olay, k, 'E-posta', h.e_posta, b.baslik, metin, b.oncelik, plan);
     if (((b.eposta && ana === 'SMS') || b.sms) && h.cep_telefonu) await kuyruk(db, b.olay, k, 'SMS', h.cep_telefonu, b.baslik, metin, b.oncelik, plan);
     if (b.eposta && ana === 'WhatsApp') {
-      if (h.cep_telefonu) await kuyruk(db, b.olay, k, 'WhatsApp', h.cep_telefonu, b.baslik, b.baslik, b.oncelik, plan);
+      if (h.cep_telefonu) await kuyruk(db, b.olay, k, 'WhatsApp', h.cep_telefonu, b.baslik, whatsappMetni(b.baslik), b.oncelik, plan);
       else if (h.e_posta) await kuyruk(db, b.olay, k, 'E-posta', h.e_posta, b.baslik, metin, b.oncelik, plan);
     }
   }
+}
+
+/** MSJ-3: otomatik WhatsApp iletisinde doğrulama kodu ve fiyat yer almaz; tutar ve kod biçimli sayı ayıklanır. Serbest yazışma bu süzgeçten geçmez. */
+export function whatsappMetni(m: string): string {
+  return m.replace(/\d[\d.]*(,\d+)?\s*(EUR|TL|€|₺)/gi, '').replace(/(EUR|TL|€|₺)\s*\d[\d.,]*/gi, '').replace(/(?<![\w-])\d{6}(?![\w-])/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([:·,.])/g, '$1').trim();
 }
 
 async function kuyruk(db: Db, olay: string, k: string | null, kanal: string, hedef: string, konu: string, metin: string, oncelik: string | undefined, plan: Date) {
