@@ -98,6 +98,23 @@ export async function limitYonlendir(db: Db, onay: string, kullanici: string, tu
   return `${metin} ${dil === 'en' ? 'The approval has been forwarded to your authorised colleague.' : 'Onay, kurumunuzun yetkili kişisine iletilmiştir.'}`;
 }
 
+/** YG-990: dönemsel gözetim. Birden çok rol taşıyanlar ve aynı işte birden çok adımda karar verenler listelenir. */
+export async function gorevAyriligiRaporu(db: Db, gun = 31) {
+  const coklu = (await db.query(`SELECT h.ad_soyad, array_agg(x.rol_adi ORDER BY x.rol_adi) roller FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND h.kullanici_grubu = 'LGM İç Rolü' GROUP BY h.kimlik, h.ad_soyad HAVING count(*) > 1 ORDER BY h.ad_soyad`)).rows;
+  const ayniKisi = (await db.query(`SELECT k.baslik, h.ad_soyad, count(DISTINCT a.kademe)::int kademe, bool_or(a.yapan_ref = k.hazirlayan_ref) hazirlayan_karar FROM is_karti_adim a JOIN is_karti k ON k.kimlik = a.is_ref JOIN kullanici_hesabi h ON h.kimlik = a.yapan_ref WHERE a.zaman > now() - make_interval(days => $1) GROUP BY k.kimlik, k.baslik, h.ad_soyad HAVING count(DISTINCT a.kademe) > 1 OR bool_or(a.yapan_ref = k.hazirlayan_ref) ORDER BY k.baslik`, [gun])).rows;
+  return { cokluRol: coklu, ayniKisiAdimlari: ayniKisi };
+}
+
+/** YG-990: ayda bir İç Denetim Müdürüne gözetim görevi; bulgu yoksa görev açılmaz. */
+export async function gorevAyriligiIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const donem = simdi.toISOString().slice(0, 7);
+  const r = await gorevAyriligiRaporu(db);
+  if (!r.ayniKisiAdimlari.length && !r.cokluRol.length) return 0;
+  if (!(await birKez(db, 'gorev_ayriligi', donem))) return 0;
+  await kartAc(db, { tur: 'Görev Ayrılığı Gözetimi', kategori: 'gorev', baslik: `${donem} · Görev Ayrılığı Gözetimi`, ozet: `Birden çok rol taşıyan: ${r.cokluRol.length} kişi · aynı işte birden çok adım veya kendi işine karar: ${r.ayniKisiAdimlari.length} kayıt. İncelemeniz rica olunur.`, sahipRol: await rolId(db, 'İç Denetim Müdürü') });
+  return 1;
+}
+
 /** Cayma: kayıt, ONY-19 bildirimi, iade hesabı görevi (YG-1450, YG-1493). */
 export async function caymaIsle(c: Db, kayit: string, kanal: string) {
   const k = (await c.query(`SELECT k.*, d.dosya_no, d.yazisma_dili, f.teklif_no, f.surum_no FROM on_bilgilendirme_cayma_kaydi k JOIN dosya d ON d.kimlik = k.dosya_ref JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE k.kimlik = $1`, [kayit])).rows[0];
@@ -274,6 +291,9 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const { pdfUret } = await import('./pdf.js');
     return y.type('application/pdf').header('Content-Disposition', `inline; filename="${encodeURIComponent(v.dosyaAdi)}"`).send(await pdfUret(v.t));
   });
+
+  // YG-990: gözetim raporu İç Denetim, Hukuk ve Uyum, GMY ve CEO'ya açıktır.
+  s.get('/rapor/gorev-ayriligi', oturumlu, async (i, y) => (await rolVar(i.oturum!.kullanici, ['İç Denetim Müdürü', 'İç Denetçi', HUD, 'Genel Müdür Yardımcısı', 'CEO'])) ? gorevAyriligiRaporu(b.db) : yok(y));
 
   // YG-1078: yasal ayıp ve rücu listesi yalnız Direktör ve üstü; Müdürler göremez.
   s.get('/rapor/yasal-ayip', oturumlu, async (i, y) => {
