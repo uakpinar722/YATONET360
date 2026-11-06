@@ -574,3 +574,31 @@ describe('saklama başlangıcı (YG-1223)', () => {
     expect((await o.sup.query(`SELECT 1 FROM imha_kalemi WHERE liste_ref = $1 AND nesne_kimligi = $2`, [l2, h])).rowCount).toBe(1);
   });
 });
+
+describe('kurumsal belge süreleri (YG-532)', () => {
+  it('LGM poliçesi 45 günde, acente yetkisi 30 günde uyarır; yenilenen eski belge uyarmaz', async () => {
+    const { sureUyariIsle } = await import('../src/uyum.js');
+    const gun = (x: number) => new Date(Date.now() + x * 86_400_000).toISOString().slice(0, 10); const c = await o.gir('hud');
+    expect((await o.ist('POST', '/api/kurum-belgesi', await o.gir('ds'), { tur: 'İmza Sirküleri', ad: 'X', bitis: gun(10) })).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/kurum-belgesi', c, { tur: 'Poliçe', ad: 'X', bitis: gun(10) })).statusCode).toBe(400);
+    const p = (await o.ist('POST', '/api/kurum-belgesi', c, { tur: 'LGM Sigorta Poliçesi', ad: 'Mesleki Sorumluluk', karsiTaraf: 'Sigortacı A', bitis: gun(40) })).json().kimlik;
+    const a = (await o.ist('POST', '/api/kurum-belgesi', c, { tur: 'Acente Yetki Belgesi', ad: 'Acente B', bitis: gun(25) })).json().kimlik;
+    const e = (await o.ist('POST', '/api/kurum-belgesi', c, { tur: 'İmza Sirküleri', ad: 'Eski Sirküler', bitis: gun(10) })).json().kimlik;
+    await o.ist('POST', '/api/kurum-belgesi', c, { tur: 'İmza Sirküleri', ad: 'Yeni Sirküler', bitis: gun(700), yenilenen: e });
+    await sureUyariIsle(o.db);
+    const z = (await o.sup.query(`SELECT anahtar FROM zamanlanmis_is WHERE ad = 'kurum_belgesi'`)).rows.map((r) => r.anahtar);
+    expect(z).toEqual(expect.arrayContaining([`${p}:45`, `${a}:30`])); expect(z.some((x) => x.startsWith(e))).toBe(false);
+  });
+});
+
+describe('tür bazlı belge erişimi (YG-609, YG-1075)', () => {
+  it('firma müşteri ve fiyat belgesini, müşteri iş emrini, dış kullanıcı Kurumsal sınıfı göremez', async () => {
+    const { disTurEngeli } = await import('../src/belge.js');
+    const g = (belge_turu: string, bilgi_sinifi = 'Gizli') => ({ belge_turu, bilgi_sinifi });
+    expect(disTurEngeli('İş Birliği Firması', g('Fiyat Teklifi'))).toBe(true); expect(disTurEngeli('İş Birliği Firması', g('Teknik Rapor'))).toBe(true);
+    expect(disTurEngeli('İş Birliği Firması', g('İş Emri'))).toBe(false); expect(disTurEngeli('Tedarikçi', g('Proforma'))).toBe(true);
+    expect(disTurEngeli('Bireysel Müşteri (Yat Sahibi/Yetkilisi)', g('İş Emri'))).toBe(true); expect(disTurEngeli('Bireysel Müşteri (Yat Sahibi/Yetkilisi)', g('Fiyat Teklifi'))).toBe(false);
+    expect(disTurEngeli('Sigorta Şirketi / Eksper', g('Uyuşmazlık Paketi'))).toBe(true); expect(disTurEngeli('Sigorta Şirketi / Eksper', g('Fotoğraf', 'Kurumsal'))).toBe(true);
+    expect(disTurEngeli('LGM İç Rolü', g('Uyuşmazlık Paketi', 'Kurumsal'))).toBe(false);
+  });
+});

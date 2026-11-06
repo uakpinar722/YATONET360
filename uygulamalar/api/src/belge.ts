@@ -16,6 +16,21 @@ type Db = Pool | PoolClient;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const KANAL = ['WhatsApp', 'E-posta', 'Elden', 'Firma Portalı', 'Sistem'];
 const SINIF = ['Kamuya Açık', 'Kurumsal', 'Gizli', 'Kritik'];
+
+/**
+ * YG-609, YG-1075: ana dosyaya erişim içindeki her belge türünü indirme hakkı vermez. Dış kullanıcı Kurumsal sınıftaki belgeyi
+ * ve kendi grubuna kapalı türleri göremez (kendi yüklediği hariç): firma, tedarikçi ve tesis müşteri/fiyat belgelerini; müşteri ve sigorta iş emrini görmez.
+ */
+const MUSTERI_BELGESI = ['Fiyat Teklifi', 'Teknik Rapor', 'Onay Belgesi', 'Proforma', 'Ödeme Talebi', 'Ödeme Sorumluluğu', 'Mutabakat Raporu', 'Ön Bilgilendirme Formu'];
+export function disKapaliTurler(grup: string): string[] {
+  if (grup === 'LGM İç Rolü') return [];
+  const firma = grup === 'İş Birliği Firması' || grup === 'Tedarikçi' || grup.startsWith('Tesis');
+  return firma ? [...MUSTERI_BELGESI, 'Uyuşmazlık Paketi'] : ['İş Emri', 'Uyuşmazlık Paketi'];
+}
+export function disTurEngeli(grup: string, e: { belge_turu: string; bilgi_sinifi: string }): boolean {
+  if (grup === 'LGM İç Rolü') return false;
+  return e.bilgi_sinifi === 'Kurumsal' || disKapaliTurler(grup).includes(e.belge_turu);
+}
 const KOD_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const PAYLASIM_KOD_DK = 10; const PAYLASIM_HATA = 5;
 
@@ -90,6 +105,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const e = (await b.db.query(`SELECT * FROM belge WHERE kimlik = $1`, [id])).rows[0];
     if (!e) return null;
     if (e.olusturan_ref === kullanici) return { e, tum: true };
+    if (disTurEngeli(grup, e)) return null;
     if (e.bilgi_sinifi === 'Kritik' && !(await b.db.query(`SELECT 1 FROM belge_erisim_grubu WHERE belge_ref = $1 AND kullanici_ref = $2`, [id, kullanici])).rowCount) return null; // YG-1160
     const bag = BAGLAR.get(e.bag_turu);
     if (!bag || (await bag(b.db, kullanici, e.bag_kimligi)) !== 'tamam') return null;
@@ -171,7 +187,8 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
               coalesce(json_agg(json_build_object('no', s.surum_no, 'dosya', s.dosya_adi, 'boyut', s.boyut, 'durum', s.durum, 'yukleme', s.yukleme_zamani, 'yururluk', s.yururluk_tarihi, 'gerekce', CASE WHEN $4 THEN s.degisiklik_gerekcesi END) ORDER BY s.surum_no DESC), '[]') AS surumler
          FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik
         WHERE e.bag_turu = $1 AND e.bag_kimligi = $2 AND (e.bilgi_sinifi <> 'Kritik' OR e.olusturan_ref = $3) AND ($4 OR e.olusturan_ref = $3 OR s.durum = 'Yürürlükte')
-        GROUP BY e.kimlik ORDER BY e.olusturma_zamani DESC`, [bagTuru, bagKimligi, o.kullanici, lgm]);
+          AND ($4 OR e.olusturan_ref = $3 OR (e.bilgi_sinifi <> 'Kurumsal' AND NOT e.belge_turu = ANY($5)))
+        GROUP BY e.kimlik ORDER BY e.olusturma_zamani DESC`, [bagTuru, bagKimligi, o.kullanici, lgm, disKapaliTurler(o.grup)]);
     return rows;
   });
 

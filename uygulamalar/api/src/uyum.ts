@@ -85,6 +85,13 @@ export async function sureUyariIsle(db: Pool, simdi = new Date()): Promise<numbe
     const k = kalan(c.b); if (k < 0) { await db.query(`UPDATE olcum_cihazi SET kabul = false WHERE kimlik = $1`, [c.kimlik]); n++; continue; } // YG-533: süresi geçen kullanılabilir görünmez
     const e = esik(k, [60, 30]); if (e) await uyar('kalibrasyon', c.kimlik, e, kk, `Kalibrasyon Süresi Doluyor · ${e} Gün`, `${c.ad} · ${c.seri_no} · Son: ${G(c.b)}`);
   }
+  // YG-532: LGM poliçesi ve imza sirküleri 90/45/15 gün (kaydeden, Hukuk ve Uyum, GMY, CEO); broker ve acente yetki belgesi 60/30 gün (kaydeden, Sicil Sorumlusu, Hukuk ve Uyum).
+  const hud = await rolSahipleri(db, await rolId(db, HUD));
+  for (const q of (await db.query(`SELECT kimlik, tur, ad, karsi_taraf, bitis, kaydeden_ref FROM kurum_belgesi WHERE durum = 'Geçerli'`)).rows) {
+    const lgm = q.tur === 'LGM Sigorta Poliçesi' || q.tur === 'İmza Sirküleri';
+    const e = esik(kalan(q.bitis), lgm ? [90, 45, 15] : [60, 30]); if (!e) continue;
+    await uyar('kurum_belgesi', q.kimlik, e, lgm ? [q.kaydeden_ref, ...ust] : [q.kaydeden_ref, ...sc, ...hud], `${q.tur} Yenilemesi · ${e} Gün`, `${q.ad}${q.karsi_taraf ? ` · ${q.karsi_taraf}` : ''} · Bitiş: ${G(q.bitis)}`);
+  }
   // YG-533: firma ekipmanı bakım ve kalibrasyon bitişi; süresi geçen kullanılabilir gösterilmez.
   for (const q of (await db.query(`SELECT e.kimlik, e.ad, e.seri_no, e.kurulus_ref, u.ticari_unvan, least(e.bakim_bitis, e.kalibrasyon_bitis) b FROM firma_ekipmani e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.kullanilabilir AND coalesce(e.bakim_bitis, e.kalibrasyon_bitis) IS NOT NULL`)).rows) {
     const k = kalan(q.b); if (k < 0) { await db.query(`UPDATE firma_ekipmani SET kullanilabilir = false WHERE kimlik = $1`, [q.kimlik]); n++; continue; }

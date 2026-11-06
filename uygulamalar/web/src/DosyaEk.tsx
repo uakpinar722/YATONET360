@@ -278,3 +278,19 @@ export function ButceDonemi() {
       <button className="btn2" onClick={() => void istek(`/butce/${yil}/talep`, { ...f, birim: f.birim || undefined, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')) }).then(() => { setF({ ...f, aciklama: '', tutar: '', gerekce: '' }); setM('Talep eklendi.'); return yk(); }).catch((e) => setM(e.message))}>Talep Ekle</button></>}
     {v.durum === 'Hazırlık' && v.onaylayabilir && <button className="btn2" onClick={() => void istek(`/butce/${yil}/onay`, {}).then(() => { setM('Bütçe onaylandı.'); return yk(); }).catch((e) => setM(e.message))}>Bütçeyi Onayla</button>}</>;
 }
+
+/** YG-532: LGM poliçesi, imza sirküleri, broker ve acente yetki belgeleri; bitişe göre uyarı. */
+export function KurumBelgeleri() {
+  const T = ['LGM Sigorta Poliçesi', 'İmza Sirküleri', 'Broker Yetki Belgesi', 'Acente Yetki Belgesi'];
+  const [l, setL] = useState<{ kimlik: string; tur: string; ad: string; karsi_taraf: string | null; bitis: string; durum: string }[] | null>(null); const [f, setF] = useState({ tur: '', ad: '', karsiTaraf: '', bitis: '', yenilenen: '' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/kurum-belgesi').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Kurumsal Belgeler</div>{m && <div className="not" role="status">{m}</div>}<div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tur} · {x.ad}{x.karsi_taraf ? ` · ${x.karsi_taraf}` : ''} · Bitiş: {x.bitis.split('-').reverse().join('.')} · {x.durum}</div>)}</div>
+    <label htmlFor="kb-t">Belge Türü</label><select id="kb-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}><option value="">Seçiniz</option>{T.map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="kb-a">Belge Adı / No</label><input id="kb-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+    <label htmlFor="kb-k">Karşı Taraf (Sigorta Şirketi, Broker, Acente)</label><input id="kb-k" value={f.karsiTaraf} onChange={(e) => setF({ ...f, karsiTaraf: e.target.value })} />
+    <label htmlFor="kb-b">Bitiş</label><input id="kb-b" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} />
+    <label htmlFor="kb-y">Yenilenen Belge (varsa)</label><select id="kb-y" value={f.yenilenen} onChange={(e) => setF({ ...f, yenilenen: e.target.value })}><option value="">Yok</option>{l.filter((x) => x.durum === 'Geçerli').map((x) => <option key={x.kimlik} value={x.kimlik}>{x.tur} · {x.ad}</option>)}</select>
+    <button className="btn2" onClick={() => void istek('/kurum-belgesi', { ...f, yenilenen: f.yenilenen || undefined }).then(() => { setF({ tur: '', ad: '', karsiTaraf: '', bitis: '', yenilenen: '' }); setM('Belge kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Belge Kaydet</button></>;
+}

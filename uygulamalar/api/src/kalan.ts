@@ -324,6 +324,20 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     return { kimlik: r.rows[0].kimlik };
   });
 
+  // YG-532: LGM'nin kurumsal belgeleri; yenilenen belge eskisini "Yenilendi" yapar.
+  const KB_TUR = ['LGM Sigorta Poliçesi', 'İmza Sirküleri', 'Broker Yetki Belgesi', 'Acente Yetki Belgesi'];
+  const kbci = (k: string) => rolVar(k, ['CEO', 'Genel Müdür Yardımcısı', HUD, TID, MFM, 'Sicil Sorumlusu']);
+  s.get('/kurum-belgesi', oturumlu, async (i, y) => (await kbci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kimlik, tur, ad, karsi_taraf, bitis::text, durum FROM kurum_belgesi ORDER BY durum, bitis`)).rows : yok(y));
+  s.post('/kurum-belgesi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; ad?: string; karsiTaraf?: string; bitis?: string; belge?: string; yenilenen?: string };
+    if (!(await kbci(o.kullanici))) return yok(y);
+    if (!KB_TUR.includes(g.tur ?? '') || !g.ad?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.bitis ?? '')) return y.code(400).send({ hata: 'Tür, belge adı ve bitiş tarihini girmenizi rica ederiz.' });
+    const r = (await b.db.query(`INSERT INTO kurum_belgesi (tur, ad, karsi_taraf, bitis, belge_ref, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.tur, g.ad.trim(), g.karsiTaraf?.trim() || null, g.bitis, g.belge && UUID.test(g.belge) ? g.belge : null, o.kullanici])).rows[0];
+    if (g.yenilenen && UUID.test(g.yenilenen)) await b.db.query(`UPDATE kurum_belgesi SET durum = 'Yenilendi' WHERE kimlik = $1 AND durum = 'Geçerli'`, [g.yenilenen]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Belge Kaydı', nesneTuru: 'Kurumsal Belge', nesneKimligi: r.kimlik, yeni: { tur: g.tur, bitis: g.bitis }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return r;
+  });
+
   // YG-1472: resmî tatil ve arife takvimi; yıllık parametre, CEO veya GMY girer.
   s.get('/takvim', oturumlu, async (i, y) => i.oturum!.grup === 'LGM İç Rolü' ? (await b.db.query(`SELECT tarih::text, ad, yarim_gun FROM resmi_tatil WHERE tarih >= current_date - 31 ORDER BY tarih`)).rows : yok(y));
   s.post('/takvim', oturumlu, async (i, y) => {

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
-import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
+import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, KurumBelgeleri, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
@@ -734,6 +734,7 @@ export function IdariIslemler() {
       <MaliParametreler />
       <TatilTakvimi />
       <ButceDonemi />
+      <KurumBelgeleri />
       <YasalAyipRaporu />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
