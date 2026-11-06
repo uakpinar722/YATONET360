@@ -12,7 +12,7 @@ import { belgeUret } from './belge_uret.js';
 import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import { onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { altNumara } from './sure.js';
-import { firmaFiyatYansit, parametre, isGunuSonu } from './teklif.js';
+import { firmaFiyatYansit, parametre, isGunuSonu, teklifKdvUygula } from './teklif.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
@@ -158,6 +158,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, ana_teklif_ref, dosya_ref, cetvel_ref, teklif_muhatabi, teklif_dili, kdv_orani, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,$3,$4,'Yat Sahibi',$5,$6,$7,$8,$9,$7,$10) RETURNING kimlik`, [no, t.kimlik, t.dosya_ref, t.cetvel_ref, t.teklif_dili, t.kdv_orani, ara, kdv, R2(ara + kdv), o.kullanici])).rows[0];
       let n = 0;
       for (const k of kl) await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`, [r.kimlik, ++n, k.satir_ref, k.kartela_kodu, k.kartela_surumu, k.kartela_disi, k.aciklama, k.isin_niteligi, k.bedel_turu, k.miktar, k.birim, k.firma_kalem_ref, k.birim_maliyet_eur, k.birim_satis_fiyati_eur, k.tutar_eur, false, k.opsiyon]);
+      await teklifKdvUygula(c, r.kimlik); // KDV-1
       return { kimlik: r.kimlik, teklifNo: no, tutar: ara };
     });
   });

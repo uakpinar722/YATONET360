@@ -434,3 +434,26 @@ describe('keşif mahsubu satırı ve klas hatırlatması (YG-864, YG-334)', () =
     expect(klasBildirimSonu('2027-03-10T12:00:00Z')?.toISOString()).toBe('2027-03-08T12:00:00.000Z'); expect(klasBildirimSonu(null)).toBeUndefined();
   });
 });
+
+describe('teklifte KDV hesabı (KDV-1)', () => {
+  const kur = async (muhatap: string, musteriTuru = 'Bireysel Müşteri') => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET musteri_turu = $2 WHERE kimlik = $1`, [d.kimlik, musteriTuru]);
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, ara_toplam_eur, hazirlayan_ref) VALUES ($1,$2,'Onarım',$3,20,1000,$4) RETURNING kimlik`, [`T-${++n}`, d.kimlik, muhatap, o.K.ts])).rows[0].kimlik as string;
+    for (const [i, b, x] of [[1, 'İşçilik', 600], [2, 'Malzeme', 400]] as [number, string, number][]) await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,$2,'K','Onarım',$3,1,'Adet',$4,$4,$4)`, [t, i, b, x]);
+    return { d, t };
+  };
+  const oku = async (t: string) => { const r = (await o.sup.query(`SELECT kdv_tutari_eur k, tevkifat_eur v, genel_toplam_eur g FROM fiyat_teklifi WHERE kimlik = $1`, [t])).rows[0]; return [Number(r.k), Number(r.v), Number(r.g)]; };
+  it('standart, istisna ve tevkifat doğru hesaplanır; istisnada KDV yalnız malzemeden', async () => {
+    const { teklifKdvUygula } = await import('../src/teklif.js');
+    const a = await kur('Yat Sahibi'); expect(await teklifKdvUygula(o.db, a.t)).toBe(1200); expect(await oku(a.t)).toEqual([200, 0, 1200]);
+    const b = await kur('Yat Sahibi');
+    const bk = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('İ','K','Gizli','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [b.d.kimlik, o.K.ds])).rows[0].kimlik;
+    const tr = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref, kdv_istisna_belge_ref, kdv_istisna_bitis) VALUES ($1,'Gerçek kişi','Bireysel Müşteri','İ','{Yat Sahibi}',$2,$3,'2099-01-01') RETURNING kimlik`, [`TR-K${++n}`, o.K.ds, bk])).rows[0].kimlik;
+    await o.sup.query(`UPDATE yat SET yat_sahibi_ref = $2 WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [b.d.kimlik, tr]);
+    expect(await teklifKdvUygula(o.db, b.t)).toBe(1080); expect(await oku(b.t)).toEqual([80, 0, 1080]);
+    const c = await kur('Sigorta Şirketi', 'Sigorta Şirketi');
+    await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,'Tevkif Sigorta',$2)`, [c.d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO sigorta_vergi_profili (sigortaci_adi, kdv_uygulamasi, tevkifat_pay, tevkifat_payda, yururluk, dayanak_belge_ref, kaydeden_ref) VALUES ('Tevkif Sigorta','KDV tevkifatlı',9,10,'2020-01-01',$1,$2)`, [bk, o.K.ds]);
+    expect(await teklifKdvUygula(o.db, c.t)).toBe(1020); expect(await oku(c.t)).toEqual([200, 180, 1020]);
+  });
+});

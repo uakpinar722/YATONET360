@@ -98,9 +98,22 @@ export async function firmaFiyatYansit(c: Db, firmaKalem: string): Promise<numbe
     }
     const top = toplamlar((await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [f.kimlik])).rows, f.indirim_orani === null ? null : Number(f.indirim_orani), Number(f.kesif_mahsubu_eur ?? 0), Number(f.kdv_orani));
     await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [f.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
+    await teklifKdvUygula(c, f.kimlik);
     n++;
   }
   return n;
+}
+
+/** KDV-1, YG-878: teklifin KDV'si proformayla aynı kuralla: istisnada yalnız parça ve malzeme, tevkifat tahsil edilecekten düşer. */
+export async function teklifKdvUygula(c: Db, teklif: string): Promise<number> {
+  const f = (await c.query(`SELECT dosya_ref, teklif_muhatabi, ara_toplam_eur, indirim_tutari_eur, kesif_mahsubu_eur, kdv_orani FROM fiyat_teklifi WHERE kimlik = $1`, [teklif])).rows[0];
+  const ara = Number(f.ara_toplam_eur); const ind = Number(f.indirim_tutari_eur ?? 0); const matrah = R2(ara - ind - Number(f.kesif_mahsubu_eur ?? 0));
+  const malz = Number((await c.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND NOT opsiyon AND bedel_turu = 'Malzeme'`, [teklif])).rows[0].t);
+  const malzNet = ara > 0 ? R2(malz - (malz * ind) / ara) : 0;
+  const { kdvBelirle, kdvHesapla } = await import('./vergi.js');
+  const h = kdvHesapla(matrah, malzNet, Number(f.kdv_orani), await kdvBelirle(c, f.dosya_ref, f.teklif_muhatabi));
+  await c.query(`UPDATE fiyat_teklifi SET kdv_tutari_eur = $2, tevkifat_eur = $3, genel_toplam_eur = $4 WHERE kimlik = $1`, [teklif, h.kdv, h.tevkifat, h.toplam]);
+  return h.toplam;
 }
 
 export function toplamlar(kalemler: { tutar_eur: number | string; opsiyon: boolean }[], indirimOrani: number | null, kesifMahsubu: number, kdvOrani: number) {
@@ -313,9 +326,10 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       }
       const top = toplamlar(hesap, null, 0, kdvO);
       await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [t.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
+      const genelT = await teklifKdvUygula(c, t.kimlik);
       await c.query(`UPDATE firma_fiyat_teklifi SET durum = 'Seçildi' WHERE kimlik = $1`, [g.firmaTeklifi]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Fiyat Teklifi Hazırlandı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { no, toplam: top.ara }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-      return { kimlik: t.kimlik, teklifNo: no, araToplam: top.ara, genelToplam: top.genel, bantDisi, uyarilar: await kartelaUyarilari(c, kodlar) };
+      return { kimlik: t.kimlik, teklifNo: no, araToplam: top.ara, genelToplam: genelT, bantDisi, uyarilar: await kartelaUyarilari(c, kodlar) };
     });
   });
 
@@ -359,8 +373,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const kalem = (await b.db.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
     const top = toplamlar(kalem, g.oran!, Number(t.kesif_mahsubu_eur), Number(t.kdv_orani));
     await b.db.query(`UPDATE fiyat_teklifi SET indirim_orani = $2, indirim_gerekcesi = $3, indirim_tutari_eur = $4, kdv_tutari_eur = $5, genel_toplam_eur = $6, onay_limit_tutari_eur = $7, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, g.oran, g.gerekce.trim(), top.ind, top.kdv, top.genel, top.matrah]);
+    const genelT = await teklifKdvUygula(b.db, t.kimlik);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklif İndirimi', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { oran: g.oran, tutar: top.ind }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { indirim: top.ind, genelToplam: top.genel };
+    return { indirim: top.ind, genelToplam: genelT };
   });
 
   // YG-187: bant dışı kalem varsa önce TİD'in gerekçeli onayı.
@@ -393,7 +408,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const kl = (await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
       const top = toplamlar(kl, t.indirim_orani === null ? null : Number(t.indirim_orani), Number(t.kesif_mahsubu_eur), Number(t.kdv_orani));
       await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, indirim_tutari_eur = $3, kdv_tutari_eur = $4, genel_toplam_eur = $5, onay_limit_tutari_eur = $6, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, top.ara, top.ind, top.kdv, top.genel, top.matrah]);
-      return { sira, araToplam: top.ara, genelToplam: top.genel };
+      const genelT = await teklifKdvUygula(c, t.kimlik);
+      return { sira, araToplam: top.ara, genelToplam: genelT };
     });
   });
 
