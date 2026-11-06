@@ -877,3 +877,15 @@ describe('uyuşmazlık paketi ek bölümleri (YG-107)', () => {
     expect(b.find((x) => x.baslik === 'Belge Bütünlük Özetleri')!.satirlar!.some((r) => r[2] === oz)).toBe(true);
   });
 });
+
+describe('e-postası olmayan alıcıya iletim (YG-207, YG-239)', () => {
+  it('onay sonucu SMS ile hesap bağlantısıyla gider; hesabı yoksa Dosya Sorumlusuna kalıcı saklayıcı görevi açılır', async () => {
+    const { epostasizIletim } = await import('../src/onay_iletim.js');
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const on = crypto.randomUUID(); const c = await o.db.connect();
+    try { await epostasizIletim(c, { kimlik: on, telefon: '+905001112244', alici_kullanici_ref: null, dosya_ref: d.kimlik, belge_adi: 'Fiyat Teklifi' }, 'Onayınız kaydedildi.', 'http://ornek'); } finally { c.release(); }
+    expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 AND kanal = 'SMS'`, [`onay-sonuc:${on}`])).rows[0].metin).toContain('http://ornek');
+    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Onay Belgesi' AND nesne = $1`, [on])).rowCount).toBe(1);
+    expect((await o.kart('Kalıcı Saklayıcıyla İletim', on)).baslik).toContain('Kalıcı Saklayıcıyla İletim');
+  });
+});
