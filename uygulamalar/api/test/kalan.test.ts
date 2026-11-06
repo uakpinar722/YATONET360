@@ -790,3 +790,16 @@ describe('kısmi başarı: gönderim parçaları (YG-1145)', () => {
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/gonderimler`, await o.gir('sy'))).statusCode).toBe(404);
   });
 });
+
+describe('belgede maliyet sızıntısı (YG-1158, YG-992)', () => {
+  it('firma bedeli müşteri belgesinde geçerse belge durur; benzer sayı ve firma belgesi etkilenmez', async () => {
+    const { belgeMaskeEngeli } = await import('../src/yetki_ek.js');
+    const d = await o.dosyaAc({}, {});
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'MF','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-MF${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K',1234.5,$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds]);
+    expect(await belgeMaskeEngeli(o.db, 'Fiyat Teklifi', d.kimlik, 'Toplam 1.234,50 EUR')).toContain('maliyeti');
+    expect(await belgeMaskeEngeli(o.db, 'Proforma', d.kimlik, 'Total 1,234.50 EUR')).toContain('maliyeti');
+    expect(await belgeMaskeEngeli(o.db, 'Fiyat Teklifi', d.kimlik, 'Toplam 11.234,50 EUR')).toBeNull();
+    expect(await belgeMaskeEngeli(o.db, 'İş Emri', d.kimlik, 'Bedel 1.234,50 EUR')).toBeNull();
+  });
+});

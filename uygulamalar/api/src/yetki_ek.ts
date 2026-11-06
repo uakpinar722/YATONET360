@@ -37,7 +37,13 @@ export async function belgeMaskeEngeli(db: Db, tur: string, dosya: string, metin
     return var_(s) ? 'Sigorta bilgisi firma belgesinde yer alamaz.' : null;
   }
   const f = (await db.query(`SELECT u.ticari_unvan n FROM is_emri e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND u.kayit_rolu <> 'Tesis'`, [dosya])).rows.map((r) => r.n as string);
-  return var_(f) ? 'Firma kimliği müşteri ve sigorta belgesinde yer alamaz.' : null;
+  if (var_(f)) return 'Firma kimliği müşteri ve sigorta belgesinde yer alamaz.';
+  // YG-1158, YG-992: firma birim fiyatı ve iş emri bedeli (LGM maliyeti) müşteri ve sigorta belgesinde geçemez; satış tutarlarıyla çakışan değer sayılmaz.
+  const { tutar } = await import('./metin.js');
+  const mal = (await db.query(`SELECT k.birim_fiyat_eur v FROM firma_fiyat_kalemi k JOIN firma_fiyat_teklifi t ON t.kimlik = k.teklif_ref WHERE t.dosya_ref = $1 UNION SELECT firma_bedeli_eur FROM is_emri WHERE dosya_ref = $1 AND firma_bedeli_eur IS NOT NULL`, [dosya])).rows.map((r) => Number(r.v));
+  const sat = new Set((await db.query(`SELECT k.birim_satis_fiyati_eur v FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 UNION SELECT k.tutar_eur FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 UNION SELECT unnest(ARRAY[ara_toplam_eur, genel_toplam_eur, kdv_tutari_eur, indirim_tutari_eur]) FROM fiyat_teklifi WHERE dosya_ref = $1`, [dosya])).rows.map((r) => Number(r.v)));
+  const sizan = mal.filter((m) => m >= 10 && !sat.has(m)).some((m) => [tutar(m, 'tr'), tutar(m, 'en')].some((s) => new RegExp(`(^|[^\\d.,])${s.replace(/[.,]/g, '\\$&')}($|[^\\d])`).test(metin)));
+  return sizan ? 'Firma maliyeti müşteri ve sigorta belgesinde yer alamaz.' : null;
 }
 
 /** YG-1171: dosya belgesi, dosya tarafı olmayan alıcıya ancak onaylı hasar paylaşım talebiyle paylaşılır. */
