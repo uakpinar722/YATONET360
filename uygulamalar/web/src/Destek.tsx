@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { BelgeSec } from './Kalite';
 
 type Talep = { kimlik: string; talep_no: string; tur: string; seviye: string; durum: string; belirti: string; yanit_son: string; cozum_son: string | null; kullaniciya_sonuc: string | null; dosya_no: string | null };
 const zaman = (s: string | null) => (s ? new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '-');
 
+/** YG-1504: dosya veya iş emri ekranından açılan talep o dosyaya bağlanır ve dosyanın Dosya Sorumlusuna düşer. */
+export function DosyaDestek({ dosya }: { dosya: string }) {
+  const [b, setB] = useState(''); const [m, setM] = useState('');
+  return <><div className="bolum">Bu Dosya İçin Destek Talebi</div>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor={`dd-${dosya}`}>Destek Talebi Açıklaması</label><input id={`dd-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!b.trim()} onClick={() => void istek<{ talepNo: string }>('/destek', { tur: 'Soru', belirti: b.trim(), dosya }).then((r) => { setM(`${r.talepNo} açıldı.`); setB(''); }).catch((e) => setM(e.message))}>Talep Aç</button></>;
+}
+
 /** YG-1409–1412, YG-1504: Yardım | BT Destek / LGM Merkez; talep açma, taleplerim, BT çözüm kaydı ve kullanıcı doğrulaması. */
 export function DestekSayfasi({ lgm }: { lgm: boolean }) {
   const [f, setF] = useState({ tur: 'Hata', belirti: '', etki: '', beklenen: '', ekran: '', etkilenen: '1', sistemKullanilamiyor: false, kritikSurec: false, guvenlik: false, veriButunlugu: false, musteriMali: false });
-  const [l, setL] = useState<Talep[]>([]); const [bt, setBt] = useState<Talep[] | null>(null); const [m, setM] = useState('');
+  const [l, setL] = useState<Talep[]>([]); const [bt, setBt] = useState<Talep[] | null>(null); const [m, setM] = useState(''); const [son, setSon] = useState<string | null>(null); const [eg, setEg] = useState('');
   const [cz, setCz] = useState<Record<string, { yapilan: string; degisen: string; dogrulama: string; sonuc: string }>>({});
   const yk = () => { void istek<Talep[]>('/destek').then(setL).catch(() => setL([])); if (lgm) void istek<Talep[]>('/destek?hepsi=1').then(setBt).catch(() => setBt(null)); };
   useEffect(() => { yk(); }, []);
@@ -24,7 +33,8 @@ export function DestekSayfasi({ lgm }: { lgm: boolean }) {
     {f.tur === 'Hata' && <>
       <label htmlFor="ds-n">Etkilenen Kullanıcı veya İş Sayısı</label><input id="ds-n" inputMode="numeric" value={f.etkilenen} onChange={(e) => setF({ ...f, etkilenen: e.target.value })} />
       {K('sistemKullanilamiyor', 'Sistem kullanılamıyor')}{K('kritikSurec', 'Kritik süreç durdu')}{K('guvenlik', 'Güvenlik olayı')}{K('veriButunlugu', 'Veri hatalı veya kayıp')}{K('musteriMali', 'Müşteriyi veya ödemeyi etkiliyor')}</>}
-    <button className="btn2" disabled={!f.belirti.trim()} onClick={() => void istek<{ talepNo: string; seviye: string }>('/destek', { ...f, etkilenen: Number(f.etkilenen) || 1 }).then((r) => { setM(`${r.talepNo} açıldı (${r.seviye}).`); setF({ ...f, belirti: '', etki: '', beklenen: '', ekran: '' }); yk(); }).catch((e) => setM(e.message))}>Talep Gönder</button>
+    <button className="btn2" disabled={!f.belirti.trim()} onClick={() => void istek<{ kimlik: string; talepNo: string; seviye: string }>('/destek', { ...f, etkilenen: Number(f.etkilenen) || 1 }).then((r) => { setM(`${r.talepNo} açıldı (${r.seviye}).`); setSon(r.kimlik); setEg(''); setF({ ...f, belirti: '', etki: '', beklenen: '', ekran: '' }); yk(); }).catch((e) => setM(e.message))}>Talep Gönder</button>
+    {son && <BelgeSec ad="Ekran Görüntüsü (isteğe bağlı)" bagTuru="Destek Talebi" bagKimligi={son} deger={eg} sec={(x) => { setEg(x); void istek(`/destek/${son}/ekran-goruntusu`, { belge: x }).then(() => setM('Ekran görüntüsü eklendi.')).catch((e) => setM(e.message)); }} />}
     <div className="bolum">Taleplerim</div>
     <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.talep_no} · {x.seviye} · {x.tur} · {x.durum} · {x.belirti}{x.kullaniciya_sonuc ? ` · Sonuç: ${x.kullaniciya_sonuc}` : ''}
       {x.durum === 'Çözüldü' && <><button className="btn2 kucuk" onClick={() => is(`/destek/${x.kimlik}/dogrula`, { sonuc: 'Çözüldü' }, 'Talep kapatıldı.')}>Çözüldü</button><button className="btn2 kucuk" onClick={() => is(`/destek/${x.kimlik}/dogrula`, { sonuc: 'Sorun Sürüyor' }, 'Talep yeniden incelenecek.')}>Sorun Sürüyor</button></>}</div>)}</div>

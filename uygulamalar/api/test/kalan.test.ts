@@ -941,3 +941,18 @@ describe('destek talebi (YG-1409–1412, YG-1504)', () => {
     expect((await o.ist('GET', `/api/destek/${y2.json().kimlik}`, await o.gir('ds'))).json().ilgili.map((x: { talep_no: string }) => x.talep_no)).toContain(r.json().talepNo);
   });
 });
+
+describe('destek talebi dosya bağlamı ve ekran görüntüsü (YG-1504)', () => {
+  it('dosya ekranından açılan talep Dosya Sorumlusuna düşer; ekran görüntüsü yalnız talebe bağlı belgeden eklenir', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const r = await o.ist('POST', '/api/destek', await o.gir('mpm'), { tur: 'Soru', belirti: 'Teslim tarihi nerede görünür', dosya: d.kimlik }); expect(r.statusCode, r.body).toBe(200);
+    const id = r.json().kimlik as string;
+    expect((await o.sup.query(`SELECT atanan_ref, dosya_ref FROM destek_talebi WHERE kimlik = $1`, [id])).rows[0]).toMatchObject({ atanan_ref: o.K.ds, dosya_ref: d.kimlik });
+    expect((await o.sup.query(`SELECT sahip_kullanici_ref FROM is_karti WHERE tur = 'Destek Talebi' AND nesne_kimligi = $1`, [id])).rows[0].sahip_kullanici_ref).toBe(o.K.ds);
+    const yabanci = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Başka','Foto','Gizli','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/destek/${id}/ekran-goruntusu`, await o.gir('mpm'), { belge: yabanci })).statusCode).toBe(400);
+    const eg = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Ekran','Foto','Gizli','Destek Talebi',$1,'Sistem',current_date,$2) RETURNING kimlik`, [id, o.K.mpm])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/destek/${id}/ekran-goruntusu`, await o.gir('mpm'), { belge: eg })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/destek/${id}/ekran-goruntusu`, await o.gir('ds'), { belge: eg })).statusCode).toBe(404);
+  });
+});

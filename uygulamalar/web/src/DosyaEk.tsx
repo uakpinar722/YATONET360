@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { DosyaDestek } from './Destek';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 
@@ -127,6 +128,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/onay-iste`, { ony: on.ony, parca: on.parca || undefined, tutar: on.tutar ? sayi(on.tutar) : undefined, zaman: on.zaman || undefined, kayitNo: on.kayitNo || undefined, teklifNo: on.teklifNo || undefined }), 'Onay ekranı yat sahibine gönderildi.')}>Onay İste</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/acil/${id}/ilk-tedbir-talebi`, {}), 'Acil İlk Tedbir talebi gönderildi.')}>Acil İlk Tedbir Talebi</button></div>
 
     <DisTalepler id={id} />
+    <DosyaDestek dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />

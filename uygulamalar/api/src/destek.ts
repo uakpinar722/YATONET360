@@ -10,6 +10,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
 import { tatilGunleri } from './sure.js';
 import { UUID } from './yat.js';
+import { belgeBagiKaydet } from './belge.js';
 
 type Db = Pool | PoolClient;
 const SAAT = 3_600_000; const TZ = 3 * SAAT;
@@ -51,6 +52,15 @@ export async function destekSureIsle(db: Pool, simdi = new Date()): Promise<numb
   }
   return n;
 }
+
+/** YG-1504: ekran görüntüsü talebe bağlı belge olarak yüklenir; talebi açan ve çözen görür. */
+belgeBagiKaydet('Destek Talebi', async (db, k, id) => {
+  if (!UUID.test(id)) return 'yok';
+  const t = (await db.query(`SELECT t.acan_ref, t.atanan_ref, d.dosya_sorumlusu_ref FROM destek_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [id])).rows[0];
+  if (!t) return 'yok';
+  if ([t.acan_ref, t.atanan_ref, t.dosya_sorumlusu_ref].includes(k)) return 'tamam';
+  return (await db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, BT])).rowCount ? 'tamam' : 'yetkisiz';
+});
 
 export function destekYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -115,6 +125,13 @@ export function destekYollari(s: FastifyInstance, b: Baglam) {
     const mesajlar = (await b.db.query(`SELECT m.metin, m.zaman, h.ad_soyad FROM destek_mesaji m JOIN kullanici_hesabi h ON h.kimlik = m.yazan_ref WHERE m.talep_ref = $1 ORDER BY m.zaman`, [a.t.kimlik])).rows;
     const ilgili = (await b.db.query(`SELECT kimlik, talep_no, durum FROM destek_talebi WHERE ilgili_ref = $1 OR kimlik = $2`, [a.t.kimlik, a.t.ilgili_ref])).rows;
     return { ...a.t, mesajlar, ilgili };
+  });
+  s.post('/destek/:id/ekran-goruntusu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const a = await talep((i.params as { id: string }).id, o.kullanici); const belge = ((i.body ?? {}) as { belge?: string }).belge;
+    if (!a || a.yetki !== 'acan') return yok(y);
+    if (!belge || !UUID.test(belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Destek Talebi' AND bag_kimligi = $2`, [belge, a.t.kimlik])).rowCount) return y.code(400).send({ hata: 'Ekran görüntüsünü bu talebe yüklemenizi rica ederiz.' });
+    await b.db.query(`UPDATE destek_talebi SET ekran_goruntusu_ref = $2 WHERE kimlik = $1`, [a.t.kimlik, belge]);
+    return { tamam: true };
   });
   s.post('/destek/:id/gecici-cozum', oturumlu, async (i, y) => {
     const a = await talep((i.params as { id: string }).id, i.oturum!.kullanici); if (!a || a.yetki !== 'cozen') return yok(y);
