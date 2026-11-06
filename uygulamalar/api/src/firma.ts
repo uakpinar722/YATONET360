@@ -19,12 +19,14 @@ import { ilaveIsYetkiEngeli, yabanciBayrakEngeli } from './teslim_ek.js';
 import { isAcmaEngeli as blokeSozlesmeDisi, sozlesmeEngeli } from './alacak.js';
 import { baslangicToplantiEngeli, isDurduBildir } from './saha_kayit.js';
 import { ekonomikKilitEngeli } from './yat_degeri.js';
-import { caymaEngeli, parasalZincir, parametre, sonMakam } from './teklif.js';
+import { caymaEngeli, firmaAralikIsaretle, parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID, vergiNoGecerli } from './yat.js';
 import { belgeBagiKaydet } from './belge.js';
 import { ilerlemeEngeli, kabulEngeli, planEngeli } from './kalite.js';
 import { yatDegeriEngeli } from './yat_degeri.js';
 import { izinGerekli } from './yetki.js';
+import { rolSahipleri } from './makam.js';
+import { tutar } from './metin.js';
 
 type Db = Pool | PoolClient;
 const GRUP = 'İş Birliği Firması';
@@ -142,6 +144,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (g.asama === 'Onaylı' || g.asama === 'Koşullu Onaylı') await (await import('./uyum.js')).uyumOlay(b.db, 'firma_kabulu', 'Kuruluş', id); // YG-1546
     const r = await b.db.query(`UPDATE kurulus SET kayit_asamasi = coalesce($2, kayit_asamasi), ag_statusu = coalesce($3, ag_statusu), risk_derecesi = coalesce($4, risk_derecesi), kabul_karar_zamani = CASE WHEN $2::text IS NOT NULL THEN now() ELSE kabul_karar_zamani END, sonraki_gozden_gecirme_tarihi = CASE WHEN $2::text IS NOT NULL OR $4::text IS NOT NULL THEN NULL ELSE sonraki_gozden_gecirme_tarihi END, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING kimlik`, [id, g.asama ?? null, g.ag ?? null, g.risk ?? null]);
     if (!r.rowCount) return yok(y);
+    if (g.ag === 'Geçici Askıda') await (await import('./firma_ek.js')).askiIsKararlariAc(b.db, id); // YG-1660: her açık iş için ayrı karar
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Statü Kararı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: g, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
@@ -303,6 +306,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       const t = (await c.query(`INSERT INTO firma_fiyat_teklifi (teklif_no, dosya_ref, kurulus_ref, cetvel_ref, durum, gecerlilik, giren_ref) VALUES ($1,$2,$3,$4,'Gönderildi',(now() AT TIME ZONE 'Europe/Istanbul')::date + $5::int,$6) RETURNING kimlik`, [no, id, f, cetvel.kimlik, gun, o.kullanici])).rows[0];
       for (const k of g.kalemler!) await c.query(`INSERT INTO firma_fiyat_kalemi (teklif_ref, satir_ref, birim_fiyat_eur) VALUES ($1,$2,$3)`, [t.kimlik, k.satir, k.fiyat]);
       await c.query(`UPDATE firma_fiyat_teklifi SET toplam_eur = (SELECT sum(k.birim_fiyat_eur * s.miktar) FROM firma_fiyat_kalemi k JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.teklif_ref = $1) WHERE kimlik = $1`, [t.kimlik]);
+      await firmaAralikIsaretle(c, t.kimlik); // YG-234: aralık işareti yalnız LGM ekranında görünür.
       return { kimlik: t.kimlik, teklifNo: no };
     });
   });
@@ -354,6 +358,25 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   };
   const ekipteMi = async (dosya: string, k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = ANY($3) AND bitis_zamani IS NULL`, [dosya, k, r])).rowCount);
   const TEKNIK = ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Saha Sorumlusu'];
+
+  // YG-1660: firma işi bırakırsa iş emri kapanır, Dosya Sorumlusuna firma değiştirme görevi açılır; rücu ve mahsup için hakediş, kesinti ve ödeme bilgisi Muhasebe ve Finans Müdürüne gider.
+  s.post('/is-emri/:id/firma-birakti', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const gerekce = ((i.body ?? {}) as { gerekce?: string }).gerekce?.trim();
+    if (!e) return yok(y);
+    const ds = (await b.db.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].dosya_sorumlusu_ref;
+    if (ds !== o.kullanici) return y.code(403).send({ hata: 'Firmanın işi bıraktığını Dosya Sorumlusu kaydeder.' });
+    if (!['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'].includes(e.statu)) return y.code(409).send({ hata: 'İş emri bu durumda kapatılamaz.' });
+    if (!gerekce) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
+    return islem(async (c) => {
+      await c.query(`UPDATE is_emri SET statu = 'İptal', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, `Firma işi bıraktı: ${gerekce}`]);
+      const h = (await c.query(`SELECT coalesce(sum(h.bu_donem_brut), 0) AS brut, coalesce(sum(h.kesinti), 0) AS kesinti, coalesce((SELECT sum(x.tutar_eur) FROM odeme_talimati x JOIN hakedis z ON z.kimlik = x.hakedis_ref WHERE z.is_emri_ref = $1 AND x.durum = 'Ödendi'), 0) AS odenen FROM hakedis h WHERE h.is_emri_ref = $1 AND h.statu <> 'Reddedildi'`, [e.kimlik])).rows[0];
+      await kartAc(c, { tur: 'Firma Değiştir', kategori: 'gorev', baslik: `${e.is_emri_no} · Firma İşi Bıraktı`, ozet: gerekce.slice(0, 200), oncelik: e.oncelik === 'Kritik' ? 'Kritik' : 'Yüksek', sahipKullanici: o.kullanici, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik });
+      const mfm = await rolSahipleri(c, await rolId(c, 'Muhasebe ve Finans Müdürü'));
+      await bildir(c, { olay: `firma-birakti:${e.kimlik}`, kullanicilar: mfm, baslik: `${e.is_emri_no} · Firma İşi Bıraktı · Rücu ve Mahsup`, ozet: `Hakediş brüt ${tutar(Number(h.brut))} EUR, kesinti ${tutar(Number(h.kesinti))} EUR, ödenen ${tutar(Number(h.odenen))} EUR. Rücu ve mahsup değerlendirmesi rica olunur.`, oncelik: 'Yüksek' });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma İşi Bıraktı', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, yeni: { gerekce }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { statu: 'İptal' };
+    });
+  });
 
   // YG-369: başlangıç kontrolü firma kabulünden sonra; Başlanabilir / Koşullu Başlanabilir / Bekletilir. BLD-02 yat sahibine.
   s.post('/is-emri/:id/baslangic', oturumlu, async (i, y) => {

@@ -288,7 +288,8 @@ try {
   // Onarım iş emri
   await dosyaAc(pOy, d.dosyaNo);
   await isEmriForm(pOy, 'ON', 'Laminasyon', '510', true);
-  const ie = (await sup.query(`SELECT kimlik, is_emri_no FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'ON'`, [d.kimlik])).rows[0];
+  let ie; for (let i = 0; i < 20 && !ie; i++) { ie = (await sup.query(`SELECT kimlik, is_emri_no FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'ON'`, [d.kimlik])).rows[0]; if (!ie) await pOy.waitForTimeout(250); }
+  if (!ie) throw new Error(`onarım iş emri oluşmadı: ${await pOy.locator('[role=status]').allTextContents()}`);
   await kartKarar(E, 'opm', ie.is_emri_no, 'Onaya Gönder'); await kartKarar(E, 'tid', ie.is_emri_no, 'Onayla');
   await firmaKabul(ie.is_emri_no);
   await dosyaAc(pDs, d.dosyaNo); const ieKart = pDs.locator('.soru', { hasText: ie.is_emri_no });

@@ -86,11 +86,28 @@ export function kalemHesapla(firmaBirim: number, miktar: number, katsayi: number
   return { birimSatis, tutar: R2(birimSatis * miktar), bantDisi: bant !== null && (birimSatis < bant.alt || birimSatis > bant.ust), bant };
 }
 
+/** YG-234: firma teklifindeki birim maliyet, kartelalı kalemde kartela maliyetinin bant aralığı dışındaysa işaretlenir; kartelasız kalem dışarıda kalır. */
+export async function firmaAralikIsaretle(c: Db, teklif: string): Promise<number> {
+  const [bant, sur] = [await parametre(c, 'bant_orani'), await yururlukSurumu(c)];
+  let n = 0;
+  for (const k of (await c.query(`SELECT x.kimlik, x.birim_fiyat_eur, s.kartela_kodu, t.dosya_ref, m.maliyet_eur FROM firma_fiyat_kalemi x JOIN firma_fiyat_teklifi t ON t.kimlik = x.teklif_ref JOIN kapsam_satiri s ON s.kimlik = x.satir_ref LEFT JOIN kartela_kalemi m ON m.kod = s.kartela_kodu AND m.surum = $2 WHERE x.teklif_ref = $1`, [teklif, sur])).rows) {
+    let disi = false;
+    if (k.maliyet_eur !== null) {
+      const mal = GMO_KALEMLERI.includes(k.kartela_kodu) ? await gmoMaliyet(c, k.dosya_ref, Number(k.maliyet_eur)) : Number(k.maliyet_eur);
+      const f = Number(k.birim_fiyat_eur); disi = f < R2(mal * (1 - bant)) || f > R2(mal * (1 + bant));
+    }
+    if (disi) n++;
+    await c.query(`UPDATE firma_fiyat_kalemi SET aralik_disi = $2 WHERE kimlik = $1`, [k.kimlik, disi]);
+  }
+  return n;
+}
+
 /** YG-190: ara toplam, opsiyon, indirim, KDV ve genel toplam sistemce; KDV indirimli matrahtan. */
 /** YG-189: düzeltilen firma fiyatı taslak teklife sistemce yansır; gönderilmiş teklifte yeni sürüm görevi açılır, eski değer kayıtta kalır. */
 export async function firmaFiyatYansit(c: Db, firmaKalem: string): Promise<number> {
   const fiyat = Number((await c.query(`SELECT birim_fiyat_eur FROM firma_fiyat_kalemi WHERE kimlik = $1`, [firmaKalem])).rows[0].birim_fiyat_eur);
   const [kat, bant] = [await parametre(c, 'fiyat_katsayisi'), await parametre(c, 'bant_orani')];
+  await firmaAralikIsaretle(c, (await c.query(`SELECT teklif_ref FROM firma_fiyat_kalemi WHERE kimlik = $1`, [firmaKalem])).rows[0].teklif_ref);
   let n = 0;
   for (const f of (await c.query(`SELECT DISTINCT f.kimlik, f.statu, f.teklif_no, f.hazirlayan_ref, f.indirim_orani, f.kesif_mahsubu_eur, f.kdv_orani FROM fiyat_teklifi f JOIN fiyat_teklifi_kalemi k ON k.teklif_ref = f.kimlik WHERE k.firma_kalem_ref = $1 AND f.statu <> 'Yerine Geçti'`, [firmaKalem])).rows) {
     if (f.statu !== 'Taslak') { await kartAc(c, { tur: 'Teklif Revizyonu', kategori: 'islem', baslik: `${f.teklif_no} · Yeni Teklif Sürümü Bekleniyor`, ozet: 'Firma fiyatı düzeltildi; müşteriye gönderilmiş teklifte düzeltme yeni sürümle yapılır.', oncelik: 'Yüksek', sahipKullanici: f.hazirlayan_ref, nesneTuru: 'Teklif', nesneKimligi: f.kimlik }); n++; continue; }
@@ -357,8 +374,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!d) return yok(y);
     const cetveller = (await b.db.query(`SELECT c.kimlik, c.surum, c.durum, (SELECT count(*)::int FROM kapsam_satiri s WHERE s.cetvel_ref = c.kimlik) AS satir FROM kapsam_cetveli c WHERE c.dosya_ref = $1 ORDER BY c.surum DESC`, [id])).rows;
     const teklifler = (await b.db.query(`SELECT kimlik, teklif_no, surum_no, teklif_turu, statu, karar, ara_toplam_eur, genel_toplam_eur, gecerlilik_bitis_tarihi::text, teklif_muhatabi, bant_disi_onay_ref IS NOT NULL AS bant_onayli, EXISTS (SELECT 1 FROM fiyat_teklifi_kalemi x WHERE x.teklif_ref = fiyat_teklifi.kimlik AND x.bant_disi) AS bant_disi FROM fiyat_teklifi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`, [id])).rows;
-    const firma = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.durum, f.toplam_eur, f.gecerlilik::text FROM firma_fiyat_teklifi f WHERE f.dosya_ref = $1 ORDER BY f.olusturma_zamani DESC`, [id])).rows;
-    const isEmirleri = (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.is_emri_turu, e.statu, e.firma_yaniti, e.ana_is_emri_ref, u.ticari_unvan AS firma FROM is_emri e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 ORDER BY e.olusturma_zamani`, [id])).rows;
+    const firma = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.durum, f.toplam_eur, f.gecerlilik::text, (SELECT count(*)::int FROM firma_fiyat_kalemi x WHERE x.teklif_ref = f.kimlik AND x.aralik_disi) AS aralik_disi FROM firma_fiyat_teklifi f WHERE f.dosya_ref = $1 ORDER BY f.olusturma_zamani DESC`, [id])).rows;
+    const isEmirleri = (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.is_emri_turu, e.statu, e.firma_yaniti, e.ana_is_emri_ref, u.ticari_unvan AS firma, (SELECT json_build_object('kimlik', a.kimlik, 'oneri', a.oneri) FROM aski_is_karari a WHERE a.is_emri_ref = e.kimlik AND a.karar IS NULL) AS aski FROM is_emri e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 ORDER BY e.olusturma_zamani`, [id])).rows;
     return { cetveller, teklifler, firma, isEmirleri, ekonomikKilit: !(await ekonomikKilitEngeli(b.db, id) === null) };
   });
 

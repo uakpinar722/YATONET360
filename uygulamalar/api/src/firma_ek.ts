@@ -6,6 +6,7 @@ import { dosyaErisimi } from './dosya.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
+import { rolSahipleri } from './makam.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
 
@@ -75,13 +76,46 @@ export async function muadilEngeli(db: Db, dosya: string, orijinal: string, muad
   return (await db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-07' AND durum = 'Onaylandı' AND metin LIKE '%' || $2 || '%' LIMIT 1`, [dosya, parcaAdi])).rowCount ? null : 'Muadil parça için müşteri onayı bekleniyor.';
 }
 
-/** YG-312, YG-416: kapanışta paylaşım bağlantıları ve konum gönderimi kapanır, süren yükümlülük göreve dönüşür. */
+/** YG-312, YG-416: kapanışta paylaşım bağlantıları, konum gönderimi ve bekleyen tesis talepleri kapanır; bekleyen malzeme ve süren yükümlülük göreve dönüşür. */
 export async function dosyaKapanisIsleri(c: Db, dosya: string) {
   await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum s JOIN belge b ON b.kimlik = s.belge_ref WHERE p.surum_ref = s.kimlik AND b.bag_turu = 'Dosya' AND b.bag_kimligi = $1 AND p.iptal_zamani IS NULL`, [dosya]);
   await c.query(`UPDATE acil_konum a SET aktif = false, durduran = 'Dosya Kapanışı', durma_zamani = now() FROM dosya d WHERE d.kimlik = $1 AND d.talep_ref = a.talep_ref AND a.aktif`, [dosya]);
   await c.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [dosya]);
+  await c.query(`UPDATE tesis_talebi SET durum = 'Geri Çekildi' WHERE dosya_ref = $1 AND durum = 'Yanıt Bekliyor'`, [dosya]); // YG-416: tesiste bekleyen saha/çalışma izni talebi kapanır
   const d = (await c.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  // YG-416: karantinada veya kararı bekleyen malzeme dosyaya ayrılmış kalır; iade ya da teslim kaydı için görev açılır.
+  const malzeme = (await c.query(`SELECT count(*)::int AS n FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE s.dosya_ref = $1 AND (m.kabul_karari IS NULL OR m.kabul_karari = 'Karantina')`, [dosya])).rows[0].n;
+  if (malzeme && d?.dosya_sorumlusu_ref && await birKez(c, 'kapanis_malzeme', dosya)) await kartAc(c, { tur: 'Kapanış Malzeme Kontrolü', kategori: 'gorev', baslik: `${d.dosya_no} · Bekleyen Malzeme`, ozet: `${malzeme} malzeme kaydı karantinada veya karar bekliyor; iade ya da teslim kaydını tamamlayınız.`, oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
   if (d?.dosya_sorumlusu_ref && await birKez(c, 'kapanis_yukumluluk', dosya)) await kartAc(c, { tur: 'Garanti İzleme', kategori: 'islem', baslik: `${d.dosya_no} · Garanti İzleme`, ozet: '12 aylık garanti süresince izlenir.', sonZaman: new Date(Date.now() + 365 * 86_400_000), sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
+}
+
+/** YG-1660: geçici askıda her açık iş emri için ayrı karar kaydı ve Dosya Sorumlusuna görev. Öneri: iş başlamadıysa Devir, durdurulmuşsa Güvenli Durdurma, sürüyorsa Ek Gözetim. */
+export async function askiIsKararlariAc(c: Db, firma: string): Promise<number> {
+  let n = 0;
+  for (const e of (await c.query(`SELECT e.kimlik, e.is_emri_no, e.statu, d.dosya_sorumlusu_ref, d.oncelik FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kurulus_ref = $1 AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu') AND NOT EXISTS (SELECT 1 FROM aski_is_karari a WHERE a.is_emri_ref = e.kimlik AND a.karar IS NULL)`, [firma])).rows) {
+    const oneri = ['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Çekinceli'].includes(e.statu) ? 'Devir' : e.statu === 'Durduruldu' ? 'Güvenli Durdurma' : 'Ek Gözetim';
+    const a = (await c.query(`INSERT INTO aski_is_karari (is_emri_ref, kurulus_ref, oneri) VALUES ($1,$2,$3) RETURNING kimlik`, [e.kimlik, firma, oneri])).rows[0];
+    if (e.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Geçici Askı İş Kararı', kategori: 'gorev', baslik: `${e.is_emri_no} · Firma Geçici Askıda`, ozet: `Öneri: ${oneri}. Güvenli Durdurma, Kontrollü Devam, Ek Gözetim veya Devir kararını veriniz.`, oncelik: e.oncelik === 'Kritik' ? 'Kritik' : 'Yüksek', sahipKullanici: e.dosya_sorumlusu_ref, nesneTuru: 'Askı İş Kararı', nesneKimligi: a.kimlik });
+    n++;
+  }
+  return n;
+}
+
+/** YG-1660: Firma Kapsama Raporu; branş, kapsama türü ve bölge başına onaylı aktif firma sayısı. Aday raporu kayıt sürecindeki firmaları sayar. Aktif firması kalmayan satır "Boş" görünür. */
+export async function firmaKapsamaRaporu(db: Db, aday = false) {
+  const asama = aday ? ['Aday', 'Başvuru', 'İncelemede'] : ['Onaylı', 'Koşullu Onaylı'];
+  return (await db.query(`SELECT y.ana_brans, y.kapsama, coalesce(y.bolge, '-') AS bolge, count(DISTINCT u.kimlik) FILTER (WHERE u.kayit_asamasi = ANY($1) AND ($2 OR (u.ag_statusu = 'Aktif' AND y.durum = 'Aktif')))::int AS firma FROM brans_yetkinligi y JOIN kurulus u ON u.kimlik = y.kurulus_ref WHERE u.kayit_rolu = 'Çözüm Ortağı' GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`, [asama, aday])).rows as { ana_brans: string; kapsama: string; bolge: string; firma: number }[];
+}
+
+/** YG-1660: her ayın ilk çalışmasında kapsama raporu BT ve Firma Yönetimi Direktörüne, aday firma kapsama raporu GMY'ye bildirilir. */
+export async function kapsamaRaporIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const ay = simdi.toISOString().slice(0, 7);
+  if (!(await birKez(db, 'firma_kapsama_raporu', ay))) return 0;
+  const r = await firmaKapsamaRaporu(db); const a = await firmaKapsamaRaporu(db, true);
+  const bos = r.filter((x) => x.firma === 0).map((x) => `${x.ana_brans} (${x.bolge})`);
+  await bildir(db, { olay: `kapsama-raporu:${ay}`, kullanicilar: await rolSahipleri(db, await rolId(db, BTD)), baslik: `Firma Kapsama Raporu · ${ay}`, ozet: `${r.length} branş-bölge satırı; aktif firması olmayan: ${bos.length ? bos.slice(0, 10).join(', ') : 'yok'}.` });
+  await bildir(db, { olay: `aday-kapsama-raporu:${ay}`, kullanicilar: await rolSahipleri(db, await rolId(db, 'Genel Müdür Yardımcısı')), baslik: `Aday Firma Kapsama Raporu · ${ay}`, ozet: `Kayıt sürecindeki aday firmalar ${a.filter((x) => x.firma > 0).length} branş-bölge satırında.` });
+  return 2;
 }
 
 /** YG-141: geçici onarım süresi ve kontrol hatırlatması; su alma riskinde ilk 3 gün her gün, sonra haftalık, diğerlerinde haftalık. */
@@ -100,6 +134,18 @@ kapanisKaydet('Alt Yüklenici Talebi', async (c, k, karar) => {
   if (karar === 'Onayla') await c.query(`UPDATE alt_yuklenici_talebi SET durum = 'Onaylandı' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
   else if (karar === 'Reddet') await c.query(`UPDATE alt_yuklenici_talebi SET durum = 'Reddedildi' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
+/** YG-1660: iki onay birbirini beklemez; ikisi de onaylayınca talep onaylanır, biri reddederse reddedilir. Sonuç Operasyon Müdürüne bildirilir. */
+async function yurtDisiKarar(c: Db, k: { nesne_kimligi: string | null }, karar: string, alan: 'fym_karari' | 'hud_karari') {
+  if (!['Onayla', 'Reddet'].includes(karar)) return;
+  const t = (await c.query(`UPDATE yurt_disi_firma_talebi SET ${alan} = $2 WHERE kimlik = $1::uuid AND durum = 'Onayda' RETURNING *`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi'])).rows[0];
+  if (!t) return;
+  const durum = t.fym_karari === 'Reddedildi' || t.hud_karari === 'Reddedildi' ? 'Reddedildi' : t.fym_karari && t.hud_karari ? 'Onaylandı' : null;
+  if (!durum) return;
+  await c.query(`UPDATE yurt_disi_firma_talebi SET durum = $2 WHERE kimlik = $1`, [t.kimlik, durum]);
+  await bildir(c, { olay: `yurt-disi-firma:${t.kimlik}`, kullanicilar: [t.talep_eden_ref], baslik: `Yurt Dışı Yerel Firma Talebi · ${durum}`, ozet: `${t.ulke} / ${t.sehir} · ${t.ana_brans}` });
+}
+kapanisKaydet('Yurt Dışı Firma Onayı', (c, k, karar) => yurtDisiKarar(c, k, karar, 'fym_karari'));
+kapanisKaydet('Yurt Dışı Firma Hukuk Onayı', (c, k, karar) => yurtDisiKarar(c, k, karar, 'hud_karari'));
 kapanisKaydet('Kalıcı Askı Önerisi', async (c, k, karar) => {
   if (karar === 'Onayla') await c.query(`UPDATE kurulus SET ag_statusu = 'Askıda', guncelleme_zamani = now() WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
@@ -234,6 +280,47 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     const k = await kartAc(b.db, { tur: 'Kalıcı Askı Önerisi', baslik: `${f.ticari_unvan} · Kalıcı Askı Önerisi`, ozet: g, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, TM), await rolId(b.db, HUD), await rolId(b.db, OPM), await rolId(b.db, BTD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
     return { kimlik: k };
   });
+
+  // YG-1660: geçici askı iş kararı; öneri öndeğerdir. Güvenli Durdurma iş emrini durdurur, Devir firma değiştirme görevi açar.
+  s.post('/aski-karari/:id', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    const a = (await b.db.query(`SELECT a.*, e.is_emri_no, e.dosya_ref, e.statu, d.dosya_sorumlusu_ref FROM aski_is_karari a JOIN is_emri e ON e.kimlik = a.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref WHERE a.kimlik = $1 AND a.karar IS NULL`, [id])).rows[0];
+    if (!a) return yok(y);
+    if (a.dosya_sorumlusu_ref !== o.kullanici && !(await rolVar(o.kullanici, [OPM]))) return y.code(403).send({ hata: 'Kararı Dosya Sorumlusu veya Operasyon Müdürü verir.' });
+    const karar = g.karar ?? a.oneri;
+    if (!['Güvenli Durdurma', 'Kontrollü Devam', 'Ek Gözetim', 'Devir'].includes(karar)) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    if (karar !== a.oneri && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Öneriden farklı kararda gerekçe zorunludur.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE aski_is_karari SET karar = $2, gerekce = $3, karar_veren_ref = $4, karar_zamani = now() WHERE kimlik = $1`, [id, karar, g.gerekce?.trim() || null, o.kullanici]);
+      if (karar === 'Güvenli Durdurma' && a.statu === 'Aktif') await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = 'Firma geçici askıda: güvenli durdurma', guncelleme_zamani = now() WHERE kimlik = $1`, [a.is_emri_ref]);
+      if (karar === 'Devir' && a.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Firma Değiştir', kategori: 'gorev', baslik: `${a.is_emri_no} · Firma Geçici Askıda · Devir`, ozet: g.gerekce?.trim() || 'Geçici askı kararı: Devir', oncelik: 'Yüksek', sahipKullanici: a.dosya_sorumlusu_ref, nesneTuru: 'İş Emri', nesneKimligi: a.is_emri_ref });
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Geçici Askı İş Kararı' AND nesne_kimligi = $1 AND kapanma_zamani IS NULL`, [id]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Geçici Askı İş Kararı', nesneTuru: 'İş Emri', nesneKimligi: a.is_emri_ref, yeni: { karar, oneri: a.oneri }, gerekce: g.gerekce?.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { karar };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
+  // YG-1660: yurt dışı yerel firma talebini Operasyon Müdürü açar; iki onay kartı aynı anda açılır.
+  s.post('/firma/yurt-disi-talep', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { ulke?: string; sehir?: string; brans?: string; firma?: string; dosya?: string; gerekce?: string };
+    if (!(await rolVar(o.kullanici, [OPM]))) return y.code(403).send({ hata: 'Yurt dışı yerel firma talebini Operasyon Müdürü açar.' });
+    if (!g.ulke?.trim() || !g.sehir?.trim() || !g.brans?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Ülke, şehir, branş ve gerekçe zorunludur.' });
+    if (g.dosya && !UUID.test(g.dosya)) return y.code(400).send({ hata: 'Dosya geçersizdir.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const t = (await c.query(`INSERT INTO yurt_disi_firma_talebi (ulke, sehir, ana_brans, firma_adi, dosya_ref, gerekce, talep_eden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.ulke.trim(), g.sehir.trim(), g.brans.trim(), g.firma?.trim() || null, g.dosya || null, g.gerekce.trim(), o.kullanici])).rows[0];
+      const baslik = `${g.ulke.trim()} / ${g.sehir.trim()} · ${g.brans.trim()} · Yurt Dışı Yerel Firma`;
+      for (const [tur, rol] of [['Yurt Dışı Firma Onayı', FYM], ['Yurt Dışı Firma Hukuk Onayı', HUD]] as const) await kartAc(c, { tur, baslik, ozet: g.gerekce.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, rol)], nesneTuru: 'Yurt Dışı Firma Talebi', nesneKimligi: t.kimlik });
+      await c.query('COMMIT');
+      return { kimlik: t.kimlik, durum: 'Onayda' };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  s.get('/firma/yurt-disi-talep', oturumlu, async (i, y) => (await rolVar(i.oturum!.kullanici, [OPM, FYM, HUD, BTD, 'Genel Müdür Yardımcısı', 'CEO'])) ? (await b.db.query(`SELECT kimlik, ulke, sehir, ana_brans, firma_adi, gerekce, fym_karari, hud_karari, durum, olusturma_zamani FROM yurt_disi_firma_talebi ORDER BY olusturma_zamani DESC LIMIT 100`)).rows : yok(y));
 
   // YG-141: geçici onarım en çok 30 gün; Teknik Yönetici en çok 2 uzatma, toplam 60 gün.
   s.post('/dosya/:id/gecici-onarim', oturumlu, async (i, y) => {

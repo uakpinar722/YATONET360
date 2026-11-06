@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', bim: 'Bilgi İşlem Müdürü' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -616,6 +616,12 @@ describe('kritik pozisyon vekilleri (YG-1058)', () => {
     expect((await o.karar(k, 'huu', 'Onayla')).statusCode).not.toBe(200);
     const s2 = await o.karar(k, 'gmy', 'Onayla'); expect(s2.statusCode, s2.body).toBe(200);
     await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı' WHERE kimlik = $1`, [r.json().kimlik]);
+    // YG-1660: BT ve Firma Yönetimi Direktörüne GMY ancak Bilgi İşlem Müdürü de yokken vekâlet eder.
+    const btd = await rol('Bilgi Teknolojileri ve Firma Yönetimi Direktörü');
+    expect((await ata(o.K.btd!, btd, o.K.gmy!)).statusCode).toBe(400);
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, personel_durumu, guncelleyen_ref) VALUES ($1, '2026-01-01', 'İzinli', $1) ON CONFLICT (kullanici_ref) DO UPDATE SET personel_durumu = 'İzinli'`, [o.K.bim]);
+    const v = await ata(o.K.btd!, btd, o.K.gmy!); expect(v.statusCode, v.body).toBe(200);
+    await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı' WHERE kimlik = $1`, [v.json().kimlik]); await o.sup.query(`UPDATE personel_karti SET personel_durumu = 'Görevde' WHERE kullanici_ref = $1`, [o.K.bim]);
   });
 });
 
@@ -658,5 +664,55 @@ describe('vekilin dosya erişimi (YG-1056)', () => {
     expect(await dosyaErisimi(o.db, o.K.iks!, d.kimlik)).toBe(true);
     await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı' WHERE kimlik = $1`, [id]);
     expect(await dosyaErisimi(o.db, o.K.iks!, d.kimlik)).toBe(false);
+  });
+});
+
+describe('tam ziya teslimi (YG-079)', () => {
+  it('iş yapılmış dosyada teslim kaydı olmadan tam ziya kapanışı olmaz; teslimi yalnız Dosya Sorumlusu kaydeder', async () => {
+    const { kapanisEksikleri } = await import('../src/saha.js');
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, 'Tam Ziya')).not.toContain('Tam Ziya Teslimi Bekliyor');
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'TZ','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-TZ${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K',$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds]);
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, 'Hükmi Tam Ziya')).toContain('Tam Ziya Teslimi Bekliyor');
+    const u = `/api/dosya/${d.kimlik}/tam-ziya-teslim`;
+    expect((await o.ist('POST', u, await o.gir('oy'), { teslimAlan: 'Yat Sahibi: A' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('ds'), {})).statusCode).toBe(400);
+    expect((await o.ist('POST', u, await o.gir('ds'), { teslimAlan: 'Yat Sahibi: A' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, await o.gir('ds'), { teslimAlan: 'Yat Sahibi: A' })).statusCode).toBe(409);
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, 'Hükmi Tam Ziya')).not.toContain('Tam Ziya Teslimi Bekliyor');
+  });
+});
+
+describe('firma kapsama raporu (YG-1660)', () => {
+  it('aktif firması olmayan branş-bölge boş görünür; aday raporu ayrı; ayda bir bildirilir; yetkisiz role kapalı', async () => {
+    const { firmaKapsamaRaporu, kapsamaRaporIsle } = await import('../src/firma_ek.js');
+    const ek = async (asama: string, brans: string) => { const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ($1,'KF','Çözüm Ortağı',$2,'Aktif',$3) RETURNING kimlik`, [`S-KR${Date.now()}${Math.random()}`, asama, o.K.ds])).rows[0].kimlik; await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, bolge) VALUES ($1,$2,'Ege')`, [f, brans]); };
+    await ek('Onaylı', 'Kapsama Boya'); await ek('Aday', 'Kapsama Elektrik');
+    const r = await firmaKapsamaRaporu(o.db);
+    expect(r.find((x) => x.ana_brans === 'Kapsama Boya')!.firma).toBe(1); expect(r.find((x) => x.ana_brans === 'Kapsama Elektrik')!.firma).toBe(0);
+    expect((await firmaKapsamaRaporu(o.db, true)).find((x) => x.ana_brans === 'Kapsama Elektrik')!.firma).toBe(1);
+    const z = new Date('2031-03-01T08:00:00Z'); expect(await kapsamaRaporIsle(o.db, z)).toBe(2); expect(await kapsamaRaporIsle(o.db, z)).toBe(0);
+    expect((await o.sup.query(`SELECT ozet FROM bildirim WHERE olay_anahtari = 'kapsama-raporu:2031-03' LIMIT 1`)).rows[0].ozet).toContain('Kapsama Elektrik (Ege)');
+    expect((await o.ist('GET', '/api/rapor/firma-kapsama', await o.gir('gmy'))).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/rapor/firma-kapsama?aday=1', await o.gir('ds'))).statusCode).toBe(404);
+  });
+});
+
+describe('firma işi bıraktı (YG-1660)', () => {
+  it('iş emri kapanır, Dosya Sorumlusuna görev, Muhasebe ve Finans Müdürüne rücu bilgisi gider', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'FB','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-FB${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, kesinti, net, statu, giren_ref) VALUES ($1,$2,$3,1,1000,1000,50,950,'Doğrulandı',$4)`, [`${d.dosyaNo}-HK01`, e, d.kimlik, o.K.ds]);
+    const u = `/api/is-emri/${e}/firma-birakti`;
+    expect((await o.ist('POST', u, await o.gir('oy'), { gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('ds'), {})).statusCode).toBe(400);
+    const r = await o.ist('POST', u, await o.gir('ds'), { gerekce: 'Firma sahadan çekildi' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [e])).rows[0].statu).toBe('İptal');
+    expect((await o.kart('Firma Değiştir', e)).baslik).toContain('İşi Bıraktı');
+    const b = (await o.sup.query(`SELECT b.ozet FROM bildirim b WHERE b.olay_anahtari = $1 AND b.kullanici_ref = $2`, [`firma-birakti:${e}`, o.K.mfm])).rows[0];
+    expect(b.ozet).toContain('1.000,00 EUR'); expect(b.ozet).toContain('kesinti 50,00 EUR');
+    expect((await o.ist('POST', u, await o.gir('ds'), { gerekce: 'Tekrar' })).statusCode).toBe(409);
   });
 });

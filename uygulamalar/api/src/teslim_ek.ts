@@ -211,6 +211,23 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'İletildi' };
   });
 
+  // YG-079: tam ziyada onarım teslimi olmaz; yat, teslim alan kişi ve kapanış hesabı görülerek ayrı adımla bırakılır.
+  s.post('/dosya/:id/tam-ziya-teslim', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { teslimAlan?: string; aciklama?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const d = (await b.db.query(`SELECT dosya_sorumlusu_ref, statu FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    if (d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Tam ziya teslimini Dosya Sorumlusu kaydeder.' });
+    if (d.statu === 'Kapalı') return y.code(409).send({ hata: 'Dosya kapalıdır.' });
+    if (!g.teslimAlan?.trim()) return y.code(400).send({ hata: 'Yatı teslim alan kişi ve sıfatı zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM teslim_kaydi WHERE dosya_ref = $1 AND durum LIKE 'Teslim Edildi%' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Teslim kaydı zaten vardır.' });
+    return islem(async (c) => {
+      const k = (await c.query(`INSERT INTO teslim_kaydi (dosya_ref, durum, teslim_eden_ref, teslim_alan, istisna_gerekcesi, teslim_zamani) VALUES ($1,'Teslim Edildi',$2,$3,$4,now()) RETURNING kimlik`, [id, o.kullanici, g.teslimAlan!.trim(), `Tam Ziya${g.aciklama?.trim() ? `: ${g.aciklama.trim()}` : ''}`])).rows[0];
+      await c.query(`UPDATE teslim_kaydi SET durum = 'İptal' WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor'`, [id]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Tam Ziya Teslimi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { teslimAlan: g.teslimAlan!.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { kimlik: k.kimlik };
+    });
+  });
+
   // YG-079: kapanış hesabı (tam ziya dahil): onaylı, faturalı, tahsil edilen ve firma alacağı.
   s.get('/dosya/:id/kapanis-hesabi', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string };

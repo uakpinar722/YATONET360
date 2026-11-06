@@ -363,6 +363,13 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1299: Sağlayıcı ve Sözleşme Matrisi; yurt dışında KVKK m.9 dayanağı ve maskeleme kuralı zorunlu.
   const matrisci = (k: string) => rolVar(k, ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', HUD, 'Bilgi İşlem Müdürü']);
+  // YG-1660: Firma Kapsama Raporu ve aday raporu ekranda da görülür.
+  s.get('/rapor/firma-kapsama', oturumlu, async (i, y) => {
+    const aday = (i.query as { aday?: string }).aday === '1';
+    if (!(await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Firma Yönetimi Müdürü']))) return yok(y);
+    const { firmaKapsamaRaporu } = await import('./firma_ek.js');
+    return firmaKapsamaRaporu(b.db, aday);
+  });
   s.get('/saglayici-matrisi', oturumlu, async (i, y) => (await matrisci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kimlik, baglanti, saglayici, veri_yeri, ulke, erisim_yontemi, ucret, hizmet_seviyesi, yedek_saglayici, kvkk_sozlesmesi, m9_dayanak, maskeleme_kurali, kurul_bildirim_tarihi::text, durum FROM saglayici_matrisi ORDER BY baglanti, saglayici`)).rows : yok(y));
   s.post('/saglayici-matrisi', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { baglanti?: string; saglayici?: string; veriYeri?: string; ulke?: string; erisim?: string; ucret?: string; seviye?: string; yedek?: string; kvkk?: boolean; m9?: string; maskeleme?: string; kurulBildirim?: string; belge?: string };

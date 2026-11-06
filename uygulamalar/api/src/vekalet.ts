@@ -24,8 +24,10 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     if (asil.rol_adi === 'CEO') { // YG-1058: T&O Direktörü yalnız CEO ve GMY birlikte yokken.
       if (aday.rol_adi === 'Genel Müdür Yardımcısı') return true;
       if (aday.rol_adi !== 'Teknik ve Operasyon Direktörü') return false;
-      return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik JOIN rol x ON x.kimlik = a.rol_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE x.rol_adi = 'Genel Müdür Yardımcısı' AND a.atama_durumu = 'Aktif' AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif')) LIMIT 1`)).rowCount);
+      return yokMu('Genel Müdür Yardımcısı');
     }
+    // YG-1660: BT ve Firma Yönetimi Direktörüne GMY ancak vekili Bilgi İşlem Müdürü de yokken vekâlet eder.
+    if (asil.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü' && aday.rol_adi === 'Genel Müdür Yardımcısı') return yokMu('Bilgi İşlem Müdürü');
     // YG-1058: GMY ve Direktör vekilleri kritik pozisyon vekil tablosundan (LST_KRITIK_POZISYON_VEKILI); tablo vekili yoksa üst makam.
     if (asil.kademe === 'Direktör' || asil.rol_adi === 'Genel Müdür Yardımcısı') {
       const tablo = await kritikVekiller(asil.rol_adi);
@@ -36,6 +38,11 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     const cift = new Set(['Müdür', 'Müdür Yardımcısı']);
     if (aday.birim === asil.birim && cift.has(aday.kademe) && cift.has(asil.kademe)) return true;
     return (await onayMakami(b.db, asil.rol)) === aday.rol;
+  }
+
+  /** Rol sahibi izinli, raporlu ya da kendisi vekâlete bırakılmışsa yok sayılır. */
+  async function yokMu(rolAdi: string): Promise<boolean> {
+    return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik JOIN rol x ON x.kimlik = a.rol_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE x.rol_adi = $1 AND a.atama_durumu = 'Aktif' AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif')) LIMIT 1`, [rolAdi])).rowCount);
   }
 
   async function kritikVekiller(rolAdi: string): Promise<string[]> {

@@ -29,6 +29,8 @@ export async function kapanisEksikleri(db: PoolClient | Baglam['db'], d: { kimli
   if ((await db.query(`SELECT 1 FROM tedarik_siparisi WHERE dosya_ref = $1 AND statu IN ('Onay Bekliyor', 'Verildi', 'Kısmi Teslim') LIMIT 1`, [d.kimlik])).rowCount) l.push('Açık Tedarik Siparişi'); // YG-416
   if (neden === 'Tamamlandı' && !(await db.query(`SELECT 1 FROM kesif WHERE dosya_ref = $1 AND durum = 'Tamamlandı' LIMIT 1`, [d.kimlik])).rowCount) l.push('Teknik Eksik');
   if (neden === 'Tamamlandı' && (await db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK') LIMIT 1`, [d.kimlik])).rowCount && !(await db.query(`SELECT 1 FROM teslim_kaydi WHERE dosya_ref = $1 AND durum LIKE 'Teslim Edildi%' LIMIT 1`, [d.kimlik])).rowCount) l.push('Kabul Bekliyor'); // YG-148
+  // YG-079: tam ziyada üzerinde iş yapılmış yat teslim adımıyla bırakılır; teslim kaydı olmadan dosya kapanmaz.
+  if ((neden === 'Tam Ziya' || neden === 'Hükmi Tam Ziya') && (await db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND statu <> 'İptal' LIMIT 1`, [d.kimlik])).rowCount && !(await db.query(`SELECT 1 FROM teslim_kaydi WHERE dosya_ref = $1 AND durum LIKE 'Teslim Edildi%' LIMIT 1`, [d.kimlik])).rowCount) l.push('Tam Ziya Teslimi Bekliyor');
   return l;
 }
 

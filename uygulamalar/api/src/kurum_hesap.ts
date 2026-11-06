@@ -58,6 +58,9 @@ kapanisKaydet('Firma Kabul İtirazı', async (c, k, karar) => {
   await bildir(c, { olay: `kurum-itiraz:${t.kimlik}`, kullanicilar: [t.itiraz_eden_ref], baslik: 'Kabul Kararı İtirazı', ozet: karar === 'Onayla' ? 'İtirazınız kabul edildi; başvurunuz yeniden incelenecektir.' : 'İtirazınız kabul edilmedi.' });
 });
 
+/** YG-1660: kurum hesap talebi kurum türüne göre yönlenir; tedarikçi Tedarik Yönetimi, marina/tersane/çekek Firma Yönetimi Müdürlüğüne. Sigorta, broker, acente ve kurumsal müşteri talepleri Müşteri ve Paydaş İlişkileri Müdürlüğünde (kurumsal.ts). */
+const KURUM_YONLENDIRME: Record<string, string> = { 'Tedarikçi': 'Tedarik Yönetimi Müdürü', 'Tesis': 'Firma Yönetimi Müdürü' };
+
 export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
   webAdresi = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -159,7 +162,7 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const t = (await c.query(`INSERT INTO kurum_kullanici_talebi (kurulus_ref, ad_soyad, eposta, telefon, talep_eden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [u.kimlik, g.ad.trim(), eposta, g.telefon?.trim() || null, o.kullanici])).rows[0];
-      await kartAc(c, { tur: 'Kurum Kullanıcı Teyidi', baslik: `${u.ticari_unvan} · Kullanıcı Talebi`, ozet: `${g.ad.trim()} · ${eposta}`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Sicil Sorumlusu')], nesneTuru: 'Kurum Kullanıcı Talebi', nesneKimligi: t.kimlik });
+      await kartAc(c, { tur: 'Kurum Kullanıcı Teyidi', baslik: `${u.ticari_unvan} · Kullanıcı Talebi`, ozet: `${g.ad.trim()} · ${eposta}`, hazirlayan: o.kullanici, zincir: [await rolId(c, KURUM_YONLENDIRME[u.kayit_rolu] ?? 'Sicil Sorumlusu')], nesneTuru: 'Kurum Kullanıcı Talebi', nesneKimligi: t.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurum Kullanıcı Talebi', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, yeni: { eposta }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
       await c.query('COMMIT');
       return { durum: 'Teyit Bekliyor', talep: t.kimlik };

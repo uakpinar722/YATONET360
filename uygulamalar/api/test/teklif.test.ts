@@ -145,6 +145,10 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
   it('bant dışı kalem TİD onayı olmadan onaya gönderilemez', async () => {
     const d = await hazir(); const t = await teklifAc(d, 100); const c = await o.gir('ts');
     expect(t.bantDisi).toBe(1);
+    // YG-234: firma teklifindeki maliyet aralık dışı olduğu için LGM listesinde işaretlidir; aralık içindeki teklif işaretsizdir.
+    const fl = (await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, c)).json().firma;
+    expect(fl[0].aralik_disi).toBe(1);
+    await firmaFiyat(d.kimlik, 51); expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, c)).json().firma[0].aralik_disi).toBe(0);
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/onaya-gonder`, c)).statusCode).toBe(409);
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/bant-onayi`, c, {})).statusCode).toBe(400);
     await o.ist('POST', `/api/teklif/${t.kimlik}/bant-onayi`, c, { gerekce: 'Özel durum' });

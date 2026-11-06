@@ -52,6 +52,11 @@ describe('kurum kullanıcıları (YG-1004, YG-425)', () => {
     expect(m).toContain('Kurum Firma'); expect(m).toMatch(/\/#davet=/);
     expect((await o.sup.query(`SELECT r.rol_adi FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1`, [h.kimlik])).rows[0].rol_adi).toBe('Firma Yetkilisi');
   });
+  it('tedarikçi talebi Tedarik Yönetimi Müdürüne yönlenir (YG-1660)', async () => {
+    const r = await o.ist('POST', '/api/kurum/kullanici', tedC, { ad: 'Tedarik Kişi', eposta: 'yeni@tedarik.local' }); expect(r.statusCode, r.body).toBe(200);
+    const k = await o.kart('Kurum Kullanıcı Teyidi', r.json().talep);
+    expect((await o.sup.query(`SELECT rol_adi FROM rol WHERE kimlik = $1`, [k.zincir[0]])).rows[0].rol_adi).toBe('Tedarik Yönetimi Müdürü');
+  });
   it('red hesap açmaz; talep sahibine bildirim gider', async () => {
     const r = await o.ist('POST', '/api/kurum/kullanici', firC, { ad: 'Red Kişi', eposta: 'red@firma.local' });
     const k = await o.kart('Kurum Kullanıcı Teyidi', r.json().talep); await o.karar(k.kimlik, 'sc', 'Reddet', 'Kimlik teyit edilemedi');

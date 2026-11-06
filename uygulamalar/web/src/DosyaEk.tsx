@@ -133,6 +133,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <label htmlFor="ts-a">Teslim Alan</label><input id="ts-a" value={tes.alici} onChange={(e) => setTes({ ...tes, alici: e.target.value })} />
     <BelgeSec ad="Teslim Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={foto} sec={setFoto} />
     <button className="btn2 kucuk" disabled={!tes.alici.trim() || !foto} onClick={() => void yap(() => istek(`/dosya/${id}/teslim-onaysiz`, { ...tes, belge: foto }), 'Teslim edildi, onay verilmedi olarak kaydedildi.')}>Onaysız Teslimi Kaydet</button>
+    <button className="btn2 kucuk" disabled={!tes.alici.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/tam-ziya-teslim`, { teslimAlan: `${tes.aliciTuru}: ${tes.alici.trim()}` }), 'Tam ziya teslimi kaydedildi; kapanışı başlatabilirsiniz.')}>Tam Ziya Teslimini Kaydet</button>
 
     <div className="bolum">Yat Kabul Tutanağı</div>
     <label htmlFor="ka-t">Teslim Alan Taraf</label><select id="ka-t" value={ka.teslimAlan} onChange={(e) => setKa({ ...ka, teslimAlan: e.target.value })}><option>LGM</option><option>Görevli Firma</option></select>
@@ -280,6 +281,32 @@ export function ButceDonemi() {
 }
 
 /** YG-532: LGM poliçesi, imza sirküleri, broker ve acente yetki belgeleri; bitişe göre uyarı. */
+/** YG-1660: Firma Kapsama Raporu (BT ve Firma Yönetimi Direktörü) ve aday raporu (GMY). Yetkisiz rolde görünmez. */
+export function FirmaKapsamaRaporu() {
+  const [aday, setAday] = useState(false); const [l, setL] = useState<{ ana_brans: string; kapsama: string; bolge: string; firma: number }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>(`/rapor/firma-kapsama${aday ? '?aday=1' : ''}`).then(setL).catch(() => setL(null)); }, [aday]);
+  if (!l) return null;
+  return <><div className="bolum">{aday ? 'Aday Firma Kapsama Raporu' : 'Firma Kapsama Raporu'}</div>
+    <label className="kutu"><input type="checkbox" checked={aday} onChange={(e) => setAday(e.target.checked)} /><span>Aday firmalar</span></label>
+    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={`${x.ana_brans}-${x.kapsama}-${x.bolge}`}>{x.ana_brans} · {x.kapsama} · {x.bolge} · {x.firma === 0 ? 'Boş' : `${x.firma} firma`}</div>)}</div></>;
+}
+
+/** YG-1660: yurt dışı yerel firma talebi; Operasyon Müdürü açar, iki onay birbirini beklemez. */
+export function YurtDisiFirmaTalebi() {
+  const [l, setL] = useState<{ kimlik: string; ulke: string; sehir: string; ana_brans: string; fym_karari: string | null; hud_karari: string | null; durum: string }[] | null>(null); const [f, setF] = useState({ ulke: '', sehir: '', brans: '', firma: '', gerekce: '' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/firma/yurt-disi-talep').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Yurt Dışı Yerel Firma Talepleri</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.ulke} / {x.sehir} · {x.ana_brans} · Firma Yönetimi: {x.fym_karari ?? 'Bekliyor'} · Hukuk: {x.hud_karari ?? 'Bekliyor'} · {x.durum}</div>)}</div>
+    <label htmlFor="yd-u">Ülke</label><input id="yd-u" value={f.ulke} onChange={(e) => setF({ ...f, ulke: e.target.value })} />
+    <label htmlFor="yd-s">Şehir</label><input id="yd-s" value={f.sehir} onChange={(e) => setF({ ...f, sehir: e.target.value })} />
+    <label htmlFor="yd-b">Branş</label><input id="yd-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })} />
+    <label htmlFor="yd-f">Önerilen Firma (varsa)</label><input id="yd-f" value={f.firma} onChange={(e) => setF({ ...f, firma: e.target.value })} />
+    <label htmlFor="yd-g">Gerekçe</label><input id="yd-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    <button className="btn2" onClick={() => void istek('/firma/yurt-disi-talep', { ...f, firma: f.firma || undefined }).then(() => { setF({ ulke: '', sehir: '', brans: '', firma: '', gerekce: '' }); setM('Talep onaya gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Talep Aç</button></>;
+}
+
 export function KurumBelgeleri() {
   const T = ['LGM Sigorta Poliçesi', 'İmza Sirküleri', 'Broker Yetki Belgesi', 'Acente Yetki Belgesi'];
   const [l, setL] = useState<{ kimlik: string; tur: string; ad: string; karsi_taraf: string | null; bitis: string; durum: string }[] | null>(null); const [f, setF] = useState({ tur: '', ad: '', karsiTaraf: '', bitis: '', yenilenen: '' }); const [m, setM] = useState('');

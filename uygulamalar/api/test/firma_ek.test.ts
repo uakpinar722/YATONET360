@@ -104,6 +104,32 @@ describe('firma portalı ve kapanış (YG-411, YG-423, YG-867, YG-1660, YG-416)'
     expect((await o.karar(k.kimlik, 'btd', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT ag_statusu FROM kurulus WHERE kimlik = $1`, [f])).rows[0].ag_statusu).toBe('Askıda');
   });
+  it('yurt dışı yerel firma talebi: Operasyon Müdürü açar, iki onay birbirini beklemez (YG-1660)', async () => {
+    const u = '/api/firma/yurt-disi-talep';
+    expect((await o.ist('POST', u, await o.gir('fym'), { ulke: 'Yunanistan', sehir: 'Rodos', brans: 'Makine', gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('opm'), { ulke: 'Yunanistan' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, await o.gir('opm'), { ulke: 'Yunanistan', sehir: 'Rodos', brans: 'Makine', gerekce: 'Bölgede firma yok' }); expect(r.statusCode, r.body).toBe(200);
+    const durum = async () => (await o.sup.query(`SELECT durum FROM yurt_disi_firma_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum;
+    await o.karar((await o.kart('Yurt Dışı Firma Hukuk Onayı', r.json().kimlik)).kimlik, 'hud', 'Onayla'); expect(await durum()).toBe('Onayda');
+    await o.karar((await o.kart('Yurt Dışı Firma Onayı', r.json().kimlik)).kimlik, 'fym', 'Onayla'); expect(await durum()).toBe('Onaylandı');
+    const r2 = (await o.ist('POST', u, await o.gir('opm'), { ulke: 'Hırvatistan', sehir: 'Split', brans: 'Boya', gerekce: 'G' })).json().kimlik;
+    await o.karar((await o.kart('Yurt Dışı Firma Onayı', r2)).kimlik, 'fym', 'Reddet', 'Uygun değil');
+    expect((await o.sup.query(`SELECT durum FROM yurt_disi_firma_talebi WHERE kimlik = $1`, [r2])).rows[0].durum).toBe('Reddedildi');
+  });
+  it('geçici askıda her açık iş için ayrı karar; öneri öndeğer, farklı kararda gerekçe (YG-1660)', async () => {
+    const d = await dosya(); const f = await firma();
+    const ie = async (no: string, statu: string) => (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K',$4,$5) RETURNING kimlik`, [`${d.dosyaNo}-${no}`, d.kimlik, f, statu, o.K.ds])).rows[0].kimlik as string;
+    const aktif = await ie('ON01', 'Aktif'); const bekl = await ie('ON02', 'Kabul Bekliyor'); await ie('ON03', 'Tamamlandı');
+    const r = await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { ag: 'Geçici Askıda', gerekce: 'Belge süresi doldu' }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.sup.query(`SELECT kimlik, is_emri_ref, oneri FROM aski_is_karari WHERE kurulus_ref = $1 ORDER BY oneri`, [f])).rows;
+    expect(k.map((x) => x.oneri)).toEqual(['Devir', 'Ek Gözetim']);
+    const ak = k.find((x) => x.is_emri_ref === aktif)!.kimlik; const bk = k.find((x) => x.is_emri_ref === bekl)!.kimlik;
+    expect((await o.ist('POST', `/api/aski-karari/${ak}`, await o.gir('ds'), { karar: 'Güvenli Durdurma' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/aski-karari/${ak}`, await o.gir('ds'), { karar: 'Güvenli Durdurma', gerekce: 'Emniyet' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [aktif])).rows[0].statu).toBe('Durduruldu');
+    expect((await o.ist('POST', `/api/aski-karari/${bk}`, await o.gir('ds'), {})).json().karar).toBe('Devir');
+    expect((await o.kart('Firma Değiştir', bekl)).baslik).toContain('Devir');
+  });
   it('kapanışta konum kapanır, garanti izleme açılır', async () => {
     const d = await dosya(); await dosyaKapanisIsleri(o.db, d.kimlik);
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Garanti İzleme' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);

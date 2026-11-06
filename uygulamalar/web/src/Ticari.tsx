@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
-import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, KurumBelgeleri, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
+import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
@@ -96,8 +96,8 @@ interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
   ekonomikKilit: boolean;
   teklifler: { bant_disi?: boolean; bant_onayli?: boolean; kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
-  firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string }[];
-  isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null }[];
+  firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string; aralik_disi?: number }[];
+  isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
 }
 interface Mali { kredi: { acik: number; limit: number; oran: number; uyari: boolean; asim: boolean; buyuk: boolean } | null; itirazlar: { kimlik: string; fatura_ref: string; kalem: string; tutar_eur: string; durum: string; yanit: string | null; yanit_son: string }[]; gecikme: { fatura: string; gun: number; tur: string; oran: number | null; faiz: number | null }[]; sigortali: boolean; ayriKalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
 
@@ -118,6 +118,21 @@ function MasrafKalemi({ dosya, teklif, yap }: { dosya: string; teklif: string; y
     <BelgeSec ad="Tesis Teklifi veya Tarifesi" bagTuru="Dosya" bagKimligi={dosya} deger={f.belge} sec={(x) => setF({ ...f, belge: x })} />
     <button className="btn2 kucuk" disabled={!f.belge} onClick={() => void yap(() => istek(`/teklif/${teklif}/masraf-kalemi`, { aciklama: f.aciklama, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')), belge: f.belge }), 'Masraf kalemi eklendi.').then(() => setF({ aciklama: '', tutar: '', belge: '' }))}>Masraf Ekle</button>
   </div>;
+}
+
+/** YG-1660: firma geçici askıda; öneri öndeğer, farklı kararda gerekçe. */
+function AskiKarari({ aski, yap }: { aski: { kimlik: string; oneri: string }; yap: (f: () => Promise<unknown>, m?: string) => Promise<unknown> }) {
+  const [k, setK] = useState(aski.oneri); const [g, setG] = useState('');
+  return <><label htmlFor={`ak-${aski.kimlik}`}>Firma Geçici Askıda · Karar</label><select id={`ak-${aski.kimlik}`} value={k} onChange={(e) => setK(e.target.value)}>{['Güvenli Durdurma', 'Kontrollü Devam', 'Ek Gözetim', 'Devir'].map((x) => <option key={x}>{x}</option>)}</select>
+    {k !== aski.oneri && <><label htmlFor={`akg-${aski.kimlik}`}>Gerekçe</label><input id={`akg-${aski.kimlik}`} value={g} onChange={(e) => setG(e.target.value)} /></>}
+    <button className="btn2 kucuk" disabled={k !== aski.oneri && !g.trim()} onClick={() => void yap(() => istek(`/aski-karari/${aski.kimlik}`, { karar: k, gerekce: g.trim() || undefined }), 'Askı kararı kaydedildi.')}>Kararı Kaydet</button></>;
+}
+
+/** YG-1660: firma işi bırakırsa iş emri kapanır; rücu bilgisi Muhasebe ve Finans Müdürüne gider. */
+function FirmaBirakti({ kimlik, yap }: { kimlik: string; yap: (f: () => Promise<unknown>, m?: string) => Promise<unknown> }) {
+  const [g, setG] = useState('');
+  return <><label htmlFor={`fb-${kimlik}`}>Firmanın İşi Bırakma Gerekçesi</label><input id={`fb-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!g.trim()} onClick={() => void yap(() => istek(`/is-emri/${kimlik}/firma-birakti`, { gerekce: g.trim() }), 'İş emri kapatıldı; firma değiştirme görevi açıldı.')}>Firma İşi Bıraktı</button></>;
 }
 
 /** YG-368: ön koşullar; eksikte Koşullu ve gerekçe. */
@@ -190,7 +205,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         ))}
         <TedarikSuresi id={id} />
         {ticari && <>
-          <label htmlFor="t-f">Firma Fiyat Teklifi</label><select id="t-f" value={ft} onChange={(e) => setFt(e.target.value)}><option value="">Seçiniz</option>{v.firma.map((f) => <option key={f.kimlik} value={f.kimlik}>{f.teklif_no} · {eur(f.toplam_eur)} · {f.durum}</option>)}</select>
+          <label htmlFor="t-f">Firma Fiyat Teklifi</label><select id="t-f" value={ft} onChange={(e) => setFt(e.target.value)}><option value="">Seçiniz</option>{v.firma.map((f) => <option key={f.kimlik} value={f.kimlik}>{f.teklif_no} · {eur(f.toplam_eur)} · {f.durum}{f.aralik_disi ? ` · Maliyet aralığı dışı: ${f.aralik_disi} kalem` : ''}</option>)}</select>
           {v.teklifler.some((t) => t.statu === 'Karar') && <><label htmlFor="t-a">Ek Fiyat Teklifi İçin Ana Teklif</label><select id="t-a" value={ek} onChange={(e) => setEk(e.target.value)}><option value="">Ek Teklif Değil</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
           <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft, ekTeklif: ek || undefined, acilTedbir: acilT || undefined }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
           <label className="kutu"><input type="checkbox" checked={acilT} onChange={(e) => setAcilT(e.target.checked)} /><span>Acil Tedbir Fiyat Teklifi</span></label>
@@ -203,11 +218,13 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <div key={e.kimlik} className="soru">
             <span>{e.ana_is_emri_ref ? '↳ ' : ''}{e.is_emri_no} · {e.firma} · {e.statu}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
             <div className="dugmeler">
+              {e.aski && <AskiKarari aski={e.aski} yap={yap} />}
               {e.statu === 'Başlangıç Kontrolünde' && tu && <BaslangicKontrolu kimlik={e.kimlik} yap={yap} />}
               {['Aktif', 'Tamamlandı'].includes(e.statu) && tu && <IlerlemeDogrula isEmri={e.kimlik} />}
               {!['Taslak', 'İç Onayda', 'İptal'].includes(e.statu) && <SahaKayitlari isEmri={e.kimlik} />}
               {e.statu === 'Tamamlandı' && tu && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/teknik-kabul`, { sonuc: 'Kabul' }), 'Teknik kabul kaydedildi.')}>Teknik Kabul</button>}
               {e.statu === 'Tamamlandı' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/kapat`, {}))}>Kapat</button>}
+              {['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'].includes(e.statu) && rollerim.includes('Dosya Sorumlusu') && <FirmaBirakti kimlik={e.kimlik} yap={yap} />}
             </div>
           </div>
         ))}
@@ -735,6 +752,8 @@ export function IdariIslemler() {
       <TatilTakvimi />
       <ButceDonemi />
       <KurumBelgeleri />
+      <FirmaKapsamaRaporu />
+      <YurtDisiFirmaTalebi />
       <YasalAyipRaporu />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
