@@ -260,7 +260,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE kurtarma_operasyonu SET onay_talebi_ref = $2 WHERE kimlik = $1`, [r.kimlik, on.kimlik]);
       await (await import('./belge_uret.js')).belgeUret(c, { tur: 'Kurtarma Sözleşmesi', nesne: r.kimlik, dosya: id }); // YG-590
       const firma = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [g.saglayici])).rows.map((x) => x.kullanici_ref as string);
-      await bildir(c, { olay: `kurtarma:${r.kimlik}:firma`, kullanicilar: firma, baslik: `${d.dosya_no} · Kurtarma Sözleşmesi Onayı`, oncelik: g.acil ? 'Kritik' : 'Yüksek', sms: true, acil: Boolean(g.acil) });
+      await bildir(c, { olay: `kurtarma:${r.kimlik}:firma`, kullanicilar: firma, baslik: `${d.dosya_no} · Kurtarma Sözleşmesi Onayı`, ozet: `Onay için: ${b.webAdresi}`, oncelik: g.acil ? 'Kritik' : 'Yüksek', sms: true, acil: Boolean(g.acil) });
       await kartAc(c, { tur: 'Kurtarma Koordinatör Onayı', kategori: 'islem', baslik: `${d.dosya_no} · Kurtarma Koordinatör Onayı`, ozet: g.hizmet, oncelik: g.acil ? 'Kritik' : 'Yüksek', sahipRol: await rolId(c, TOD), nesneTuru: 'Kurtarma', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik };
     });

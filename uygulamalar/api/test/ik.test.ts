@@ -86,6 +86,11 @@ describe('puantaj (YG-953, YG-957, YG-1492)', () => {
     expect((await o.ist('POST', '/api/puantaj', oy, P('2027-03-01', { cikis: '23:00' }))).json().hata).toContain('11 saati');
     for (const t of ['2027-03-01', '2027-03-02', '2027-03-03', '2027-03-04', '2027-03-05']) expect((await o.ist('POST', '/api/puantaj', oy, P(t))).json().fazlaDakika).toBe(0);
     expect((await o.ist('POST', '/api/puantaj', oy, { tarih: '2027-03-06', gunTuru: 'Çalışma', nobetFiili: 60 })).json().hata).toContain('Ek-3');
+    // YG-1489: Olağanüstü Olay Döneminde Ek-3 eksikliği fazla çalışmayı durdurmaz, uyarı döner.
+    const od = (await o.sup.query(`INSERT INTO olaganustu_donem (sebep) VALUES ('Deneme') RETURNING kimlik`)).rows[0].kimlik;
+    const ou = (await o.ist('POST', '/api/puantaj', oy, { tarih: '2027-03-06', gunTuru: 'Çalışma', nobetFiili: 60 })).json();
+    expect(ou.fazlaDakika).toBe(60); expect(ou.uyari).toContain('Olağanüstü');
+    await o.sup.query(`UPDATE olaganustu_donem SET bitis = now() WHERE kimlik = $1`, [od]);
     await kart('oy', { brut: 45000, ek3Yil: 2027 });
     expect((await o.ist('POST', '/api/puantaj', oy, { tarih: '2027-03-06', gunTuru: 'Çalışma', nobetFiili: 60 })).json().fazlaDakika).toBe(60);
     const oz = (await o.ist('GET', '/api/puantaj/ozet?ay=2027-03', iks)).json().find((x: { kimlik: string }) => x.kimlik === o.K.oy);
@@ -212,5 +217,15 @@ describe('iş kazası ve yurt dışı (YG-981, YG-1669, YG-1492, YG-972)', () =>
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('tm'), { kullanici: o.K.tu, rol: 'Teknik Uzman' });
     expect(r.statusCode, r.body).toBe(409); expect(r.json().hata).toContain('Raporlu');
     await o.sup.query(`UPDATE personel_karti SET personel_durumu = 'Görevde' WHERE kullanici_ref = $1`, [o.K.tu]);
+  });
+});
+
+describe('tazminat neti (YG-978)', () => {
+  it('kıdemden yalnız damga düşer; ihbarda gelir vergisi bordroya bırakılır; oran girilmemişse net yok', async () => {
+    const { tazminatNet } = await import('../src/ik_net.js');
+    expect(tazminatNet({ kidemBrut: 100000, ihbarBrut: 20000, damgaBinde: null })).toBeNull();
+    const n = tazminatNet({ kidemBrut: 100000, ihbarBrut: 20000, damgaBinde: 7.59 })!;
+    expect(n.kidem).toEqual({ brut: 100000, damga: 759, net: 99241 });
+    expect(n.ihbar).toMatchObject({ damga: 151.8, gelirVergisi: 'Bordroda hesaplanır', netDamgaSonrasi: 19848.2 });
   });
 });

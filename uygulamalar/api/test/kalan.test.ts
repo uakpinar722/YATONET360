@@ -846,3 +846,20 @@ describe('denetim izi: dosya okuma ve entegrasyon çağrısı (YG-1184)', () => 
     expect((await o.sup.query(`SELECT sonuc FROM denetim_izi WHERE eylem = 'Entegrasyon Çağrısı' AND nesne_kimligi = $1`, [g])).rows[0]?.sonuc).toBe('Başarılı');
   });
 });
+
+describe('firma rapor ve fiyat sayacı (YG-1483)', () => {
+  it('son zamana 4 saat kala firmaya hatırlatma, aşılınca Dosya Sorumlusuna görev; rapor ve fiyat gelince durur', async () => {
+    const { firmaRaporSureIsle } = await import('../src/firma_rapor_sure.js');
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'RS','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-RS${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const kabul = new Date('2031-01-06T08:00:00Z');
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, firma_kabul_zamani, hazirlayan_ref) VALUES ($1,'KN',$2,$3,'M','K','Aktif',$4,$5) RETURNING kimlik`, [`${d.dosyaNo}-KN01`, d.kimlik, f, kabul, o.K.ds])).rows[0].kimlik;
+    const { raporSonZamani } = await import('../src/rapor.js'); const oncelik = (await o.sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].oncelik;
+    const son = (await raporSonZamani(o.db, oncelik, kabul)).getTime();
+    await firmaRaporSureIsle(o.db, new Date(son - 3 * 3_600_000));
+    await firmaRaporSureIsle(o.db, new Date(son + 60_000));
+    expect((await o.kart('Firma Raporu Gecikti', e)).baslik).toContain('Firma Teknik Raporu ve Firma Fiyat Teklifi');
+    await firmaRaporSureIsle(o.db, new Date(son + 120_000));
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Firma Raporu Gecikti' AND nesne_kimligi = $1`, [e])).rows[0].n).toBe(1);
+  });
+});

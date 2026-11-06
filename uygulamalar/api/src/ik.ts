@@ -196,7 +196,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/ik/parametre', oturumlu, async (i, y) => { // Kıdem tavanı resmî tutardan İK Müdürü, harcırah TİD girer; sistem tutar uydurmaz.
     const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; deger?: number };
-    const yetki = g.kod === 'kidem_tavani_tl' ? IKM : g.kod === 'harcirah_gunluk_eur' ? TID : null;
+    const yetki = g.kod === 'kidem_tavani_tl' || g.kod === 'damga_vergisi_binde' ? IKM : g.kod === 'harcirah_gunluk_eur' ? TID : null; // YG-978: damga oranı binde değer
     if (!yetki || !(Number(g.deger) > 0)) return y.code(400).send({ hata: 'Parametre ve tutarı girmenizi rica ederiz.' });
     if (!(await rolVar(o.kullanici, [yetki]))) return y.code(403).send({ hata: `Bu tutarı ${yetki} girer.` });
     await b.db.query(`INSERT INTO ik_parametresi (kod, deger, giren_ref) VALUES ($1,$2,$3) ON CONFLICT (kod) DO UPDATE SET deger = EXCLUDED.deger, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.kod, g.deger, o.kullanici]);
@@ -230,15 +230,17 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     const nobet = Math.max(0, Number(g.nobetFiili ?? 0)); const net = netDakika(g.giris, g.cikis, nobet);
     if (net - nobet > GUNLUK_DK) return y.code(409).send({ hata: 'Günlük çalışma 11 saati aşamaz.' });
     const onceki = (await b.db.query(`SELECT coalesce(sum(net_dakika), 0) n, coalesce(sum(fazla_dakika), 0) f FROM puantaj_kaydi WHERE personel_ref = $1 AND date_trunc('week', tarih) = date_trunc('week', $2::date) AND tarih <> $2`, [k, g.tarih])).rows[0];
-    const fazla = Math.max(0, Number(onceki.n) + net - HAFTALIK_DK - Number(onceki.f));
+    const fazla = Math.max(0, Number(onceki.n) + net - HAFTALIK_DK - Number(onceki.f)); let uyari: string | undefined;
     if (fazla > 0) {
       const kart = (await b.db.query(`SELECT ek3_yil FROM personel_karti WHERE kullanici_ref = $1`, [k])).rows[0]; const yil = Number(g.tarih.slice(0, 4));
-      if (kart?.ek3_yil !== yil) return y.code(409).send({ hata: `Haftalık 45 saati aşan çalışma için ${yil} yılı Ek-3 onayı bekleniyor.` });
+      const ood = Boolean((await b.db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL LIMIT 1`)).rowCount); // YG-1489: İş Kanunu m.42-43
+      if (kart?.ek3_yil !== yil && !ood) return y.code(409).send({ hata: `Haftalık 45 saati aşan çalışma için ${yil} yılı Ek-3 onayı bekleniyor.` });
+      if (kart?.ek3_yil !== yil) uyari = 'Olağanüstü Olay Dönemi: Ek-3 onayı olmadan fazla çalışma kaydedildi.';
       const top = Number((await b.db.query(`SELECT coalesce(sum(fazla_dakika), 0) f FROM puantaj_kaydi WHERE personel_ref = $1 AND EXTRACT(YEAR FROM tarih) = $2 AND tarih <> $3`, [k, yil, g.tarih])).rows[0].f);
       if (top + fazla > YILLIK_FAZLA_DK) return y.code(409).send({ hata: 'Yıllık fazla çalışma 270 saati aşamaz.' });
     }
     await b.db.query(`INSERT INTO puantaj_kaydi (personel_ref, tarih, gun_turu, giris_saati, cikis_saati, net_dakika, nobet_fiili_dakika, fazla_dakika, onaylayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (personel_ref, tarih) DO UPDATE SET gun_turu = EXCLUDED.gun_turu, giris_saati = EXCLUDED.giris_saati, cikis_saati = EXCLUDED.cikis_saati, net_dakika = EXCLUDED.net_dakika, nobet_fiili_dakika = EXCLUDED.nobet_fiili_dakika, fazla_dakika = EXCLUDED.fazla_dakika, onaylayan_ref = EXCLUDED.onaylayan_ref`, [k, g.tarih, g.gunTuru, g.giris ?? null, g.cikis ?? null, net, nobet, fazla, ik ? o.kullanici : null]);
-    return { netDakika: net, fazlaDakika: fazla };
+    return { netDakika: net, fazlaDakika: fazla, uyari };
   });
   s.get('/puantaj/ozet', oturumlu, async (i, y) => {
     if (!(await ikMi(i.oturum!.kullanici))) return y.code(403).send({ hata: 'Özeti İnsan Kaynakları görür.' });
@@ -370,7 +372,9 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if (!(await ikMi(o.kullanici)) && !(await rolVar(o.kullanici, [GMY]))) return { devir, engel: await ayrilisEngeli(a) };
     const brut = a.brut_aylik_tl ? Number(a.brut_aylik_tl) : null; const tavan = await paramOku('kidem_tavani_tl'); const son = gunStr(new Date(a.son_is_gunu)); const bil = gunStr(new Date(a.bildirim_tarihi));
     const ih = brut ? ihbarTazminati({ giris: a.giris, bildirim: bil, son, brutAylik: brut, tur: a.tur, mutabakat: a.sure_mutabakati }) : { hafta: ihbarHafta(a.giris, son), eksikGun: 0, tutar: 0, odeyen: null };
-    return { devir, engel: await ayrilisEngeli(a), ihbar: ih, kidem: brut && tavan ? kidemTazminati({ giris: a.giris, son, brutAylik: brut, tavan, tur: a.tur }) : null, uyari: !brut ? 'Brüt ücret bekleniyor.' : !tavan ? 'Kıdem tazminatı tavanı bekleniyor.' : null, odemeDurumu: a.odeme_durumu };
+    const kidemB = brut && tavan ? kidemTazminati({ giris: a.giris, son, brutAylik: brut, tavan, tur: a.tur }) : null;
+    const net = brut ? (await import('./ik_net.js')).tazminatNet({ kidemBrut: kidemB, ihbarBrut: ih.tutar, damgaBinde: await paramOku('damga_vergisi_binde') }) : null; // YG-978
+    return { devir, engel: await ayrilisEngeli(a), ihbar: ih, net, kidem: kidemB, uyari: !brut ? 'Brüt ücret bekleniyor.' : !tavan ? 'Kıdem tazminatı tavanı bekleniyor.' : null, odemeDurumu: a.odeme_durumu };
   });
   s.post('/ayrilis-devir/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const yeni = ((i.body ?? {}) as { devralan?: string }).devralan;

@@ -91,6 +91,21 @@ describe('kurtarma (YG-210, YG-276, YG-486, YG-1515)', () => {
     frm = await giris('frm@kurtarma.local');
     const te = (await o.sup.query(`SELECT e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.K.tod])).rows[0].e_posta; tod = await giris(te);
   });
+  it('eksik onay eksik tarafa aralıkla hatırlatılır; üçüncüde Operasyon Müdürü bilgilenir, sonra durur (YG-210)', async () => {
+    const { kurtarmaOnayHatirlat } = await import('../src/kurtarma_hatir.js');
+    const k = await YENI();
+    const t0 = new Date((await o.sup.query(`SELECT olusturma_zamani FROM kurtarma_operasyonu WHERE kimlik = $1`, [k])).rows[0].olusturma_zamani).getTime();
+    const an = (saat: number) => new Date(t0 + saat * 3_600_000 + 60_000);
+    expect(await kurtarmaOnayHatirlat(o.db, an(1))).toBe(0);
+    expect(await kurtarmaOnayHatirlat(o.db, an(4))).toBeGreaterThanOrEqual(1);
+    const b1 = (await o.sup.query(`SELECT kullanici_ref, ozet FROM bildirim WHERE olay_anahtari = $1`, [`kurtarma-hatir:${k}:1`])).rows;
+    expect(b1.map((x) => x.kullanici_ref)).toContain(o.K.tod); expect(b1[0].ozet).toContain('Hizmet sağlayıcı');
+    expect(await kurtarmaOnayHatirlat(o.db, an(4))).toBe(0);
+    await kurtarmaOnayHatirlat(o.db, an(12));
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`kurtarma-hatir:${k}:3`, o.K.opm])).rowCount).toBe(1);
+    await kurtarmaOnayHatirlat(o.db, an(16));
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1`, [`kurtarma-hatir:${k}:4`])).rowCount).toBe(0);
+  });
   it('acil olmayanda üçlü onay olmadan, dalışta belge olmadan başlamaz; yat sahibi onayı ONY-30', async () => {
     const k = await YENI();
     const u = `/api/kurtarma/${k}/baslat`; const ds = await o.gir('ds');

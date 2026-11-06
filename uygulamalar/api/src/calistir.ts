@@ -9,6 +9,8 @@ import { nobetCagriIsle } from './acil_ek.js';
 import { mutabakatIsle } from './onay_ek.js';
 import { teslimIsle } from './teslim_ek.js';
 import { geciciOnarimIsle, kapsamaRaporIsle } from './firma_ek.js';
+import { kurtarmaOnayHatirlat } from './kurtarma_hatir.js';
+import { firmaRaporSureIsle } from './firma_rapor_sure.js';
 import { personelDurumIsle } from './ik.js';
 import { konumTemizle } from './mobil.js';
 import { kvkkIsle } from './kvkk.js';
@@ -52,4 +54,4 @@ setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); }, 
 setInterval(() => { alacakIsle(db).catch((h) => s.log.error(h.message)); kaliteSureIsle(db).catch((h) => s.log.error(h.message)); tedarikSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { onaySureIsle(db).catch((h) => s.log.error(h.message)); belgeKuyruguIsle(baglam).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { sigortaSureIsle(db).catch((h) => s.log.error(h.message)); karneAylikIsle(db).catch((h) => s.log.error(h.message)); kapsamaRaporIsle(db).catch((h) => s.log.error(h.message)); sahaSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
-setInterval(() => { acilIsle(db).catch((h) => s.log.error(h.message)); nobetCagriIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
+setInterval(() => { acilIsle(db).catch((h) => s.log.error(h.message)); kurtarmaOnayHatirlat(db).catch((h) => s.log.error(h.message)); firmaRaporSureIsle(db).catch((h) => s.log.error(h.message)); nobetCagriIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
