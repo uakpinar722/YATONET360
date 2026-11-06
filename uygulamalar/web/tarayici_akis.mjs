@@ -396,7 +396,8 @@ try {
   // Teslim
   await sup.query(`UPDATE dosya SET asama = 'Teslim' WHERE kimlik = $1`, [d.kimlik]);
   await dosyaAc(pDs, d.dosyaNo); await tikla(pDs, 'Teslimi Başlat');
-  kontrol('Dosya Sorumlusu teslimi ekrandan başlatır, yat sahibine ONY-27 gider', (await sup.query(`SELECT count(*)::int n FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-27'`, [d.kimlik])).rows[0].n === 1);
+  let ony27 = 0; for (let i = 0; i < 25 && ony27 === 0; i++) { ony27 = (await sup.query(`SELECT count(*)::int n FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-27'`, [d.kimlik])).rows[0].n; if (!ony27) await pDs.waitForTimeout(200); } // yük altında yanıt gecikebilir
+  kontrol('Dosya Sorumlusu teslimi ekrandan başlatır, yat sahibine ONY-27 gider', ony27 === 1);
   sonuc.push(`DOSYA ${d.dosyaNo}`);
 
   // İkinci dosya: bekletme noktası, çalışma izni, uygunsuzluk, koşullu kabul, tedarik; nöbet çizelgesi

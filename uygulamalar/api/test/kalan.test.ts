@@ -618,3 +618,31 @@ describe('kritik pozisyon vekilleri (YG-1058)', () => {
     await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı' WHERE kimlik = $1`, [r.json().kimlik]);
   });
 });
+
+describe('günlük ve yönetim hesabı (YG-1001)', () => {
+  it('ayrıcalıklı rol yalnız yönetim hesabına, yönetim hesabına yalnız ayrıcalıklı rol', async () => {
+    const { hesapAyrimEngeli } = await import('../src/erisim.js');
+    const r = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
+    const yon = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE ayricalikli_mi LIMIT 1`)).rows[0].kimlik as string;
+    expect(await hesapAyrimEngeli(o.db, o.K.sy!, await r('Sistem Yöneticisi'))).toContain('günlük iş hesabına');
+    expect(await hesapAyrimEngeli(o.db, yon, await r('Dosya Sorumlusu'))).toContain('Yönetim hesabına');
+    expect(await hesapAyrimEngeli(o.db, yon, await r('Sistem Yöneticisi'))).toBeNull();
+    expect(await hesapAyrimEngeli(o.db, o.K.ds!, await r('Teknik Uzman'))).toBeNull();
+  });
+});
+
+describe('atama kapanış kontrolü (YG-312)', () => {
+  it('devredilen kişinin paylaşım bağlantısı kapanır; indirdiği belge için görev açılır', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const bl = await o.belge(d.kimlik, 'ds');
+    const sr = (await o.sup.query(`SELECT kimlik FROM belge_surum WHERE belge_ref = $1 LIMIT 1`, [bl])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO paylasim_baglantisi (surum_ref, belirtec_ozeti, alici_eposta, son_gecerlilik, olusturan_ref) VALUES ($1,$2,'a@b.local',now() + interval '2 days',$3)`, [sr, `oz-${d.kimlik}`, o.K.ds]);
+    await o.ist('GET', `/api/belge/${bl}/surum/1/indir`, await o.gir('ds'));
+    await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, dogrulama_yontemi) VALUES ('İç Kullanıcı','LGM İç Rolü','Yeni DS',$1,$1,'SMS kodu') RETURNING kimlik`, [`yds${d.kimlik.slice(0, 6)}@d.local`]).then(async (r) => {
+      await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Dosya Sorumlusu'`, [r.rows[0].kimlik]);
+      const a = await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('opm'), { kullanici: r.rows[0].kimlik, rol: 'Dosya Sorumlusu', devirNotu: 'Devir' }); expect(a.statusCode, a.body).toBe(200);
+    });
+    expect((await o.sup.query(`SELECT iptal_zamani FROM paylasim_baglantisi WHERE belirtec_ozeti = $1`, [`oz-${d.kimlik}`])).rows[0].iptal_zamani).not.toBeNull();
+    expect((await o.kart('Atama Kapanış Kontrolü', d.kimlik)).sahip_kullanici_ref).toBe(o.K.ds);
+  });
+});

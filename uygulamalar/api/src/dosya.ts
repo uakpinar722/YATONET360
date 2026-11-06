@@ -356,7 +356,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         const eski = (await c.query(`SELECT kimlik, kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = $2 AND bitis_zamani IS NULL FOR UPDATE`, [id, g.rol])).rows[0];
         if (eski?.kullanici_ref === g.kullanici) return dur(409, 'Kişi bu rolde zaten atanmıştır.');
         if (eski && !g.devirNotu?.trim()) return dur(400, 'Devir notu olmadan yeni sorumluya geçilemez.');
-        if (eski) await c.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now(), devir_notu = $2 WHERE kimlik = $1`, [eski.kimlik, g.devirNotu!.trim()]);
+        if (eski) { await c.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now(), devir_notu = $2 WHERE kimlik = $1`, [eski.kimlik, g.devirNotu!.trim()]); await atamaKapanisKontrolu(c, id, eski.kullanici_ref); } // YG-312
       } else if ((await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = $3 AND bitis_zamani IS NULL`, [id, g.kullanici, g.rol])).rowCount) return dur(409, 'Kişi bu rolde zaten atanmıştır.');
       await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,$3,$4)`, [id, g.kullanici, g.rol, o.kullanici]);
       if (g.rol === 'Operasyon Yöneticisi' || g.rol === 'Teknik Yönetici') { // K-240: yat değeri görevi atanan kişiye düşer; devredilenin görevi kapanır.
@@ -596,4 +596,19 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     return { dosyalar: izinli };
   });
 
+}
+
+/**
+ * YG-312: atama sona erdiğinde kişinin bu dosyada başka atanması yoksa açtığı paylaşım bağlantıları kapanır;
+ * dosya belgelerini indirmişse kopyaların silinmesi için kendisine kapanış kontrolü görevi açılır.
+ */
+export async function atamaKapanisKontrolu(c: Pool | PoolClient, dosya: string, kullanici: string): Promise<{ baglanti: number; indirme: number }> {
+  if ((await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [dosya, kullanici])).rowCount) return { baglanti: 0, indirme: 0 };
+  const baglanti = (await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE p.surum_ref = s.kimlik AND e.bag_turu = 'Dosya' AND e.bag_kimligi = $1::text AND p.olusturan_ref = $2 AND p.iptal_zamani IS NULL AND p.son_gecerlilik > now()`, [dosya, kullanici])).rowCount ?? 0;
+  const indirme = Number((await c.query(`SELECT count(DISTINCT d.nesne_kimligi) n FROM denetim_izi d JOIN belge e ON e.kimlik::text = d.nesne_kimligi WHERE d.aktor_ref = $1 AND d.eylem = 'Belge İndirildi' AND e.bag_turu = 'Dosya' AND e.bag_kimligi = $2::text`, [kullanici, dosya])).rows[0].n);
+  if (indirme > 0) {
+    const no = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]?.dosya_no;
+    await kartAc(c, { tur: 'Atama Kapanış Kontrolü', kategori: 'gorev', baslik: `${no} · Atama Kapanış Kontrolü`, ozet: `Bu dosyadan indirdiğiniz ${indirme} belgenin kopyalarını cihazlarınızdan ve paylaşılan klasörlerden silip görevi tamamlamanız rica olunur.`, sahipKullanici: kullanici, nesneTuru: 'Dosya', nesneKimligi: dosya });
+  }
+  return { baglanti, indirme };
 }

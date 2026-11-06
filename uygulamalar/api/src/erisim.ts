@@ -29,6 +29,16 @@ kapanisKaydet('Erişim Talebi', async (c, k, karar, yapan) => {
   else if (karar === 'Yeniden Gönder') await c.query(`UPDATE erisim_talebi SET talep_asamasi = 'İş Onayı' WHERE kimlik = $1`, [id]);
 });
 
+/** YG-1001: günlük iş hesabı ile yönetim hesabı ayrıdır; ayrıcalıklı rol yalnız ayrıcalıklı hesaba, ayrıcalıklı hesaba yalnız ayrıcalıklı rol verilir. */
+export async function hesapAyrimEngeli(db: Pool | PoolClient, kullanici: string, rol: string): Promise<string | null> {
+  const h = (await db.query(`SELECT ayricalikli_mi FROM kullanici_hesabi WHERE kimlik = $1`, [kullanici])).rows[0];
+  const r = (await db.query(`SELECT ayricalikli_rol FROM rol WHERE kimlik = $1`, [rol])).rows[0];
+  if (!h || !r) return null;
+  if (r.ayricalikli_rol && !h.ayricalikli_mi) return 'Yönetim (ayrıcalıklı) rolü günlük iş hesabına verilemez; kişinin ayrı yönetim hesabı açılmalıdır.';
+  if (!r.ayricalikli_rol && h.ayricalikli_mi) return 'Yönetim hesabına günlük iş rolü verilemez; kişinin günlük iş hesabı kullanılmalıdır.';
+  return null;
+}
+
 export function erisimYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const uygulayici = { preHandler: izinGerekli(b, 'erisim.uygula') };
@@ -97,6 +107,7 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
         await c.query(`INSERT INTO risk_kabulu (kullanici_ref, rol_ref, sahip_rol, gerekce, telafi_kontrolu, yeniden_inceleme, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [t.kullanici_ref, t.rol_ref, rk.sahip.trim(), rk.gerekce.trim(), rk.telafi.trim(), rk.yenidenInceleme, o.kullanici]);
       }
       if (t.kullanici_ref === o.kullanici) return dur(403, 'Kendi hesabınıza yetki tanımlayamazsınız.');
+      { const ae = await hesapAyrimEngeli(c, t.kullanici_ref, t.rol_ref); if (ae) return dur(409, ae); }
       if (t.talep_eden_ref === o.kullanici || t.is_onayi_veren === o.kullanici) return dur(403, 'Talep eden veya onaylayan kişi atamayı yapamaz.');
       await c.query(
         `INSERT INTO rol_atamasi (kullanici_ref, rol_ref, bitis_tarihi, atayan_ref, onaylayan_ref, erisim_talebi_ref, izin_dogrulandi) VALUES ($1,$2,$3,$4,$5,$6,false)
