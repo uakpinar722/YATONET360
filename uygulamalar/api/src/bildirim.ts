@@ -128,9 +128,11 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
         await c.query(`UPDATE gonderim SET durum = 'Gönderildi', gonderim_zamani = $2, deneme = deneme + 1 WHERE kimlik = $1`, [g.kimlik, simdi]);
         n++;
       } catch (e) {
-        const d = g.deneme + 1;
+        // YG-1310: kalıcı hata (geçersiz numara veya adres, engelli alıcı) yeniden denenmez; geçici hata bekleme aralığıyla yeniden denenir.
+        const kalici = (e as { kalici?: boolean }).kalici === true || /geçersiz|invalid|unknown (user|number|recipient)|blacklist|kara liste|engellen/i.test((e as Error).message);
+        const d = kalici ? AZAMI_DENEME : g.deneme + 1;
         if (d >= AZAMI_DENEME) {
-          await c.query(`UPDATE gonderim SET durum = 'Başarısız', deneme = $2, son_hata = $3 WHERE kimlik = $1`, [g.kimlik, d, (e as Error).message.slice(0, 200)]);
+          await c.query(`UPDATE gonderim SET durum = 'Başarısız', deneme = $2, son_hata = $3 WHERE kimlik = $1`, [g.kimlik, g.deneme + 1, `${kalici ? 'Kalıcı hata: ' : ''}${(e as Error).message}`.slice(0, 200)]);
           const h = g.kullanici_ref ? (await c.query(`SELECT e_posta, cep_telefonu FROM kullanici_hesabi WHERE kimlik = $1`, [g.kullanici_ref])).rows[0] : null;
           const alt = g.kanal === 'E-posta' ? (h?.cep_telefonu ? ['SMS', h.cep_telefonu] : null) : (h?.e_posta ? ['E-posta', h.e_posta] : null);
           if (alt) await kuyruk(c, g.olay_anahtari + ':alternatif', g.kullanici_ref, alt[0], alt[1], g.konu, g.metin, g.oncelik, simdi);

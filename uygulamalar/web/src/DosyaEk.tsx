@@ -219,5 +219,27 @@ export function YasalAyipRaporu() {
   const [v, setV] = useState<{ ayip: { kayit_no: string; dosya_no: string; statu: string; karar: string | null; tarih: string }[]; rucu: { dosya_no: string; ticari_unvan: string; tur: string; tutar_eur: string; kalan_eur: string; statu: string; tarih: string }[] } | null>(null);
   useEffect(() => { void istek<NonNullable<typeof v>>('/rapor/yasal-ayip').then(setV).catch(() => setV(null)); }, []);
   if (!v) return null;
-  return <><div className="bolum">Yasal Ayıp ve Rücu Kayıtları</div><div className="ozet">{v.ayip.length === 0 && v.rucu.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{v.ayip.map((a) => <div key={a.kayit_no}>{a.dosya_no} · {a.kayit_no} · {a.statu}{a.karar ? ` · ${a.karar}` : ''} · {a.tarih}</div>)}{v.rucu.map((r, n) => <div key={n}>{r.dosya_no} · {r.ticari_unvan} · {r.tur} · {r.tutar_eur} EUR · Kalan: {r.kalan_eur} EUR · {r.statu}</div>)}</div></>;
+  return <><div className="bolum">Yasal Ayıp ve Rücu Kayıtları</div><div className="dugmeler"><a href="/api/rapor/yasal-ayip.csv">Dışa Aktar (CSV)</a></div><div className="ozet">{v.ayip.length === 0 && v.rucu.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{v.ayip.map((a) => <div key={a.kayit_no}>{a.dosya_no} · {a.kayit_no} · {a.statu}{a.karar ? ` · ${a.karar}` : ''} · {a.tarih}</div>)}{v.rucu.map((r, n) => <div key={n}>{r.dosya_no} · {r.ticari_unvan} · {r.tur} · {r.tutar_eur} EUR · Kalan: {r.kalan_eur} EUR · {r.statu}</div>)}</div></>;
+}
+
+/** YG-1299: Sağlayıcı ve Sözleşme Matrisi; yurt dışında KVKK m.9 dayanağı ve maskeleme kuralı zorunlu. */
+export function SaglayiciMatrisi() {
+  const bos = { baglanti: '', saglayici: '', veriYeri: 'Türkiye', ulke: '', erisim: '', ucret: '', seviye: '', yedek: '', kvkk: false, m9: '', maskeleme: '', kurulBildirim: '' };
+  const [l, setL] = useState<{ kimlik: string; baglanti: string; saglayici: string; veri_yeri: string; ulke: string | null; kvkk_sozlesmesi: boolean; m9_dayanak: string | null; hizmet_seviyesi: string | null; yedek_saglayici: string | null }[] | null>(null); const [f, setF] = useState(bos); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/saglayici-matrisi').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  const A = (k: keyof typeof bos, et: string) => <><label htmlFor={`sm-${k}`}>{et}</label><input id={`sm-${k}`} value={String(f[k])} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
+  return <><div className="bolum">Sağlayıcı ve Sözleşme Matrisi</div>{m && <div className="not" role="status">{m}</div>}<div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.baglanti} · {x.saglayici} · {x.veri_yeri}{x.ulke ? ` (${x.ulke})` : ''} · KVKK sözleşmesi: {x.kvkk_sozlesmesi ? 'Var' : '⚠ Yok'}{x.m9_dayanak ? ` · m.9: ${x.m9_dayanak}` : ''}{x.yedek_saglayici ? ` · Yedek: ${x.yedek_saglayici}` : ''}</div>)}</div>
+    <div className="ozet">{A('baglanti', 'Bağlantı (ör. SMS, WhatsApp, E-posta)')}{A('saglayici', 'Sağlayıcı')}<label htmlFor="sm-v">Veri Yeri</label><select id="sm-v" value={f.veriYeri} onChange={(e) => setF({ ...f, veriYeri: e.target.value })}><option>Türkiye</option><option>Yurt Dışı</option></select>{f.veriYeri === 'Yurt Dışı' && <>{A('ulke', 'Ülke')}{A('m9', 'KVKK m.9 Dayanağı')}{A('maskeleme', 'Maskeleme Kuralı')}{A('kurulBildirim', 'Kurula Bildirim Tarihi (YYYY-AA-GG)')}</>}{A('erisim', 'Erişim Yöntemi')}{A('ucret', 'Ücret')}{A('seviye', 'Hizmet Seviyesi')}{A('yedek', 'Yedek Sağlayıcı')}<label className="kutu"><input type="checkbox" checked={f.kvkk} onChange={(e) => setF({ ...f, kvkk: e.target.checked })} /><span>KVKK Veri İşleyen Sözleşmesi İmzalandı</span></label>
+      <button className="btn2" onClick={() => void istek('/saglayici-matrisi', { ...f, kurulBildirim: f.kurulBildirim || undefined }).then(() => { setF(bos); setM('Kayıt eklendi.'); return yk(); }).catch((e) => setM(e.message))}>Matrise Ekle</button></div></>;
+}
+
+/** YG-826: mali parametreler; boş değer işlemi bir üst onaya gönderir. Her değişiklik gerekçeyle kayda geçer. */
+export function MaliParametreler() {
+  const [l, setL] = useState<{ kod: string; deger: string | null; aciklama: string }[] | null>(null); const [d, setD] = useState<Record<string, string>>({}); const [g, setG] = useState(''); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/parametreler').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Mali Parametreler</div>{m && <div className="not" role="status">{m}</div>}<label htmlFor="mp-g">Değişiklik Gerekçesi</label><input id="mp-g" value={g} onChange={(e) => setG(e.target.value)} /><div className="ozet">{l.map((x) => <div key={x.kod}>{x.aciklama}: {x.deger ?? '⚠ Tanımsız (işlem bir üst onaya gider)'} <input aria-label={`${x.aciklama} yeni değer`} value={d[x.kod] ?? ''} onChange={(e) => setD({ ...d, [x.kod]: e.target.value })} /> <button className="btn2 kucuk" disabled={!g.trim() || d[x.kod] === undefined} onClick={() => void istek(`/parametre/${x.kod}`, { deger: d[x.kod] === '' ? null : Number(String(d[x.kod]).replace(',', '.')), gerekce: g }).then(() => { setM('Parametre güncellendi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>)}</div></>;
 }

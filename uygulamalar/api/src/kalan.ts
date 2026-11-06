@@ -295,6 +295,62 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   // YG-990: gözetim raporu İç Denetim, Hukuk ve Uyum, GMY ve CEO'ya açıktır.
   s.get('/rapor/gorev-ayriligi', oturumlu, async (i, y) => (await rolVar(i.oturum!.kullanici, ['İç Denetim Müdürü', 'İç Denetçi', HUD, 'Genel Müdür Yardımcısı', 'CEO'])) ? gorevAyriligiRaporu(b.db) : yok(y));
 
+  // YG-411: sahada onaysız alt yüklenici tespiti; kayıt, Firma Yönetimi Müdürü ve Operasyon Müdürüne görev.
+  s.post('/is-emri/:id/alt-yuklenici-tespit', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; aciklama?: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id)) return yok(y);
+    const e = (await b.db.query(`SELECT kimlik, dosya_ref, is_emri_no FROM is_emri WHERE kimlik = $1`, [id])).rows[0];
+    if (!e || !(await dosyaErisimi(b.db, o.kullanici, e.dosya_ref))) return yok(y);
+    if (!g.ad?.trim()) return y.code(400).send({ hata: 'Sahada görülen alt yüklenicinin adını yazmanızı rica ederiz.' });
+    const engel = await altYukleniciEngeli(b.db, id, [g.ad]);
+    if (!engel) return { onayli: true };
+    for (const rol of ['Firma Yönetimi Müdürü', 'Operasyon Müdürü']) await kartAc(b.db, { tur: 'Onaysız Alt Yüklenici', kategori: 'gorev', baslik: `${e.is_emri_no} · Onaysız Alt Yüklenici`, ozet: `${g.ad.trim()}${g.aciklama?.trim() ? ` · ${g.aciklama.trim()}` : ''}`, sahipRol: await rolId(b.db, rol), nesneTuru: 'İş Emri', nesneKimligi: e.kimlik });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Onaysız Alt Yüklenici Tespiti', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, yeni: { ad: g.ad.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { onayli: false };
+  });
+
+  // YG-1078: dışa aktarım; görüntüleme gibi iz kaydına girer.
+  s.get('/rapor/yasal-ayip.csv', oturumlu, async (i, y) => {
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.rol_adi LIKE '%Direktörü' OR x.rol_adi IN ('Genel Müdür Yardımcısı', 'CEO')) LIMIT 1`, [i.oturum!.kullanici])).rowCount) return yok(y);
+    const ayip = (await b.db.query(`SELECT d.dosya_no, g.kayit_no, g.statu, coalesce(g.karar, '') karar, g.olusturma_zamani::date::text tarih FROM garanti_sikayet g JOIN dosya d ON d.kimlik = g.dosya_ref WHERE EXISTS (SELECT 1 FROM unnest(g.kayit_turu) x WHERE x ILIKE '%ayıp%') ORDER BY g.olusturma_zamani`)).rows;
+    const rucu = (await b.db.query(`SELECT d.dosya_no, u.ticari_unvan, m.tur, m.tutar_eur, m.kalan_eur, m.statu, m.olusturma_zamani::date::text tarih FROM hakedis_mahsubu m JOIN dosya d ON d.kimlik = m.dosya_ref JOIN kurulus u ON u.kimlik = m.kurulus_ref ORDER BY m.olusturma_zamani`)).rows;
+    const h = (x: unknown) => `"${String(x ?? '').replace(/"/g, '""')}"`; const s2 = (n: unknown) => Number(n).toFixed(2).replace('.', ',');
+    const satir = ['Kayıt;Dosya No;Kayıt No / Firma;Tür / Durum;Tutar (EUR);Kalan (EUR);Tarih', ...ayip.map((a) => ['Yasal Ayıp', a.dosya_no, a.kayit_no, `${a.statu}${a.karar ? ` / ${a.karar}` : ''}`, '', '', a.tarih].map(h).join(';')), ...rucu.map((r) => ['Rücu / Mahsup', r.dosya_no, r.ticari_unvan, `${r.tur} / ${r.statu}`, s2(r.tutar_eur), s2(r.kalan_eur), r.tarih].map(h).join(';'))];
+    await izYaz(b.db, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Yasal Ayıp Raporu Dışa Aktarıldı', nesneTuru: 'Rapor', nesneKimligi: 'yasal-ayip', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return y.type('text/csv; charset=utf-8').header('Content-Disposition', 'attachment; filename="yasal-ayip-rucu.csv"').send('\uFEFF' + satir.join('\r\n'));
+  });
+
+  // YG-1299: Sağlayıcı ve Sözleşme Matrisi; yurt dışında KVKK m.9 dayanağı ve maskeleme kuralı zorunlu.
+  const matrisci = (k: string) => rolVar(k, ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', HUD, 'Bilgi İşlem Müdürü']);
+  s.get('/saglayici-matrisi', oturumlu, async (i, y) => (await matrisci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kimlik, baglanti, saglayici, veri_yeri, ulke, erisim_yontemi, ucret, hizmet_seviyesi, yedek_saglayici, kvkk_sozlesmesi, m9_dayanak, maskeleme_kurali, kurul_bildirim_tarihi::text, durum FROM saglayici_matrisi ORDER BY baglanti, saglayici`)).rows : yok(y));
+  s.post('/saglayici-matrisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { baglanti?: string; saglayici?: string; veriYeri?: string; ulke?: string; erisim?: string; ucret?: string; seviye?: string; yedek?: string; kvkk?: boolean; m9?: string; maskeleme?: string; kurulBildirim?: string; belge?: string };
+    if (!(await matrisci(o.kullanici))) return yok(y);
+    if (!g.baglanti?.trim() || !g.saglayici?.trim() || !g.erisim?.trim() || !['Türkiye', 'Yurt Dışı'].includes(g.veriYeri ?? '')) return y.code(400).send({ hata: 'Bağlantı, sağlayıcı, veri yeri ve erişim yöntemini girmenizi rica ederiz.' });
+    if (g.veriYeri === 'Yurt Dışı' && (!g.ulke?.trim() || !g.m9?.trim() || !g.maskeleme?.trim())) return y.code(400).send({ hata: 'Yurt dışı bağlantıda ülke, KVKK m.9 dayanağı ve maskeleme kuralı zorunludur.' });
+    if (g.m9 && /standart sözleşme/i.test(g.m9) && !g.kurulBildirim) return y.code(400).send({ hata: 'Standart sözleşmede Kurula bildirim tarihini girmenizi rica ederiz (imzadan itibaren beş iş günü).' });
+    const r = (await b.db.query(`INSERT INTO saglayici_matrisi (baglanti, saglayici, veri_yeri, ulke, erisim_yontemi, ucret, hizmet_seviyesi, yedek_saglayici, kvkk_sozlesmesi, m9_dayanak, maskeleme_kurali, kurul_bildirim_tarihi, sozlesme_belge_ref, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`, [g.baglanti.trim(), g.saglayici.trim(), g.veriYeri, g.ulke?.trim() || null, g.erisim.trim(), g.ucret?.trim() || null, g.seviye?.trim() || null, g.yedek?.trim() || null, Boolean(g.kvkk), g.m9?.trim() || null, g.maskeleme?.trim() || null, g.kurulBildirim || null, g.belge && UUID.test(g.belge) ? g.belge : null, o.kullanici])).rows[0];
+    if (!g.kvkk) await kartAc(b.db, { tur: 'KVKK Veri İşleyen Sözleşmesi', kategori: 'gorev', baslik: `${g.saglayici.trim()} · Veri İşleyen Sözleşmesi Bekleniyor`, ozet: g.baglanti.trim(), sahipRol: await rolId(b.db, HUD), nesneTuru: 'Sağlayıcı', nesneKimligi: r.kimlik });
+    return r;
+  });
+
+  // YG-826: mali parametreler. Tanımsız değer işlemi bir üst onaya gönderir; fiyat katsayısı bu ekranda hiç görünmez (K-104).
+  const parametreci = (k: string) => rolVar(k, [TID, 'Genel Müdür Yardımcısı', 'CEO']);
+  s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod <> 'fiyat_katsayisi' ORDER BY kod`)).rows : yok(y));
+  s.post('/parametre/:kod', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { kod } = i.params as { kod: string }; const g = (i.body ?? {}) as { deger?: number | null; gerekce?: string };
+    if (!(await parametreci(o.kullanici))) return yok(y);
+    if (kod === 'fiyat_katsayisi') return yok(y);
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Değişiklik gerekçesini yazmanızı rica ederiz.' });
+    if (g.deger !== null && g.deger !== undefined && !(Number(g.deger) >= 0)) return y.code(400).send({ hata: 'Değer geçersizdir.' });
+    const e = (await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0]; if (!e) return yok(y);
+    const yeni = g.deger === null || g.deger === undefined ? null : Number(g.deger);
+    await b.db.query(`UPDATE sistem_parametresi SET deger = $2, gecerlilik = current_date WHERE kod = $1`, [kod, yeni]);
+    await b.db.query(`INSERT INTO parametre_gecmisi (kod, eski, yeni, gerekce, giren_ref) VALUES ($1,$2,$3,$4,$5)`, [kod, e.deger, yeni, g.gerekce.trim(), o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Parametre Değişikliği', nesneTuru: 'Parametre', nesneKimligi: kod, eski: { deger: e.deger }, yeni: { deger: yeni }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   // YG-1078: yasal ayıp ve rücu listesi yalnız Direktör ve üstü; Müdürler göremez.
   s.get('/rapor/yasal-ayip', oturumlu, async (i, y) => {
     const r = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.rol_adi LIKE '%Direktörü' OR x.rol_adi IN ('Genel Müdür Yardımcısı', 'CEO')) LIMIT 1`, [i.oturum!.kullanici])).rowCount;
@@ -313,4 +369,12 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE kurulus SET mersis_no = coalesce($2, mersis_no), mahalle = coalesce($3, mahalle), konum_turu = coalesce($4, konum_turu), yetkili_kisi = coalesce($5, yetkili_kisi), tali_branslar = coalesce($6, tali_branslar), hizmet_bolgeleri = coalesce($7, hizmet_bolgeleri), calisan_sayisi = coalesce($8, calisan_sayisi), referanslar = coalesce($9, referanslar) WHERE kimlik = $1`, [id, g.mersis ?? null, g.mahalle ?? null, g.konumTuru ?? null, g.yetkili ?? null, g.taliBranslar ?? null, g.bolgeler ?? null, g.calisan ?? null, g.referanslar ?? null]);
     return { tamam: true };
   });
+}
+
+/** YG-411: alt yüklenici kullanımı LGM'nin önceden yazılı onayına bağlıdır; ad, bu iş emrinde onaylanmış bir talepte geçmelidir. */
+export async function altYukleniciEngeli(db: Db, isEmri: string, adlar: string[]): Promise<string | null> {
+  const k = (s: string) => s.toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+  const onayli = (await db.query(`SELECT alt_yuklenici FROM alt_yuklenici_talebi WHERE is_emri_ref = $1 AND durum = 'Onaylandı'`, [isEmri])).rows.map((r) => k(r.alt_yuklenici));
+  const eksik = adlar.map((a) => a.trim()).filter((a) => a && !onayli.includes(k(a)));
+  return eksik.length ? `LGM'nin yazılı onayı olmayan alt yüklenici: ${eksik.join(', ')}. Önce Alt Yüklenici Talebi onaylanmalıdır.` : null;
 }

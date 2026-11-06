@@ -357,7 +357,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-369: başlangıç kontrolü firma kabulünden sonra; Başlanabilir / Koşullu Başlanabilir / Bekletilir. BLD-02 yat sahibine.
   s.post('/is-emri/:id/baslangic', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc, onKosul, gerekce } = (i.body ?? {}) as { sonuc?: string; onKosul?: string[]; gerekce?: string };
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc, onKosul, gerekce, altYuklenici } = (i.body ?? {}) as { sonuc?: string; onKosul?: string[]; gerekce?: string; altYuklenici?: string };
     if (!e) return yok(y);
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, TEKNIK))) return y.code(403).send({ hata: 'Başlangıç kontrolünü Saha Sorumlusu veya Teknik Uzman yapar.' });
     if (e.statu !== 'Başlangıç Kontrolünde') return y.code(409).send({ hata: 'İş emri başlangıç kontrolünde değildir.' });
@@ -366,6 +366,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const eksikOn = ON_KOSULLAR.filter((x) => !(onKosul ?? []).includes(x));
     if (sonuc === 'Başlanabilir' && eksikOn.length) return y.code(409).send({ hata: `Başlama ön koşulu eksiktir: ${eksikOn.join(', ')}. Sapma gerekçesiyle Koşullu Başlanabilir seçmenizi rica ederiz.`, eksikler: eksikOn });
     if (sonuc === 'Koşullu Başlanabilir' && eksikOn.length && !gerekce?.trim()) return y.code(400).send({ hata: 'Eksik ön koşul için sapma gerekçesini yazmanızı rica ederiz.' });
+    if (sonuc !== 'Bekletilir' && altYuklenici?.trim()) { const { altYukleniciEngeli } = await import('./kalan.js'); const ae = await altYukleniciEngeli(b.db, e.kimlik, altYuklenici.split(',')); if (ae) return y.code(409).send({ hata: ae }); } // YG-411
     if (sonuc !== 'Bekletilir') { const pe = await planEngeli(b.db, e.dosya_ref, e.is_emri_turu) ?? await baslangicToplantiEngeli(b.db, e.kimlik, e.is_emri_turu) ?? (e.is_emri_turu === 'ON' ? await isBasiAvansEngeli(b.db, e.dosya_ref) : null); if (pe) return y.code(409).send({ hata: pe }); }
     return islem(async (c) => {
       await c.query(`UPDATE is_emri SET baslangic_sonucu = $2, statu = CASE WHEN $2 = 'Bekletilir' THEN statu ELSE 'Aktif' END, eksik_on_kosullar = $3, on_kosul_gerekcesi = $4, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, eksikOn, gerekce?.trim() || null]);

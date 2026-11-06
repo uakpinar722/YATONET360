@@ -457,3 +457,71 @@ describe('teklifte KDV hesabı (KDV-1)', () => {
     expect(await teklifKdvUygula(o.db, c.t)).toBe(1020); expect(await oku(c.t)).toEqual([200, 180, 1020]);
   });
 });
+
+describe('sağlayıcı matrisi, parametreler, dışa aktarım, kalıcı hata (YG-1299, YG-826, YG-1078, YG-1310)', () => {
+  it('matris: yurt dışında m.9 ve maskeleme zorunlu; sözleşme yoksa görev açılır', async () => {
+    const c = await o.gir('hud'); const g = { baglanti: 'WhatsApp', saglayici: 'Meta', veriYeri: 'Yurt Dışı', erisim: 'API' };
+    expect((await o.ist('POST', '/api/saglayici-matrisi', await o.gir('ds'), g)).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/saglayici-matrisi', c, g)).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/saglayici-matrisi', c, { ...g, ulke: 'İrlanda', m9: 'Standart sözleşme', maskeleme: 'Kod ve fiyat gönderilmez' })).statusCode).toBe(400);
+    const r = await o.ist('POST', '/api/saglayici-matrisi', c, { ...g, ulke: 'İrlanda', m9: 'Standart sözleşme', maskeleme: 'Kod ve fiyat gönderilmez', kurulBildirim: '2026-11-10' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.kart('KVKK Veri İşleyen Sözleşmesi', r.json().kimlik)).durum).toBe('Bekliyor');
+    expect((await o.ist('GET', '/api/saglayici-matrisi', c)).json().length).toBeGreaterThan(0);
+  });
+  it('parametre: gerekçe zorunlu, geçmiş tutulur, fiyat katsayısı görünmez ve değişmez', async () => {
+    const c = await o.gir('tid');
+    const l = (await o.ist('GET', '/api/parametreler', c)).json() as { kod: string }[]; expect(l.some((x) => x.kod === 'kdv_orani')).toBe(true); expect(l.some((x) => x.kod === 'fiyat_katsayisi')).toBe(false);
+    expect((await o.ist('POST', '/api/parametre/fiyat_katsayisi', c, { deger: 2, gerekce: 'x' })).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/parametre/masraf_yemek_eur', c, { deger: 30 })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/parametre/masraf_yemek_eur', c, { deger: 30, gerekce: 'Tarife' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT eski, yeni FROM parametre_gecmisi WHERE kod = 'masraf_yemek_eur'`)).rows.map((x) => [Number(x.eski), Number(x.yeni)])).toEqual([[25, 30]]);
+    expect((await o.ist('GET', '/api/parametreler', await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('yasal ayıp CSV yalnız Direktör ve üstüne', async () => {
+    expect((await o.ist('GET', '/api/rapor/yasal-ayip.csv', await o.gir('mfm'))).statusCode).toBe(404);
+    const r = await o.ist('GET', '/api/rapor/yasal-ayip.csv', await o.gir('tid')); expect(r.statusCode).toBe(200); expect(r.headers['content-type']).toContain('text/csv'); expect(r.body).toContain('Dosya No');
+  });
+  it('kalıcı gönderim hatası yeniden denenmez, geçici hata yeniden denenir', async () => {
+    const { kuyrukIsle } = await import('../src/bildirim.js');
+    await o.sup.query(`INSERT INTO gonderim (olay_anahtari, kanal, hedef, konu, metin, plan_zamani) VALUES ('kh:1','SMS','+905550009901','K','M',now() - interval '1 minute'), ('kh:2','SMS','+905550009902','K','M',now() - interval '1 minute')`);
+    const asil = o.sms.gonder; o.sms.gonder = async (tel: string) => { throw Object.assign(new Error(tel.endsWith('01') ? 'Geçersiz numara' : 'Zaman aşımı'), {}); };
+    try { await kuyrukIsle({ db: o.db, sms: o.sms, eposta: o.posta } as never); } finally { o.sms.gonder = asil; }
+    const r = (await o.sup.query(`SELECT olay_anahtari, durum, deneme FROM gonderim WHERE olay_anahtari IN ('kh:1','kh:2') ORDER BY olay_anahtari`)).rows;
+    expect(r[0]).toMatchObject({ durum: 'Başarısız', deneme: 1 }); expect(r[1]).toMatchObject({ durum: 'Bekliyor', deneme: 1 });
+  });
+});
+
+describe('garanti çekek mahsubu (YG-1418)', () => {
+  it('garanti kararında LGM\'nin ödediği çekek firma hakedişine mahsup önerisi olur; yat sahibine kalem açılmaz', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Firma GM','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-GM${++n}`, o.K.ds])).rows[0].kimlik;
+    const te = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Tesis GM','Tesis',$2) RETURNING kimlik`, [`S-TG${++n}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K',$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds]);
+    const tt = (await o.sup.query(`INSERT INTO tesis_talebi (dosya_ref, kurulus_ref, tur, hedef_tarih, olusturan_ref) VALUES ($1,$2,'Çekek Randevusu',current_date,$3) RETURNING kimlik`, [d.kimlik, te, o.K.ds])).rows[0].kimlik;
+    const bl = await o.belge(d.kimlik, 'ds');
+    await o.sup.query(`INSERT INTO tesis_faturasi (kurulus_ref, talep_ref, fatura_no, tarih, kalem, tutar_eur, belge_ref, giren_ref) VALUES ($1,$2,'TF-1',current_date,'Çekek',400,$3,$4)`, [te, tt, bl, o.K.ds]);
+    const gs = (await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, olusturan_ref) VALUES ($1,$2,'{Garanti bildirimi}','Telefon',now(),'Normal',$3) RETURNING kimlik`, [`GS-${++n}`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    const r = await o.ist('POST', `/api/garanti-sikayet/${gs}/karar`, await o.gir('ty'), { karar: 'Garanti', gerekce: 'Garanti kapsamında' }); expect(r.statusCode, r.body).toBe(200);
+    const m = (await o.sup.query(`SELECT kimlik, kurulus_ref, tutar_eur, statu FROM hakedis_mahsubu WHERE dosya_ref = $1`, [d.kimlik])).rows;
+    expect(m).toHaveLength(1); expect(m[0]).toMatchObject({ kurulus_ref: f, statu: 'Onayda' }); expect(Number(m[0].tutar_eur)).toBe(400);
+    expect((await o.kart('Hakediş Mahsubu', m[0].kimlik)).durum).toBe('Bekliyor');
+    await o.ist('POST', `/api/garanti-sikayet/${gs}/karar`, await o.gir('ty'), { karar: 'Garanti', gerekce: 'Tekrar' });
+    expect((await o.sup.query(`SELECT count(*) n FROM hakedis_mahsubu WHERE dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe('1');
+  });
+});
+
+describe('onaysız alt yüklenici (YG-411)', () => {
+  it('onaylı talepte olmayan ad engellenir; sahada tespit görev açar', async () => {
+    const { altYukleniciEngeli } = await import('../src/kalan.js');
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Firma AY','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-AY${++n}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO alt_yuklenici_talebi (is_emri_ref, alt_yuklenici, kapsam, durum, talep_eden_ref) VALUES ($1,'İzmir Boya Ltd','Boya','Onaylandı',$2), ($1,'Bekleyen Ltd','Kaynak','Onayda',$2)`, [e, o.K.ds]);
+    expect(await altYukleniciEngeli(o.db, e, ['izmir  boya ltd'])).toBeNull();
+    expect(await altYukleniciEngeli(o.db, e, ['İzmir Boya Ltd', 'Bekleyen Ltd'])).toContain('Bekleyen Ltd');
+    const u = `/api/is-emri/${e}/alt-yuklenici-tespit`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { ad: 'İzmir Boya Ltd' })).json()).toEqual({ onayli: true });
+    expect((await o.ist('POST', u, await o.gir('ds'), { ad: 'Habersiz Usta' })).json()).toEqual({ onayli: false });
+    expect((await o.kart('Onaysız Alt Yüklenici', e)).durum).toBe('Bekliyor');
+  });
+});

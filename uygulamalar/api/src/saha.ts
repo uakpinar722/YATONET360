@@ -13,7 +13,7 @@ import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 import { birKez, bildir, disGonder } from './bildirim.js';
 import { sigortaAdresiBekleniyor, sigortayaHazirla } from './sigorta_gonderim.js';
-import { metinGetir } from './metin.js';
+import { metinGetir, tutar } from './metin.js';
 import { rolSahipleri } from './makam.js';
 
 const ONEM_ONCELIK: Record<string, string> = { Kritik: 'Kritik', Yüksek: 'Yüksek', Orta: 'Normal', Düşük: 'Planlı', Gözlem: 'Planlı' };
@@ -511,6 +511,13 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (g.karar === 'Garanti') {
       await garantiKarneIsle(b.db, k.dosya_ref); // Ek I §7.5
       const gm = Number((await b.db.query(`SELECT coalesce(sum(f.tutar_eur), 0) t FROM tesis_faturasi f JOIN tesis_talebi s ON s.kimlik = f.talep_ref WHERE s.dosya_ref = $1 AND f.kalem = 'Çekek'`, [k.dosya_ref])).rows[0].t);
+      // YG-1418: LGM'nin ödediği çekek tutarı firma hakedişinden mahsup önerisi olarak kendiliğinden açılır; onay zinciri elle açılan mahsupla aynıdır.
+      const firma = k.kurulus_ref ?? (await b.db.query(`SELECT DISTINCT kurulus_ref FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK')`, [k.dosya_ref])).rows.map((r) => r.kurulus_ref as string).find((_, n, l) => l.length === 1);
+      if (gm > 0 && firma && await birKez(b.db, 'garanti_mahsup', id)) {
+        const { parasalZincir, sonMakam } = await import('./teklif.js'); // döngüsel içe aktarmayı önler
+        const m = (await b.db.query(`INSERT INTO hakedis_mahsubu (kurulus_ref, dosya_ref, tur, tutar_eur, aciklama, hazirlayan_ref) VALUES ($1,$2,'Garanti Masrafı',$3,$4,$5) RETURNING kimlik`, [firma, k.dosya_ref, gm, `${k.kayit_no} garanti kararı: LGM'nin ödediği çekek masrafı`, o.kullanici])).rows[0];
+        await kartAc(b.db, { tur: 'Hakediş Mahsubu', baslik: 'Garanti Masrafı · Hakediş Mahsubu', ozet: `${tutar(gm)} EUR · ${k.kayit_no} garanti kararı`, hazirlayan: o.kullanici, zincir: await parasalZincir(b.db, ['Muhasebe ve Finans Müdürü'], await sonMakam(b.db, gm)), nesneTuru: 'Hakediş Mahsubu', nesneKimligi: m.kimlik });
+      }
       if (await birKez(b.db, 'garanti_masraf', id)) await kartAc(b.db, { tur: 'Garanti Masrafı', kategori: 'islem', baslik: `${k.kayit_no} · Garanti Yan Masrafı`, ozet: `Karaya alma, çekek ve ulaşım masrafını LGM ödediyse firma hakedişinden mahsup önermenizi rica ederiz.${gm > 0 ? ` Kayıtlı çekek faturaları: ${gm.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR.` : ''}`, sahipRol: await rolId(b.db, 'Muhasebe ve Finans Müdürü'), nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref }); // YG-1418
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Garanti/Şikâyet Kararı', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, yeni: { karar: g.karar, sonuc: g.sikayetSonucu }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

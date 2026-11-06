@@ -1,0 +1,6 @@
+-- YG-1299: Sağlayıcı ve Sözleşme Matrisi. YG-826: mali parametre değişiklik geçmişi.
+CREATE TABLE saglayici_matrisi (
+  kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), baglanti text NOT NULL, saglayici text NOT NULL, veri_yeri text NOT NULL CHECK (veri_yeri IN ('Türkiye', 'Yurt Dışı')), ulke text, erisim_yontemi text NOT NULL, ucret text, hizmet_seviyesi text, yedek_saglayici text, kvkk_sozlesmesi boolean NOT NULL DEFAULT false, m9_dayanak text, maskeleme_kurali text, kurul_bildirim_tarihi date, sozlesme_belge_ref uuid REFERENCES belge (kimlik), durum text NOT NULL DEFAULT 'Aktif' CHECK (durum IN ('Aktif', 'Pasif')), kaydeden_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zaman timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE parametre_gecmisi (kimlik bigserial PRIMARY KEY, kod text NOT NULL REFERENCES sistem_parametresi (kod), eski numeric, yeni numeric, gerekce text NOT NULL, giren_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zaman timestamptz NOT NULL DEFAULT now());
+GRANT SELECT, INSERT, UPDATE ON saglayici_matrisi TO yatonet_uygulama; GRANT SELECT, INSERT ON parametre_gecmisi TO yatonet_uygulama; GRANT USAGE ON SEQUENCE parametre_gecmisi_kimlik_seq TO yatonet_uygulama; GRANT UPDATE ON sistem_parametresi TO yatonet_uygulama;

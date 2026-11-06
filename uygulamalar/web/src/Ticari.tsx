@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
-import { DosyaEkIslemler, FirmaAcilIslemleri, MutabakatRaporlari, YasalAyipRaporu } from './DosyaEk';
+import { DosyaEkIslemler, FirmaAcilIslemleri, MaliParametreler, MutabakatRaporlari, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
@@ -123,10 +123,11 @@ function MasrafKalemi({ dosya, teklif, yap }: { dosya: string; teklif: string; y
 /** YG-368: ön koşullar; eksikte Koşullu ve gerekçe. */
 function BaslangicKontrolu({ kimlik, yap }: { kimlik: string; yap: (f: () => Promise<unknown>, m?: string) => Promise<unknown> }) {
   const ON = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'];
-  const [s, setS] = useState<string[]>([]); const [g, setG] = useState('');
+  const [s, setS] = useState<string[]>([]); const [g, setG] = useState(''); const [ay, setAy] = useState('');
   return <div className="tam">{ON.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={s.includes(x)} onChange={(e) => setS(e.target.checked ? [...s, x] : s.filter((y) => y !== x))} /><span>{x}</span></label>)}
     <label htmlFor={`bk-${kimlik}`}>Sapma Gerekçesi</label><input id={`bk-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
-    <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${kimlik}/baslangic`, { sonuc: 'Başlanabilir', onKosul: s }))}>Başlanabilir</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${kimlik}/baslangic`, { sonuc: 'Koşullu Başlanabilir', onKosul: s, gerekce: g }))}>Koşullu Başlanabilir</button></div></div>;
+    <label htmlFor={`bka-${kimlik}`}>Sahadaki Alt Yükleniciler (virgülle; yoksa boş)</label><input id={`bka-${kimlik}`} value={ay} onChange={(e) => setAy(e.target.value)} />
+    <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${kimlik}/baslangic`, { sonuc: 'Başlanabilir', onKosul: s, altYuklenici: ay }))}>Başlanabilir</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${kimlik}/baslangic`, { sonuc: 'Koşullu Başlanabilir', onKosul: s, gerekce: g, altYuklenici: ay }))}>Koşullu Başlanabilir</button></div></div>;
 }
 
 /** YG-195, YG-230, YG-301, YG-302, YG-884: dosya içinde kapsam, teklif, iş emri ve mali akış. */
@@ -730,6 +731,7 @@ export function IdariIslemler() {
       <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
       <KurumsalEk2 yap={yap} />
+      <MaliParametreler />
       <YasalAyipRaporu />
       <IbanTeyit />
       <Blok baslik="İzin Talebi">
