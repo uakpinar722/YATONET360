@@ -1,3 +1,4 @@
+import { sayac } from './sure.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez } from './bildirim.js';
@@ -151,7 +152,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     const k = KOMUTA[g.tur ?? '']; if (!k || !g.ozet?.trim()) return y.code(400).send({ hata: 'Olay türü ve özeti girmenizi rica ederiz.' });
     if (g.dosya && (!UUID.test(g.dosya) || !(await dosyaErisimi(b.db, o.kullanici, g.dosya)))) return yok(y);
     return islem(async (c) => {
-      const r = (await c.query(`INSERT INTO olay_kaydi (olay_turu, ozet, dosya_ref, acan_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.tur, g.ozet!.trim(), g.dosya ?? null, o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO olay_kaydi (olay_turu, ozet, dosya_ref, acan_ref, olay_no) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [g.tur, g.ozet!.trim(), g.dosya ?? null, o.kullanici, `LGM-OL-${String(await sayac(c, 'olay-kaydi')).padStart(5, '0')}`])).rows[0];
       // Kurumsal krizde ilk müdahale olayı açan ilgili Direktördür.
       const ilk = k.ilk ? await sahipleri(c, k.ilk) : [o.kullanici]; const yon: string[] = []; for (const x of k.yonetici) yon.push(...await sahipleri(c, x)); const bil: string[] = []; for (const x of k.bilgi) bil.push(...await sahipleri(c, x));
       await bildir(c, { olay: `olay:${r.kimlik}:ilk`, kullanicilar: ilk, baslik: `İlk Müdahale: ${g.tur}`, ozet: g.ozet!.trim(), oncelik: 'Kritik', sms: true, acil: true });

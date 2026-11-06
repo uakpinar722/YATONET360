@@ -889,3 +889,25 @@ describe('e-postası olmayan alıcıya iletim (YG-207, YG-239)', () => {
     expect((await o.kart('Kalıcı Saklayıcıyla İletim', on)).baslik).toContain('Kalıcı Saklayıcıyla İletim');
   });
 });
+
+describe('sökülen parça süresi (YG-077)', () => {
+  it('son güne 7 gün kala hatırlatma; talimatsız süre dolunca İade seçilir ve görev açılır', async () => {
+    const { sokulenParcaIsle } = await import('../src/sokulen_parca.js');
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const p = (await o.sup.query(`INSERT INTO sokulen_parca (dosya_ref, parca_adi, son_tarih, giren_ref) VALUES ($1,'Pervane','2031-02-10',$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    await sokulenParcaIsle(o.db, new Date('2031-02-05T09:00:00Z'));
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`sokulen-parca-once:${p}`, o.K.ds])).rowCount).toBe(1);
+    await sokulenParcaIsle(o.db, new Date('2031-02-12T09:00:00Z'));
+    expect((await o.sup.query(`SELECT secim FROM sokulen_parca WHERE kimlik = $1`, [p])).rows[0].secim).toBe('İade');
+    expect((await o.kart('Talimatsız Parça İadesi', p)).baslik).toContain('Yatla İade');
+  });
+});
+
+describe('olay kaydı numarası (YG-010)', () => {
+  it('olay kaydı LGM-OL önekli sıra numarası alır', async () => {
+    const { benzerAlanKontrolu } = await import('../src/teyit.js');
+    await benzerAlanKontrolu(o.db, 'x@limitglobalrnarine.com.tr', o.K.ds!, null);
+    const n = (await o.sup.query(`SELECT olay_no FROM olay_kaydi ORDER BY olusturma_zamani DESC LIMIT 1`)).rows[0].olay_no as string;
+    expect(n).toMatch(/^LGM-OL-\d{5}$/);
+  });
+});

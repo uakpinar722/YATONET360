@@ -8,6 +8,7 @@ import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
 import { UUID } from './yat.js';
+import { sayac } from './sure.js';
 
 type Db = Pool | PoolClient;
 const LGM_ALANI = 'limitglobalmarine.com.tr';
@@ -54,7 +55,7 @@ export async function benzerAlanKontrolu(db: Db, gonderen: string | undefined, k
   const t = benzerAlanAdi(gonderen, await tanimliAlanlar(db, dosya));
   if (!t) return null;
   const ozet = `Benzer alan adlı gönderen: ${gonderen.trim()} (tanımlı: ${t})`;
-  const o = (await db.query(`INSERT INTO olay_kaydi (olay_turu, ozet, dosya_ref, acan_ref) VALUES ('Bilgi Güvenliği Göstergesi', $1, $2, $3) RETURNING kimlik`, [ozet, dosya ?? null, kullanici])).rows[0];
+  const o = (await db.query(`INSERT INTO olay_kaydi (olay_turu, ozet, dosya_ref, acan_ref, olay_no) VALUES ('Bilgi Güvenliği Göstergesi', $1, $2, $3, $4) RETURNING kimlik`, [ozet, dosya ?? null, kullanici, `LGM-OL-${String(await sayac(db, 'olay-kaydi')).padStart(5, '0')}`])).rows[0];
   const al: string[] = []; for (const r of ['Bilgi İşlem Müdürü', 'Sistem Yöneticisi', 'Hukuk ve Uyum Direktörü']) al.push(...await rolSahipleri(db, await rolId(db, r)));
   await bildir(db, { olay: `benzer-alan:${o.kimlik}`, kullanicilar: [...new Set(al)], baslik: 'Bilgi Güvenliği Göstergesi', ozet, oncelik: 'Yüksek' });
   return `Gönderen adresi tanımlı ${t} alan adına benziyor ancak aynı değildir; ileti kabul edilmedi ve güvenlik kaydı açıldı.`;
