@@ -21,7 +21,9 @@ describe('avans ve ara ödeme (YG-906)', () => {
 
 describe('iş günü (YG-1472)', () => {
   it('Cumartesi iş günü, Pazar değil', async () => {
-    const r = await isGunuSonu(o.db, new Date('2027-03-05T09:00:00Z'), 2); expect(r.toISOString().slice(0, 10)).toBe('2027-03-08');
+    const r = await isGunuSonu(o.db, new Date('2027-02-05T09:00:00Z'), 2); expect(r.toISOString().slice(0, 10)).toBe('2027-02-08');
+    // TAT-1: 8 Mart 2027 arife (yarım gün), 9–11 Mart Ramazan Bayramı
+    expect((await isGunuSonu(o.db, new Date('2027-03-05T09:00:00Z'), 2)).toISOString().slice(0, 10)).toBe('2027-03-12');
   });
 });
 

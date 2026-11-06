@@ -70,7 +70,9 @@ async function rolKisileri(db: Pool, roller: string[], direktorler: boolean): Pr
 export async function butceDonemiIsle(db: Pool, simdi = new Date()): Promise<number> {
   const yil = simdi.getUTCFullYear(); const ay = simdi.getUTCMonth(); let n = 0;
   if (ay === 11 && !(await db.query(`SELECT 1 FROM resmi_tatil WHERE extract(year FROM tarih) = $1 LIMIT 1`, [yil + 1])).rowCount && await birKez(db, 'tatil_takvimi_eksik', String(yil + 1))) {
-    await kartAc(db, { tur: 'Tatil Takvimi Eksik', kategori: 'gorev', oncelik: 'Yüksek', baslik: `${yil + 1} Tatil ve Arife Takvimi Girilmedi`, ozet: 'İş günü sayaçları yalnız Pazar gününü düşüyor; takvimin Bütçe Nihai Onay Toplantısından önce tamamlanması rica olunur.', sahipRol: await rolId(db, 'CEO'), nesneTuru: 'Takvim', nesneKimligi: String(yil + 1) }); n++;
+    // CEO 06.11.2026: görev GMY'ye açılır, CEO bilgilendirilir.
+    await kartAc(db, { tur: 'Tatil Takvimi Eksik', kategori: 'gorev', oncelik: 'Yüksek', baslik: `${yil + 1} Tatil ve Arife Takvimi Girilmedi`, ozet: 'İş günü sayaçları yalnız Pazar gününü düşüyor; takvimin Bütçe Nihai Onay Toplantısından önce tamamlanması rica olunur.', sahipRol: await rolId(db, GMY), nesneTuru: 'Takvim', nesneKimligi: String(yil + 1) });
+    await bildir(db, { olay: `tatil-eksik-ceo:${yil + 1}`, kullanicilar: await rolSahipleri(db, await rolId(db, 'CEO')), baslik: `Bilgi: ${yil + 1} Tatil ve Arife Takvimi Girilmedi`, ozet: 'Takvimin tamamlanması için Genel Müdür Yardımcısına görev açıldı.' }); n++;
   }
   if (ay !== 10 || !(await birKez(db, 'butce_donemi', String(yil)))) return n;
   await db.query(`INSERT INTO butce_donemi (yil) VALUES ($1) ON CONFLICT DO NOTHING`, [yil + 1]);

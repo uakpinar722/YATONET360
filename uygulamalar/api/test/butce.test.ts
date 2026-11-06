@@ -28,11 +28,13 @@ describe('bilanço ve bütçe dönemi', () => {
     await o.sup.query(`INSERT INTO resmi_tatil (tarih, ad) VALUES ('2032-12-08', 'Deneme') ON CONFLICT DO NOTHING`);
     expect((await asamaTarihi(o.db, 2032, ASAMALAR[3]!, new Date('2032-11-01T06:00:00Z'))).toISOString()).toBe('2032-12-09T07:00:00.000Z');
   });
-  it('Aralıkta gelecek yıl takvimi boşsa CEO\'ya görev; doluysa açılmaz', async () => {
+  it('Aralıkta gelecek yıl takvimi boşsa GMY\'ye görev, CEO\'ya bilgi; doluysa açılmaz', async () => {
     const { butceDonemiIsle } = await import('../src/butce.js');
     expect(await butceDonemiIsle(o.db, new Date('2033-12-01T06:00:00Z'))).toBe(1);
-    expect((await o.kart('Tatil Takvimi Eksik', '2034')).durum).toBe('Bekliyor');
+    const k = await o.kart('Tatil Takvimi Eksik', '2034'); expect(k.durum).toBe('Bekliyor'); expect(k.sahip_rol_ref).toBe((await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Genel Müdür Yardımcısı'`)).rows[0].kimlik);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND baslik = 'Bilgi: 2034 Tatil ve Arife Takvimi Girilmedi'`, [o.K.bceo])).rowCount).toBe(1);
     await o.sup.query(`INSERT INTO resmi_tatil (tarih, ad) VALUES ('2035-01-01', 'Yılbaşı') ON CONFLICT DO NOTHING`);
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM resmi_tatil WHERE extract(year FROM tarih) IN (2026, 2027)`)).rows[0].n)).toBe(33); // TAT-1 yüklü
     expect(await butceDonemiIsle(o.db, new Date('2034-12-01T06:00:00Z'))).toBe(0);
   });
   it('talep: birim kendi talebini girer, başkasınınkini görmez; CEO onaylar, sonra değişiklik yok', async () => {
