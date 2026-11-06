@@ -123,5 +123,12 @@ describe('saklama grubu (YG-1222)', () => {
     const g = async (id: string) => (await o.sup.query(`SELECT saklama_grubu, saklama_bitis::text s FROM belge WHERE kimlik = $1`, [id])).rows[0];
     expect((await g(pr)).saklama_grubu).toBe('MAL-10'); expect((await g(pr)).s).toContain('2030-12-3');
     expect((await g(ra)).saklama_grubu).toBe('OPS-5'); expect((await g(ra)).s).toContain('2025-0');
+    // YG-608: dosya dışı bağ: iş emri belgesi dosya kapanışından, kuruluş belgesi ilişki bitişinden hesaplanır.
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, iliski_bitis) VALUES ($1,'SK','Çözüm Ortağı',$2,'2021-03-01') RETURNING kimlik`, [`S-SK${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    const bb = async (tur: string, bag: string, id: string) => (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,$2,'Gizli',$3,$4,'Sistem',current_date,$5) RETURNING kimlik`, [`${tur}-${Math.random()}`, tur, bag, id, o.K.ds])).rows[0].kimlik as string;
+    const ie = await bb('Teknik Rapor', 'İş Emri', e); const ks = await bb('Vergi levhası', 'Kuruluş', f); await kvkkIsle(o.db);
+    expect(await g(ie)).toMatchObject({ saklama_grubu: 'OPS-5', s: '2025-06-01' });
+    expect(await g(ks)).toMatchObject({ saklama_grubu: 'ILS-5', s: '2026-03-01' });
   });
 });

@@ -64,7 +64,12 @@ export async function imhaListesiUret(db: Pool, simdi = new Date()): Promise<str
   }
   for (const h of (await db.query(`SELECT kimlik, kullanici_adi, kullanici_grubu FROM kullanici_hesabi WHERE imha_zamani IS NULL AND hesap_durumu = 'Kapalı' AND ((kullanici_grubu = 'LGM İç Rolü' AND kapanma_zamani < $1) OR (kullanici_grubu <> 'LGM İç Rolü' AND kapanma_zamani < $2 AND NOT EXISTS (SELECT 1 FROM dosya_tarafi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kullanici_ref = kullanici_hesabi.kimlik AND (d.statu <> 'Kapalı' OR d.kapanis_zamani >= $2))))`, [sinir(120), sinir(60)]) /* YG-1223: broker, acente ve diğer dış kullanıcıda süre taraf olduğu son dosyanın kapanmasından başlar */).rows) if (!(await hukukiKorumaVar(db, 'HSP', { kullanici: h.kimlik }))) await ekle('HSP', 'Kullanıcı', h.kimlik, 'Kapanmış hesap');
   for (const r of (await db.query(`SELECT kimlik, ilgili_kisi_ref FROM acik_riza WHERE imha_zamani IS NULL AND riza_turu IN ('Pazarlama açık rızası', 'Ticari elektronik ileti onayı') AND (durum = 'Geri Alındı' OR onay_zamani < $1)`, [sinir(60)])).rows) if (!(await hukukiKorumaVar(db, 'RIZA', { kullanici: r.ilgili_kisi_ref }))) await ekle('RIZA', 'Rıza', r.kimlik, 'Pazarlama verisi');
-  for (const e of (await db.query(`SELECT b.kimlik, b.ad, b.saklama_grubu, b.bag_kimligi FROM belge b WHERE b.imha_zamani IS NULL AND b.saklama_grubu IN ('MAL-10', 'SOZ-10', 'TIC-10') AND b.saklama_bitis < $1`, [simdi])).rows) if (!(await hukukiKorumaVar(db, e.saklama_grubu, { dosya: e.bag_kimligi }))) await ekle(e.saklama_grubu, 'Belge', e.kimlik, e.ad);
+  // YG-608: dosya dışı kayda bağlı belgede hukuki koruma bağlı kaydın kendisinden (dosya, kuruluş, personel) okunur.
+  for (const e of (await db.query(`SELECT b.kimlik, b.ad, b.saklama_grubu, b.bag_kimligi, b.bag_turu,
+      CASE b.bag_turu WHEN 'Dosya' THEN b.bag_kimligi WHEN 'İş Emri' THEN (SELECT dosya_ref::text FROM is_emri WHERE kimlik::text = b.bag_kimligi) WHEN 'Talep' THEN (SELECT dosya_ref::text FROM talep WHERE kimlik::text = b.bag_kimligi) END AS dosya,
+      CASE b.bag_turu WHEN 'Kuruluş' THEN b.bag_kimligi END AS kurulus,
+      CASE b.bag_turu WHEN 'Personel' THEN b.bag_kimligi WHEN 'İzin' THEN (SELECT personel_ref FROM izin_talebi WHERE kimlik::text = b.bag_kimligi) END AS kullanici
+    FROM belge b WHERE b.imha_zamani IS NULL AND (b.saklama_grubu IN ('MAL-10', 'SOZ-10', 'TIC-10') OR (b.bag_turu <> 'Dosya' AND b.saklama_grubu IN ('OPS-5', 'ILS-5', 'OZL-10'))) AND b.saklama_bitis < $1`, [simdi])).rows) if (!(await hukukiKorumaVar(db, e.saklama_grubu, { dosya: e.dosya, kurulus: e.kurulus, kullanici: e.kullanici }))) await ekle(e.saklama_grubu, 'Belge', e.kimlik, e.ad);
   for (const p of (await db.query(`SELECT kullanici_ref FROM personel_karti WHERE ayrilis_tarihi < $1 AND brut_aylik_tl IS NOT NULL`, [sinir(120)])).rows) if (!(await hukukiKorumaVar(db, 'OZL-10', { kullanici: p.kullanici_ref }))) await ekle('OZL-10', 'Personel', p.kullanici_ref, 'Özlük kaydı');
   for (const o of (await db.query(`SELECT o.kimlik FROM olay_kaydi o WHERE o.olusturma_zamani < $1 AND o.ozet <> $2`, [sinir(60), IMHA_METNI])).rows) await ekle('DST-5', 'Olay', o.kimlik, 'Olay kaydı');
   for (const v of (await db.query(`SELECT kimlik, olay_no FROM veri_ihlali WHERE durum = 'Kapalı' AND kapanis_zamani < $1`, [sinir(120)])).rows) await ekle('IHL-10', 'Veri İhlali', v.kimlik, v.olay_no);
@@ -126,9 +131,21 @@ export async function kvkkIsle(db: Pool, simdi = new Date()): Promise<number> {
   for (const k of (await db.query(`SELECT kimlik, basvuru_no, son_yanit_tarihi, hazirlayan_ref FROM ilgili_kisi_basvurusu WHERE durum <> 'Yanıtlandı' AND son_yanit_tarihi <= ($1::date + 7)`, [simdi.toISOString().slice(0, 10)])).rows) if (await birKez(db, 'basvuru_son', k.kimlik)) { await bildir(db, { olay: `basvuru-son:${k.kimlik}`, kullanicilar: [k.hazirlayan_ref, ...await rolKisileri(db, HUD)], baslik: `⚠ ${k.basvuru_no} · Yanıt Süresi Yaklaşıyor`, ozet: `Son yanıt: ${new Date(k.son_yanit_tarihi).toLocaleDateString('tr-TR')}`, oncelik: 'Yüksek' }); n++; }
   await db.query(`DELETE FROM bildirim WHERE zaman < $1`, [ayEkle(simdi, -24)]);
   // YG-608, YG-1222: belge türüne göre grup; birden çok gruba giriyorsa en uzun süre. Mali kayıt takvim yılı sonundan başlar.
-  for (const g of (await db.query(`SELECT b.kimlik, b.belge_turu, b.saklama_grubu, d.kapanis_zamani FROM belge b JOIN dosya d ON d.kimlik::text = b.bag_kimligi WHERE b.bag_turu = 'Dosya' AND b.saklama_bitis IS NULL AND d.kapanis_zamani IS NOT NULL LIMIT 500`)).rows) {
-    const grup = (g.saklama_grubu as string | null) ?? saklamaGrubu(g.belge_turu); const k = new Date(g.kapanis_zamani);
-    await db.query(`UPDATE belge SET saklama_grubu = $3, saklama_bitis = $2 WHERE kimlik = $1`, [g.kimlik, grup === 'OPS-5' ? ayEkle(k, 60) : ayEkle(grup === 'MAL-10' ? new Date(Date.UTC(k.getUTCFullYear(), 11, 31)) : k, 120), grup]);
+  // YG-608: dosya dışı kayda bağlı belge de hesaplanır. İş emri ve talep belgesi bağlı dosyanın kapanışından; kuruluş belgesi ilişkinin bitişinden (ILS-5);
+  // personel ve izin belgesi iş ilişkisinin bitişinden (OZL-10) başlar. Sözleşme, mali ve ticari türler kendi grubunu korur.
+  const BAS = `SELECT b.kimlik, b.belge_turu, b.saklama_grubu, x.bas, x.varsayilan FROM belge b JOIN LATERAL (
+      SELECT d.kapanis_zamani AS bas, NULL::text AS varsayilan FROM dosya d WHERE b.bag_turu = 'Dosya' AND d.kimlik::text = b.bag_kimligi
+      UNION ALL SELECT d.kapanis_zamani, NULL FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE b.bag_turu = 'İş Emri' AND e.kimlik::text = b.bag_kimligi
+      UNION ALL SELECT d.kapanis_zamani, NULL FROM talep q JOIN dosya d ON d.kimlik = q.dosya_ref WHERE b.bag_turu = 'Talep' AND q.kimlik::text = b.bag_kimligi
+      UNION ALL SELECT u.iliski_bitis::timestamptz, 'ILS-5' FROM kurulus u WHERE b.bag_turu = 'Kuruluş' AND u.kimlik::text = b.bag_kimligi
+      UNION ALL SELECT p.ayrilis_tarihi::timestamptz, 'OZL-10' FROM personel_karti p WHERE b.bag_turu = 'Personel' AND p.kullanici_ref = b.bag_kimligi
+      UNION ALL SELECT p.ayrilis_tarihi::timestamptz, 'OZL-10' FROM izin_talebi z JOIN personel_karti p ON p.kullanici_ref = z.personel_ref WHERE b.bag_turu = 'İzin' AND z.kimlik::text = b.bag_kimligi
+    ) x ON x.bas IS NOT NULL WHERE b.saklama_bitis IS NULL AND b.imha_zamani IS NULL LIMIT 500`;
+  for (const g of (await db.query(BAS)).rows) {
+    const tur = saklamaGrubu(g.belge_turu);
+    const grup = (g.saklama_grubu as string | null) ?? (g.varsayilan && tur === 'OPS-5' ? g.varsayilan : tur); const k = new Date(g.bas);
+    const ay = grup === 'OPS-5' || grup === 'ILS-5' ? 60 : 120;
+    await db.query(`UPDATE belge SET saklama_grubu = $3, saklama_bitis = $2 WHERE kimlik = $1`, [g.kimlik, ayEkle(grup === 'MAL-10' ? new Date(Date.UTC(k.getUTCFullYear(), 11, 31)) : k, ay), grup]);
   }
   if (await imhaListesiUret(db, simdi)) n++;
   n += await imhaYenidenUygula(db);
