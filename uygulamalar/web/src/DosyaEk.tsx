@@ -243,3 +243,14 @@ export function MaliParametreler() {
   if (!l) return null;
   return <><div className="bolum">Mali Parametreler</div>{m && <div className="not" role="status">{m}</div>}<label htmlFor="mp-g">Değişiklik Gerekçesi</label><input id="mp-g" value={g} onChange={(e) => setG(e.target.value)} /><div className="ozet">{l.map((x) => <div key={x.kod}>{x.aciklama}: {x.deger ?? '⚠ Tanımsız (işlem bir üst onaya gider)'} <input aria-label={`${x.aciklama} yeni değer`} value={d[x.kod] ?? ''} onChange={(e) => setD({ ...d, [x.kod]: e.target.value })} /> <button className="btn2 kucuk" disabled={!g.trim() || d[x.kod] === undefined} onClick={() => void istek(`/parametre/${x.kod}`, { deger: d[x.kod] === '' ? null : Number(String(d[x.kod]).replace(',', '.')), gerekce: g }).then(() => { setM('Parametre güncellendi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>)}</div></>;
 }
+
+/** YG-1472: resmî tatil ve arife takvimi (yıllık parametre). Arife yarım iş günü sayılır. */
+export function TatilTakvimi() {
+  const [l, setL] = useState<{ tarih: string; ad: string; yarim_gun: boolean }[] | null>(null); const [f, setF] = useState({ tarih: '', ad: '', arife: false }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/takvim').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Resmî Tatil ve Arife Takvimi</div>{m && <div className="not" role="status">{m}</div>}<div className="ozet">{l.length === 0 && <div className="not">⚠ Takvim boş: iş günü sayaçları yalnız Pazar gününü düşüyor.</div>}{l.map((x) => <div key={x.tarih}>{x.tarih.split('-').reverse().join('.')} · {x.ad}{x.yarim_gun ? ' (Arife, yarım gün)' : ''} <button className="btn2 kucuk" onClick={() => void istek('/takvim', { tarih: x.tarih, sil: true }).then(() => yk()).catch((e) => setM(e.message))}>Kaldır</button></div>)}</div>
+    <label htmlFor="tt-t">Tarih</label><input id="tt-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} /><label htmlFor="tt-a">Tatil Adı</label><input id="tt-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} /><label className="kutu"><input type="checkbox" checked={f.arife} onChange={(e) => setF({ ...f, arife: e.target.checked })} /><span>Arife (Yarım Gün)</span></label>
+    <button className="btn2" onClick={() => void istek('/takvim', f).then(() => { setF({ tarih: '', ad: '', arife: false }); setM('Takvim güncellendi.'); return yk(); }).catch((e) => setM(e.message))}>Takvime Ekle</button></>;
+}

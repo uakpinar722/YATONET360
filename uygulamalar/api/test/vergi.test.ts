@@ -122,5 +122,11 @@ describe('ödeme sorumluluğu (YG-894, YG-896)', () => {
     expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Ödeme Sorumluluğu' AND nesne = $1`, [r.json().odemeTalebi])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld30:${r.json().odemeTalebi}%`])).rowCount).toBeGreaterThan(0);
     expect((await o.ist('POST', `/api/ayri-kalem/${a.json().kimlik}/karar`, ds, { karar: 'Sigorta Öder' })).statusCode).toBe(409);
+    // YG-896: fatura kuru yokken TL sütunu yok; kur gelince TL tutar basılır.
+    const { sorumlulukTanim } = await import('../src/belge_uret.js'); const ot = r.json().odemeTalebi as string;
+    const sutun = async () => ((await sorumlulukTanim(o.db, ot, 'K', 'w')).t.bolumler as { sutunlar?: { ad: string }[]; satirlar?: string[][] }[])[0]!;
+    expect((await sutun()).sutunlar!.map((x) => x.ad).some((x) => x.includes('TL'))).toBe(false);
+    await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, fatura_no, fatura_tarihi, kur, kur_tarihi, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',1,0,1,'Faturalandı',$1,'2026-11-05',50.1234,'2026-11-04',$3)`, [`PF-SR-${d.kimlik.slice(0, 8)}`, d.kimlik, o.K.ds]);
+    const s2 = await sutun(); expect(s2.sutunlar!.at(-1)!.ad).toBe('Tutar (TL, 04.11.2026 kuru)'); expect(s2.satirlar![0]!.at(-1)).toBe('15.037,02');
   });
 });

@@ -71,13 +71,13 @@ describe('erişim taraması', () => {
   it('iç rol: Dosya Sorumlusu maliyet, ücret ve banka alanı görmez (YG-1159)', async () => {
     await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, brut_aylik_tl, guncelleyen_ref) VALUES ($1,'2026-01-01',50000,$1) ON CONFLICT DO NOTHING`, [o.K.tu]);
     const tk = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ('T-TR1',$1,'Onarım','Yat Sahibi',20,$2) RETURNING kimlik`, [dosya, o.K.ds])).rows[0].kimlik as string;
-    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,1,'K','Onarım','İşçilik',1,'Adet',777,1000,1000)`, [tk]);
+    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,1,'K','Onarım','İşçilik',1,'Adet',7771.37,1000,1000)`, [tk]);
     const c = await o.gir('ds'); const ihlal: string[] = [];
     const idli = uclar(/s\.get\('(\/(?:dosya|teklif)\/:id(?:\/[a-z-]+)?)'/g).map((u) => u.replace(':id', u.startsWith('/teklif/') ? tk : dosya));
     const bak = await o.ist('GET', `/api/teklif/${tk}`, c); expect(bak.statusCode, bak.body).toBe(200); expect(bak.body).toContain('1000'); // veri gerçekten okunuyor
     for (const u of [...uclar(), ...idli]) {
       const r = await o.ist('GET', `/api${u}`, c); if (r.statusCode >= 500) ihlal.push(`ds ${u} → ${r.statusCode}`);
-      if (r.statusCode === 200 && r.body.includes('777')) ihlal.push(`ds ${u} → maliyet değeri`);
+      if (r.statusCode === 200 && r.body.includes('7771.37')) ihlal.push(`ds ${u} → maliyet değeri`);
       if (r.statusCode === 200) for (const a of ['birim_maliyet_eur', 'maliyet_eur', 'brut_aylik_tl', 'iban']) if (r.body.includes(`"${a}"`)) ihlal.push(`ds ${u} → ${a}`);
     }
     expect(ihlal, ihlal.join('\n')).toEqual([]);

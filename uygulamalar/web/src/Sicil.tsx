@@ -44,6 +44,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <label htmlFor="fs-i">IBAN</label><input id="fs-i" value={iban} onChange={(e) => setIban(e.target.value)} />
           <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/iban`, { iban }), 'IBAN karantinaya alındı; teyit bekliyor.')}>IBAN Ekle</button>
           <FirmaSozlesme id={secili} yap={yap} />
+          <FirmaEkipman id={secili} yap={yap} />
         </div>
       </>}
     </>
@@ -159,4 +160,15 @@ function OnKayit({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: 
   const A = (k: keyof typeof f, et: string) => <><label htmlFor={`ok-${k}`}>{et}</label><input id={`ok-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
   const dizi = (x: string) => (x.trim() ? x.split(',').map((s) => s.trim()).filter(Boolean) : undefined); const bos = (x: string) => x.trim() || undefined;
   return <>{A('mersis', 'MERSİS No')}{A('mahalle', 'Mahalle')}{A('konumTuru', 'Konum Türü')}{A('yetkili', 'Yetkili Kişi')}{A('tali', 'Tali Branşlar (Virgülle)')}{A('bolgeler', 'Hizmet Bölgeleri (Virgülle)')}{A('calisan', 'Çalışan Sayısı')}{A('referanslar', 'Referanslar')}<button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/on-kayit`, { mersis: bos(f.mersis), mahalle: bos(f.mahalle), konumTuru: bos(f.konumTuru), yetkili: bos(f.yetkili), taliBranslar: dizi(f.tali), bolgeler: dizi(f.bolgeler), calisan: f.calisan ? Number(f.calisan) : undefined, referanslar: bos(f.referanslar) }), 'Ön kayıt bilgileri kaydedildi.')}>Ön Kaydı Kaydet</button></>;
+}
+
+/** YG-533: firma ekipmanı bakım ve kalibrasyon geçerliliği; süresi geçen kullanılamaz görünür. */
+function FirmaEkipman({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [l, setL] = useState<{ kimlik: string; ad: string; seri_no: string; bakim_bitis: string | null; kalibrasyon_bitis: string | null; kullanilabilir: boolean }[]>([]); const [f, setF] = useState({ ad: '', seri: '', bakim: '', kalibrasyon: '' });
+  const yk = () => istek<typeof l>(`/firma/${id}/ekipman`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, [id]);
+  const A = (k: keyof typeof f, et: string, tip = 'text') => <><label htmlFor={`fe-${k}`}>{et}</label><input id={`fe-${k}`} type={tip} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
+  return <><div className="bolum">Ekipman</div><div className="ozet">{l.map((x) => <div key={x.kimlik}>{x.ad} · {x.seri_no}{x.bakim_bitis ? ` · Bakım: ${x.bakim_bitis.split('-').reverse().join('.')}` : ''}{x.kalibrasyon_bitis ? ` · Kalibrasyon: ${x.kalibrasyon_bitis.split('-').reverse().join('.')}` : ''} · {x.kullanilabilir ? 'Kullanılabilir' : '⚠ Süresi geçti, kullanılamaz'}</div>)}</div>
+    {A('ad', 'Ekipman Adı')}{A('seri', 'Seri No')}{A('bakim', 'Bakım Son Tarihi', 'date')}{A('kalibrasyon', 'Kalibrasyon Son Tarihi', 'date')}
+    <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/ekipman`, { ad: f.ad, seri: f.seri, bakim: f.bakim || undefined, kalibrasyon: f.kalibrasyon || undefined }).then(() => { setF({ ad: '', seri: '', bakim: '', kalibrasyon: '' }); return yk(); }), 'Ekipman kaydedildi.')}>Ekipman Kaydet</button></>;
 }

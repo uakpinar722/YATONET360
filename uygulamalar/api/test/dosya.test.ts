@@ -89,6 +89,9 @@ describe('süre hesabı (YG-042, YG-1607)', () => {
     expect(bitisKaydir(new Date('2026-11-09T20:00:00Z'), 'Yüksek').bitis.toISOString()).toBe('2026-11-10T09:00:00.000Z'); // 23:00 → ertesi gün 12:00
     expect(bitisKaydir(new Date('2026-11-10T02:00:00Z'), 'Yüksek').bitis.toISOString()).toBe('2026-11-10T09:00:00.000Z'); // 05:00 → aynı gün 12:00
     expect(bitisKaydir(new Date('2026-11-10T10:00:00Z'), 'Normal', new Set(['2026-11-10'])).bitis.toISOString()).toBe('2026-11-11T09:00:00.000Z');
+    const ar = new Set(['2026-11-10']); // arife: 11:00 geçerli, 15:00 ertesi gün 12:00'a kayar
+    expect(bitisKaydir(new Date('2026-11-10T08:00:00Z'), 'Normal', new Set(), ar).not).toBeNull();
+    expect(bitisKaydir(new Date('2026-11-10T12:00:00Z'), 'Normal', new Set(), ar).bitis.toISOString()).toBe('2026-11-11T09:00:00.000Z');
   });
   it('mesafe eki: 150 km altı yok, üstü 4 saat, 250 km sonrası her 100 km 1,5 saat', () => {
     expect([mesafeEki(100), mesafeEki(200), mesafeEki(250), mesafeEki(251), mesafeEki(400)]).toEqual([0, 4, 4, 5.5, 7]);

@@ -31,9 +31,11 @@ const ARA = ['Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yard�
 
 /** İş günü ekler; hafta sonu ve resmî tatil sayılmaz. */
 export async function isGunuSonu(db: Db, d: Date, gun: number): Promise<Date> {
-  const tatil = new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil`)).rows.map((r) => r.t as string));
+  // YG-1472: Pazartesi–Cumartesi iş günü; Pazar ve resmî tatil sayılmaz; arife yarım gün sayılır.
+  const r = (await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t, yarim_gun FROM resmi_tatil`)).rows;
+  const tatil = new Set(r.filter((x) => !x.yarim_gun).map((x) => x.t as string)); const arife = new Set(r.filter((x) => x.yarim_gun).map((x) => x.t as string));
   const x = new Date(d.getTime()); let k = 0;
-  while (k < gun) { x.setUTCDate(x.getUTCDate() + 1); const y = new Date(x.getTime() + 180 * 60_000); const g = y.getUTCDay(); if (g !== 0 && !tatil.has(y.toISOString().slice(0, 10))) k++; }
+  while (k < gun) { x.setUTCDate(x.getUTCDate() + 1); const y = new Date(x.getTime() + 180 * 60_000); const g = y.getUTCDay(); const t = y.toISOString().slice(0, 10); if (g !== 0 && !tatil.has(t)) k += arife.has(t) ? 0.5 : 1; }
   return x;
 }
 

@@ -29,21 +29,23 @@ export function mesafeEki(km: number | null | undefined): number {
  * YG-1607: saatle izlenen sürenin son anı pazar, resmî tatil veya 22:00–08:00 arasına düşerse ilk çalışma günü 12:00'a kayar.
  * Acil evredeki Kritik süreler 7/24 işler, kaymaz.
  */
-export function bitisKaydir(bitis: Date, oncelik: string, tatiller: Set<string> = new Set()): { bitis: Date; not: string | null } {
+export function bitisKaydir(bitis: Date, oncelik: string, tatiller: Set<string> = new Set(), arifeler: Set<string> = new Set()): { bitis: Date; not: string | null } {
   if (oncelik === 'Kritik') return { bitis, not: null };
   const y = yerel(bitis); const saat = y.getUTCHours();
   const calisma = (g: Date) => g.getUTCDay() !== 0 && !tatiller.has(gunAnahtari(g));
-  if (calisma(y) && saat >= 8 && saat < 22) return { bitis, not: null };
+  // YG-1472: arife yarım gündür; öğleden sonraya düşen bitiş ilk çalışma günü 12:00'a kayar.
+  if (calisma(y) && saat >= 8 && saat < (arifeler.has(gunAnahtari(y)) ? 12 : 22)) return { bitis, not: null };
+  const arifeOgle = calisma(y) && arifeler.has(gunAnahtari(y)) && saat >= 12 && saat < 22;
   const g = new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth(), y.getUTCDate(), 12));
   // Gece yarısından önceki geç saat ertesi güne, sabahın erken saati aynı güne kayar.
-  if (saat >= 22) g.setUTCDate(g.getUTCDate() + 1);
+  if (saat >= 22 || arifeOgle) g.setUTCDate(g.getUTCDate() + 1);
   while (!calisma(g)) g.setUTCDate(g.getUTCDate() + 1);
   const ad = (d: Date) => d.toLocaleDateString('tr-TR', { weekday: 'long', timeZone: 'UTC' });
   return { bitis: new Date(g.getTime() - TZ), not: `Kaydırıldı: ${ad(y)} → ${ad(g)} 12:00` };
 }
 
-export async function tatilGunleri(db: Db): Promise<Set<string>> {
-  return new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil`)).rows.map((r) => r.t as string));
+export async function tatilGunleri(db: Db, arife = false): Promise<Set<string>> {
+  return new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil WHERE yarim_gun = $1`, [arife])).rows.map((r) => r.t as string));
 }
 
 /** Sayacı başlatır; aynı tür ikinci kez başlamaz. Önceliğe göre süre tanımı yoksa sayaç açılmaz. */
@@ -51,7 +53,7 @@ export async function sureBaslat(db: Db, g: { tur: string; oncelik: string; basl
   const saat = SURE_SAAT[g.tur]?.[g.oncelik];
   if (saat === undefined) return;
   const ham = new Date(g.baslangic.getTime() + (saat + (g.tur === 'Keşif' || g.tur === 'Sahaya Ulaşma' ? mesafeEki(g.km) : 0)) * 3_600_000);
-  const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db));
+  const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db), await tatilGunleri(db, true));
   await db.query(`INSERT INTO dosya_sure (dosya_ref, talep_ref, tur, baslangic, bitis, kaydirma_notu) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, [g.dosya ?? null, g.talep ?? null, g.tur, g.baslangic, bitis, not]);
 }
 

@@ -309,6 +309,33 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     return { onayli: false };
   });
 
+  // YG-533: firma ekipmanı; Sicil Sorumlusu, Firma Yönetimi Müdürü veya firmanın kendi kullanıcısı girer. Süresi geçen kullanılamaz görünür.
+  const ekipmanci = async (k: string, firma: string) => (await rolVar(k, ['Sicil Sorumlusu', 'Firma Yönetimi Müdürü'])) || Boolean((await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kullanici_ref = $1 AND kurulus_ref = $2`, [k, firma])).rowCount);
+  s.get('/firma/:id/ekipman', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string }; if (!UUID.test(id) || !(await ekipmanci(i.oturum!.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT kimlik, ad, seri_no, bakim_bitis::text, kalibrasyon_bitis::text, (kullanilabilir AND coalesce(least(bakim_bitis, kalibrasyon_bitis), coalesce(bakim_bitis, kalibrasyon_bitis), current_date) >= current_date) kullanilabilir FROM firma_ekipmani WHERE kurulus_ref = $1 ORDER BY ad`, [id])).rows;
+  });
+  s.post('/firma/:id/ekipman', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; seri?: string; bakim?: string; kalibrasyon?: string };
+    if (!UUID.test(id) || !(await ekipmanci(o.kullanici, id))) return yok(y);
+    const tarih = (x?: string) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+    if (!g.ad?.trim() || !g.seri?.trim() || (!tarih(g.bakim) && !tarih(g.kalibrasyon))) return y.code(400).send({ hata: 'Ekipman adı, seri no ve bakım veya kalibrasyon geçerlilik tarihini girmenizi rica ederiz.' });
+    const r = await b.db.query(`INSERT INTO firma_ekipmani (kurulus_ref, ad, seri_no, bakim_bitis, kalibrasyon_bitis, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (kurulus_ref, seri_no) DO UPDATE SET ad = EXCLUDED.ad, bakim_bitis = EXCLUDED.bakim_bitis, kalibrasyon_bitis = EXCLUDED.kalibrasyon_bitis, kullanilabilir = true, kaydeden_ref = EXCLUDED.kaydeden_ref, zaman = now() RETURNING kimlik`, [id, g.ad.trim(), g.seri.trim(), tarih(g.bakim), tarih(g.kalibrasyon), o.kullanici]);
+    return { kimlik: r.rows[0].kimlik };
+  });
+
+  // YG-1472: resmî tatil ve arife takvimi; yıllık parametre, CEO veya GMY girer.
+  s.get('/takvim', oturumlu, async (i, y) => i.oturum!.grup === 'LGM İç Rolü' ? (await b.db.query(`SELECT tarih::text, ad, yarim_gun FROM resmi_tatil WHERE tarih >= current_date - 31 ORDER BY tarih`)).rows : yok(y));
+  s.post('/takvim', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { tarih?: string; ad?: string; arife?: boolean; sil?: boolean };
+    if (!(await rolVar(o.kullanici, ['CEO', 'Genel Müdür Yardımcısı']))) return yok(y);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '')) return y.code(400).send({ hata: 'Tarihi girmenizi rica ederiz.' });
+    if (g.sil) await b.db.query(`DELETE FROM resmi_tatil WHERE tarih = $1`, [g.tarih]);
+    else { if (!g.ad?.trim()) return y.code(400).send({ hata: 'Tatil adını yazmanızı rica ederiz.' }); await b.db.query(`INSERT INTO resmi_tatil (tarih, ad, yarim_gun, giren_ref) VALUES ($1,$2,$3,$4) ON CONFLICT (tarih) DO UPDATE SET ad = EXCLUDED.ad, yarim_gun = EXCLUDED.yarim_gun, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.tarih, g.ad.trim(), Boolean(g.arife), o.kullanici]); }
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.sil ? 'Tatil Silindi' : 'Tatil Kaydedildi', nesneTuru: 'Takvim', nesneKimligi: g.tarih!, yeni: { ad: g.ad, arife: Boolean(g.arife) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   // YG-1078: dışa aktarım; görüntüleme gibi iz kaydına girer.
   s.get('/rapor/yasal-ayip.csv', oturumlu, async (i, y) => {
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.rol_adi LIKE '%Direktörü' OR x.rol_adi IN ('Genel Müdür Yardımcısı', 'CEO')) LIMIT 1`, [i.oturum!.kullanici])).rowCount) return yok(y);

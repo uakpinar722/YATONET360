@@ -140,12 +140,15 @@ export async function odemeTanim(db: Db, tur: 'Proforma' | 'Ödeme Talebi', id: 
 }
 
 /** YG-896, FR-TIC-013: kalem, tutar ve son tarih; gerekçe yorumu yok, gövde onaylı BLD-30 metnidir. */
-async function sorumlulukTanim(db: Db, id: string, kod: string, web: string) {
+export async function sorumlulukTanim(db: Db, id: string, kod: string, web: string) {
   const v = await odemeTanim(db, 'Ödeme Talebi', id, kod, web);
   const kl = (await db.query(`SELECT tur, aciklama, tutar_eur FROM odeme_sorumlulugu_kalemi WHERE odeme_talebi_ref = $1`, [id])).rows;
   const dil = v.t.dil as Dil; const en = dil === 'en';
   const govde = await metinGetir(db, 'BLD-30', dil, { 'Dosya No': v.t.dosyaNo as string, 'File No': v.t.dosyaNo as string, 'bağlantı': web, link: web });
-  return { ...v, t: { ...v.t, ad: en ? 'Payment Responsibility Notice' : 'Ödeme Sorumluluğu Bildirimi', kod: 'FR-TIC-013', matbuBas: [govde], bolumler: [{ baslik: en ? 'Items' : 'Kalemler', tur: 'tablo', sutunlar: [{ ad: en ? 'Item' : 'Kalem' }, { ad: en ? 'Description' : 'Açıklama' }, { ad: en ? 'Amount (EUR)' : 'Tutar (EUR)', hiza: 'sag' }], satirlar: kl.map((k) => [k.tur, k.aciklama, tutar(Number(k.tutar_eur), dil)]) } as Bolum, ...(v.t.bolumler as Bolum[])] } };
+  // YG-896: TL tutar, dosyada muhasebeden gelmiş son fatura kuruyla (K-193: önceki iş günü TCMB satış); kur yoksa TL sütunu basılmaz, tutar uydurulmaz.
+  const kr = (await db.query(`SELECT f.kur, to_char(f.kur_tarihi, 'DD.MM.YYYY') t FROM musteri_faturasi f JOIN odeme_talebi o ON o.dosya_ref = f.dosya_ref WHERE o.kimlik = $1 AND f.kur IS NOT NULL ORDER BY f.kur_tarihi DESC LIMIT 1`, [id])).rows[0];
+  const sut = [{ ad: en ? 'Item' : 'Kalem' }, { ad: en ? 'Description' : 'Açıklama' }, { ad: en ? 'Amount (EUR)' : 'Tutar (EUR)', hiza: 'sag' }, ...(kr ? [{ ad: en ? `Amount (TRY, rate ${kr.t})` : `Tutar (TL, ${kr.t} kuru)`, hiza: 'sag' }] : [])];
+  return { ...v, t: { ...v.t, ad: en ? 'Payment Responsibility Notice' : 'Ödeme Sorumluluğu Bildirimi', kod: 'FR-TIC-013', matbuBas: [govde], bolumler: [{ baslik: en ? 'Items' : 'Kalemler', tur: 'tablo', sutunlar: sut, satirlar: kl.map((k) => [k.tur, k.aciklama, tutar(Number(k.tutar_eur), dil), ...(kr ? [tutar(Math.round(Number(k.tutar_eur) * Number(kr.kur) * 100) / 100, dil)] : [])]) } as Bolum, ...(v.t.bolumler as Bolum[])] } };
 }
 
 /** YG-107, FR-KLT-012: dosyanın onay, SMS, teslim, fatura ve yazışma kayıtları tek belgede. Belge asılları bu paketin içine gömülmez, dosyada kalır. */

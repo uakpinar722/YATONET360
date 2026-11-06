@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -523,5 +523,52 @@ describe('onaysız alt yüklenici (YG-411)', () => {
     expect((await o.ist('POST', u, await o.gir('ds'), { ad: 'İzmir Boya Ltd' })).json()).toEqual({ onayli: true });
     expect((await o.ist('POST', u, await o.gir('ds'), { ad: 'Habersiz Usta' })).json()).toEqual({ onayli: false });
     expect((await o.kart('Onaysız Alt Yüklenici', e)).durum).toBe('Bekliyor');
+  });
+});
+
+describe('ekipman ve takvim (YG-533, YG-1472)', () => {
+  it('ekipman: uyarı 30 günde, süresi geçen kullanılamaz; yetkisiz göremez', async () => {
+    const { sureUyariIsle } = await import('../src/uyum.js');
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Firma EK','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-EK${++n}`, o.K.ds])).rows[0].kimlik;
+    const c = await o.gir('sc'); const u = `/api/firma/${f}/ekipman`; const gun = (x: number) => new Date(Date.now() + x * 86_400_000).toISOString().slice(0, 10);
+    expect((await o.ist('POST', u, await o.gir('ds'), { ad: 'Vinç', seri: 'V1', bakim: gun(30) })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, c, { ad: 'Vinç', seri: 'V1' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { ad: 'Vinç', seri: 'V1', bakim: gun(30) })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, c, { ad: 'Kaynak', seri: 'K1', kalibrasyon: gun(-1) })).statusCode).toBe(200);
+    await sureUyariIsle(o.db);
+    const l = (await o.ist('GET', u, c)).json() as { seri_no: string; kullanilabilir: boolean }[];
+    expect(l.find((x) => x.seri_no === 'V1')!.kullanilabilir).toBe(true); expect(l.find((x) => x.seri_no === 'K1')!.kullanilabilir).toBe(false);
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM zamanlanmis_is WHERE ad = 'firma_ekipman'`)).rows[0].n)).toBe(1);
+  });
+  it('takvim: arife yarım gün, tatil sayılmaz; yalnız CEO/GMY girer', async () => {
+    const { isGunuSonu } = await import('../src/teklif.js');
+    expect((await o.ist('POST', '/api/takvim', await o.gir('tid'), { tarih: '2031-01-06', ad: 'X' })).statusCode).toBe(404);
+    const c = await o.gir('gmy');
+    const bas = new Date('2031-01-06T06:00:00Z'); // Pazartesi
+    const once = await isGunuSonu(o.db, bas, 2);
+    expect((await o.ist('POST', '/api/takvim', c, { tarih: '2031-01-07', ad: 'Deneme Tatili' })).statusCode).toBe(200);
+    expect((await isGunuSonu(o.db, bas, 2)).getTime() - once.getTime()).toBe(86_400_000);
+    expect((await o.ist('POST', '/api/takvim', c, { tarih: '2031-01-07', ad: 'Deneme Arifesi', arife: true })).statusCode).toBe(200);
+    expect((await isGunuSonu(o.db, bas, 2)).getTime() - once.getTime()).toBe(86_400_000); // 0,5 + 1 + 0,5 eşiği üçüncü güne kaydırır
+    await o.ist('POST', '/api/takvim', c, { tarih: '2031-01-07', sil: true });
+    expect((await isGunuSonu(o.db, bas, 2)).getTime()).toBe(once.getTime());
+  });
+});
+
+describe('saklama başlangıcı (YG-1223)', () => {
+  it('dış kullanıcı hesabı taraf olduğu son dosyanın kapanmasından 5 yıl geçmeden imha listesine girmez', async () => {
+    const { imhaListesiUret } = await import('../src/kvkk.js');
+    const h = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, cep_telefonu, dogrulama_yontemi, hesap_durumu, kapanma_zamani) VALUES ('Müşteri/Kurum','Sigorta Şirketi / Eksper','Broker K','brk.${++n}','brk${n}@d.local','+90554${String(n).padStart(7, '0')}','SMS kodu','Kapalı',now() - interval '7 years') RETURNING kimlik`)).rows[0].kimlik;
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`UPDATE dosya SET statu = 'Kapalı', kapanma_nedeni = 'Tamamlandı', kapanis_zamani = now() - interval '2 years' WHERE kimlik = $1`, [d.kimlik]);
+    await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE kimlik = (SELECT kimlik FROM dosya_tarafi WHERE dosya_ref = $1 LIMIT 1)`, [d.kimlik, h]);
+    await o.sup.query(`DELETE FROM zamanlanmis_is WHERE ad = 'imha_listesi'`);
+    const l = await imhaListesiUret(o.db, new Date('2027-01-15T09:00:00Z'));
+    expect(l).not.toBeNull();
+    expect((await o.sup.query(`SELECT 1 FROM imha_kalemi WHERE liste_ref = $1 AND nesne_kimligi = $2`, [l, h])).rowCount).toBe(0);
+    await o.sup.query(`UPDATE dosya SET kapanis_zamani = now() - interval '6 years' WHERE kimlik = $1`, [d.kimlik]);
+    await o.sup.query(`DELETE FROM zamanlanmis_is WHERE ad = 'imha_listesi'`);
+    const l2 = await imhaListesiUret(o.db, new Date('2027-07-15T09:00:00Z'));
+    expect((await o.sup.query(`SELECT 1 FROM imha_kalemi WHERE liste_ref = $1 AND nesne_kimligi = $2`, [l2, h])).rowCount).toBe(1);
   });
 });

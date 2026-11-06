@@ -85,6 +85,13 @@ export async function sureUyariIsle(db: Pool, simdi = new Date()): Promise<numbe
     const k = kalan(c.b); if (k < 0) { await db.query(`UPDATE olcum_cihazi SET kabul = false WHERE kimlik = $1`, [c.kimlik]); n++; continue; } // YG-533: süresi geçen kullanılabilir görünmez
     const e = esik(k, [60, 30]); if (e) await uyar('kalibrasyon', c.kimlik, e, kk, `Kalibrasyon Süresi Doluyor · ${e} Gün`, `${c.ad} · ${c.seri_no} · Son: ${G(c.b)}`);
   }
+  // YG-533: firma ekipmanı bakım ve kalibrasyon bitişi; süresi geçen kullanılabilir gösterilmez.
+  for (const q of (await db.query(`SELECT e.kimlik, e.ad, e.seri_no, e.kurulus_ref, u.ticari_unvan, least(e.bakim_bitis, e.kalibrasyon_bitis) b FROM firma_ekipmani e JOIN kurulus u ON u.kimlik = e.kurulus_ref WHERE e.kullanilabilir AND coalesce(e.bakim_bitis, e.kalibrasyon_bitis) IS NOT NULL`)).rows) {
+    const k = kalan(q.b); if (k < 0) { await db.query(`UPDATE firma_ekipmani SET kullanilabilir = false WHERE kimlik = $1`, [q.kimlik]); n++; continue; }
+    const e = esik(k, [60, 30]); if (!e) continue;
+    const ku = (await db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [q.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
+    await uyar('firma_ekipman', q.kimlik, e, [...sc, ...ku], `Ekipman Bakım/Kalibrasyon Süresi Doluyor · ${e} Gün`, `${q.ticari_unvan} · ${q.ad} · ${q.seri_no} · Son: ${G(q.b)}`);
+  }
   // D-025: personel vize ve pasaport bitişi İnsan Kaynaklarına.
   const ikl = [...await rolSahipleri(db, await rolId(db, 'İnsan Kaynakları Müdürü')), ...await rolSahipleri(db, await rolId(db, 'İnsan Kaynakları Sorumlusu'))];
   for (const p of (await db.query(`SELECT k.kullanici_ref, h.ad_soyad, k.vize_bitis, k.pasaport_bitis FROM personel_karti k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.personel_durumu <> 'Ayrıldı' AND (k.vize_bitis IS NOT NULL OR k.pasaport_bitis IS NOT NULL)`)).rows) {
