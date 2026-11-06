@@ -242,6 +242,8 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE ilgili_kisi_basvurusu SET kimlik_dogrulandi = true, temsil_belgesi_ref = $2 WHERE kimlik = $1`, [a.kimlik, t && UUID.test(t) ? t : null]);
     return { tamam: true };
   });
+  /** YG-1220: arşiv ve yedek ile sağlayıcı matrisindeki her dış hizmet elle kontrol edilmeden karar hazırlanmaz. */
+  const elleGerekli = async () => ['Yedek ve Arşiv', ...(await b.db.query(`SELECT DISTINCT saglayici FROM saglayici_matrisi ORDER BY saglayici`)).rows.map((r) => r.saglayici as string)];
   s.post('/kvkk-basvuru/:id/arama', oturumlu, async (i, y) => { // YG-1220
     const o = i.oturum!; const a = await basvuru((i.params as { id: string }).id); const g = (i.body ?? {}) as { terim?: string; elleKontrol?: string[] };
     if (!a) return yok(y);
@@ -255,7 +257,7 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     const kapsam = [...Object.keys(sonuc), ...(g.elleKontrol ?? []).map((x) => `${x} (elle)`)];
     await b.db.query(`UPDATE ilgili_kisi_basvurusu SET arama_kapsami = $2, arama_sonucu = $3 WHERE kimlik = $1`, [a.kimlik, kapsam, JSON.stringify(sonuc)]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'KVKK Veri Araması', nesneTuru: 'KVKK Başvurusu', nesneKimligi: a.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { sonuc };
+    return { sonuc, elleGerekli: await elleGerekli() };
   });
   s.post('/kvkk-basvuru/:id/karar', oturumlu, async (i, y) => { // YG-1218: hazırlayan ile onaylayan farklı.
     const o = i.oturum!; const a = await basvuru((i.params as { id: string }).id); const g = (i.body ?? {}) as { karar?: string; gerekce?: string };
@@ -263,6 +265,8 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     if (!(await rolVar(o.kullanici, [HUU]))) return y.code(403).send({ hata: 'Kararı Hukuk ve Uyum Uzmanı hazırlar.' });
     if (!a.kimlik_dogrulandi) return y.code(409).send({ hata: 'Kimlik doğrulanmadan karar hazırlanamaz.' });
     if (!a.arama_sonucu) return y.code(409).send({ hata: 'Veri araması bekleniyor.' });
+    const eksik = (await elleGerekli()).filter((x) => !((a.arama_kapsami ?? []) as string[]).includes(`${x} (elle)`));
+    if (eksik.length) return y.code(409).send({ hata: `Elle kontrolü kaydedilmemiş kaynak var: ${eksik.join(', ')}.`, eksik });
     if (!['Kabul', 'Kısmi Kabul', 'Ret'].includes(g.karar ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar ve gerekçe zorunludur.' });
     if (a.durum !== 'İncelemede') return y.code(409).send({ hata: 'Karar onaya gönderilmiştir.' });
     await b.db.query(`UPDATE ilgili_kisi_basvurusu SET karar = $2, karar_gerekcesi = $3, durum = 'Onayda' WHERE kimlik = $1`, [a.kimlik, g.karar, g.gerekce.trim()]);

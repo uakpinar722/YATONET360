@@ -73,6 +73,7 @@ export function KvkkEkrani() {
   const sec = (k: string) => m[k] ?? ''; const yz = (k: string, v: string) => setM({ ...m, [k]: v });
   const yukle = (r = y) => { if (!r) return; if (r.ihlal) void istek<Ihlal[]>('/veri-ihlali').then(setIv).catch(() => {}); if (r.hud || r.uzman) { void istek<Basvuru[]>('/kvkk-basvuru').then(setBs).catch(() => {}); void istek<Liste[]>('/imha-listesi').then(setIl).catch(() => {}); } };
   useEffect(() => { void istek<NonNullable<typeof y>>('/kvkk/yetki').then((r) => { setY(r); yukle(r); }); }, []);
+  const [elle, setElle] = useState<Record<string, { gerekli: string[]; sec: string[] }>>({}); // YG-1220
   if (!y) return null;
   const is = (yol: string, g: object, t: string) => void yap(() => istek(yol, g).then(() => yukle()), t);
   return (<>
@@ -106,7 +107,9 @@ export function KvkkEkrani() {
         {y.uzman && a.durum === 'İncelemede' && <div className="tam">
           {!a.kimlik_dogrulandi && <button className="btn2 kucuk" onClick={() => is(`/kvkk-basvuru/${a.kimlik}/dogrula`, {}, 'Kimlik doğrulandı.')}>Kimlik Doğrulandı</button>}
           <label htmlFor={`t-${a.kimlik}`}>Arama Terimi (ad, telefon, e-posta)</label><input id={`t-${a.kimlik}`} value={sec(`t${a.kimlik}`)} onChange={(e) => yz(`t${a.kimlik}`, e.target.value)} />
-          <button className="btn2 kucuk" disabled={sec(`t${a.kimlik}`).length < 3} onClick={() => is(`/kvkk-basvuru/${a.kimlik}/arama`, { terim: sec(`t${a.kimlik}`), elleKontrol: ['Dışa Aktarımlar', 'Entegrasyon Kayıtları', 'Arşiv', 'Dış Hizmetler'] }, 'Arama tamamlandı.')}>Veri Ara</button>
+          <button className="btn2 kucuk" disabled={sec(`t${a.kimlik}`).length < 3} onClick={() => void yap(() => istek<{ elleGerekli: string[] }>(`/kvkk-basvuru/${a.kimlik}/arama`, { terim: sec(`t${a.kimlik}`) }).then((r) => { setElle({ ...elle, [a.kimlik]: { gerekli: r.elleGerekli, sec: [] } }); yukle(); }), 'Arama tamamlandı; elle kontrol edilecek kaynakları işaretleyiniz.')}>Veri Ara</button>
+          {elle[a.kimlik] && <>{elle[a.kimlik]!.gerekli.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={elle[a.kimlik]!.sec.includes(x)} onChange={(e) => { const s = elle[a.kimlik]!.sec; setElle({ ...elle, [a.kimlik]: { ...elle[a.kimlik]!, sec: e.target.checked ? [...s, x] : s.filter((z) => z !== x) } }); }} /><span>{x} elle kontrol edildi</span></label>)}
+            <button className="btn2 kucuk" disabled={elle[a.kimlik]!.sec.length === 0} onClick={() => is(`/kvkk-basvuru/${a.kimlik}/arama`, { terim: sec(`t${a.kimlik}`), elleKontrol: elle[a.kimlik]!.sec }, 'Elle kontroller kaydedildi.')}>Elle Kontrolleri Kaydet</button></>}
           {a.arama_sonucu && <div>{Object.entries(a.arama_sonucu).map(([k, n]) => `${k}: ${n}`).join(' · ')}</div>}
           <label htmlFor={`g2-${a.kimlik}`}>Karar Gerekçesi</label><input id={`g2-${a.kimlik}`} value={sec(`k${a.kimlik}`)} onChange={(e) => yz(`k${a.kimlik}`, e.target.value)} />
           <div className="dugmeler">{['Kabul', 'Kısmi Kabul', 'Ret'].map((x) => <button key={x} className="btn2 kucuk" disabled={!sec(`k${a.kimlik}`).trim()} onClick={() => is(`/kvkk-basvuru/${a.kimlik}/karar`, { karar: x, gerekce: sec(`k${a.kimlik}`) }, 'Karar onaya gönderildi.')}>{x}</button>)}</div>

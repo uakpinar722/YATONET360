@@ -50,6 +50,9 @@ describe('ilgili kişi başvurusu (YG-1218–1220)', () => {
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'G' })).json().hata).toContain('arama');
     const ar = await o.ist('POST', `${a}/arama`, u, { terim: 'Dosya', elleKontrol: ['Arşiv', 'Dış Hizmetler'] }); expect(ar.statusCode, ar.body).toBe(200); expect(ar.json().sonuc).toHaveProperty('Mesaj Geçmişi'); expect(ar.json().sonuc).toHaveProperty('Gönderim Kaydı'); expect(ar.json().sonuc).toHaveProperty('Paylaşım Bağlantısı'); expect(ar.json().sonuc).toHaveProperty('Hasar Paylaşım Talebi');
     expect((await o.ist('POST', `${a}/yanit`, u, { tarih: '2026-11-10', kanit: crypto.randomUUID() })).json().hata).toContain('onaylı karar');
+    // YG-1220: yedek/arşiv ve kayıtlı dış hizmetler elle kontrol edilmeden karar hazırlanmaz.
+    expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'Uygun' })).json().eksik).toContain('Yedek ve Arşiv');
+    await o.ist('POST', `${a}/arama`, u, { terim: 'Dosya', elleKontrol: ar.json().elleGerekli });
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'Uygun' })).json().durum).toBe('Onayda');
     const k = await o.kart('KVKK Başvuru Kararı', r.json().kimlik); expect((await o.karar(k.kimlik, 'hud', 'Onayla')).statusCode).toBe(200);
     const d = await o.dosyaAc({}, {}); expect((await o.ist('POST', `${a}/yanit`, u, { tarih: '2026-11-10', kanit: await belge(d.kimlik) })).statusCode).toBe(200);

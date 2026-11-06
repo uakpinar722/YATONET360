@@ -12,8 +12,8 @@ import { UUID } from './yat.js';
 const BT = ['Sistem Yöneticisi', 'Bilgi İşlem Müdürü', 'Bilgi İşlem Müdür Yardımcısı', 'Hukuk ve Uyum Direktörü'];
 const ANLIK_YANIT_DK = 30; const GECICI_COZUM_DK = 240;
 
-/** YG-1184: hassas veriyi okuyan GET istekleri izlenir. */
-const HASSAS_GET = /^\/api\/(ik\/personel|puantaj\/ozet|disiplin$|veri-ihlali|kvkk-basvuru|riza-kayitlari|hukuki-koruma|imha-listesi|saklama-plani|yedekler|denetim\/|mahsup-itirazlar|is-kazasi)/;
+/** YG-1184: hassas veriyi ve dosya içeriğini (dosya, portal dosyası, teklif ayrıntısı) okuyan GET istekleri izlenir. */
+const HASSAS_GET = /^\/api\/(dosya\/[0-9a-f-]{36}$|portal\/dosya\/[0-9a-f-]{36}$|teklif\/[0-9a-f-]{36}$|ik\/personel|puantaj\/ozet|disiplin$|veri-ihlali|kvkk-basvuru|riza-kayitlari|hukuki-koruma|imha-listesi|saklama-plani|yedekler|denetim\/|mahsup-itirazlar|is-kazasi)/;
 
 /** YG-1283: BT kesintisinde 30 dakika yanıt, 4 saat geçici çözüm; aşılınca Bilgi İşlem Müdürüne ve Direktöre uyarı. */
 export async function olayIsle(db: Pool, simdi = new Date()): Promise<number> {

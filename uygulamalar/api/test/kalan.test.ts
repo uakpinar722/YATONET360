@@ -834,3 +834,15 @@ describe('e-posta ekinde hasar paylaşım kapısı (YG-1171)', () => {
     expect(await disGonder(o.db, { olay: `ek3:${d.kimlik}`, eposta: 'yabanci@baska.local', konu: 'K', metin: 'M', ekler: [s] })).toBe(true);
   });
 });
+
+describe('denetim izi: dosya okuma ve entegrasyon çağrısı (YG-1184)', () => {
+  it('dosya ayrıntısı görüntülemesi ve dış gönderim çağrısı denetim izine yazılır', async () => {
+    const { kuyrukIsle } = await import('../src/bildirim.js');
+    const d = await o.dosyaAc({}, {});
+    await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('mpm'));
+    expect((await o.sup.query(`SELECT 1 FROM denetim_izi WHERE eylem = 'Veri Görüntüleme' AND nesne_kimligi = $1`, [`/api/dosya/${d.kimlik}`])).rowCount).toBe(1);
+    const g = (await o.sup.query(`INSERT INTO gonderim (olay_anahtari, kanal, hedef, konu, metin) VALUES ($1,'E-posta','iz@ornek.local','K','M') RETURNING kimlik`, [`iz:${d.kimlik}`])).rows[0].kimlik;
+    await kuyrukIsle({ db: o.db, webAdresi: 'http://x', eposta: o.posta, sms: o.sms } as never, new Date(Date.now() + 86_400_000), 10_000);
+    expect((await o.sup.query(`SELECT sonuc FROM denetim_izi WHERE eylem = 'Entegrasyon Çağrısı' AND nesne_kimligi = $1`, [g])).rows[0]?.sonuc).toBe('Başarılı');
+  });
+});

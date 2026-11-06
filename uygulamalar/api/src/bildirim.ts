@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { Depo } from './depo.js';
+import { izYaz } from './denetim.js';
 import type { Pool, PoolClient } from 'pg';
 import type { Baglam } from './kimlik.js';
 import { onayMakami, rolSahipleri } from './makam.js';
@@ -127,7 +128,7 @@ export async function birKez(db: Db, ad: string, anahtar: string): Promise<boole
  * WhatsApp ve dış servisler bağlanana kadar deneme kutusu çalışır; test ortamı gerçek kişiye gönderemez (YG-524).
  */
 export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Promise<number> {
-  const c = await b.db.connect(); let n = 0;
+  const c = await b.db.connect(); let n = 0; const iz: Parameters<typeof izYaz>[1][] = [];
   try {
     await c.query('BEGIN');
     const { rows } = await c.query(`SELECT * FROM gonderim WHERE durum = 'Bekliyor' AND plan_zamani <= $1 ORDER BY plan_zamani LIMIT $2 FOR UPDATE SKIP LOCKED`, [simdi, limit]);
@@ -139,9 +140,11 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
         }
         else await b.sms.gonder(g.hedef, g.metin); // WhatsApp sağlayıcısı bağlanana kadar deneme kutusu
         await c.query(`UPDATE gonderim SET durum = 'Gönderildi', gonderim_zamani = $2, deneme = deneme + 1 WHERE kimlik = $1`, [g.kimlik, simdi]);
+        iz.push({ eylem: 'Entegrasyon Çağrısı', nesneTuru: 'Gönderim', nesneKimligi: g.kimlik, kanal: g.kanal, sonuc: 'Başarılı' }); // YG-1184
         n++;
       } catch (e) {
         // YG-1310: kalıcı hata (geçersiz numara veya adres, engelli alıcı) yeniden denenmez; geçici hata bekleme aralığıyla yeniden denenir.
+        iz.push({ eylem: 'Entegrasyon Çağrısı', nesneTuru: 'Gönderim', nesneKimligi: g.kimlik, kanal: g.kanal, sonuc: 'Başarısız', gerekce: (e as Error).message.slice(0, 200) }); // YG-1184
         const kalici = (e as { kalici?: boolean }).kalici === true || /geçersiz|invalid|unknown (user|number|recipient)|blacklist|kara liste|engellen/i.test((e as Error).message);
         const d = kalici ? AZAMI_DENEME : g.deneme + 1;
         if (d >= AZAMI_DENEME) {
@@ -155,6 +158,7 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
     }
     await c.query('COMMIT');
   } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  for (const k of iz) await izYaz(b.db, k).catch(() => {});
   return n;
 }
 
