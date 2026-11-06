@@ -57,6 +57,7 @@ describe('resmî PDF (YG-665, YG-691)', () => {
   });
   it('e-posta PDF ekiyle gider; üretim hatası işlemi bozmaz, üç denemeden sonra Dosya Sorumlusuna görev açar', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const t = await teklif(d);
+    await o.sup.query(`UPDATE dosya_tarafi SET eposta = 'alici@deneme.local' WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]); // YG-1171: ek yalnız dosya tarafına
     await belgeUret(o.db, { tur: 'Fiyat Teklifi', nesne: t, dosya: d.kimlik, gonder: { olay: `pdf-deneme:${t}`, eposta: 'alici@deneme.local', konu: 'Konu', metin: 'Metin', acil: true } });
     await belgeKuyruguIsle(b as never);
     const g = (await o.sup.query(`SELECT ek_surumler, durum FROM gonderim WHERE olay_anahtari = $1`, [`pdf-deneme:${t}`])).rows[0];

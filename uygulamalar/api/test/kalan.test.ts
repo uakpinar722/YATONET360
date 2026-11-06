@@ -803,3 +803,34 @@ describe('belgede maliyet sızıntısı (YG-1158, YG-992)', () => {
     expect(await belgeMaskeEngeli(o.db, 'İş Emri', d.kimlik, 'Bedel 1.234,50 EUR')).toBeNull();
   });
 });
+
+describe('firma belgesi müşteriye kapalı (YG-1074)', () => {
+  it('iş emrine bağlı firma raporunu yat sahibi indiremez, dosya ekibi indirir', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    await o.sup.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik, o.K.iks]);
+    await o.sup.query(`UPDATE kullanici_hesabi SET kullanici_grubu = 'Kurumsal Müşteri', izin_adimi_zamani = now() WHERE kimlik = $1`, [o.K.iks]);
+    await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) SELECT $1,'Çalışan','KVKK-04','R00','Türkçe','Web' WHERE NOT EXISTS (SELECT 1 FROM aydinlatma_kaydi WHERE ilgili_kisi_ref = $1 AND aydinlatma_metni = 'KVKK-04')`, [o.K.iks]);
+    await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) SELECT $1,'R00','Türkçe' WHERE NOT EXISTS (SELECT 1 FROM kullanim_kosullari_kabulu WHERE kullanici_ref = $1)`, [o.K.iks]);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'FR','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-FR${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, hazirlayan_ref) VALUES ($1,'KN',$2,$3,'M','K',$4) RETURNING kimlik`, [`${d.dosyaNo}-KN01`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    const bl = await o.belge(d.kimlik, 'ds'); await o.sup.query(`UPDATE belge SET bag_turu = 'İş Emri', bag_kimligi = $2, ad = 'Firma Keşif Raporu' WHERE kimlik = $1`, [bl, e]);
+    await o.sup.query(`UPDATE belge_surum SET durum = 'Yürürlükte' WHERE belge_ref = $1`, [bl]);
+    expect((await o.ist('GET', `/api/belge/${bl}/surum/1/indir`, await o.gir('iks'))).statusCode).toBe(404);
+    expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, await o.gir('iks'))).body).not.toContain('Firma Keşif Raporu');
+    expect((await o.ist('GET', `/api/belge/${bl}/surum/1/indir`, await o.gir('ds'))).statusCode).toBe(200);
+  });
+});
+
+describe('e-posta ekinde hasar paylaşım kapısı (YG-1171)', () => {
+  it('dosya belgesi eki dosya tarafına gider, yabancı alıcıda durur; onaylı paylaşım talebiyle gider', async () => {
+    const { disGonder } = await import('../src/bildirim.js');
+    const d = await o.dosyaAc({ eposta: 'sahip-ek@ornek.local' }, {}); await o.ekipKur(d.kimlik);
+    const bl = await o.belge(d.kimlik, 'ds'); const s = (await o.sup.query(`SELECT kimlik FROM belge_surum WHERE belge_ref = $1`, [bl])).rows[0].kimlik;
+    const taraf = (await o.sup.query(`SELECT eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND eposta IS NOT NULL LIMIT 1`, [d.kimlik])).rows[0].eposta as string;
+    expect(await disGonder(o.db, { olay: `ek1:${d.kimlik}`, eposta: taraf, konu: 'K', metin: 'M', ekler: [s] })).toBe(true);
+    expect(await disGonder(o.db, { olay: `ek2:${d.kimlik}`, eposta: 'yabanci@baska.local', konu: 'K', metin: 'M', ekler: [s] })).toBe(false);
+    expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`ek2:${d.kimlik}`])).rowCount).toBe(0);
+    await o.sup.query(`INSERT INTO hasar_paylasim_talebi (dosya_ref, alici, kapsam, talep_eden_ref, durum) VALUES ($1,'yabanci@baska.local','Eksper incelemesi',$2,'Onaylandı')`, [d.kimlik, o.K.ds]);
+    expect(await disGonder(o.db, { olay: `ek3:${d.kimlik}`, eposta: 'yabanci@baska.local', konu: 'K', metin: 'M', ekler: [s] })).toBe(true);
+  });
+});
