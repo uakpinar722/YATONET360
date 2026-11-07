@@ -432,6 +432,10 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const kum = Number((await c.query(`SELECT coalesce(sum(bu_donem_brut), 0) t FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].t);
       const bedel = Number(e.firma_bedeli_eur ?? 0);
       if (R2(kum + Number(g.brut)) > bedel) throw Object.assign(new Error('Kümülatif tutar iş emri bedelini aşıyor; değişiklik onayı gereklidir.'), { statusCode: 409 });
+      // YG-837: hakediş aylık ya da dilim tutarı (20.000,00 EUR) kadar verilir; iş emri bedelini tamamlayan son hakediş beklemez.
+      const dilim = await parametre(c, 'hakedis_dilim_eur'); const son = (await c.query(`SELECT max(olusturma_zamani) z FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].z ?? e.baslangic_tarihi ?? e.olusturma_zamani;
+      const ay = new Date(son); ay.setMonth(ay.getMonth() + 1);
+      if (Number(g.brut) < dilim && R2(kum + Number(g.brut)) < bedel && !['Tamamlandı', 'Kapalı'].includes(e.statu) && ay > new Date()) throw Object.assign(new Error(`Hakediş aylık ya da ${tutar(dilim)} EUR'luk dilimlerle verilir; bir sonraki hakediş tarihi ${ay.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}.`), { statusCode: 409 });
       const kes = hakedisKesintisi(Number(g.brut), bedel, await parametre(c, 'hakedis_kesinti_esik_eur'), await parametre(c, 'hakedis_kesinti_orani'));
       const no = await altNumara(c, e.dosya_no, 'HK');
       const sira = (await c.query(`SELECT coalesce(max(sira_no), 0) + 1 n FROM hakedis WHERE is_emri_ref = $1`, [id])).rows[0].n;

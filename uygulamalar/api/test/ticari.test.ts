@@ -152,9 +152,10 @@ describe('teslim kilidi (YG-087, YG-910, YG-216)', () => {
 });
 
 describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', () => {
-  const isEmri = async (bedel: number) => {
+  // YG-837: hakediş aylık verildiği için iş emri bir ay önce başlamış sayılır.
+  const isEmri = async (bedel: number, baslangic = "current_date - 40") => {
     const d = await dosya();
-    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, teknik_kabul_sonucu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K',$4,'Aktif','Kabul',$5) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, firma, bedel, o.K.oy])).rows[0];
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, teknik_kabul_sonucu, hazirlayan_ref, baslangic_tarihi) VALUES ($1,'ON',$2,$3,'Y','K',$4,'Aktif','Kabul',$5,${baslangic}) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, firma, bedel, o.K.oy])).rows[0];
     return { d, e: e.kimlik as string };
   };
   it('kanıt zorunlu ve tek; kümülatif bedeli aşamaz; kesinti 10.000 üstünde', async () => {
@@ -166,6 +167,14 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ hakedisNo: `${d.dosyaNo}-HK01`, kesinti: 50, net: 950 });
     expect((await o.ist('POST', u, firmaC, { brut: 100, belge: b1 })).json().hata).toContain('Aynı kanıt');
     expect((await o.ist('POST', u, firmaC, { brut: 11000.01, belge: b2 })).json().hata).toContain('aşıyor');
+  });
+  it('hakediş aylık ya da 20.000 EUR dilimle; bedeli tamamlayan son hakediş beklemez (YG-837)', async () => {
+    const { d, e } = await isEmri(30000, 'current_date'); const u = `/api/firma-portal/is-emri/${e}/hakedis`;
+    const bl = async () => o.belge(d.kimlik, 'ds');
+    expect((await o.ist('POST', u, firmaC, { brut: 5000, belge: await bl() })).json().hata).toContain('dilimlerle');
+    expect((await o.ist('POST', u, firmaC, { brut: 20000, belge: await bl() })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, firmaC, { brut: 5000, belge: await bl() })).json().hata).toContain('dilimlerle');
+    expect((await o.ist('POST', u, firmaC, { brut: 10000, belge: await bl() })).statusCode).toBe(200);
   });
   it('doğrulama: Saha yoksa DS; talimat kapıları: fatura, IBAN, SGK; ikili onay; plan 120 gün', async () => {
     const { d, e } = await isEmri(5000); const b1 = await o.belge(d.kimlik, 'ds');
