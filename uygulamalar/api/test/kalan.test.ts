@@ -968,3 +968,25 @@ describe('yatın onarım geçmişi (YG-095)', () => {
     void r;
   });
 });
+
+describe('kilometre taşı (YG-072)', () => {
+  it('baz tarih değişmez ve silinmez; aşımda üç açıklama zorunlu; açıklamasız aşım DS görevi açar', async () => {
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kilometre`, ds, { ad: 'Kızak' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kilometre`, ds, { ad: 'Kızağa Çekme', baz: '2026-11-01' }); expect(r.statusCode, r.body).toBe(200);
+    const k = r.json().kimlik;
+    expect((await o.ist('POST', `/api/kilometre/${k}`, ds, { guncel: '2026-11-20' })).json().hata).toContain('zorunludur');
+    expect((await o.ist('POST', `/api/kilometre/${k}`, ds, { guncel: '2026-11-20', neden: 'Hava', eylem: 'Ek vardiya', etki: 'Boya 3 gün kayar' })).statusCode).toBe(200);
+    await expect(o.sup.query(`UPDATE kilometre_tasi SET baz_tarih = '2026-12-01' WHERE kimlik = $1`, [k])).rejects.toThrow(/Baz tarih/);
+    await expect(o.sup.query(`DELETE FROM kilometre_tasi WHERE kimlik = $1`, [k])).rejects.toThrow(/silinemez/);
+    const r2 = (await o.ist('POST', `/api/dosya/${d.kimlik}/kilometre`, ds, { ad: 'Teslim', baz: '2026-11-02' })).json().kimlik;
+    const { kilometreIsle } = await import('../src/kilometre.js');
+    await kilometreIsle(o.db, new Date('2026-11-05T09:00:00Z'));
+    expect((await o.kart('Kilometre Taşı Gecikmesi', r2)).baslik).toContain('Teslim');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE nesne_kimligi = $1`, [k])).rows[0].n).toBe(0);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/kilometre`, await o.gir('sy'))).statusCode).toBe(404);
+  });
+});

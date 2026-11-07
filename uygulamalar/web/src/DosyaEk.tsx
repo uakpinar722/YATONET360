@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { DosyaDestek } from './Destek';
 import { YatGecmisi } from './YatGecmis';
+import { KilometreTaslari } from './Kilometre';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 
@@ -131,6 +132,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <DisTalepler id={id} />
     <DosyaDestek dosya={id} />
     <YatGecmisi dosya={id} />
+    <KilometreTaslari dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
