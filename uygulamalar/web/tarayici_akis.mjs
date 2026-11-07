@@ -250,8 +250,9 @@ try {
   // Firma sayfası (YG-425, YG-422)
   const pFf = await al('fir', E); await pFf.getByRole('button', { name: 'Firma' }).first().click(); await pFf.getByText('Cari Ekstre').waitFor();
   await tasmaYok(pFf, 'firma_sayfasi');
-  await pFf.getByLabel('Yeni IBAN').fill('TR200006100519786457849999'); await tikla(pFf, 'IBAN Bildir'); await pFf.waitForTimeout(400);
-  kontrol('firma IBAN bildirir, karantinada başlar', (await sup.query(`SELECT durum FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = 'TR200006100519786457849999'`, [firma])).rows[0]?.durum === 'Karantina');
+  await pFf.getByLabel('Yeni IBAN').fill('TR200006100519786457849999'); await tikla(pFf, 'IBAN Bildir');
+  let ibF; for (let n = 0; n < 25 && !ibF; n++) { ibF = (await sup.query(`SELECT durum FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = 'TR200006100519786457849999'`, [firma])).rows[0]?.durum; if (!ibF) await pFf.waitForTimeout(200); }
+  kontrol('firma IBAN bildirir, karantinada başlar', ibF === 'Karantina');
   await sup.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kurulus_ref = $1`, [firma]); // sonraki sicil adımı kendi IBAN'ını teyit eder
   await sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur IN ('Banka Hesabı Onayı', 'Banka Geri Arama Teyidi') AND baslik LIKE $1`, [`E2E Firma ${tek}%`]);
   await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et'); await pFf.waitForTimeout(400);

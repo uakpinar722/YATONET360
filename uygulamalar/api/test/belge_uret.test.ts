@@ -99,6 +99,12 @@ describe('resmî PDF (YG-665, YG-691)', () => {
     await belgeUret(o.db, { tur: 'Teslim Tutanağı', nesne: tk, dosya: d.kimlik }); await belgeKuyruguIsle(b as never);
     const ut = await durum('Teslim Tutanağı', tk); expect(ut.durum, ut.son_hata).toBe('Üretildi');
     expect((await o.sup.query(`SELECT ad, bilgi_sinifi FROM belge WHERE kimlik = $1`, [ut.belge_ref])).rows[0].ad).toContain(`${d.dosyaNo}-TT01`);
+    // YG-650: kışlık hazırlık sorumlusu belirlenmişse teslim tutanağına yazılır.
+    const { tutanakTanim } = await import('../src/belge_uret.js');
+    const ks = async () => JSON.stringify((await tutanakTanim(o.db, tk, 'TT', 'http://x')).t);
+    expect(await ks()).not.toContain('Kışlık Hazırlık Sorumlusu');
+    await o.sup.query(`UPDATE dosya SET kislik_sorumlu_kullanici_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    expect(await ks()).toContain('Kışlık Hazırlık Sorumlusu');
   });
   it('Ödeme Talebi OT numaralı üretilir; yeniden tetiklenen teklif yeni sürüm olur, eskisi Yerine Geçti', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const t = await teklif(d);

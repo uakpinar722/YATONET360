@@ -343,10 +343,12 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (g.cikis === 'Kapalı' && !(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_KAPANMA_NEDENI' AND deger = $1`, [g.neden ?? ''])).rowCount) return y.code(400).send({ hata: 'Kapanma nedenini seçiniz.' });
     const isaret: string[] = [];
     if (!g.yetkiKapsam) isaret.push('Kapanış Bekliyor');
-    if (!g.uygulama) isaret.push('Teknik Eksik');
-    if (!g.testKabul) isaret.push('Kabul Bekliyor');
+    // YG-076: ON/EK iş emri yayımlanmadan kapanan dosyada uygulama, kabul ve garanti işaretleri aranmaz.
+    const onVar = Boolean((await b.db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK') AND statu NOT IN ('Taslak', 'İç Onayda', 'İptal') LIMIT 1`, [id])).rowCount);
+    if (!g.uygulama && onVar) isaret.push('Teknik Eksik');
+    if (!g.testKabul && onVar) isaret.push('Kabul Bekliyor');
     if (!g.acikKonu) isaret.push('Açık Görev');
-    if (!g.garanti) isaret.push('Garanti Bağı Eksik');
+    if (!g.garanti && onVar) isaret.push('Garanti Bağı Eksik');
     if (!g.arsiv && g.cikis === 'Kapalı') isaret.push('Arşiv Bekliyor');
     const kapi = await kapanisEksikleri(b.db, d, g.neden ?? null);
     for (const k of KAPILAR_KAPANIS) { const h = await k(b.db, d, g.cikis!); if (h) kapi.push(h); }

@@ -149,6 +149,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { aliciTuru?: string; alici?: string; belge?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!['Yat Sahibi', 'Yetkili Temsilci', 'Marina veya Tersane'].includes(g.aliciTuru ?? '') || !g.alici?.trim()) return y.code(400).send({ hata: 'Teslim alanı girmenizi rica ederiz.' });
+    { const hb = (await import('./tutanak_ek.js')).hassasBilgi(g.alici); if (hb) return y.code(400).send({ hata: hb }); }
     if (!(await dosyaBelgesi(g.belge, id))) return y.code(400).send({ hata: 'Teslim fotoğrafını eklemenizi rica ederiz.' });
     const d = await dosya(id); const t = await sahip(id);
     // YG-414: temsilciye teslimde geçerli yetki kaydı aranır; sözlü veya e-posta teyidi yerine geçmez.
@@ -167,11 +168,14 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-088: yat LGM'ye veya görevli firmaya teslim edildiğinde kabul tutanağı.
   s.post('/dosya/:id/yat-kabul', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { teslimAlan?: string; envanter?: string; anahtarlar?: string; sayaclar?: string; yakit?: string; belge?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { teslimAlan?: string; firma?: string; envanter?: string; anahtarlar?: string; sayaclar?: string; yakit?: string; belge?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!['LGM', 'Görevli Firma'].includes(g.teslimAlan ?? '') || !g.envanter?.trim() || !g.anahtarlar?.trim() || !g.sayaclar?.trim() || !g.yakit?.trim()) return y.code(400).send({ hata: 'Teslim alan, envanter, anahtarlar, sayaçlar ve yakıt seviyesini girmenizi rica ederiz.' });
+    // YG-089: görevli firmaya teslimde firma, dosyada iş emri olan firmalar arasından zorunlu; şifre gibi hassas bilgi yazılmaz.
+    if (g.teslimAlan === 'Görevli Firma' && (!g.firma || !UUID.test(g.firma) || !(await b.db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu <> 'İptal' LIMIT 1`, [id, g.firma])).rowCount)) return y.code(400).send({ hata: 'Yatı teslim alan görevli firmayı seçiniz.' });
+    const hb = (await import('./tutanak_ek.js')).hassasBilgi(g.envanter, g.anahtarlar, g.sayaclar, g.yakit); if (hb) return y.code(400).send({ hata: hb });
     if (!(await dosyaBelgesi(g.belge, id))) return y.code(400).send({ hata: 'Fotoğrafları eklemenizi rica ederiz.' });
-    const r = await b.db.query(`INSERT INTO yat_kabul_tutanagi (dosya_ref, teslim_alan, envanter, anahtarlar, sayaclar, yakit_seviyesi, foto_belge_ref, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [id, g.teslimAlan, g.envanter.trim(), g.anahtarlar.trim(), g.sayaclar.trim(), g.yakit.trim(), g.belge, o.kullanici]);
+    const r = await b.db.query(`INSERT INTO yat_kabul_tutanagi (dosya_ref, teslim_alan, envanter, anahtarlar, sayaclar, yakit_seviyesi, foto_belge_ref, kaydeden_ref, kurulus_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, g.teslimAlan, g.envanter.trim(), g.anahtarlar.trim(), g.sayaclar.trim(), g.yakit.trim(), g.belge, o.kullanici, g.teslimAlan === 'Görevli Firma' ? g.firma : null]);
     return { kimlik: r.rows[0].kimlik };
   });
 

@@ -225,7 +225,7 @@ async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
   };
 }
 
-async function tutanakTanim(db: Db, id: string, kod: string, web: string) {
+export async function tutanakTanim(db: Db, id: string, kod: string, web: string) {
   const k = (await db.query(`SELECT * FROM teslim_kaydi WHERE kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, k.dosya_ref, ''); const dil = b.dil; const en = dil === 'en'; const e = E[dil];
   const no = await altNumara(db, b.d.dosya_no, 'TT');
@@ -250,7 +250,9 @@ async function tutanakTanim(db: Db, id: string, kod: string, web: string) {
     bolumler.push({ baslik: T.gar, tur: 'tablo', sutunlar: [{ ad: T.paket, hiza: 'ort' }, { ad: T.kalem }, { ad: T.bas }, { ad: T.bit }, { ad: T.not }], satirlar: isler.map((x, n) => [n + 1, x.aciklama, gunAy(teslim), gunAy(bitis), T.gn]) });
   }
   if (testler.length) bolumler.push({ baslik: T.ozet, tur: 'tablo', sutunlar: [{ ad: T.tt }, { ad: T.ts }, { ad: T.not }], satirlar: testler.map((x) => [x.test_grubu, x.sonuc, x.sonuc_gerekcesi]) });
-  bolumler.push({ baslik: T.kab, tur: 'alanlar', alanlar: [{ et: T.ktur, deger: kabul?.kabul_turu }, { et: T.acik, deger: acik.length ? `${T.var}  ·  ${acik.length}` : T.yok }] });
+  // YG-650: kışa sarkan dosyada kışlık hazırlık sorumlusu teslim tutanağına yazılır.
+  const ks = (await db.query(`SELECT coalesce(h.ad_soyad, t.kisi_adi_soyadi || ' (' || t.taraf_rolu || ')') ad FROM dosya d LEFT JOIN kullanici_hesabi h ON h.kimlik = d.kislik_sorumlu_kullanici_ref LEFT JOIN dosya_tarafi t ON t.kimlik = d.kislik_sorumlu_taraf_ref WHERE d.kimlik = $1`, [k.dosya_ref])).rows[0]?.ad as string | null;
+  bolumler.push({ baslik: T.kab, tur: 'alanlar', alanlar: [{ et: T.ktur, deger: kabul?.kabul_turu }, { et: T.acik, deger: acik.length ? `${T.var}  ·  ${acik.length}` : T.yok }, ...(ks ? [{ et: en ? 'Winterisation Responsible' : 'Kışlık Hazırlık Sorumlusu', deger: ks }] : [])] });
   if (acik.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: T.sor }], satirlar: acik.map((x) => [x.tanim, gunAy(x.hedef_tarih)]) });
   bolumler.push(
     { baslik: e.iletisim, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.ad }, { ad: e.tel }, { ad: e.eposta }], satirlar: [

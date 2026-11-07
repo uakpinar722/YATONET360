@@ -175,6 +175,10 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
     const d = await hazir(); const c = await o.gir('ds'); const K = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/kapanis`, c, { yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: true, ...x });
     expect((await K({ cikis: 'Teknik Kapalı', yazismaBeyani: false })).statusCode).toBe(400);
     expect((await K({ cikis: 'Kapalı', neden: 'Tamamlandı' })).statusCode).toBe(409);
+    // YG-076: kabul ve garanti işareti yalnız yayımlanmış ON/EK iş emri olan dosyada aranır.
+    expect((await K({ cikis: 'Teknik Kapalı', testKabul: false, garanti: false, yetkiKapsam: false })).json().eksikler).toEqual(['Kapanış Bekliyor']);
+    await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-KPN','Kapanış Firma','Çözüm Ortağı',$1) ON CONFLICT DO NOTHING`, [o.K.ds]);
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,'ON',$2,(SELECT kimlik FROM kurulus WHERE sicil_no = 'S-KPN'),'Y','K',100,'Tamamlandı',$3)`, [`${d.dosyaNo}-ON09`, d.kimlik, o.K.oy]);
     const e = await K({ cikis: 'Teknik Kapalı', testKabul: false, garanti: false });
     expect(e.statusCode).toBe(409); expect(e.json().eksikler).toEqual(['Kabul Bekliyor', 'Garanti Bağı Eksik']);
     const r = await K({ cikis: 'Teknik Kapalı' });

@@ -1012,3 +1012,35 @@ describe('kışlık hazırlık sorumlusu (YG-110)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kislik`, await o.gir('sy'), { kullanici: o.K.ds })).statusCode).toBe(404);
   });
 });
+
+describe('ertelenen kalemler ve daraltılmış kapanış (YG-076)', () => {
+  it('ertelenen kalemler ana dosyaya bağlı Planlı talep açar', async () => {
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ertelenen`, ds, { kalemler: [], hedef: '2027-04-01' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ertelenen`, ds, { kalemler: ['Teak yenileme'] })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/ertelenen`, ds, { kalemler: ['Teak yenileme', 'Antifouling'], hedef: '2027-04-01' }); expect(r.statusCode, r.body).toBe(200);
+    const t = (await o.sup.query(`SELECT oncelik, onceki_dosya_ref, ihtiyac_tanimi FROM talep WHERE kimlik = $1`, [r.json().talep])).rows[0];
+    expect(t.oncelik).toBe('Planlı'); expect(t.onceki_dosya_ref).toBe(d.kimlik); expect(t.ihtiyac_tanimi).toContain('Antifouling');
+    expect((await o.kart('Planlı Alt Dosya', r.json().talep)).baslik).toContain(d.dosyaNo);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/alt-talepler`, ds)).json()).toHaveLength(1);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ertelenen`, await o.gir('sy'), { kalemler: ['x'], hedef: '2027-04-01' })).statusCode).toBe(404);
+  });
+});
+
+describe('ON iş emri yokken kapanış listesi daralır (YG-076)', () => {
+  it('ON yoksa uygulama, kabul ve garanti işareti istenmez; ON varsa istenir', async () => {
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, statu = 'Aktif' WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const ds = await o.gir('ds'); const g = { cikis: 'Teknik Kapalı', yetkiKapsam: false, uygulama: false, testKabul: false, acikKonu: true, garanti: false, arsiv: true, yazismaBeyani: true };
+    const r1 = (await o.ist('POST', `/api/dosya/${d.kimlik}/kapanis`, ds, g)).json();
+    expect(r1.eksikler).toContain('Kapanış Bekliyor'); expect(r1.eksikler).not.toContain('Teknik Eksik'); expect(r1.eksikler).not.toContain('Kabul Bekliyor'); expect(r1.eksikler).not.toContain('Garanti Bağı Eksik');
+    const k = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Daraltma Firma','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-DR${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K',100,'Aktif',$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, k, o.K.oy]);
+    const r2 = (await o.ist('POST', `/api/dosya/${d.kimlik}/kapanis`, ds, g)).json();
+    expect(r2.eksikler).toEqual(expect.arrayContaining(['Teknik Eksik', 'Kabul Bekliyor', 'Garanti Bağı Eksik']));
+  });
+});

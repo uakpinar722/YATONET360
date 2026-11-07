@@ -84,6 +84,16 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/yat-kabul`, ds, { ...P, belge: await belge(d.kimlik) })).statusCode).toBe(200);
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/kapanis-hesabi`, ds)).json()).toMatchObject({ acikAlacak: 0, firmaBorcu: 0 });
   });
+  it('tutanak: görevli firmada firma zorunlu; şifre yazılmaz; kayıt değişmez, ek kayıtla düzeltilir (YG-089)', async () => {
+    const d = await dosya(); const ds = await o.gir('ds'); const P = { teslimAlan: 'LGM', envanter: 'E', anahtarlar: 'A', sayaclar: 'S', yakit: '%50', belge: await belge(d.kimlik) };
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/yat-kabul`, ds, { ...P, teslimAlan: 'Görevli Firma' })).json().hata).toContain('görevli firmayı');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/yat-kabul`, ds, { ...P, anahtarlar: 'Kapı şifre: 4471' })).json().hata).toContain('hassas');
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/yat-kabul`, ds, P); expect(r.statusCode, r.body).toBe(200); const k = r.json().kimlik;
+    await expect(o.sup.query(`UPDATE yat_kabul_tutanagi SET yakit_seviyesi = '%60' WHERE kimlik = $1`, [k])).rejects.toThrow(/değiştirilemez/);
+    expect((await o.ist('POST', `/api/tutanak/yat-kabul/${k}/ek`, ds, { metin: 'PIN 1234' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/tutanak/yat-kabul/${k}/ek`, ds, { metin: 'Yakıt seviyesi %60 olarak düzeltildi' })).statusCode).toBe(200);
+    const l = (await o.ist('GET', `/api/tutanak/yat-kabul/${k}/ek`, ds)).json(); expect(l).toHaveLength(1); expect(l[0].metin).toContain('%60');
+  });
 });
 
 describe('sökülen parça (YG-482)', () => {
