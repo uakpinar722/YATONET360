@@ -956,3 +956,15 @@ describe('destek talebi dosya bağlamı ve ekran görüntüsü (YG-1504)', () =>
     expect((await o.ist('POST', `/api/destek/${id}/ekran-goruntusu`, await o.gir('ds'), { belge: eg })).statusCode).toBe(404);
   });
 });
+
+describe('yatın onarım geçmişi (YG-095)', () => {
+  it('aynı yatın önceki dosyaları ve onaylı raporları görünür; rapor yalnız bu geçmişe atıf yapar', async () => {
+    const a = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [a.kimlik])).rows[0].yat_ref;
+    const b = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET yat_ref = $2 WHERE kimlik = $1`, [b.kimlik, yat]);
+    const r = (await o.sup.query(`INSERT INTO teknik_rapor (rapor_no, rapor_turu, dosya_ref, kapsam, incelenen_alan, saha_kosullari, yontem_olcut, bulgular, acik_sorular, analiz_risk, oneriler, uzmanlik_siniri, rapor_dili, hazirlayan_ref, durum) VALUES ($1,'İlk Rapor',$2,'k','i','s','y','b','a','r','o','u','Türkçe',$3,'Onaylı') RETURNING kimlik`, [`${a.dosyaNo}-TR01`, a.kimlik, o.K.ds])).rows[0].kimlik;
+    const g = await o.ist('GET', `/api/dosya/${b.kimlik}/yat-gecmisi`, await o.gir('mpm')); expect(g.statusCode, g.body).toBe(200);
+    const s = g.json().find((x: { dosya_no: string }) => x.dosya_no === a.dosyaNo); expect(s.raporlar[0].raporNo).toBe(`${a.dosyaNo}-TR01`);
+    expect((await o.ist('GET', `/api/dosya/${b.kimlik}/yat-gecmisi`, await o.gir('sy'))).statusCode).toBe(404);
+    void r;
+  });
+});

@@ -216,3 +216,18 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
     expect((await o.ist('POST', `/api/siparis/${id}/eslestirme`, c, { no: 'F1', tarih: ileri(0), tutar: 200 })).statusCode).toBe(409);
   });
 });
+
+describe('uzun terminli parça (YG-868)', () => {
+  it('teslim süresi 14 günü aşan sipariş uzun terminli işaretlenir ve GMY onayından geçer', async () => {
+    const d = await dosya(); const c = await o.gir('ts'); const u = `/api/dosya/${d.kimlik}/siparis`;
+    await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,'Karar','Tam Onay',1000,200,1200,1000,$3)`, [`${d.dosyaNo}-TK01`, d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO odeme_talebi (dosya_ref, tur, tutar_eur, muhatap, son_tarih, durum, hazirlayan_ref) VALUES ($1,'Parça',600,'Yat Sahibi',current_date,'Ödendi',$2)`, [d.kimlik, o.K.ds]);
+    const S = (g: number) => ({ tedarikci, teklifRef: 'T1', kullanim: 'Ana makine', teslimTarihi: ileri(g), teslimYeri: 'Depo', olcut: 'Ö', gerekce: 'G', kalemler: [{ tanim: 'Pompa', parcaNo: `P${g}`, miktar: 1, birim: 'adet', bedel: 100 }] });
+    const kisa = await o.ist('POST', u, c, S(10)); expect(kisa.statusCode, kisa.body).toBe(200); expect(kisa.json().uzunTerminli).toBe(false);
+    const uzun = await o.ist('POST', u, c, S(20)); expect(uzun.statusCode, uzun.body).toBe(200); expect(uzun.json().uzunTerminli).toBe(true);
+    const gmy = (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Genel Müdür Yardımcısı'`)).rows[0].kimlik;
+    expect((await o.kart('Tedarik Siparişi', uzun.json().kimlik)).zincir).toContain(gmy);
+    expect((await o.kart('Tedarik Siparişi', kisa.json().kimlik)).zincir).not.toContain(gmy);
+    expect((await o.sup.query(`SELECT uzun_terminli FROM tedarik_siparisi WHERE kimlik = $1`, [uzun.json().kimlik])).rows[0].uzun_terminli).toBe(true);
+  });
+});

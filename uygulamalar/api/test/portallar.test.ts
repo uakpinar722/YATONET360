@@ -75,7 +75,7 @@ describe('A9 Tedarikçi (YG-298, YG-1088, YG-1577)', () => {
     expect((await o.ist('POST', `/api/tedarikci-portal/talep/${t.json().kimlik}/yanit`, tedC, { kalemler: [] })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/tedarikci-portal/talep/${t.json().kimlik}/yanit`, tedC, { kalemler: [{ kimlik: k, fiyat: 100, sure: 5 }] })).json().gecerlilik).toBeDefined();
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklif-talepleri`, ts)).json()[0].kalemler[0].teslim_suresi_gun).toBe(5);
-    const s = await o.ist('POST', `/api/dosya/${d.kimlik}/siparis`, ts, { tedarikci: ted, teklifRef: t.json().talepNo, kullanim: 'K', teslimTarihi: '2027-01-10', teslimYeri: 'Y', olcut: 'Ö', gerekce: 'G', kalemler: [{ tanim: 'Pompa', parcaNo: 'P1', miktar: 2, birim: 'adet', bedel: 100 }] });
+    const s = await o.ist('POST', `/api/dosya/${d.kimlik}/siparis`, ts, { tedarikci: ted, teklifRef: t.json().talepNo, kullanim: 'K', teslimTarihi: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10) /* YG-868: kısa terminli */, teslimYeri: 'Y', olcut: 'Ö', gerekce: 'G', kalemler: [{ tanim: 'Pompa', parcaNo: 'P1', miktar: 2, birim: 'adet', bedel: 100 }] });
     expect(s.statusCode, s.body).toBe(200);
     const sid = s.json().kimlik; const kr = await o.kart('Tedarik Siparişi', sid);
     expect((await o.ist('GET', '/api/tedarikci-portal/ana', tedC)).json().siparisler).toHaveLength(0);

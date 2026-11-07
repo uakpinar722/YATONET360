@@ -75,9 +75,14 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kismi_teslim_izni, kabul_olcutu, secim_gerekcesi, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`, [no, id, g.tedarikci, g.teklifRef!.trim(), g.kullanim!.trim(), matrah, kdv, R2(matrah + kdv), g.teslimTarihi, g.teslimYeri!.trim(), Boolean(g.kismi), g.olcut!.trim(), g.gerekce!.trim(), o.kullanici])).rows[0];
       let n = 0;
       for (const k of kl) await c.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur, muadil_orijinal_no) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [r.kimlik, ++n, k.tanim!.trim(), k.parcaNo!.trim(), k.miktar, k.birim!.trim(), k.bedel, R2(Number(k.miktar) * Number(k.bedel)), k.muadilOrijinal?.trim() || null]);
+      // YG-868: teslim süresi 14 günü aşan parça uzun terminlidir; onay zincirinin sonuna GMY eklenir.
+      const uzun = (new Date(g.teslimTarihi!).getTime() - Date.now()) / 86_400_000 > 14;
+      if (uzun) await c.query(`UPDATE tedarik_siparisi SET uzun_terminli = true WHERE kimlik = $1`, [r.kimlik]);
       // YG-824: aynı dosyada aynı tedarikçiye bölünmüş sipariş kümülatif tutarla onaya gider.
-      await kartAc(c, { tur: 'Tedarik Siparişi', baslik: `${no} · Tedarik Siparişi`, ozet: `${tutar(matrah)} EUR`, hazirlayan: o.kullanici, zincir: await parasalZincir(c, ['Tedarik Yönetimi Müdürü', 'Teknik ve Operasyon Direktörü'], await sonMakam(c, Number((await c.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM tedarik_siparisi WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu <> 'İptal'`, [id, g.tedarikci])).rows[0].t))), nesneTuru: 'Sipariş', nesneKimligi: r.kimlik });
-      return { kimlik: r.kimlik, siparisNo: no, kdvHaric: matrah, toplam: R2(matrah + kdv) };
+      const zn = await parasalZincir(c, ['Tedarik Yönetimi Müdürü', 'Teknik ve Operasyon Direktörü'], await sonMakam(c, Number((await c.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM tedarik_siparisi WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu <> 'İptal'`, [id, g.tedarikci])).rows[0].t)));
+      const gmy = await rolId(c, 'Genel Müdür Yardımcısı'); if (uzun && !zn.includes(gmy)) zn.push(gmy);
+      await kartAc(c, { tur: 'Tedarik Siparişi', baslik: `${no} · Tedarik Siparişi${uzun ? ' · Uzun Terminli' : ''}`, ozet: `${tutar(matrah)} EUR`, hazirlayan: o.kullanici, zincir: zn, nesneTuru: 'Sipariş', nesneKimligi: r.kimlik });
+      return { kimlik: r.kimlik, siparisNo: no, kdvHaric: matrah, toplam: R2(matrah + kdv), uzunTerminli: uzun };
     });
   });
 

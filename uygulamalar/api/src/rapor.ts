@@ -104,9 +104,13 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
       const f = (await c.query(`SELECT kimlik, bulgular, onerilen_islemler, firma_onayi FROM firma_teknik_raporu WHERE dosya_ref = $1 ORDER BY firma_onayi DESC LIMIT 1`, [id])).rows[0];
       const ana = tur === 'Ek Teknik Rapor' ? (await c.query(`SELECT kimlik FROM teknik_rapor WHERE dosya_ref = $1 AND rapor_turu = 'İlk Rapor' AND durum = 'Onaylı' LIMIT 1`, [id])).rows[0]?.kimlik : null;
       if (tur === 'Ek Teknik Rapor' && !ana) throw Object.assign(new Error('Ek Teknik Rapor için onaylı İlk Rapor bekleniyor.'), { statusCode: 409 });
+      // YG-095: rapor aynı yatın önceki dosyalarındaki onaylı raporlara atıf yapabilir.
+      const onceki = Array.isArray((i.body as { oncekiRaporlar?: unknown })?.oncekiRaporlar) ? ((i.body as { oncekiRaporlar: string[] }).oncekiRaporlar).filter((x) => UUID.test(x)) : [];
+      if (onceki.length && Number((await c.query(`SELECT count(*) n FROM teknik_rapor r JOIN dosya x ON x.kimlik = r.dosya_ref WHERE r.kimlik = ANY($1::uuid[]) AND r.durum = 'Onaylı' AND x.yat_ref = (SELECT yat_ref FROM dosya WHERE kimlik = $2) AND x.kimlik <> $2`, [onceki, id])).rows[0].n) !== onceki.length) throw Object.assign(new Error('Atıf yalnız aynı yatın önceki dosyalarındaki onaylı raporlara yapılır.'), { statusCode: 400 });
       const no = await altNumara(c, d.dosya_no, 'TR');
       const son = f ? await raporSonZamani(c, d.oncelik, new Date(f.firma_onayi)) : null;
       const r = (await c.query(`INSERT INTO teknik_rapor (rapor_no, rapor_turu, ana_rapor_ref, dosya_ref, dayanak_firma_raporu_ref, kapsam, incelenen_alan, saha_kosullari, yontem_olcut, bulgular, acik_sorular, analiz_risk, oneriler, uzmanlik_siniri, rapor_dili, son_zaman, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`, [no, tur, ana, id, f?.kimlik ?? null, g.kapsam!.trim(), g.incelenen!.trim(), g.saha!.trim(), g.yontem!.trim(), g.bulgular!.trim(), g.acikSorular!.trim(), g.analiz!.trim(), g.oneriler!.trim(), g.uzmanlik!.trim(), d.yazisma_dili ?? 'Türkçe', son, o.kullanici])).rows[0];
+      if (onceki.length) await c.query(`UPDATE teknik_rapor SET onceki_raporlar = $2 WHERE kimlik = $1`, [r.kimlik, onceki]); // YG-095
       if (f) {
         await c.query(`UPDATE firma_teknik_raporu SET lgm_inceleyen_ref = $2, lgm_inceleme_zamani = now() WHERE kimlik = $1`, [f.kimlik, o.kullanici]);
         const degisen = g.bulgular!.trim() !== f.bulgular || g.oneriler!.trim() !== f.onerilen_islemler;

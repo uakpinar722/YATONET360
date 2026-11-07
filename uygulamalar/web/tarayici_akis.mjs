@@ -452,7 +452,7 @@ try {
   await pFym.api(`/firma/${ted}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
   const pTd = await al('tds', E); await dosyaAc(pTd, d2.dosyaNo);
   await pTd.locator('#sp-ted').selectOption(ted);
-  for (const [i, v] of [['teklifRef', 'T1'], ['kullanim', 'Ana makine'], ['teslimTarihi', '2027-01-15'], ['teslimYeri', 'Marina'], ['olcut', 'Sertifikalı'], ['gerekce', 'Tek kaynak'], ['tanim', 'Pompa'], ['parcaNo', 'P-1'], ['miktar', '2'], ['bedel', '100']]) await pTd.locator(`#sp-${i}`).fill(v);
+  for (const [i, v] of [['teklifRef', 'T1'], ['kullanim', 'Ana makine'], ['teslimTarihi', new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10)], ['teslimYeri', 'Marina'], ['olcut', 'Sertifikalı'], ['gerekce', 'Tek kaynak'], ['tanim', 'Pompa'], ['parcaNo', 'P-1'], ['miktar', '2'], ['bedel', '100']]) await pTd.locator(`#sp-${i}`).fill(v);
   await tikla(pTd, 'Siparişi Onaya Gönder');
   let sp; for (let i = 0; i < 20 && !sp; i++) { sp = (await sup.query(`SELECT kimlik, siparis_no FROM tedarik_siparisi WHERE dosya_ref = $1`, [d2.kimlik])).rows[0]; if (!sp) await pTd.waitForTimeout(250); }
   if (!sp) throw new Error(`tedarik siparişi oluşmadı: ${await pTd.locator('[role=status]').allTextContents()}`);
