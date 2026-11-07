@@ -100,6 +100,9 @@ async function raporTanim(db: Db, id: string, kod: string, web: string) {
     { baslik: e.bulgu, tur: 'metin', metin: r.bulgular },
   ];
   if (bl.length) bolumler.push({ baslik: `${e.bulgu} (${e.bolge})`, tur: 'tablo', sutunlar: [{ ad: e.bolge }, { ad: e.gozlem }, { ad: e.konumS }, { ad: e.etiket }, { ad: e.onem }], satirlar: bl.map((x) => [x.bolge_kodu ?? x.bulgu_no, x.aciklama, x.konum_referansi, x.bulgu_etiketi, x.hasar_onem_derecesi]) });
+  // YG-1441: TU'nun Gerekli işaretlediği teklif satırları.
+  const ro = await (await import('./resmi_onay.js')).resmiOnayGerekenler(db, r.dosya_ref);
+  if (ro.length) bolumler.push({ baslik: dil === 'en' ? 'Works Requiring Statutory / Class Approval' : 'Resmî / Klas Onayı Gereken İşler', tur: 'tablo', sutunlar: [{ ad: dil === 'en' ? 'Code' : 'Kod' }, { ad: e.aciklama }], satirlar: ro.map((x) => [x.kod, x.aciklama]) });
   bolumler.push({ baslik: e.deger, tur: 'metin', metin: r.analiz_risk }, { baslik: e.oneri, tur: 'metin', metin: r.oneriler }, { baslik: e.acik, tur: 'metin', metin: r.acik_sorular }, { baslik: e.sinir, tur: 'metin', metin: r.uzmanlik_siniri }, ekipBolumu(b), atananEkip(b));
   if (gr.length) bolumler.push({ baslik: e.foto, tur: 'tablo', sutunlar: [{ ad: e.gorsel }, { ad: e.aciklama }, { ad: e.zaman }, { ad: e.konumS }], satirlar: gr.map((x) => [x.gorsel_no, x.cekim_kalemi, x.cekim_zamani ? gunAy(x.cekim_zamani) : null, x.konum]) });
   return {

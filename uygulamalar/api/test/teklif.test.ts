@@ -463,3 +463,37 @@ describe('bildirilen onarım süresi (YG-1457)', () => {
     expect((await o.sup.query(`SELECT tahmini_sure_gun FROM firma_teknik_raporu WHERE dosya_ref = $1`, [d.kimlik])).rows[0].tahmini_sure_gun).toBe(7);
   });
 });
+
+describe('resmî / klas onayı etiketi (YG-1441)', () => {
+  it('klaslı yatta etiketli işlem TU görevi açar; TU işaretler; Gerekli satır rapor tablosuna düşer; etiketi yalnız TM koyar', async () => {
+    const d = await hazir();
+    await o.sup.query(`UPDATE yat SET klas_durumu = 'Evet' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    const kod = (await o.sup.query(`SELECT s.kartela_kodu FROM kapsam_satiri s JOIN kapsam_cetveli c ON c.kimlik = s.cetvel_ref WHERE c.dosya_ref = $1 AND s.kartela_kodu IS NOT NULL LIMIT 1`, [d.kimlik])).rows[0].kartela_kodu;
+    expect((await o.ist('POST', `/api/kartela/${kod}/resmi-onay`, await o.gir('tu'), { etiket: true })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/kartela/${kod}/resmi-onay`, await o.gir('tm'), { etiket: true })).statusCode).toBe(200);
+    try {
+      const t = await teklifAc(d);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Resmî / Klas Onayı Değerlendirmesi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [t.kimlik])).rows[0].n).toBe(1);
+      const tu = await o.gir('tu'); const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/resmi-onay`, tu)).json(); expect(l.length).toBeGreaterThan(0);
+      expect((await o.ist('POST', `/api/teklif-kalemi/${l[0].kimlik}/resmi-onay`, tu, { karar: 'Belki' })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/teklif-kalemi/${l[0].kimlik}/resmi-onay`, await o.gir('ts'), { karar: 'Gerekli' })).statusCode).toBe(404);
+      for (const [n, x] of l.entries()) expect((await o.ist('POST', `/api/teklif-kalemi/${x.kimlik}/resmi-onay`, tu, { karar: n === 0 ? 'Gerekli' : 'Gerekmez' })).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Resmî / Klas Onayı Değerlendirmesi' AND nesne_kimligi = $1`, [t.kimlik])).rows[0].durum).toBe('Tamamlandı');
+      const { resmiOnayGerekenler } = await import('../src/resmi_onay.js');
+      expect((await resmiOnayGerekenler(o.db, d.kimlik)).map((x) => x.kod)).toEqual([l[0].kartela_kodu]);
+    } finally { await o.sup.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = false WHERE kod = $1`, [kod]); }
+  });
+});
+
+describe('firma raporunda resmî / klas onayı sorusu (YG-1441)', () => {
+  it('klaslı yatta firma evet/hayır yanıtlamadan rapor gönderemez', async () => {
+    const d = await hazir();
+    await o.sup.query(`UPDATE yat SET klas_durumu = 'Evet' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    const e = (await o.sup.query(`SELECT kimlik FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'KN' LIMIT 1`, [d.kimlik])).rows[0].kimlik;
+    await o.sup.query(`DELETE FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e]);
+    const R = { tarih: '2026-11-05', bulgular: 'b', oneriler: 'o', sure: 3, degerlendirme: 'f' };
+    expect((await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, R)).json().hata).toContain('resmî / klas onayı');
+    const r = await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, { ...R, resmiOnay: true }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT resmi_onay_gerekir FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e])).rows[0].resmi_onay_gerekir).toBe(true);
+  });
+});

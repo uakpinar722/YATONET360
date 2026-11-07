@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
+import { KartelaResmiEtiket } from './ResmiOnay';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { EkipKarti, GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
@@ -291,7 +292,7 @@ function CalismaIzni({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<a
 
 /** YG-428, YG-429, YG-1518: fiyat içermez; Firma Değerlendirmesi zorunlu; son zaman görünür. */
 function FirmaRapor({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
-  const [v, setV] = useState<{ rapor: { rapor_no: string } | null; sonZaman: string } | null>(null); const [f, setF] = useState({ tarih: '', bulgular: '', oneriler: '', malzeme: '', sure: '', degerlendirme: '' });
+  const [v, setV] = useState<{ rapor: { rapor_no: string } | null; sonZaman: string } | null>(null); const [f, setF] = useState({ tarih: '', bulgular: '', oneriler: '', malzeme: '', sure: '', degerlendirme: '', resmi: '' });
   const yukle = () => istek<NonNullable<typeof v>>(`/firma-portal/is-emri/${isEmri}/teknik-rapor`).then(setV);
   useEffect(() => { void yap(yukle); }, [isEmri]);
   if (!v) return null;
@@ -303,8 +304,9 @@ function FirmaRapor({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<an
     <label htmlFor="fr-o">Önerilen İşlemler</label><textarea id="fr-o" value={f.oneriler} onChange={(e) => setF({ ...f, oneriler: e.target.value })} />
     <label htmlFor="fr-m">Malzeme İhtiyacı</label><input id="fr-m" value={f.malzeme} onChange={(e) => setF({ ...f, malzeme: e.target.value })} />
     <label htmlFor="fr-s">Tahmini Süre (Gün)</label><input id="fr-s" inputMode="numeric" value={f.sure} onChange={(e) => setF({ ...f, sure: e.target.value })} />
+    <label htmlFor="fr-r">Önerilen İşlemler İçin Resmî / Klas Onayı Gerekir mi?</label><select id="fr-r" value={f.resmi} onChange={(e) => setF({ ...f, resmi: e.target.value })}><option value="">Seçiniz</option><option>Evet</option><option>Hayır</option></select>
     <label htmlFor="fr-d">Firma Değerlendirmesi</label><textarea id="fr-d" value={f.degerlendirme} onChange={(e) => setF({ ...f, degerlendirme: e.target.value })} />
-    <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teknik-rapor`, { ...f, sure: Number(f.sure) }).then(yukle), 'Raporunuz iletildi.')}>Raporu Onayla ve Gönder</button>
+    <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teknik-rapor`, { ...f, resmi: undefined, sure: Number(f.sure), resmiOnay: f.resmi ? f.resmi === 'Evet' : undefined }).then(yukle), 'Raporunuz iletildi.')}>Raporu Onayla ve Gönder</button>
   </Blok>;
 }
 
@@ -751,6 +753,7 @@ export function IdariIslemler() {
       <KurumsalEk2 yap={yap} />
       <MaliParametreler />
       <KartelaMaliyet />
+      <KartelaResmiEtiket />
       <TatilTakvimi />
       <ButceDonemi />
       <KurumBelgeleri />

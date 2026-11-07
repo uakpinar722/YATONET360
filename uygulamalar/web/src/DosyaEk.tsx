@@ -4,6 +4,7 @@ import { YatGecmisi } from './YatGecmis';
 import { KilometreTaslari } from './Kilometre';
 import { KislikSorumlusu } from './Kislik';
 import { ErtelenenKalemler } from './Ertelenen';
+import { ResmiOnayIsaretleri } from './ResmiOnay';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 
@@ -137,6 +138,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <KilometreTaslari dosya={id} />
     <KislikSorumlusu dosya={id} />
     <ErtelenenKalemler dosya={id} />
+    <ResmiOnayIsaretleri dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />

@@ -69,14 +69,17 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     return { rapor: r ?? null, sonZaman: await raporSonZamani(b.db, e.oncelik, new Date(e.firma_kabul_zamani ?? e.olusturma_zamani ?? Date.now())) };
   });
   s.post('/firma-portal/is-emri/:id/teknik-rapor', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tarih?: string; bulgular?: string; oneriler?: string; malzeme?: string; sure?: number; degerlendirme?: string };
+    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tarih?: string; bulgular?: string; oneriler?: string; malzeme?: string; sure?: number; degerlendirme?: string; resmiOnay?: boolean };
     if (!e) return yok(y);
     if (e.is_emri_turu !== 'KN') return y.code(409).send({ hata: 'Firma Teknik Raporu keşif iş emrinde girilir.' });
     if (!g.tarih || !g.bulgular?.trim() || !g.oneriler?.trim() || !(Number(g.sure) > 0) || !g.degerlendirme?.trim()) return y.code(400).send({ hata: 'İnceleme tarihi, bulgular, önerilen işlemler, tahmini süre ve Firma Değerlendirmesini yazmanızı rica ederiz.' });
     if ((await b.db.query(`SELECT 1 FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu iş emrinin raporu kayıtlıdır.' });
+    // YG-1441: klaslı ya da ticari yatta firma "resmî / klas onayı gerekir mi" sorusunu yanıtlar.
+    const kl = (await b.db.query(`SELECT y.klas_durumu, y.kullanim_amaci FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [e.dosya_ref])).rows[0];
+    if ((kl?.klas_durumu === 'Evet' || kl?.kullanim_amaci === 'Charter') && typeof g.resmiOnay !== 'boolean') return y.code(400).send({ hata: 'Önerilen işlemler için resmî / klas onayı gerekip gerekmediğini belirtmenizi rica ederiz.' });
     return islem(async (c) => {
       const no = await altNumara(c, e.dosya_no, 'FR');
-      await c.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, malzeme_ihtiyaci, tahmini_sure_gun, firma_degerlendirmesi, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [no, e.dosya_ref, e.kimlik, e.kurulus_ref, g.tarih, g.bulgular!.trim(), g.oneriler!.trim(), g.malzeme?.trim() ?? null, g.sure, g.degerlendirme!.trim(), o.kullanici]);
+      await c.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, malzeme_ihtiyaci, tahmini_sure_gun, firma_degerlendirmesi, giren_ref, resmi_onay_gerekir) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [no, e.dosya_ref, e.kimlik, e.kurulus_ref, g.tarih, g.bulgular!.trim(), g.oneriler!.trim(), g.malzeme?.trim() ?? null, g.sure, g.degerlendirme!.trim(), o.kullanici, typeof g.resmiOnay === 'boolean' ? g.resmiOnay : null]);
       const tu = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
       await bildir(c, { olay: `firma-rapor:${e.kimlik}`, kullanicilar: tu, baslik: `${e.dosya_no} · Firma Teknik Raporu Geldi` });
       return { raporNo: no };

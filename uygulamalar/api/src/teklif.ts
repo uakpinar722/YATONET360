@@ -397,6 +397,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       }
       const top = toplamlar(hesap, null, 0, kdvO);
       await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [t.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
+      await (await import('./resmi_onay.js')).resmiOnayKontrol(c, t.kimlik); // YG-1441
       const genelT = await teklifKdvUygula(c, t.kimlik);
       await c.query(`UPDATE firma_fiyat_teklifi SET durum = 'Seçildi' WHERE kimlik = $1`, [g.firmaTeklifi]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Fiyat Teklifi Hazırlandı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { no, toplam: top.ara }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
@@ -706,6 +707,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const yeni = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, surum_no, onceki_surum_ref, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, revizyon_nedeni, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref) SELECT teklif_no, surum_no + 1, kimlik, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, $2, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, ara_toplam_eur * (1 + kdv_orani / 100), ara_toplam_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref FROM fiyat_teklifi WHERE kimlik = $1 RETURNING kimlik, surum_no`, [t.kimlik, neden.trim()])).rows[0];
       await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon) SELECT $2, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik, yeni.kimlik]);
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Yerine Geçti', guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
+      await (await import('./resmi_onay.js')).resmiOnayKontrol(c, yeni.kimlik); // YG-1441
       await c.query(`UPDATE is_karti SET durum = 'Geçersiz', kapanma_zamani = now() WHERE tur = 'Fiyat Teklifi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [t.kimlik]);
       await c.query(`UPDATE onay_talebi SET durum = 'İptal' WHERE nesne_kimligi = $1 AND durum = 'Bekliyor'`, [t.kimlik]); // YG-156: içerik değişince önceki onay düşer.
       return { kimlik: yeni.kimlik, surum: yeni.surum_no };
