@@ -990,3 +990,25 @@ describe('kilometre taşı (YG-072)', () => {
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/kilometre`, await o.gir('sy'))).statusCode).toBe(404);
   });
 });
+
+describe('kışlık hazırlık sorumlusu (YG-110)', () => {
+  it('kış dönemi hesabı; kışa sarkan dosyada görev bir kez açılır; personel ya da taraf atanır, görev kapanır', async () => {
+    const { kistaMi, kislikIsle } = await import('../src/kislik.js');
+    expect([kistaMi(12, 11, 3), kistaMi(2, 11, 3), kistaMi(6, 11, 3), kistaMi(4, 11, 3)]).toEqual([true, true, false, false]);
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, musteri_hedef_tarihi = NULL WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await kislikIsle(o.db, new Date('2026-07-10T09:00:00Z'));
+    expect(await o.kart('Kışlık Hazırlık Sorumlusu', d.kimlik)).toBeUndefined();
+    await o.sup.query(`UPDATE dosya SET musteri_hedef_tarihi = '2026-12-15' WHERE kimlik = $1`, [d.kimlik]);
+    await kislikIsle(o.db, new Date('2026-07-10T09:00:00Z')); await kislikIsle(o.db, new Date('2026-07-11T09:00:00Z'));
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Kışlık Hazırlık Sorumlusu' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+    const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kislik`, ds, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kislik`, ds, { kullanici: o.K.tm })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kislik`, ds, { kullanici: o.K.ds }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.kart('Kışlık Hazırlık Sorumlusu', d.kimlik)).durum).toBe('Tamamlandı');
+    const g = (await o.ist('GET', `/api/dosya/${d.kimlik}/kislik`, ds)).json(); expect(g.sorumlu).toBeTruthy();
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kislik`, await o.gir('sy'), { kullanici: o.K.ds })).statusCode).toBe(404);
+  });
+});
