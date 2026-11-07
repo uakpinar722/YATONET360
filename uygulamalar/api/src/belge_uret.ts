@@ -75,7 +75,7 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
   const bolumler: Bolum[] = [
     ...ortak(b),
     { baslik: e.kalem, tur: 'tablo', sutunlar: [{ ad: e.sira, hiza: 'ort' }, { ad: e.kod }, { ad: e.aciklama }, { ad: e.nitelik }, { ad: e.bedel }, { ad: e.miktar, hiza: 'sag' }, { ad: e.fiyat, hiza: 'sag' }, { ad: e.tutar, hiza: 'sag' }], satirlar: kl.map((k) => [k.sira_no, k.kartela_kodu, k.aciklama, k.isin_niteligi, k.bedel_turu, `${tutar(Number(k.miktar), dil)} ${k.birim}`, para(k.birim_satis_fiyati_eur, dil), para(k.tutar_eur, dil)]), toplamlar: [...top, { et: e.genel, deger: para(f.genel_toplam_eur, dil), ana: true } as { et: string; deger: string; ana?: boolean }] },
-    { baslik: e.kosul, tur: 'alanlar', alanlar: [{ et: e.gecerlilik, deger: f.gecerlilik_bitis_tarihi ? gunAy(f.gecerlilik_bitis_tarihi) : null }, { et: e.odemeKosul, deger: f.odeme_vadesi }, { et: e.kdvDurum, deger: await kdvDurumMetni(db, f.dosya_ref, f.teklif_muhatabi, dil) }] },
+    { baslik: e.kosul, tur: 'alanlar', alanlar: [{ et: e.gecerlilik, deger: f.gecerlilik_bitis_tarihi ? gunAy(f.gecerlilik_bitis_tarihi) : null }, { et: e.odemeKosul, deger: f.odeme_vadesi }, ...(f.bildirilen_sure_gun ? [{ et: dil === 'en' ? 'Estimated Repair Time' : 'Tahmini Onarım Süresi', deger: dil === 'en' ? `${f.bildirilen_sure_gun} working days` : `${f.bildirilen_sure_gun} iş günü` }] : []), { et: e.kdvDurum, deger: await kdvDurumMetni(db, f.dosya_ref, f.teklif_muhatabi, dil) }] },
     ekipBolumu(b),
     atananEkip(b),
   ];

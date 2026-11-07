@@ -452,3 +452,14 @@ describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_surumu WHERE durum = 'Yürürlükte'`)).rows[0].n).toBe(1);
   });
 });
+
+describe('bildirilen onarım süresi (YG-1457)', () => {
+  it('teklife firmanın tahmini süresinin %20 fazlası yukarı yuvarlanarak yazılır; firma raporu değişmez', async () => {
+    const d = await hazir();
+    const e = (await o.sup.query(`SELECT kimlik, kurulus_ref FROM is_emri WHERE dosya_ref = $1 LIMIT 1`, [d.kimlik])).rows[0];
+    await o.sup.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, tahmini_sure_gun, firma_degerlendirmesi, giren_ref) VALUES ($1,$2,$3,$4,current_date,'b','o',7,'f',$5)`, [`${d.dosyaNo}-FR01`, d.kimlik, e.kimlik, e.kurulus_ref, o.K.ds]);
+    const t = await teklifAc(d);
+    expect((await o.sup.query(`SELECT bildirilen_sure_gun FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].bildirilen_sure_gun).toBe(9); // 7 × 1,2 = 8,4 → 9
+    expect((await o.sup.query(`SELECT tahmini_sure_gun FROM firma_teknik_raporu WHERE dosya_ref = $1`, [d.kimlik])).rows[0].tahmini_sure_gun).toBe(7);
+  });
+});

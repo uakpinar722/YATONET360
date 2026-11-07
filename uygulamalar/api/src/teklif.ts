@@ -378,6 +378,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const no = await altNumara(c, d.dosya_no, 'TK');
       const t = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, teklif_muhatabi, teklif_dili, kdv_orani, odeme_vadesi, fatura_bilgisi, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`,
         [no, g.acilTedbir ? 'Acil Tedbir Fiyat Teklifi' : g.ekTeklif ? 'Ek Fiyat Teklifi' : 'Fiyat Teklifi', g.ekTeklif || null, id, cetvel.kimlik, muhatap, d.yazisma_dili, kdvO, g.odemeVadesi ?? null, g.faturaBilgisi ?? null, o.kullanici])).rows[0];
+      // YG-1457: bildirilen onarım süresi firmanın tahmini süresinin tampon kadar fazlasıdır (yukarı yuvarlanır); firma iş emrinde kendi süresi kalır.
+      const fs = (await c.query(`SELECT tahmini_sure_gun FROM firma_teknik_raporu WHERE dosya_ref = $1 AND tahmini_sure_gun IS NOT NULL ORDER BY firma_onayi DESC LIMIT 1`, [id])).rows[0]?.tahmini_sure_gun;
+      if (fs) await c.query(`UPDATE fiyat_teklifi SET bildirilen_sure_gun = $2 WHERE kimlik = $1`, [t.kimlik, Math.ceil(Number(fs) * (1 + await parametre(c, 'onarim_sure_tamponu')) - 1e-9)]);
       // YG-864: ödenen Keşif Ücreti ilk teklife ayrı mahsup satırıyla düşülür; iskonto limitine sayılmaz.
       if (muhatap !== 'Sigorta Şirketi' && !g.ekTeklif) await c.query(`UPDATE fiyat_teklifi SET kesif_mahsubu_eur = (SELECT coalesce(sum(tutar_eur), 0) FROM odeme_talebi WHERE dosya_ref = $2 AND tur = 'Keşif Ücreti' AND durum = 'Ödendi') WHERE kimlik = $1 AND NOT EXISTS (SELECT 1 FROM fiyat_teklifi x WHERE x.dosya_ref = $2 AND x.kimlik <> $1 AND x.kesif_mahsubu_eur > 0 AND x.statu <> 'İptal')`, [t.kimlik, id]);
       let n = 0; const hesap: { tutar_eur: number; opsiyon: boolean }[] = []; const kodlar: string[] = []; let bantDisi = 0;
