@@ -69,6 +69,7 @@ async function aktifeGecir(c: PoolClient, id: string, yapan: string) {
   if (!['Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Yönetici'].every((r) => ekip.has(r)) || !(ekip.has('Teknik Uzman') || ekip.has('Sorumlu Teknik Uzman (Koordinatör)'))) return;
   await statuYaz(c, d, { statu: 'Aktif', asama: 'Keşif' }, 'Dosya ekibi tamamlandı', yapan, 'Dosya Sorumlusu');
   await sureBaslat(c, { tur: 'Randevu İletişimi', oncelik: d.oncelik, baslangic: new Date(), dosya: id });
+  if (d.oncelik !== 'Kritik') await (await import('./kesif_talebi.js')).kesifTalebiHazirla(c, id, d.dosya_no); // YG-1597
   // YG-1596: hasar ilerleyebilir işaretli Yüksek dosyada Teknik Uzman ilk yanıtta görüntülü değerlendirme yapar.
   if (d.hasar_ilerleyebilir && d.oncelik === 'Yüksek') {
     const tu = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Teknik Uzman','Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL LIMIT 1`, [id])).rows[0];

@@ -110,6 +110,11 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
     await c.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = true WHERE ana_brans = ANY($1::text[])`, [br]);
     await c.query(`INSERT INTO sema_gocu (dosya) VALUES ('kls1_resmi_onay_etiketi')`);
   }
+  // KLS-2: şanzıman, şaft ve pervane branşı etiket setine eklenir (bir kez).
+  if (!(await c.query(`SELECT 1 FROM sema_gocu WHERE dosya = 'kls2_resmi_onay_etiketi'`)).rowCount) {
+    await c.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = true WHERE ana_brans = 'Şanzıman, şaft ve pervane sistemi'`);
+    await c.query(`INSERT INTO sema_gocu (dosya) VALUES ('kls2_resmi_onay_etiketi')`);
+  }
   // Onaylı metin kütüphanesi (YG-600, YG-626, YG-692). Kaynak: YATONET 360 KAYNAK\sablon.
   const tsv = (d: string) => readFileSync(join(KOK, 'veri', 'sablon', d), 'utf8').split(/\r?\n/).filter(Boolean).slice(1).map((l) => l.split('\t'));
   const metin = async (kod: string, dil: string, tur: string, baslik: string | null, m: string | undefined) => {

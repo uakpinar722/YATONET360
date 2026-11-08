@@ -8,7 +8,7 @@ import { kapanisKaydet } from './kapanis.js';
 import { garantiKarneIsle } from './karne.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayTalebiAc } from './onay.js';
-import { altNumara, sureBaslat, sureBitir } from './sure.js';
+import { altNumara, sureBaslat, sureBitir, sureKur } from './sure.js';
 import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 import { birKez, bildir, disGonder } from './bildirim.js';
@@ -116,7 +116,10 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const k = (await c.query(`INSERT INTO kesif (dosya_ref, amac_kapsam, teknik_sorular, izinli_islemler, erisim_kisitlari, planlanan_baslangic, planlanan_bitis, bulusma_noktasi, sorumlu_ref, guvenlik_hazirligi, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`,
         [id, g.amac!.trim(), g.sorular?.trim() || null, g.izinli ?? [], g.kisit?.trim() || null, g.baslangic, g.bitis, g.bulusma?.trim() || null, tu.kullanici_ref, g.guvenlik?.trim() || null, o.kullanici])).rows[0];
       await sureBitir(c, { tur: 'Randevu İletişimi', dosya: id });
-      await sureBaslat(c, { tur: 'Keşif', oncelik: d.oncelik, baslangic: new Date(), dosya: id, km: g.km });
+      // YG-042, KSF-1: keşif iş emri firmaya gönderilmişse süre o andan işler; firmasız keşifte planlamayla başlar, gönderim gelirse yeniden kurulur.
+      await c.query(`UPDATE kesif SET km = $2 WHERE kimlik = $1`, [k.kimlik, g.km ?? null]);
+      const gn = (await c.query(`SELECT min(yayim_zamani) z FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'KN'`, [id])).rows[0].z as Date | null;
+      await sureKur(c, { tur: 'Keşif', oncelik: d.oncelik, baslangic: gn ? new Date(gn) : new Date(), dosya: id, km: g.km });
       await bildir(c, { olay: `kesif:${k.kimlik}`, kullanicilar: [tu.kullanici_ref].filter((x) => x !== o.kullanici), baslik: `Keşif Görevi: ${d.dosya_no}`, ozet: g.amac!.trim().slice(0, 200), oncelik: d.oncelik, eposta: true });
       // K-213: keşif ve söküm izni yalnız sigortasız dosyada aranır; sigortalıda yat sahibi onayı alınmaz.
       if (d.dosya_niteligi !== 'Sigorta bağlantılı') {

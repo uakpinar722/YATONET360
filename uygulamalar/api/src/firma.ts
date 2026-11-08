@@ -1,3 +1,4 @@
+import { sureKur } from './sure.js';
 import { rolId } from './ihbar.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
@@ -238,7 +239,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
         const zincir = await parasalZincir(c, ARA_ISLEM, await sonMakam(c, kum));
         await c.query(`UPDATE is_emri SET statu = 'İç Onayda' WHERE kimlik = $1`, [e.kimlik]);
         await kartAc(c, { tur: 'İş Emri', baslik: `${no} · İş Emri Onayı`, ozet: `Kümülatif ${kum.toFixed(2)} EUR`, oncelik: d.oncelik === 'Kritik' ? 'Kritik' : 'Normal', hazirlayan: o.kullanici, zincir, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik });
-      } else await yayimla(c, e);
+      } else if (g.tur === 'KN') await (await import('./kesif_talebi.js')).gonderimeHazirla(c, { kimlik: e.kimlik, is_emri_no: no, dosya_ref: id }); // YG-1597
+      else await yayimla(c, e);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İş Emri Oluşturuldu', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { no, tur: g.tur }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: e.kimlik, isEmriNo: no };
     });
@@ -377,6 +379,23 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       await bildir(c, { olay: `firma-birakti:${e.kimlik}`, kullanicilar: mfm, baslik: `${e.is_emri_no} · Firma İşi Bıraktı · Rücu ve Mahsup`, ozet: `Hakediş brüt ${tutar(Number(h.brut))} EUR, kesinti ${tutar(Number(h.kesinti))} EUR, ödenen ${tutar(Number(h.odenen))} EUR. Rücu ve mahsup değerlendirmesi rica olunur.`, oncelik: 'Yüksek' });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma İşi Bıraktı', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, yeni: { gerekce }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { statu: 'İptal' };
+    });
+  });
+
+  // YG-1597, YG-042, KSF-1: keşif iş emrini Dosya Sorumlusu firmaya gönderir; keşif süresi gönderimle başlar.
+  s.post('/is-emri/:id/firmaya-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici);
+    if (!e) return yok(y);
+    if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Dosya Sorumlusu', 'Yedek Sorumlu']))) return y.code(403).send({ hata: 'Keşif iş emrini Dosya Sorumlusu firmaya gönderir.' });
+    if (e.is_emri_turu !== 'KN' || e.statu !== 'Taslak') return y.code(409).send({ hata: 'Yalnız gönderilmemiş keşif iş emri firmaya gönderilir.' });
+    const engel = await firmaUygunlugu(b.db, e.kurulus_ref, null); if (engel) return y.code(409).send({ hata: engel });
+    return islem(async (c) => {
+      const onceki = (await c.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'KN' AND kimlik <> $2 AND yayim_zamani IS NOT NULL LIMIT 1`, [e.dosya_ref, e.kimlik])).rowCount;
+      const simdi = new Date(); await yayimla(c, e, simdi);
+      if (!onceki) { const d = (await c.query(`SELECT oncelik, (SELECT km FROM kesif k WHERE k.dosya_ref = x.kimlik ORDER BY k.planlanan_baslangic DESC LIMIT 1) km FROM dosya x WHERE x.kimlik = $1`, [e.dosya_ref])).rows[0]; await sureKur(c, { tur: 'Keşif', oncelik: d.oncelik, baslangic: simdi, dosya: e.dosya_ref, km: d.km === null ? null : Number(d.km) }); }
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Firmaya Gönder' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [e.kimlik]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Keşif İş Emri Firmaya Gönderildi', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { statu: 'Kabul Bekliyor' };
     });
   });
 

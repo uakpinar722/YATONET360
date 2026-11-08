@@ -34,11 +34,12 @@ const cetvel = async (id: string, satirlar: object[] = [{ aciklama: 'İnceleme',
   expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).toBe(200);
   return r.json().kimlik as string;
 };
-const kesifIsEmri = async (id: string) => {
+const kesifIsEmri = async (id: string, gonder = true) => {
   await o.sup.query(`UPDATE onay_talebi SET durum = 'Onaylandı' WHERE dosya_ref = $1`, [id]);
   await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-01','k','m','d','a','+905550002222',$2,'Onaylandı',now())`, [id, `x${Math.random()}`]);
   const r = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif' });
   expect(r.statusCode, r.body).toBe(200);
+  if (gonder) { const g = await o.ist('POST', `/api/is-emri/${r.json().kimlik}/firmaya-gonder`, await o.gir('ds'), {}); expect(g.statusCode, g.body).toBe(200); }
   return r.json();
 };
 const firmaFiyat = async (id: string, birim: number) => {
@@ -503,5 +504,26 @@ describe('firma raporunda resmî / klas onayı sorusu (YG-1441)', () => {
 describe('Ticari Sorumlu ataması (YG-1600)', () => {
   it('keşif iş emriyle görev açılır', async () => {
     const d = await hazir(); expect((await o.kart('Ticari Sorumlu Ataması', d.kimlik)).durum).toBe('Bekliyor');
+  });
+});
+
+describe('keşif talebi ve Firmaya Gönder (YG-1597, YG-042, KSF-1)', () => {
+  it('hazır talep görevi açılır; KN firmaya gitmez; yalnız Dosya Sorumlusu gönderir; keşif süresi gönderimle başlar', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); await o.ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, await o.gir('ds'), { tahrik: 'Dizel' }); await o.sup.query(`UPDATE yat SET gecici_kayit = false WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    expect((await o.kart('Keşif Talebi Hazır', d.kimlik)).durum).toBe('Bekliyor');
+    const on = (await o.ist('GET', `/api/dosya/${d.kimlik}/kesif-talebi`, await o.gir('oy'))).json(); expect(on).toHaveProperty('kapsam');
+    const r = await kesifIsEmri(d.kimlik, false);
+    expect((await o.kart('Keşif Talebi Hazır', d.kimlik)).durum).toBe('Tamamlandı');
+    expect((await o.sup.query(`SELECT statu, yayim_zamani FROM is_emri WHERE kimlik = $1`, [r.kimlik])).rows[0]).toEqual({ statu: 'Taslak', yayim_zamani: null });
+    expect((await o.kart('Firmaya Gönder', r.kimlik)).durum).toBe('Bekliyor');
+    await o.sup.query(`INSERT INTO dosya_sure (dosya_ref, tur, baslangic, bitis) VALUES ($1,'Keşif',now() - interval '30 days',now() - interval '27 days') ON CONFLICT DO NOTHING`, [d.kimlik]);
+    const u = `/api/is-emri/${r.kimlik}/firmaya-gonder`;
+    expect((await o.ist('POST', u, await o.gir('oy'), {})).statusCode).toBe(403);
+    const g = await o.ist('POST', u, await o.gir('ds'), {}); expect(g.statusCode, g.body).toBe(200);
+    expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [r.kimlik])).rows[0].statu).toBe('Kabul Bekliyor');
+    expect((await o.kart('Firmaya Gönder', r.kimlik)).durum).toBe('Tamamlandı');
+    const s = (await o.sup.query(`SELECT baslangic, bitis FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rows[0];
+    expect(Date.now() - new Date(s.baslangic).getTime()).toBeLessThan(60_000); expect(new Date(s.bitis).getTime()).toBeGreaterThan(Date.now());
+    expect((await o.ist('POST', u, await o.gir('ds'), {})).statusCode).toBe(409);
   });
 });

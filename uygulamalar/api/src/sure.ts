@@ -57,6 +57,16 @@ export async function sureBaslat(db: Db, g: { tur: string; oncelik: string; basl
   await db.query(`INSERT INTO dosya_sure (dosya_ref, talep_ref, tur, baslangic, bitis, kaydirma_notu) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, [g.dosya ?? null, g.talep ?? null, g.tur, g.baslangic, bitis, not]);
 }
 
+/** KSF-1: açık süreyi verilen başlangıçtan yeniden kurar; yoksa açar. */
+export async function sureKur(db: Db, g: { tur: string; oncelik: string; baslangic: Date; dosya: string; km?: number | null }): Promise<void> {
+  const saat = SURE_SAAT[g.tur]?.[g.oncelik];
+  if (saat === undefined) return;
+  const ham = new Date(g.baslangic.getTime() + (saat + (g.tur === 'Keşif' || g.tur === 'Sahaya Ulaşma' ? mesafeEki(g.km) : 0)) * 3_600_000);
+  const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db), await tatilGunleri(db, true));
+  const u = await db.query(`UPDATE dosya_sure SET baslangic = $3, bitis = $4, kaydirma_notu = $5 WHERE dosya_ref = $1 AND tur = $2 AND tamamlanma IS NULL`, [g.dosya, g.tur, g.baslangic, bitis, not]);
+  if (!u.rowCount) await sureBaslat(db, g);
+}
+
 export async function sureBitir(db: Db, g: { tur: string; dosya?: string; talep?: string }, zaman = new Date()): Promise<void> {
   await db.query(`UPDATE dosya_sure SET tamamlanma = $1 WHERE tur = $2 AND tamamlanma IS NULL AND (dosya_ref = $3 OR talep_ref = $4)`, [zaman, g.tur, g.dosya ?? null, g.talep ?? null]);
 }
