@@ -256,6 +256,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!['Avans', 'Ara Ödeme', 'Nihai', 'Parça', 'Acil Tedbir Bedeli'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'Ödeme türünü seçiniz.' });
     if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'Ödeme talebi onaylı teklife dayanır.' });
     if (!g.sonTarih) return y.code(400).send({ hata: 'Son ödeme tarihini giriniz.' });
+    { const ge = await (await import('./garanti_sigorta.js')).garantiFaturaEngeli(b.db, t); if (ge) return y.code(409).send({ hata: ge }); } // YG-1421
     let tut = Number(g.tutar);
     if (g.tur === 'Avans') {
       const c = (await b.db.query(`SELECT erken_ifa_onayi, cayma_bitis FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [t.kimlik])).rows[0];

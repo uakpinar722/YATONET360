@@ -387,7 +387,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (e.statu !== 'Başlangıç Kontrolünde') return y.code(409).send({ hata: 'İş emri başlangıç kontrolünde değildir.' });
     if (!['Başlanabilir', 'Koşullu Başlanabilir', 'Bekletilir'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
     // YG-368: eksik ön koşulla başlama ancak Koşullu ve gerekçeyle; Başlanabilir yalnız tamamı işaretliyse.
-    const eksikOn = ON_KOSULLAR.filter((x) => !(onKosul ?? []).includes(x));
+    // YG-370: absorban ve bariyer onarım işlerinde aranır; keşifte aranmaz.
+    const eksikOn = ON_KOSULLAR.filter((x) => !(e.is_emri_turu === 'KN' && x === 'Absorban ve Bariyer Mevcut') && !(onKosul ?? []).includes(x));
     if (sonuc === 'Başlanabilir' && eksikOn.length) return y.code(409).send({ hata: `Başlama ön koşulu eksiktir: ${eksikOn.join(', ')}. Sapma gerekçesiyle Koşullu Başlanabilir seçmenizi rica ederiz.`, eksikler: eksikOn });
     if (sonuc === 'Koşullu Başlanabilir' && eksikOn.length && !gerekce?.trim()) return y.code(400).send({ hata: 'Eksik ön koşul için sapma gerekçesini yazmanızı rica ederiz.' });
     if (sonuc !== 'Bekletilir' && altYuklenici?.trim()) { const { altYukleniciEngeli } = await import('./kalan.js'); const ae = await altYukleniciEngeli(b.db, e.kimlik, altYuklenici.split(',')); if (ae) return y.code(409).send({ hata: ae }); } // YG-411

@@ -299,7 +299,7 @@ try {
   await ieKart.getByRole('button', { name: 'Toplantıyı Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Başlangıç toplantısı');
   kontrol('başlangıç toplantısı ekrandan kaydedilir', (await sup.query(`SELECT 1 FROM baslangic_toplantisi t JOIN is_emri e ON e.kimlik = t.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rowCount === 1);
   await ieKart.getByLabel('Sapma Açıklaması').fill('Yöntem bildirimi eksik'); await ieKart.getByLabel('Sapma Kararı').selectOption('Değişiklik Talebi');
-  await dosyaAc(pTu, d.dosyaNo); for (const x of ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar']) await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByLabel(x).check(); await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: 'Başlanabilir', exact: true }).click(); await pTu.waitForTimeout(500); await hataVarsa(pTu, 'Başlanabilir');
+  await dosyaAc(pTu, d.dosyaNo); for (const x of ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut']) await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByLabel(x).check(); await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: 'Başlanabilir', exact: true }).click(); await pTu.waitForTimeout(500); await hataVarsa(pTu, 'Başlanabilir');
   kontrol('Teknik Uzman başlangıç kontrolünü ekrandan verir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].statu === 'Aktif');
 
   // İlerleme: dosya yükleyerek

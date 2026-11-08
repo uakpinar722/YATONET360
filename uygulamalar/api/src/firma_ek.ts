@@ -14,7 +14,7 @@ import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
 const FYM = 'Firma Yönetimi Müdürü'; const TM = 'Teknik Müdür'; const HUD = 'Hukuk ve Uyum Direktörü'; const OPM = 'Operasyon Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'; const TID = 'Ticari İşler Direktörü'; const TIC = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)';
-export const ON_KOSULLAR = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'];
+export const ON_KOSULLAR = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'];
 const SICIL_ROLLER = ['Sicil Sorumlusu', FYM, 'Firma Yönetimi Müdür Yardımcısı'];
 
 /** YG-307: görev sınıfı ve asgari yetkinlik. */

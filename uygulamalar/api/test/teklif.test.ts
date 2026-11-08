@@ -398,11 +398,11 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     await o.sup.query(`UPDATE kullanici_hesabi SET totp_son_adim = 0 WHERE e_posta = $1`, [FIRMA_EP]);
     const ky = await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/yanit`, firmaC, { yanit: 'Kabul', kod: totpKodu(firmaGizli, suankiAdim()) });
     expect(ky.statusCode, ky.body).toBe(200); expect(ky.json().statu).toBe('Başlangıç Kontrolünde');
-    expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('ds'), { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'] })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('ds'), { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'] })).statusCode).toBe(403);
     await o.sup.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, durum, hazirlayan_ref) VALUES ($1,1,'C','Ö','Onaylı',$2)`, [d.kimlik, o.K.tu]);
     expect((await o.ist('GET', `/api/is-emri/${e.kimlik}/ilerlemeler`, await o.gir('tu'))).json()).toEqual([]);
     await o.sup.query(`INSERT INTO baslangic_toplantisi (is_emri_ref, tarih, katilimcilar, konusulanlar, kaydeden_ref) VALUES ($1,current_date,'K','K',$2)`, [e.kimlik, o.K.ds]);
-    const bs = await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('tu'), { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar'] });
+    const bs = await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('tu'), { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'] });
     expect(bs.statusCode, bs.body).toBe(200);
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`bld02:${e.kimlik}`])).rows[0].metin;
     expect(m).toContain('itibarıyla başlanmıştır'); expect(m).not.toContain('[');

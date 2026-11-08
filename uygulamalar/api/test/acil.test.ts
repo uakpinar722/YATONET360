@@ -201,6 +201,17 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     for (const [n, a] of [[1, 'A'], [2, 'B']] as const) await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,$2,$3,'Onarım','İşçilik',1,'saat',115.38,150,150)`, [t.kimlik, n, a]);
     return { d, t: t.kimlik as string };
   };
+  it('garanti portalda yalnız durum; geçerli garanti kararından sonraki teklif sigortaya faturalanmaz (YG-1421)', async () => {
+    const { d } = await dosyaVeTeklif(); const no = `GS-${Date.now()}`;
+    const g = (await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, karar, statu, yanit_zamani, karar_gerekcesi, olusturan_ref) VALUES ($1,$2,'{Garanti bildirimi}','Telefon',now(),'Normal','Garanti','Uygulamada',now() - interval '1 day','Gizli Gerekçe',$3) RETURNING kimlik`, [no, d.kimlik, o.K.ds])).rows[0].kimlik;
+    const ana = async () => { const r = await o.ist('GET', '/api/sigorta/ana', sigortaC); return { b: r.body, k: r.json().dosyalar.find((x: any) => x.dosyaNo === d.dosyaNo) }; };
+    const a1 = await ana(); expect(a1.k.garanti).toBe('İnceleme Açıldı'); expect(a1.b).not.toContain(no); expect(a1.b).not.toContain('Gizli Gerekçe');
+    const { garantiFaturaEngeli } = await import('../src/garanti_sigorta.js'); const E = (m: string, z: string) => garantiFaturaEngeli(o.db, { dosya_ref: d.kimlik, teklif_muhatabi: m, olusturma_zamani: z });
+    const sonra = new Date().toISOString(); const once = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    expect(await E('Sigorta Şirketi', sonra)).toContain('faturalanmaz'); expect(await E('Yat Sahibi', sonra)).toBeNull(); expect(await E('Sigorta Şirketi', once)).toBeNull();
+    await o.sup.query(`UPDATE garanti_sikayet SET statu = 'Kapalı' WHERE kimlik = $1`, [g]);
+    expect((await ana()).k.garanti).toBe('İnceleme Kapandı'); expect(await E('Sigorta Şirketi', sonra)).toBeNull();
+  });
   it('yalnız kendi dosyası; firma ve maliyet görünmez; hasar no ayrı', async () => {
     const { d, t } = await dosyaVeTeklif();
     const a = (await o.ist('GET', '/api/sigorta/ana', sigortaC)).json();
