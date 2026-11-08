@@ -304,15 +304,18 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     });
   });
   s.post('/test/:id/sonuc', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; gerekce?: string; hamVeri?: string; gozlem?: string; durdurma?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; gerekce?: string; hamVeri?: string; gozlem?: string; durdurma?: string; disRapor?: string };
     if (!UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT * FROM test_kaydi WHERE kimlik = $1`, [id])).rows[0];
     if (!t || !(await erisim(t.dosya_ref, o.kullanici))) return yok(y);
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Sonucu testi hazırlayan girer.' });
     if (t.durum !== 'Planlandı') return y.code(409).send({ hata: 'Sonuç girilmiştir; yeniden test yeni numara alır.' });
+    // YG-398: dış uzman / muayene raporu sonucu girilirse test sonucu ondan eşlenir; elle farklı sonuç girilemez.
+    const ESLE: Record<string, string> = { Uygun: 'Başarılı', 'Uygun Değil': 'Başarısız', Belirlenemedi: 'Geçersiz' };
+    if (g.disRapor !== undefined) { if (!ESLE[g.disRapor]) return y.code(400).send({ hata: 'Dış rapor sonucu geçersizdir.' }); if (g.sonuc && g.sonuc !== ESLE[g.disRapor]) return y.code(400).send({ hata: `Dış rapor sonucu "${g.disRapor}" test sonucunda "${ESLE[g.disRapor]}" olarak işlenir.` }); g.sonuc = ESLE[g.disRapor]; }
     if (!['Başarılı', 'Koşullu', 'Başarısız', 'Geçersiz', 'Engellendi'].includes(g.sonuc ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Sonuç ve gerekçe zorunludur.' });
     if (!g.hamVeri || !UUID.test(g.hamVeri)) return y.code(400).send({ hata: 'Ham veri zorunludur.' });
-    await b.db.query(`UPDATE test_kaydi SET sonuc = $2, sonuc_gerekcesi = $3, ham_veri_ref = $4, gozlemler = $5, durdurma_olayi = $6, durum = 'Kontrolde' WHERE kimlik = $1`, [id, g.sonuc, g.gerekce.trim(), g.hamVeri, g.gozlem ?? null, g.durdurma ?? null]);
+    await b.db.query(`UPDATE test_kaydi SET sonuc = $2, sonuc_gerekcesi = $3, ham_veri_ref = $4, gozlemler = $5, durdurma_olayi = $6, dis_rapor_sonucu = $7, durum = 'Kontrolde' WHERE kimlik = $1`, [id, g.sonuc, g.gerekce.trim(), g.hamVeri, g.gozlem ?? null, g.durdurma ?? null, g.disRapor ?? null]);
     return { durum: 'Kontrolde' };
   });
   s.post('/test/:id/kontrol', oturumlu, async (i, y) => {

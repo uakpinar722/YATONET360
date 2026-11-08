@@ -187,3 +187,18 @@ describe('sapma, denetim ve karne (YG-379, YG-786, Ek I §7.5)', () => {
     await performansOlayIsle(o.db, b.e); expect((await olay(b.e)).girdi.oncedenBildirim).toBe(100);
   });
 });
+
+describe('ek test gerektiren sapma (YG-394)', () => {
+  it('test sonucu girilmeden yalnız İşi Durdur kararı verilir; sonuç girilince diğer kararlar açılır', async () => {
+    const { e } = await isEmri(); const tu = await o.gir('tu'); const u = `/api/is-emri/${e}/sapma`;
+    const dosya = (await o.sup.query(`SELECT dosya_ref FROM is_emri WHERE kimlik = $1`, [e])).rows[0].dosya_ref;
+    const t = (await o.sup.query(`INSERT INTO test_kaydi (test_no, dosya_ref, test_grubu, amac_kapsam, yontem, kabul_olcutu, durdurma_kosulu, hazirlayan_ref) VALUES ($1,$2,'Makine ve Tahrik','A','Y','≤ 80 °C','Alarm',$3) RETURNING kimlik`, [`TS-${Date.now()}`, dosya, o.K.tu])).rows[0].kimlik;
+    const g = { tur: 'Yöntem', aciklama: 'Laminasyon sıcaklığı sınır dışı', karar: 'Düzeltme', hedef: '2026-12-01', ekTest: t };
+    expect((await o.ist('POST', u, tu, { ...g, ekTest: '00000000-0000-0000-0000-000000000000' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tu, g)).json().hata).toContain('Ek test sonucu');
+    expect((await o.ist('POST', u, tu, { ...g, karar: 'İşi Durdur' })).statusCode).toBe(200);
+    await o.sup.query(`UPDATE test_kaydi SET sonuc = 'Başarılı', sonuc_gerekcesi = 'G' WHERE kimlik = $1`, [t]);
+    const r = await o.ist('POST', u, tu, g); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT ek_test_ref FROM sapma_kaydi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].ek_test_ref).toBe(t);
+  });
+});

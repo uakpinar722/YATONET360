@@ -126,6 +126,13 @@ describe('test (YG-286, YG-396, YG-397)', () => {
     expect(await kabulEngeli(o.db, E, 'Kabul')).toBeNull();
     const a = await o.ist('POST', `/api/test/${t2.kimlik}/kontrol`, tu); expect(a.statusCode).toBe(409);
   });
+  it('dış uzman / muayene raporu sonucu test sonucuna eşlenir (YG-398)', async () => {
+    const d = await dosya(); const tu = await o.gir('tu'); const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const ham = await o.belge(d.kimlik, 'ds');
+    const dx = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, T)).json().kimlik;
+    expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', sonuc: 'Başarılı', gerekce: 'G', hamVeri: ham })).json().hata).toContain('Başarısız');
+    expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', gerekce: 'G', hamVeri: ham })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT sonuc, dis_rapor_sonucu FROM test_kaydi WHERE kimlik = $1`, [dx])).rows[0]).toEqual({ sonuc: 'Başarısız', dis_rapor_sonucu: 'Uygun Değil' });
+  });
   it('hazırlayan kontrol edemez, kontrol eden karar veremez', async () => {
     const d = await dosya(); const tu = await o.gir('tu'); const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '5 bar', durdurma: 'D' })).json().kimlik;
     await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarılı', gerekce: 'G', hamVeri: await o.belge(d.kimlik, 'ds') });

@@ -51,7 +51,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [ks, setKs] = useState<Record<string, { karar: string; kanit: string }>>({});
   const [kn, setKn] = useState({ problem: '', dogrudan: '', katki: '', bariyer: '', kokNeden: '', tekrar: '' });
   const [t, setT] = useState({ grup: GRUP[0]!, amac: '', yontem: '', olcut: '', durdurma: '' });
-  const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string }>>({});
+  const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string; dis: string }>>({});
   const [gk, setGk] = useState<Record<string, string>>({});
   const [ie, setIe] = useState<{ kimlik: string; is_emri_no: string; statu: string; teknik_kabul?: string | null }[]>([]); const [kpk, setKpk] = useState<Record<string, string>>({});
   const [kp, setKp] = useState({ isEmri: '', tur: 'Bekletme', ozellik: '', olcut: '', zaman: '', eksperKlas: false }); const [kk, setKk] = useState({ isEmri: '', bitis: '', tanim: '', etki: '', hedef: '', bedel: '' });
@@ -130,14 +130,15 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
         <button className="btn2" disabled={!kk.isEmri || !kk.bedel} onClick={() => void yap(() => istek(`/is-emri/${kk.isEmri}/kosullu-kabul`, { bitis: kk.bitis, kalemler: [{ tanim: kk.tanim, etki: kk.etki, hedef: kk.hedef, bedel: Number(String(kk.bedel).replace(',', '.')) }] }), 'Koşullu kabul kaydedildi.')}>Koşullu Kabul Ver</button>
       </Blok>}
       <Blok baslik="Testler">
-        {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '' }; return (
+        {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '', dis: '' }; return (
           <div className="soru" key={x.kimlik}>
             <span>{x.test_no} · {x.test_grubu} · Ölçüt: {x.kabul_olcutu} · {x.durum}{x.sonuc ? ` · ${x.sonuc}` : ''}</span>
             {x.durum === 'Planlandı' && <>
               <label htmlFor={`ts-${x.kimlik}`}>Sonuç</label><select id={`ts-${x.kimlik}`} value={a.sonuc} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, sonuc: e.target.value } })}>{SONUC.map((s) => <option key={s}>{s}</option>)}</select>
+              <label htmlFor={`td-${x.kimlik}`}>Dış Rapor Sonucu (varsa)</label><select id={`td-${x.kimlik}`} value={a.dis} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, dis: e.target.value, sonuc: ({ Uygun: 'Başarılı', 'Uygun Değil': 'Başarısız', Belirlenemedi: 'Geçersiz' } as Record<string, string>)[e.target.value] ?? a.sonuc } })}><option value="">Yok</option><option>Uygun</option><option>Uygun Değil</option><option>Belirlenemedi</option></select>
               <label htmlFor={`tg-${x.kimlik}`}>Gerekçe</label><input id={`tg-${x.kimlik}`} value={a.gerekce} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, gerekce: e.target.value } })} />
               <BelgeSec ad="Ham Veri" bagTuru="Dosya" bagKimligi={id} deger={a.ham} sec={(k) => setTs({ ...ts, [x.kimlik]: { ...a, ham: k } })} />
-              <button className="btn2 kucuk" disabled={!a.ham} onClick={() => void yap(() => istek(`/test/${x.kimlik}/sonuc`, { sonuc: a.sonuc, gerekce: a.gerekce, hamVeri: a.ham }))}>Sonucu Kaydet</button>
+              <button className="btn2 kucuk" disabled={!a.ham} onClick={() => void yap(() => istek(`/test/${x.kimlik}/sonuc`, { sonuc: a.sonuc, gerekce: a.gerekce, hamVeri: a.ham, disRapor: a.dis || undefined }))}>Sonucu Kaydet</button>
             </>}
             {x.durum === 'Kontrolde' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/test/${x.kimlik}/kontrol`, {}))}>Kontrol Ettim</button>}
             {x.durum === 'Kararda' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/test/${x.kimlik}/karar`, {}))}>Kararı Ver</button>}
