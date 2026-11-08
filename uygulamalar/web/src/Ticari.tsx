@@ -3,6 +3,7 @@ import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { KartelaResmiEtiket } from './ResmiOnay';
+import { TicariAtamaBekleyenler } from './TicariAtama';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { EkipKarti, GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
@@ -754,6 +755,7 @@ export function IdariIslemler() {
       <MaliParametreler />
       <KartelaMaliyet />
       <KartelaResmiEtiket />
+      <TicariAtamaBekleyenler />
       <TatilTakvimi />
       <ButceDonemi />
       <KurumBelgeleri />

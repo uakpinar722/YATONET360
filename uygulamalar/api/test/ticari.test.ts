@@ -248,3 +248,24 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     expect((await o.ist('POST', '/api/masraf', c, M)).statusCode).toBe(409);
   });
 });
+
+describe('Ticari Sorumlu ataması (YG-1600)', () => {
+  it('yalnız Yönetici görür; yalnız Ticari Sorumlu atanır; görev kapanır, yeniden açılmaz', async () => {
+    const d = await dosya(); const K = 'Ticari Sorumlu Ataması';
+    const { ticariAtamaAc } = await import('../src/ticari_atama.js');
+    const ac = async () => { const c = await o.db.connect(); try { await ticariAtamaAc(c, d.kimlik); } finally { c.release(); } };
+    await ac(); await ac();
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = $1 AND nesne_kimligi = $2`, [K, d.kimlik])).rows[0].n).toBe(1);
+    expect((await o.ist('GET', '/api/ticari-atama', await o.gir('ts'))).statusCode).toBe(404);
+    const my = await o.gir('my'); const v = (await o.ist('GET', '/api/ticari-atama', my)).json();
+    expect(v.bekleyenler.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true); expect(v.adaylar.some((x: { kimlik: string }) => x.kimlik === o.K.ts)).toBe(true);
+    const u = `/api/dosya/${d.kimlik}/ticari-sorumlu`;
+    expect((await o.ist('POST', u, await o.gir('ts'), { kullanici: o.K.ts })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, my, { kullanici: o.K.tu })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, my, { kullanici: o.K.ts }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.kart(K, d.kimlik)).durum).toBe('Tamamlandı');
+    expect((await o.sup.query(`SELECT ticari_sorumlu_ref r FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].r).toBe(o.K.ts);
+    expect((await o.ist('GET', '/api/ticari-atama', my)).json().bekleyenler.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(false);
+    await ac(); expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = $1 AND nesne_kimligi = $2`, [K, d.kimlik])).rows[0].n).toBe(1);
+  });
+});

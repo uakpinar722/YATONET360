@@ -499,3 +499,9 @@ describe('firma raporunda resmî / klas onayı sorusu (YG-1441)', () => {
     expect((await o.sup.query(`SELECT resmi_onay_gerekir FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e])).rows[0].resmi_onay_gerekir).toBe(true);
   });
 });
+
+describe('Ticari Sorumlu ataması (YG-1600)', () => {
+  it('keşif iş emriyle görev açılır', async () => {
+    const d = await hazir(); expect((await o.kart('Ticari Sorumlu Ataması', d.kimlik)).durum).toBe('Bekliyor');
+  });
+});
