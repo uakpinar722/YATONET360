@@ -435,7 +435,9 @@ describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
     expect((await o.ist('GET', '/api/kartela/maliyet', await o.gir('ts'))).statusCode).toBe(404);
     const c = await o.gir('tid');
     const eski = (await o.ist('GET', '/api/kartela/maliyet', c)).json().surum as string;
+    const etk = (await o.sup.query(`SELECT kod FROM kartela_kalemi WHERE surum = $1 LIMIT 1`, [eski])).rows[0].kod as string; await o.sup.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = true WHERE kod = $1`, [etk]);
     const r = await o.ist('POST', '/api/kartela/taslak', c, {}); expect(r.statusCode, r.body).toBe(200); const sur = r.json().surum as string;
+    expect((await o.sup.query(`SELECT resmi_onay_gerekebilir e FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [etk, sur])).rows[0].e).toBe(true); await o.sup.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = false WHERE kod = $1`, [etk]); // YG-1441: etiket yeni sürüme taşınır
     expect((await o.ist('POST', '/api/kartela/taslak', c, {})).statusCode).toBe(409);
     const k = (await o.sup.query(`SELECT kod, maliyet_eur FROM kartela_kalemi WHERE surum = $1 AND maliyet_eur > 0 LIMIT 1`, [sur])).rows[0];
     const u = '/api/kartela/taslak/maliyet';
