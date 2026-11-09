@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { gostergePuani, karneKapanisGorevi, nihaiPuan } from '../src/personel_karne.js';
+import { gostergePuani, karneKapanisGorevi, maliBirlesik, nihaiPuan } from '../src/personel_karne.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
@@ -123,5 +123,19 @@ describe('memnuniyet anketi ve değerlendirme (YG-1470, YG-962, YG-971, YG-973)'
     expect((await o.ist('POST', u, opm, { ...G, tur: 'Yıllık', donem: '2026', egitim: 'Hasar raporu' })).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/personel-karne?donem=2026-11', await o.gir('ds'))).json().degerlendirmeler.length).toBe(2);
     const g = (await o.ist('GET', '/api/gorev-tanimim', await o.gir('ds'))).json(); expect(g[0].rol).toBe('Dosya Sorumlusu'); expect(g[0].bloklar.some((x: { m: string }) => x.m === 'Amaç')).toBe(true); expect(g[0].bloklar.some((x: { m: string }) => x.m === 'Karne göstergeleri')).toBe(false);
+  });
+});
+
+describe('kurumsal muhatap ve mali sonuç (D-200)', () => {
+  it('net marj ve tahsilat birleşir; biri yoksa diğeri esas alınır', () => { expect(maliBirlesik(100, 80)).toBe(90); expect(maliBirlesik(null, 80)).toBe(80); expect(maliBirlesik(70, null)).toBe(70); expect(maliBirlesik(null, null)).toBeNull(); });
+  it('kurumsal dosyada anket Ek-2 muhatabına gider; yürürlükte Ek-2 yoksa gitmez', async () => {
+    const { anketGonder, kurumsalMuhatap } = await import('../src/memnuniyet.js');
+    const yeni = async () => { const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET statu = 'Teknik Kapalı', musteri_turu = 'Kurumsal Müşteri' WHERE kimlik = $1`, [d.kimlik]); const bo = (await o.sup.query(`SELECT column_name c FROM information_schema.columns WHERE table_name = 'kapanis_kontrolu' AND is_nullable = 'NO' AND column_default IS NULL AND data_type = 'boolean'`)).rows.map((r) => r.c as string); await o.sup.query(`INSERT INTO kapanis_kontrolu (dosya_ref, hazirlayan_ref, cikis_statusu, durum, kapanis_zamani${bo.map((b) => `, ${b}`).join('')}) VALUES ($1,$2,'Teknik Kapalı','Onaylandı',now() - interval '60 hours'${bo.map(() => ', true').join('')})`, [d.kimlik, o.K.ds]); return d.kimlik as string; };
+    const a = await yeni(); expect((await anketGonder(o.db, 'http://x')).find((x) => x.dosya === a)).toBeUndefined();
+    const ty = (await o.sup.query(`SELECT y.yat_sahibi_ref r FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [a])).rows[0].r;
+    const k = (await o.sup.query(`INSERT INTO kurumsal_kurum (taraf_ref, unvan, ek2_onay_siniri, kaydeden_ref) VALUES ($1,'Kurum',1000,$2) RETURNING kimlik`, [ty, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO kurumsal_ek2 (kurum_ref, surum, satirlar, durum, kaydeden_ref) VALUES ($1,1,$2,'Yürürlükte',$3)`, [k, JSON.stringify({ muhatap: { ad: 'Muhatap Rolü', iletisim: 'Tel 0212, muhatap@kurum.local' } }), o.K.ds]);
+    expect(await kurumsalMuhatap(o.db, a)).toBe('muhatap@kurum.local');
+    expect((await anketGonder(o.db, 'http://x')).find((x) => x.dosya === a)).toBeDefined();
   });
 });

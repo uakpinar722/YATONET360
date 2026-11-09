@@ -15,19 +15,27 @@ const KOK = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 type Blok = { t: 'b' | 'a' | 'm'; m: string };
 let tanimlar: Record<string, Blok[]> | null = null;
 
-/** YG-1470, YG-1475: Teknik Kapalı + 48 saat; tek anket, hatırlatma yok. Uyuşmazlık, vefat, tam ziya ve alt dosyada gönderilmez. Kurumsal muhatap (D-200) bağlanana kadar kurumsal dosyada gönderilmez. */
+/** D-200: kurumsal dosyada yürürlükteki Ek-2'nin Müşteri Sözleşme Muhatabı e-postası. */
+export async function kurumsalMuhatap(db: Pool, dosya: string): Promise<string | null> {
+  const s = (await db.query(`SELECT e.satirlar FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref JOIN kurumsal_kurum c ON c.taraf_ref = y.yat_sahibi_ref JOIN kurumsal_ek2 e ON e.kurum_ref = c.kimlik AND e.durum = 'Yürürlükte' WHERE d.kimlik = $1 ORDER BY e.surum DESC LIMIT 1`, [dosya])).rows[0]?.satirlar as { muhatap?: { iletisim?: string } } | undefined;
+  return /[^\s,;]+@[^\s,;]+\.[^\s,;]+/.exec(s?.muhatap?.iletisim ?? '')?.[0] ?? null;
+}
+
+/** YG-1470, YG-1475: Teknik Kapalı + 48 saat; tek anket, hatırlatma yok. Uyuşmazlık, vefat, tam ziya ve alt dosyada gönderilmez. Kurumsal dosyada Ek-2 muhatabına gider; e-postası yoksa gönderilmez. */
 export async function anketGonder(db: Pool, web: string, simdi = new Date()): Promise<{ dosya: string; belirtec: string }[]> {
   const { rows } = await db.query(
-    `SELECT d.kimlik, d.dosya_no, d.yazisma_dili, t.telefon, t.eposta FROM dosya d JOIN kapanis_kontrolu c ON c.dosya_ref = d.kimlik AND c.cikis_statusu = 'Teknik Kapalı' AND c.durum = 'Onaylandı'
-       JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif
-      WHERE c.kapanis_zamani <= $1::timestamptz - interval '48 hours' AND d.statu IN ('Teknik Kapalı', 'Kapalı') AND d.ana_dosya_ref IS NULL AND NOT d.vefat_isareti AND d.musteri_turu <> 'Kurumsal Müşteri'
+    `SELECT d.kimlik, d.dosya_no, d.yazisma_dili, d.musteri_turu, t.kimlik taraf, t.telefon, t.eposta FROM dosya d JOIN kapanis_kontrolu c ON c.dosya_ref = d.kimlik AND c.cikis_statusu = 'Teknik Kapalı' AND c.durum = 'Onaylandı'
+       LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif
+      WHERE c.kapanis_zamani <= $1::timestamptz - interval '48 hours' AND d.statu IN ('Teknik Kapalı', 'Kapalı') AND d.ana_dosya_ref IS NULL AND NOT d.vefat_isareti
         AND coalesce(d.kapanma_nedeni, '') NOT IN ('Hükmi Tam Ziya (onarım ekonomik değil)', 'Tam Ziya (yat fiziken yok)', 'Hükmi Tam Ziya', 'Tam Ziya')
         AND NOT EXISTS (SELECT 1 FROM uyusmazlik_kaydi u WHERE u.dosya_ref = d.kimlik AND u.karar IS NULL) AND NOT EXISTS (SELECT 1 FROM memnuniyet_anketi a WHERE a.dosya_ref = d.kimlik)`, [simdi]);
   const sonuc: { dosya: string; belirtec: string }[] = [];
   for (const d of rows) {
+    const muhatap = d.musteri_turu === 'Kurumsal Müşteri' ? await kurumsalMuhatap(db, d.kimlik) : null;
+    if (d.musteri_turu === 'Kurumsal Müşteri' ? !muhatap : !d.taraf) continue;
     const belirtec = randomBytes(32).toString('hex'); const dil = dilKod(d.yazisma_dili); const l = `${web}/#anket=${belirtec}`;
     if (!(await db.query(`INSERT INTO memnuniyet_anketi (dosya_ref, belirtec_ozet, dil) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING RETURNING kimlik`, [d.kimlik, ozet(belirtec), dil])).rowCount) continue;
-    await yatTarafinaYaz(db, { olay: `bld36:${d.kimlik}`, kod: 'BLD-36', dil, konu: `${d.dosya_no} Memnuniyet Anketi`, telefon: d.telefon, eposta: d.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': l, link: l } });
+    await yatTarafinaYaz(db, { olay: `bld36:${d.kimlik}`, kod: 'BLD-36', dil, konu: `${d.dosya_no} Memnuniyet Anketi`, telefon: muhatap ? null : d.telefon, eposta: muhatap ?? d.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': l, link: l } });
     sonuc.push({ dosya: d.kimlik, belirtec });
   }
   return sonuc;

@@ -7,6 +7,7 @@ import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayMakami, rolSahipleri } from './makam.js';
+import { dosyaButcesi } from './risk_rezervi.js';
 import { DURAK_SN } from './sure.js';
 import { isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
@@ -16,7 +17,7 @@ const DONEM = /^\d{4}-\d{2}$/; const IKS = 'İnsan Kaynakları Sorumlusu'; const
 const istanbulAy = (d = new Date()) => new Date(d.getTime() + 3 * 3_600_000).toISOString().slice(0, 7);
 const yuvarla = (x: number) => Math.round(x * 100) / 100;
 
-type Olcum = { pay: number; payda: number; kapsam?: string };
+type Olcum = { pay: number; payda: number; kapsam?: string; dogrudan?: boolean };
 type Gosterge = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: string };
 export type Satir = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: number; pay: number | null; payda: number | null; deger: number | null; puan: number | null; kapsam: string | null };
 
@@ -43,12 +44,26 @@ const DS_SORGU: Record<string, { sql: string; kapsam?: string }> = {
   'Müşteri ve şikâyet': { kapsam: 'Anket yanıtı olmayan dosyada yalnız şikâyetsiz kapanış sayılıyor.', sql: `SELECT sum(z.k) payda, coalesce(sum(z.k * CASE WHEN z.o IS NULL THEN z.s ELSE (z.o / 5 + z.s) / 2 END), 0) pay FROM (SELECT d.zorluk_katsayisi k, (SELECT a.ortalama FROM memnuniyet_anketi a WHERE a.dosya_ref = d.kimlik) o, (CASE WHEN EXISTS (SELECT 1 FROM garanti_sikayet g WHERE g.dosya_ref = d.kimlik AND 'Şikâyet' = ANY(g.kayit_turu)) THEN 0 ELSE 1 END)::numeric s ${kapanan}) z` },
   'Kayıt bütünlüğü': { kapsam: 'Form süresi henüz sayılmıyor; yalnız eksiksiz kapanış sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE cardinality(coalesce(c.eksiklik_isaretleri, '{}')) = 0), 0) pay ${kapanan}` },
 };
+const MALI = 'Mali sonuç (marj, tahsilat süresi)'; const MARJ_HEDEF = 23;
+/** Mali sonuç: net marjın %23 hedefe ulaşma oranı ile vadesinde tahsilatın ortalaması; biri yoksa diğeri esas alınır. */
+export const maliBirlesik = (marj: number | null, tahsil: number | null) => (marj === null ? tahsil : tahsil === null ? marj : yuvarla((marj + tahsil) / 2));
+async function maliOlc(db: Db, kullanici: string, donem: string): Promise<Olcum | null> {
+  const t = (await db.query(DS_SORGU[MALI]!.sql, [kullanici, donem])).rows[0]; const tp = Number(t.payda ?? 0);
+  const tahsil = tp ? gostergePuani((Number(t.pay) / tp) * 100, '≥ %90') : null;
+  const ds = (await db.query(`SELECT d.kimlik, d.zorluk_katsayisi k, (SELECT sum(f.kdv_haric_eur) FROM musteri_faturasi f WHERE f.dosya_ref = d.kimlik AND f.fatura_no IS NOT NULL) satis ${kapanan}`, [kullanici, donem])).rows.filter((r) => Number(r.satis) > 0);
+  let top = 0; let ag = 0;
+  for (const r of ds) { const m = ((Number(r.satis) - (await dosyaButcesi(db, r.kimlik)).gerceklesen) / Number(r.satis)) * 100; const k = Number(r.k); top += k * Math.max(0, Math.min(100, (m / MARJ_HEDEF) * 100)); ag += k; }
+  const marj = ag ? top / ag : null; const v = maliBirlesik(marj === null ? null : yuvarla(marj), tahsil);
+  if (v === null) return null;
+  return { pay: v, payda: 100, dogrudan: true, ...(marj === null ? { kapsam: 'Bu dönemde kapanan faturalı dosya yok; yalnız vadesinde tahsilat sayılıyor.' } : tahsil === null ? { kapsam: 'Bu dönemde vadesi gelen fatura yok; yalnız net marj sayılıyor.' } : {}) };
+}
 const ROL_SORGU: Record<string, Record<string, { sql: string; kapsam?: string }>> = {
   'Dosya Sorumlusu': DS_SORGU,
   'Kalite Uzmanı (Kalite Kontrolör)': { 'FR-KLT-011 tamamlama': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM dosya_performans p WHERE p.dosya_ref = c.dosya_ref AND p.durum IN ('Onayda', 'Onaylandı'))) pay FROM kapanis_kontrolu c JOIN dosya_ekibi_atamasi e ON e.dosya_ref = c.dosya_ref AND e.kullanici_ref = $1 AND e.rol = 'Kalite Kontrolör' WHERE c.durum = 'Onaylandı' AND c.cikis_statusu = 'Teknik Kapalı' AND ${ay('c.kapanis_zamani')}` } },
 };
 async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: string, donem: string): Promise<Olcum | null> {
   if (ONAY_GOSTERGE.has(g.gosterge)) return onaySureOlc(db, kullanici, rol, donem, /sipariş onay/i.test(g.hesap));
+  if (rolAdi === 'Dosya Sorumlusu' && g.gosterge === MALI) return maliOlc(db, kullanici, donem);
   const q = ROL_SORGU[rolAdi]?.[g.gosterge]; if (!q) return null;
   const r = (await db.query(q.sql, [kullanici, donem])).rows[0]; const payda = Number(r.payda ?? 0);
   return payda ? { pay: Number(r.pay), payda, kapsam: q.kapsam } : null;
@@ -72,7 +87,7 @@ export async function karneHesapla(db: Db, kullanici: string, rol: { ad: string;
   const satirlar: Satir[] = [];
   for (const g of gs) {
     const o = await olc(db, g, kullanici, rol.kimlik, rol.ad, donem); const deger = o ? yuvarla((o.pay / o.payda) * 100) : null;
-    satirlar.push({ kimlik: g.kimlik, gosterge: g.gosterge, hesap: g.hesap, hedef: g.hedef, agirlik: Number(g.agirlik), pay: o?.pay ?? null, payda: o?.payda ?? null, deger, puan: deger === null ? null : gostergePuani(deger, g.hedef), kapsam: o?.kapsam ?? null });
+    satirlar.push({ kimlik: g.kimlik, gosterge: g.gosterge, hesap: g.hesap, hedef: g.hedef, agirlik: Number(g.agirlik), pay: o?.pay ?? null, payda: o?.payda ?? null, deger, puan: deger === null ? null : o?.dogrudan ? deger : gostergePuani(deger, g.hedef), kapsam: o?.kapsam ?? null });
   }
   const olcu = satirlar.filter((x) => x.puan !== null); const top = olcu.reduce((t, x) => t + x.agirlik, 0);
   return { satirlar, sistem: top ? yuvarla(olcu.reduce((t, x) => t + x.agirlik * x.puan!, 0) / top) : null };

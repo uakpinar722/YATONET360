@@ -67,5 +67,6 @@ describe('Nihai Kapanış Özeti (YG-1541)', () => {
     const ds = await o.gir('ds'); const u = `/api/sigorta-gonderim/${g.kimlik}/teyit`;
     expect((await o.ist('POST', u, ds, { adim: 1 })).statusCode).toBe(200); const r = await o.ist('POST', u, ds, { adim: 2 }); expect(r.statusCode, r.body).toBe(200);
     expect((await uretim(d)).gonder).toMatchObject({ eposta: 'hasar@sigorta.local', sigortaTeyitli: true });
+    expect((await o.ist('GET', '/api/personel-karne?donem=' + new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 7), ds)).statusCode).toBe(200);
   });
 });

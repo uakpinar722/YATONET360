@@ -7,6 +7,7 @@ import { gonderimIsleyici, sigortayaHazirla } from './sigorta_gonderim.js';
 import { dilKod, rolId, yatTarafinaYaz } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
+import { kurumsalMuhatap } from './memnuniyet.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { dosyaErisimi } from './dosya.js';
 import { DURAK_SN } from './sure.js';
@@ -34,7 +35,7 @@ export function kapanisKodu(k: { cikis: string; neden: string | null; vefat: boo
 /** Onaylanan kapanışların yat sahibine bildirimi ve FR-KLT-011 görevi; her kapanış için bir kez. */
 export async function kapanisSonrasiIsle(db: Pool, web: string, simdi = new Date()): Promise<{ dosya: string; kod: string }[]> {
   const { rows } = await db.query(
-    `SELECT c.kimlik, c.cikis_statusu, c.kapanma_nedeni, d.kimlik dosya, d.dosya_no, d.yazisma_dili, d.dosya_niteligi, d.oncelik, d.vefat_isareti, d.dosya_sorumlusu_ref, y.yat_adi, m.tekne_turu, t.telefon, t.eposta,
+    `SELECT c.kimlik, c.cikis_statusu, c.kapanma_nedeni, d.kimlik dosya, d.dosya_no, d.yazisma_dili, d.dosya_niteligi, d.oncelik, d.vefat_isareti, d.musteri_turu, d.dosya_sorumlusu_ref, y.yat_adi, m.tekne_turu, t.telefon, t.eposta,
             (SELECT a.kullanici_ref FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Kalite Kontrolör' AND a.bitis_zamani IS NULL LIMIT 1) kk
        FROM kapanis_kontrolu c JOIN dosya d ON d.kimlik = c.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif
       WHERE c.durum = 'Onaylandı' AND c.kapanis_zamani > $1::timestamptz - interval '7 days'`, [simdi]);
@@ -42,8 +43,9 @@ export async function kapanisSonrasiIsle(db: Pool, web: string, simdi = new Date
   for (const r of rows) {
     const kod = kapanisKodu({ cikis: r.cikis_statusu, neden: r.kapanma_nedeni, vefat: r.vefat_isareti, sigortali: r.dosya_niteligi === 'Sigorta bağlantılı', oncelik: r.oncelik });
     if (kod && r.eposta !== undefined && (await birKez(db, 'kapanis_bildirim', r.kimlik))) {
+      const muhatap = kod === 'BLD-16P' && r.musteri_turu === 'Kurumsal Müşteri' ? await kurumsalMuhatap(db, r.dosya) : null; // BLD-16P: kurumsal müşteriye e-posta
       const c = tekneCekim(r.tekne_turu); const ad = [r.tekne_turu, r.yat_adi].filter(Boolean).join(' ');
-      await yatTarafinaYaz(db, { olay: `kapanis:${r.kimlik}`, kod, dil: dilKod(r.yazisma_dili), konu: `${r.dosya_no} Dosya Kapanışı`, telefon: r.telefon, eposta: r.eposta, alanlar: { 'Tekne türü + Yat': ad, 'Boat type + Yacht': ad, 'Dosya No': r.dosya_no, 'File No': r.dosya_no, 'bağlantı': web, link: web, 'motor yatınızı': c.yi, 'Motor yatınızı': c.Yi, 'motor yacht': c.en, 'yatınızın': c.yin, 'Yatınızın': c.Yin, 'your yacht': `your ${c.en}` } });
+      await yatTarafinaYaz(db, { olay: `kapanis:${r.kimlik}`, kod, dil: dilKod(r.yazisma_dili), konu: `${r.dosya_no} Dosya Kapanışı`, telefon: muhatap ? null : r.telefon, eposta: muhatap ?? r.eposta, alanlar: { 'Tekne türü + Yat': ad, 'Boat type + Yacht': ad, 'Dosya No': r.dosya_no, 'File No': r.dosya_no, 'bağlantı': web, link: web, 'motor yatınızı': c.yi, 'Motor yatınızı': c.Yi, 'motor yacht': c.en, 'yatınızın': c.yin, 'Yatınızın': c.Yin, 'your yacht': `your ${c.en}` } });
       sonuc.push({ dosya: r.dosya, kod });
     }
     if (await birKez(db, 'rp_rap_004', r.dosya)) { await db.query(`INSERT INTO nihai_kapanis_ozeti (dosya_ref) VALUES ($1) ON CONFLICT DO NOTHING`, [r.dosya]); await ozetKartiAc(db, r.dosya, r.dosya_no, r.dosya_sorumlusu_ref); }
