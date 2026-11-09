@@ -6,11 +6,11 @@ import { Depo } from './depo.js';
 import { kartAc } from './is_motoru.js';
 import type { Baglam } from './kimlik.js';
 import { gunAy, metinGetir, tutar, type Dil } from './metin.js';
-import { pdfUret, type BelgeTanim, type Bolum } from './pdf.js';
+import { pdfUret, type BelgeTanim, type Bolum, type Renk } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -298,6 +298,20 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   };
 }
 
+/** YG-651: RP-OPS-001 iç rapor; risk taraması renklidir (YG-684). */
+export async function onDegerlendirmeTanim(db: Db, id: string) {
+  const r = (await db.query(`SELECT * FROM on_degerlendirme WHERE kimlik = $1`, [id])).rows[0];
+  const b = await dosyaBilgi(db, r.dosya_ref, ''); const v = r.veriler as Record<string, string>; const RENK: Record<string, Renk> = { Hayır: 'yesil', Bilinmiyor: 'sari', Kısmen: 'turuncu', Evet: 'kirmizi' };
+  const no = `${b.d.dosya_no}-OD${String(r.surum).padStart(2, '0')}`;
+  const M = (baslik: string, metin: string | undefined): Bolum[] => (metin ? [{ baslik, tur: 'metin', metin }] : []);
+  const bolumler: Bolum[] = [...ortak(b), atananEkip(b), ...M('Görevlendirme Kapsamı ve Karar Sınırı', v.kapsam), ...M('Olay Özeti ve Kronoloji', v.kronoloji), ...M('İncelenen Kaynaklar', v.kaynaklar), ...M('Doğrulanmış Olgular', v.olgular), ...M('Beyanlar, Gözlemler ve Varsayımlar', v.beyanlar),
+    { baslik: 'Risk Taraması', tur: 'tablo', sutunlar: [{ ad: 'Risk' }, { ad: 'Durum', hiza: 'ort' }], satirlar: Object.entries(r.risk as Record<string, string>).map(([k, d]) => [k, { m: d, renk: RENK[d]! }]) },
+    { baslik: 'Bilgi Yeterliliği', tur: 'alanlar', alanlar: [{ et: 'Esas Alınan Son Bilgi Tarihi', deger: gunAy(v.sonBilgi!) }, { et: 'Bilgi Yeterliliği', deger: v.yeterlilik }, { et: 'Gerekli Uzmanlıklar', deger: v.uzmanliklar }, { et: 'Gerekçe ve Eksik Listesi', deger: v.yeterlilikGerekcesi, genis: true }] },
+    { baslik: 'Ön Değerlendirme Sonucu', tur: 'alanlar', alanlar: [{ et: 'Sonuç', deger: v.sonuc, genis: true }, { et: 'Yöntem Kararı', deger: v.yontem }, { et: 'Öncelik Teyidi', deger: v.oncelikTeyidi }, { et: 'Etkilenen Sistemler', deger: v.etkilenen }, { et: 'Yöntem Gerekçesi', deger: v.yontemGerekcesi, genis: true }] },
+    ...M('Sonraki Adım', v.sonrakiAdim), ...M('Açık Konular', v.acikKonular)];
+  return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: 'Ön Değerlendirme Raporu', kod: 'RP-OPS-001', no, dosyaNo: b.d.dosya_no, tarih: gunAy(r.olusturma_zamani), surum: `Rev.${r.surum}`, dil: 'tr' as Dil, yat: b.d.yat_adi, icKayit: true, rapor: true, bolumler } as BelgeTanim };
+}
+
 /** YG-1541: RP-RAP-004 Nihai Kapanış Özeti; kayıtlardan üretilir, Çözüm Ortağı kimliği taşımaz. */
 export async function kapanisOzetiTanim(db: Db, dosya: string) {
   const b = await dosyaBilgi(db, dosya, ''); const dil = b.dil; const en = dil === 'en';
@@ -327,7 +341,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       { const me = await (await import('./yetki_ek.js')).belgeMaskeEngeli(c, u.tur, u.dosya_ref, JSON.stringify(v.t)); if (me) throw new Error(me); }
       const pdf = await pdfUret(KASELI.includes(u.tur) ? { ...v.t, kase: true } : v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);

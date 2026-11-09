@@ -25,7 +25,9 @@ export type FormDurumu = { kod: string; ad: string; var: boolean };
 /** Teklif aşamasından önce kapanan dosyada yalnız o aşamaya kadarki formlar aranır. */
 export async function zorunluFormlar(db: Db, dosya: string): Promise<FormDurumu[]> {
   const teklif = Boolean((await db.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND gonderim_zamani IS NOT NULL LIMIT 1`, [dosya])).rowCount);
+  // Ek II §10.7: bakım ve planlı hizmette Teknik Rapor aranmaz.
+  const planli = Boolean((await db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND oncelik = 'Planlı' AND dosya_niteligi <> 'Sigorta bağlantılı'`, [dosya])).rowCount);
   const l: FormDurumu[] = [];
-  for (const f of FORMLAR) if (teklif || !f.teklifSonrasi) l.push({ kod: f.kod, ad: f.ad, var: Boolean((await db.query(f.sql, [dosya])).rowCount) });
+  for (const f of FORMLAR) if ((teklif || !f.teklifSonrasi) && !(planli && f.kod === 'RP-RAP-002')) l.push({ kod: f.kod, ad: f.ad, var: Boolean((await db.query(f.sql, [dosya])).rowCount) });
   return l;
 }

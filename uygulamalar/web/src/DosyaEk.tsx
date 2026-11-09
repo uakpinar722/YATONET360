@@ -1,3 +1,4 @@
+import { OnDegerlendirme } from './OnDegerlendirme';
 import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -152,6 +153,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <SigortaFark dosya={id} />
     <OnerilenTesisler dosya={id} />
     <ZorlukKatsayisi dosya={id} />
+    <OnDegerlendirme dosya={id} />
     <DosyaPerformans dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
