@@ -13,6 +13,7 @@ import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
+import { EtikBildirim, ErisimInceleme, IcDenetim } from './ErisimEtik';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -792,6 +793,9 @@ export function IdariIslemler() {
       <VeriEnvanteri />
       <VeriSozlugu />
       <ArsivListesi />
+      <ErisimInceleme />
+      <EtikBildirim />
+      <IcDenetim />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
