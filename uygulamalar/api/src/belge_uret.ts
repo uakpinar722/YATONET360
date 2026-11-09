@@ -10,7 +10,7 @@ import { pdfUret, type BelgeTanim, type Bolum } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -188,6 +188,14 @@ export async function mutabakatTanim(db: Db, id: string) {
   return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: 'Aylık Sigorta Mutabakat Raporu', kod: 'RP-TIC-MUT', no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, bolumler } };
 }
 
+/** YNT-2, K-192: yat sahibine bilgi nüshası; yalnız kapsam ve uygulama sırası, firma, fiyat, malzeme tablosu ve proses sınırı yok. */
+export async function yontemBilgiTanim(db: Db, id: string) {
+  const r = (await db.query(`SELECT * FROM yontem_raporu WHERE kimlik = $1`, [id])).rows[0];
+  const b = await dosyaBilgi(db, r.dosya_ref, r.hazirlayan_ref); const en = b.dil === 'en';
+  const t: BelgeTanim = { ad: en ? 'Repair Method Report - Information Copy' : 'Onarım Yöntem Raporu - Bilgi Nüshası', kod: 'FR-ONR-001', no: r.rapor_no, dosyaNo: b.d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: b.dil, yat: b.d.yat_adi, bolumler: [...ortak(b), { baslik: en ? 'Scope' : 'Kapsam', tur: 'metin', metin: r.kapsam }, { baslik: en ? 'Application Sequence' : 'Uygulama Sırası', tur: 'metin', metin: r.uygulama_sirasi }] };
+  return { dosyaAdi: `${r.rapor_no}-Bilgi.pdf`, sinif: 'Gizli', t };
+}
+
 async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
   const e = (await db.query(`SELECT e.*, k.ticari_unvan, d.oncelik, d.kesin_teslim_tarihi, d.gecikme_bedeli_eur, d.kesin_teslim_durumu, f.teklif_no, f.surum_no AS teklif_surum FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref JOIN dosya d ON d.kimlik = e.dosya_ref LEFT JOIN fiyat_teklifi f ON f.kimlik = e.teklif_ref WHERE e.kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, e.dosya_ref, ''); const dil: Dil = 'tr'; const bt = { ...b, dil };
@@ -286,7 +294,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       { const me = await (await import('./yetki_ek.js')).belgeMaskeEngeli(c, u.tur, u.dosya_ref, JSON.stringify(v.t)); if (me) throw new Error(me); }
       const pdf = await pdfUret(v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);

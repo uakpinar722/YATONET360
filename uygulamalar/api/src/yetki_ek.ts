@@ -28,7 +28,7 @@ export async function teknikKabulAyrimi(db: Db, e: { kimlik: string; dosya_ref: 
 /** YG-1074, YG-1167, YG-1174, YG-1623: üretilen belge son denetimden geçer. Müşteri ve sigorta belgesinde dosyadaki firma adı, firma belgesinde sigorta bilgisi, hiçbir dış belgede lehtar adı bulunmaz. */
 export async function belgeMaskeEngeli(db: Db, tur: string, dosya: string, metin: string): Promise<string | null> {
   const var_ = (l: (string | null)[]) => l.find((x) => x && x.length >= 4 && metin.includes(x));
-  const musteri = ['Fiyat Teklifi', 'Teknik Rapor', 'Onay Belgesi', 'Proforma', 'Ödeme Talebi', 'Teslim Tutanağı', 'Ödeme Sorumluluğu'];
+  const musteri = ['Fiyat Teklifi', 'Teknik Rapor', 'Onay Belgesi', 'Proforma', 'Ödeme Talebi', 'Teslim Tutanağı', 'Ödeme Sorumluluğu', 'Yöntem Bilgi Nüshası'];
   if (![...musteri, 'İş Emri'].includes(tur)) return null;
   const lehtar = (await db.query(`SELECT y.lehtar_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0]?.lehtar_adi as string | null;
   if (var_([lehtar])) return 'Belgede lehtar bilgisi yer alamaz.';

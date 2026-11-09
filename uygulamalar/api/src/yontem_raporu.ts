@@ -1,10 +1,12 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { PoolClient } from 'pg';
+import { belgeUret } from './belge_uret.js';
 import { izYaz } from './denetim.js';
 import { dosyaErisimi } from './dosya.js';
-import { rolId } from './ihbar.js';
+import { dilKod, rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
+import { metinGetir } from './metin.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { PROSES } from './proses.js';
 import { UUID } from './yat.js';
@@ -37,12 +39,22 @@ export async function yontemSinirAktar(c: PoolClient, isEmri: string, dosya: str
   for (const s of r.sinirlar as Sinir[]) await c.query(`INSERT INTO proses_siniri (is_emri_ref, proses_turu, sicaklik_min, sicaklik_max, nem_min, nem_max, dayanak, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (is_emri_ref, proses_turu) DO NOTHING`, [isEmri, s.tur, s.sicaklikMin, s.sicaklikMax, s.nemMin, s.nemMax, `Onarım Yöntem Raporu ${r.rapor_no}`, r.hazirlayan_ref]);
 }
 
+/** YNT-2, K-192: onaylanan rapor yat sahibine bilgi PDF'i olarak gider; e-posta yoksa Dosya Sorumlusu iletir; vefat işaretli dosyada gönderilmez. */
+async function bilgiNushasiGonder(c: PoolClient, rapor: string, dosya: string): Promise<void> {
+  const d = (await c.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, d.dosya_sorumlusu_ref, y.yat_adi, t.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [dosya])).rows[0];
+  if (!d || d.vefat_isareti) return;
+  const metin = await metinGetir(c, 'BLD-91', dilKod(d.yazisma_dili), { Yat: d.yat_adi, Yacht: d.yat_adi });
+  await belgeUret(c, { tur: 'Yöntem Bilgi Nüshası', nesne: rapor, dosya, gonder: d.eposta ? { olay: `bld91:${rapor}`, eposta: d.eposta, konu: `${d.dosya_no} Onarım Yöntemi`, metin } : undefined });
+  if (!d.eposta && d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Yöntem Bilgi Nüshası İletimi', kategori: 'gorev', baslik: `${d.dosya_no} · Yöntem Bilgi Nüshası`, ozet: 'Yat sahibinin e-postası kayıtlı değil; nüshayı dosya belgelerinden alıp iletiniz.', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
+}
+
 kapanisKaydet(KART, async (c, k, karar, yapan) => {
   const r = (await c.query(`SELECT kimlik, dosya_ref FROM yontem_raporu WHERE kimlik = $1 AND durum = 'Onayda'`, [k.nesne_kimligi])).rows[0];
   if (!r) return;
   if (karar === 'Onayla') {
     await c.query(`UPDATE yontem_raporu SET durum = 'Yerine Geçti' WHERE dosya_ref = $1 AND durum = 'Onaylı'`, [r.dosya_ref]);
     await c.query(`UPDATE yontem_raporu SET durum = 'Onaylı', onaylayan_ref = $2, onay_zamani = now() WHERE kimlik = $1`, [r.kimlik, yapan]);
+    await bilgiNushasiGonder(c, r.kimlik, r.dosya_ref); // YNT-2
   } else if (karar === 'Reddet') await c.query(`UPDATE yontem_raporu SET durum = 'Reddedildi' WHERE kimlik = $1`, [r.kimlik]);
   else if (karar === 'Gerekçeyle İade Et') await c.query(`UPDATE yontem_raporu SET durum = 'İade Edildi' WHERE kimlik = $1`, [r.kimlik]);
 });

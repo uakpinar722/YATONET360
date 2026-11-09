@@ -106,6 +106,14 @@ describe('resmî PDF (YG-665, YG-691)', () => {
     await o.sup.query(`UPDATE dosya SET kislik_sorumlu_kullanici_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
     expect(await ks()).toContain('Kışlık Hazırlık Sorumlusu');
   });
+  it('yöntem bilgi nüshası üretilir; yalnız kapsam ve sıra, malzeme tablosu yok (YNT-2)', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const r = (await o.sup.query(`INSERT INTO yontem_raporu (rapor_no, dosya_ref, kapsam, malzeme_tablosu, uygulama_sirasi, durum, hazirlayan_ref, onaylayan_ref, onay_zamani) VALUES ($1,$2,'Kapsam Metni','Gizli Malzeme Listesi','Sıra Metni','Onaylı',$3,$4,now()) RETURNING kimlik`, [`${d.dosyaNo}-FR-ONR-001-01`, d.kimlik, o.K.tu, o.K.tm])).rows[0].kimlik;
+    await belgeUret(o.db, { tur: 'Yöntem Bilgi Nüshası', nesne: r, dosya: d.kimlik }); await belgeKuyruguIsle(b as never);
+    const u = await durum('Yöntem Bilgi Nüshası', r); expect(u.durum, u.son_hata).toBe('Üretildi');
+    const { yontemBilgiTanim } = await import('../src/belge_uret.js'); const j = JSON.stringify((await yontemBilgiTanim(o.db, r)).t);
+    expect(j).toContain('Kapsam Metni'); expect(j).toContain('Sıra Metni'); expect(j).not.toContain('Gizli Malzeme');
+  });
   it('Ödeme Talebi OT numaralı üretilir; yeniden tetiklenen teklif yeni sürüm olur, eskisi Yerine Geçti', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const t = await teklif(d);
     const ot = (await o.sup.query(`INSERT INTO odeme_talebi (dosya_ref, teklif_ref, tur, tutar_eur, muhatap, son_tarih, hazirlayan_ref) VALUES ($1,$2,'Ara Ödeme',500,'Yat Sahibi','2026-12-01',$3) RETURNING kimlik`, [d.kimlik, t, o.K.ts])).rows[0].kimlik;

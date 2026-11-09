@@ -554,6 +554,7 @@ describe('Onarım Yöntem Raporu (YG-1454, YNT-1)', () => {
       expect((await on()).json().hata).toContain('Onarım Yöntem Raporu');
       await o.karar((await o.kart('Onarım Yöntem Raporu', r.json().kimlik)).kimlik, 'tm', 'Onayla');
       expect((await o.sup.query(`SELECT durum, onaylayan_ref FROM yontem_raporu WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ durum: 'Onaylı', onaylayan_ref: o.K.tm });
+      expect((await o.sup.query(`SELECT count(*)::int n FROM belge_uretim WHERE tur = 'Yöntem Bilgi Nüshası' AND nesne = $1`, [r.json().kimlik])).rows[0].n).toBe(1); // YNT-2
       expect((await on()).json().hata).toContain('Muadil parça');
       await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-07','k','Pompa Contası için','d','a','+905550002222',$2,'Onaylandı',now())`, [d.kimlik, `y${Math.random()}`]);
       const ie = await on(); expect(ie.statusCode, ie.body).toBe(200);
