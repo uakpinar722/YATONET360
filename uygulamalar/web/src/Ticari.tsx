@@ -8,6 +8,7 @@ import { TopluOdeme } from './TopluOdeme';
 import { IdariTalep } from './IdariTalep';
 import { PersonelEk } from './PersonelEk';
 import { PoliceListesi } from './FirmaPolice';
+import { PersonelKarne } from './PersonelKarne';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
@@ -774,6 +775,7 @@ export function IdariIslemler() {
       <IdariTalep />
       <PersonelEk />
       <PoliceListesi />
+      <PersonelKarne />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
