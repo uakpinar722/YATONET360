@@ -34,7 +34,7 @@ async function onaySureOlc(db: Db, kullanici: string, rol: string, donem: string
 const ay = (alan: string) => `to_char(${alan} AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $2`;
 const kapanan = `FROM kapanis_kontrolu c JOIN dosya d ON d.kimlik = c.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND c.durum = 'Onaylandı' AND c.cikis_statusu = 'Teknik Kapalı' AND ${ay('c.kapanis_zamani')}`;
 /** Dosya Sorumlusu: dosyaya dayalı göstergeler zorluk katsayısıyla ağırlıklıdır (Cilt I ¶2029). Kaynağı henüz olmayan kısım kapsam notunda görünür. */
-const DS_SORGU: Record<string, { sql: string; kapsam: string }> = {
+const DS_SORGU: Record<string, { sql: string; kapsam?: string }> = {
   'Süre uyumu': { kapsam: 'İlerleme raporu adımı henüz sayılmıyor.', sql: `SELECT sum(k) payda, coalesce(sum(k) FILTER (WHERE ok), 0) pay FROM (
       SELECT d.zorluk_katsayisi k, (s.tamamlanma IS NOT NULL AND s.tamamlanma <= s.bitis + make_interval(secs => ${DURAK_SN})) ok FROM dosya_sure s JOIN dosya d ON d.kimlik = s.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND ${ay('s.bitis')} AND (s.tamamlanma IS NOT NULL OR s.bitis < now())
       UNION ALL SELECT d.zorluk_katsayisi, (m.gerceklesme_tarihi IS NOT NULL AND m.gerceklesme_tarihi <= coalesce(m.guncel_tarih, m.baz_tarih)) FROM kilometre_tasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND to_char(coalesce(m.guncel_tarih, m.baz_tarih), 'YYYY-MM') = $2 AND (m.gerceklesme_tarihi IS NOT NULL OR coalesce(m.guncel_tarih, m.baz_tarih) < current_date)) x` },
@@ -43,9 +43,13 @@ const DS_SORGU: Record<string, { sql: string; kapsam: string }> = {
   'Müşteri ve şikâyet': { kapsam: 'Anket yanıtı olmayan dosyada yalnız şikâyetsiz kapanış sayılıyor.', sql: `SELECT sum(z.k) payda, coalesce(sum(z.k * CASE WHEN z.o IS NULL THEN z.s ELSE (z.o / 5 + z.s) / 2 END), 0) pay FROM (SELECT d.zorluk_katsayisi k, (SELECT a.ortalama FROM memnuniyet_anketi a WHERE a.dosya_ref = d.kimlik) o, (CASE WHEN EXISTS (SELECT 1 FROM garanti_sikayet g WHERE g.dosya_ref = d.kimlik AND 'Şikâyet' = ANY(g.kayit_turu)) THEN 0 ELSE 1 END)::numeric s ${kapanan}) z` },
   'Kayıt bütünlüğü': { kapsam: 'Form süresi henüz sayılmıyor; yalnız eksiksiz kapanış sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE cardinality(coalesce(c.eksiklik_isaretleri, '{}')) = 0), 0) pay ${kapanan}` },
 };
+const ROL_SORGU: Record<string, Record<string, { sql: string; kapsam?: string }>> = {
+  'Dosya Sorumlusu': DS_SORGU,
+  'Kalite Uzmanı (Kalite Kontrolör)': { 'FR-KLT-011 tamamlama': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM dosya_performans p WHERE p.dosya_ref = c.dosya_ref AND p.durum IN ('Onayda', 'Onaylandı'))) pay FROM kapanis_kontrolu c JOIN dosya_ekibi_atamasi e ON e.dosya_ref = c.dosya_ref AND e.kullanici_ref = $1 AND e.rol = 'Kalite Kontrolör' WHERE c.durum = 'Onaylandı' AND c.cikis_statusu = 'Teknik Kapalı' AND ${ay('c.kapanis_zamani')}` } },
+};
 async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: string, donem: string): Promise<Olcum | null> {
   if (ONAY_GOSTERGE.has(g.gosterge)) return onaySureOlc(db, kullanici, rol, donem, /sipariş onay/i.test(g.hesap));
-  const q = rolAdi === 'Dosya Sorumlusu' ? DS_SORGU[g.gosterge] : undefined; if (!q) return null;
+  const q = ROL_SORGU[rolAdi]?.[g.gosterge]; if (!q) return null;
   const r = (await db.query(q.sql, [kullanici, donem])).rows[0]; const payda = Number(r.payda ?? 0);
   return payda ? { pay: Number(r.pay), payda, kapsam: q.kapsam } : null;
 }

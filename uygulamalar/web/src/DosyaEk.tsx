@@ -1,3 +1,4 @@
+import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DosyaDestek } from './Destek';
@@ -151,6 +152,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <SigortaFark dosya={id} />
     <OnerilenTesisler dosya={id} />
     <ZorlukKatsayisi dosya={id} />
+    <DosyaPerformans dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
