@@ -10,6 +10,7 @@ import { PersonelEk } from './PersonelEk';
 import { PoliceListesi } from './FirmaPolice';
 import { PersonelKarne } from './PersonelKarne';
 import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
+import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
@@ -779,6 +780,8 @@ export function IdariIslemler() {
       <PersonelKarne />
       <GorevTanimim />
       <MemnuniyetGorusme />
+      <Akademi />
+      <DenemeDegerlendirme />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
