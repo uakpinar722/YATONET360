@@ -10,7 +10,7 @@ interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_
 export function FirmaSicil({ ben }: { ben: Ben }) {
   const [l, setL] = useState<Firma[]>([]); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   const [yeni, setYeni] = useState({ unvan: '', rol: 'Çözüm Ortağı' }); const [secili, setSecili] = useState('');
-  const [belge, setBelge] = useState({ tur: '', bitis: '' }); const [iban, setIban] = useState(''); const [gerekce, setGerekce] = useState(''); const [oneri, setOneri] = useState('Koşullu Onaylı');
+  const [belge, setBelge] = useState({ tur: '', bitis: '', limit: '', gozetim: false }); const [iban, setIban] = useState(''); const [gerekce, setGerekce] = useState(''); const [oneri, setOneri] = useState('Koşullu Onaylı');
   const [aday, setAday] = useState(false);
   const yukle = (a = aday) => istek<Firma[]>(`/firma/sicil${a ? '?aday=1' : ''}`).then(setL);
   useEffect(() => { void yukle().catch((x) => setHata((x as Error).message)); }, []);
@@ -45,7 +45,8 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} />
           <OnKayit id={secili} yap={yap} />
           <label htmlFor="fs-t">Geçerlilik Bitişi</label><input id="fs-t" type="date" value={belge.bitis} onChange={(e) => setBelge({ ...belge, bitis: e.target.value })} />
-          <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/belge`, { tur: belge.tur, bitis: belge.bitis || undefined }), 'Belge kaydedildi.')}>Belge Kaydet</button>
+          {/sigorta/i.test(belge.tur) && <><label htmlFor="fs-l">Poliçe Limiti (EUR)</label><input id="fs-l" inputMode="decimal" value={belge.limit} onChange={(e) => setBelge({ ...belge, limit: e.target.value })} /><label><input type="checkbox" checked={belge.gozetim} onChange={(e) => setBelge({ ...belge, gozetim: e.target.checked })} /> Gözetim ve Muhafazadaki Yat Dahil</label></>}
+          <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/belge`, { tur: belge.tur, bitis: belge.bitis || undefined, policeLimit: /sigorta/i.test(belge.tur) && belge.limit ? Number(belge.limit.replace(/\./g, '').replace(',', '.')) : undefined, gozetim: /sigorta/i.test(belge.tur) ? belge.gozetim : undefined }), 'Belge kaydedildi.')}>Belge Kaydet</button>
           <label htmlFor="fs-i">IBAN</label><input id="fs-i" value={iban} onChange={(e) => setIban(e.target.value)} />
           <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/iban`, { iban }), 'IBAN karantinaya alındı; teyit bekliyor.')}>IBAN Ekle</button>
           <FirmaSozlesme id={secili} yap={yap} />
