@@ -542,9 +542,6 @@ type KapanisKapisi = (db: Baglam['db'], d: Record<string, any>, cikis: string) =
 const KAPILAR_KAPANIS: KapanisKapisi[] = [];
 export function kapanisKapisi(f: KapanisKapisi) { KAPILAR_KAPANIS.push(f); }
 
-async function isGunuEkle(c: PoolClient, d: Date, gun: number): Promise<Date> {
-  const tatil = new Set((await c.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil`)).rows.map((r) => r.t as string));
-  const x = new Date(d.getTime()); let k = 0;
-  while (k < gun) { x.setUTCDate(x.getUTCDate() + 1); const y = new Date(x.getTime() + 180 * 60_000); const g = y.getUTCDay(); if (g !== 0 && g !== 6 && !tatil.has(y.toISOString().slice(0, 10))) k++; }
-  return x;
+async function isGunuEkle(c: PoolClient, d: Date, gun: number): Promise<Date> { // D-001
+  return (await import('./teklif.js')).isGunuSonu(c, d, gun);
 }

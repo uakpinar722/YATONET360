@@ -420,8 +420,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       await c.query(`UPDATE is_emri SET baslangic_sonucu = $2, statu = CASE WHEN $2 = 'Bekletilir' THEN statu ELSE 'Aktif' END, eksik_on_kosullar = $3, on_kosul_gerekcesi = $4, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, eksikOn, gerekce?.trim() || null]);
       if (sonuc !== 'Bekletilir' && e.is_emri_turu !== 'KN') {
+        const teslimT = await (await import('./teslim_sure.js')).teslimTarihiKur(c, e); // SRE-1
         const t = (await c.query(`SELECT t.telefon, t.eposta, y.yat_adi FROM dosya_tarafi t JOIN dosya d ON d.kimlik = t.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE t.dosya_ref = $1 AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif AND NOT d.vefat_isareti LIMIT 1`, [e.dosya_ref])).rows[0];
-        if (t) await yatTarafinaYaz(c, { olay: `bld02:${e.kimlik}`, kod: 'BLD-02', dil: dilKod(e.yazisma_dili), konu: `${e.dosya_no} İşe Başlandı`, telefon: t.telefon, eposta: t.eposta, alanlar: bld02Alanlari(t.yat_adi, new Date(), e.hedef_bitis_tarihi, b.webAdresi) });
+        if (t) await yatTarafinaYaz(c, { olay: `bld02:${e.kimlik}`, kod: 'BLD-02', dil: dilKod(e.yazisma_dili), konu: `${e.dosya_no} İşe Başlandı`, telefon: t.telefon, eposta: t.eposta, alanlar: bld02Alanlari(t.yat_adi, new Date(), teslimT ?? e.hedef_bitis_tarihi, b.webAdresi) }); // K-197: yat sahibine tamponlu tarih
       }
       return { statu: sonuc === 'Bekletilir' ? 'Başlangıç Kontrolünde' : 'Aktif' };
     });

@@ -261,7 +261,7 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Şikâyet'], kanal: 'E-posta', oncelik: 'Normal', konu: 'Gecikme' });
     expect(r.json().kayitNo).toBe(`${d.dosyaNo}-SK01`);
     const k = (await o.sup.query(`SELECT yanit_son, bildirim_zamani, sikayet_takip_ref, sikayet_sonuc_ref FROM garanti_sikayet WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
-    expect((+k.yanit_son - +k.bildirim_zamani) / 86_400_000).toBeGreaterThanOrEqual(12);
+    expect((+k.yanit_son - +k.bildirim_zamani) / 86_400_000).toBeGreaterThanOrEqual(11);
     expect([k.sikayet_takip_ref, k.sikayet_sonuc_ref]).toEqual([o.K.mpd, o.K.mpm]);
     expect((await o.kart('Şikâyet Takibi', r.json().kimlik)).sahip_kullanici_ref).toBe(o.K.mpd);
     expect((await o.ist('POST', `/api/garanti-sikayet/${r.json().kimlik}/karar`, c, { gerekce: 'G', sikayetSonucu: 'Yanlış' })).statusCode).toBe(400);

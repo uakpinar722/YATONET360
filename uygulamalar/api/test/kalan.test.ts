@@ -1095,3 +1095,52 @@ describe('iç bütçe ve risk rezervi (YG-862, YG-863, YG-780)', () => {
     expect((await o.kart('Bütçe Erken Uyarısı', d.kimlik)).baslik).toContain('Bütçe Aşımı');
   });
 });
+
+describe('teslim süresi değerlendirmesi (SRE-1)', () => {
+  const S = new Date('2026-11-09T09:00:00Z'); // Pazartesi
+  const kur = async (tarih: string) => {
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    await o.sup.query(`UPDATE dosya SET statu = 'Aktif', dosya_sorumlusu_ref = $2, tahmini_teslim_tarihi = $3, ilk_tahmini_teslim_tarihi = $3 WHERE kimlik = $1`, [d.kimlik, o.K.ds, tarih]);
+    return d;
+  };
+  it('ilk onarım iş emri başlayınca tarih gerçek başlangıçtan kurulur; ikinci kez değişmez; keşifte kurulmaz', async () => {
+    const { teslimTarihiKur } = await import('../src/teslim_sure.js');
+    const d = await o.dosyaAc({}, {});
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, ara_toplam_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref, bildirilen_sure_gun) VALUES ($1,$2,'Yat Sahibi',20,'Karar',1,1,1,$3,9) RETURNING kimlik`, [`${d.dosyaNo}-TX`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    expect(await teslimTarihiKur(o.db, { is_emri_turu: 'KN', dosya_ref: d.kimlik, teklif_ref: t }, S)).toBeNull();
+    expect(await teslimTarihiKur(o.db, { is_emri_turu: 'ON', dosya_ref: d.kimlik, teklif_ref: t }, S)).toBe('2026-11-19');
+    expect(await teslimTarihiKur(o.db, { is_emri_turu: 'ON', dosya_ref: d.kimlik, teklif_ref: t }, new Date('2026-12-01T09:00:00Z'))).toBe('2026-11-19');
+    expect((await o.sup.query(`SELECT ilk_tahmini_teslim_tarihi::text i FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].i).toBe('2026-11-19');
+  });
+  it('iş günü takvimi Cumartesi sayar, Pazarı atlar', async () => {
+    const { kalanIsGunu, gunMetni } = await import('../src/teslim_sure.js'); const { isGunuSonu } = await import('../src/teklif.js');
+    expect(gunMetni(await isGunuSonu(o.db, S, 9))).toBe('2026-11-19'); expect(await kalanIsGunu(o.db, S, '2026-11-19')).toBe(9); expect(await kalanIsGunu(o.db, S, '2026-11-08')).toBe(0);
+  });
+  it('5 iş günü kala görev bir kez; 3 iş günü kala Operasyon Müdürüne uyarı; uzak tarihte görev yok', async () => {
+    const { teslimSureIsle } = await import('../src/teslim_sure.js');
+    const uzak = await kur('2026-11-30'); const bes = await kur('2026-11-14'); const uc = await kur('2026-11-12');
+    await teslimSureIsle(o.db, S); await teslimSureIsle(o.db, S);
+    expect(await o.kart('Teslim Süresi Değerlendirmesi', uzak.kimlik)).toBeUndefined();
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Teslim Süresi Değerlendirmesi' AND nesne_kimligi = $1`, [bes.kimlik])).rows[0].n).toBe(1);
+    expect(await o.kart('Teslim Süresi Değerlendirmesi Gecikti', bes.kimlik)).toBeUndefined();
+    expect((await o.kart('Teslim Süresi Değerlendirmesi Gecikti', uc.kimlik)).durum).toBe('Bekliyor');
+  });
+  it('uzamada gerekçe ve ek gün zorunlu; yeni tarih takvimden; BLD-03 gider; aynı tarih iki kez değerlendirilmez; yeni tarih yeniden izlenir', async () => {
+    const { teslimSureIsle } = await import('../src/teslim_sure.js');
+    const d = await kur('2026-12-05'); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/teslim-sure`;
+    await o.sup.query(`UPDATE dosya_tarafi SET aktif = true, telefon = '+905550001111' WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]);
+    expect((await o.ist('POST', u, await o.gir('sy'), { sonuc: 'Uzama Yok' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ds, { sonuc: 'Uzama Var', ekGun: 3 })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, ds, { sonuc: 'Uzama Var', ekGun: 3, gerekce: 'parça tedarikindeki gecikme' }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().yeniTarih).toBe('2026-12-09'); // Cmt 05.12 + Pzt, Sal, Çar
+    expect((await o.sup.query(`SELECT tahmini_teslim_tarihi::text t, ilk_tahmini_teslim_tarihi::text i FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]).toEqual({ t: '2026-12-09', i: '2026-12-05' });
+    const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE 'bld03:%' AND metin LIKE '%parça tedarikindeki%' ORDER BY olusturma_zamani DESC LIMIT 1`)).rows[0]?.metin as string;
+    expect(m).toContain('05.12.2026'); expect(m).toContain('09.12.2026');
+    expect((await o.ist('POST', u, ds, { sonuc: 'Uzama Yok' })).statusCode).toBe(200); // yeni tarih değerlendirildi
+    expect((await o.ist('POST', u, ds, { sonuc: 'Uzama Yok' })).statusCode).toBe(409);
+    const d2 = await kur('2026-11-12'); await teslimSureIsle(o.db, S);
+    const g = await o.ist('POST', `/api/dosya/${d2.kimlik}/teslim-sure`, ds, { sonuc: 'Uzama Yok' }); expect(g.statusCode, g.body).toBe(200);
+    expect((await o.kart('Teslim Süresi Değerlendirmesi', d2.kimlik)).durum).toBe('Tamamlandı');
+  });
+});

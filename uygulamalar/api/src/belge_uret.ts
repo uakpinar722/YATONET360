@@ -63,6 +63,17 @@ const gizli = (dil: Dil) => (dil === 'en' ? 'This document has been prepared sol
 const dogrula = (dil: Dil, kod: string, web: string) => (dil === 'en' ? `This document was generated and electronically approved on YATONET 360 and does not require a wet signature. Its authenticity can be verified at ${web}/dogrula with code ${kod}.` : `Bu belge YATONET 360 tarafından üretilmiş ve elektronik olarak onaylanmıştır; ıslak imza gerektirmez. Doğruluğunu ${kod} ile ${web}/dogrula üzerinden doğrulayabilirsiniz.`);
 const tesekkur = (dil: Dil) => (dil === 'en' ? 'Thank you for choosing LİMİT GLOBAL MARINE.' : 'LİMİT GLOBAL MARINE’ı tercih ettiğiniz için teşekkür ederiz.');
 
+/** SRE-1: süre ve iş günü takvimiyle hesaplanan tarih; avans alınmayan işte avans ifadesi yazılmaz. */
+async function teslimSatiri(db: Db, f: Record<string, any>, d: Record<string, any>, dil: Dil) {
+  if (!f.bildirilen_sure_gun) return [];
+  const { isGunuSonu, parametre } = await import('./teklif.js'); const { avansHesapla } = await import('./ticari.js');
+  const tarih = gunAy(f.tahmini_teslim_tarihi ?? await isGunuSonu(db, new Date(), f.bildirilen_sure_gun));
+  const avans = avansHesapla(d.musteri_turu, Number(f.genel_toplam_eur), d.oncelik === 'Kritik', await parametre(db, 'avans_orani'), await parametre(db, 'sigorta_avans_esik_eur')) > 0;
+  return dil === 'en'
+    ? [{ et: 'Estimated Repair Time / Estimated Delivery Date', deger: `${f.bildirilen_sure_gun} working days / ${tarih} (starting once the yacht is at the repair location and approval${avans ? ' and advance payment are' : ' is'} complete)` }]
+    : [{ et: 'Tahmini Onarım Süresi / Tahmini Teslim Tarihi', deger: `${f.bildirilen_sure_gun} iş günü / ${tarih} (yat onarım yerine ulaştıktan ve onay${avans ? ' ile avans' : ''} tamamlandıktan sonra işlemeye başlar)` }];
+}
+
 export async function teklifTanim(db: Db, id: string, kod: string, web: string): Promise<{ t: BelgeTanim; dosyaAdi: string; sinif: string }> {
   const f = (await db.query(`SELECT * FROM fiyat_teklifi WHERE kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, f.dosya_ref, f.hazirlayan_ref); const dil = b.dil; const e = E[dil];
@@ -75,7 +86,7 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
   const bolumler: Bolum[] = [
     ...ortak(b),
     { baslik: e.kalem, tur: 'tablo', sutunlar: [{ ad: e.sira, hiza: 'ort' }, { ad: e.kod }, { ad: e.aciklama }, { ad: e.nitelik }, { ad: e.bedel }, { ad: e.miktar, hiza: 'sag' }, { ad: e.fiyat, hiza: 'sag' }, { ad: e.tutar, hiza: 'sag' }], satirlar: kl.map((k) => [k.sira_no, k.kartela_kodu, k.aciklama, k.isin_niteligi, k.bedel_turu, `${tutar(Number(k.miktar), dil)} ${k.birim}`, para(k.birim_satis_fiyati_eur, dil), para(k.tutar_eur, dil)]), toplamlar: [...top, { et: e.genel, deger: para(f.genel_toplam_eur, dil), ana: true } as { et: string; deger: string; ana?: boolean }] },
-    { baslik: e.kosul, tur: 'alanlar', alanlar: [{ et: e.gecerlilik, deger: f.gecerlilik_bitis_tarihi ? gunAy(f.gecerlilik_bitis_tarihi) : null }, { et: e.odemeKosul, deger: f.odeme_vadesi }, ...(f.bildirilen_sure_gun ? [{ et: dil === 'en' ? 'Estimated Repair Time' : 'Tahmini Onarım Süresi', deger: dil === 'en' ? `${f.bildirilen_sure_gun} working days` : `${f.bildirilen_sure_gun} iş günü` }] : []), { et: e.kdvDurum, deger: await kdvDurumMetni(db, f.dosya_ref, f.teklif_muhatabi, dil) }] },
+    { baslik: e.kosul, tur: 'alanlar', alanlar: [{ et: e.gecerlilik, deger: f.gecerlilik_bitis_tarihi ? gunAy(f.gecerlilik_bitis_tarihi) : null }, { et: e.odemeKosul, deger: f.odeme_vadesi }, ...(await teslimSatiri(db, f, b.d, dil)), { et: e.kdvDurum, deger: await kdvDurumMetni(db, f.dosya_ref, f.teklif_muhatabi, dil) }] },
     ekipBolumu(b),
     atananEkip(b),
   ];
