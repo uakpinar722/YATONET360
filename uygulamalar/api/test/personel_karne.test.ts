@@ -139,3 +139,18 @@ describe('kurumsal muhatap ve mali sonuç (D-200)', () => {
     expect((await anketGonder(o.db, 'http://x')).find((x) => x.dosya === a)).toBeDefined();
   });
 });
+
+describe('rol göstergeleri (Karne Gösterge Kataloğu)', () => {
+  it('kayıtlı her gösterge katalogda var ve sorgusu çalışır; düşük hedef doğru puanlanır', async () => {
+    const { EK_SORGU } = await import('../src/karne_olcumler.js');
+    for (const [rol, m] of Object.entries(EK_SORGU)) for (const [g, q] of Object.entries(m)) {
+      expect((await o.sup.query(`SELECT 1 FROM karne_gosterge WHERE rol_adi = $1 AND gosterge = $2`, [rol, g])).rowCount, `${rol} · ${g}`).toBe(1);
+      await o.db.query(q.sql, [o.K.ds, '2026-10']);
+    }
+    expect(gostergePuani(2, '≤ %3')).toBe(100); expect(gostergePuani(6, '≤ %3')).toBe(50); expect(gostergePuani(0, '≤ %5')).toBe(100); expect(gostergePuani(90, '≥ %90 (başlangıç hedefi)')).toBe(100);
+  });
+  it('tedarik seçim gerekçesi kayıttan ölçülür', async () => {
+    const q = (await import('../src/karne_olcumler.js')).EK_SORGU['Tedarik Sorumlusu']!['Seçim gerekçesi tamlığı']!;
+    const r = (await o.db.query(q.sql, [o.K.ds, '2026-10'])).rows[0]; expect(Number(r.payda)).toBe(0);
+  });
+});

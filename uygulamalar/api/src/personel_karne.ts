@@ -4,6 +4,7 @@ import { bildir, birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
+import { EK_SORGU } from './karne_olcumler.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayMakami, rolSahipleri } from './makam.js';
@@ -61,6 +62,7 @@ const ROL_SORGU: Record<string, Record<string, { sql: string; kapsam?: string }>
   'Dosya Sorumlusu': DS_SORGU,
   'Kalite Uzmanı (Kalite Kontrolör)': { 'FR-KLT-011 tamamlama': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM dosya_performans p WHERE p.dosya_ref = c.dosya_ref AND p.durum IN ('Onayda', 'Onaylandı'))) pay FROM kapanis_kontrolu c JOIN dosya_ekibi_atamasi e ON e.dosya_ref = c.dosya_ref AND e.kullanici_ref = $1 AND e.rol = 'Kalite Kontrolör' WHERE c.durum = 'Onaylandı' AND c.cikis_statusu = 'Teknik Kapalı' AND ${ay('c.kapanis_zamani')}` } },
 };
+for (const [r, m] of Object.entries(EK_SORGU)) ROL_SORGU[r] = { ...ROL_SORGU[r], ...m };
 async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: string, donem: string): Promise<Olcum | null> {
   if (ONAY_GOSTERGE.has(g.gosterge)) return onaySureOlc(db, kullanici, rol, donem, /sipariş onay/i.test(g.hesap));
   if (rolAdi === 'Dosya Sorumlusu' && g.gosterge === MALI) return maliOlc(db, kullanici, donem);
@@ -69,8 +71,10 @@ async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: 
   return payda ? { pay: Number(r.pay), payda, kapsam: q.kapsam } : null;
 }
 
-/** Hedefi "≥ %N" olan göstergede hedefe ulaşan 100 alır; diğerlerinde oran doğrudan puandır. */
+/** Hedefi "≥ %N" olan göstergede hedefe ulaşan 100 alır; "≤ %N" olanda hedefin altı 100, üstünde hedef/değer oranı; diğerlerinde oran doğrudan puandır. */
 export function gostergePuani(deger: number, hedef: string): number {
+  const u = /≤\s*%\s*(\d+(?:[.,]\d+)?)/.exec(hedef);
+  if (u && !/≥/.test(hedef)) { const h = Number(u[1]!.replace(',', '.')); return deger <= h ? 100 : yuvarla((h / deger) * 100); }
   const m = /≥\s*%\s*(\d+(?:[.,]\d+)?)/.exec(hedef); const h = m ? Number(m[1]!.replace(',', '.')) : 100;
   return yuvarla(Math.min(100, (deger / h) * 100));
 }
