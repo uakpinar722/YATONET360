@@ -13,6 +13,7 @@ import { dosyaErisimi } from './dosya.js';
 import { DURAK_SN } from './sure.js';
 import { isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
+import { zorunluFormlar } from './zorunlu_form.js';
 
 type Db = Pool | PoolClient;
 const KK = 'Kalite Uzmanı (Kalite Kontrolör)'; const KM = 'Kalite Müdürü'; const GOREV = 'Dosya Performans Değerlendirmesi'; const ONAY = 'Dosya Performans Onayı';
@@ -108,6 +109,12 @@ export function kapanisEkYollari(s: FastifyInstance, b: Baglam) {
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
   });
 
+  s.get('/dosya/:id/zorunlu-formlar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return zorunluFormlar(b.db, id);
+  });
+
   // YG-785: hedef ve gerçekleşen süreler kayıttan gelir; müşteri kararı, erişim ve üçüncü taraf beklemesi düşülür.
   s.get('/dosya/:id/performans', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
@@ -120,7 +127,8 @@ export function kapanisEkYollari(s: FastifyInstance, b: Baglam) {
     const kayit = (await b.db.query(`SELECT sapma_nedeni, denetim_sinifi, denetim_bulgulari, firma_karne_etkisi, durum FROM dosya_performans WHERE dosya_ref = $1`, [id])).rows[0] ?? null;
     const ozetDurum = (await b.db.query(`SELECT durum FROM nihai_kapanis_ozeti WHERE dosya_ref = $1`, [id])).rows[0]?.durum ?? null;
     const ds = (await b.db.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.r === o.kullanici;
-    return { ...d, arsivlenebilir: ds && d.statu === 'Kapalı' && !d.arsiv_zamani, ozetDurum, ozetYenilenir: ds && ozetDurum === 'İade', kapali: ['Teknik Kapalı', 'Kapalı'].includes(d.statu), sureler, ilkSeferde: ilk, uygunsuzluk: uyg, memnuniyet: mem, kayit, duzenleyebilir: await yetkiliKk(o.kullanici, id) };
+    const formlar = d.statu === 'Teknik Kapalı' || d.statu === 'Kapalı' ? await zorunluFormlar(b.db, id) : [];
+    return { ...d, formlar, arsivlenebilir: ds && d.statu === 'Kapalı' && !d.arsiv_zamani, ozetDurum, ozetYenilenir: ds && ozetDurum === 'İade', kapali: ['Teknik Kapalı', 'Kapalı'].includes(d.statu), sureler, ilkSeferde: ilk, uygunsuzluk: uyg, memnuniyet: mem, kayit, duzenleyebilir: await yetkiliKk(o.kullanici, id) };
   });
 
   // YG-786: Kalite Kontrolör değerlendirir, Kalite Müdürü onaylar; dosya başına bir değerlendirme.

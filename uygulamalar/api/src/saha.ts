@@ -1,3 +1,4 @@
+import { zorunluFormlar } from './zorunlu_form.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
@@ -359,6 +360,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const t = (await c.query(`INSERT INTO kapanis_kontrolu (dosya_ref, hazirlayan_ref, yetki_kapsam_kontrolu, uygulama_kontrolu, test_kabul_kontrolu, acik_konu_kontrolu, garanti_kontrolu, arsiv_kontrolu, yazisma_beyani, cikis_statusu, kapanma_nedeni) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9,$10) RETURNING kimlik`,
         [id, o.kullanici, true, true, true, true, true, Boolean(g.arsiv), g.cikis, g.cikis === 'Kapalı' ? g.neden : null])).rows[0];
+      { const fm = (await zorunluFormlar(c, id)).filter((x) => !x.var).map((x) => x.kod); if (fm.length) await c.query(`UPDATE kapanis_kontrolu SET eksiklik_isaretleri = $2 WHERE kimlik = $1`, [t.kimlik, fm]); } // YG-635: kayda geçer, kapanışı durdurmaz
       await kartAc(c, { tur: 'Dosya Kapanışı', baslik: `${d.dosya_no} · ${g.cikis} Onayı`, ozet: g.neden ?? 'Teslim ve kabul tamam', hazirlayan: o.kullanici, zincir: [await rolId(c, 'Operasyon Müdürü')], nesneTuru: 'Kapanış Kontrolü', nesneKimligi: t.kimlik });
       return { kimlik: t.kimlik, durum: 'Onaya Gönderildi' };
     });

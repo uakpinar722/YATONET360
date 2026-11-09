@@ -70,6 +70,7 @@ const al = async (k, E) => { if (!sayfalar[k]) sayfalar[k] = await gir(E[k], k);
 const kartKarar = async (E, kim, baslik, karar) => {
   const p = await al(kim, E);
   const kart = p.locator('.ozet', { hasText: baslik }).filter({ has: p.getByRole('button', { name: karar, exact: true }) }).first();
+  for (let n = 0; n < 8 && !(await kart.count()); n++) { await p.waitForTimeout(1500); await p.reload(); await p.waitForLoadState('networkidle').catch(() => {}); } // önceki istek bitmeden açılan ana sayfa kartı göstermez
   await kart.waitFor({ timeout: 15000 }).catch(async (e) => { throw new Error(`${kim} kartı yok (${baslik}): ${(await p.locator('main, body').first().innerText()).replace(/\s+/g, ' ').slice(0, 300)}`); });
   await kart.getByRole('button', { name: karar, exact: true }).click();
   await p.locator('.ozet', { hasText: baslik }).filter({ has: p.getByRole('button', { name: karar, exact: true }) }).waitFor({ state: 'detached', timeout: 15000 }).catch(async () => { throw new Error(`${kim} karar sonrası (${baslik}): ${(await kart.innerText()).replace(/\s+/g, ' ').slice(0, 300)}`); });
