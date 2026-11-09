@@ -30,4 +30,5 @@ def yaz(sat, yol):
 
 d = dict(sayfalar(sys.argv[1])); os.makedirs(sys.argv[2], exist_ok=True)
 yaz(d['Firmalar'], os.path.join(sys.argv[2], 'firmalar.tsv')); yaz(d['Bağlama Noktaları'], os.path.join(sys.argv[2], 'noktalar.tsv'))
+yaz(d['Bölgeler'], os.path.join(sys.argv[2], 'bolgeler.tsv')); yaz(d['İl Varsayılanları'], os.path.join(sys.argv[2], 'iller.tsv'))
 print(len(d['Firmalar']) - 1, len(d['Bağlama Noktaları']) - 1)

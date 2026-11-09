@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import pg from 'pg';
 import { ortamOku } from '../src/ayarlar.js';
-import { anaVeriYukle, type Satir } from '../src/ana_veri.js';
+import { anaVeriYukle, bolgeYukle, type Satir } from '../src/ana_veri.js';
 
 const oku = (p: string): Satir[] => {
   const [bas, ...sat] = readFileSync(p, 'utf8').split(/\r?\n/).filter(Boolean).map((l) => l.split('\t'));
@@ -18,6 +18,7 @@ await c.connect();
 try {
   await c.query('BEGIN');
   const s = await anaVeriYukle(c as unknown as pg.PoolClient, { firmalar: oku(join(dizin, 'firmalar.tsv')), noktalar: oku(join(dizin, 'noktalar.tsv')) });
+  const bl = await bolgeYukle(c as unknown as pg.PoolClient, { bolgeler: oku(join(dizin, 'bolgeler.tsv')), iller: oku(join(dizin, 'iller.tsv')) }); console.log(JSON.stringify(bl));
   await c.query(uygula ? 'COMMIT' : 'ROLLBACK');
   console.log(uygula ? 'YÜKLENDİ' : 'DENEME (kaydedilmedi)', JSON.stringify(s));
 } catch (h) { await c.query('ROLLBACK'); throw h; } finally { await c.end(); }

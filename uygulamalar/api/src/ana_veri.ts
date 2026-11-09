@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
@@ -13,6 +13,33 @@ const SICIL = ['Sicil Sorumlusu', 'Firma Yönetimi Müdürü', 'Firma Yönetimi 
 const dolu = (x?: string) => (x?.trim() ? x.trim() : null);
 const sayi = (x?: string) => (x?.trim() && !Number.isNaN(Number(x.replace(',', '.'))) ? Number(x.replace(',', '.')) : null);
 
+/** YG-1258: 0XXX XXX XX XX; çözülemeyen null döner, kayıt Kontrol edilmeli işaretlenir. */
+export function telefonBicimi(s: string | null | undefined): string | null {
+  let d = String(s ?? '').replace(/\D/g, '');
+  if (d.startsWith('90') && d.length === 12) d = d.slice(2);
+  if (d.startsWith('0') && d.length === 11) d = d.slice(1);
+  if (d.length !== 10 || !/^[2-5]/.test(d)) return null;
+  return `0${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6, 8)} ${d.slice(8)}`;
+}
+
+/** YG-1264, YG-1265: bölge tabloları ana veriden yüklenir (dosya depoya alınmaz). */
+export async function bolgeYukle(c: PoolClient, g: { bolgeler: Satir[]; iller: Satir[] }): Promise<{ bolge: number; il: number }> {
+  let bolge = 0; let il = 0;
+  for (const r of g.bolgeler) { if (!dolu(r['İl']) || !dolu(r['İlçe'])) continue; await c.query(`INSERT INTO bolge_eslesme (il, ilce, bolge, hizmet_kumesi, saha_merkezi, kalici_saha, destek) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (il, ilce) DO UPDATE SET bolge = $3, hizmet_kumesi = $4, saha_merkezi = $5, kalici_saha = $6, destek = $7`, [r['İl'], r['İlçe'], r['Bölge'], r['Hizmet Kümesi'], dolu(r['Saha Merkezi']), r['Kalıcı Saha Sorumlusu'] === 'Evet', dolu(r['Destek'])]); bolge++; }
+  for (const r of g.iller) { if (!dolu(r['İl'])) continue; await c.query(`INSERT INTO il_varsayilan (il, bolge, hizmet_kumesi) VALUES ($1,$2,$3) ON CONFLICT (il) DO UPDATE SET bolge = $2, hizmet_kumesi = $3`, [r['İl'], r['Bölge'], r['Varsayılan Hizmet Kümesi']]); il++; }
+  return { bolge, il };
+}
+/** Bölgesi boş firma ve bağlama noktasını önce ilçeden, yoksa il varsayılanından bağlar. */
+export async function bolgeTuret(db: Pool): Promise<number> {
+  let n = 0;
+  for (const t of ['kurulus', 'baglama_noktasi']) {
+    const sm = t === 'kurulus' ? ', saha_merkezi = b.saha_merkezi' : '';
+    n += (await db.query(`UPDATE ${t} x SET bolge = b.bolge, hizmet_kumesi = b.hizmet_kumesi${sm} FROM bolge_eslesme b WHERE x.bolge IS NULL AND lower(x.il) = lower(b.il) AND lower(x.ilce) = lower(b.ilce)`)).rowCount ?? 0;
+    n += (await db.query(`UPDATE ${t} x SET bolge = v.bolge, hizmet_kumesi = v.hizmet_kumesi FROM il_varsayilan v WHERE x.bolge IS NULL AND lower(x.il) = lower(v.il)`)).rowCount ?? 0;
+  }
+  return n;
+}
+
 /** ANV-1, YG-367: adaylar sicile Aday ve Pasif girer, paydaşlar alınmaz; yeniden çalıştırmak mevcut kaydı değiştirmez. */
 export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktalar: Satir[] }): Promise<{ firma: number; atlanan: number; paydas: number; nokta: number; mukerrerFirma: number; mukerrerNokta: number }> {
   let firma = 0; let atlanan = 0; let paydas = 0; let nokta = 0; let mukerrerFirma = 0; let mukerrerNokta = 0;
@@ -24,6 +51,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     const grup = dolu(f['Mükerrer Grubu']); if (grup) mukerrerFirma++;
     await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, kurumsal_telefon, il, ilce, ana_veri_no, adres, web, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,'Çözüm Ortağı','Aday','Pasif',$3,$4,$5,$6,$7,$8,$9,$10)`,
       [`LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`, ad, dolu(f['Telefon']), dolu(f['Konum İl']), dolu(f['Konum İlçe']), no, dolu(f['Adres']), /^https?:|^www\./i.test(f['Web'] ?? '') ? dolu(f['Web']) : null, grup, grup ? 'Karar bekliyor' : null]);
+    { const tel = telefonBicimi(f['Telefon']); await c.query(`UPDATE kurulus SET bolge = $2, hizmet_kumesi = $3, kurumsal_telefon = coalesce($4, kurumsal_telefon), telefon_kontrol = $5 WHERE ana_veri_no = $1`, [no, dolu(f['Bölge']), dolu(f['Hizmet Kümesi']), tel, Boolean(dolu(f['Telefon'])) && !tel]); }
     firma++;
   }
   for (const n of g.noktalar) {

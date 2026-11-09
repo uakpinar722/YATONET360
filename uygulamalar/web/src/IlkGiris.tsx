@@ -157,8 +157,9 @@ export function Davet({ belirtec, bitti }: { belirtec: string; bitti: () => void
   );
 }
 
-const AMAC = ['Bakım ve sezon hatırlatmaları', 'Hizmet ve kampanya tanıtımları'];
-const KANAL = ['SMS', 'E-posta', 'Telefon', 'WhatsApp'];
+export const AMAC = ['Bakım ve sezon hatırlatmaları', 'Hizmet ve kampanya tanıtımları'];
+export const KANAL = ['SMS', 'E-posta', 'Telefon', 'WhatsApp'];
+export const IZIN_METNI = T;
 const OZEL = ['Özel gün – Doğum günü paylaşımı', 'Özel gün – Evlilik yıl dönümü paylaşımı', 'Özel gün – İşe giriş yıl dönümü paylaşımı'];
 
 function kisaMetin(t: (typeof T)['tr'], grup: string) {
