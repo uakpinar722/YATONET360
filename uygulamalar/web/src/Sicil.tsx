@@ -1,3 +1,4 @@
+import { TesisBilgi } from './BaglamaNoktasi';
 import { useEffect, useState } from 'react';
 import { BelgeSec } from './Kalite';
 import { istek, type Ben } from './api';
@@ -169,7 +170,7 @@ function FirmaTesis({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, 
   const [l, setL] = useState<{ kimlik: string; tesis_kodu: string; ad: string; il: string | null; ilce: string | null; aktif: boolean }[]>([]); const [f, setF] = useState({ ad: '', adres: '', il: '', ilce: '' });
   const yk = () => istek<typeof l>(`/firma/${id}/tesis`).then(setL).catch(() => setL([]));
   useEffect(() => { void yk(); }, [id]);
-  return <><div className="bolum">Tesisler ve Şubeler</div><div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tesis_kodu} · {x.ad}{x.il ? ` · ${x.il}${x.ilce ? ` / ${x.ilce}` : ''}` : ''}{x.aktif ? '' : ' · Pasif'}</div>)}</div>
+  return <><div className="bolum">Tesisler ve Şubeler</div><div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tesis_kodu} · {x.ad}{x.il ? ` · ${x.il}${x.ilce ? ` / ${x.ilce}` : ''}` : ''}{x.aktif ? '' : ' · Pasif'} <TesisBilgi kimlik={x.kimlik} /></div>)}</div>
     <label htmlFor="ft-a">Tesis Adı</label><input id="ft-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
     <label htmlFor="ft-d">Adres</label><input id="ft-d" value={f.adres} onChange={(e) => setF({ ...f, adres: e.target.value })} />
     <label htmlFor="ft-i">İl</label><input id="ft-i" value={f.il} onChange={(e) => setF({ ...f, il: e.target.value })} />

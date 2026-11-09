@@ -1152,3 +1152,33 @@ describe('teslim süresi değerlendirmesi (SRE-1)', () => {
     expect((await o.kart('Teslim Süresi Değerlendirmesi', d2.kimlik)).durum).toBe('Tamamlandı');
   });
 });
+
+describe('bağlama noktası ve tesis önerisi (YG-113, YG-114, YG-115, YG-333)', () => {
+  const tesisKur = async (ad: string, x: object) => {
+    const sc = await o.gir('sc'); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, ag_statusu, olusturan_ref) VALUES ($1,$2,'Tesis','Aktif',$3) RETURNING kimlik`, [`S-BN${Math.random()}`, ad, o.K.ds])).rows[0].kimlik;
+    const r = await o.ist('POST', `/api/firma/${f}/tesis`, sc, { ad, il: 'Muğla' }); expect(r.statusCode, r.body).toBe(200);
+    const b = await o.ist('POST', `/api/firma-tesis/${r.json().kimlik}/bilgi`, sc, { kural: 'Serbest', ...x }); expect(b.statusCode, b.body).toBe(200); return r.json().kimlik as string;
+  };
+  it('alan doğrulaması; yalnız sicil rolü girer; 12 ay geçen kural teyidi yılda bir görev açar', async () => {
+    const { tesisTeyitIsle } = await import('../src/baglama_noktasi.js');
+    const t = await tesisKur(`Teyit ${Math.random()}`, { kuralTeyit: '2025-01-01' }); const sc = await o.gir('sc'); const u = `/api/firma-tesis/${t}/bilgi`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { kural: 'Serbest' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, sc, { kural: 'Kayıt Şartlı' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sc, { kural: 'Ücretli' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sc, { kural: 'X' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sc, { kural: 'Serbest', kuralTeyit: '2025-01-01', enlem: 36.8, boylam: 28.2 })).statusCode).toBe(200);
+    await tesisTeyitIsle(o.db, new Date('2026-11-09T09:00:00Z')); await tesisTeyitIsle(o.db, new Date('2026-11-10T09:00:00Z'));
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Tesis Kural Teyidi' AND nesne_kimligi = $1`, [t])).rows[0].n).toBe(1);
+  });
+  it('öneri tonaj ve boya uyar, yasak tesis çıkmaz, en yakından sıralanır', async () => {
+    const { mesafeKm } = await import('../src/baglama_noktasi.js'); expect(mesafeKm({ enlem: 36.85, boylam: 28.27 }, { enlem: 37.03, boylam: 27.43 })).toBeGreaterThan(70);
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    await o.sup.query(`UPDATE yat SET tonaj = 40, tam_boy_m = 20 WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    const ek = Math.random(); const ad = (x: string) => `${x} ${ek}`;
+    await tesisKur(ad('Uzak'), { travelLift: 100, azamiBoy: 30, enlem: 37.03, boylam: 27.43 }); await tesisKur(ad('Yakın'), { vinc: 50, azamiBoy: 25, enlem: 36.85, boylam: 28.27 });
+    await tesisKur(ad('Küçük Lift'), { travelLift: 30, azamiBoy: 25, enlem: 36.85, boylam: 28.27 }); await tesisKur(ad('Kısa'), { travelLift: 100, azamiBoy: 15, enlem: 36.85, boylam: 28.27 }); await tesisKur(ad('Yasak'), { kural: 'Yasak', travelLift: 100, azamiBoy: 30, enlem: 36.85, boylam: 28.27 });
+    const r = (await o.ist('GET', `/api/dosya/${d.kimlik}/onerilen-tesisler?enlem=36.85&boylam=28.27`, await o.gir('ds'))).json();
+    expect(r.tesisler.map((x: { ad: string }) => x.ad).filter((x: string) => x.endsWith(String(ek)))).toEqual([ad('Yakın'), ad('Uzak')]); expect(r.tesisler[0].enlem).toBeUndefined();
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/onerilen-tesisler`, await o.gir('sy'))).statusCode).toBe(404);
+  });
+});

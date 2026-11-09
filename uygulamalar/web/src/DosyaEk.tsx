@@ -9,6 +9,7 @@ import { YontemRaporu } from './YontemRaporu';
 import { RiskRezervi } from './RiskRezervi';
 import { TeslimSure } from './TeslimSure';
 import { SigortaFark } from './SigortaFark';
+import { OnerilenTesisler } from './BaglamaNoktasi';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 
@@ -147,6 +148,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <RiskRezervi dosya={id} />
     <TeslimSure dosya={id} />
     <SigortaFark dosya={id} />
+    <OnerilenTesisler dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
