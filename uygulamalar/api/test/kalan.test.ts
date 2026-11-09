@@ -1205,3 +1205,17 @@ describe('ana veri aktarımı (ANV-1, YG-367)', () => {
     expect((await o.ist('POST', `/api/baglama-noktasi/${n[0].kimlik}/tesis`, sc, { tesis: a.kimlik })).statusCode).toBe(400);
   });
 });
+
+describe('yurt dışı garanti (YG-1422)', () => {
+  it('yurt dışında keşif süresi işlemez; yerinde müdahale ayrı teklif görevi açar; yalnız garantide seçilir', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/garanti-sikayet`; const G = { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Normal', belirti: 'Sızıntı' };
+    expect((await o.ist('POST', u, ds, { turler: ['Şikâyet'], kanal: 'Telefon', oncelik: 'Normal', konu: 'K', yerinde: true })).statusCode).toBe(400);
+    const a = await o.ist('POST', u, ds, { ...G, yurtDisi: true, yerinde: true }); expect(a.statusCode, a.body).toBe(200);
+    const k = (await o.sup.query(`SELECT kimlik, kesif_son, yurt_disi, yerinde_mudahale FROM garanti_sikayet WHERE dosya_ref = $1`, [d.kimlik])).rows[0]; expect(k).toMatchObject({ kesif_son: null, yurt_disi: true, yerinde_mudahale: true });
+    expect((await o.kart('Fiyat Teklifi Hazırla', k.kimlik)).baslik).toContain('Yurt Dışı');
+    const b = await o.ist('POST', u, ds, G); expect(b.statusCode, b.body).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM garanti_sikayet WHERE dosya_ref = $1 AND kesif_son IS NOT NULL`, [d.kimlik])).rows[0].n).toBe(1);
+  });
+});

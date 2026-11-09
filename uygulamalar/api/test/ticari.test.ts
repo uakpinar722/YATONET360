@@ -269,3 +269,19 @@ describe('Ticari Sorumlu ataması (YG-1600)', () => {
     await ac(); expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = $1 AND nesne_kimligi = $2`, [K, d.kimlik])).rows[0].n).toBe(1);
   });
 });
+
+describe('fiş aslı (YG-1622)', () => {
+  it('kâğıt fişte teslim izlenir, e-Fatura izlenmez; ödeme asılı beklemez; aylık hatırlatma bir kez', async () => {
+    const c = await o.gir('ds'); const M = { tur: 'Yemek', tarih: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), tutarTl: 100, kur: 40, miktar: 1 };
+    const k = (await o.ist('POST', '/api/masraf', c, { ...M, belgeOzeti: `K-${Math.random()}` })).json().kimlik as string;
+    const e = (await o.ist('POST', '/api/masraf', c, { ...M, belgeOzeti: `E-${Math.random()}`, belgeTuru: 'e-Fatura' })).json().kimlik as string;
+    expect((await o.ist('POST', '/api/masraf', c, { ...M, belgeOzeti: 'X', belgeTuru: 'Z' })).statusCode).toBe(400);
+    const my = await o.gir('my'); expect((await o.ist('GET', '/api/masraf/asil-bekleyen', c)).statusCode).toBe(404);
+    const l = (await o.ist('GET', '/api/masraf/asil-bekleyen', my)).json().map((x: { kimlik: string }) => x.kimlik); expect(l).toContain(k); expect(l).not.toContain(e);
+    expect((await o.ist('POST', `/api/masraf/${e}/asil-teslim`, my, {})).statusCode).toBe(409);
+    const { fisAsliHatirlat } = await import('../src/menfaat_masraf.js'); const ileri = new Date(Date.now() + 40 * 86_400_000);
+    const n1 = await fisAsliHatirlat(o.db, ileri); const n2 = await fisAsliHatirlat(o.db, ileri); expect(n1).toBeGreaterThan(0); expect(n2).toBe(0);
+    expect((await o.ist('POST', `/api/masraf/${k}/asil-teslim`, my, {})).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT asil_teslim_alan_ref r FROM personel_masraf_fisi WHERE kimlik = $1`, [k])).rows[0].r).toBe(o.K.my);
+  });
+});

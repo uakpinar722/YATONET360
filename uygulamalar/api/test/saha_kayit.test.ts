@@ -258,3 +258,14 @@ describe('onarım zarfı genişlemesi (YG-407)', () => {
     expect((await o.sup.query(`SELECT bulgu_ref FROM sapma_kaydi WHERE kimlik = $1`, [s])).rows[0].bulgu_ref).toBe(bg);
   });
 });
+
+describe('menfaat talebi bildirimi (YG-412)', () => {
+  it('firma kendi iş emrinden bildirir; görev Hukuk ve Uyum Direktörüne düşer; başkası listeyi göremez', async () => {
+    const { e } = await isEmri(); const u = `/api/firma-portal/is-emri/${e}/menfaat-bildirimi`;
+    expect((await o.ist('POST', u, f2C, { kaynak: 'Kaptan', aciklama: 'A' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, fC, { kaynak: 'Diğer', aciklama: 'A' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, fC, { kaynak: 'Kaptan', aciklama: 'Komisyon istendi' })).statusCode).toBe(200);
+    const k = (await o.sup.query(`SELECT r.rol_adi FROM is_karti c JOIN menfaat_bildirimi m ON m.kimlik::text = c.nesne_kimligi JOIN rol r ON r.kimlik = c.sahip_rol_ref WHERE m.is_emri_ref = $1`, [e])).rows[0]; expect(k.rol_adi).toBe('Hukuk ve Uyum Direktörü');
+    expect((await o.ist('GET', '/api/menfaat-bildirimleri', await o.gir('tu'))).statusCode).toBe(404);
+  });
+});

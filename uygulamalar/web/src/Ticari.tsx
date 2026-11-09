@@ -5,6 +5,7 @@ import { BelgeSec } from './Kalite';
 import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
 import { TopluOdeme } from './TopluOdeme';
+import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
@@ -390,6 +391,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       {acik.statu === 'Aktif' && <CalismaIzni isEmri={acik.kimlik} yap={yap} />}
       {['Başlangıç Kontrolünde', 'Aktif', 'Çekinceli'].includes(acik.statu) && <EkipKarti isEmri={acik.kimlik} yap={yap} />}
       {acik.tur === 'ON' && <YontemRaporuFirma isEmri={acik.kimlik} />}
+      {!['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <MenfaatBildir isEmri={acik.kimlik} />}
       {acik.statu === 'Aktif' && acik.tur !== 'KN' && <ProsesFirma isEmri={acik.kimlik} />}
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">
         <BelgeSec ad="Hakediş Kanıtı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
@@ -753,7 +755,7 @@ export function SigortaEk2() {
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
   const [izId, setIzId] = useState(''); const [izB, setIzB] = useState('');
-  const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '' });
+  const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '', belgeTuru: 'Kağıt Fiş' });
   return (
     <>
       <h1>İdari İşlemlerim</h1><Mesaj />
@@ -766,6 +768,8 @@ export function IdariIslemler() {
       <KartelaResmiEtiket />
       <TicariAtamaBekleyenler />
       <TopluOdeme />
+      <FisAsliTeslim />
+      <MenfaatListesi />
       <TatilTakvimi />
       <ButceDonemi />
       <KurumBelgeleri />
@@ -783,6 +787,7 @@ export function IdariIslemler() {
       {izId && <Blok baslik="İzin Belgesi"><BelgeSec ad="Rapor veya Belge" bagTuru="İzin" bagKimligi={izId} deger={izB} sec={(k) => { setIzB(k); void yap(() => istek(`/izin/${izId}/belge`, { belge: k }).then(() => ({ uyari: 'Belge izin talebinize eklendi.' }))); }} /></Blok>}
       <Blok baslik="Masraf Fişi">
         <label htmlFor="ms-t">Masraf Türü</label><select id="ms-t" value={m.tur} onChange={(e) => setM({ ...m, tur: e.target.value })}>{['Yemek', 'Konaklama', 'Km', 'Ulaşım', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="ms-bt">Belge Türü</label><select id="ms-bt" value={m.belgeTuru} onChange={(e) => setM({ ...m, belgeTuru: e.target.value })}><option>Kağıt Fiş</option><option>e-Fatura</option><option>e-Arşiv</option></select>
         <div className="iki-tarih"><div><label htmlFor="ms-d">Fiş Tarihi</label><input id="ms-d" type="date" value={m.tarih} onChange={(e) => setM({ ...m, tarih: e.target.value })} /></div><div><label htmlFor="ms-n">Belge No</label><input id="ms-n" value={m.belgeOzeti} onChange={(e) => setM({ ...m, belgeOzeti: e.target.value })} /></div></div>
         <div className="iki-tarih"><div><label htmlFor="ms-a">Tutar (TL)</label><input id="ms-a" inputMode="decimal" value={m.tutarTl} onChange={(e) => setM({ ...m, tutarTl: e.target.value })} /></div><div><label htmlFor="ms-k">TCMB Kuru</label><input id="ms-k" inputMode="decimal" value={m.kur} onChange={(e) => setM({ ...m, kur: e.target.value })} /></div></div>
         <button className="btn2" onClick={() => void yap(() => istek<{ odenecek: number; kesilen: number }>('/masraf', { ...m, tutarTl: Number(m.tutarTl.replace(',', '.')), kur: Number(m.kur.replace(',', '.')), miktar: Number(m.miktar) }).then((r) => ({ uyari: `Ödenecek: ${eur(r.odenecek)}${r.kesilen > 0 ? ` · Limit Aşımı: ${eur(r.kesilen)}` : ''}` })))}>Masraf Gönder</button>

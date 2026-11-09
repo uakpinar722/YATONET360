@@ -443,7 +443,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   // YG-081, YG-085, YG-1423, YG-1424, YG-1425: garanti ve şikâyet ayrı kayıt; numara GKnn / SKnn; kapalı dosyayı açmaz. Şikâyette 10 iş günü nihai yanıt.
   s.post('/dosya/:id/garanti-sikayet', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { turler?: string[]; kanal?: string; bildirimZamani?: string; belirti?: string; konu?: string; oncelik?: string; tekrarlayan?: boolean; konum?: string };
+    const g = (i.body ?? {}) as { turler?: string[]; kanal?: string; bildirimZamani?: string; belirti?: string; konu?: string; oncelik?: string; tekrarlayan?: boolean; konum?: string; yurtDisi?: boolean; yerinde?: boolean };
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     const turler = g.turler ?? [];
@@ -452,6 +452,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!ONCELIK_SIRA.includes(g.oncelik ?? '')) return y.code(400).send({ hata: 'Önceliği seçiniz.' });
     const garanti = turler.includes('Garanti bildirimi'); const sikayet = turler.includes('Şikâyet');
     if (garanti && !g.belirti?.trim()) return y.code(400).send({ hata: 'Belirti zorunludur.' });
+    if (g.yerinde && !(garanti && g.yurtDisi)) return y.code(400).send({ hata: 'Yerinde müdahale yalnız yurt dışı garanti talebinde seçilir.' });
     if (sikayet && !g.konu?.trim()) return y.code(400).send({ hata: 'Şikâyet konusu zorunludur.' });
     return islem(async (c) => {
       const no = await altNumara(c, d.dosya_no, garanti ? 'GK' : 'SK');
@@ -459,12 +460,14 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       // YG-1417: garanti keşfi Yüksek 48 saat, Normal ve Planlı en geç 72 saat. Kritikte acil evre kuralı geçerlidir.
       const kesifSaat: Record<string, number | null> = { Kritik: null, Yüksek: 48, Normal: 72, Planlı: 72 };
       const saat = kesifSaat[g.oncelik!];
-      const kesifSon = garanti && saat ? new Date(simdi.getTime() + saat * 3_600_000) : null;
+      // YG-1422: yurt dışındaki yatta garanti Türkiye'de yerine getirilir; keşif süresi yat gelene kadar işlemez.
+      const kesifSon = garanti && saat && !g.yurtDisi ? new Date(simdi.getTime() + saat * 3_600_000) : null;
       const takip = sikayet ? (await rolSahipleri(c, await rolId(c, 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı')))[0] : null;
       const sonuc = sikayet ? (await rolSahipleri(c, await rolId(c, 'Müşteri ve Paydaş İlişkileri Müdürü')))[0] : null;
       const yanitSon = sikayet ? await isGunuEkle(c, simdi, 10) : null;
       const k = (await c.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, konum, belirti, oncelik, tekrarlayan, sikayet_konusu, kesif_son, yanit_son, sikayet_takip_ref, sikayet_sonuc_ref, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`,
         [no, id, turler, g.kanal, g.bildirimZamani ? new Date(g.bildirimZamani) : simdi, g.konum?.trim() || d.konum, g.belirti?.trim() || null, g.oncelik, Boolean(g.tekrarlayan), g.konu?.trim() || null, kesifSon, yanitSon, takip ?? null, sonuc ?? null, o.kullanici])).rows[0];
+      if (g.yurtDisi && garanti) { await c.query(`UPDATE garanti_sikayet SET yurt_disi = true, yerinde_mudahale = $2 WHERE kimlik = $1`, [k.kimlik, Boolean(g.yerinde)]); if (g.yerinde) await kartAc(c, { tur: 'Fiyat Teklifi Hazırla', kategori: 'islem', baslik: `${no} · Yurt Dışı Yerinde Müdahale Teklifi`, ozet: 'Garanti Türkiye\'de yerine getirilir; yerinde müdahale ayrı teklifle yürür.', sahipRol: await rolId(c, 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)'), nesneTuru: 'Garanti Şikâyet', nesneKimligi: k.kimlik }); }
       await c.query(`UPDATE garanti_sikayet g SET kurulus_ref = (SELECT e.kurulus_ref FROM is_emri e WHERE e.dosya_ref = $2 AND e.is_emri_turu IN ('ON', 'EK') ORDER BY e.olusturma_zamani DESC LIMIT 1) WHERE g.kimlik = $1`, [k.kimlik, id]); // YG-335: ayıp bildirimi işi yapan firmaya bağlanır
       if (takip) await kartAc(c, { tur: 'Şikâyet Takibi', kategori: 'islem', baslik: `${no} · Şikâyet Kaydı ve İlk Teyit`, ozet: g.konu!.trim().slice(0, 200), sahipKullanici: takip, sonZaman: yanitSon, nesneTuru: 'Garanti Şikâyet', nesneKimligi: k.kimlik });
       if (garanti && d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Garanti Keşfi', kategori: 'gorev', baslik: `${no} · Garanti Keşfi`, ozet: g.belirti!.trim().slice(0, 200), oncelik: g.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sonZaman: kesifSon, sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Garanti Şikâyet', nesneKimligi: k.kimlik });

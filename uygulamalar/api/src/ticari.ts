@@ -580,17 +580,18 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-920, YG-921: masraf; limit EUR, form TL; 30 gün sınırı; aşan ödenmez; belgesiz ve mükerrer kabul edilmez; 250 EUR üstü TİD.
   s.post('/masraf', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string; belgeTuru?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     if (!g.tur?.trim() || !g.tarih || !(Number(g.tutarTl) > 0) || !(Number(g.kur) > 0)) return y.code(400).send({ hata: 'Tür, tarih, tutar ve kur zorunludur.' });
     if (!g.belgeOzeti?.trim()) return y.code(400).send({ hata: 'Masraf için belge numarasını yazmanızı rica ederiz.' });
+    if (g.belgeTuru && !['Kağıt Fiş', 'e-Fatura', 'e-Arşiv'].includes(g.belgeTuru)) return y.code(400).send({ hata: 'Belge türü geçersizdir.' }); // YG-1622
     if ((Date.now() - new Date(g.tarih).getTime()) / 86_400_000 > 30) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
     const eur = R2(Number(g.tutarTl) / Number(g.kur));
     const lim = { km: await parametre(b.db, 'masraf_km_eur'), yemek: await parametre(b.db, 'masraf_yemek_eur'), konaklama: await parametre(b.db, 'masraf_konaklama_eur') };
     const od = masrafOdenecek(g.tur, eur, Number(g.miktar ?? 1), lim);
     if ((await b.db.query(`SELECT 1 FROM personel_masraf_fisi WHERE personel_ref = $1 AND belge_ozeti = $2`, [o.kullanici, g.belgeOzeti.trim()])).rowCount) return y.code(409).send({ hata: 'Bu belge daha önce girilmiştir.' });
     return islem(async (c) => {
-      const r = (await c.query(`INSERT INTO personel_masraf_fisi (personel_ref, masraf_turu, fis_tarihi, tutar_tl, kur, tutar_eur, odenecek_eur, miktar, belge_ref, belge_ozeti) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [o.kullanici, g.tur, g.tarih, g.tutarTl, g.kur, eur, od, g.miktar ?? 1, g.belge ?? null, g.belgeOzeti!.trim()])).rows[0];
+      const r = (await c.query(`INSERT INTO personel_masraf_fisi (personel_ref, masraf_turu, fis_tarihi, tutar_tl, kur, tutar_eur, odenecek_eur, miktar, belge_ref, belge_ozeti, belge_turu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11, 'Kağıt Fiş')) RETURNING kimlik`, [o.kullanici, g.tur, g.tarih, g.tutarTl, g.kur, eur, od, g.miktar ?? 1, g.belge ?? null, g.belgeOzeti!.trim(), g.belgeTuru ?? null])).rows[0];
       const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
       const zincir = [await onayMakami(c, rl.kimlik)];
       const my = await rolId(c, 'Muhasebe ve Finans Yöneticisi'); if ((await rolSahipleri(c, my)).length) zincir.push(my);

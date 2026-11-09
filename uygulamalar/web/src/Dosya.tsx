@@ -340,7 +340,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
   const [gKalem, setGKalem] = useState(KALEMLER[0]!); const [gBelge, setGBelge] = useState(''); const [gBolge, setGBolge] = useState(''); const [gOlcek, setGOlcek] = useState(''); const [gNeden, setGNeden] = useState('');
   const [iTur, setITur] = useState('Askı'); const [iNeden, setINeden] = useState(''); const [iGer, setIGer] = useState(''); const [iYapilan, setIYapilan] = useState(''); const [iAcik, setIAcik] = useState(''); const [iTeslim, setITeslim] = useState(''); const [iDev, setIDev] = useState('');
   const [kNeden, setKNeden] = useState(''); const [beyan, setBeyan] = useState(false);
-  const [gsTur, setGsTur] = useState('Garanti bildirimi'); const [gsAcik, setGsAcik] = useState('');
+  const [gsTur, setGsTur] = useState('Garanti bildirimi'); const [gsYd, setGsYd] = useState(false); const [gsYer, setGsYer] = useState(false); const [gsAcik, setGsAcik] = useState('');
   const yukle = () => istek<Saha>(`/dosya/${id}/saha`).then(setV).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, [id]);
   const yap = async (f: () => Promise<any>, tamam?: string) => { setHata(''); setNot(''); try { await f(); if (tamam) setNot(tamam); await yukle(); yenile(); } catch (x) { setHata((x as Error).message); } };
@@ -406,7 +406,8 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}{!g.karar && g.statu !== 'Kapalı' && <GarantiKarar id={g.kimlik} yap={yap} />}</div>)}
         <label htmlFor="gs-t">Kayıt Türü</label><select id="gs-t" value={gsTur} onChange={(e) => setGsTur(e.target.value)}><option>Garanti bildirimi</option><option>Şikâyet</option></select>
         <label htmlFor="gs-a">{gsTur === 'Şikâyet' ? 'Şikâyet Konusu' : 'Belirti'}</label><input id="gs-a" value={gsAcik} onChange={(e) => setGsAcik(e.target.value)} />
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/garanti-sikayet`, { turler: [gsTur], kanal: 'Telefon', oncelik: 'Normal', belirti: gsTur === 'Şikâyet' ? undefined : gsAcik, konu: gsTur === 'Şikâyet' ? gsAcik : undefined }))}>Kaydı Aç</button>
+        {gsTur !== 'Şikâyet' && <><label><input type="checkbox" checked={gsYd} onChange={(e) => setGsYd(e.target.checked)} /> Yat Yurt Dışında</label>{gsYd && <label><input type="checkbox" checked={gsYer} onChange={(e) => setGsYer(e.target.checked)} /> Yerinde Müdahale İsteniyor (Ayrı Teklif)</label>}</>}
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/garanti-sikayet`, { turler: [gsTur], kanal: 'Telefon', oncelik: 'Normal', belirti: gsTur === 'Şikâyet' ? undefined : gsAcik, konu: gsTur === 'Şikâyet' ? gsAcik : undefined, yurtDisi: gsTur !== 'Şikâyet' && gsYd ? true : undefined, yerinde: gsTur !== 'Şikâyet' && gsYd && gsYer ? true : undefined }))}>Kaydı Aç</button>
       </Blok>
     </>
   );
