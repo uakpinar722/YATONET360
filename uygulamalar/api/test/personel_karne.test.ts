@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { gostergePuani, karneKapanisGorevi, nihaiPuan } from '../src/personel_karne.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test73', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -88,5 +88,40 @@ describe('Dosya Sorumlusu göstergeleri ve zorluk katsayısı (YG-964, YG-965)',
     const r = (await o.ist('GET', `/api/personel-karne?donem=${D2}`, await o.gir('ds'))).json();
     const s = r.satirlar.find((x: { gosterge: string }) => x.gosterge === 'Süre uyumu'); expect(s).toMatchObject({ pay: 2, payda: 3, deger: 66.67, puan: 74.08 }); expect(s.kapsam).toContain('İlerleme raporu');
     expect(r.satirlar.find((x: { gosterge: string }) => x.gosterge === 'Kayıt bütünlüğü').puan).toBeNull(); expect(r.sistem).toBe(74.08);
+  });
+});
+
+describe('memnuniyet anketi ve değerlendirme (YG-1470, YG-962, YG-971, YG-973)', () => {
+  const kapat = async (saat: number, ek = '') => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET statu = 'Teknik Kapalı', musteri_turu = 'Bireysel Müşteri' ${ek} WHERE kimlik = $1`, [d.kimlik]);
+    const bo = (await o.sup.query(`SELECT column_name c FROM information_schema.columns WHERE table_name = 'kapanis_kontrolu' AND is_nullable = 'NO' AND column_default IS NULL AND data_type = 'boolean'`)).rows.map((r) => r.c as string);
+    await o.sup.query(`INSERT INTO kapanis_kontrolu (dosya_ref, hazirlayan_ref, cikis_statusu, durum, kapanis_zamani${bo.map((b) => `, ${b}`).join('')}) VALUES ($1,$2,'Teknik Kapalı','Onaylandı',now() - make_interval(hours => $3)${bo.map(() => ', true').join('')})`, [d.kimlik, o.K.ds, saat]);
+    return d.kimlik as string;
+  };
+  it('48 saatten önce gitmez; vefatta gitmez; tek kullanımlık; 2 ve altında görev açılır', async () => {
+    const { anketGonder } = await import('../src/memnuniyet.js');
+    const erken = await kapat(10); const vefat = await kapat(60, ', vefat_isareti = true'); const d = await kapat(60);
+    const l = await anketGonder(o.db, 'http://x'); const bul = (k: string) => l.find((x) => x.dosya === k);
+    expect(bul(erken)).toBeUndefined(); expect(bul(vefat)).toBeUndefined(); expect(bul(d)).toBeDefined(); expect((await anketGonder(o.db, 'http://x')).find((x) => x.dosya === d)).toBeUndefined();
+    const u = `/api/anket/${bul(d)!.belirtec}`; const a = await o.ist('GET', u, ''); expect(a.json()).toEqual({ dil: 'tr', yanitlandi: false });
+    expect((await o.ist('GET', `/api/anket/${'0'.repeat(64)}`, '')).statusCode).toBe(404);
+    expect((await o.ist('POST', u, '', { genel: 6, iletisim: 5, isKalitesi: 5 })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, '', { genel: 5, iletisim: 2, isKalitesi: 5, yorum: 'Geç döndünüz' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, '', { genel: 5, iletisim: 5, isKalitesi: 5 })).statusCode).toBe(409);
+    const k = (await o.sup.query(`SELECT kimlik, ortalama::float o FROM memnuniyet_anketi WHERE dosya_ref = $1`, [d])).rows[0]; expect(k.o).toBe(4);
+    expect((await o.kart('Memnuniyet Görüşmesi', k.kimlik)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', `/api/anket-gorusme/${k.kimlik}`, await o.gir('ds'), { sonuc: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/anket-gorusme/${k.kimlik}`, await o.gir('mpm'), { sonuc: 'Arandı, çözüldü' })).statusCode).toBe(200);
+    expect((await o.kart('Memnuniyet Görüşmesi', k.kimlik)).durum).toBe('Tamamlandı');
+  });
+  it('üç aylık ve yıllık değerlendirmeyi üst makam kaydeder; yıllıkta eğitim ihtiyacı zorunlu; görev tanımı rolünü gösterir', async () => {
+    const opm = await o.gir('opm'); const u = '/api/personel-karne/degerlendirme'; const G = { kullanici: o.K.ds, gorusmeTarihi: '2026-11-01', notlar: 'Görüşüldü' };
+    expect((await o.ist('POST', u, await o.gir('iks'), { ...G, tur: 'Üç Aylık', donem: '2026-Q4' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, opm, { ...G, tur: 'Yıllık', donem: '2026' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, opm, { ...G, tur: 'Üç Aylık', donem: '2026-Q4' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, opm, { ...G, tur: 'Üç Aylık', donem: '2026-Q4' })).statusCode).toBe(409);
+    expect((await o.ist('POST', u, opm, { ...G, tur: 'Yıllık', donem: '2026', egitim: 'Hasar raporu' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/personel-karne?donem=2026-11', await o.gir('ds'))).json().degerlendirmeler.length).toBe(2);
+    const g = (await o.ist('GET', '/api/gorev-tanimim', await o.gir('ds'))).json(); expect(g[0].rol).toBe('Dosya Sorumlusu'); expect(g[0].bloklar.some((x: { m: string }) => x.m === 'Amaç')).toBe(true); expect(g[0].bloklar.some((x: { m: string }) => x.m === 'Karne göstergeleri')).toBe(false);
   });
 });

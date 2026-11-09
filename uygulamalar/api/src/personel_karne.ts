@@ -32,7 +32,7 @@ async function onaySureOlc(db: Db, kullanici: string, rol: string, donem: string
   return r.payda ? { pay: r.pay, payda: r.payda } : null;
 }
 const ay = (alan: string) => `to_char(${alan} AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $2`;
-const kapanan = `FROM kapanis_kontrolu c JOIN dosya d ON d.kimlik = c.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND c.durum = 'Onaylandı' AND ${ay('c.kapanis_zamani')}`;
+const kapanan = `FROM kapanis_kontrolu c JOIN dosya d ON d.kimlik = c.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND c.durum = 'Onaylandı' AND c.cikis_statusu = 'Teknik Kapalı' AND ${ay('c.kapanis_zamani')}`;
 /** Dosya Sorumlusu: dosyaya dayalı göstergeler zorluk katsayısıyla ağırlıklıdır (Cilt I ¶2029). Kaynağı henüz olmayan kısım kapsam notunda görünür. */
 const DS_SORGU: Record<string, { sql: string; kapsam: string }> = {
   'Süre uyumu': { kapsam: 'İlerleme raporu adımı henüz sayılmıyor.', sql: `SELECT sum(k) payda, coalesce(sum(k) FILTER (WHERE ok), 0) pay FROM (
@@ -40,7 +40,7 @@ const DS_SORGU: Record<string, { sql: string; kapsam: string }> = {
       UNION ALL SELECT d.zorluk_katsayisi, (m.gerceklesme_tarihi IS NOT NULL AND m.gerceklesme_tarihi <= coalesce(m.guncel_tarih, m.baz_tarih)) FROM kilometre_tasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND to_char(coalesce(m.guncel_tarih, m.baz_tarih), 'YYYY-MM') = $2 AND (m.gerceklesme_tarihi IS NOT NULL OR coalesce(m.guncel_tarih, m.baz_tarih) < current_date)) x` },
   'Kalite (ilk seferde kabul, uygunsuzluk)': { kapsam: 'Uygunsuzluk düşümü tanımlı olmadığından yalnız ilk seferde kabul sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE e.teknik_ret_sayisi = 0), 0) pay FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND EXISTS (SELECT 1 FROM kabul_kaydi k WHERE k.is_emri_ref = e.kimlik AND ${ay('k.olusturma_zamani')})` },
   'Mali sonuç (marj, tahsilat süresi)': { kapsam: 'Net marj henüz ölçülmüyor; yalnız vadesinde tahsilat sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE f.tahsil_edilen_eur >= f.toplam_eur AND (SELECT max(t.tarih) FROM tahsilat t WHERE t.fatura_ref = f.kimlik) <= f.vade), 0) pay FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND f.fatura_no IS NOT NULL AND f.vade < current_date AND to_char(f.vade, 'YYYY-MM') = $2` },
-  'Müşteri ve şikâyet': { kapsam: 'Memnuniyet puanı henüz ölçülmüyor; yalnız şikâyetsiz kapanış sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE NOT EXISTS (SELECT 1 FROM garanti_sikayet g WHERE g.dosya_ref = d.kimlik AND 'Şikâyet' = ANY(g.kayit_turu))), 0) pay ${kapanan}` },
+  'Müşteri ve şikâyet': { kapsam: 'Anket yanıtı olmayan dosyada yalnız şikâyetsiz kapanış sayılıyor.', sql: `SELECT sum(z.k) payda, coalesce(sum(z.k * CASE WHEN z.o IS NULL THEN z.s ELSE (z.o / 5 + z.s) / 2 END), 0) pay FROM (SELECT d.zorluk_katsayisi k, (SELECT a.ortalama FROM memnuniyet_anketi a WHERE a.dosya_ref = d.kimlik) o, (CASE WHEN EXISTS (SELECT 1 FROM garanti_sikayet g WHERE g.dosya_ref = d.kimlik AND 'Şikâyet' = ANY(g.kayit_turu)) THEN 0 ELSE 1 END)::numeric s ${kapanan}) z` },
   'Kayıt bütünlüğü': { kapsam: 'Form süresi henüz sayılmıyor; yalnız eksiksiz kapanış sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE cardinality(coalesce(c.eksiklik_isaretleri, '{}')) = 0), 0) pay ${kapanan}` },
 };
 async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: string, donem: string): Promise<Olcum | null> {
@@ -130,7 +130,9 @@ export function personelKarneYollari(s: FastifyInstance, b: Baglam) {
     const rol = await karneRolu(b.db, kisi); if (!rol) return yok(y);
     const k = await donemKaydi(kisi, donem);
     const itiraz = k ? (await b.db.query(`SELECT durum, konu, karar_gerekce FROM personel_karne_itiraz WHERE donem_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 5`, [k.kimlik])).rows : [];
-    const ortak = { rol: rol.ad, donem, kendisi: kisi === o.kullanici, ikYetkili: await rolVar(o.kullanici, IKS), itiraz };
+    const hf = (await b.db.query(`SELECT count(*)::int payda, (count(*) FILTER (WHERE c.kapanma_zamani <= c.son_zaman))::int pay FROM is_karti c WHERE c.son_zaman BETWEEN now() - interval '7 days' AND now() AND (c.sahip_kullanici_ref = $1 OR c.sahip_rol_ref = $2)`, [kisi, rol.kimlik])).rows[0]; // YG-962: haftalık süre uyumu, puansız
+    const degerlendirmeler = (await b.db.query(`SELECT tur, donem, gorusme_tarihi::text, notlar, egitim_ihtiyaci FROM personel_degerlendirme WHERE personel_ref = $1 ORDER BY zaman DESC LIMIT 12`, [kisi])).rows;
+    const ortak = { rol: rol.ad, donem, kendisi: kisi === o.kullanici, ikYetkili: await rolVar(o.kullanici, IKS), itiraz, haftalik: hf, degerlendirmeler };
     if (k?.durum === 'Kapalı') {
       const satirlar = (await b.db.query(`SELECT g.kimlik, g.gosterge, g.hesap, g.hedef, s.agirlik, s.pay, s.payda, s.deger, s.puan, s.kapsam FROM personel_karne_satir s JOIN karne_gosterge g ON g.kimlik = s.gosterge_ref WHERE s.donem_ref = $1 ORDER BY g.sira`, [k.kimlik])).rows;
       return { ...ortak, durum: 'Kapalı', satirlar, sistem: num(k.sistem_puani), yonetici: num(k.yonetici_puani), nihai: num(k.nihai_puan) };
@@ -176,6 +178,17 @@ export function personelKarneYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       return { kisi: kisiler.length };
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
+  });
+
+  // YG-962, YG-971: üç aylık görüşme ve yıllık değerlendirme doğrudan üst makamca kaydedilir; yıllıkta eğitim ve gelişim ihtiyacı zorunludur.
+  s.post('/personel-karne/degerlendirme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { kullanici?: string; tur?: string; donem?: string; gorusmeTarihi?: string; notlar?: string; egitim?: string };
+    const rol = g.kullanici ? await karneRolu(b.db, g.kullanici) : null; if (!rol || !g.kullanici) return yok(y);
+    const m = await karneMakami(b.db, rol); if (!m || !(await rolSahipleri(b.db, m)).includes(o.kullanici)) return yok(y);
+    const gecerli = g.tur === 'Üç Aylık' ? /^\d{4}-Q[1-4]$/.test(g.donem ?? '') : g.tur === 'Yıllık' && /^\d{4}$/.test(g.donem ?? '');
+    if (!gecerli || !/^\d{4}-\d{2}-\d{2}$/.test(g.gorusmeTarihi ?? '') || !g.notlar?.trim() || (g.tur === 'Yıllık' && !g.egitim?.trim())) return y.code(400).send({ hata: 'Dönem, görüşme tarihi ve notlar zorunludur; yıllık değerlendirmede eğitim ve gelişim ihtiyacı da yazılır.' });
+    const r = await b.db.query(`INSERT INTO personel_degerlendirme (personel_ref, tur, donem, gorusme_tarihi, notlar, egitim_ihtiyaci, amir_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING RETURNING kimlik`, [g.kullanici, g.tur, g.donem, g.gorusmeTarihi, g.notlar.trim(), g.egitim?.trim() || null, o.kullanici]);
+    return r.rowCount ? { kimlik: r.rows[0].kimlik } : y.code(409).send({ hata: 'Bu dönem için değerlendirme kaydedilmiştir.' });
   });
 
   // YG-967, YG-968: yalnız karnenin sahibi, kapanıştan itibaren 10 iş günü içinde itiraz eder; bir üst makam karar verir.

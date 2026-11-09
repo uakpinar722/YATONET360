@@ -1,3 +1,4 @@
+import { Anket } from './Memnuniyet';
 import { useEffect, useState } from 'react';
 import { ApiHatasi, istek, type Ben } from './api';
 import { BelgeDogrula, PaylasimAc } from './Genel';
@@ -30,10 +31,11 @@ export function Uygulama() {
   }, []);
   if (!hazir) return null;
   // Giriş gerektirmeyen sayfalar (YG-611, YG-691).
-  const genel = /^#(dogrula|paylasim|onay|ekip)=?(.*)$/.exec(location.hash);
+  const genel = /^#(dogrula|paylasim|onay|ekip|anket)=?(.*)$/.exec(location.hash);
   if (genel?.[1] === 'dogrula') return <BelgeDogrula ilkKod={genel[2] ?? ''} />;
   if (genel?.[1] === 'paylasim' && genel[2]) return <PaylasimAc belirtec={genel[2]} />;
   if (genel?.[1] === 'onay' && genel[2]) return <OnayEkrani belirtec={genel[2]} />;
+  if (genel?.[1] === 'anket' && genel[2]) return <Anket belirtec={genel[2]} />; // YG-1470
   if (genel?.[1] === 'ekip' && genel[2]) return <EkipKartiDogrula kod={genel[2]} />; // YG-424
   if (davet) return <Davet belirtec={davet} bitti={() => { setDavet(null); void yenile(); }} />;
   if (parola) return <ParolaYenile belirtec={parola} bitti={() => { history.replaceState(null, '', location.pathname); setParola(null); setBen(null); }} />;

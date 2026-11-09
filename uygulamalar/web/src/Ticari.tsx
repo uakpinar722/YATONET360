@@ -9,6 +9,7 @@ import { IdariTalep } from './IdariTalep';
 import { PersonelEk } from './PersonelEk';
 import { PoliceListesi } from './FirmaPolice';
 import { PersonelKarne } from './PersonelKarne';
+import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
@@ -776,6 +777,8 @@ export function IdariIslemler() {
       <PersonelEk />
       <PoliceListesi />
       <PersonelKarne />
+      <GorevTanimim />
+      <MemnuniyetGorusme />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
