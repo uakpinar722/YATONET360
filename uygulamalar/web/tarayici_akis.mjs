@@ -258,8 +258,9 @@ try {
   kontrol('firma IBAN bildirir, karantinada başlar', ibF === 'Karantina');
   await sup.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kurulus_ref = $1`, [firma]); // sonraki sicil adımı kendi IBAN'ını teyit eder
   await sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur IN ('Banka Hesabı Onayı', 'Banka Geri Arama Teyidi') AND baslik LIKE $1`, [`E2E Firma ${tek}%`]);
-  await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et'); await pFf.waitForTimeout(400);
-  kontrol('firma bilgi değişikliği teyide gider', (await sup.query(`SELECT durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1`, [firma])).rows[0]?.durum === 'Teyit Bekliyor');
+  await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et');
+  let bdF; for (let n = 0; n < 25 && !bdF; n++) { bdF = (await sup.query(`SELECT durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1`, [firma])).rows[0]?.durum; if (!bdF) await pFf.waitForTimeout(200); }
+  kontrol('firma bilgi değişikliği teyide gider', bdF === 'Teyit Bekliyor');
 
   // Karne (YG-351, YG-795)
   await pFf.getByText('Performans Karnesi').first().waitFor();

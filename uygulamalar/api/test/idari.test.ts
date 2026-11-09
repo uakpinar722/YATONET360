@@ -36,3 +36,25 @@ describe('CEO masraf raporu (YG-1677)', () => {
     expect(await ceoMasrafRaporIsle(o.db, S)).toBe(true); expect(await ceoMasrafRaporIsle(o.db, S)).toBe(false);
   });
 });
+
+describe('personel ek kayıtları (YG-974, YG-956, YG-947)', () => {
+  it('zimmet personel beyanıyla oluşur, iadeyi idari işler alır', async () => {
+    const ds = await o.gir('ds'); expect((await o.ist('POST', '/api/zimmet', ds, { ekipman: '' })).statusCode).toBe(400);
+    const z = (await o.ist('POST', '/api/zimmet', ds, { ekipman: 'Telefon', seri: 'S1', tarih: '2026-11-01' })).json().kimlik as string;
+    expect((await o.ist('POST', `/api/zimmet/${z}/iade`, ds, {})).statusCode).toBe(404);
+    const idr = await o.gir('idr'); expect((await o.ist('GET', '/api/personel-ek', idr)).json().acikZimmetler.some((x: { kimlik: string }) => x.kimlik === z)).toBe(true);
+    expect((await o.ist('POST', `/api/zimmet/${z}/iade`, idr, {})).statusCode).toBe(200); expect((await o.ist('POST', `/api/zimmet/${z}/iade`, idr, {})).statusCode).toBe(409);
+  });
+  it('nöbet düzenini yalnız birim amiri belirler; aynı nöbete ikinci kayıt olmaz', async () => {
+    const G = { personel: o.K.ds, nobetTarihi: '2026-11-01', duzen: 'Geç Başlama', uygulamaTarihi: '2026-11-02' };
+    expect((await o.ist('POST', '/api/nobet-serbest-zaman', await o.gir('idr'), G)).statusCode).toBe(404);
+    const op = await o.gir('opm'); expect((await o.ist('POST', '/api/nobet-serbest-zaman', op, { ...G, uygulamaTarihi: '2026-11-01' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/nobet-serbest-zaman', op, G)).statusCode).toBe(200); expect((await o.ist('POST', '/api/nobet-serbest-zaman', op, G)).statusCode).toBe(409);
+  });
+  it('rıza geri alınınca evlilik tarihi silinir', async () => {
+    const ds = await o.gir('ds'); expect((await o.ist('POST', '/api/personel-ozel-gun', ds, { riza: true })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/personel-ozel-gun', ds, { riza: true, evlilikTarihi: '2020-06-01' })).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/personel-ozel-gun', ds, { riza: false })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT evlilik_tarihi, paylasim_rizasi FROM personel_ozel_gun WHERE personel_ref = $1`, [o.K.ds])).rows[0]).toEqual({ evlilik_tarihi: null, paylasim_rizasi: false });
+  });
+});

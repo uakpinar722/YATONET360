@@ -6,6 +6,7 @@ import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
 import { TopluOdeme } from './TopluOdeme';
 import { IdariTalep } from './IdariTalep';
+import { PersonelEk } from './PersonelEk';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
@@ -770,6 +771,7 @@ export function IdariIslemler() {
       <TicariAtamaBekleyenler />
       <TopluOdeme />
       <IdariTalep />
+      <PersonelEk />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

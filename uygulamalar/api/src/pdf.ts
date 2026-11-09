@@ -30,6 +30,8 @@ export interface BelgeTanim {
   isaret?: string;
   matbuBas?: string[]; bolumler: Bolum[]; matbuSon?: string[];
   onay?: { rol: string; zaman: string; kanal: string; kod?: string };
+  /** LGM'nin düzenlediği belgede kaşe; sözleşmelerde kullanılmaz (CEO 09.11). */
+  kase?: boolean;
 }
 
 const k = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -82,6 +84,8 @@ td.top { border: .5pt solid #D9D4CC; padding: 3pt 5pt; text-align: right; }
 tr.ana td { background: #F7F5F1; font-weight: 700; border-top: 1.2pt solid #A6743E; font-size: 11pt; }
 .matbu { margin-top: 3mm; text-align: justify; break-inside: avoid; }
 .matbu.son { font-size: 9.5pt; color: #333; }
+.kase { margin-top: 3mm; text-align: right; break-inside: avoid; }
+.kase img { width: 55mm; }
 .kapak { break-after: page; height: 250mm; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .kapak .lg { height: 22mm; }
 .kapak .si { width: 120mm; margin: 14mm 0; }
@@ -147,6 +151,7 @@ function belgeHtml(t: BelgeTanim, o: { kapak?: boolean; toc?: [string, number][]
 ${kapak}${toc}<div class="bas"><img src="${logo}" alt=""><div><h1>${k(t.ad)}</h1>${t.kod ? `<div class="kod">${k(t.kod)}</div>` : ''}</div></div>${band}
 ${t.icKayit ? `<div class="ic">${e.ic}</div>` : ''}
 ${(t.matbuBas ?? []).map((m) => `<p class="matbu">${k(m)}</p>`).join('')}${govde}${onay}
+${tamam && t.kase ? `<div class="kase"><img src="${gorsel(`veri/sablon/kase_${t.dil}.png`)}" alt="${k(UNVAN)}"></div>` : ''}
 ${tamam ? (t.matbuSon ?? []).map((m) => `<p class="matbu son">${k(m)}</p>`).join('') : ''}
 </body></html>`;
 }
