@@ -1,3 +1,4 @@
+import { ProsesLgm } from './Proses';
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
@@ -170,6 +171,7 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
         </>}
         {v.sapmalar.map((x) => <div className="soru" key={x.kimlik}><span>Sapma: {x.tur} · {x.karar} · {x.aciklama} · {x.durum}{x.hedef_tarih ? ` · Hedef: ${tarih(x.hedef_tarih)}` : ''}</span>{x.durum === 'Açık' && <div className="tam"><BelgeSec ad={`Kapanış Kanıtı ${x.tur}`} bagTuru="İş Emri" bagKimligi={isEmri} deger={kk[x.kimlik] ?? ''} sec={(b) => setKk({ ...kk, [x.kimlik]: b })} /><button className="btn2 kucuk" disabled={!kk[x.kimlik]} onClick={() => void yap(() => istek(`/sapma/${x.kimlik}/kapat`, { belge: kk[x.kimlik] }))}>Sapmayı Kapat</button></div>}</div>)}
         {v.bulgular.map((x) => <div key={x.kimlik}>Denetim: {x.sinif} · {x.aciklama}</div>)}
+        <ProsesLgm isEmri={isEmri} />
         <label><input type="checkbox" checked={v.teshisiBelirsiz} onChange={(e) => void yap(() => istek(`/is-emri/${isEmri}/teshisi-belirsiz`, { deger: e.target.checked }))} /> Teşhisi Belirsiz İş</label>
         <label htmlFor={`sp-t-${isEmri}`}>Sapma Türü</label><select id={`sp-t-${isEmri}`} value={s.tur} onChange={(e) => setS({ ...s, tur: e.target.value })}>{['Kapsam', 'Yöntem', 'Süre', 'Maliyet', 'Kalite', 'Güvenlik', 'Belge'].map((x) => <option key={x}>{x}</option>)}</select>
         <label htmlFor={`sp-a-${isEmri}`}>Sapma Açıklaması</label><input id={`sp-a-${isEmri}`} value={s.aciklama} onChange={(e) => setS({ ...s, aciklama: e.target.value })} />

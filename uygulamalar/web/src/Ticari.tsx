@@ -4,6 +4,7 @@ import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
+import { ProsesFirma } from './Proses';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
 import { EkipKarti, GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
@@ -384,6 +385,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaFiyat dosya={acik.dosya} yap={yap} />}
       {acik.statu === 'Aktif' && <CalismaIzni isEmri={acik.kimlik} yap={yap} />}
       {['Başlangıç Kontrolünde', 'Aktif', 'Çekinceli'].includes(acik.statu) && <EkipKarti isEmri={acik.kimlik} yap={yap} />}
+      {acik.statu === 'Aktif' && acik.tur !== 'KN' && <ProsesFirma isEmri={acik.kimlik} />}
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">
         <BelgeSec ad="Hakediş Kanıtı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
         <div className="iki-tarih"><div><label htmlFor="f-br">Brüt (EUR)</label><input id="f-br" inputMode="decimal" value={brut} onChange={(e) => setBrut(e.target.value)} /></div><div><label htmlFor="f-fn">Fatura No</label><input id="f-fn" value={fat} onChange={(e) => setFat(e.target.value)} /></div></div>

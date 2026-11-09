@@ -202,3 +202,46 @@ describe('ek test gerektiren sapma (YG-394)', () => {
     expect((await o.sup.query(`SELECT ek_test_ref FROM sapma_kaydi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].ek_test_ref).toBe(t);
   });
 });
+
+describe('proses kayıtları (YG-1455, YG-408, YG-282, PRS-1)', () => {
+  const S = { tur: 'Kompozit Laminasyon ve Kür', zaman: '2026-11-09T10:00', sicaklik: 22, nem: 55, recine: 4.5, sertlestirici: 1.5, katlar: 'CSM 450 + WR 600', vakum: -0.8, vakumSure: 120, sorumlu: 'Firma Teknik Lideri' };
+  it('sınırsız seans girilmez; sınır dışı değer kararı bekler ve yeni seansı kilitler; Durdur işi durdurur; Uygun Değil uygunsuzluk ister', async () => {
+    const { d, e } = await isEmri(); const tu = await o.gir('tu'); const up = `/api/firma-portal/is-emri/${e}/proses`; const us = `/api/is-emri/${e}/proses-siniri`;
+    expect((await o.ist('POST', up, fC, S)).statusCode).toBe(409);
+    expect((await o.ist('POST', us, await o.gir('ds'), { tur: S.tur, sicaklikMin: 15, dayanak: 'x' })).statusCode).toBe(403);
+    expect((await o.ist('POST', us, tu, { tur: S.tur, sicaklikMin: 15 })).statusCode).toBe(400);
+    expect((await o.ist('POST', us, tu, { tur: S.tur, sicaklikMin: 30, sicaklikMax: 20, dayanak: 'Reçine TDS' })).statusCode).toBe(400);
+    expect((await o.ist('POST', us, tu, { tur: S.tur, sicaklikMin: 15, sicaklikMax: 30, nemMax: 75, dayanak: 'Reçine TDS' })).statusCode).toBe(200);
+    expect((await o.ist('POST', up, fC, { ...S, recine: undefined })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/firma-portal/is-emri/${e}/proses`, f2C, S)).statusCode).toBe(404);
+    const a = await o.ist('POST', up, fC, S); expect(a.statusCode, a.body).toBe(200); expect(a.json()).toMatchObject({ seansNo: 1, sinirDisi: [] }); expect(a.json().kayitNo).toBe(`${d.dosyaNo}-FR-ONR-005-01`);
+    expect((await o.ist('POST', us, tu, { tur: S.tur, sicaklikMin: 10, dayanak: 'y' })).statusCode).toBe(409);
+    const ks = await o.ist('POST', `/api/proses-seansi/${a.json().kimlik}/sonuc`, await o.gir('ds'), { sonuc: 'Uygun' }); expect(ks.statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/proses-seansi/${a.json().kimlik}/sonuc`, tu, { sonuc: 'Uygun Değil' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/proses-seansi/${a.json().kimlik}/sonuc`, tu, { sonuc: 'Uygun' })).json().durum).toBe('Onaylı');
+    expect((await o.sup.query(`SELECT onaylayan_ref, onay_zamani FROM proses_seansi WHERE kimlik = $1`, [a.json().kimlik])).rows[0].onaylayan_ref).toBe(o.K.tu);
+    const b = await o.ist('POST', up, fC, { ...S, sicaklik: 12, nem: 80 }); expect(b.json().sinirDisi).toEqual(['Sıcaklık', 'Nem']);
+    const bk = b.json().kimlik as string; expect((await o.kart('Proses Sınır Dışı Değer', bk)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', up, fC, S)).json().hata).toContain('kararı beklenmektedir');
+    expect((await o.ist('POST', `/api/proses-seansi/${bk}/sonuc`, tu, { sonuc: 'Uygun' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/proses-seansi/${bk}/karar`, tu, { karar: 'Durdur' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/proses-seansi/${bk}/karar`, tu, { karar: 'Durdur', gerekce: 'Isıtma yetersiz' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [e])).rows[0].statu).toBe('Durduruldu');
+    expect((await o.kart('Proses Sınır Dışı Değer', bk)).durum).toBe('Tamamlandı');
+    expect((await o.ist('POST', up, fC, S)).statusCode).toBe(409);
+    const n = (await o.sup.query(`INSERT INTO uygunsuzluk (uygunsuzluk_no, dosya_ref, is_emri_ref, tespit_kaynagi, yer_nitelik, dayanak_olcut, gercek_durum, kanit_belge_ref, sinif, acan_ref) VALUES ($1,$2,$3,'K','Y','D','G',$4,'Minör',$5) RETURNING kimlik`, [`NCR-P${Date.now()}`, d.kimlik, e, await belge(e), o.K.ds])).rows[0].kimlik;
+    const r = await o.ist('POST', `/api/proses-seansi/${bk}/sonuc`, tu, { sonuc: 'Uygun Değil', uygunsuzluk: n }); expect(r.statusCode, r.body).toBe(200); expect(r.json().durum).toBe('Uygun Değil');
+    await expect(o.sup.query(`UPDATE proses_seansi SET uygunsuzluk_ref = NULL WHERE kimlik = $1`, [bk])).rejects.toThrow();
+  });
+  it('Devam kararıyla yeni seans girilebilir; yapıştırmada malzeme zorunlu', async () => {
+    const { e } = await isEmri(); const tu = await o.gir('tu'); const up = `/api/firma-portal/is-emri/${e}/proses`;
+    await o.ist('POST', `/api/is-emri/${e}/proses-siniri`, tu, { tur: S.tur, sicaklikMin: 15, dayanak: 'TDS' });
+    const b = (await o.ist('POST', up, fC, { ...S, sicaklik: 10 })).json().kimlik;
+    expect((await o.ist('POST', `/api/proses-seansi/${b}/karar`, tu, { karar: 'Devam', gerekce: 'Isıtıcı devreye alındı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', up, fC, S)).statusCode).toBe(200);
+    const Y = { tur: 'Yapıştırma, Sızdırmazlık ve Dolgu', zaman: S.zaman, sicaklik: 20, nem: 50, sorumlu: 'Usta' };
+    await o.ist('POST', `/api/is-emri/${e}/proses-siniri`, tu, { tur: Y.tur, nemMax: 80, dayanak: 'TDS' });
+    expect((await o.ist('POST', up, fC, Y)).statusCode).toBe(400);
+    expect((await o.ist('POST', up, fC, { ...Y, malzeme: 'Poliüretan, Parti 123' })).json().kayitNo).toContain('FR-ONR-006');
+  });
+});
