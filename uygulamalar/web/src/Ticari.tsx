@@ -12,6 +12,7 @@ import { PersonelKarne } from './PersonelKarne';
 import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
+import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
@@ -784,6 +785,9 @@ export function IdariIslemler() {
       <Akademi />
       <DenemeDegerlendirme />
       <Guvenlik />
+      <ProblemBulgu />
+      <VeriEnvanteri />
+      <VeriSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

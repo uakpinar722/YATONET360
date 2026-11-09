@@ -29,7 +29,8 @@ export async function etkinRoller(db: Pool | PoolClient, kullanici: string, onay
 
 export async function kullaniciIzinleri(db: Pool, kullanici: string) {
   const { rows } = await db.query(
-    `SELECT DISTINCT z.izin FROM rol_izni z WHERE z.rol_ref = ANY($1) ORDER BY z.izin`, [(await etkinRoller(db, kullanici)).map((r) => r.kimlik)]);
+    // YG-942: yüksek riskli (ayrıcalıklı) rolün izni, o role atanmış zorunlu ders beyan edilene kadar açılmaz.
+    `SELECT DISTINCT z.izin FROM rol_izni z JOIN rol r ON r.kimlik = z.rol_ref WHERE z.rol_ref = ANY($1) AND NOT (r.ayricalikli_rol AND EXISTS (SELECT 1 FROM akademi_ders d WHERE d.aktif AND d.tur = 'Zorunlu' AND r.rol_adi = ANY(d.roller) AND NOT EXISTS (SELECT 1 FROM akademi_beyan b WHERE b.ders_ref = d.kimlik AND b.surum = d.surum AND b.personel_ref = $2))) ORDER BY z.izin`, [(await etkinRoller(db, kullanici)).map((r) => r.kimlik), kullanici]);
   return rows.map((r) => r.izin as string);
 }
 

@@ -1,0 +1,10 @@
+-- YG-1179 kişisel veri envanteri; YG-1286 problem; YG-1293 sistem bulgusu.
+CREATE TABLE kisisel_veri_envanteri (varlik text PRIMARY KEY, ilgili_kisi_grubu text NOT NULL, veri_kategorisi text NOT NULL, isleme_amaci text NOT NULL, hukuki_sebep text NOT NULL, alici text NOT NULL, guvenlik_tedbiri text NOT NULL, guncelleyen_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zaman timestamptz NOT NULL DEFAULT now());
+CREATE TABLE problem_kaydi (
+  kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), problem_no text NOT NULL UNIQUE, kaynak text NOT NULL CHECK (kaynak IN ('Tekrarlayan Olay', 'Yüksek Etkili Olay', 'Denetim Bulgusu', 'Eğilim')), baslik text NOT NULL, aciklama text NOT NULL, sorumlu_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), hedef_tarih date NOT NULL, gecici_cozum text, olay_ref uuid, kok_neden text, kalici_cozum text, durum text NOT NULL DEFAULT 'Açık' CHECK (durum IN ('Açık', 'Kapalı')), acan_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), olusturma_zamani timestamptz NOT NULL DEFAULT now(), kapanis_zamani timestamptz
+);
+CREATE TABLE sistem_bulgusu (
+  kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), bulgu_no text NOT NULL UNIQUE, kosul text NOT NULL, olcut text NOT NULL, kanit text NOT NULL, neden_risk text NOT NULL, kapsam text NOT NULL, kok_neden text NOT NULL, sorumlu_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), hedef_tarih date NOT NULL, durum text NOT NULL DEFAULT 'Açık' CHECK (durum IN ('Açık', 'İstisna', 'Kapalı')), istisna_bitis date, kalan_risk text, istisna_veren_ref text REFERENCES kullanici_hesabi (kimlik), dogrulama_kaniti text, dogrulayan_ref text REFERENCES kullanici_hesabi (kimlik), acan_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), olusturma_zamani timestamptz NOT NULL DEFAULT now(), kapanis_zamani timestamptz, CHECK (dogrulayan_ref IS NULL OR dogrulayan_ref <> sorumlu_ref)
+);
+CREATE INDEX sistem_bulgusu_kok ON sistem_bulgusu (kok_neden);
+GRANT SELECT, INSERT, UPDATE ON kisisel_veri_envanteri, problem_kaydi, sistem_bulgusu TO yatonet_uygulama;
