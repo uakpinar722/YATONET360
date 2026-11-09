@@ -63,15 +63,14 @@ const gizli = (dil: Dil) => (dil === 'en' ? 'This document has been prepared sol
 const dogrula = (dil: Dil, kod: string, web: string) => (dil === 'en' ? `This document was generated and electronically approved on YATONET 360 and does not require a wet signature. Its authenticity can be verified at ${web}/dogrula with code ${kod}.` : `Bu belge YATONET 360 tarafından üretilmiş ve elektronik olarak onaylanmıştır; ıslak imza gerektirmez. Doğruluğunu ${kod} ile ${web}/dogrula üzerinden doğrulayabilirsiniz.`);
 const tesekkur = (dil: Dil) => (dil === 'en' ? 'Thank you for choosing LİMİT GLOBAL MARINE.' : 'LİMİT GLOBAL MARINE’ı tercih ettiğiniz için teşekkür ederiz.');
 
-/** SRE-1: süre ve iş günü takvimiyle hesaplanan tarih; avans alınmayan işte avans ifadesi yazılmaz. */
+/** SRE-1, SRE-2: teklifte yalnız iş günü yazılır, tarih onay sonrası bildirilir; avans alınmayan işte avans ifadesi yazılmaz. */
 async function teslimSatiri(db: Db, f: Record<string, any>, d: Record<string, any>, dil: Dil) {
   if (!f.bildirilen_sure_gun) return [];
-  const { isGunuSonu, parametre } = await import('./teklif.js'); const { avansHesapla } = await import('./ticari.js');
-  const tarih = gunAy(f.tahmini_teslim_tarihi ?? await isGunuSonu(db, new Date(), f.bildirilen_sure_gun));
+  const { parametre } = await import('./teklif.js'); const { avansHesapla } = await import('./ticari.js');
   const avans = avansHesapla(d.musteri_turu, Number(f.genel_toplam_eur), d.oncelik === 'Kritik', await parametre(db, 'avans_orani'), await parametre(db, 'sigorta_avans_esik_eur')) > 0;
   return dil === 'en'
-    ? [{ et: 'Estimated Repair Time / Estimated Delivery Date', deger: `${f.bildirilen_sure_gun} working days / ${tarih} (starting once the yacht is at the repair location and approval${avans ? ' and advance payment are' : ' is'} complete)` }]
-    : [{ et: 'Tahmini Onarım Süresi / Tahmini Teslim Tarihi', deger: `${f.bildirilen_sure_gun} iş günü / ${tarih} (yat onarım yerine ulaştıktan ve onay${avans ? ' ile avans' : ''} tamamlandıktan sonra işlemeye başlar)` }];
+    ? [{ et: 'Estimated Repair Time', deger: `${f.bildirilen_sure_gun} working days (starting once the yacht is at the repair location and approval${avans ? ' and advance payment are' : ' is'} complete)` }]
+    : [{ et: 'Tahmini Onarım Süresi', deger: `${f.bildirilen_sure_gun} iş günü (yat onarım yerine ulaştıktan ve onay${avans ? ' ile avans' : ''} tamamlandıktan sonra işlemeye başlar)` }];
 }
 
 export async function teklifTanim(db: Db, id: string, kod: string, web: string): Promise<{ t: BelgeTanim; dosyaAdi: string; sinif: string }> {

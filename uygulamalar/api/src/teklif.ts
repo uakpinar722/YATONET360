@@ -532,7 +532,6 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Teklif onayı için Lehtar muvafakati bekleniyor.' });
     const gun = await parametre(b.db, 'teklif_gecerlilik_gun');
     // K-241: sigortaya giden teklif ikinci teyide kadar gönderilmiş sayılmaz; portala düşmez, süre başlamaz.
-    if (t.bildirilen_sure_gun) await b.db.query(`UPDATE fiyat_teklifi SET tahmini_teslim_tarihi = $2 WHERE kimlik = $1`, [t.kimlik, (await isGunuSonu(b.db, new Date(), t.bildirilen_sure_gun)).toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' })]); // SRE-1
     if (t.teklif_muhatabi === 'Sigorta Şirketi') return islem(async (c) => {
       const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, s.sigortaci_adi, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
       // YG-443: sigorta şirketi portal kullanmak zorunda değildir; e-posta da portal kullanıcısı da yoksa teklif kimseye ulaşmaz.

@@ -465,7 +465,7 @@ describe('bildirilen onarım süresi (YG-1457)', () => {
     expect((await o.sup.query(`SELECT bildirilen_sure_gun FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].bildirilen_sure_gun).toBe(9); // 7 × 1,2 = 8,4 → 9
     expect((await o.sup.query(`SELECT tahmini_sure_gun FROM firma_teknik_raporu WHERE dosya_ref = $1`, [d.kimlik])).rows[0].tahmini_sure_gun).toBe(7);
     const { teklifTanim } = await import('../src/belge_uret.js'); const pdf = JSON.stringify((await teklifTanim(o.db, t.kimlik, 'K', 'http://x')).t);
-    expect(pdf).toContain('Tahmini Onarım Süresi / Tahmini Teslim Tarihi'); expect(pdf).toMatch(/9 iş günü \/ \d{2}\.\d{2}\.\d{4} \(yat onarım yerine ulaştıktan/);
+    expect(pdf).toContain('Tahmini Onarım Süresi'); expect(pdf).toContain('9 iş günü (yat onarım yerine ulaştıktan'); expect(pdf).not.toContain('Tahmini Teslim Tarihi'); // SRE-2
     // Revizyonda süre korunur.
     await o.sup.query(`UPDATE fiyat_teklifi SET hazirlayan_ref = $2 WHERE kimlik = $1`, [t.kimlik, o.K.ts]);
     const rv = await o.ist('POST', `/api/teklif/${t.kimlik}/revizyon`, await o.gir('ts'), { neden: 'Kapsam düzeltmesi' }); expect(rv.statusCode, rv.body).toBe(200);

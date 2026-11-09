@@ -73,9 +73,9 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/sigorta/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const sir = await sirketim(o.kullanici);
     if (!sir && !o.grup.startsWith('Sigorta')) return y.code(403).send({ hata: 'Bu sayfa sigorta kullanıcılarına açıktır.' });
-    const { rows } = await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, y.yat_adi, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE ${dosyaKosul} ORDER BY d.acilis_tarihi DESC LIMIT 200`, [sir ?? '', o.kullanici]);
+    const { rows } = await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.tahmini_teslim_tarihi::text, y.yat_adi, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE ${dosyaKosul} ORDER BY d.acilis_tarihi DESC LIMIT 200`, [sir ?? '', o.kullanici]);
     const grn = await (await import('./garanti_sigorta.js')).garantiDurumlari(b.db, rows.map((r) => r.kimlik as string)); // YG-1421
-    const dosyalar = []; for (const r of rows) { const m = await durum(r); dosyalar.push({ kimlik: r.kimlik, dosyaNo: r.dosya_no, hasarNo: r.sigorta_hasar_dosya_no, yat: r.yat_adi, durum: m.ad, renk: m.renk, garanti: grn.get(r.kimlik) ?? null }); }
+    const dosyalar = []; for (const r of rows) { const m = await durum(r); dosyalar.push({ kimlik: r.kimlik, dosyaNo: r.dosya_no, hasarNo: r.sigorta_hasar_dosya_no, yat: r.yat_adi, durum: m.ad, renk: m.renk, garanti: grn.get(r.kimlik) ?? null, tahminiTeslim: r.tahmini_teslim_tarihi ?? null }); }
     const bekleyen = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.ara_toplam_eur, f.genel_toplam_eur, f.sigorta_karar_son, d.dosya_no FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE f.statu = 'Gönderildi' AND f.teklif_muhatabi = 'Sigorta Şirketi' AND ${dosyaKosul} ORDER BY f.sigorta_karar_son NULLS LAST`, [sir ?? '', o.kullanici])).rows;
     return { dosyalar, bekleyen };
   });
@@ -83,7 +83,7 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/sigorta/teklif/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const sir = await sirketim(o.kullanici);
     if (!UUID.test(id)) return yok(y);
-    const t = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.ara_toplam_eur, f.indirim_tutari_eur, f.kdv_tutari_eur, f.genel_toplam_eur, f.gecerlilik_bitis_tarihi::text, f.sigorta_karar_son, f.statu, f.karar, f.bildirilen_sure_gun, f.tahmini_teslim_tarihi::text, d.dosya_no FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE f.kimlik = $3 AND f.teklif_muhatabi = 'Sigorta Şirketi' AND ${dosyaKosul}`, [sir ?? '', o.kullanici, id])).rows[0];
+    const t = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.ara_toplam_eur, f.indirim_tutari_eur, f.kdv_tutari_eur, f.genel_toplam_eur, f.gecerlilik_bitis_tarihi::text, f.sigorta_karar_son, f.statu, f.karar, f.bildirilen_sure_gun, d.dosya_no FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE f.kimlik = $3 AND f.teklif_muhatabi = 'Sigorta Şirketi' AND ${dosyaKosul}`, [sir ?? '', o.kullanici, id])).rows[0];
     if (!t) return yok(y);
     // YG-296: maliyet ve firma bağı yoktur; yalnız satış tutarları.
     const kalemler = (await b.db.query(`SELECT sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [id])).rows;

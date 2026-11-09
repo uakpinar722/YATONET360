@@ -423,6 +423,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
         const teslimT = await (await import('./teslim_sure.js')).teslimTarihiKur(c, e); // SRE-1
         const t = (await c.query(`SELECT t.telefon, t.eposta, y.yat_adi FROM dosya_tarafi t JOIN dosya d ON d.kimlik = t.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE t.dosya_ref = $1 AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif AND NOT d.vefat_isareti LIMIT 1`, [e.dosya_ref])).rows[0];
         if (t) await yatTarafinaYaz(c, { olay: `bld02:${e.kimlik}`, kod: 'BLD-02', dil: dilKod(e.yazisma_dili), konu: `${e.dosya_no} İşe Başlandı`, telefon: t.telefon, eposta: t.eposta, alanlar: bld02Alanlari(t.yat_adi, new Date(), teslimT ?? e.hedef_bitis_tarihi, b.webAdresi) }); // K-197: yat sahibine tamponlu tarih
+        if (teslimT) await (await import('./teslim_sure.js')).sigortayaTarihBildir(c, e.dosya_ref, teslimT, new Date(), b.webAdresi, o.kullanici); // SRE-2
       }
       return { statu: sonuc === 'Bekletilir' ? 'Başlangıç Kontrolünde' : 'Aktif' };
     });

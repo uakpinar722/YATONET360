@@ -414,7 +414,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   );
 }
 
-interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null; yat: string; durum: string; renk: string; garanti: string | null }
+interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null; yat: string; durum: string; renk: string; garanti: string | null; tahminiTeslim: string | null }
 interface SigortaTeklif { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; genel_toplam_eur: string; sigorta_karar_son: string | null; dosya_no: string }
 interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | null; tahmini_teslim_tarihi: string | null; ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string }[] }
 
@@ -431,7 +431,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       <>
         <button className="lnk" onClick={() => setT(null)}>← Ana Sayfa</button>
         <h1>{t.teklif_no} Rev.{t.surum_no}</h1><Mesaj />
-        {t.bildirilen_sure_gun && <div className="not">Tahmini Onarım Süresi / Tahmini Teslim Tarihi: {t.bildirilen_sure_gun} iş günü{t.tahmini_teslim_tarihi ? ` / ${t.tahmini_teslim_tarihi.split('-').reverse().join('.')}` : ''}</div>}
+        {t.bildirilen_sure_gun && <div className="not">Tahmini Onarım Süresi: {t.bildirilen_sure_gun} iş günü</div>}
         <label className="kutu"><input type="checkbox" checked={sec.length === t.kalemler.length} onChange={(e) => setSec(e.target.checked ? t.kalemler.map((k) => k.sira_no) : [])} /><span>Tümünü Seç</span></label>
         {t.kalemler.map((k) => <label className="kutu" key={k.sira_no}><input type="checkbox" checked={sec.includes(k.sira_no)} onChange={(e) => setSec(e.target.checked ? [...sec, k.sira_no] : sec.filter((x) => x !== k.sira_no))} /><span>{k.aciklama} · {k.isin_niteligi} · {eur(k.tutar_eur)}</span></label>)}
         <div className="not">Seçilen Toplam (KDV Hariç): {eur(top)}</div>
@@ -447,7 +447,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       {v.bekleyen.map((b) => <div className="ozet" key={b.kimlik}><b>{b.teklif_turu} · {b.dosya_no}</b><div>{eur(b.genel_toplam_eur)}{b.sigorta_karar_son ? ` · Son: ${saat(b.sigorta_karar_son)}` : ''}</div><button className="btn" onClick={() => void istek<TeklifAyrinti>(`/sigorta/teklif/${b.kimlik}`).then((x) => { setT(x); setSec([]); })}>İncele</button></div>)}
       <div className="bolum">Dosyalar</div>
       {v.dosyalar.length === 0 && <div className="ozet bos">Dosya bulunmamaktadır.</div>}
-      {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>Garanti</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="Garanti">{d.garanti ?? '—'}</td></tr>)}</tbody></table></div>}
+      {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>Garanti</th><th>Tahmini Teslim Tarihi</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="Garanti">{d.garanti ?? '—'}</td><td data-ad="Tahmini Teslim Tarihi">{d.tahminiTeslim ? d.tahminiTeslim.split('-').reverse().join('.') : '—'}</td></tr>)}</tbody></table></div>}
     </>
   );
 }

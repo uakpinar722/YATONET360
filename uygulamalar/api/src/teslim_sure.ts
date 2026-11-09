@@ -34,6 +34,14 @@ export async function teslimTarihiKur(c: Db, e: { is_emri_turu: string; dosya_re
   return t;
 }
 
+/** SRE-2: tarih onay sonrası işe başlarken yat sahibine (BLD-02) ve sigorta şirketine bildirilir; sigortaya dosya başına bir kez. */
+export async function sigortayaTarihBildir(c: PoolClient, dosya: string, tarih: string, bas: Date, web: string, sorumlu: string): Promise<void> {
+  const d = (await c.query(`SELECT d.dosya_no, d.yazisma_dili, y.yat_adi, coalesce(s.onay_yetkilisi_eposta, p.eposta) eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE d.kimlik = $1 LIMIT 1`, [dosya])).rows[0];
+  if (!d || !(await birKez(c, 'bld02_sigorta', dosya))) return;
+  const { bld02Alanlari } = await import('./firma.js');
+  await (await import('./sigorta_gonderim.js')).sigortayaHazirla(c, { dosya, tur: 'BLD-02', nesne: dosya, alici: d.eposta ?? null, konu: `${d.dosya_no} Teslim Tarihi`, metin: await metinGetir(c, 'BLD-02', dilKod(d.yazisma_dili), bld02Alanlari(d.yat_adi, bas, tarih, web)), acil: true, sorumlu });
+}
+
 /** SRE-1: 5 iş günü kala değerlendirme görevi; 3 iş günü kala hâlâ değerlendirilmemişse Operasyon Müdürüne uyarı. Her tarih için bir kez. */
 export async function teslimSureIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;

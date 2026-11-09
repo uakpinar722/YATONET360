@@ -1113,6 +1113,14 @@ describe('teslim süresi değerlendirmesi (SRE-1)', () => {
     expect(await teslimTarihiKur(o.db, { is_emri_turu: 'ON', dosya_ref: d.kimlik, teklif_ref: t }, new Date('2026-12-01T09:00:00Z'))).toBe('2026-11-19');
     expect((await o.sup.query(`SELECT ilk_tahmini_teslim_tarihi::text i FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].i).toBe('2026-11-19');
   });
+  it('tarih sigortaya BLD-02 ile bir kez bildirilir; sigortasız dosyada gönderim açılmaz (SRE-2)', async () => {
+    const { sigortayaTarihBildir } = await import('../src/teslim_sure.js');
+    const d = await o.dosyaAc({ sigortaci: 'SG', hasarNo: `H-${Math.random()}` }, { musteriTuru: 'Sigorta Şirketi' }); const y = await o.dosyaAc({}, {});
+    const c = await o.db.connect();
+    try { for (const k of [d.kimlik, d.kimlik, y.kimlik]) await sigortayaTarihBildir(c, k, '2026-11-19', S, 'http://x', o.K.ds!); } finally { c.release(); }
+    const l = (await o.sup.query(`SELECT metin FROM sigorta_gonderim WHERE tur = 'BLD-02' AND dosya_ref = ANY($1::uuid[])`, [[d.kimlik, y.kimlik]])).rows;
+    expect(l).toHaveLength(1); expect(l[0].metin).toContain('19.11.2026');
+  });
   it('iş günü takvimi Cumartesi sayar, Pazarı atlar', async () => {
     const { kalanIsGunu, gunMetni } = await import('../src/teslim_sure.js'); const { isGunuSonu } = await import('../src/teklif.js');
     expect(gunMetni(await isGunuSonu(o.db, S, 9))).toBe('2026-11-19'); expect(await kalanIsGunu(o.db, S, '2026-11-19')).toBe(9); expect(await kalanIsGunu(o.db, S, '2026-11-08')).toBe(0);
