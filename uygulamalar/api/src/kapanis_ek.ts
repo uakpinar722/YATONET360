@@ -112,7 +112,7 @@ export function kapanisEkYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/performans', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !((await dosyaErisimi(b.db, o.kullanici, id)) || (await rolVar(o.kullanici, KM)))) return yok(y);
-    const d = (await b.db.query(`SELECT statu, oncelik, tahmini_teslim_tarihi::text hedef, teslim_tarihi::text teslim FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (!d) return yok(y);
+    const d = (await b.db.query(`SELECT statu, arsiv_zamani, oncelik, tahmini_teslim_tarihi::text hedef, teslim_tarihi::text teslim FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (!d) return yok(y);
     const sureler = (await b.db.query(`SELECT s.tur, s.bitis + make_interval(secs => ${DURAK_SN}) hedef, s.tamamlanma FROM dosya_sure s WHERE s.dosya_ref = $1 AND s.tur IN ('İlk Yanıt', 'Keşif', 'Teklif') ORDER BY s.bitis`, [id])).rows;
     const ilk = (await b.db.query(`SELECT count(*)::int n, (count(*) FILTER (WHERE teknik_ret_sayisi = 0))::int k FROM is_emri WHERE dosya_ref = $1 AND EXISTS (SELECT 1 FROM kabul_kaydi x WHERE x.is_emri_ref = is_emri.kimlik)`, [id])).rows[0];
     const uyg = (await b.db.query(`SELECT sinif, count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1 AND statu <> 'Geçersiz' GROUP BY sinif ORDER BY sinif`, [id])).rows;
@@ -120,7 +120,7 @@ export function kapanisEkYollari(s: FastifyInstance, b: Baglam) {
     const kayit = (await b.db.query(`SELECT sapma_nedeni, denetim_sinifi, denetim_bulgulari, firma_karne_etkisi, durum FROM dosya_performans WHERE dosya_ref = $1`, [id])).rows[0] ?? null;
     const ozetDurum = (await b.db.query(`SELECT durum FROM nihai_kapanis_ozeti WHERE dosya_ref = $1`, [id])).rows[0]?.durum ?? null;
     const ds = (await b.db.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.r === o.kullanici;
-    return { ...d, ozetDurum, ozetYenilenir: ds && ozetDurum === 'İade', kapali: ['Teknik Kapalı', 'Kapalı'].includes(d.statu), sureler, ilkSeferde: ilk, uygunsuzluk: uyg, memnuniyet: mem, kayit, duzenleyebilir: await yetkiliKk(o.kullanici, id) };
+    return { ...d, arsivlenebilir: ds && d.statu === 'Kapalı' && !d.arsiv_zamani, ozetDurum, ozetYenilenir: ds && ozetDurum === 'İade', kapali: ['Teknik Kapalı', 'Kapalı'].includes(d.statu), sureler, ilkSeferde: ilk, uygunsuzluk: uyg, memnuniyet: mem, kayit, duzenleyebilir: await yetkiliKk(o.kullanici, id) };
   });
 
   // YG-786: Kalite Kontrolör değerlendirir, Kalite Müdürü onaylar; dosya başına bir değerlendirme.

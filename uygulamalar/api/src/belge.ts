@@ -241,6 +241,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const a = await erisim(o.kullanici, o.grup, id);
     if (!a) return yok(y);
     if (a.e.bilgi_sinifi === 'Kritik') return y.code(403).send({ hata: 'Güvenliğiniz için Kritik belgeler bağlantıyla paylaşılmıyor.' });
+    if (a.e.bag_turu === 'Dosya' && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik::text = $1 AND arsiv_zamani IS NOT NULL`, [a.e.bag_kimligi])).rowCount) return y.code(403).send({ hata: 'Arşivdeki dosyanın belgesi dışarıyla paylaşılmaz.' }); // YG-1236
     const { alici, gun = 7, izin = 'Görüntüle' } = (i.body ?? {}) as { alici?: string; gun?: number; izin?: string };
     if (!alici || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(alici)) return y.code(400).send({ hata: 'Alıcı e-posta adresi zorunludur.' });
     if (!Number.isInteger(gun) || gun < 1 || gun > 30) return y.code(400).send({ hata: 'Bağlantı süresi 1 ile 30 gün arasında olmalıdır.' });

@@ -12,7 +12,7 @@ export type PoliceSatiri = { kimlik: string; ticari_unvan: string; sicil_no: str
 /** YG-1471: ağdaki Çözüm Ortaklarının son sorumluluk poliçesi; önerilen seviye LMT-1 parametresidir, ağa kabul şartı değildir. */
 export async function policeListesi(db: Pool): Promise<PoliceSatiri[]> {
   const { rows } = await db.query(
-    `SELECT u.kimlik, u.ticari_unvan, u.sicil_no, s.gecerlilik_bitis::text bitis, s.police_limit_eur limit_eur, s.gozetim_muhafaza gozetim, s.kimlik belge, (s.gecerlilik_bitis < current_date) dolmus, (s.police_limit_eur < (SELECT deger FROM sistem_parametresi WHERE kod = 'police_olay_basi_limit_eur')) dusuk
+    `SELECT u.kimlik, u.ticari_unvan, u.sicil_no, s.gecerlilik_bitis::text bitis, s.police_limit_eur limit_eur, s.gozetim_muhafaza gozetim, s.kimlik belge, (s.gecerlilik_bitis < current_date) dolmus, (s.police_limit_eur < coalesce((SELECT max(l.limit_eur) FROM firma_police_brans_limit l JOIN brans_yetkinligi y ON y.ana_brans = l.brans WHERE y.kurulus_ref = u.kimlik), (SELECT deger FROM sistem_parametresi WHERE kod = 'police_olay_basi_limit_eur'))) dusuk
        FROM kurulus u LEFT JOIN LATERAL (SELECT * FROM sicil_belgesi b WHERE b.kurulus_ref = u.kimlik AND b.tur ILIKE '%sigorta%' ORDER BY b.olusturma_zamani DESC LIMIT 1) s ON true
       WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND u.ag_statusu IN ('Aktif', 'Kısıtlı') ORDER BY u.ticari_unvan LIMIT 2000`);
   return rows.map((r) => {
@@ -33,6 +33,14 @@ export async function policeGozdenGecirIsle(db: Pool, simdi = new Date()): Promi
 export function firmaPoliceYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+  // YG-343: branşa göre asgari limit; tanımsız branşta LMT-1 geçerlidir.
+  s.post('/firma/police-brans-limit', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { brans?: string; limit?: unknown }; const l = Number(g.limit);
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = $2 LIMIT 1`, [o.kullanici, FYM])).rowCount) return yok(y);
+    if (!g.brans?.trim() || !(l > 0)) return y.code(400).send({ hata: 'Branş ve limit zorunludur.' });
+    await b.db.query(`INSERT INTO firma_police_brans_limit (brans, limit_eur, giren_ref) VALUES ($1,$2,$3) ON CONFLICT (brans) DO UPDATE SET limit_eur = $2, giren_ref = $3, zaman = now()`, [g.brans.trim(), l, o.kullanici]);
+    return { tamam: true };
+  });
   s.get('/firma/police-listesi', oturumlu, async (i, y) => {
     const yetkili = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [i.oturum!.kullanici, [FYM, BTD, GMY]])).rowCount;
     return yetkili ? policeListesi(b.db) : yok(y);
