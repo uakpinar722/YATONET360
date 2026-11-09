@@ -307,7 +307,7 @@ function FirmaRapor({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<an
     <label htmlFor="fr-b">Bulgular</label><textarea id="fr-b" value={f.bulgular} onChange={(e) => setF({ ...f, bulgular: e.target.value })} />
     <label htmlFor="fr-o">Önerilen İşlemler</label><textarea id="fr-o" value={f.oneriler} onChange={(e) => setF({ ...f, oneriler: e.target.value })} />
     <label htmlFor="fr-m">Malzeme İhtiyacı</label><input id="fr-m" value={f.malzeme} onChange={(e) => setF({ ...f, malzeme: e.target.value })} />
-    <label htmlFor="fr-s">Tahmini Süre (Gün)</label><input id="fr-s" inputMode="numeric" value={f.sure} onChange={(e) => setF({ ...f, sure: e.target.value })} />
+    <label htmlFor="fr-s">Tahmini Süre (İş Günü)</label><input id="fr-s" inputMode="numeric" value={f.sure} onChange={(e) => setF({ ...f, sure: e.target.value })} />
     <label htmlFor="fr-r">Önerilen İşlemler İçin Resmî / Klas Onayı Gerekir mi?</label><select id="fr-r" value={f.resmi} onChange={(e) => setF({ ...f, resmi: e.target.value })}><option value="">Seçiniz</option><option>Evet</option><option>Hayır</option></select>
     <label htmlFor="fr-d">Firma Değerlendirmesi</label><textarea id="fr-d" value={f.degerlendirme} onChange={(e) => setF({ ...f, degerlendirme: e.target.value })} />
     <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teknik-rapor`, { ...f, resmi: undefined, sure: Number(f.sure), resmiOnay: f.resmi ? f.resmi === 'Evet' : undefined }).then(yukle), 'Raporunuz iletildi.')}>Raporu Onayla ve Gönder</button>
@@ -416,7 +416,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
 
 interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null; yat: string; durum: string; renk: string; garanti: string | null }
 interface SigortaTeklif { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; genel_toplam_eur: string; sigorta_karar_son: string | null; dosya_no: string }
-interface TeklifAyrinti extends SigortaTeklif { ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string }[] }
+interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | null; ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string }[] }
 
 /** YG-1568, YG-1571 A4 Sigorta Şirketi: teklif kalemleri seçimli onaylanır; ret düğmesi yoktur; firma adı görünmez. */
 export function SigortaAna({ ben }: { ben: Ben }) {
@@ -431,6 +431,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       <>
         <button className="lnk" onClick={() => setT(null)}>← Ana Sayfa</button>
         <h1>{t.teklif_no} Rev.{t.surum_no}</h1><Mesaj />
+        {t.bildirilen_sure_gun && <div className="not">Tahmini Onarım Süresi: {t.bildirilen_sure_gun} iş günü</div>}
         <label className="kutu"><input type="checkbox" checked={sec.length === t.kalemler.length} onChange={(e) => setSec(e.target.checked ? t.kalemler.map((k) => k.sira_no) : [])} /><span>Tümünü Seç</span></label>
         {t.kalemler.map((k) => <label className="kutu" key={k.sira_no}><input type="checkbox" checked={sec.includes(k.sira_no)} onChange={(e) => setSec(e.target.checked ? [...sec, k.sira_no] : sec.filter((x) => x !== k.sira_no))} /><span>{k.aciklama} · {k.isin_niteligi} · {eur(k.tutar_eur)}</span></label>)}
         <div className="not">Seçilen Toplam (KDV Hariç): {eur(top)}</div>
