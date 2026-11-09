@@ -5,6 +5,7 @@ import { BelgeSec } from './Kalite';
 import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
 import { TopluOdeme } from './TopluOdeme';
+import { IdariTalep } from './IdariTalep';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
@@ -768,6 +769,7 @@ export function IdariIslemler() {
       <KartelaResmiEtiket />
       <TicariAtamaBekleyenler />
       <TopluOdeme />
+      <IdariTalep />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
