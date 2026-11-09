@@ -1044,3 +1044,54 @@ describe('ON iş emri yokken kapanış listesi daralır (YG-076)', () => {
     expect(r2.eksikler).toEqual(expect.arrayContaining(['Teknik Eksik', 'Kabul Bekliyor', 'Garanti Bağı Eksik']));
   });
 });
+
+describe('iç bütçe ve risk rezervi (YG-862, YG-863, YG-780)', () => {
+  const kur = async () => {
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$3)`, [d.kimlik, o.K.ds, o.K.opm]);
+    const tk = async (no: string, statu: string, karar: string | null, m: number, zaman: string) => { const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, karar_zamani, ara_toplam_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,$3,$4,$5,1,1,1,$6) RETURNING kimlik`, [`${d.dosyaNo}-${no}`, d.kimlik, statu, karar, karar ? zaman : null, o.K.ts])).rows[0].kimlik; await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'A','Onarım','İşçilik',1,'saat',$2,$2,$2,$3)`, [t, m, karar ? 'Onaylandı' : 'Bekliyor']); return t; };
+    await tk('T1', 'Yerine Geçti', 'Tam Onay', 900, '2026-11-01'); await tk('T2', 'Karar', 'Tam Onay', 1000, '2026-11-02'); await tk('T3', 'Gönderildi', null, 300, '2026-11-03');
+    return d;
+  };
+  it('bütçe bileşenleri ayrı; rezerv yalnız maliyet görene; talep OPM ve Direktör onayıyla; %80 uyarısı bir kez; aşım reddedilir', async () => {
+    const { dosyaButcesi } = await import('../src/risk_rezervi.js');
+    const d = await kur(); const v = await dosyaButcesi(o.db, d.kimlik);
+    expect(v).toMatchObject({ temelCizgi: 900, guncelButce: 1000, bekleyenDegisiklik: 300, rezervOrani: 0.05, rezerv: 50, rezervKalan: 50 });
+    const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/risk-rezervi`;
+    const g = (await o.ist('GET', u, ds)).json(); expect(g.butce).toBeNull(); expect(g.talepAcabilir).toBe(true);
+    expect((await o.ist('GET', u, await o.gir('ts'))).json().butce.rezerv).toBe(50);
+    expect((await o.ist('POST', u, await o.gir('ts'), { tur: 'Kullanım', tutar: 10, gerekce: 'G' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ds, { tur: 'Kullanım', tutar: 10 })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { tur: 'Kullanım', tutar: 51, gerekce: 'G' })).statusCode).toBe(409);
+    const r = await o.ist('POST', u, ds, { tur: 'Kullanım', tutar: 45, gerekce: 'Gizli hasar' }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.kart('Risk Rezervi Talebi', r.json().kimlik)).kimlik;
+    expect((await o.karar(k, 'opm', 'Onaya Gönder')).statusCode).toBe(200); expect((await dosyaButcesi(o.db, d.kimlik)).rezervKullanilan).toBe(0);
+    expect((await o.karar(k, 'tod', 'Onayla')).statusCode).toBe(200);
+    expect((await dosyaButcesi(o.db, d.kimlik))).toMatchObject({ rezervKullanilan: 45, rezervKalan: 5 });
+    expect((await o.kart('Bütçe Erken Uyarısı', d.kimlik)).baslik).toContain('Risk Rezervi');
+    const { butceUyariKontrol } = await import('../src/risk_rezervi.js'); await butceUyariKontrol(o.db, d.kimlik, d.dosyaNo);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Bütçe Erken Uyarısı' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
+  it('onay anında kalan rezerv yeniden denetlenir; aşan talep onaylanamaz', async () => {
+    const d = await kur(); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/risk-rezervi`;
+    const al = async () => (await o.kart('Risk Rezervi Talebi', (await o.ist('POST', u, ds, { tur: 'Kullanım', tutar: 30, gerekce: 'G' })).json().kimlik)).kimlik;
+    const a = await al(); const b = await al();
+    for (const k of [a, b]) expect((await o.karar(k, 'opm', 'Onaya Gönder')).statusCode).toBe(200);
+    expect((await o.karar(a, 'tod', 'Onayla')).statusCode).toBe(200);
+    const r = await o.karar(b, 'tod', 'Onayla'); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('rezervi aşmaktadır');
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE kimlik = $1`, [b])).rows[0].durum).toBe('Bekliyor');
+  });
+  it('oran değişikliği Direktör onayıyla işler; bütçe %10 aşımı uyarır', async () => {
+    const { dosyaButcesi, butceUyariKontrol } = await import('../src/risk_rezervi.js');
+    const d = await kur(); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/risk-rezervi`;
+    expect((await o.ist('POST', u, ds, { tur: 'Oran Değişikliği', oran: 1.5, gerekce: 'G' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, ds, { tur: 'Oran Değişikliği', oran: 0.1, gerekce: 'Yüksek risk' }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.kart('Risk Rezervi Talebi', r.json().kimlik)).kimlik; expect((await o.karar(k, 'opm', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(k, 'tod', 'Onayla')).statusCode).toBe(200);
+    expect((await dosyaButcesi(o.db, d.kimlik))).toMatchObject({ rezervOrani: 0.1, rezerv: 100 });
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Bütçe Firma','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-BT${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K',1200,'Aktif',$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.oy ?? o.K.ds]);
+    expect((await dosyaButcesi(o.db, d.kimlik))).toMatchObject({ acikTaahhut: 1200, bitisTahmini: 1200 });
+    await butceUyariKontrol(o.db, d.kimlik, d.dosyaNo);
+    expect((await o.kart('Bütçe Erken Uyarısı', d.kimlik)).baslik).toContain('Bütçe Aşımı');
+  });
+});
