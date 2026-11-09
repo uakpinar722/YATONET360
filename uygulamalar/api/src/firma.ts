@@ -102,7 +102,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   const firmam = async (k: string) => (await b.db.query(`SELECT kurulus_ref FROM kurulus_kullanici WHERE kullanici_ref = $1 LIMIT 1`, [k])).rows[0]?.kurulus_ref as string | undefined;
 
   // YG-009, YG-345: sicil no LGM-SC-NNNNN; başvuruda verilir, ayrı numara yok. Vergi no mükerrerlik anahtarı.
-  s.get('/firma/sicil', { preHandler: izinGerekli(b, 'firma.kayit') }, async () => (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus ORDER BY ticari_unvan LIMIT 500`)).rows);
+  s.get('/firma/sicil', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i) => (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE $1 OR kayit_asamasi <> 'Aday' ORDER BY ticari_unvan LIMIT 1000`, [(i.query as { aday?: string }).aday === '1'])).rows); // ANV-1: aday havuzu ayrı gösterilir
   s.post('/firma', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { unvan?: string; vergiNo?: string; rol?: string; eposta?: string; telefon?: string; il?: string; ilce?: string };
     if (!g.unvan?.trim()) return y.code(400).send({ hata: 'Ticari unvan zorunludur.' });
@@ -175,7 +175,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/firma/uygunluk', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     const { brans, rol } = i.query as { brans?: string; rol?: string };
-    const { rows } = await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, ag_statusu, risk_derecesi FROM kurulus WHERE kayit_rolu = $1 ORDER BY ticari_unvan LIMIT 200`, [rol === 'Tedarikçi' ? rol : 'Çözüm Ortağı']);
+    const { rows } = await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, ag_statusu, risk_derecesi FROM kurulus WHERE kayit_rolu = $1 AND kayit_asamasi <> 'Aday' ORDER BY ticari_unvan LIMIT 200`, [rol === 'Tedarikçi' ? rol : 'Çözüm Ortağı']);
     const l = []; for (const f of rows) l.push({ ...f, engel: await firmaUygunlugu(b.db, f.kimlik, brans || null) });
     return l;
   });

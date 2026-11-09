@@ -1182,3 +1182,26 @@ describe('bağlama noktası ve tesis önerisi (YG-113, YG-114, YG-115, YG-333)',
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/onerilen-tesisler`, await o.gir('sy'))).statusCode).toBe(404);
   });
 });
+
+describe('ana veri aktarımı (ANV-1, YG-367)', () => {
+  it('adaylar pasif girer, paydaş alınmaz, yeniden çalıştırmak çoğaltmaz; listelerde aday görünmez; mükerrer karar sicilde; nokta tesise bağlanır', async () => {
+    const { anaVeriYukle } = await import('../src/ana_veri.js'); const x = Math.floor(Math.random() * 1e8) + 1e6; const ad = (s: string) => `${s} ${x}`;
+    const F = [{ 'Sıra': String(x), 'Firma Adı': ad('Aday Bir'), 'Adres': 'A', 'Konum İl': 'Muğla', 'Konum İlçe': 'Bodrum', 'Telefon': '0533', 'Web': 'Resmî web sitesi bulunamadı', 'Mükerrer Grubu': `G${x}`, 'Kayıt Rolü': 'İB Firması adayı' }, { 'Sıra': String(x + 1), 'Firma Adı': ad('Aday İki'), 'Mükerrer Grubu': `G${x}`, 'Kayıt Rolü': 'İB Firması adayı' }, { 'Sıra': String(x + 2), 'Firma Adı': ad('Okul'), 'Kayıt Rolü': 'Paydaş (eğitim kurumu)' }];
+    const N = [{ 'Nokta No': String(x), 'Tür': 'Marina ve yat limanı', 'İl': `İl${x}`, 'İlçe': 'B', 'Tesis / Nitelik': ad('Marina'), 'Olası Mükerrer Grubu': `N${x}`, 'Mükerrer Kararı': 'Karar bekliyor' }, { 'Nokta No': String(x + 1), 'Tür': 'Marina ve yat limanı', 'İl': `İl${x}`, 'Tesis / Nitelik': ad('Marina 2'), 'Olası Mükerrer Grubu': `N${x}`, 'Mükerrer Kararı': 'Karar bekliyor' }];
+    const yukle = async () => { const c = await o.db.connect(); try { await c.query('BEGIN'); const r = await anaVeriYukle(c, { firmalar: F, noktalar: N }); await c.query('COMMIT'); return r; } finally { c.release(); } };
+    expect(await yukle()).toEqual({ firma: 2, atlanan: 0, paydas: 1, nokta: 2, mukerrerFirma: 2, mukerrerNokta: 2 });
+    expect(await yukle()).toMatchObject({ firma: 0, atlanan: 2, nokta: 0 });
+    const f = (await o.sup.query(`SELECT kimlik, kayit_asamasi, ag_statusu, web, sicil_no FROM kurulus WHERE ticari_unvan = $1`, [ad('Aday Bir')])).rows[0];
+    expect(f).toMatchObject({ kayit_asamasi: 'Aday', ag_statusu: 'Pasif', web: null }); expect(f.sicil_no).toMatch(/^LGM-SC-/);
+    const sc = await o.gir('sc'); const adlar = (r: { json: () => { ticari_unvan: string }[] }) => r.json().map((z) => z.ticari_unvan);
+    expect(adlar(await o.ist('GET', '/api/firma/sicil', sc))).not.toContain(ad('Aday Bir')); expect(adlar(await o.ist('GET', '/api/firma/sicil?aday=1', sc))).toContain(ad('Aday Bir'));
+    expect(adlar(await o.ist('GET', '/api/firma/uygunluk', await o.gir('ds')))).not.toContain(ad('Aday Bir'));
+    const u = '/api/ana-veri/mukerrer'; expect((await o.ist('GET', u, await o.gir('ds'))).statusCode).toBe(404);
+    const v = (await o.ist('GET', u, sc)).json(); const a = v.firmalar.find((z: { ad: string }) => z.ad === ad('Aday Bir')); const b = v.firmalar.find((z: { ad: string }) => z.ad === ad('Aday İki'));
+    expect((await o.ist('POST', u, sc, { tur: 'firma', kimlik: a.kimlik, karar: 'Birleştirildi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sc, { tur: 'firma', kimlik: a.kimlik, karar: 'Birleştirildi', ana: b.kimlik })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT mukerrer_karari k, ana_kayit_ref r FROM kurulus WHERE kimlik = $1`, [a.kimlik])).rows[0]).toEqual({ k: 'Birleştirildi', r: b.kimlik });
+    const n = (await o.ist('GET', `/api/baglama-noktalari?il=${encodeURIComponent(`İl${x}`)}`, await o.gir('ds'))).json(); expect(n).toHaveLength(2);
+    expect((await o.ist('POST', `/api/baglama-noktasi/${n[0].kimlik}/tesis`, sc, { tesis: a.kimlik })).statusCode).toBe(400);
+  });
+});
