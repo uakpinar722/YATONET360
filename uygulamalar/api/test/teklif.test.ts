@@ -597,3 +597,42 @@ describe('tedarikçi parça fiyatı (YG-1427, K-178)', () => {
     expect((await o.sup.query(`SELECT tedarikci_kalem_ref r FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND aciklama = 'Pompa'`, [rv.json().kimlik])).rows[0].r).toBe(uc);
   });
 });
+
+describe('sigorta ödeme farkı (YG-891, SGF-1)', () => {
+  const S = [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'B', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'C', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }];
+  const kur = async () => {
+    const d = await hazir({ sigortaci: 'SG', hasarNo: `H${Math.random()}` }, { musteriTuru: 'Sigorta Şirketi' }, S); const t = await teklifAc(d); await onayla(t.kimlik);
+    const gn = (await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).json().gonderim;
+    await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 1 }); await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 2 });
+    const k = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' }); expect(k.statusCode, k.body).toBe(200);
+    const kl = (await o.sup.query(`SELECT sira_no, tutar_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows; return { d, t, top: kl.reduce((a, x) => a + Number(x.tutar_eur), 0), bir: Number(kl[0].tutar_eur) };
+  };
+  it('fark varken iş emri açılmaz; kalem kapsamdan çıkar, ayrı teklife gider; kalan bakiye ayrı kalem olur', async () => {
+    const { d, t, top, bir } = await kur(); const ds = await o.gir('ds'); const u = `/api/teklif/${t.kimlik}/sigorta-odenecek`;
+    expect((await o.ist('POST', u, await o.gir('ts'), { tutar: 1 })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ds, { tutar: top + 1 })).statusCode).toBe(400);
+    const fark = bir * 2 + 10; const r = await o.ist('POST', u, ds, { tutar: top - fark }); expect(r.statusCode, r.body).toBe(200); expect(r.json().fark).toBeCloseTo(fark, 2);
+    expect((await o.ist('POST', u, ds, { tutar: 1 })).statusCode).toBe(409);
+    expect((await o.kart('Sigorta Ödeme Farkı', t.kimlik)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10 })).json().hata).toContain('fark kararı');
+    const f = `/api/teklif/${t.kimlik}/odeme-farki`;
+    expect((await o.ist('POST', f, ds, { neden: 'Diğer', kapsamdan: [1], ayri: [1] })).statusCode).toBe(400);
+    expect((await o.ist('POST', f, ds, { neden: 'Diğer', kapsamdan: [1, 2, 3] })).json().hata).toContain('aşmaktadır');
+    expect((await o.ist('POST', f, ds, { neden: 'Muafiyet', ayri: [1] })).statusCode).toBe(400);
+    const k = await o.ist('POST', f, ds, { neden: 'Diğer', kapsamdan: [1], ayri: [2] }); expect(k.statusCode, k.body).toBe(200); expect(k.json().kalan).toBeCloseTo(10, 2);
+    expect((await o.kart('Sigorta Ödeme Farkı', t.kimlik)).durum).toBe('Tamamlandı');
+    const a = await o.ist('POST', `/api/teklif/${t.kimlik}/onaylanmayan-teklif`, await o.gir('ts'), {}); expect(a.statusCode, a.body).toBe(200);
+    const kl = (await o.sup.query(`SELECT aciklama, tutar_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [a.json().kimlik])).rows;
+    expect(kl.map((x) => x.aciklama)).toEqual(['B', 'Onarım Bedeli Bakiyesi']); expect(Number(kl[1].tutar_eur)).toBeCloseTo(10, 2);
+    expect(JSON.stringify(kl)).not.toMatch(/muafiyet|sigorta/i);
+  });
+  it('muafiyet farkı yat sahibine yansımaz, kapsam değişmez, ayrı teklif açılmaz; tam ödemede fark kaydı açılmaz', async () => {
+    const { t, top } = await kur(); const ds = await o.gir('ds');
+    await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-odenecek`, ds, { tutar: top - 5 });
+    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/odeme-farki`, ds, { neden: 'Muafiyet' }); expect(r.statusCode, r.body).toBe(200); expect(r.json()).toEqual({ kalan: 0, ayriTeklif: false });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylanmadı'`, [t.kimlik])).rows[0].n).toBe(0);
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/onaylanmayan-teklif`, await o.gir('ts'), {})).statusCode).toBe(409);
+    const y = await kur(); const q = await o.ist('POST', `/api/teklif/${y.t.kimlik}/sigorta-odenecek`, ds, { tutar: y.top }); expect(q.json().fark).toBe(0);
+    expect(await o.kart('Sigorta Ödeme Farkı', y.t.kimlik)).toBeUndefined();
+  });
+});

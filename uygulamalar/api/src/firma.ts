@@ -213,6 +213,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       if (!t || t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'İş emri için Onaylanmış teklif bekleniyor.' });
       const cay = await caymaEngeli(b.db, id);
       if (cay) return y.code(409).send({ hata: cay });
+      { const fe = await (await import('./sigorta_fark.js')).odemeFarkiEngeli(b.db, g.teklif!); if (fe) return y.code(409).send({ hata: fe }); } // YG-891
       // YG-324: yalnız onaylanan paketler seçilir.
       kalemler = (await b.db.query(`SELECT kimlik, aciklama, miktar, birim, satir_ref FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' AND ($2::int[] IS NULL OR sira_no = ANY($2)) ORDER BY sira_no`, [g.teklif, g.siralar ?? null])).rows;
       if (!kalemler.length) return y.code(409).send({ hata: 'Seçilebilecek onaylı kalem yoktur.' });

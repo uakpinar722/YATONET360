@@ -148,16 +148,19 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const t = await teklif((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
     if (!(await rolVar(o.kullanici, [TICARI]))) return y.code(403).send({ hata: 'Teklifi Ticari Sorumlu hazırlar.' });
-    if (t.teklif_muhatabi !== 'Sigorta Şirketi' || !['Kısmi Onay', 'Ret'].includes(t.karar ?? '')) return y.code(409).send({ hata: 'Ayrı teklif, sigortanın onaylamadığı kalemler için açılır.' });
+    if (t.teklif_muhatabi !== 'Sigorta Şirketi' || (!['Kısmi Onay', 'Ret'].includes(t.karar ?? '') && !t.odeme_farki_ayri)) return y.code(409).send({ hata: 'Ayrı teklif, sigortanın onaylamadığı kalemler için açılır.' });
     if ((await b.db.query(`SELECT 1 FROM fiyat_teklifi WHERE ana_teklif_ref = $1 AND teklif_muhatabi = 'Yat Sahibi' AND statu NOT IN ('İptal', 'Yerine Geçti') LIMIT 1`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu kalemler için teklif bulunmaktadır.' });
-    const kl = (await b.db.query(`SELECT * FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylanmadı' ORDER BY sira_no`, [t.kimlik])).rows;
-    if (!kl.length) return y.code(409).send({ hata: 'Onaylanmayan kalem bulunmamaktadır.' });
-    const ara = R2(kl.reduce((a, k) => a + Number(k.tutar_eur), 0)); const kdv = R2((ara * Number(t.kdv_orani)) / 100);
+    // YG-891: kapsamdan çıkarılan kalem teklife girmez; kalan bakiye ayrı kalem olur.
+    const kl = (await b.db.query(`SELECT * FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylanmadı' AND fark_karari IS DISTINCT FROM 'Kapsamdan Çıkarıldı' ORDER BY sira_no`, [t.kimlik])).rows;
+    const bakiye = Number(t.odeme_farki_kalan_eur ?? 0);
+    if (!kl.length && !(bakiye > 0)) return y.code(409).send({ hata: 'Onaylanmayan kalem bulunmamaktadır.' });
+    const ara = R2(kl.reduce((a, k) => a + Number(k.tutar_eur), 0) + bakiye); const kdv = R2((ara * Number(t.kdv_orani)) / 100);
     return islem(async (c) => {
       const no = await altNumara(c, t.dosya_no, 'TK');
       const r = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, ana_teklif_ref, dosya_ref, cetvel_ref, teklif_muhatabi, teklif_dili, kdv_orani, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,$3,$4,'Yat Sahibi',$5,$6,$7,$8,$9,$7,$10) RETURNING kimlik`, [no, t.kimlik, t.dosya_ref, t.cetvel_ref, t.teklif_dili, t.kdv_orani, ara, kdv, R2(ara + kdv), o.kullanici])).rows[0];
       let n = 0;
       for (const k of kl) await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon, tedarikci_kalem_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`, [r.kimlik, ++n, k.satir_ref, k.kartela_kodu, k.kartela_surumu, k.kartela_disi, k.aciklama, k.isin_niteligi, k.bedel_turu, k.miktar, k.birim, k.firma_kalem_ref, k.birim_maliyet_eur, k.birim_satis_fiyati_eur, k.tutar_eur, false, k.opsiyon, k.tedarikci_kalem_ref]);
+      if (bakiye > 0) await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,$2,true,'Onarım Bedeli Bakiyesi','Onarım','Masraf',1,'adet',0,$3,$3)`, [r.kimlik, ++n, bakiye]);
       await teklifKdvUygula(c, r.kimlik); // KDV-1
       return { kimlik: r.kimlik, teklifNo: no, tutar: ara };
     });

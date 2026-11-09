@@ -1,0 +1,3 @@
+-- YG-891, SGF-1: sigortanın bildirdiği ödeme tutarı onaylı toplamdan düşükse fark kararı.
+ALTER TABLE fiyat_teklifi ADD COLUMN IF NOT EXISTS sigorta_odenecek_eur numeric(14,2) CHECK (sigorta_odenecek_eur >= 0), ADD COLUMN IF NOT EXISTS odeme_farki_eur numeric(14,2), ADD COLUMN IF NOT EXISTS odeme_farki_durum text CHECK (odeme_farki_durum IN ('Açık', 'Kapandı')), ADD COLUMN IF NOT EXISTS odeme_farki_nedeni text, ADD COLUMN IF NOT EXISTS odeme_farki_kalan_eur numeric(14,2) NOT NULL DEFAULT 0, ADD COLUMN IF NOT EXISTS odeme_farki_ayri boolean NOT NULL DEFAULT false;
+ALTER TABLE fiyat_teklifi_kalemi ADD COLUMN IF NOT EXISTS fark_karari text CHECK (fark_karari IN ('Kapsamdan Çıkarıldı', 'Yat Sahibine Ayrı Teklif'));

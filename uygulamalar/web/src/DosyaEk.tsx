@@ -8,6 +8,7 @@ import { ResmiOnayIsaretleri } from './ResmiOnay';
 import { YontemRaporu } from './YontemRaporu';
 import { RiskRezervi } from './RiskRezervi';
 import { TeslimSure } from './TeslimSure';
+import { SigortaFark } from './SigortaFark';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 
@@ -22,7 +23,7 @@ function useYap(yenile: () => unknown) {
 type Yap = (f: () => Promise<unknown>, m?: string) => Promise<void>;
 const sayi = (x: string) => Number(x.replace(',', '.'));
 const gun = (x: string | null) => (x ? x.slice(0, 10).split('-').reverse().join('.') : '—');
-interface TeklifOz { kimlik: string; teklif_no: string; surum_no: number; statu: string; karar: string | null; teklif_muhatabi: string }
+interface TeklifOz { odeme_farki_ayri?: boolean; kimlik: string; teklif_no: string; surum_no: number; statu: string; karar: string | null; teklif_muhatabi: string }
 
 /** İP-4 ve İP-6 dosya işlemleri: hasar no, koşul, kesin teslim, protokol, yurt dışı, kurtarma, acil temas. */
 export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar, firmaTeklifleri }: { firmaTeklifleri: { kimlik: string; teklif_no: string }[]; id: string; teklifler: TeklifOz[]; sigortali: boolean; ticari: boolean; ds: boolean; firmalar: { kurulus_ref: string; ticari_unvan: string }[] }) {
@@ -39,7 +40,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
   const [p, setP] = useState({ tur: 'Değişiklik', mevcut: '', onerilen: '', fark: '', toplam: '', sure: '', kanal: 'YATONET 360', sigorta: 'Gerekli Değil', starih: '' }); const [pb, setPb] = useState('');
   const [ku, setKu] = useState({ hizmet: 'Kurtarma', saglayici: '', acil: false }); const [dalis, setDalis] = useState({ limanIzni: '', dalisPlani: '', enerjiIzolasyonu: '' }); const [kod, setKod] = useState(''); const [te, setTe] = useState({ tur: '112 Arandı', ozet: '' }); const [sec, setSec] = useState('Devam');
   const ret = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && t.karar === 'Ret');
-  const kismi = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && ['Kısmi Onay', 'Ret'].includes(t.karar ?? ''));
+  const kismi = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && (['Kısmi Onay', 'Ret'].includes(t.karar ?? '') || t.odeme_farki_ayri));
   return (
     <Blok baslik="Dosya İşlemleri"><Mesaj />
       {sigortali && <><label htmlFor="de-hn">Hasar Dosya No</label><input id="de-hn" value={hn} onChange={(e) => setHn(e.target.value)} /><button className="btn2 kucuk" disabled={!hn.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/hasar-no`, { no: hn }), 'Hasar dosya numarası kaydedildi.')}>Hasar No Kaydet</button></>}
@@ -145,6 +146,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <YontemRaporu dosya={id} />
     <RiskRezervi dosya={id} />
     <TeslimSure dosya={id} />
+    <SigortaFark dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
