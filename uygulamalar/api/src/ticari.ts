@@ -235,6 +235,19 @@ kapanisKaydet('Banka Hesabı Onayı', async (c, k, karar, yapan) => {
   await bildir(c, { olay: `banka-sonuc:${h.kimlik}`, kullanicilar: kisiler, baslik: 'Banka Hesabı', ozet: karar === 'Onayla' ? 'Bildirdiğiniz banka hesabı teyit edildi.' : 'Bildirdiğiniz banka hesabı kabul edilmedi; Sicil Sorumlusu ile görüşmenizi rica ederiz.' });
 });
 
+/** Faturaya tahsilat yazar; tek tek ve sigorta toplu ödemesinde aynı kural işler (YG-902). */
+export async function faturaTahsilatIsle(c: Db, g: { fatura: string; tutar: number; tarih: string; kanal: string; referans: string | null; giren: string; ucuncuKisi?: string | null; topluOdeme?: string | null }) {
+  const f = (await c.query(`SELECT * FROM musteri_faturasi WHERE kimlik = $1 FOR UPDATE`, [g.fatura])).rows[0];
+  if (!f || !['Faturalandı', 'Kısmi Tahsil'].includes(f.durum)) throw Object.assign(new Error('Tahsilat faturalanmış kayda girilir.'), { statusCode: 409 });
+  const yeni = R2(Number(f.tahsil_edilen_eur) + g.tutar);
+  if (yeni > Number(f.toplam_eur)) throw Object.assign(new Error('Tahsilat fatura tutarının üzerindedir; fazla ödeme iade akışından yürütülür.'), { statusCode: 409 });
+  await c.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, referans, giren_ref, ucuncu_kisi_ref, toplu_odeme_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [f.kimlik, f.dosya_ref, g.tutar, g.tarih, g.kanal, g.referans, g.giren, g.ucuncuKisi ?? null, g.topluOdeme ?? null]);
+  const durum = yeni === Number(f.toplam_eur) ? 'Tahsil Edildi' : 'Kısmi Tahsil';
+  await c.query(`UPDATE musteri_faturasi SET tahsil_edilen_eur = $2, durum = $3 WHERE kimlik = $1`, [f.kimlik, yeni, durum]);
+  await odemeAlindi(c, f.dosya_ref, f.muhatap, g.tarih);
+  return { durum, kalan: R2(Number(f.toplam_eur) - yeni) };
+}
+
 export function ticariYollari(s: FastifyInstance, b: Baglam) {
   webAdresi = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -360,17 +373,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       if (!u) return y.code(409).send({ hata: 'Üçüncü kişi ödemesi için onay bekleniyor.' });
     }
     return islem(async (c) => {
-      if (g.fatura) {
-        const f = (await c.query(`SELECT * FROM musteri_faturasi WHERE kimlik = $1 FOR UPDATE`, [g.fatura])).rows[0];
-        if (!f || !['Faturalandı', 'Kısmi Tahsil'].includes(f.durum)) throw Object.assign(new Error('Tahsilat faturalanmış kayda girilir.'), { statusCode: 409 });
-        const yeni = R2(Number(f.tahsil_edilen_eur) + Number(g.tutar));
-        if (yeni > Number(f.toplam_eur)) throw Object.assign(new Error('Tahsilat fatura tutarının üzerindedir; fazla ödeme iade akışından yürütülür.'), { statusCode: 409 });
-        await c.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, referans, giren_ref, ucuncu_kisi_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [f.kimlik, f.dosya_ref, g.tutar, g.tarih, g.kanal, g.referans ?? null, o.kullanici, g.ucuncuKisi ?? null]);
-        const durum = yeni === Number(f.toplam_eur) ? 'Tahsil Edildi' : 'Kısmi Tahsil';
-        await c.query(`UPDATE musteri_faturasi SET tahsil_edilen_eur = $2, durum = $3 WHERE kimlik = $1`, [f.kimlik, yeni, durum]);
-        await odemeAlindi(c, f.dosya_ref, f.muhatap, g.tarih!);
-        return { durum, kalan: R2(Number(f.toplam_eur) - yeni) };
-      }
+      if (g.fatura) return faturaTahsilatIsle(c, { fatura: g.fatura, tutar: Number(g.tutar), tarih: g.tarih!, kanal: g.kanal!, referans: g.referans ?? null, giren: o.kullanici, ucuncuKisi: g.ucuncuKisi ?? null });
       const t = g.odemeTalebi ? (await c.query(`SELECT * FROM odeme_talebi WHERE kimlik = $1 FOR UPDATE`, [g.odemeTalebi])).rows[0] : undefined;
       if (!t || t.durum !== 'Gönderildi') throw Object.assign(new Error('Ödeme talebi bulunamadı.'), { statusCode: 404 });
       await c.query(`INSERT INTO tahsilat (odeme_talebi_ref, dosya_ref, tutar_eur, tarih, kanal, referans, giren_ref, ucuncu_kisi_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [t.kimlik, t.dosya_ref, g.tutar, g.tarih, g.kanal, g.referans ?? null, o.kullanici, g.ucuncuKisi ?? null]);

@@ -4,6 +4,7 @@ import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
+import { TopluOdeme } from './TopluOdeme';
 import { ProsesFirma } from './Proses';
 import { YontemRaporuFirma } from './YontemRaporu';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
@@ -762,6 +763,7 @@ export function IdariIslemler() {
       <KartelaMaliyet />
       <KartelaResmiEtiket />
       <TicariAtamaBekleyenler />
+      <TopluOdeme />
       <TatilTakvimi />
       <ButceDonemi />
       <KurumBelgeleri />

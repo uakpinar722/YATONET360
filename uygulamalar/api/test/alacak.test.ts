@@ -182,3 +182,24 @@ describe('boş parametre (YG-826)', () => {
     try { expect(await sonMakam(o.db, 100)).toBe('Genel Müdür Yardımcısı'); } finally { await o.sup.query(`UPDATE sistem_parametresi SET deger = 5000 WHERE kod = 'limit_tid_eur'`); }
   });
 });
+
+describe('sigorta toplu ödemesi (YG-902)', () => {
+  it('toplam dağılıma eşit olmalı; yalnız o sigortacının faturası; tek işlemde dağıtılır; mükerrer banka referansı reddedilir; hata hepsini geri alır', async () => {
+    const SG = `Toplu SG ${Date.now()}`; const ac = async (s: string) => o.dosyaAc({ sigortaci: s, hasarNo: `H-${Math.random()}` }, { musteriTuru: 'Sigorta Şirketi' });
+    const a = await ac(SG); const b = await ac(SG); const x = await ac('Başka SG');
+    const ka = await fatura(a, { toplam: 1000, muhatap: 'Sigorta Şirketi' }) as unknown as string; const kb = await fatura(b, { toplam: 500, muhatap: 'Sigorta Şirketi' }) as unknown as string; const kx = await fatura(x, { toplam: 300, muhatap: 'Sigorta Şirketi' }) as unknown as string;
+    const ts = await o.gir('ts'); const u = '/api/sigorta-toplu-odeme'; const T = { sigortaci: SG, tarih: '2026-11-09', referans: `R-${Date.now()}`, bildirim: 'DB-1' };
+    expect((await o.ist('POST', u, await o.gir('ds'), { ...T, toplam: 1, dagilim: [] })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ts, { ...T, toplam: 1500, dagilim: [{ fatura: ka, tutar: 1000 }] })).json().hata).toContain('eşit');
+    expect((await o.ist('POST', u, ts, { ...T, toplam: 1300, dagilim: [{ fatura: ka, tutar: 1000 }, { fatura: kx, tutar: 300 }] })).json().hata).toContain('ait değildir');
+    expect((await o.sup.query(`SELECT tahsil_edilen_eur t FROM musteri_faturasi WHERE kimlik = $1`, [ka])).rows[0].t).toBe('0.00');
+    expect((await o.ist('POST', u, ts, { ...T, toplam: 1600, dagilim: [{ fatura: ka, tutar: 1100 }, { fatura: kb, tutar: 500 }] })).statusCode).toBe(409);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM sigorta_toplu_odeme WHERE banka_referansi = $1`, [T.referans])).rows[0].n).toBe(0);
+    const r = await o.ist('POST', u, ts, { ...T, toplam: 1200, dagilim: [{ fatura: ka, tutar: 1000 }, { fatura: kb, tutar: 200 }] }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM musteri_faturasi WHERE kimlik = $1`, [ka])).rows[0].durum).toBe('Tahsil Edildi');
+    expect((await o.sup.query(`SELECT durum, tahsil_edilen_eur t FROM musteri_faturasi WHERE kimlik = $1`, [kb])).rows[0]).toEqual({ durum: 'Kısmi Tahsil', t: '200.00' });
+    expect((await o.sup.query(`SELECT count(*)::int n, count(DISTINCT dosya_ref)::int d FROM tahsilat WHERE toplu_odeme_ref = $1`, [r.json().kimlik])).rows[0]).toEqual({ n: 2, d: 2 });
+    expect((await o.ist('POST', u, ts, { ...T, toplam: 100, dagilim: [{ fatura: kb, tutar: 100 }] })).json().hata).toContain('banka referansı');
+    expect((await o.ist('GET', `${u}?sigortaci=${encodeURIComponent(SG)}`, ts)).json().faturalar.map((z: { kimlik: string }) => z.kimlik)).toEqual([kb]);
+  });
+});
