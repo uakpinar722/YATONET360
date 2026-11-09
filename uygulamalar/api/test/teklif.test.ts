@@ -368,6 +368,17 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
     return { d, t, e: r.json() };
   };
+  it('EK iş emri zarf sapmasına bağlanınca görev kapanır ve sapma listeden düşer (YG-407)', async () => {
+    const { d, t, e } = await onarim();
+    const bg = (await o.sup.query(`INSERT INTO bulgu (bulgu_no, dosya_ref, konum_referansi, aciklama, bulgu_etiketi, bilgi_turu, hasar_onem_derecesi, yonlendirme, yonlendirme_sorumlu_ref, yonlendirme_hedef_tarihi, olusturan_ref) VALUES ($1,$2,'S1','Gizli','E','B','Orta','Y',$3,current_date,$3) RETURNING kimlik`, [`${d.dosyaNo}-B09`, d.kimlik, o.K.tu])).rows[0].kimlik;
+    const s = (await o.sup.query(`INSERT INTO sapma_kaydi (is_emri_ref, dosya_ref, tur, aciklama, karar, giren_ref, zarf_genisledi, bulgu_ref) VALUES ($1,$2,'Kapsam','Z','Değişiklik Talebi',$3,true,$4) RETURNING kimlik`, [e.kimlik, d.kimlik, o.K.tu, bg])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, ozet, sahip_kullanici_ref, nesne_turu, nesne_kimligi) VALUES ('Ek İş İş Emri Gerekli','gorev','b','o',$1,'Sapma',$2)`, [o.K.oy, s]);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, await o.gir('ds'))).json().zarfSapmalari).toHaveLength(1);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'EK', ana: e.kimlik, firma, yer: 'M', kapsam: 'Ek', teklif: t.kimlik, bedel: 10, sapma: s }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT ek_is_emri_ref r FROM sapma_kaydi WHERE kimlik = $1`, [s])).rows[0].r).toBe(r.json().kimlik);
+    expect((await o.kart('Ek İş İş Emri Gerekli', s)).durum).toBe('Tamamlandı');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, await o.gir('ds'))).json().zarfSapmalari).toHaveLength(0);
+  });
   it('numara ve tür; yetki; onaysız teklif, firma uygunsuzluğu ve mali limit boş iş emri reddedilir', async () => {
     const d = await hazir(); const t = await teklifAc(d); const oy = await o.gir('oy');
     expect((await o.sup.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].is_emri_no).toBe(`${d.dosyaNo}-KN01`);
@@ -634,5 +645,13 @@ describe('sigorta ödeme farkı (YG-891, SGF-1)', () => {
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/onaylanmayan-teklif`, await o.gir('ts'), {})).statusCode).toBe(409);
     const y = await kur(); const q = await o.ist('POST', `/api/teklif/${y.t.kimlik}/sigorta-odenecek`, ds, { tutar: y.top }); expect(q.json().fark).toBe(0);
     expect(await o.kart('Sigorta Ödeme Farkı', y.t.kimlik)).toBeUndefined();
+  });
+});
+
+describe('paket statüsü (PKT-1, YG-385)', () => {
+  it('iş emri statüsü yedi paket statüsüne eşlenir', async () => {
+    const d = await hazir(); const e = (await o.sup.query(`SELECT kimlik FROM is_emri WHERE dosya_ref = $1 LIMIT 1`, [d.kimlik])).rows[0].kimlik; const ds = await o.gir('ds');
+    const bak = async (statu: string, kabul: string | null = null) => { await o.sup.query(`UPDATE is_emri SET statu = $2, teknik_kabul_sonucu = $3 WHERE kimlik = $1`, [e, statu, kabul]); return (await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, ds)).json().isEmirleri[0].paket_statusu; };
+    for (const [s, k, p] of [['Taslak', null, 'Taslak'], ['İç Onayda', null, 'Onay Bekliyor'], ['Kabul Bekliyor', null, 'Onay Bekliyor'], ['Başlangıç Kontrolünde', null, 'Hazır'], ['Aktif', null, 'Uygulamada'], ['Durduruldu', null, 'Uygulamada'], ['Tamamlandı', null, 'Kontrol Bekliyor'], ['Tamamlandı', 'Kabul', 'Kabul'], ['Kapalı', 'Kabul', 'Kapalı'], ['İptal', null, null]] as const) expect(await bak(s, k)).toBe(p);
   });
 });

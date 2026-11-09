@@ -102,7 +102,8 @@ interface Kayitlar {
   ekonomikKilit: boolean;
   teklifler: { bant_disi?: boolean; bant_onayli?: boolean; kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string; aralik_disi?: number }[];
-  isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
+  zarfSapmalari: { kimlik: string; aciklama: string; is_emri_no: string }[];
+  isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; paket_statusu: string | null; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
 }
 interface Mali { kredi: { acik: number; limit: number; oran: number; uyari: boolean; asim: boolean; buyuk: boolean } | null; itirazlar: { kimlik: string; fatura_ref: string; kalem: string; tutar_eur: string; durum: string; yanit: string | null; yanit_son: string }[]; gecikme: { fatura: string; gun: number; tur: string; oran: number | null; faiz: number | null }[]; sigortali: boolean; ayriKalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
 
@@ -158,7 +159,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); void istek<{ yer: string; kapsam: string }>(`/dosya/${id}/kesif-talebi`).then((r) => setIe((x) => ({ ...x, yer: x.yer || r.yer, kapsam: x.kapsam || r.kapsam }))).catch(() => {}); }, [id]);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
-  const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
+  const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
   const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [gonderen, setGonderen] = useState(''); const [onayBelge, setOnayBelge] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
   if (!v) return null;
   const ticari = roller.includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
@@ -221,7 +222,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {v.isEmirleri.length === 0 && <div className="not">İş emri bulunmamaktadır.</div>}
         {v.isEmirleri.map((e) => (
           <div key={e.kimlik} className="soru">
-            <span>{e.ana_is_emri_ref ? '↳ ' : ''}{e.is_emri_no} · {e.firma} · {e.statu}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
+            <span>{e.ana_is_emri_ref ? '↳ ' : ''}{e.is_emri_no} · {e.firma} · {e.statu}{e.paket_statusu ? ` · Paket: ${e.paket_statusu}` : ''}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
             <div className="dugmeler">
               {e.aski && <AskiKarari aski={e.aski} yap={yap} />}
               {e.is_emri_turu === 'KN' && e.statu === 'Taslak' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/firmaya-gonder`, {}), 'Keşif iş emri firmaya gönderildi.')}>Firmaya Gönder</button>}
@@ -242,8 +243,9 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <label htmlFor="e-k">Kapsam</label><input id="e-k" value={ie.kapsam} onChange={(x) => setIe({ ...ie, kapsam: x.target.value })} />
           {ie.tur !== 'KN' && <><label htmlFor="e-b">Firma Bedeli (EUR)</label><input id="e-b" inputMode="decimal" value={ie.bedel} onChange={(x) => setIe({ ...ie, bedel: x.target.value })} /></>}
           {(ie.tur === 'ON' || ie.tur === 'EK' || ie.tur === 'PH') && <><label htmlFor="e-tk">Onaylı Teklif</label><select id="e-tk" value={ie.teklif} onChange={(x) => setIe({ ...ie, teklif: x.target.value })}><option value="">Seçiniz</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
+          {ie.tur === 'EK' && v.zarfSapmalari.length > 0 && <><label htmlFor="e-sp">Onarım Zarfı Sapması</label><select id="e-sp" value={ie.sapma} onChange={(x) => setIe({ ...ie, sapma: x.target.value })}><option value="">Bağlama</option>{v.zarfSapmalari.map((z) => <option key={z.kimlik} value={z.kimlik}>{z.is_emri_no} · {z.aciklama}</option>)}</select></>}
           {(ie.tur === 'EK' || ie.tur === 'GR') && <><label htmlFor="e-an">Ana İş Emri</label><select id="e-an" value={ie.ana} onChange={(x) => setIe({ ...ie, ana: x.target.value })}><option value="">Seçiniz</option>{v.isEmirleri.map((e) => <option key={e.kimlik} value={e.kimlik}>{e.is_emri_no}</option>)}</select></>}
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/is-emri`, { tur: ie.tur, firma: ie.firma, yer: ie.yer, kapsam: ie.kapsam, bedel: ie.bedel ? Number(ie.bedel.replace(',', '.')) : undefined, teklif: ie.teklif || undefined, ana: ie.ana || undefined }), 'İş emri oluşturuldu.')}>İş Emri Oluştur</button>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/is-emri`, { tur: ie.tur, firma: ie.firma, yer: ie.yer, kapsam: ie.kapsam, bedel: ie.bedel ? Number(ie.bedel.replace(',', '.')) : undefined, teklif: ie.teklif || undefined, ana: ie.ana || undefined, sapma: ie.sapma || undefined }), 'İş emri oluşturuldu.')}>İş Emri Oluştur</button>
         </>}
       </Blok>
       {m && <Blok baslik="Ödeme ve Fatura">

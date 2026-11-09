@@ -183,7 +183,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   // YG-435: KN, ON, EK Operasyon Yöneticisi; GR Teknik Yönetici çıkarır. YG-322: mali ve kapsam doğrulanmadan yayımlanmaz.
   s.post('/dosya/:id/is-emri', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { tur?: string; firma?: string; yer?: string; kapsam?: string; bedel?: number; baslangic?: string; bitis?: string; teklif?: string; siralar?: number[]; ana?: string; tehlikeliAtik?: boolean; brans?: string; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean };
+    const g = (i.body ?? {}) as { sapma?: string; tur?: string; firma?: string; yer?: string; kapsam?: string; bedel?: number; baslangic?: string; bitis?: string; teklif?: string; siralar?: number[]; ana?: string; tehlikeliAtik?: boolean; brans?: string; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT * FROM dosya WHERE kimlik = $1`, [id])).rows[0];
     if (d.statu !== 'Aktif') return y.code(409).send({ hata: 'İş emri yalnız Aktif dosyada verilir.' });
@@ -237,6 +237,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
         [no, g.tur, g.ana ?? null, id, g.teklif ?? null, g.firma, g.yer!.trim(), g.kapsam!.trim(), g.bedel ?? null, g.baslangic ?? null, g.bitis ?? null, Boolean(g.tehlikeliAtik), o.kullanici])).rows[0];
       if (g.tur === 'KN') await (await import('./ticari_atama.js')).ticariAtamaAc(c, id); // YG-1600
       if (g.tur === 'ON') await ym.yontemSinirAktar(c, e.kimlik, id); // PRS-1
+      if (g.tur === 'EK' && g.sapma && UUID.test(g.sapma)) { const zs = await c.query(`UPDATE sapma_kaydi SET ek_is_emri_ref = $3 WHERE kimlik = $1 AND dosya_ref = $2 AND zarf_genisledi AND ek_is_emri_ref IS NULL RETURNING kimlik`, [g.sapma, id, e.kimlik]); if (zs.rowCount) await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Ek İş İş Emri Gerekli' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.sapma]); } // YG-407
       for (const k of kalemler) await c.query(`INSERT INTO is_emri_kalemi (is_emri_ref, teklif_kalem_ref, satir_ref, aciklama, miktar, birim) VALUES ($1,$2,$3,$4,$5,$6)`, [e.kimlik, k.kimlik, k.satir_ref, k.aciklama, k.miktar, k.birim]);
       if (g.bedel !== undefined && g.bedel > 0) {
         // YG-302: son onay limite göre; kümülatif izlenir.

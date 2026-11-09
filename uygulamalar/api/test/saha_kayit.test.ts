@@ -245,3 +245,16 @@ describe('proses kayıtları (YG-1455, YG-408, YG-282, PRS-1)', () => {
     expect((await o.ist('POST', up, fC, { ...Y, malzeme: 'Poliüretan, Parti 123' })).json().kayitNo).toContain('FR-ONR-006');
   });
 });
+
+describe('onarım zarfı genişlemesi (YG-407)', () => {
+  it('gizli hasar bulgusu olmadan kaydedilmez; Ek İş görevi açılır; EK iş emri bağlanınca kapanır', async () => {
+    const { d, e } = await isEmri(); const tu = await o.gir('tu'); const u = `/api/is-emri/${e}/sapma`;
+    const bg = (await o.sup.query(`INSERT INTO bulgu (bulgu_no, dosya_ref, konum_referansi, aciklama, bulgu_etiketi, bilgi_turu, hasar_onem_derecesi, yonlendirme, yonlendirme_sorumlu_ref, yonlendirme_hedef_tarihi, olusturan_ref) VALUES ($1,$2,'S1','Söküm sonrası gizli hasar','E','B','Orta','Y',$3,current_date,$3) RETURNING kimlik`, [`${d.dosyaNo}-B01`, d.kimlik, o.K.tu])).rows[0].kimlik;
+    const G = { tur: 'Kapsam', aciklama: 'Zarf genişledi', karar: 'Değişiklik Talebi', zarfGenisledi: true };
+    expect((await o.ist('POST', u, tu, G)).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tu, { ...G, tur: 'Süre', bulgu: bg })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, tu, { ...G, bulgu: bg }); expect(r.statusCode, r.body).toBe(200); const s = r.json().kimlik as string;
+    expect((await o.kart('Ek İş İş Emri Gerekli', s)).durum).toBe('Bekliyor');
+    expect((await o.sup.query(`SELECT bulgu_ref FROM sapma_kaydi WHERE kimlik = $1`, [s])).rows[0].bulgu_ref).toBe(bg);
+  });
+});
