@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { kapanisKodu, kapanisSonrasiIsle, tekneCekim } from '../src/kapanis_ek.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', kk: 'Kalite Uzmanı (Kalite Kontrolör)', kk2: 'Kalite Uzmanı (Kalite Kontrolör)', km: 'Kalite Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', kk: 'Kalite Uzmanı (Kalite Kontrolör)', kk2: 'Kalite Uzmanı (Kalite Kontrolör)', km: 'Kalite Müdürü', oy: 'Operasyon Yöneticisi', omy: 'Operasyon Müdür Yardımcısı' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test74', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -44,5 +44,28 @@ describe('dosya performans değerlendirmesi (YG-785, YG-786)', () => {
     expect((await o.karar(son, 'km', 'Onayla')).statusCode).toBe(200);
     const v = (await o.ist('GET', u, kk)).json(); expect(v.kayit).toMatchObject({ durum: 'Onaylandı', sapma_nedeni: 'Düzeltildi' }); expect(v.ilkSeferde).toEqual({ n: 0, k: 0 });
     expect((await o.ist('GET', '/api/personel-karne?donem=' + new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 7), kk)).json().satirlar.find((x: { gosterge: string }) => x.gosterge === 'FR-KLT-011 tamamlama')).toMatchObject({ pay: 1, payda: 1 });
+  });
+});
+
+describe('Nihai Kapanış Özeti (YG-1541)', () => {
+  const zincir = async (d: string) => { const k = (await o.kart('Nihai Kapanış Özeti', d)).kimlik as string; expect((await o.karar(k, 'oy', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(k, 'omy', 'Onayla')).statusCode).toBe(200); };
+  const uretim = async (d: string) => (await o.sup.query(`SELECT gonder FROM belge_uretim WHERE tur = 'Nihai Kapanış Özeti' AND nesne = $1`, [d])).rows[0];
+  it('onaysız üretilmez; Operasyon Yöneticisi kontrol, Operasyon Müdür Yardımcısı onay; sigortasız dosyada yalnız özet üretilir', async () => {
+    const d = await kapat(); await kapanisSonrasiIsle(o.db, 'http://x'); expect(await uretim(d)).toBeUndefined();
+    await zincir(d); expect((await o.sup.query(`SELECT durum FROM nihai_kapanis_ozeti WHERE dosya_ref = $1`, [d])).rows[0].durum).toBe('Onaylandı');
+    expect((await uretim(d)).gonder).toBeNull();
+    const { kapanisOzetiTanim } = await import('../src/belge_uret.js'); const v = await kapanisOzetiTanim(o.db, d);
+    expect(v.t.kod).toBe('RP-RAP-004'); expect(v.t.onay?.rol).toBe('Operasyon Müdür Yardımcısı');
+  });
+  it('sigortalı dosyada BLD-77 ikili teyitten sonra özet ekiyle gider', async () => {
+    const d = await kapat(); await o.sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sigorta_teyit_bekleme_sn'`);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, dosya_niteligi = 'Sigorta bağlantılı', musteri_turu = 'Sigorta Şirketi' WHERE kimlik = $1`, [d, o.K.ds]);
+    const t = (await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, eposta, olusturan_ref) VALUES ($1,'Sigorta Şirketi','Sg','hasar@sigorta.local',$2) RETURNING kimlik`, [d, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, sigorta_hasar_dosya_no, sigorta_taraf_ref, olusturan_ref) VALUES ($1,'Sg','H-5',$2,$3)`, [d, t, o.K.ds]);
+    await kapanisSonrasiIsle(o.db, 'http://x'); await zincir(d); expect(await uretim(d)).toBeUndefined();
+    const g = (await o.sup.query(`SELECT kimlik, metin FROM sigorta_gonderim WHERE tur = 'Kapanış E-postası' AND nesne_kimligi = $1`, [d])).rows[0]; expect(g.metin).toContain('H-5');
+    const ds = await o.gir('ds'); const u = `/api/sigorta-gonderim/${g.kimlik}/teyit`;
+    expect((await o.ist('POST', u, ds, { adim: 1 })).statusCode).toBe(200); const r = await o.ist('POST', u, ds, { adim: 2 }); expect(r.statusCode, r.body).toBe(200);
+    expect((await uretim(d)).gonder).toMatchObject({ eposta: 'hasar@sigorta.local', sigortaTeyitli: true });
   });
 });

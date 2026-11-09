@@ -10,7 +10,7 @@ import { pdfUret, type BelgeTanim, type Bolum } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -295,8 +295,25 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   };
 }
 
+/** YG-1541: RP-RAP-004 Nihai Kapanış Özeti; kayıtlardan üretilir, Çözüm Ortağı kimliği taşımaz. */
+export async function kapanisOzetiTanim(db: Db, dosya: string) {
+  const b = await dosyaBilgi(db, dosya, ''); const dil = b.dil; const en = dil === 'en';
+  const o = (await db.query(`SELECT onay_zamani FROM nihai_kapanis_ozeti WHERE dosya_ref = $1 AND durum = 'Onaylandı'`, [dosya])).rows[0];
+  const k = (await db.query(`SELECT cikis_statusu, kapanma_nedeni, kapanis_zamani FROM kapanis_kontrolu WHERE dosya_ref = $1 AND durum = 'Onaylandı' ORDER BY kapanis_zamani DESC LIMIT 1`, [dosya])).rows[0];
+  const no = await altNumara(db, b.d.dosya_no, 'NK');
+  const isler = (await db.query(`SELECT m.aciklama, (SELECT kabul_turu FROM kabul_kaydi x WHERE x.is_emri_ref = i.kimlik ORDER BY x.olusturma_zamani DESC LIMIT 1) AS kabul FROM is_emri_kalemi m JOIN is_emri i ON i.kimlik = m.is_emri_ref WHERE i.dosya_ref = $1 ORDER BY m.aciklama`, [dosya])).rows;
+  const testler = (await db.query(`SELECT test_grubu, sonuc FROM test_kaydi WHERE dosya_ref = $1 AND sonuc IS NOT NULL ORDER BY test_no`, [dosya])).rows;
+  const acik = (await db.query(`SELECT a.tanim, a.hedef_tarih FROM acik_is_kalemi a JOIN kabul_kaydi x ON x.kimlik = a.kabul_ref WHERE x.dosya_ref = $1 AND a.kapanis_zamani IS NULL ORDER BY a.hedef_tarih`, [dosya])).rows;
+  const T = en ? { ad: 'Final Closing Summary', kap: 'Closing Control', st: 'Closing Status', ned: 'Closing Reason', zam: 'Closing Date', haz: 'Prepared By', kon: 'Checked By', uyg: 'Implementation', is: 'Work Item', kab: 'Acceptance', dog: 'Verification', tg: 'Test', sn: 'Result', acik: 'Open Obligations', hed: 'Target Date', r1: 'File Manager', r2: 'Operations Officer', r3: 'Deputy Operations Manager' } : { ad: 'Nihai Kapanış Özeti', kap: 'Kapanış Kontrolü', st: 'Kapanış Statüsü', ned: 'Kapanma Nedeni', zam: 'Kapanış Tarihi', haz: 'Hazırlayan', kon: 'Kontrol Eden', uyg: 'Uygulama', is: 'İş Kalemi', kab: 'Kabul', dog: 'Doğrulama', tg: 'Test', sn: 'Sonuç', acik: 'Açık Yükümlülük', hed: 'Hedef Tarih', r1: 'Dosya Sorumlusu', r2: 'Operasyon Yöneticisi', r3: 'Operasyon Müdür Yardımcısı' };
+  const bolumler: Bolum[] = [...ortak(b), { baslik: T.kap, tur: 'alanlar', alanlar: [{ et: T.st, deger: k?.cikis_statusu }, { et: T.ned, deger: k?.kapanma_nedeni }, { et: T.zam, deger: k?.kapanis_zamani ? gunAy(k.kapanis_zamani) : null }, { et: T.haz, deger: T.r1 }, { et: T.kon, deger: T.r2 }] }];
+  if (isler.length) bolumler.push({ baslik: T.uyg, tur: 'tablo', sutunlar: [{ ad: T.is }, { ad: T.kab }], satirlar: isler.map((x) => [x.aciklama, x.kabul]) });
+  if (testler.length) bolumler.push({ baslik: T.dog, tur: 'tablo', sutunlar: [{ ad: T.tg }, { ad: T.sn }], satirlar: testler.map((x) => [x.test_grubu, x.sonuc]) });
+  if (acik.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: T.hed }], satirlar: acik.map((x) => [x.tanim, gunAy(x.hedef_tarih)]) });
+  return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: T.ad, kod: 'RP-RAP-004', no, dosyaNo: b.d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: b.d.yat_adi, bolumler, onay: o ? { rol: T.r3, zaman: anSaat(o.onay_zamani), kanal: 'YATONET 360' } : undefined } as BelgeTanim };
+}
+
 /** CEO 09.11: kaşe basılan belgeler; sözleşmeler ve karşı tarafın beyan/onay belgeleri dışarıda. */
-const KASELI = ['Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 'Ödeme Talebi', 'İş Emri', 'Teslim Tutanağı', 'Mutabakat Raporu', 'Yöntem Bilgi Nüshası'];
+const KASELI = ['Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 'Ödeme Talebi', 'İş Emri', 'Teslim Tutanağı', 'Mutabakat Raporu', 'Yöntem Bilgi Nüshası', 'Nihai Kapanış Özeti'];
 
 /** Kuyruktaki belgeleri üretir, dosyaya resmî sürüm olarak bağlar, ekiyle gönderir. Hata üç denemeden sonra Dosya Sorumlusuna düşer. */
 export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
@@ -307,7 +324,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       { const me = await (await import('./yetki_ek.js')).belgeMaskeEngeli(c, u.tur, u.dosya_ref, JSON.stringify(v.t)); if (me) throw new Error(me); }
       const pdf = await pdfUret(KASELI.includes(u.tur) ? { ...v.t, kase: true } : v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);

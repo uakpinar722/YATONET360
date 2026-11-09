@@ -51,6 +51,7 @@ export function sigortaGonderimYollari(s: FastifyInstance, b: Baglam) {
   };
   // İkili teyit veren kişi nelerin gideceğini görür (V-80).
   const ekListesi = async (r: { tur: string; nesne_kimligi: string; dosya_ref: string | null }) => {
+    if (r.tur === 'Kapanış E-postası') return ['Nihai Kapanış Özeti.pdf'];
     if (r.tur !== 'Fiyat Teklifi') return [] as string[];
     const t = (await b.db.query(`SELECT teklif_no FROM fiyat_teklifi WHERE kimlik = $1`, [r.nesne_kimligi])).rows[0];
     const ra = (await b.db.query(`SELECT e.ad FROM belge_uretim u JOIN belge e ON e.kimlik = u.belge_ref WHERE u.dosya_ref = $1 AND u.tur = 'Teknik Rapor' AND u.durum = 'Üretildi' ORDER BY u.olusturma_zamani DESC LIMIT 1`, [r.dosya_ref])).rows[0];
