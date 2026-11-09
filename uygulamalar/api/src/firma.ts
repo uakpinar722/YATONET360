@@ -322,7 +322,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/firma-portal/dosya/:id/kapsam', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const f = await firmam(o.kullanici);
     if (!f || !UUID.test(id) || !(await b.db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu NOT IN ('Taslak', 'İç Onayda', 'İptal') LIMIT 1`, [id, f])).rowCount) return yok(y);
-    return (await b.db.query(`SELECT s.kimlik, s.satir_kodu, s.bolge_kodu, s.kartela_kodu, s.aciklama, s.miktar, s.birim FROM kapsam_satiri s JOIN kapsam_cetveli c ON c.kimlik = s.cetvel_ref WHERE c.dosya_ref = $1 AND c.durum = 'Onaylı' ORDER BY s.satir_kodu`, [id])).rows;
+    return (await b.db.query(`SELECT s.kimlik, s.satir_kodu, s.bolge_kodu, s.kartela_kodu, s.aciklama, s.miktar, s.birim FROM kapsam_satiri s JOIN kapsam_cetveli c ON c.kimlik = s.cetvel_ref WHERE c.dosya_ref = $1 AND c.durum = 'Onaylı' AND NOT EXISTS (SELECT 1 FROM tedarikci_teklif_kalemi x JOIN tedarikci_teklif_talebi t ON t.kimlik = x.talep_ref WHERE x.satir_ref = s.kimlik AND t.durum <> 'Süresi Doldu') ORDER BY s.satir_kodu`, [id])).rows; // YG-1427: tedarikçiye bağlı satırı firma fiyatlamaz
   });
 
   // YG-377: ilerleme miktar ve kanıtla; yalnız yüzde resmî ilerleme sayılmaz. YG-318: kapsam dışında iş durdurulur.

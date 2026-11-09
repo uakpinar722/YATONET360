@@ -429,11 +429,11 @@ interface TeklifTalebi { kimlik: string; talep_no: string; durum: string; gecerl
 
 /** YG-298: tedarikçiden teklif talebi; Tedarik Sorumlusu açar. */
 export function TeklifTalebiBolumu({ id, roller }: { id: string; roller: string[] }) {
-  const [l, setL] = useState<TeklifTalebi[]>([]); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [f, setF] = useState({ tedarikci: '', sonZaman: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet' });
+  const [l, setL] = useState<TeklifTalebi[]>([]); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [f, setF] = useState({ tedarikci: '', sonZaman: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', satir: '' }); const [satirlar, setSatirlar] = useState<{ kimlik: string; satir_kodu: string; aciklama: string }[]>([]);
   const ts = roller.includes('Tedarik Sorumlusu');
   const yukle = () => istek<TeklifTalebi[]>(`/dosya/${id}/teklif-talepleri`).then(setL);
   const { yap, Mesaj } = useYap(yukle);
-  useEffect(() => { void yukle().catch(() => {}); if (ts) void istek<typeof ted>('/firma/uygunluk?rol=Tedarikçi').then(setTed).catch(() => {}); }, [id]);
+  useEffect(() => { void yukle().catch(() => {}); if (ts) { void istek<typeof ted>('/firma/uygunluk?rol=Tedarikçi').then(setTed).catch(() => {}); void istek<typeof satirlar>(`/dosya/${id}/tedarik-satirlari`).then(setSatirlar).catch(() => {}); } }, [id]);
   if (!ts && !l.length) return null;
   return (
     <Blok baslik="Tedarikçi Teklif Talepleri">
@@ -442,10 +442,11 @@ export function TeklifTalebiBolumu({ id, roller }: { id: string; roller: string[
       {ts && <>
         <label htmlFor="tt-t">Tedarikçi</label><select id="tt-t" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })}><option value="">Seçiniz</option>{ted.filter((x) => !x.engel).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
         <label htmlFor="tt-s">Yanıt Son Zamanı</label><input id="tt-s" type="datetime-local" value={f.sonZaman} onChange={(e) => setF({ ...f, sonZaman: e.target.value })} />
+        <label htmlFor="tt-k">Kapsam Satırı (fiyat teklife geçer)</label><select id="tt-k" value={f.satir} onChange={(e) => setF({ ...f, satir: e.target.value })}><option value="">Bağlama</option>{satirlar.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.satir_kodu} · {x.aciklama}</option>)}</select>
         <label htmlFor="tt-u">Ürün</label><input id="tt-u" value={f.tanim} onChange={(e) => setF({ ...f, tanim: e.target.value })} />
         <label htmlFor="tt-p">Üretici Parça No</label><input id="tt-p" value={f.parcaNo} onChange={(e) => setF({ ...f, parcaNo: e.target.value })} />
         <div className="iki-tarih"><div><label htmlFor="tt-m">Miktar</label><input id="tt-m" inputMode="decimal" value={f.miktar} onChange={(e) => setF({ ...f, miktar: e.target.value })} /></div><div><label htmlFor="tt-b">Birim</label><input id="tt-b" value={f.birim} onChange={(e) => setF({ ...f, birim: e.target.value })} /></div></div>
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/teklif-talebi`, { tedarikci: f.tedarikci, sonZaman: f.sonZaman && new Date(f.sonZaman).toISOString(), kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: sayi(f.miktar), birim: f.birim }] }), 'Teklif talebi gönderildi.')}>Teklif Talebi Gönder</button>
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/teklif-talebi`, { tedarikci: f.tedarikci, sonZaman: f.sonZaman && new Date(f.sonZaman).toISOString(), kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: sayi(f.miktar), birim: f.birim, satir: f.satir || undefined }] }), 'Teklif talebi gönderildi.')}>Teklif Talebi Gönder</button>
       </>}
     </Blok>
   );

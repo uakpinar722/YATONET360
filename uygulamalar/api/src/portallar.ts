@@ -125,22 +125,30 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
 
   // Teklif talebi Tedarik Sorumlusundan; dosya kimliği ve müşteri tedarikçiye görünmez (YG-298).
   s.post('/dosya/:id/teklif-talebi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tedarikci?: string; sonZaman?: string; kalemler?: { tanim?: string; parcaNo?: string; miktar?: number; birim?: string }[] };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tedarikci?: string; sonZaman?: string; kalemler?: { tanim?: string; parcaNo?: string; miktar?: number; birim?: string; satir?: string }[] };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await rolBak(o.kullanici, ['Tedarik Sorumlusu']))) return y.code(403).send({ hata: 'Teklif talebini Tedarik Sorumlusu açar.' });
     const kl = g.kalemler ?? [];
     if (!g.tedarikci || !UUID.test(g.tedarikci) || !g.sonZaman || !kl.length || kl.some((k) => !k.tanim?.trim() || !(Number(k.miktar) > 0) || !k.birim?.trim())) return y.code(400).send({ hata: 'Tedarikçi, son zaman ve kalem bilgileri zorunludur.' });
     const f = (await b.db.query(`SELECT kayit_rolu FROM kurulus WHERE kimlik = $1`, [g.tedarikci])).rows[0];
     if (f?.kayit_rolu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kayıt tedarikçi değildir.' });
+    // YG-1427: kalem onaylı kapsamın bir satırına bağlanabilir; fiyatı o satırın teklif maliyeti olur.
+    for (const k of kl) if (k.satir && (!UUID.test(k.satir) || !(await b.db.query(`SELECT 1 FROM kapsam_satiri s JOIN kapsam_cetveli c ON c.kimlik = s.cetvel_ref WHERE s.kimlik = $1 AND c.dosya_ref = $2 AND c.durum = 'Onaylı'`, [k.satir, id])).rowCount)) return y.code(400).send({ hata: 'Kalem onaylı kapsamda değildir.' });
     return islem(async (c) => {
       const no = await disNumara(c, 'TT'); // YG-298: dosya kimliği tedarikçiye görünmez
       const r = (await c.query(`INSERT INTO tedarikci_teklif_talebi (talep_no, dosya_ref, kurulus_ref, son_zaman, olusturan_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [no, id, g.tedarikci, g.sonZaman, o.kullanici])).rows[0];
-      for (const k of kl) await c.query(`INSERT INTO tedarikci_teklif_kalemi (talep_ref, urun_tanimi, uretici_parca_no, miktar, birim) VALUES ($1,$2,$3,$4,$5)`, [r.kimlik, k.tanim!.trim(), k.parcaNo?.trim() ?? null, k.miktar, k.birim!.trim()]);
+      for (const k of kl) await c.query(`INSERT INTO tedarikci_teklif_kalemi (talep_ref, urun_tanimi, uretici_parca_no, miktar, birim, satir_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [r.kimlik, k.tanim!.trim(), k.parcaNo?.trim() ?? null, k.miktar, k.birim!.trim(), k.satir ?? null]);
       const al = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [g.tedarikci])).rows.map((x) => x.kullanici_ref as string);
       await bildir(c, { olay: `tt:${r.kimlik}`, kullanicilar: al, baslik: `${no} · Teklif Talebi`, eposta: true });
       return { kimlik: r.kimlik, talepNo: no };
     });
   });
+  s.get('/dosya/:id/tedarik-satirlari', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id)) || !(await rolBak(o.kullanici, ['Tedarik Sorumlusu']))) return yok(y);
+    return (await b.db.query(`SELECT s.kimlik, s.satir_kodu, s.aciklama, s.miktar, s.birim FROM kapsam_satiri s JOIN kapsam_cetveli c ON c.kimlik = s.cetvel_ref WHERE c.dosya_ref = $1 AND c.durum = 'Onaylı' AND s.bedel_turu = 'Malzeme' ORDER BY s.satir_kodu`, [id])).rows;
+  });
+
   s.get('/dosya/:id/teklif-talepleri', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);

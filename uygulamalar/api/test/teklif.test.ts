@@ -572,3 +572,28 @@ describe('Onarım Yöntem Raporu (YG-1454, YNT-1)', () => {
     } finally { await o.sup.query(`UPDATE kartela_kalemi SET ana_brans = $3 WHERE kod = $1 AND surum = $2`, [kod.k, kod.s, eski]); }
   });
 });
+
+describe('tedarikçi parça fiyatı (YG-1427, K-178)', () => {
+  const S = [{ aciklama: 'İşçilik', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 2, birim: 'saat' }, { aciklama: 'Pompa', nitelik: 'Onarım', bedel: 'Malzeme', miktar: 3, birim: 'adet', kartela: KARTELA }];
+  it('bağlı satırı firma görmez; yanıt beklerken teklif açılmaz; geçerli en düşük fiyat kartela kuralıyla geçer; bant dışı işaretlenir', async () => {
+    const d = await hazir({}, {}, S);
+    const st = (await o.sup.query(`SELECT s.kimlik FROM kapsam_satiri s JOIN kapsam_cetveli c ON c.kimlik = s.cetvel_ref WHERE c.dosya_ref = $1 AND s.aciklama = 'Pompa'`, [d.kimlik])).rows[0].kimlik;
+    const ted = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Parça Tedarik','Tedarikçi',$2) RETURNING kimlik`, [`S-TD${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const talep = async (no: string, durum: string, fiyat: number | null, gec = 'current_date + 30', son = "now() + interval '1 day'") => { const t = (await o.sup.query(`INSERT INTO tedarikci_teklif_talebi (talep_no, dosya_ref, kurulus_ref, son_zaman, durum, gecerlilik, olusturan_ref) VALUES ($1,$2,$3,${son},$4,${gec},$5) RETURNING kimlik`, [`${no}${Math.random()}`, d.kimlik, ted, durum, o.K.ds])).rows[0].kimlik; return (await o.sup.query(`INSERT INTO tedarikci_teklif_kalemi (talep_ref, urun_tanimi, miktar, birim, birim_fiyat_eur, satir_ref) VALUES ($1,'Pompa',3,'adet',$2,$3) RETURNING kimlik`, [t, fiyat, st])).rows[0].kimlik as string; };
+    await talep('B', 'Yanıt Bekliyor', null);
+    const kap = (await o.ist('GET', `/api/firma-portal/dosya/${d.kimlik}/kapsam`, firmaC)).json(); expect(kap.map((x: { aciklama: string }) => x.aciklama)).toEqual(['İşçilik']);
+    const ff = await firmaFiyat(d.kimlik, 51);
+    const ts = await o.gir('ts'); const u = `/api/dosya/${d.kimlik}/teklif`;
+    expect((await o.ist('POST', u, ts, { firmaTeklifi: ff })).json().hata).toContain('Tedarikçi fiyatı bekleyen');
+    await o.sup.query(`UPDATE tedarikci_teklif_talebi SET durum = 'Süresi Doldu' WHERE dosya_ref = $1`, [d.kimlik]);
+    expect((await o.ist('POST', u, ts, { firmaTeklifi: ff })).json().hata).toContain('Firma fiyatı bekleyen');
+    await talep('E', 'Yanıtlandı', 1, 'current_date - 1'); // süresi geçmiş ve en ucuz: sayılmaz
+    await talep('P', 'Yanıtlandı', 1000); const uc = await talep('U', 'Yanıtlandı', 800);
+    const r = await o.ist('POST', u, ts, { firmaTeklifi: ff }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.sup.query(`SELECT birim_maliyet_eur, birim_satis_fiyati_eur, tedarikci_kalem_ref, firma_kalem_ref, bant_disi FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND aciklama = 'Pompa'`, [r.json().kimlik])).rows[0];
+    const kat = Number((await o.sup.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'fiyat_katsayisi'`)).rows[0].deger);
+    expect(Number(k.birim_maliyet_eur)).toBe(800); expect(Number(k.birim_satis_fiyati_eur)).toBeCloseTo(800 * kat, 2); expect(k.tedarikci_kalem_ref).toBe(uc); expect(k.firma_kalem_ref).toBeNull(); expect(k.bant_disi).toBe(true);
+    const rv = await o.ist('POST', `/api/teklif/${r.json().kimlik}/revizyon`, ts, { neden: 'Kapsam düzeltmesi' }); expect(rv.statusCode, rv.body).toBe(200);
+    expect((await o.sup.query(`SELECT tedarikci_kalem_ref r FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND aciklama = 'Pompa'`, [rv.json().kimlik])).rows[0].r).toBe(uc);
+  });
+});

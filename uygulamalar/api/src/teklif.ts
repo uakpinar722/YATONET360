@@ -370,7 +370,13 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const satirlar = (await b.db.query(`SELECT s.*, f.kimlik AS firma_kalem, f.birim_fiyat_eur FROM kapsam_satiri s LEFT JOIN firma_fiyat_kalemi f ON f.satir_ref = s.kimlik AND f.teklif_ref = $2 WHERE s.cetvel_ref = $1 ORDER BY s.satir_kodu`, [cetvel.kimlik, g.firmaTeklifi])).rows;
     // YG-180: Yat Sahibi Talebi yalnız yat sahibine hitaben teklifte; sigortalı dosyada yat sahibine ayrı teklif açılabilir.
     if (muhatap !== 'Yat Sahibi' && satirlar.some((r) => r.isin_niteligi === 'Yat Sahibi Talebi')) return y.code(400).send({ hata: 'Yat Sahibi Talebi niteliği yalnız yat sahibine hitaben teklifte seçilir.' });
-    const eksik = satirlar.filter((r) => r.firma_kalem === null);
+    // YG-1427, K-178: tedarikçiye bağlı satırda geçerli en düşük tedarikçi fiyatı firma fiyatı gibi kartela kuralıyla teklife geçer.
+    const tdf = new Map((await b.db.query(`SELECT DISTINCT ON (x.satir_ref) x.satir_ref, x.kimlik, x.birim_fiyat_eur FROM tedarikci_teklif_kalemi x JOIN tedarikci_teklif_talebi t ON t.kimlik = x.talep_ref WHERE t.dosya_ref = $1 AND x.satir_ref IS NOT NULL AND x.birim_fiyat_eur IS NOT NULL AND t.durum = 'Yanıtlandı' AND t.gecerlilik >= (now() AT TIME ZONE 'Europe/Istanbul')::date ORDER BY x.satir_ref, x.birim_fiyat_eur`, [id])).rows.map((r) => [r.satir_ref as string, r]));
+    const tdb = new Set((await b.db.query(`SELECT x.satir_ref FROM tedarikci_teklif_kalemi x JOIN tedarikci_teklif_talebi t ON t.kimlik = x.talep_ref WHERE t.dosya_ref = $1 AND x.satir_ref IS NOT NULL AND t.durum = 'Yanıt Bekliyor' AND t.son_zaman > now()`, [id])).rows.map((r) => r.satir_ref as string));
+    for (const r of satirlar) { const td = tdf.get(r.kimlik); if (td) { r.firma_kalem = null; r.tedarikci_kalem = td.kimlik; r.birim_fiyat_eur = td.birim_fiyat_eur; } }
+    const tdBekleyen = satirlar.filter((r) => !r.tedarikci_kalem && tdb.has(r.kimlik));
+    if (tdBekleyen.length) return y.code(409).send({ hata: `Tedarikçi fiyatı bekleyen kalem var: ${tdBekleyen.map((r) => r.satir_kodu).join(', ')}.`, eksik: tdBekleyen.map((r) => r.satir_kodu) });
+    const eksik = satirlar.filter((r) => r.firma_kalem === null && !r.tedarikci_kalem);
     if (eksik.length) return y.code(409).send({ hata: `Firma fiyatı bekleyen kalem var: ${eksik.map((r) => r.satir_kodu).join(', ')}.`, eksik: eksik.map((r) => r.satir_kodu) });
     return islem(async (c) => {
       const [kat, bant, kdvO] = [await parametre(c, 'fiyat_katsayisi'), await parametre(c, 'bant_orani'), await parametre(c, 'kdv_orani')];
@@ -392,8 +398,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
         if (h.bantDisi) bantDisi++;
         if (r.kartela_kodu) kodlar.push(r.kartela_kodu);
         hesap.push({ tutar_eur: h.tutar, opsiyon: false });
-        await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-          [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi]);
+        await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, tedarikci_kalem_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi, r.tedarikci_kalem ?? null]);
       }
       const top = toplamlar(hesap, null, 0, kdvO);
       await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [t.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
@@ -418,7 +424,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const kalemler = (await b.db.query(`SELECT * FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows;
     const r = await roller(o.kullanici);
     const maliyetGorur = r.some((x) => [TICARI, 'Ticari İşler Direktörü', 'Genel Müdür Yardımcısı', 'CEO', 'Muhasebe ve Finans Müdürü', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yardımcısı'].includes(x));
-    return { ...t, kalemler: kalemler.map((k) => (maliyetGorur ? k : { ...k, birim_maliyet_eur: undefined, firma_kalem_ref: undefined })), uyarilar: await kartelaUyarilari(b.db, kalemler.map((k) => k.kartela_kodu).filter(Boolean)) };
+    return { ...t, kalemler: kalemler.map((k) => (maliyetGorur ? k : { ...k, birim_maliyet_eur: undefined, firma_kalem_ref: undefined, tedarikci_kalem_ref: undefined })), uyarilar: await kartelaUyarilari(b.db, kalemler.map((k) => k.kartela_kodu).filter(Boolean)) };
   });
 
   s.get('/dosya/:id/teklifler', oturumlu, async (i, y) => {
@@ -705,7 +711,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.statu === 'Yerine Geçti') return y.code(409).send({ hata: 'Bu sürüm yerine geçmiştir.' });
     return islem(async (c) => {
       const yeni = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, surum_no, onceki_surum_ref, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, revizyon_nedeni, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, bildirilen_sure_gun) SELECT teklif_no, surum_no + 1, kimlik, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, $2, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, ara_toplam_eur * (1 + kdv_orani / 100), ara_toplam_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, bildirilen_sure_gun FROM fiyat_teklifi WHERE kimlik = $1 RETURNING kimlik, surum_no`, [t.kimlik, neden.trim()])).rows[0];
-      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon) SELECT $2, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik, yeni.kimlik]);
+      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon, tedarikci_kalem_ref) SELECT $2, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon, tedarikci_kalem_ref FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik, yeni.kimlik]);
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Yerine Geçti', guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
       await (await import('./resmi_onay.js')).resmiOnayKontrol(c, yeni.kimlik); // YG-1441
       await c.query(`UPDATE is_karti SET durum = 'Geçersiz', kapanma_zamani = now() WHERE tur = 'Fiyat Teklifi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [t.kimlik]);
