@@ -7,6 +7,7 @@ import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayMakami, rolSahipleri } from './makam.js';
+import { DURAK_SN } from './sure.js';
 import { isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
 
@@ -15,9 +16,9 @@ const DONEM = /^\d{4}-\d{2}$/; const IKS = 'İnsan Kaynakları Sorumlusu'; const
 const istanbulAy = (d = new Date()) => new Date(d.getTime() + 3 * 3_600_000).toISOString().slice(0, 7);
 const yuvarla = (x: number) => Math.round(x * 100) / 100;
 
-type Olcum = { pay: number; payda: number };
+type Olcum = { pay: number; payda: number; kapsam?: string };
 type Gosterge = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: string };
-export type Satir = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: number; pay: number | null; payda: number | null; deger: number | null; puan: number | null };
+export type Satir = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: number; pay: number | null; payda: number | null; deger: number | null; puan: number | null; kapsam: string | null };
 
 /** Kayıt taramasıyla hesaplanan göstergeler; listede olmayan gösterge "Ölçüm Yok" kalır ve puana girmez. */
 const ONAY_GOSTERGE = new Set(['Onay süresi uyumu', 'Silsile işlem süresi', 'Kademe onay süresi uyumu']);
@@ -30,8 +31,23 @@ async function onaySureOlc(db: Db, kullanici: string, rol: string, donem: string
       WHERE (yapan_ref = $1 OR (yapan_ref IS NULL AND rol_ref = $2)) AND to_char(zaman AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $3 AND (NOT $4 OR tur ILIKE '%sipariş%')`, [kullanici, rol, donem, siparis])).rows[0];
   return r.payda ? { pay: r.pay, payda: r.payda } : null;
 }
-async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, donem: string): Promise<Olcum | null> {
-  return ONAY_GOSTERGE.has(g.gosterge) ? onaySureOlc(db, kullanici, rol, donem, /sipariş onay/i.test(g.hesap)) : null;
+const ay = (alan: string) => `to_char(${alan} AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $2`;
+const kapanan = `FROM kapanis_kontrolu c JOIN dosya d ON d.kimlik = c.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND c.durum = 'Onaylandı' AND ${ay('c.kapanis_zamani')}`;
+/** Dosya Sorumlusu: dosyaya dayalı göstergeler zorluk katsayısıyla ağırlıklıdır (Cilt I ¶2029). Kaynağı henüz olmayan kısım kapsam notunda görünür. */
+const DS_SORGU: Record<string, { sql: string; kapsam: string }> = {
+  'Süre uyumu': { kapsam: 'İlerleme raporu adımı henüz sayılmıyor.', sql: `SELECT sum(k) payda, coalesce(sum(k) FILTER (WHERE ok), 0) pay FROM (
+      SELECT d.zorluk_katsayisi k, (s.tamamlanma IS NOT NULL AND s.tamamlanma <= s.bitis + make_interval(secs => ${DURAK_SN})) ok FROM dosya_sure s JOIN dosya d ON d.kimlik = s.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND ${ay('s.bitis')} AND (s.tamamlanma IS NOT NULL OR s.bitis < now())
+      UNION ALL SELECT d.zorluk_katsayisi, (m.gerceklesme_tarihi IS NOT NULL AND m.gerceklesme_tarihi <= coalesce(m.guncel_tarih, m.baz_tarih)) FROM kilometre_tasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND to_char(coalesce(m.guncel_tarih, m.baz_tarih), 'YYYY-MM') = $2 AND (m.gerceklesme_tarihi IS NOT NULL OR coalesce(m.guncel_tarih, m.baz_tarih) < current_date)) x` },
+  'Kalite (ilk seferde kabul, uygunsuzluk)': { kapsam: 'Uygunsuzluk düşümü tanımlı olmadığından yalnız ilk seferde kabul sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE e.teknik_ret_sayisi = 0), 0) pay FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND EXISTS (SELECT 1 FROM kabul_kaydi k WHERE k.is_emri_ref = e.kimlik AND ${ay('k.olusturma_zamani')})` },
+  'Mali sonuç (marj, tahsilat süresi)': { kapsam: 'Net marj henüz ölçülmüyor; yalnız vadesinde tahsilat sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE f.tahsil_edilen_eur >= f.toplam_eur AND (SELECT max(t.tarih) FROM tahsilat t WHERE t.fatura_ref = f.kimlik) <= f.vade), 0) pay FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE d.dosya_sorumlusu_ref = $1 AND f.fatura_no IS NOT NULL AND f.vade < current_date AND to_char(f.vade, 'YYYY-MM') = $2` },
+  'Müşteri ve şikâyet': { kapsam: 'Memnuniyet puanı henüz ölçülmüyor; yalnız şikâyetsiz kapanış sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE NOT EXISTS (SELECT 1 FROM garanti_sikayet g WHERE g.dosya_ref = d.kimlik AND 'Şikâyet' = ANY(g.kayit_turu))), 0) pay ${kapanan}` },
+  'Kayıt bütünlüğü': { kapsam: 'Form süresi henüz sayılmıyor; yalnız eksiksiz kapanış sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE cardinality(coalesce(c.eksiklik_isaretleri, '{}')) = 0), 0) pay ${kapanan}` },
+};
+async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: string, donem: string): Promise<Olcum | null> {
+  if (ONAY_GOSTERGE.has(g.gosterge)) return onaySureOlc(db, kullanici, rol, donem, /sipariş onay/i.test(g.hesap));
+  const q = rolAdi === 'Dosya Sorumlusu' ? DS_SORGU[g.gosterge] : undefined; if (!q) return null;
+  const r = (await db.query(q.sql, [kullanici, donem])).rows[0]; const payda = Number(r.payda ?? 0);
+  return payda ? { pay: Number(r.pay), payda, kapsam: q.kapsam } : null;
 }
 
 /** Hedefi "≥ %N" olan göstergede hedefe ulaşan 100 alır; diğerlerinde oran doğrudan puandır. */
@@ -51,8 +67,8 @@ export async function karneHesapla(db: Db, kullanici: string, rol: { ad: string;
   const gs = (await db.query(`SELECT kimlik, gosterge, hesap, hedef, agirlik FROM karne_gosterge WHERE rol_adi = $1 ORDER BY sira`, [rol.ad])).rows as Gosterge[];
   const satirlar: Satir[] = [];
   for (const g of gs) {
-    const o = await olc(db, g, kullanici, rol.kimlik, donem); const deger = o ? yuvarla((o.pay / o.payda) * 100) : null;
-    satirlar.push({ kimlik: g.kimlik, gosterge: g.gosterge, hesap: g.hesap, hedef: g.hedef, agirlik: Number(g.agirlik), pay: o?.pay ?? null, payda: o?.payda ?? null, deger, puan: deger === null ? null : gostergePuani(deger, g.hedef) });
+    const o = await olc(db, g, kullanici, rol.kimlik, rol.ad, donem); const deger = o ? yuvarla((o.pay / o.payda) * 100) : null;
+    satirlar.push({ kimlik: g.kimlik, gosterge: g.gosterge, hesap: g.hesap, hedef: g.hedef, agirlik: Number(g.agirlik), pay: o?.pay ?? null, payda: o?.payda ?? null, deger, puan: deger === null ? null : gostergePuani(deger, g.hedef), kapsam: o?.kapsam ?? null });
   }
   const olcu = satirlar.filter((x) => x.puan !== null); const top = olcu.reduce((t, x) => t + x.agirlik, 0);
   return { satirlar, sistem: top ? yuvarla(olcu.reduce((t, x) => t + x.agirlik * x.puan!, 0) / top) : null };
@@ -79,7 +95,7 @@ export async function zincirdeMi(db: Db, bakan: string, personel: string): Promi
 }
 
 async function satirYaz(c: Db, id: string, satirlar: Satir[]) {
-  for (const s of satirlar) await c.query(`INSERT INTO personel_karne_satir (donem_ref, gosterge_ref, agirlik, pay, payda, deger, puan) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (donem_ref, gosterge_ref) DO UPDATE SET agirlik = $3, pay = $4, payda = $5, deger = $6, puan = $7`, [id, s.kimlik, s.agirlik, s.pay, s.payda, s.deger, s.puan]);
+  for (const s of satirlar) await c.query(`INSERT INTO personel_karne_satir (donem_ref, gosterge_ref, agirlik, pay, payda, deger, puan, kapsam) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (donem_ref, gosterge_ref) DO UPDATE SET agirlik = $3, pay = $4, payda = $5, deger = $6, puan = $7, kapsam = $8`, [id, s.kimlik, s.agirlik, s.pay, s.payda, s.deger, s.puan, s.kapsam]);
 }
 const num = (x: unknown) => (x === null || x === undefined ? null : Number(x));
 
@@ -116,7 +132,7 @@ export function personelKarneYollari(s: FastifyInstance, b: Baglam) {
     const itiraz = k ? (await b.db.query(`SELECT durum, konu, karar_gerekce FROM personel_karne_itiraz WHERE donem_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 5`, [k.kimlik])).rows : [];
     const ortak = { rol: rol.ad, donem, kendisi: kisi === o.kullanici, ikYetkili: await rolVar(o.kullanici, IKS), itiraz };
     if (k?.durum === 'Kapalı') {
-      const satirlar = (await b.db.query(`SELECT g.kimlik, g.gosterge, g.hesap, g.hedef, s.agirlik, s.pay, s.payda, s.deger, s.puan FROM personel_karne_satir s JOIN karne_gosterge g ON g.kimlik = s.gosterge_ref WHERE s.donem_ref = $1 ORDER BY g.sira`, [k.kimlik])).rows;
+      const satirlar = (await b.db.query(`SELECT g.kimlik, g.gosterge, g.hesap, g.hedef, s.agirlik, s.pay, s.payda, s.deger, s.puan, s.kapsam FROM personel_karne_satir s JOIN karne_gosterge g ON g.kimlik = s.gosterge_ref WHERE s.donem_ref = $1 ORDER BY g.sira`, [k.kimlik])).rows;
       return { ...ortak, durum: 'Kapalı', satirlar, sistem: num(k.sistem_puani), yonetici: num(k.yonetici_puani), nihai: num(k.nihai_puan) };
     }
     const h = await karneHesapla(b.db, kisi, rol, donem); const yon = num(k?.yonetici_puani);

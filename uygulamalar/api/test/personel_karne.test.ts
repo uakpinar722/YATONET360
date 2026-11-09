@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { gostergePuani, karneKapanisGorevi, nihaiPuan } from '../src/personel_karne.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test73', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -64,5 +64,29 @@ describe('kişisel karne (YG-960–968)', () => {
     expect((await o.sup.query(`SELECT agirlik::float a FROM karne_gosterge WHERE kimlik = $1`, [gs[0].kimlik])).rows[0].a).toBe(30);
     expect((await o.karar((await o.kart('Karne Ağırlık Değişikliği', r.json().kimlik)).kimlik, 'cg', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT agirlik::float a FROM karne_gosterge WHERE kimlik = $1`, [gs[0].kimlik])).rows[0].a).toBe(25);
+  });
+});
+
+describe('Dosya Sorumlusu göstergeleri ve zorluk katsayısı (YG-964, YG-965)', () => {
+  const O = { oncelik: 'A', brans: 'B', kabulSinifi: 'C', tutarBandi: 'D', erisim: 'E', gizliHasar: 'F' };
+  const dosya = async () => { const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]); return d.kimlik as string; };
+  it('katsayıyı Teknik Müdür girer; ölçütler zorunlu; gerekçeyle yalnız bir kez revize edilir', async () => {
+    const d = await dosya(); const tm = await o.gir('tm'); const u = `/api/dosya/${d}/zorluk`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { katsayi: 1.5, olcutler: O })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, tm, { katsayi: 2.5, olcutler: O })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tm, { katsayi: 1.5, olcutler: { ...O, erisim: '' } })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tm, { katsayi: 1.5, olcutler: O })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, tm, { katsayi: 1.6, olcutler: O })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tm, { katsayi: 1.6, olcutler: O, gerekce: 'Gizli hasar çıktı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, tm, { katsayi: 1.7, olcutler: O, gerekce: 'Tekrar' })).statusCode).toBe(409);
+    expect((await o.sup.query(`SELECT zorluk_katsayisi::float k, zorluk_revize_edildi r FROM dosya WHERE kimlik = $1`, [d])).rows[0]).toEqual({ k: 1.6, r: true });
+  });
+  it('süre uyumu ve kayıt bütünlüğü zorluk katsayısıyla ağırlıklı ölçülür; kapsam notu görünür', async () => {
+    const [a, b] = [await dosya(), await dosya()]; const tm = await o.gir('tm'); const D2 = '2026-09';
+    expect((await o.ist('POST', `/api/dosya/${a}/zorluk`, tm, { katsayi: 2, olcutler: O })).statusCode).toBe(200);
+    await o.sup.query(`INSERT INTO dosya_sure (dosya_ref, tur, baslangic, bitis, tamamlanma) VALUES ($1,'Keşif','2026-09-01T09:00:00Z','2026-09-02T09:00:00Z','2026-09-01T12:00:00Z'), ($2,'Keşif','2026-09-01T09:00:00Z','2026-09-02T09:00:00Z','2026-09-05T12:00:00Z')`, [a, b]);
+    const r = (await o.ist('GET', `/api/personel-karne?donem=${D2}`, await o.gir('ds'))).json();
+    const s = r.satirlar.find((x: { gosterge: string }) => x.gosterge === 'Süre uyumu'); expect(s).toMatchObject({ pay: 2, payda: 3, deger: 66.67, puan: 74.08 }); expect(s.kapsam).toContain('İlerleme raporu');
+    expect(r.satirlar.find((x: { gosterge: string }) => x.gosterge === 'Kayıt bütünlüğü').puan).toBeNull(); expect(r.sistem).toBe(74.08);
   });
 });
