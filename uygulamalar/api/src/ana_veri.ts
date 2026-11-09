@@ -96,7 +96,7 @@ export function anaVeriYollari(s: FastifyInstance, b: Baglam) {
   s.get('/baglama-noktalari', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     const q = i.query as { il?: string; ara?: string };
-    return (await b.db.query(`SELECT n.kimlik, n.nokta_no, n.tur, n.il, n.ilce, n.ad, n.teyit_durumu, t.tesis_kodu FROM baglama_noktasi n LEFT JOIN firma_tesisi t ON t.kimlik = n.tesis_ref WHERE n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi' AND ($1 = '' OR n.il = $1) AND ($2 = '' OR n.ad ILIKE '%' || $2 || '%') ORDER BY n.il, n.ad LIMIT 200`, [q.il ?? '', q.ara ?? ''])).rows;
+    return (await b.db.query(`SELECT n.kimlik, n.nokta_no, n.tur, n.il, n.ilce, n.ad, n.teyit_durumu, t.tesis_kodu FROM baglama_noktasi n LEFT JOIN firma_tesisi t ON t.kimlik = n.tesis_ref WHERE n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi' AND ($1 = '' OR n.il = $1) AND ($2 = '' OR tr_norm(n.ad) LIKE '%' || tr_norm($2) || '%') ORDER BY n.il, n.ad LIMIT 200`, [q.il ?? '', q.ara ?? ''])).rows;
   });
 
   // ANV-1: yalnız sözleşmeli tesis kaydına bağlanır; bağlama noktası tek başına iş alan kayıt değildir.

@@ -179,14 +179,14 @@ export function yetkiEkYollari(s: FastifyInstance, b: Baglam) {
     const f = (await b.db.query(`SELECT kurulus_ref FROM kurulus_kullanici WHERE kullanici_ref = $1 LIMIT 1`, [o.kullanici])).rows[0];
     if (!f) return yok(y);
     if (q.length < 2) return [];
-    return (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.statu, d.dosya_no, x.yat_adi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat x ON x.kimlik = d.yat_ref WHERE e.kurulus_ref = $1 AND (e.is_emri_no ILIKE '%' || $2 || '%' OR d.dosya_no ILIKE '%' || $2 || '%' OR x.yat_adi ILIKE '%' || $2 || '%') ORDER BY e.olusturma_zamani DESC LIMIT 30`, [f.kurulus_ref, q])).rows;
+    return (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.statu, d.dosya_no, x.yat_adi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat x ON x.kimlik = d.yat_ref WHERE e.kurulus_ref = $1 AND (tr_norm(e.is_emri_no) LIKE '%' || tr_norm($2) || '%' OR tr_norm(d.dosya_no) LIKE '%' || tr_norm($2) || '%' OR tr_norm(x.yat_adi) LIKE '%' || tr_norm($2) || '%') ORDER BY e.olusturma_zamani DESC LIMIT 30`, [f.kurulus_ref, q])).rows;
   });
   s.get('/tedarikci-portal/ara', oturumlu, async (i, y) => {
     const o = i.oturum!; const q = String((i.query as { q?: string }).q ?? '').trim();
     const f = (await b.db.query(`SELECT kurulus_ref FROM kurulus_kullanici WHERE kullanici_ref = $1 LIMIT 1`, [o.kullanici])).rows[0];
     if (!f) return yok(y);
     if (q.length < 2) return [];
-    return (await b.db.query(`SELECT s.kimlik, s.siparis_no, d.dosya_no FROM tedarik_siparisi s JOIN dosya d ON d.kimlik = s.dosya_ref JOIN yat x ON x.kimlik = d.yat_ref WHERE s.kurulus_ref = $1 AND (s.siparis_no ILIKE '%' || $2 || '%' OR d.dosya_no ILIKE '%' || $2 || '%' OR x.yat_adi ILIKE '%' || $2 || '%') ORDER BY s.olusturma_zamani DESC LIMIT 30`, [f.kurulus_ref, q])).rows;
+    return (await b.db.query(`SELECT s.kimlik, s.siparis_no, d.dosya_no FROM tedarik_siparisi s JOIN dosya d ON d.kimlik = s.dosya_ref JOIN yat x ON x.kimlik = d.yat_ref WHERE s.kurulus_ref = $1 AND (tr_norm(s.siparis_no) LIKE '%' || tr_norm($2) || '%' OR tr_norm(d.dosya_no) LIKE '%' || tr_norm($2) || '%' OR tr_norm(x.yat_adi) LIKE '%' || tr_norm($2) || '%') ORDER BY s.olusturma_zamani DESC LIMIT 30`, [f.kurulus_ref, q])).rows;
   });
 
   // YG-1027: rıza kayıtları; veri sahibi Müşteri ve Paydaş İlişkileri Müdürü, süreç kontrolü Hukuk ve Uyum Uzmanı.

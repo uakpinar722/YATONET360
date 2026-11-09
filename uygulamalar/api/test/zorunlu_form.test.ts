@@ -17,3 +17,12 @@ describe('zorunlu form seti (YG-635)', () => {
     const r = await o.ist('GET', `/api/dosya/${d.kimlik}/zorunlu-formlar`, await o.gir('ds')); expect(r.statusCode).toBe(200); expect(r.json().length).toBe(4);
   });
 });
+
+describe('belge ayrıntıları ve arama (YG-683, YG-715, YG-1373)', () => {
+  it('paket birimi Maktuen; ihbar iç kayıttır; arama Türkçe karakter gözetmez', async () => {
+    const { hasarIhbarTanim, miktarYaz } = await import('../src/belge_uret.js');
+    expect(miktarYaz({ miktar: 1, birim: 'Paket' }, 'tr')).toBe('Maktuen'); expect(miktarYaz({ miktar: 1, birim: 'paket' }, 'en')).toBe('Lump sum'); expect(miktarYaz({ miktar: 2, birim: 'Adet' }, 'tr')).toContain('Adet');
+    const d = await o.dosyaAc({}, {}); const v = await hasarIhbarTanim(o.db, d.kimlik); expect(v.t).toMatchObject({ kod: 'FR-OPS-009', icKayit: true }); expect(v.t.bandEk?.map((x) => x.et)).toEqual(['Bildirim Zamanı', 'Kayıt Zamanı']);
+    const n = async (a: string) => (await o.sup.query(`SELECT tr_norm($1) x`, [a])).rows[0].x; expect(await n('ŞANZIMAN')).toBe(await n('sanziman')); expect(await n('İSTANBUL')).toBe(await n('Istanbul'));
+  });
+});

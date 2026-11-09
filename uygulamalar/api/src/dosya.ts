@@ -256,6 +256,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (sahip && t.talep_sahibi_turu !== 'Yat Sahibi') await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_ref, taraf_rolu, kisi_adi_soyadi, telefon, eposta, kullanici_ref, olusturan_ref) VALUES ($1,$2,'Yat Sahibi',$3,$4,$5,$6,$7)`, [d.kimlik, sahip.kimlik, sahip.unvan_ad_soyad, sahip.telefon, sahip.eposta, sahip.kullanici_ref, o.kullanici]);
       if (sahip && t.talep_sahibi_turu === 'Yat Sahibi') await c.query(`UPDATE dosya_tarafi SET taraf_ref = $2, kullanici_ref = $3 WHERE kimlik = $1`, [talepTarafi.kimlik, sahip.kimlik, sahip.kullanici_ref]);
       if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigorta_taraf_ref, sigortaci_adi, police_no, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [d.kimlik, t.talep_sahibi_turu === 'Sigorta Şirketi' ? talepTarafi.kimlik : null, sigortaAdi, g.policeNo?.trim() || t.police_no_beyan, g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan, o.kullanici]);
+      await (await import('./belge_uret.js')).belgeUret(c, { tur: 'Hasar İhbar ve İlk Kayıt', nesne: d.kimlik, dosya: d.kimlik }); // YG-715
       // Açılışı yapan görevli yeni dosya sorumlusu olmaz; atamayı Operasyon Müdürü yapar (YG-047).
       await c.query(`UPDATE is_karti SET nesne_turu = 'Dosya', nesne_kimligi = $2 WHERE nesne_kimligi = $1 AND tur = 'Kritik Öncelik Teyidi'`, [id, d.kimlik]);
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND tur = 'İhbar Açılış Kontrolü' AND durum = 'Bekliyor'`, [id]);
@@ -592,7 +593,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (q.length < 2) return { dosyalar: [] };
     const { rows } = await b.db.query(
       `SELECT d.kimlik, d.dosya_no, d.statu, d.oncelik, y.yat_adi, a.kimlik AS ana_kimlik, a.dosya_no AS ana_no, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya a ON a.kimlik = d.birlestirilen_ana_dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik
-        WHERE d.dosya_no ILIKE '%' || $1 || '%' OR y.yat_adi ILIKE '%' || $1 || '%' OR s.sigorta_hasar_dosya_no ILIKE '%' || $1 || '%' ORDER BY d.acilis_tarihi DESC LIMIT 30`, [q]);
+        WHERE tr_norm(d.dosya_no) LIKE '%' || tr_norm($1) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($1) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($1) || '%' ORDER BY d.acilis_tarihi DESC LIMIT 30`, [q]);
     const izinli = [];
     for (const r of rows) if (await dosyaErisimi(b.db, o.kullanici, r.ana_kimlik ?? r.kimlik)) izinli.push(r);
     return { dosyalar: izinli };

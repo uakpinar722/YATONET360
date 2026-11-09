@@ -280,7 +280,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const q = String((i.query as { q?: string }).q ?? '').trim();
     if (q.length < 2) return [];
     const sur = await yururlukSurumu(b.db);
-    return (await b.db.query(`SELECT kod, ana_brans, tali_brans, islem, birim FROM kartela_kalemi WHERE surum = $1 AND (kod ILIKE $2 || '%' OR islem ILIKE '%' || $2 || '%') ORDER BY kod LIMIT 30`, [sur, q])).rows;
+    return (await b.db.query(`SELECT kod, ana_brans, tali_brans, islem, birim FROM kartela_kalemi WHERE surum = $1 AND (kod ILIKE $2 || '%' OR tr_norm(islem) LIKE '%' || tr_norm($2) || '%') ORDER BY kod LIMIT 30`, [sur, q])).rows;
   });
 
   // YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO tarafından görülür ve taslak sürümde girilir.
@@ -289,7 +289,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   s.get('/kartela/maliyet', oturumlu, async (i, y) => {
     if (!(await kartelaYetkili(i.oturum!.kullanici))) return yok(y);
     const q = String((i.query as { q?: string }).q ?? '').trim(); const sur = (await taslak()) ?? await yururlukSurumu(b.db);
-    return { surum: sur, taslak: Boolean(await taslak()), kalemler: (await b.db.query(`SELECT kod, islem, birim, maliyet_eur, maliyet_tarihi::text, kaynak_norm FROM kartela_kalemi WHERE surum = $1 AND ($2 = '' OR kod ILIKE $2 || '%' OR islem ILIKE '%' || $2 || '%') ORDER BY kod LIMIT 50`, [sur, q])).rows };
+    return { surum: sur, taslak: Boolean(await taslak()), kalemler: (await b.db.query(`SELECT kod, islem, birim, maliyet_eur, maliyet_tarihi::text, kaynak_norm FROM kartela_kalemi WHERE surum = $1 AND ($2 = '' OR kod ILIKE $2 || '%' OR tr_norm(islem) LIKE '%' || tr_norm($2) || '%') ORDER BY kod LIMIT 50`, [sur, q])).rows };
   });
   s.post('/kartela/taslak', oturumlu, async (i, y) => {
     const o = i.oturum!;

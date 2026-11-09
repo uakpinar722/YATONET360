@@ -32,6 +32,8 @@ export interface BelgeTanim {
   onay?: { rol: string; zaman: string; kanal: string; kod?: string };
   /** LGM'nin düzenlediği belgede kaşe; sözleşmelerde kullanılmaz (CEO 09.11). */
   kase?: boolean;
+  /** YG-720: belgeye özgü kimlik bandı alanları. */
+  bandEk?: { et: string; deger: string }[];
 }
 
 const k = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -142,7 +144,7 @@ function belgeHtml(t: BelgeTanim, o: { kapak?: boolean; toc?: [string, number][]
   const adTam = `${t.kod ? `${t.kod} — ` : ''}${t.ad}`;
   const kapak = o.kapak ? `<div class="kapak"><img class="lg" src="${logo}" alt=""><img class="si" src="${gorsel('veri/sablon/yat_silet.png')}" alt=""><h1>${k(t.ad)}</h1><div class="bl">${t.kod ? `${k(t.kod)}<br>` : ''}${t.yat ? `${k(t.yat)}<br>` : ''}${k(t.no)} · ${k(t.surum)}<br>${t.dosyaNo ? `${k(t.dosyaNo)}<br>` : ''}${k(t.tarih)}</div></div>` : '';
   const toc = o.toc ? `<div class="toc"><h2>${e.icindekiler}</h2>${o.toc.map(([a, s]) => `<div><span>${k(a)}</span><span>${s}</span></div>`).join('')}</div>` : '';
-  const band = `<table class="band"><tr><td><div class="et">${e.belgeNo}</div><b>${k(t.no)}</b></td>${t.dosyaNo ? `<td><div class="et">${e.dosyaNo}</div><b>${k(t.dosyaNo)}</b></td>` : ''}<td><div class="et">${e.tarih}</div><b>${k(t.tarih)}</b></td><td><div class="et">${e.surum}</div><b>${k(t.surum)}</b></td></tr></table>`;
+  const band = `<table class="band"><tr><td><div class="et">${e.belgeNo}</div><b>${k(t.no)}</b></td>${t.dosyaNo ? `<td><div class="et">${e.dosyaNo}</div><b>${k(t.dosyaNo)}</b></td>` : ''}<td><div class="et">${e.tarih}</div><b>${k(t.tarih)}</b></td>${(t.bandEk ?? []).map((x) => `<td><div class="et">${k(x.et)}</div><b>${k(x.deger)}</b></td>`).join('')}<td><div class="et">${e.surum}</div><b>${k(t.surum)}</b></td></tr></table>`;
   const son = o.olcum === undefined ? t.bolumler.length : o.olcum + 1;
   const govde = t.bolumler.slice(0, son).map((b, i) => bolumHtml(t, t.bolumler, b, i === o.olcum)).join('');
   const tamam = o.olcum === undefined;
