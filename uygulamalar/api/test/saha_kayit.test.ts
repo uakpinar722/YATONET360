@@ -269,3 +269,25 @@ describe('menfaat talebi bildirimi (YG-412)', () => {
     expect((await o.ist('GET', '/api/menfaat-bildirimleri', await o.gir('tu'))).statusCode).toBe(404);
   });
 });
+
+describe('kurtarma sonuç tutanağı (YG-644, YG-275)', () => {
+  it('27 satır zorunlu; talimat Sapma satırına gelir; Dosya Sorumlusu kontrol eder, onayda belge kuyruğa girer', async () => {
+    const { SATIRLAR } = await import('../src/kurtarma_sonuc.js'); expect(SATIRLAR.length).toBe(27);
+    const f = (await o.sup.query(`SELECT kurulus_ref r FROM kurulus_kullanici WHERE kullanici_ref = $1`, [fK])).rows[0].r; const d = (await o.dosyaAc({}, {})).kimlik as string; await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d, o.K.ds]);
+    const k = (await o.sup.query(`INSERT INTO kurtarma_operasyonu (dosya_ref, hizmet_turu, saglayici_ref, hazirlayan_ref) VALUES ($1,'Dalgıçlık',$2,$3) RETURNING kimlik`, [d, f, o.K.ds])).rows[0].kimlik as string;
+    const u = `/api/firma-portal/kurtarma/${k}`; expect((await o.ist('GET', `${u}/sonuc`, f2C)).statusCode).toBe(404);
+    const D = Object.fromEntries(SATIRLAR.map((x: string) => [x, 'Yok']));
+    expect((await o.ist('POST', `${u}/sonuc`, fC, { degerler: D })).statusCode).toBe(409);
+    await o.sup.query(`UPDATE kurtarma_operasyonu SET baslama_zamani = now() WHERE kimlik = $1`, [k]);
+    expect((await o.ist('POST', `${u}/sonuc`, fC, { degerler: { ...D, [SATIRLAR[6]!]: '' } })).statusCode).toBe(400);
+    expect((await o.ist('POST', `${u}/talimat`, fC, { metin: 'Liman emri' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `${u}/sonuc`, fC)).json().degerler[SATIRLAR[12]!]).toContain('Liman emri');
+    expect((await o.ist('POST', `${u}/sonuc`, fC, { degerler: D })).statusCode).toBe(200); expect((await o.ist('POST', `${u}/sonuc`, fC, { degerler: D })).statusCode).toBe(409);
+    const ds = await o.gir('ds'); const K = `/api/kurtarma/${k}/sonuc-kontrol`;
+    expect((await o.ist('POST', K, ds, { karar: 'İade' })).statusCode).toBe(400); expect((await o.ist('POST', K, ds, { karar: 'İade', gerekce: 'Eksik' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `${u}/sonuc`, fC, { degerler: D })).statusCode).toBe(200); expect((await o.ist('POST', K, ds, { karar: 'Onayla' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM belge_uretim WHERE tur = 'Kurtarma Sonuç Tutanağı' AND nesne = $1`, [k])).rows[0].n).toBe(1);
+    const { kurtarmaSonucTanim } = await import('../src/belge_uret.js'); const v = await kurtarmaSonucTanim(o.db, k); expect(v.t.kod).toBe('FR-OPS-013');
+    const b0 = v.t.bolumler[0]!; expect(b0.tur === 'tablo' ? b0.satirlar.length : 0).toBe(27);
+  });
+});

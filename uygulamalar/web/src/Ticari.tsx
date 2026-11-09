@@ -13,6 +13,7 @@ import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
+import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
@@ -415,6 +416,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       <h1>{bolum === 'isemri' ? 'İş Emirleri' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
       <FirmaArama />
       {bolum === 'ana' && <FirmaAcilIslemleri yap={yap} />}
+      {bolum === 'ana' && <KurtarmaSonucFirma />}
       {bolum === 'ana' && <><div className="bolum">İşleminizi Bekleyenler</div>
       {ac.length === 0 && <div className="ozet bos">Acil çağrı bulunmamaktadır.</div>}
       {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div><div>Yanıt Son: {saat(c.son_zaman)}</div>

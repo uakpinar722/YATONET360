@@ -1,3 +1,4 @@
+import { KurtarmaSonucKontrol } from './KurtarmaSonuc';
 import { OnDegerlendirme } from './OnDegerlendirme';
 import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
@@ -154,6 +155,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <OnerilenTesisler dosya={id} />
     <ZorlukKatsayisi dosya={id} />
     <OnDegerlendirme dosya={id} />
+    <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />
     <GonderimDurumu id={id} />
     <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
