@@ -223,8 +223,11 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     { const e1 = await sozlesmeEngeli(b.db, g.firma!) ?? await blokeSozlesmeDisi(b.db, id, g.tur!) ?? await kosulEngeli(b.db, id, g.tur!) ?? await ilaveIsYetkiEngeli(b.db, id, g.tur!) ?? await yabanciBayrakEngeli(b.db, id, g.bitis); if (e1) return y.code(409).send({ hata: e1 }); } // YG-923, YG-909, YG-1490, YG-157
     // YG-1487: bireyselde Keşif Ücreti keşiften önce ödenir.
     if (g.tur === 'KN' && d.musteri_turu === 'Bireysel Müşteri' && (await b.db.query(`SELECT 1 FROM odeme_talebi WHERE dosya_ref = $1 AND tur = 'Keşif Ücreti' AND durum = 'Gönderildi' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için Keşif Ücreti ödemesi bekleniyor.' });
+    // YG-1454, YNT-1: branş ekrandan gelmez; onaylı teklif kalemlerinin kartela branşından türetilir.
+    const ym = await import('./yontem_raporu.js'); const bransMetni = ['ON', 'EK'].includes(g.tur!) ? await ym.isEmriBransMetni(b.db, g) : '';
+    if (g.tur === 'ON' && ym.yontemGerekli(bransMetni)) { const ye = await ym.yontemEngeli(b.db, id); if (ye) return y.code(409).send({ hata: ye }); }
     return islem(async (c) => {
-      if (['ON', 'EK'].includes(g.tur!) && g.brans && /yapı|gövde|makine|yangın/i.test(g.brans)) { // YG-334
+      if (/(^|[\s,;])(yapı|gövde|makine|yangın)/i.test(bransMetni)) { // YG-334
         const kl = (await c.query(`SELECT y.klas_durumu, y.tabi_kod FROM yat y WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
         if (kl?.klas_durumu === 'Evet' || kl?.tabi_kod) await kartAc(c, { tur: 'Klas Kuruluşu Bildirimi', kategori: 'islem', baslik: `${d.dosya_no} · Sörveyör Katılımı Gerekir`, ozet: 'Klas kuruluşuna en az 48 saat önce bildirim yapınız.', oncelik: 'Yüksek', sonZaman: klasBildirimSonu(g.baslangic), sahipKullanici: d.dosya_sorumlusu_ref ?? o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
       }
@@ -232,6 +235,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, ana_is_emri_ref, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, baslangic_tarihi, hedef_bitis_tarihi, tehlikeli_atik, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [no, g.tur, g.ana ?? null, id, g.teklif ?? null, g.firma, g.yer!.trim(), g.kapsam!.trim(), g.bedel ?? null, g.baslangic ?? null, g.bitis ?? null, Boolean(g.tehlikeliAtik), o.kullanici])).rows[0];
       if (g.tur === 'KN') await (await import('./ticari_atama.js')).ticariAtamaAc(c, id); // YG-1600
+      if (g.tur === 'ON') await ym.yontemSinirAktar(c, e.kimlik, id); // PRS-1
       for (const k of kalemler) await c.query(`INSERT INTO is_emri_kalemi (is_emri_ref, teklif_kalem_ref, satir_ref, aciklama, miktar, birim) VALUES ($1,$2,$3,$4,$5,$6)`, [e.kimlik, k.kimlik, k.satir_ref, k.aciklama, k.miktar, k.birim]);
       if (g.bedel !== undefined && g.bedel > 0) {
         // YG-302: son onay limite göre; kümülatif izlenir.

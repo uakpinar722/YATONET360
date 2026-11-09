@@ -527,3 +527,41 @@ describe('keşif talebi ve Firmaya Gönder (YG-1597, YG-042, KSF-1)', () => {
     expect((await o.ist('POST', u, await o.gir('ds'), {})).statusCode).toBe(409);
   });
 });
+
+describe('Onarım Yöntem Raporu (YG-1454, YNT-1)', () => {
+  it('branş kuralı sözcük başına bakar', async () => {
+    const { yontemGerekli } = await import('../src/yontem_raporu.js');
+    expect(['Kompozit, cam elyafı ve karbon', 'Ahşap gövde ve yapısal işler', 'Metal imalat, kaynak ve makine atölyesi', 'X; Çelik gövde ve çelik üstyapı'].every(yontemGerekli)).toBe(true);
+    expect(['Tersane lojistiği ve geçici saha altyapısı', 'Ana makine ve tahrik motorları', ''].some(yontemGerekli)).toBe(false);
+  });
+  it('rapor Teknik Müdür onaylamadan kompozit ON açılmaz; muadilde yat sahibi onayı aranır; sınırlar aktarılır; firma görür', async () => {
+    const d = await hazir({ sigortaci: 'SG', hasarNo: 'H1' }, { musteriTuru: 'Sigorta Şirketi' }); const t = await teklifAc(d); await onayla(t.kimlik);
+    const gn = (await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).json().gonderim;
+    await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 1 }); await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 2 });
+    await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' });
+    const kod = (await o.sup.query(`SELECT kartela_kodu k, kartela_surumu s FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND kartela_kodu IS NOT NULL LIMIT 1`, [t.kimlik])).rows[0];
+    const eski = (await o.sup.query(`SELECT ana_brans FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [kod.k, kod.s])).rows[0].ana_brans;
+    await o.sup.query(`UPDATE kartela_kalemi SET ana_brans = 'Kompozit, cam elyafı ve karbon' WHERE kod = $1 AND surum = $2`, [kod.k, kod.s]);
+    try {
+      const on = () => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, k, { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 }));
+      expect((await on()).json().hata).toContain('Onarım Yöntem Raporu');
+      const u = `/api/dosya/${d.kimlik}/yontem-raporu`; const R = { kapsam: 'K', malzeme: 'Reçine', sira: '1', muadil: ['Pompa Contası'], sinirlar: [{ tur: 'Kompozit Laminasyon ve Kür', sicaklikMin: 15, nemMax: 75 }] };
+      expect((await o.ist('POST', u, await o.gir('ds'), R)).statusCode).toBe(403);
+      const tu = await o.gir('tu'); expect((await o.ist('POST', u, tu, { ...R, sira: '' })).statusCode).toBe(400);
+      expect((await o.ist('POST', u, tu, { ...R, sinirlar: [{ tur: 'X', sicaklikMin: 1 }] })).statusCode).toBe(400);
+      const r = await o.ist('POST', u, tu, R); expect(r.statusCode, r.body).toBe(200); expect(r.json().raporNo).toBe(`${d.dosyaNo}-FR-ONR-001-01`);
+      expect((await o.ist('POST', u, tu, R)).statusCode).toBe(409);
+      expect((await on()).json().hata).toContain('Onarım Yöntem Raporu');
+      await o.karar((await o.kart('Onarım Yöntem Raporu', r.json().kimlik)).kimlik, 'tm', 'Onayla');
+      expect((await o.sup.query(`SELECT durum, onaylayan_ref FROM yontem_raporu WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ durum: 'Onaylı', onaylayan_ref: o.K.tm });
+      expect((await on()).json().hata).toContain('Muadil parça');
+      await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-07','k','Pompa Contası için','d','a','+905550002222',$2,'Onaylandı',now())`, [d.kimlik, `y${Math.random()}`]);
+      const ie = await on(); expect(ie.statusCode, ie.body).toBe(200);
+      const sn = (await o.sup.query(`SELECT sicaklik_min, nem_max, dayanak FROM proses_siniri WHERE is_emri_ref = $1`, [ie.json().kimlik])).rows[0];
+      expect(Number(sn.sicaklik_min)).toBe(15); expect(sn.dayanak).toContain('FR-ONR-001-01');
+      await o.karar((await o.kart('İş Emri', ie.json().kimlik)).kimlik, 'tid', 'Onayla').catch(() => {});
+      await o.sup.query(`UPDATE is_emri SET statu = 'Kabul Bekliyor' WHERE kimlik = $1`, [ie.json().kimlik]);
+      const fr = await o.ist('GET', `/api/firma-portal/is-emri/${ie.json().kimlik}/yontem-raporu`, firmaC); expect(fr.statusCode, fr.body).toBe(200); expect(fr.json().malzeme_tablosu).toBe('Reçine'); expect(fr.json().muadil_parcalar).toBeUndefined();
+    } finally { await o.sup.query(`UPDATE kartela_kalemi SET ana_brans = $3 WHERE kod = $1 AND surum = $2`, [kod.k, kod.s, eski]); }
+  });
+});
