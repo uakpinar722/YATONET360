@@ -79,6 +79,23 @@ describe('varlık ve zimmet hareketi (YG-1618 varlık)', () => {
   });
 });
 
+describe('acente ve broker ana ekranı A6 (YG-1573)', () => {
+  it('dosyalarda yetki durumu, süresi dolan belge, yenilenmiş belge yükleme ve 90/45/15 uyarısı', async () => {
+    const { brokerYollari: _b, yetkiSureUyari } = await import('../src/broker.js'); void _b;
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Broker, Acente, Yat Brokeri, Kaptan' ON CONFLICT DO NOTHING`, [o.K.ide]);
+    const d = await o.dosyaAc(); const brk = await o.gir('ide');
+    const t = (await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, kullanici_ref, olusturan_ref) VALUES ($1,'Yetkili Temsilci','Broker',$2,$3) RETURNING kimlik`, [d.kimlik, o.K.ide, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('GET', '/api/broker/ana', brk)).json().bekleyen.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    const y = (await o.sup.query(`INSERT INTO yetki_kaydi (dosya_ref, dosya_tarafi_ref, yetki_dayanagi_turu, belge_duzenleyen, belge_tarihi, gecerlilik_baslangici, gecerlilik_bitisi, yetkili_islemler, parasal_sinir, dogrulayan_ref, dogrulama_kaniti, olusturan_ref) VALUES ($1,$2,'Vekâletname','Noter','2026-01-01','2026-01-01', current_date + 40, '{Onay}', 5000, $3, 'Belge', $3) RETURNING kimlik`, [d.kimlik, t, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('GET', '/api/broker/ana', brk)).json().dolan.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    expect((await o.ist('GET', '/api/broker/yetki-belgeleri', brk)).json()[0]).toMatchObject({ kimlik: y, kapsam: ['Onay'] });
+    expect(await yetkiSureUyari(o.db)).toBeGreaterThanOrEqual(1); expect(await yetkiSureUyari(o.db)).toBe(0);
+    const be = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Yetki','Yetki Belgesi','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/broker/yetki/${y}/yenile`, brk, { belge: be, bitis: '2027-12-31' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/broker/ana', await o.gir('ds'))).statusCode).toBe(404);
+  });
+});
+
 describe('İdari İşler ana ekranları A30 ve A31 (YG-1617, YG-1620)', () => {
   it('teslim eşleşmesi, kayıp cihaz ihlal bildirimi, sayım, sarf, sözleşme 90/45/15, bütçe ve uyarılar', async () => {
     const { idariUyariIsle } = await import('../src/idari_ek.js'); const idr = await o.gir('idr'); const imd = await o.gir('imd');

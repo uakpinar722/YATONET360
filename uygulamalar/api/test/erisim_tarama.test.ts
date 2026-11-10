@@ -15,7 +15,7 @@ const DIS: [string, string, string][] = [
   ['sigorta', 'Sigorta Şirketi / Eksper', 'Sigorta Şirketi Kullanıcısı'], ['yatsahibi', 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)', 'Müşteri Portal Kullanıcısı'], ['kurumsal', 'Kurumsal Müşteri', 'Kurumsal Müşteri Kullanıcısı'],
 ];
 // Dış kullanıcıya açık olabilecek uçlar: kendi portalı, kendi hesabı ve ortak seçim listeleri.
-const ACIK = [/^\/(ben|profil|bildirimler|yetkilerim|alan-erisim|saglik|hesap-kurtarma|riza-kayitlari|iletisim\/ret|mobil\/|kimlik\/|mesaj\/|portal\/|firma-portal\/|tedarikci-portal\/|tesis-portal\/|sigorta\/|kurumsal\/|kurum\/hesap|sigorta-ek2|ihbar\/secenek|yat\/marka|yat\/model|erisim\/taleplerim|disiplin\/benim|onayli-parca|faiz-orani|bugun|duyuru\/yetkim|ik\/yetki|kvkk\/yetki)/]; // son dördü: kendi yetki bayrakları, kendi kartları ve dış duyurular
+const ACIK = [/^\/(ben|profil|bildirimler|yetkilerim|alan-erisim|saglik|hesap-kurtarma|riza-kayitlari|iletisim\/ret|mobil\/|kimlik\/|mesaj\/|portal\/|firma-portal\/|tedarikci-portal\/|tesis-portal\/|sigorta\/|kurumsal\/|kurum\/hesap|sigorta-ek2|ihbar\/secenek|yat\/marka|yat\/model|erisim\/taleplerim|disiplin\/benim|onayli-parca|faiz-orani|bugun|duyuru\/yetkim|ik\/yetki|kvkk\/yetki|broker\/)/]; // broker: kendi dosya ve yetki belgeleri (YG-1573) // son dördü: kendi yetki bayrakları, kendi kartları ve dış duyurular
 const YASAK_ALAN = ['birim_maliyet_eur', 'maliyet_eur', 'brut_aylik_tl', 'tckn', 'iban', 'risk_derecesi', 'kapasite_is', 'performans_puani'];
 const uclar = (desen = /s\.get\('([^':]+)'/g) => {
   const d = join(__dirname, '..', 'src'); const l = new Set<string>();

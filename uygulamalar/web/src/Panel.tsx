@@ -10,12 +10,13 @@ import { DenetimArama, IhlalBildir, KvkkEkrani } from './Kvkk';
 import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
 import { KarneParametreleri, FirmaSicil } from './Sicil';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
+import { BrokerAna, YetkiBelgeleri } from './Broker';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'kvkk' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -64,12 +65,13 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'firmaisemri' as Sayfa, ad: 'İş Emirleri', ik: '▣' }, { s: 'gunluk' as Sayfa, ad: 'Günlük Kayıt', ik: '✎' }] : []),
     ...(ben.grup === 'Tedarikçi' ? [{ s: 'tedsiparis' as Sayfa, ad: 'Siparişler', ik: '▣' }, { s: 'tedteklif' as Sayfa, ad: 'Teklifler', ik: '▤' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
+    ...(ben.grup.startsWith('Broker') ? [{ s: 'yetkibelge' as Sayfa, ad: 'Yetki Belgeleri', ik: '▤' }] : []),
     ...(ben.grup === 'Kurumsal Müşteri' ? [{ s: 'kullanicilarim' as Sayfa, ad: 'Kullanıcılarım', ik: '▦' }] : []),
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'kurum' as Sayfa, ad: 'Firma', ik: '▦' }] : ben.grup === 'Tedarikçi' || ben.grup.startsWith('Tesis') ? [{ s: 'kurum' as Sayfa, ad: 'Hesap', ik: '▦' }] : []),
   ];
   const b = veri?.okunmamisBildirim ?? 0;
   const icerik: Record<Sayfa, ReactNode> = {
-    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Sigorta') || ben.grup.startsWith('Broker') ? <SigortaAna ben={ben} /> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
+    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Broker') ? <><BrokerAna /><SigortaAna ben={ben} /></> : ben.grup.startsWith('Sigorta') ? <SigortaAna ben={ben} /> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
     profil: <Profilim />,
     erisim: <ErisimTalebi />,
@@ -88,6 +90,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     karnepar: <KarneParametreleri />,
     gunluk: <GunlukSayfasi />,
     kullanicilarim: <Kullanicilarim />,
+    yetkibelge: <YetkiBelgeleri />,
     tedodeme: <TedarikciOdemeleri />,
     tedsiparis: <TedarikciAna ben={ben} bolum="siparis" />,
     tedteklif: <TedarikciAna ben={ben} bolum="teklif" />,
