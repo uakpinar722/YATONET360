@@ -84,7 +84,7 @@ describe('kurtarma (YG-210, YG-276, YG-486, YG-1515)', () => {
     firma = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-K','Kurtarma Firma','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
     for (const b of ['Türk Bayrağı Belgesi', 'Römorkörcülük Faaliyet İzni', 'Dalış Belgesi']) await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur) VALUES ($1,$2)`, [firma, b]);
     const oz = await parolaOzetle(PAROLA);
-    const fk = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani) VALUES ('Dış','İş Birliği Firması','F','frm.kurtarma','frm@kurtarma.local',$1,'Doğrulama uygulaması (6 haneli kod)',now()) RETURNING kimlik`, [oz])).rows[0].kimlik;
+    const fk = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani, portal_rehberi_beyani) VALUES ('Dış','İş Birliği Firması','F','frm.kurtarma','frm@kurtarma.local',$1,'Doğrulama uygulaması (6 haneli kod)',now(),now()) RETURNING kimlik`, [oz])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO kurulus_kullanici (kurulus_ref, kullanici_ref) VALUES ($1,$2)`, [firma, fk]);
     await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) VALUES ($1,'Çalışan','KVKK-03','R00','Türkçe','Web')`, [fk]);
     await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [fk]);

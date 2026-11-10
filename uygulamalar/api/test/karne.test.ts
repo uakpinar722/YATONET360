@@ -55,7 +55,7 @@ beforeAll(async () => {
   o = await ortamKur('yatonet360_test31', KADRO);
   f = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Karne Firma', rol: 'Çözüm Ortağı' })).json().kimlik;
   const oz = await parolaOzetle('Sinama-Parolasi-2026!'); const ep = 'kn1@deneme.yatonet.local';
-  fK = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani) VALUES ('Dış Kullanıcı','İş Birliği Firması','kn1',$1,$1,$2,'Doğrulama uygulaması (6 haneli kod)',now()) RETURNING kimlik`, [ep, oz])).rows[0].kimlik;
+  fK = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani, portal_rehberi_beyani) VALUES ('Dış Kullanıcı','İş Birliği Firması','kn1',$1,$1,$2,'Doğrulama uygulaması (6 haneli kod)',now(),now()) RETURNING kimlik`, [ep, oz])).rows[0].kimlik;
   await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Firma Yetkilisi'`, [fK]);
   await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) VALUES ($1,'Çalışan','KVKK-03','R00','Türkçe','Web')`, [fK]);
   await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [fK]);

@@ -9,7 +9,7 @@ const P = 'Sinama-Parolasi-2026!'; const H = { 'x-yatonet': '1' };
 let o: Ortam; let fir: string; let ted: string; let firC: string; let firK: string; let ikiC: string; let ikiK: string; let tedC: string;
 const disGir = async (ad: string, grup: string, rol: string, kurulus: string) => {
   const oz = await parolaOzetle(P); const ep = `${ad}@deneme.yatonet.local`;
-  const k = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani) VALUES ('Dış Kullanıcı',$1,$2,$3,$3,$4,'Doğrulama uygulaması (6 haneli kod)',now()) RETURNING kimlik`, [grup, ad, ep, oz])).rows[0].kimlik as string;
+  const k = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani, portal_rehberi_beyani) VALUES ('Dış Kullanıcı',$1,$2,$3,$3,$4,'Doğrulama uygulaması (6 haneli kod)',now(),now()) RETURNING kimlik`, [grup, ad, ep, oz])).rows[0].kimlik as string;
   await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = $2`, [k, rol]);
   await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) VALUES ($1,'Çalışan',$2,'R00','Türkçe','Web')`, [k, grup === 'İş Birliği Firması' ? 'KVKK-03' : 'KVKK-04']);
   await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [k]);

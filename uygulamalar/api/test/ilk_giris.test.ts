@@ -122,6 +122,16 @@ describe('ilk giriş adımları (KVKK-10)', () => {
     const { rows } = await sup.query(`SELECT count(*)::int n FROM acik_riza r JOIN kullanici_hesabi k ON k.kimlik = r.ilgili_kisi_ref WHERE k.e_posta = $1`, [`k${n}@deneme.yatonet.local`]);
     expect(rows[0].n).toBe(0);
   });
+  it('Çözüm Ortağı portal rehberi beyanı olmadan işlem yapamaz; sigorta kullanıcısından istenmez (YG-1396)', async () => {
+    const c = await davetle((await yeni('İş Birliği Firması', 'Firma Yetkilisi')).belirtec);
+    expect((await ist('GET', '/api/ben', c)).json().eksik).toEqual(['kosullar', 'aydinlatma', 'rehber']);
+    await ist('POST', '/api/ilk-giris/kosullar', c); await ist('POST', '/api/ilk-giris/aydinlatma', c);
+    expect((await ist('GET', '/api/yetki/roller', c)).statusCode).toBe(428);
+    expect((await ist('POST', '/api/ilk-giris/rehber', c, {})).statusCode).toBe(400);
+    expect((await ist('POST', '/api/ilk-giris/rehber', c, { okudum: true })).json().eksik).toEqual([]);
+    const s = await davetle((await yeni('Sigorta Şirketi / Eksper', 'Sigorta Şirketi Kullanıcısı')).belirtec);
+    expect((await ist('POST', '/api/ilk-giris/rehber', s, { okudum: true })).statusCode).toBe(409);
+  });
   it('yeni metin sürümünde adım yeniden açılır (KVKK-10 Bölüm 5)', async () => {
     const c = await davetle((await yeni('Sigorta Şirketi / Eksper', 'Sigorta Şirketi Kullanıcısı')).belirtec);
     await ist('POST', '/api/ilk-giris/kosullar', c); await ist('POST', '/api/ilk-giris/aydinlatma', c);

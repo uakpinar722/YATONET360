@@ -1,6 +1,8 @@
 import type { Pool } from 'pg';
 
-export type Adim = 'kosullar' | 'aydinlatma' | 'izinler';
+export type Adim = 'kosullar' | 'aydinlatma' | 'izinler' | 'rehber';
+/** YG-1396: portal rehberi beyanı yalnız Çözüm Ortağından istenir; sigorta şirketi ve diğer kullanıcılardan istenmez. */
+export const rehberAdimiVar = (grup: string) => grup === 'İş Birliği Firması';
 
 /** KVKK-10 Bölüm 3: kullanıcı grubuna göre aydınlatma metni. */
 export function aydinlatmaKodu(grup: string): string {
@@ -25,7 +27,7 @@ export async function sonSurum(db: Pool, kod: string): Promise<string> {
 
 /** Sıra KVKK-10 Bölüm 2. Yeni sürüm yüklenince adım bir sonraki girişte yeniden açılır (Bölüm 5). */
 export async function eksikAdimlar(db: Pool, kullanici: string): Promise<Adim[]> {
-  const { rows } = await db.query(`SELECT kullanici_grubu, izin_adimi_zamani FROM kullanici_hesabi WHERE kimlik = $1`, [kullanici]);
+  const { rows } = await db.query(`SELECT kullanici_grubu, izin_adimi_zamani, portal_rehberi_beyani FROM kullanici_hesabi WHERE kimlik = $1`, [kullanici]);
   const h = rows[0]; const e: Adim[] = [];
   if (disKullanici(h.kullanici_grubu)) {
     const s = await sonSurum(db, 'PRT-01');
@@ -34,5 +36,6 @@ export async function eksikAdimlar(db: Pool, kullanici: string): Promise<Adim[]>
   const kod = aydinlatmaKodu(h.kullanici_grubu); const s = await sonSurum(db, kod);
   if (!(await db.query(`SELECT 1 FROM aydinlatma_kaydi WHERE ilgili_kisi_ref = $1 AND aydinlatma_metni = $2 AND metin_surumu = $3`, [kullanici, kod, s])).rowCount) e.push('aydinlatma');
   if (izinAdimiVar(h.kullanici_grubu) && !h.izin_adimi_zamani) e.push('izinler');
+  if (rehberAdimiVar(h.kullanici_grubu) && !h.portal_rehberi_beyani) e.push('rehber');
   return e;
 }

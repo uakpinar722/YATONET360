@@ -7,6 +7,7 @@ import { TicariAtamaBekleyenler } from './TicariAtama';
 import { TopluOdeme } from './TopluOdeme';
 import { IdariTalep } from './IdariTalep';
 import { IdariAna } from './IdariAna';
+import { SurumHizmet } from './SurumHizmet';
 import { PersonelEk } from './PersonelEk';
 import { PoliceListesi } from './FirmaPolice';
 import { PersonelKarne } from './PersonelKarne';
@@ -830,6 +831,7 @@ export function IdariIslemler() {
       <TopluDuzeltme />
       <Kesinti />
       <FirmaHaritasi />
+      <SurumHizmet />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

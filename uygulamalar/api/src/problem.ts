@@ -9,7 +9,7 @@ import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
 const ROLLER = ['Bilgi İşlem Müdürü', 'Bilgi İşlem Müdür Yardımcısı', 'Sistem Yöneticisi', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'İç Denetim Müdürü', 'İç Denetçi', 'Hukuk ve Uyum Direktörü'];
-const KAYNAK = ['Tekrarlayan Olay', 'Yüksek Etkili Olay', 'Denetim Bulgusu', 'Eğilim'];
+const KAYNAK = ['Tekrarlayan Olay', 'Yüksek Etkili Olay', 'Denetim Bulgusu', 'Eğilim', 'Üretim Sonrası İzleme'];
 const TARIH = /^\d{4}-\d{2}-\d{2}$/;
 
 /** YG-1293: süresi dolan istisna kendiliğinden yenilenmez, bulgu yeniden açılır ve sorumluya bildirilir. */

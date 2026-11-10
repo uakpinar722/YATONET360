@@ -34,6 +34,7 @@ const hesap = async (k, rol, grup = 'LGM İç Rolü') => {
   if (rol) await sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = $2`, [u, rol]);
   await sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) VALUES ($1,'Çalışan',$2,'R00','Türkçe','Web')`, [u, grup === 'LGM İç Rolü' ? 'KVKK-05' : grup === 'İş Birliği Firması' ? 'KVKK-03' : 'KVKK-01']);
   await sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [u]);
+  await sup.query(`UPDATE kullanici_hesabi SET portal_rehberi_beyani = now() WHERE kimlik = $1 AND kullanici_grubu = 'İş Birliği Firması'`, [u]);
   return ep;
 };
 const gir = async (ep, k, w = 1280, h = 900) => {
