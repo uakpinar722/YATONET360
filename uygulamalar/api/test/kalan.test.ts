@@ -1093,6 +1093,9 @@ describe('iç bütçe ve risk rezervi (YG-862, YG-863, YG-780)', () => {
     expect((await dosyaButcesi(o.db, d.kimlik))).toMatchObject({ acikTaahhut: 1200, bitisTahmini: 1200 });
     await butceUyariKontrol(o.db, d.kimlik, d.dosyaNo);
     expect((await o.kart('Bütçe Erken Uyarısı', d.kimlik)).baslik).toContain('Bütçe Aşımı');
+    const { katkiDurumu, katkiUyariKontrol } = await import('../src/katki_uyari.js'); // YG-782
+    expect(await katkiDurumu(o.db, d.kimlik)).toMatchObject({ planli: 0, tahmin: -20, dusus: 20 });
+    expect(await katkiUyariKontrol(o.db, d.kimlik, d.dosyaNo)).toBe(true); expect(await katkiUyariKontrol(o.db, d.kimlik, d.dosyaNo)).toBe(false);
   });
 });
 

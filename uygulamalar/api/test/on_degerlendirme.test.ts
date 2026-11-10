@@ -11,14 +11,27 @@ describe('RP-OPS-001 Ön Değerlendirme Raporu (YG-651)', () => {
   it('yalnız Dosya Sorumlusu; alanlar ve risk taraması zorunlu; yeni kayıt yeni sürüm; iç rapor tanımı renkli risk içerir', async () => {
     const d = (await o.dosyaAc({}, {})).kimlik as string; await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d, o.K.ds]);
     const ds = await o.gir('ds'); const u = `/api/dosya/${d}/on-degerlendirme`;
-    const G: Record<string, unknown> = { sonBilgi: '2026-11-01', kaynaklar: 'K', yeterlilik: 'Kısmen Yeterli', yeterlilikGerekcesi: 'G', uzmanliklar: 'U', sonuc: 'S', yontem: 'Keşif', oncelikTeyidi: 'Normal', kapsam: 'K', kronoloji: 'K', olgular: 'O', beyanlar: 'B', sonrakiAdim: 'A', acikKonular: 'A', risk: Object.fromEntries(RISKLER.map((r, n) => [r, n === 0 ? 'Evet' : 'Hayır'])) };
+    const G: Record<string, unknown> = { sonBilgi: '2026-11-01', kaynaklar: 'K', yeterlilik: 'Kısmen Yeterli', yeterlilikGerekcesi: 'G', uzmanliklar: 'U', sonuc: 'Yerinde Keşif Gerekli', yontem: 'Keşif', oncelikTeyidi: 'Normal', oncelikGerekcesi: 'G', kapsam: 'K', kronoloji: 'K', olgular: 'O', beyanlar: 'B', sonrakiAdim: 'A', acikKonular: 'A', risk: Object.fromEntries(RISKLER.map((r, n) => [r, n === 0 ? 'Evet' : 'Hayır'])) };
     expect((await o.ist('POST', u, await o.gir('ds2'), G)).statusCode).toBe(404);
     expect((await o.ist('POST', u, ds, { ...G, sonuc: '' })).statusCode).toBe(400); expect((await o.ist('POST', u, ds, { ...G, risk: {} })).statusCode).toBe(400);
-    expect((await o.ist('POST', u, ds, G)).json().surum).toBe(1); expect((await o.ist('POST', u, ds, { ...G, sonuc: 'Yeni bilgi' })).json().surum).toBe(2);
-    const rows = (await o.sup.query(`SELECT kimlik, surum, veriler->>'sonuc' s FROM on_degerlendirme WHERE dosya_ref = $1 ORDER BY surum`, [d])).rows; expect(rows.map((x) => x.s)).toEqual(['S', 'Yeni bilgi']);
+    expect((await o.ist('POST', u, ds, G)).json().surum).toBe(1); expect((await o.ist('POST', u, ds, { ...G, sonuc: 'Uzaktan İnceleme Yeterli' })).json().surum).toBe(2);
+    const rows = (await o.sup.query(`SELECT kimlik, surum, veriler->>'sonuc' s FROM on_degerlendirme WHERE dosya_ref = $1 ORDER BY surum`, [d])).rows; expect(rows.map((x) => x.s)).toEqual(['Yerinde Keşif Gerekli', 'Uzaktan İnceleme Yeterli']);
     expect((await o.sup.query(`SELECT count(*)::int n FROM belge_uretim WHERE tur = 'Ön Değerlendirme Raporu' AND dosya_ref = $1`, [d])).rows[0].n).toBe(2);
     const { onDegerlendirmeTanim } = await import('../src/belge_uret.js'); const v = await onDegerlendirmeTanim(o.db, rows[0].kimlik);
     expect(v.t).toMatchObject({ kod: 'RP-OPS-001', icKayit: true, surum: 'Rev.1' });
     const tablo = v.t.bolumler.find((b) => b.tur === 'tablo' && b.satirlar.some((s) => typeof s[1] === 'object')); expect(tablo).toBeDefined();
+  });
+  it('sonuç listeden; Acil Müdahale Kritik ister; öncelik değişikliği gerekçeli; Uzman Görüşü Beklemede işareti açar (YG-038)', async () => {
+    const d = (await o.dosyaAc({}, {})).kimlik as string; await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d, o.K.ds]);
+    const at = await o.ata(d, 'ds', 'Dosya Sorumlusu', 'opm'); expect(at.statusCode, at.body).toBe(200);
+    const ds = await o.gir('ds'); const u = `/api/dosya/${d}/on-degerlendirme`; const on = (await o.sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d])).rows[0].oncelik as string;
+    const G: Record<string, unknown> = { sonBilgi: '2026-11-01', kaynaklar: 'K', yeterlilik: 'Yeterli', yeterlilikGerekcesi: 'G', uzmanliklar: 'U', sonuc: 'Yerinde Keşif Gerekli', yontem: 'Keşif', oncelikTeyidi: on, kapsam: 'K', kronoloji: 'K', olgular: 'O', beyanlar: 'B', sonrakiAdim: 'A', acikKonular: 'A', risk: Object.fromEntries(RISKLER.map((r) => [r, 'Hayır'])) };
+    expect((await o.ist('GET', u, ds)).json().sonuclar.length).toBe(5);
+    expect((await o.ist('POST', u, ds, { ...G, sonuc: 'Serbest' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { ...G, sonuc: 'Acil Müdahale Gerekli', oncelikGerekcesi: 'G', oncelikTeyidi: 'Yüksek' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { ...G, oncelikTeyidi: on === 'Planlı' ? 'Normal' : 'Planlı' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { ...G, sonuc: 'Uzman Görüşü Gerekli' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, ds, { ...G, sonuc: 'Uzman Görüşü Gerekli', bekleme: { sorumlu: o.K.ds, hedefTarih: '2099-01-01' } }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT neden, kayit_turu FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [d])).rows).toEqual([{ neden: 'Uzman Görüşü', kayit_turu: 'Ön Değerlendirme' }]);
   });
 });

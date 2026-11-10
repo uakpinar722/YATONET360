@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { SigortaListesi } from './SigortaListesi';
 import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
 import { KaliteBolumu, RaporBolumu, SigortaEposta, SigortaGonderimBolumu, TedarikBolumu, YatDegeriBolumu } from './Kalite';
@@ -133,7 +134,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       <label htmlFor="i-konum">Adres (Yatın Mevcut Konumu)</label><input id="i-konum" value={konum} onChange={(e) => setKonum(e.target.value)} />
       <label htmlFor="i-durum">Yatın Mevcut Durumu</label><input id="i-durum" value={durum} onChange={(e) => setDurum(e.target.value)} />
       <label htmlFor="i-ozet">Olay Özeti</label><textarea id="i-ozet" rows={3} value={ozet} onChange={(e) => setOzet(e.target.value)} />
-      <div className="iki-tarih"><div><label htmlFor="i-sg">Sigorta Şirketi</label><input id="i-sg" value={sigortaci} onChange={(e) => setSigortaci(e.target.value)} /></div><div><label htmlFor="i-hn">Sigorta Hasar Dosya No</label><input id="i-hn" value={hasarNo} onChange={(e) => setHasarNo(e.target.value)} /></div></div>
+      <div className="iki-tarih"><div><label htmlFor="i-sg">Sigorta Şirketi</label><input id="i-sg" list="sigorta-listesi" value={sigortaci} onChange={(e) => setSigortaci(e.target.value)} /><SigortaListesi /></div><div><label htmlFor="i-hn">Sigorta Hasar Dosya No</label><input id="i-hn" value={hasarNo} onChange={(e) => setHasarNo(e.target.value)} /></div></div>
       <div className="bolum">Öncelik Soruları</div>
       {s.sorular.map((q) => (
         <div key={q} className="soru"><span>{q}</span><div className="dugmeler">{['Hayır', 'Bilinmiyor', 'Evet'].map((c) => <button key={c} type="button" className={`cevap ${cevap[q] === c ? `c-${c === 'Evet' ? 'k' : c === 'Bilinmiyor' ? 's' : 'y'}` : ''}`} aria-pressed={cevap[q] === c} onClick={() => setCevap((o) => ({ ...o, [q]: c }))}>{c}</button>)}</div></div>
