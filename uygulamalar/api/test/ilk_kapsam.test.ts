@@ -6,6 +6,22 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test89', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('randevu bildirimi ve takvim daveti (YG-552)', () => {
+  it('deniz denemesi BLD-22 ile yat sahibine gider; .ics dosyaya kaydedilir ve e-postaya eklenir', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/randevu`;
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, eposta, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905551112233','sahip@randevu.local',$2)`, [d.kimlik, o.K.ds]).catch(() => undefined);
+    const z = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    expect((await o.ist('POST', u, ds, { tur: 'Keşif', zaman: z, yer: 'Marina' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { tur: 'Tanıklık', zaman: z, yer: 'Marina' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, ds, { tur: 'Deniz Denemesi', zaman: z, yer: 'Marina' }); expect(r.statusCode, r.body).toBe(200); expect(r.json().alicilar).toBeGreaterThanOrEqual(1);
+    const g = (await o.sup.query(`SELECT metin, ek_surumler FROM gonderim WHERE olay_anahtari = $1 AND kanal = 'E-posta'`, [`randevu:${r.json().kimlik}`])).rows[0];
+    expect(g.metin).toContain('deniz denemesi'); expect(g.ek_surumler.length).toBe(1);
+    expect((await o.sup.query(`SELECT uzanti FROM belge_surum WHERE kimlik = $1`, [g.ek_surumler[0]])).rows[0].uzanti).toBe('ics');
+    const { takvimDaveti } = await import('../src/randevu.js'); const ics = takvimDaveti({ uid: 'x', baslik: 'A, B', aciklama: 'C;D', yer: 'M', baslangic: new Date('2026-12-01T09:00:00Z'), dakika: 60 });
+    expect(ics).toContain('DTSTART:20261201T090000Z'); expect(ics).toContain('DTEND:20261201T100000Z'); expect(ics).toContain('SUMMARY:A' + String.fromCharCode(92) + ', B');
+  });
+});
+
 describe('kritik bulgu bildirimi (YG-545)', () => {
   it('Kritik bulgu ekibe hemen bildirilir; alıcı ve bilgi kayda geçer; karar Dosya Sorumlusundan', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const tu = await o.gir('tu');

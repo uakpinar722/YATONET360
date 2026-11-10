@@ -2,6 +2,7 @@ import { KurtarmaSonucKontrol } from './KurtarmaSonuc';
 import { OnDegerlendirme } from './OnDegerlendirme';
 import { IlkKapsam } from './IlkKapsam';
 import { KritikBulgular } from './KritikBulgu';
+import { Randevular } from './Randevu';
 import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -158,6 +159,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <ZorlukKatsayisi dosya={id} />
     <OnDegerlendirme dosya={id} />
     <KritikBulgular dosya={id} />
+    <Randevular dosya={id} />
     <IlkKapsam dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />

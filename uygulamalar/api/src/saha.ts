@@ -127,6 +127,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
         const t = (await c.query(`SELECT t.kimlik, t.kisi_adi_soyadi, t.telefon, t.eposta, t.kullanici_ref, y.yat_adi FROM dosya_tarafi t JOIN yat y ON y.kimlik = $2 WHERE t.dosya_ref = $1 AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif LIMIT 1`, [id, d.yat_ref])).rows[0];
         if (t?.telefon || t?.eposta) await onayTalebiAc(c, { dosya: id, ony: 'ONY-01', dil: d.yazisma_dili === 'İngilizce' ? 'en' : 'tr', alanlar: { Yat: t.yat_adi, Yacht: t.yat_adi, 'Dosya No': d.dosya_no, 'File No': d.dosya_no }, taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, belgeAdi: 'Keşif ve Söküm İzni', hazirlayan: o.kullanici, sigortaHatirlat: true, webAdresi: b.webAdresi, nesneTuru: 'Keşif', nesneKimligi: k.kimlik });
       }
+      await (await import('./randevu.js')).randevuBildir(c, b, { dosya: id, tur: 'Keşif', zaman: new Date(g.baslangic!), yer: g.bulusma?.trim() || d.konum, yapan: o.kullanici }); // YG-552
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Keşif Görevi Açıldı', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return k;
     });
