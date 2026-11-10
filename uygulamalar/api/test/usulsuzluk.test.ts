@@ -7,6 +7,25 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('veri göçü (YG-1288–YG-1291)', () => {
+  it('doğrulama sayı/kimlik/kritik değeri karşılaştırır; iki mutabık deneme olmadan gerçek göç yok; değişiklik GMY uygun görünce uygulanır', async () => {
+    const g = await import('../src/goc.js'); const { anaVeriYukle } = await import('../src/ana_veri.js');
+    const firmalar = [{ 'Sıra': '9001', 'Firma Adı': 'Göç Yat Ltd. Şti.', 'Kayıt Rolü': 'İB Firması adayı', 'Telefon': '0252 412 00 00' }, { 'Sıra': '9002', 'Firma Adı': 'Göç Yat Ltd Şti', 'Kayıt Rolü': 'İB Firması adayı', 'Telefon': '' }];
+    const noktalar = [{ 'Nokta No': '9101', 'Tesis / Nitelik': 'Göç Marina', 'Tür': 'Marina / Yat Limanı', 'Enlem': '36,85', 'Boylam': '28,27' }];
+    const c = await o.db.connect();
+    try {
+      await c.query('BEGIN'); await anaVeriYukle(c, { firmalar, noktalar }); const d = await g.gocDogrula(c, { firmalar, noktalar }); await c.query('ROLLBACK');
+      expect(d.sayi).toEqual({ kaynakFirma: 2, hedefFirma: 2, kaynakNokta: 1, hedefNokta: 1 }); expect(d.mutabik).toBe(true); expect(d.mukerrerAdaylari.some((x) => x.olcut === 'Unvan')).toBe(true);
+      expect(await g.gercekGocEngeli(c, 'x', new Date('2026-11-20'))).toContain('iki deneme');
+      await g.gocKaydet(c, { tur: 'Deneme', ozet: 'x', sonuc: d }); await g.gocKaydet(c, { tur: 'Deneme', ozet: 'x', sonuc: { ...d, mutabik: false } });
+      expect(await g.gercekGocEngeli(c, 'x', new Date('2026-11-20'))).toContain('mutabık değil');
+      await g.gocKaydet(c, { tur: 'Deneme', ozet: 'x', sonuc: d }); expect(await g.gercekGocEngeli(c, 'x', new Date('2026-11-20'))).toBeNull();
+      const k = await g.gocKaydet(c, { tur: 'Gerçek', ozet: 'x', sonuc: d }); expect((await o.kart('Ana Veri Göç Kabulü', k)).durum).toBe('Bekliyor');
+    } finally { c.release(); }
+    expect((await o.ist('POST', '/api/goc/degisiklik', await o.gir('ds'), { kaynak: 'firmalar.xlsx', kayit: '9001', alan: 'Telefon', yeni: '1', gerekce: 'G' })).statusCode).toBe(404);
+  });
+});
+
 describe('firma haritası (YG-364, YG-365, YG-366)', () => {
   it('statü rengi, en yakın bağlama noktası mesafesi; ad yalnız yetkili rollere; çıkarılmış firma yok', async () => {
     const { firmaRengi, mesafeKm } = await import('../src/firma_haritasi.js');
