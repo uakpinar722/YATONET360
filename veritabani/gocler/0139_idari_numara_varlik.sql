@@ -1,0 +1,7 @@
+-- YG-1618: idari talep LGM-ID-YYYY-NNNN, sipariş talep no + -SPnn, varlık LGM-VR-NNNNN; zimmet hareketi varlık numarasına bağlı.
+ALTER TABLE idari_talep ADD COLUMN siparis_no text UNIQUE;
+CREATE TABLE varlik (kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), varlik_no text NOT NULL UNIQUE CHECK (varlik_no ~ '^LGM-VR-[0-9]{5}$'), tur text NOT NULL CHECK (tur IN ('Demirbaş', 'Cihaz')), ad text NOT NULL CHECK (length(trim(ad)) > 0), seri_no text, durum text NOT NULL DEFAULT 'Depoda' CHECK (durum IN ('Depoda', 'Zimmette', 'Hurda', 'Kayıp')), kaydeden_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zaman timestamptz NOT NULL DEFAULT now());
+ALTER TABLE personel_zimmet ADD COLUMN varlik_ref uuid REFERENCES varlik (kimlik);
+CREATE UNIQUE INDEX personel_zimmet_varlik_acik ON personel_zimmet (varlik_ref) WHERE varlik_ref IS NOT NULL AND iade_zamani IS NULL;
+CREATE TABLE varlik_hareketi (kimlik bigserial PRIMARY KEY, varlik_ref uuid NOT NULL REFERENCES varlik (kimlik), tur text NOT NULL CHECK (tur IN ('Teslim', 'İade')), personel_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zimmet_ref uuid REFERENCES personel_zimmet (kimlik), yapan_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zaman timestamptz NOT NULL DEFAULT now());
+GRANT SELECT, INSERT, UPDATE ON varlik TO yatonet_uygulama; GRANT SELECT, INSERT ON varlik_hareketi TO yatonet_uygulama; GRANT USAGE ON SEQUENCE varlik_hareketi_kimlik_seq TO yatonet_uygulama;

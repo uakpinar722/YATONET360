@@ -20,6 +20,7 @@ import { KilitRoller } from './KilitRol';
 import { DenetimPlani, ResmiGazete, SosyalMedya } from './DenetimUyum';
 import { DisaAktarim } from './DisaAktarim';
 import { GeriYukleme } from './GeriYukleme';
+import { Varliklar } from './Varlik';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -810,6 +811,7 @@ export function IdariIslemler() {
       <SosyalMedya />
       <DisaAktarim />
       <GeriYukleme />
+      <Varliklar />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

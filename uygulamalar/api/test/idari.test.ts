@@ -17,6 +17,7 @@ describe('idari talep (YG-1619, YG-1683)', () => {
     expect((await o.kart('İdari Talep Hazırlığı', t)).durum).toBe('Bekliyor');
     expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, await o.gir('ds'), { tedarikci: 'X', tutar: 100 })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, idr, { tedarikci: 'X', tutar: 7000 })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT talep_no, siparis_no FROM idari_talep WHERE kimlik = $1`, [t])).rows[0]).toEqual({ talep_no: expect.stringMatching(/^LGM-ID-\d{4}-\d{4}$/), siparis_no: expect.stringMatching(/^LGM-ID-\d{4}-\d{4}-SP01$/) }); // YG-1618
     const k = await kart('İdari Sipariş', t); expect((await o.karar(k, 'tid', 'Onaya Gönder')).statusCode).toBe(200); expect(await durum(t)).toBe('Sipariş Onayında');
     expect((await o.karar(k, 'gmy', 'Onayla')).statusCode).toBe(200); expect(await durum(t)).toBe('Sipariş Onaylandı');
   });
@@ -56,5 +57,18 @@ describe('personel ek kayıtları (YG-974, YG-956, YG-947)', () => {
     expect((await o.ist('POST', '/api/personel-ozel-gun', ds, { riza: true, evlilikTarihi: '2020-06-01' })).statusCode).toBe(200);
     expect((await o.ist('POST', '/api/personel-ozel-gun', ds, { riza: false })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT evlilik_tarihi, paylasim_rizasi FROM personel_ozel_gun WHERE personel_ref = $1`, [o.K.ds])).rows[0]).toEqual({ evlilik_tarihi: null, paylasim_rizasi: false });
+  });
+});
+
+describe('varlık ve zimmet hareketi (YG-1618 varlık)', () => {
+  it('LGM-VR numarası; teslim ve iade hareket olarak; aynı anda tek kişi', async () => {
+    const idr = await o.gir('idr');
+    expect((await o.ist('POST', '/api/varlik', await o.gir('ds'), { tur: 'Cihaz', ad: 'Tablet' })).statusCode).toBe(404);
+    const v = (await o.ist('POST', '/api/varlik', idr, { tur: 'Cihaz', ad: 'Tablet', seri: 'SN1' })).json(); expect(v.no).toMatch(/^LGM-VR-\d{5}$/);
+    expect((await o.ist('POST', `/api/varlik/${v.kimlik}/teslim`, idr, { personel: o.K.ds })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/varlik/${v.kimlik}/teslim`, idr, { personel: o.K.opm })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/varlik/${v.kimlik}/iade`, idr, {})).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT array_agg(tur ORDER BY kimlik) t FROM varlik_hareketi WHERE varlik_ref = $1`, [v.kimlik])).rows[0].t).toEqual(['Teslim', 'İade']);
+    expect((await o.sup.query(`SELECT iade_zamani IS NOT NULL i FROM personel_zimmet WHERE varlik_ref = $1`, [v.kimlik])).rows[0].i).toBe(true);
   });
 });
