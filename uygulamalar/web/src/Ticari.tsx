@@ -19,6 +19,7 @@ import { UcretBandi } from './UcretBandi';
 import { KilitRoller } from './KilitRol';
 import { DenetimPlani, ResmiGazete, SosyalMedya } from './DenetimUyum';
 import { DisaAktarim } from './DisaAktarim';
+import { GeriYukleme } from './GeriYukleme';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -808,6 +809,7 @@ export function IdariIslemler() {
       <ResmiGazete />
       <SosyalMedya />
       <DisaAktarim />
+      <GeriYukleme />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

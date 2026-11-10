@@ -185,6 +185,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       if (!mevcut || ONCELIK_SIRA.indexOf(oneriS) > ONCELIK_SIRA.indexOf(mevcut)) await c.query(`UPDATE dosya SET onerilen_oncelik = $2 WHERE kimlik = $1`, [id, oneriS]);
       // YG-129: beyanla çelişen bulgu tarafsız kaydedilir ve sigortaya bildirilmek üzere Dosya Sorumlusuna düşer. Bulgu Tam Ziya önerisi de sigortacıya gider.
       if ((g.beyanlaCelisen || g.tamZiya) && d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Sigorta Bildirimi', kategori: 'gorev', baslik: `${d.dosya_no} · ${g.tamZiya ? 'Tam Ziya Önerisi' : 'Beyanla Çelişen Bulgu'} Sigortaya Bildirilecek`, ozet: k.bulgu_no, oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Bulgu', nesneKimligi: k.kimlik });
+      if (g.onem === 'Kritik') await (await import('./kritik_bulgu.js')).kritikBulguBildir(c, { dosya: id, dosyaNo: d.dosya_no, bulgu: k.kimlik, bulguNo: k.bulgu_no, aciklama: g.aciklama!.trim(), yapan: o.kullanici }); // YG-545
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Bulgu Kaydedildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { no: k.bulgu_no, onem: g.onem }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: k.kimlik, bulguNo: k.bulgu_no, onerilenOncelik: oneriS };
     });

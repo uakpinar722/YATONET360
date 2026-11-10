@@ -447,7 +447,8 @@ try {
   const pK = await al('kk', E); await dosyaAc(pK, d2.dosyaNo);
   await pK.locator('#n-y').fill('Güverte'); await pK.locator('#n-o').fill('Şartname 4'); await pK.locator('#n-d').fill('Çizik'); await pK.getByLabel('Uygunsuzluk Kanıtı').setInputFiles(dosyaYaz('f')); await pK.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pK, 'Uygunsuzluk Aç');
-  kontrol('Kalite Kontrolör uygunsuzluğu ekrandan açar', (await sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d2.kimlik])).rows[0].n === 1);
+  let uy = 0; for (let i = 0; i < 20 && uy !== 1; i++) { uy = (await sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d2.kimlik])).rows[0].n; if (uy !== 1) await pK.waitForTimeout(250); }
+  kontrol('Kalite Kontrolör uygunsuzluğu ekrandan açar', uy === 1);
   await dosyaAc(pT2, d2.dosyaNo);
   await pT2.locator('#kk-e').selectOption(ie2.kimlik); await pT2.locator('#kk-b').fill(new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)); await pT2.locator('#kk-t').fill('Rötuş'); await pT2.locator('#kk-i').fill('Görsel'); await pT2.locator('#kk-h').fill(new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10));
   await pT2.locator('#kk-bd').fill('0');

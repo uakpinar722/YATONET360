@@ -6,6 +6,21 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test89', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('kritik bulgu bildirimi (YG-545)', () => {
+  it('Kritik bulgu ekibe hemen bildirilir; alıcı ve bilgi kayda geçer; karar Dosya Sorumlusundan', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const tu = await o.gir('tu');
+    const G = { konum: 'Sancak kıç omuzluk, su hattı altı', aciklama: 'Gövdede çatlak, su alıyor', etiket: 'Hasar', bilgiTuru: 'Doğrulanmış olgu', onem: 'Kritik', yonlendirme: 'Teklif', sorumlu: o.K.ds, hedefTarih: '2099-01-01' };
+    const lst = async (k: string) => (await o.sup.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = $1 ORDER BY sira LIMIT 1`, [k])).rows[0].deger as string;
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/bulgu`, tu, { ...G, etiket: await lst('LST_BULGU_ETIKETI'), bilgiTuru: await lst('LST_BILGI_TURU'), yonlendirme: await lst('LST_BULGU_YONLENDIRME') }); expect(r.statusCode, r.body).toBe(200);
+    const b = r.json().kimlik as string; const n = (await o.sup.query(`SELECT alicilar, bilgi FROM kritik_bulgu_bildirimi WHERE bulgu_ref = $1`, [b])).rows[0];
+    expect(n.alicilar.sort()).toEqual([o.K.ds, o.K.oy, o.K.ty].sort()); expect(n.bilgi).toContain('çatlak');
+    expect((await o.kart('Kritik Bulgu Kararı', b)).sahip_kullanici_ref).toBe(o.K.ds);
+    expect((await o.ist('POST', `/api/bulgu/${b}/kritik-karar`, tu, { karar: 'K' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/bulgu/${b}/kritik-karar`, await o.gir('ds'), { karar: 'Yat derhal karaya alınacak' })).statusCode).toBe(200);
+    expect((await o.kart('Kritik Bulgu Kararı', b)).durum).toBe('Tamamlandı');
+  });
+});
+
 describe('FR-OPS-003 İlk Kapsam (YG-1069)', () => {
   it('Dosya Sorumlusu doldurur; Teknik Uzman tamamlar ve onaylar; iki branşta koordinatör zorunlu; yeni kayıt yeni sürüm', async () => {
     const d = (await o.dosyaAc()).kimlik as string; await o.ekipKur(d); const u = `/api/dosya/${d}/ilk-kapsam`;
