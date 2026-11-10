@@ -10,7 +10,7 @@ import { pdfUret, type BelgeTanim, type Bolum, type Renk } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt';
+export type UretimTuru = 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -353,6 +353,39 @@ export async function kapanisOzetiTanim(db: Db, dosya: string) {
   return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: T.ad, kod: 'RP-RAP-004', no, dosyaNo: b.d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: b.d.yat_adi, bolumler, onay: o ? { rol: T.r3, zaman: anSaat(o.onay_zamani), kanal: 'YATONET 360' } : undefined } as BelgeTanim };
 }
 
+/** YG-1569, K-237: FR-TIC-009 dış nüshası Sigorta Onay Belgesi; onaylanan ve onaylanmayan kalemler teklif sıra numarasıyla ayrı tablolarda. */
+export async function sigortaOnayTanim(db: Db, id: string, kod: string, web: string) {
+  const s = (await db.query(`SELECT s.*, f.teklif_no, f.surum_no, f.kdv_orani, f.genel_toplam_eur, f.dosya_ref FROM sigorta_onayi s JOIN fiyat_teklifi f ON f.kimlik = s.teklif_ref WHERE s.kimlik = $1`, [id])).rows[0];
+  const b = await dosyaBilgi(db, s.dosya_ref, ''); const dil = b.dil; const en = dil === 'en'; const e = E[dil];
+  const kl = (await db.query(`SELECT sira_no, kartela_kodu, aciklama, isin_niteligi, tutar_eur, onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [s.teklif_ref])).rows;
+  const no = await altNumara(db, b.d.dosya_no, 'SO'); const oran = Number(s.kdv_orani);
+  const R = (x: number) => Math.round(x * 100) / 100;
+  const T = en ? { ad: 'Insurance Approval Certificate', bilgi: 'Information', ozet: 'Summary', belge: 'Approved Document', toplam: 'Quotation Total (VAT Incl.)', on: 'Approved (VAT Incl.)', onm: 'Not Approved (VAT Incl.)', onT: 'Approved Items', onmT: 'Items Not Approved', onTop: 'Approved Total (EUR)', onmTop: 'Not Approved Total (EUR)', kayit: 'Approval Record', kim: 'Approved By', yon: 'Method', zam: 'Date-Time', sur: 'Approved Document Version', say: 'Selected Items', ft: 'Quotation' } : { ad: 'Sigorta Onay Belgesi', bilgi: 'Bilgilendirme', ozet: 'Özet', belge: 'Onaylanan Belge', toplam: 'Teklif Toplamı (KDV Dahil)', on: 'Onaylanan (KDV Dahil)', onm: 'Onaylanmayan (KDV Dahil)', onT: 'Onaylanan Kalemler', onmT: 'Onaylanmayan Kalemler', onTop: 'Onaylanan Toplam (EUR)', onmTop: 'Onaylanmayan Toplam (EUR)', kayit: 'Onay Kaydı', kim: 'Onaylayan', yon: 'Yöntem', zam: 'Tarih-Saat', sur: 'Onaylanan Belge Sürümü', say: 'Seçilen Kalem Sayısı', ft: 'Fiyat Teklifi' };
+  const ytn = s.onay_kanali === 'YATONET 360';
+  const bilgi = en
+    ? `Your approval of Quotation No. ${s.teklif_no} has been ${ytn ? 'received on the YATONET 360 approval screen' : `received via ${s.onay_kanali}`} and recorded with the details below. Approved and non-approved items are shown separately.`
+    : `${s.teklif_no} numaralı Fiyat Teklifine ilişkin onayınız ${ytn ? 'YATONET 360 onay ekranında alınmış' : `${s.onay_kanali} ile alınmış`} ve aşağıdaki bilgilerle kayda geçirilmiştir. Onaylanan ve onaylanmayan kalemler ayrı ayrı gösterilmiştir.`;
+  const grup = (ok: boolean) => kl.filter((k) => (k.onay_durumu === 'Onaylandı') === ok);
+  const top = (l: typeof kl) => { const ara = R(l.reduce((a, k) => a + Number(k.tutar_eur), 0)); const kdv = R(ara * oran / 100); return { ara, kdv, genel: R(ara + kdv) }; };
+  const tablo = (baslik: string, l: typeof kl, son: string): Bolum => { const t = top(l); return { baslik, tur: 'tablo', sutunlar: [{ ad: e.sira, hiza: 'ort' }, { ad: e.kod }, { ad: e.aciklama }, { ad: e.nitelik }, { ad: e.tutar, hiza: 'sag' }], satirlar: l.map((k) => [k.sira_no, k.kartela_kodu, k.aciklama, k.isin_niteligi, para(k.tutar_eur, dil)]), toplamlar: [{ et: e.ara, deger: para(t.ara, dil) }, { et: `${e.kdv} %${oran}`, deger: para(t.kdv, dil) }, { et: son, deger: para(t.genel, dil), ana: true }] }; };
+  const on = grup(true); const onm = grup(false); const a = top(on); const m = top(onm);
+  const bolumler: Bolum[] = [
+    { baslik: T.bilgi, tur: 'metin', metin: bilgi },
+    ...ortak(b).slice(0, 2),
+    { baslik: T.ozet, tur: 'alanlar', alanlar: [{ et: T.belge, deger: `${T.ft} · ${s.teklif_no} · Rev.${s.surum_no}`, genis: true }, { et: T.toplam, deger: `${para(R(a.genel + m.genel), dil)} EUR` }, { et: T.on, deger: `${para(a.genel, dil)} EUR` }, { et: T.onm, deger: `${para(m.genel, dil)} EUR` }] },
+  ];
+  if (on.length) bolumler.push(tablo(T.onT, on, T.onTop));
+  if (onm.length) bolumler.push(tablo(T.onmT, onm, T.onmTop));
+  bolumler.push({ baslik: T.kayit, tur: 'alanlar', alanlar: [{ et: T.kim, deger: [s.onaylayan_yetkili, b.d.sigortaci_adi].filter(Boolean).join(' · ') }, { et: T.yon, deger: ytn ? (en ? 'YATONET 360 approval screen · two-factor authenticated session' : 'YATONET 360 onay ekranı · iki aşamalı doğrulamalı oturum') : s.onay_kanali }, { et: T.zam, deger: anSaat(s.onay_tarihi) }, { et: T.sur, deger: `${s.teklif_no} · Rev.${s.surum_no}` }, { et: T.say, deger: `${on.length} / ${kl.length}` }] }, ekipBolumu(b));
+  return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: T.ad, kod: 'FR-TIC-009', no, dosyaNo: b.d.dosya_no, tarih: gunAy(s.onay_tarihi), surum: 'Rev.1', dil, yat: b.d.yat_adi, bolumler, matbuSon: [dogrula(dil, kod, web)] } as BelgeTanim };
+}
+
+/** Tam veya kısmi sigorta onayından hemen sonra belge kuyruğa girer. */
+export async function sigortaOnayBelgesiUret(c: Db, teklif: string): Promise<void> {
+  const s = (await c.query(`SELECT kimlik, dosya_ref FROM sigorta_onayi WHERE teklif_ref = $1 AND karar IN ('Tam Onay', 'Kısmi Onay') ORDER BY onay_tarihi DESC LIMIT 1`, [teklif])).rows[0];
+  if (s) await belgeUret(c, { tur: 'Sigorta Onay Belgesi', nesne: s.kimlik, dosya: s.dosya_ref });
+}
+
 /** CEO 09.11: kaşe basılan belgeler; sözleşmeler ve karşı tarafın beyan/onay belgeleri dışarıda. */
 const KASELI = ['Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 'Ödeme Talebi', 'İş Emri', 'Teslim Tutanağı', 'Mutabakat Raporu', 'Yöntem Bilgi Nüshası', 'Nihai Kapanış Özeti', 'Kurtarma Sonuç Tutanağı'];
 
@@ -365,7 +398,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
     try {
       await c.query('BEGIN');
       const kod = dogrulamaKodu();
-      const v = u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
+      const v = u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       { const me = await (await import('./yetki_ek.js')).belgeMaskeEngeli(c, u.tur, u.dosya_ref, JSON.stringify(v.t)); if (me) throw new Error(me); }
       const pdf = await pdfUret(KASELI.includes(u.tur) ? { ...v.t, kase: true } : v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);

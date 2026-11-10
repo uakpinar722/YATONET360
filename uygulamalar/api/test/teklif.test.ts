@@ -308,7 +308,7 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     await belgeKuyruguIsle({ db: o.db, webAdresi: 'http://x', depo: new Depo(mkdtempSync(join(tmpdir(), 'bt'))), eposta: o.posta, sms: o.sms } as never, 200);
     expect((await o.sup.query(`SELECT durum, son_hata FROM belge_uretim WHERE tur = 'Fiyat Teklifi' AND nesne = $1`, [t.kimlik])).rows[0]).toMatchObject({ durum: 'Üretildi', son_hata: null });
     expect((await satir()).rows[0].n).toBeGreaterThanOrEqual(1);
-  });
+  }, 120_000); // kuyrukta önceki testlerin PDF'leri de üretilir
   it('yat sahibinden onay istenmez, BLD-37 eş zamanlı gider; telefon kanalı geçersiz', async () => {
     const { d, t } = await gonder();
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE nesne_kimligi = $1`, [t.kimlik])).rowCount).toBe(0);
@@ -335,6 +335,9 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     const ie = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 });
     expect(ie.statusCode, ie.body).toBe(200);
     expect((await o.sup.query(`SELECT aciklama FROM is_emri_kalemi WHERE is_emri_ref = $1`, [ie.json().kimlik])).rows.map((x) => x.aciklama)).toEqual(['A']);
+    const so = (await o.sup.query(`SELECT u.kimlik, s.kimlik AS s FROM belge_uretim u JOIN sigorta_onayi s ON s.kimlik = u.nesne::uuid WHERE u.tur = 'Sigorta Onay Belgesi' AND s.teklif_ref = $1`, [t.kimlik])).rows; expect(so.length).toBe(1); // YG-1569
+    const { sigortaOnayTanim } = await import('../src/belge_uret.js'); const v = await sigortaOnayTanim(o.db, so[0].s, 'KOD1', 'http://x'); const j = JSON.stringify(v.t);
+    expect(v.t.no).toMatch(/-SO\d{2}$/); expect(j).toContain('Onaylanan Kalemler'); expect(j).toContain('Onaylanmayan Kalemler'); expect(j).not.toMatch(/teminat/i);
   });
 });
 

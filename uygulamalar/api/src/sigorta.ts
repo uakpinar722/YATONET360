@@ -23,6 +23,7 @@ async function kararUygula(c: PoolClient, t: Record<string, any>, onaylananSira:
   const tam = onaylananSira.length === kalemler.length; const karar = sureDolumu ? 'Süre Dolumu Kabulü' : tam ? 'Tam Onay' : onaylananSira.length ? 'Kısmi Onay' : 'Ret';
   await c.query(`INSERT INTO sigorta_onayi (dosya_ref, teklif_ref, karar, onaylanan_tutar_eur, onay_kanali, onay_tarihi, onaylayan_yetkili, kaydi_yapan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [t.dosya_ref, t.kimlik, karar, tutar, kanal, simdi, yetkili, kaydeden]);
   await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = $2, karar_zamani = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar, simdi]);
+  if (karar === 'Tam Onay' || karar === 'Kısmi Onay') await (await import('./belge_uret.js')).sigortaOnayBelgesiUret(c, t.kimlik); // YG-1569
   if (karar !== 'Ret' && t.d_statu === 'Aktif' && t.asama !== 'Uygulama') await statuYaz(c, { kimlik: t.dosya_ref, statu: 'Aktif', asama: t.asama }, { statu: 'Aktif', asama: 'Uygulama' }, `Sigorta kararı: ${karar}`, kaydeden, 'Operasyon Yöneticisi');
   return { karar, tutar, onaylanmayan: kalemler.length - onaylananSira.length };
 }

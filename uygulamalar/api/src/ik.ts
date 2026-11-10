@@ -196,7 +196,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/ik/parametre', oturumlu, async (i, y) => { // Kıdem tavanı resmî tutardan İK Müdürü, harcırah TİD girer; sistem tutar uydurmaz.
     const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; deger?: number };
-    const yetki = g.kod === 'kidem_tavani_tl' || g.kod === 'damga_vergisi_binde' ? IKM : g.kod === 'harcirah_gunluk_eur' ? TID : null; // YG-978: damga oranı binde değer
+    const yetki = g.kod === 'kidem_tavani_tl' || g.kod === 'damga_vergisi_binde' || g.kod === 'asgari_ucret_brut_tl' ? IKM : g.kod === 'harcirah_gunluk_eur' ? TID : null; // YG-978: damga oranı binde değer
     if (!yetki || !(Number(g.deger) > 0)) return y.code(400).send({ hata: 'Parametre ve tutarı girmenizi rica ederiz.' });
     if (!(await rolVar(o.kullanici, [yetki]))) return y.code(403).send({ hata: `Bu tutarı ${yetki} girer.` });
     await b.db.query(`INSERT INTO ik_parametresi (kod, deger, giren_ref) VALUES ($1,$2,$3) ON CONFLICT (kod) DO UPDATE SET deger = EXCLUDED.deger, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.kod, g.deger, o.kullanici]);

@@ -21,7 +21,7 @@ const SINIF = ['Kamuya Açık', 'Kurumsal', 'Gizli', 'Kritik'];
  * YG-609, YG-1075: ana dosyaya erişim içindeki her belge türünü indirme hakkı vermez. Dış kullanıcı Kurumsal sınıftaki belgeyi
  * ve kendi grubuna kapalı türleri göremez (kendi yüklediği hariç): firma, tedarikçi ve tesis müşteri/fiyat belgelerini; müşteri ve sigorta iş emrini görmez.
  */
-const MUSTERI_BELGESI = ['Fiyat Teklifi', 'Teknik Rapor', 'Onay Belgesi', 'Proforma', 'Ödeme Talebi', 'Ödeme Sorumluluğu', 'Mutabakat Raporu', 'Ön Bilgilendirme Formu'];
+const MUSTERI_BELGESI = ['Fiyat Teklifi', 'Teknik Rapor', 'Onay Belgesi', 'Sigorta Onay Belgesi', 'Proforma', 'Ödeme Talebi', 'Ödeme Sorumluluğu', 'Mutabakat Raporu', 'Ön Bilgilendirme Formu'];
 export function disKapaliTurler(grup: string): string[] {
   if (grup === 'LGM İç Rolü') return [];
   const firma = grup === 'İş Birliği Firması' || grup === 'Tedarikçi' || grup.startsWith('Tesis');

@@ -14,6 +14,8 @@ import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
 import { EtikBildirim, ErisimInceleme, IcDenetim } from './ErisimEtik';
+import { KurumTalepleri } from './KurumTalebi';
+import { UcretBandi } from './UcretBandi';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -796,6 +798,8 @@ export function IdariIslemler() {
       <ErisimInceleme />
       <EtikBildirim />
       <IcDenetim />
+      <KurumTalepleri />
+      <UcretBandi />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
