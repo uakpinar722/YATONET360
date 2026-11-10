@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek, type Ben } from './api';
+import { KurumsalFilo } from './KurumsalFilo';
 import { BelgeSec } from './Kalite';
 import { PazarlamaSorusu } from './PazarlamaSorusu';
 
@@ -26,6 +27,7 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {v?.yetkili && <div className="not">{v.yetkili.rol} · {v.yetkili.sahip_ad}</div>}
+      <KurumsalFilo />
       {v?.onaylar.filter((o) => o.ony_kod === 'ONY-30').map((o) => <div className="hata" key={o.kimlik} role="alert"><b>⚠ Yata Erişim İzni</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<div>Acil müdahale için ekibin yata erişmesine izin vermeniz istenmektedir.</div><button className="btn" onClick={() => setOnay(o.kimlik)}>İncele</button></div>)}
       <PazarlamaSorusu ben={ben} />
       {v?.yetkili && <Yetkilerim ben={ben} y={v.yetkili} yenile={() => void yukle()} />}

@@ -7,6 +7,23 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('kurumsal aylık filo ve cari hesap raporu (YG-765)', () => {
+  it('ay başında kesilir, TİD onayıyla BLD-31 gider, itiraz süresi izlenir', async () => {
+    const tr = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref) VALUES ('TR-KR1','Tüzel kişi','Kurumsal Müşteri','Filo Kurum A.Ş.','{Yat Sahibi}',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const k = (await o.sup.query(`INSERT INTO kurumsal_kurum (taraf_ref, unvan, ek2_onay_siniri, kaydeden_ref) VALUES ($1,'Filo Kurum A.Ş.',100,$2) RETURNING kimlik`, [tr, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, yetkili, ekleyen_ref) VALUES ($1,$2,'Onaylayan',100,true,$3)`, [o.K.idm, k, o.K.ds]);
+    const { kurumsalRaporIsle } = await import('../src/kurumsal_rapor.js');
+    expect(await kurumsalRaporIsle(o.db, new Date('2026-12-01T08:00:00'))).toBeGreaterThanOrEqual(1);
+    const r = (await o.sup.query(`SELECT kimlik, durum, son_gonderim FROM kurumsal_rapor WHERE kurum_ref = $1 AND donem = '2026-11'`, [k])).rows[0]; expect(r.durum).toBe('TİD Onayında');
+    expect((await o.karar((await o.kart('Kurumsal Aylık Rapor Onayı', r.kimlik)).kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld31:${r.kimlik}:%`])).rows[0].n).toBeGreaterThanOrEqual(1);
+    const km = await o.gir('idm'); const f = (await o.ist('GET', '/api/kurumsal/filo', km)).json(); expect(f.raporlar[0].durum).toBe('Gönderildi');
+    expect((await o.ist('GET', '/api/kurumsal/filo', await o.gir('oy'))).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/kurumsal/rapor/${r.kimlik}/itiraz`, km, { itiraz: 'Fatura F1 tutarı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/kurumsal/rapor/${r.kimlik}/itiraz`, km, { itiraz: 'Tekrar' })).statusCode).toBe(409);
+  });
+});
+
 describe('yönetim panosu (YG-758, YG-759)', () => {
   it('Müdür kendi birimini, Direktör bağlı birimlerini görür; personel göremez', async () => {
     await o.dosyaAc();

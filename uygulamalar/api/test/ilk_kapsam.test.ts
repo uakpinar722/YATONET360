@@ -6,6 +6,20 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test89', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('iç ilerleme raporu (YG-787)', () => {
+  it('dönem günü önceliğe göre; görev bir kez; rapor fiziksel ve finansal ilerlemeyi ayrı kaydeder', async () => {
+    const { donemGunu, icIlerlemeGorevi } = await import('../src/ic_ilerleme.js');
+    expect([1, 2, 3, 4, 5].map((g) => donemGunu('Normal', g))).toEqual([true, false, false, true, false]); expect(donemGunu('Planlı', 2)).toBe(false); expect(donemGunu('Yüksek', 3)).toBe(true); expect(donemGunu('Yüksek', 6)).toBe(false);
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); await o.sup.query(`UPDATE dosya SET statu = 'Aktif', asama = 'Uygulama', oncelik = 'Yüksek', dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const z = new Date('2026-11-11T08:00:00Z'); expect(await icIlerlemeGorevi(o.db, z)).toBeGreaterThanOrEqual(1); const n2 = await icIlerlemeGorevi(o.db, z); expect(n2).toBe(0);
+    expect((await o.kart('İç İlerleme Raporu', `${d.kimlik}:2026-11-11`)).sahip_kullanici_ref).toBe(o.K.ds);
+    const ds = await o.gir('ds'); expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ic-ilerleme`, ds, {})).statusCode).toBe(400);
+    const r = (await o.ist('POST', `/api/dosya/${d.kimlik}/ic-ilerleme`, ds, { degerlendirme: 'Planlandığı gibi' })).json(); expect(r).toMatchObject({ tamam: true, fiziksel: null });
+    expect((await o.kart('İç İlerleme Raporu', `${d.kimlik}:2026-11-11`)).durum).toBe('Tamamlandı');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/ic-ilerleme`, ds)).json().raporlar.length).toBe(1);
+  });
+});
+
 describe('iletişim bilgisi geçmişi (YG-518)', () => {
   it('değişen telefon eski kayıt olarak kalır; doğrulama kaynakla; eski değer yeniden hedef seçilebilir', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const ds = await o.gir('ds');

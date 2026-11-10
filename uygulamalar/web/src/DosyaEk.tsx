@@ -4,6 +4,7 @@ import { IlkKapsam } from './IlkKapsam';
 import { KritikBulgular } from './KritikBulgu';
 import { Randevular } from './Randevu';
 import { IletisimBilgisi } from './IletisimBilgisi';
+import { IcIlerleme } from './IcIlerleme';
 import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -162,6 +163,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <KritikBulgular dosya={id} />
     <Randevular dosya={id} />
     <IletisimBilgisi dosya={id} />
+    <IcIlerleme dosya={id} />
     <IlkKapsam dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />

@@ -1,0 +1,3 @@
+-- YG-765: kurumsal müşteri aylık filo ve cari hesap raporu; TİD onayı, BLD-31, 10 iş günü itiraz.
+CREATE TABLE kurumsal_rapor (kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), kurum_ref uuid NOT NULL REFERENCES kurumsal_kurum (kimlik), donem text NOT NULL, icerik jsonb NOT NULL, durum text NOT NULL DEFAULT 'TİD Onayında' CHECK (durum IN ('Hazırlıkta', 'TİD Onayında', 'Gönderildi', 'İtirazlı', 'Mutabık')), son_gonderim timestamptz NOT NULL, gonderim_zamani timestamptz, itiraz_son timestamptz, itiraz text, itiraz_eden_ref text REFERENCES kullanici_hesabi (kimlik), itiraz_zamani timestamptz, olusturma_zamani timestamptz NOT NULL DEFAULT now(), UNIQUE (kurum_ref, donem));
+GRANT SELECT, INSERT, UPDATE ON kurumsal_rapor TO yatonet_uygulama;
