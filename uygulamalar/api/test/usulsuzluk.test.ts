@@ -7,6 +7,34 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('toplu veri düzeltme (YG-1247, YG-1248)', () => {
+  it('yedek, betik özeti ve onay ister; sayı farkı açıklanır; etki uzlaşmadan kapanmaz', async () => {
+    const sy = await o.gir('sy'); const yd = (await o.sup.query(`INSERT INTO yedek_kaydi (tur, bitis, durum) VALUES ('Gece Tam', now(), 'Başarılı') RETURNING kimlik`)).rows[0].kimlik;
+    const G = { veriKumesi: 'Yat', kapsam: 'Bayrak alanı', gerekce: 'Yazım birliği', ornek: '10 kayıt kontrol edildi', yedek: yd, betikSurumu: 'v1', betikOzeti: 'a'.repeat(64), beklenen: 40 };
+    expect((await o.ist('POST', '/api/toplu-duzeltme', sy, { ...G, betikOzeti: 'x' })).statusCode).toBe(400);
+    const k = (await o.ist('POST', '/api/toplu-duzeltme', sy, G)).json().kimlik as string;
+    expect((await o.ist('POST', `/api/toplu-duzeltme/${k}/uygulandi`, sy, { gerceklesen: 40, sonucKontrol: 'Tamam' })).statusCode).toBe(409);
+    expect((await o.karar((await o.kart('Toplu Veri Düzeltme Onayı', k)).kimlik, 'btd', 'Onayla')).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/toplu-duzeltme/${k}/uygulandi`, sy, { gerceklesen: 38, sonucKontrol: 'Tamam' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/toplu-duzeltme/${k}/uygulandi`, sy, { gerceklesen: 38, sonucKontrol: 'Tamam', farkAciklamasi: '2 kayıt zaten doğruydu' })).statusCode).toBe(200);
+    const E = { rapor: 'Etkilenmedi', bildirim: 'Etkilenmedi', onay: 'Etkilenmedi', fatura: 'Etkilenmedi' };
+    expect((await o.ist('POST', `/api/toplu-duzeltme/${k}/kapat`, sy, { etkiler: E })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/toplu-duzeltme/${k}/kapat`, sy, { etkiler: { ...E, disSistem: 'Uzlaştırıldı' } })).statusCode).toBe(200);
+  });
+});
+
+describe('kartela işçilik normu ve fire (YG-860)', () => {
+  it('taslak sürümde TİD girer; yeni taslağa taşınır; personel göremez', async () => {
+    const tid = await o.gir('tid'); const kod = (await o.sup.query(`SELECT kod FROM kartela_kalemi ORDER BY kod LIMIT 1`)).rows[0]?.kod as string | undefined; if (!kod) return;
+    expect((await o.ist('POST', '/api/kartela/taslak/norm', tid, { kod, norm: 2, kaynak: 'Firma kayıtları' })).statusCode).toBe(409);
+    expect((await o.ist('POST', '/api/kartela/taslak', tid, {})).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/kartela/taslak/norm', tid, { kod, fire: 120, kaynak: 'K' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/kartela/taslak/norm', tid, { kod, norm: 2.5, fire: 5, kaynak: 'Firma kayıtları' })).statusCode).toBe(200);
+    const k = (await o.ist('GET', `/api/kartela/norm?q=${kod}`, tid)).json().kalemler.find((x: { kod: string }) => x.kod === kod); expect([Number(k.iscilik_normu_saat), Number(k.fire_orani)]).toEqual([2.5, 5]);
+    expect((await o.ist('GET', '/api/kartela/norm', await o.gir('ds'))).statusCode).toBe(404);
+  });
+});
+
 describe('entegrasyon tanımı ve askı (YG-1296, YG-1306)', () => {
   it('onaysız üretime açılmaz; askı gerekçeli; ölçütle yeniden açılır', async () => {
     const { entegrasyonAcik } = await import('../src/entegrasyon.js'); const sy = await o.gir('sy');

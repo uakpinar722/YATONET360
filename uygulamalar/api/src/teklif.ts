@@ -300,7 +300,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const sur = `${yil}.${n}`;
     return islem(async (c) => {
       await c.query(`INSERT INTO kartela_surumu (surum, durum, hazirlayan_ref) VALUES ($1,'Taslak',$2)`, [sur, o.kullanici]);
-      await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm, resmi_onay_gerekebilir) SELECT kod, $1, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm, resmi_onay_gerekebilir FROM kartela_kalemi WHERE surum = $2`, [sur, kaynak]);
+      await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm, resmi_onay_gerekebilir, iscilik_normu_saat, fire_orani, norm_kaynagi) SELECT kod, $1, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm, resmi_onay_gerekebilir, iscilik_normu_saat, fire_orani, norm_kaynagi FROM kartela_kalemi WHERE surum = $2`, [sur, kaynak]);
       return { surum: sur };
     });
   });
