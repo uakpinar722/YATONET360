@@ -22,6 +22,8 @@ import { DisaAktarim } from './DisaAktarim';
 import { GeriYukleme } from './GeriYukleme';
 import { Varliklar } from './Varlik';
 import { YonetimRaporu } from './YonetimRaporu';
+import { NakitTahmini } from './NakitTahmini';
+import { YonetimPanosu } from './YonetimPanosu';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -813,7 +815,9 @@ export function IdariIslemler() {
       <DisaAktarim />
       <GeriYukleme />
       <Varliklar />
+      <YonetimPanosu />
       <YonetimRaporu />
+      <NakitTahmini />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

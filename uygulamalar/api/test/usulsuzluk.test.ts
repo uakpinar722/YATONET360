@@ -7,6 +7,16 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('yönetim panosu (YG-758, YG-759)', () => {
+  it('Müdür kendi birimini, Direktör bağlı birimlerini görür; personel göremez', async () => {
+    await o.dosyaAc();
+    expect((await o.ist('GET', '/api/yonetim-panosu', await o.gir('ds'))).statusCode).toBe(404);
+    const op = (await o.ist('GET', '/api/yonetim-panosu', await o.gir('opm'))).json(); expect(op.kapsam).toEqual(['Operasyon Müdürlüğü']);
+    expect(op.gostergeler.find((x: { kod: string }) => x.kod === 'acik').deger).toBeGreaterThan(0); expect(op.gostergeler.some((x: { kod: string }) => x.kod === 'tahsilat')).toBe(false);
+    const ti = (await o.ist('GET', '/api/yonetim-panosu', await o.gir('tid'))).json(); expect(ti.gostergeler.map((x: { kod: string }) => x.kod)).toEqual(['tahsilat']);
+  });
+});
+
 describe('RP-TIC-002 aylık yönetim raporu (YG-761)', () => {
   it('faturalanmamış iş, tahsil edilmemiş fatura ve firmaya ödenmemiş bakiye', async () => {
     const d = await o.dosyaAc();
@@ -21,6 +31,11 @@ describe('RP-TIC-002 aylık yönetim raporu (YG-761)', () => {
     const r = (await o.ist('GET', '/api/yonetim-raporu?donem=2026-10', await o.gir('tid'))).json();
     expect(r.toplam).toEqual({ wip: 600, tahsil: 300, firma: 250 });
     expect(r.tahsil[0].gecikme).toBe(11);
+    const { nakitTahmini, sigortaciKarlilik } = await import('../src/nakit_karlilik.js'); // YG-762
+    const h = await nakitTahmini(o.db, new Date('2026-11-10T09:00:00Z')); expect(h.length).toBe(13);
+    expect(h[0]).toMatchObject({ baslangic: '2026-11-09', giris: 480 }); expect(h[2]!.cikis).toBe(250); expect(h[12]!.kumulatif).toBe(230);
+    await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,'Anadolu Sigorta',$2)`, [d.kimlik, o.K.ds]);
+    expect(await sigortaciKarlilik(o.db, new Date('2026-11-10T09:00:00Z'))).toEqual([{ sigortaci_adi: 'Anadolu Anonim Türk Sigorta Şirketi', dosya: 1, satis: '1000.00', maliyet: '700.00', katki: '300.00', oran: '30.0' }]);
   });
 });
 
