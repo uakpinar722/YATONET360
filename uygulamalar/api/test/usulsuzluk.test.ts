@@ -2,10 +2,40 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { usulsuzlukTara } from '../src/usulsuzluk.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', idm: 'İç Denetim Müdürü', sy: 'Sistem Yöneticisi', tid: 'Ticari İşler Direktörü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', idm: 'İç Denetim Müdürü', sy: 'Sistem Yöneticisi', tid: 'Ticari İşler Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', hud: 'Hukuk ve Uyum Direktörü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
+
+describe('entegrasyon tanımı ve askı (YG-1296, YG-1306)', () => {
+  it('onaysız üretime açılmaz; askı gerekçeli; ölçütle yeniden açılır', async () => {
+    const { entegrasyonAcik } = await import('../src/entegrasyon.js'); const sy = await o.gir('sy');
+    const G = { ad: 'e-Arşiv Fatura', gonderen: 'YATONET 360', alan: 'Muhasebe Yazılımı', kayitSahibi: 'Muhasebe ve Finans Müdürü', tetikleyici: 'Proforma onayı', siklik: 'Anlık', bilgiSinifi: 'Gizli', hataSorumlusu: 'Bilgi İşlem Müdürü', hizmetBeklentisi: '15 dakika', amac: 'Fatura düzenleme' };
+    expect((await o.ist('POST', '/api/entegrasyon', await o.gir('ds'), G)).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/entegrasyon', sy, { ...G, amac: '' })).statusCode).toBe(400);
+    const e = (await o.ist('POST', '/api/entegrasyon', sy, G)).json().kimlik as string; expect(await entegrasyonAcik(o.db, 'e-Arşiv Fatura')).toBe(false);
+    const k = (await o.kart('Entegrasyon Üretime Açma Onayı', e)).kimlik; expect((await o.karar(k, 'btd', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(k, 'hud', 'Onayla')).statusCode).toBe(200);
+    expect(await entegrasyonAcik(o.db, 'e-Arşiv Fatura')).toBe(true);
+    const A = { neden: 'Güvenlik Olayı', aciklama: 'Anahtar sızıntısı şüphesi', etkilenen: 'Fatura gönderimi', geciciYontem: 'Elle yükleme', kullaniciBildirimi: 'Muhasebe bilgilendirildi', olcut: 'Anahtar yenilendi' };
+    expect((await o.ist('POST', `/api/entegrasyon/${e}/askiya-al`, sy, { ...A, olcut: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/entegrasyon/${e}/askiya-al`, sy, A)).statusCode).toBe(200); expect(await entegrasyonAcik(o.db, 'e-Arşiv Fatura')).toBe(false);
+    expect((await o.ist('POST', `/api/entegrasyon/${e}/yeniden-ac`, sy, { olcutKarsilandi: true, gerekce: 'G' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/entegrasyon/${e}/yeniden-ac`, await o.gir('btd'), { olcutKarsilandi: true, gerekce: 'Anahtar yenilendi, test edildi' })).statusCode).toBe(200);
+    expect(await entegrasyonAcik(o.db, 'e-Arşiv Fatura')).toBe(true);
+    const { entegrasyonSonucu, uzlastir } = await import('../src/entegrasyon_uzlastirma.js'); // YG-1311, YG-1312
+    await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-1', beklenen: 'Fatura no dosyaya yazılır', sonucRef: 'F-1' });
+    const q = await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-2', beklenen: 'Fatura no dosyaya yazılır' });
+    await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-1', beklenen: 'Fatura no dosyaya yazılır', sonucRef: 'F-1' });
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM entegrasyon_kaydi WHERE entegrasyon_ref = $1 AND durum = 'Karantina'`, [e])).rows[0].n)).toBe(2);
+    expect((await o.kart('Entegrasyon Uzlaştırma', q)).sahip_rol_ref).toBeTruthy();
+    expect((await o.ist('POST', `/api/entegrasyon/kayit/${q}/uzlastir`, sy, { karar: 'Sistem Kaydı Doğru' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/entegrasyon/kayit/${q}/uzlastir`, sy, { karar: 'Elle Düzeltildi', gerekce: 'Fatura muhasebeden teyit edildi', sonucRef: 'F-2' })).statusCode).toBe(200);
+    await o.sup.query(`UPDATE entegrasyon_kaydi SET donem = '2026-11', kritik_deger = 100 WHERE entegrasyon_ref = $1 AND durum <> 'Karantina'`, [e]);
+    const u = await uzlastir(o.db, { entegrasyon: e, donem: '2026-11', karsi: [{ disKimlik: 'F-1', deger: 100, durum: 'Kesildi' }, { disKimlik: 'F-3', deger: 50, durum: 'Kesildi' }], yapan: o.K.sy! });
+    expect(u.farklar.map((f) => f.tur).sort()).toEqual(['Dönem Toplamı', 'Kimlik', 'Kimlik']);
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM is_karti WHERE tur = 'Entegrasyon Farkı' AND durum = 'Bekliyor'`)).rows[0].n)).toBe(3);
+  });
+});
 
 describe('kurumsal aylık filo ve cari hesap raporu (YG-765)', () => {
   it('ay başında kesilir, TİD onayıyla BLD-31 gider, itiraz süresi izlenir', async () => {

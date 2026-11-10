@@ -24,6 +24,7 @@ import { Varliklar } from './Varlik';
 import { YonetimRaporu } from './YonetimRaporu';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
+import { Entegrasyonlar } from './Entegrasyon';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -818,6 +819,7 @@ export function IdariIslemler() {
       <YonetimPanosu />
       <YonetimRaporu />
       <NakitTahmini />
+      <Entegrasyonlar />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />
