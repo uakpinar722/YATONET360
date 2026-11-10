@@ -2,10 +2,27 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { usulsuzlukTara } from '../src/usulsuzluk.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', idm: 'İç Denetim Müdürü', sy: 'Sistem Yöneticisi' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', idm: 'İç Denetim Müdürü', sy: 'Sistem Yöneticisi', tid: 'Ticari İşler Direktörü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
+
+describe('RP-TIC-002 aylık yönetim raporu (YG-761)', () => {
+  it('faturalanmamış iş, tahsil edilmemiş fatura ve firmaya ödenmemiş bakiye', async () => {
+    const d = await o.dosyaAc();
+    const tk = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, karar_zamani, ara_toplam_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,'Karar','Tam Onay','2026-10-05',1000,1200,1000,$3) RETURNING kimlik`, [`${d.dosyaNo}-TK01`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'A','Onarım','İşçilik',1,'saat',700,1000,1000,'Onaylandı')`, [tk]);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-YR1','Rapor Firma','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const ie = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref, olusturma_zamani) VALUES ($1,'ON',$2,$3,'Y','K','Aktif',$4,'2026-10-06') RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.oy])).rows[0].kimlik;
+    const fa = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, fatura_no, fatura_tarihi, vade, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',400,80,480,'Kısmi Tahsil','F-YR1','2026-10-10','2026-10-20',$4) RETURNING kimlik`, [`${d.dosyaNo}-PF01`, d.kimlik, tk, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, giren_ref) VALUES ($1,$2,180,'2026-10-15','Havale',$3)`, [fa, d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, net, statu, giren_ref, olusturma_zamani) VALUES ($1,$2,$3,1,300,300,250,'Doğrulandı',$4,'2026-10-12')`, [`${d.dosyaNo}-HK01`, ie, d.kimlik, o.K.oy]);
+    expect((await o.ist('GET', '/api/yonetim-raporu?donem=2026-10', await o.gir('ds'))).statusCode).toBe(404);
+    const r = (await o.ist('GET', '/api/yonetim-raporu?donem=2026-10', await o.gir('tid'))).json();
+    expect(r.toplam).toEqual({ wip: 600, tahsil: 300, firma: 250 });
+    expect(r.tahsil[0].gecikme).toBe(11);
+  });
+});
 
 describe('gerçek geri yükleme (YG-564, YG-015)', () => {
   it('Sistem Yöneticisi kaydeder; LGM duyurusu ve yeniden giriş görevleri açılır', async () => {

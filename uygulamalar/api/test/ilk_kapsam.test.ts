@@ -6,6 +6,22 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test89', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('iletişim bilgisi geçmişi (YG-518)', () => {
+  it('değişen telefon eski kayıt olarak kalır; doğrulama kaynakla; eski değer yeniden hedef seçilebilir', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const ds = await o.gir('ds');
+    const t = (await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Kaptan','K','+905550000001',$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`UPDATE dosya_tarafi SET telefon = '+905550000002' WHERE kimlik = $1`, [t]);
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/iletisim-bilgisi`, ds)).json().kayitlar.filter((x: { tur: string; deger: string }) => x.tur === 'Telefon' && x.deger.startsWith('+90555000000'));
+    expect(l.map((x: { deger: string; bildirim_hedefi: boolean }) => [x.deger, x.bildirim_hedefi])).toEqual([['+905550000002', true], ['+905550000001', false]]);
+    expect((await o.ist('POST', `/api/iletisim-bilgisi/${l[0].kimlik}/dogrula`, ds, { kaynak: 'Uydurma' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/iletisim-bilgisi/${l[0].kimlik}/dogrula`, ds, { kaynak: 'Telefon Görüşmesi' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/iletisim-bilgisi/${l[1].kimlik}/hedef`, ds, {})).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT telefon FROM dosya_tarafi WHERE kimlik = $1`, [t])).rows[0].telefon).toBe('+905550000001');
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM iletisim_bilgisi WHERE taraf_ref = $1 AND tur = 'Telefon'`, [t])).rows[0].n)).toBe(2);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/iletisim-bilgisi`, await o.gir('tu'))).statusCode).toBe(404);
+  });
+});
+
 describe('randevu bildirimi ve takvim daveti (YG-552)', () => {
   it('deniz denemesi BLD-22 ile yat sahibine gider; .ics dosyaya kaydedilir ve e-postaya eklenir', async () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/randevu`;
