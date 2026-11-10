@@ -84,7 +84,7 @@ describe('erişim taraması', () => {
   }, 300_000);
   it('kayıt ve güncelleme uçları: dış kullanıcı iç işlemi başlatamaz', async () => {
     // Oturumu kapatan veya hesabı etkileyen uçlar taramayı bozmasın diye dışarıda; kendi portal uçları ve herkese açık destek talebi (YG-1504) açık listede.
-    const ATLA = /^\/(destek|kimlik|ilk-giris|hesap|hesabim|hesap-kurtarma|kayit|onay|paylasim|mobil|portal|firma-portal|tedarikci-portal|tesis-portal|sigorta|kurumsal|kurum|profil|bildirim|mesaj|veri-ihlali|kvkk-basvuru|iletisim|disiplin\/benim|erisim\/talep)/;
+    const ATLA = /^\/(destek|kimlik|ilk-giris|hesap|hesabim|hesap-kurtarma|kayit|onay|paylasim|mobil|portal|firma-portal|tedarikci-portal|tesis-portal|sigorta|kurumsal|kurum|profil|bildirim|mesaj|veri-ihlali|kvkk-basvuru|iletisim|disiplin\/benim|erisim\/talep|ramak-kala)/; // ramak kala firmalara da açık (Cilt I Tablo 9.7)
     const l = uclar(/s\.post\('([^':]+)'/g).filter((u) => !ATLA.test(u)); expect(l.length).toBeGreaterThan(30);
     const ihlal: string[] = []; const say: Record<number, number> = {};
     for (const [k] of DIS) for (const u of l) {

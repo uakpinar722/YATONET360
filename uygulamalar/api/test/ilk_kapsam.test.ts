@@ -47,6 +47,12 @@ describe('randevu bildirimi ve takvim daveti (YG-552)', () => {
     const g = (await o.sup.query(`SELECT metin, ek_surumler FROM gonderim WHERE olay_anahtari = $1 AND kanal = 'E-posta'`, [`randevu:${r.json().kimlik}`])).rows[0];
     expect(g.metin).toContain('deniz denemesi'); expect(g.ek_surumler.length).toBe(1);
     expect((await o.sup.query(`SELECT uzanti FROM belge_surum WHERE kimlik = $1`, [g.ek_surumler[0]])).rows[0].uzanti).toBe('ics');
+    const bt = (await o.sup.query(`SELECT teyit_belirteci b FROM randevu_bildirimi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].b as string; expect(g.metin).toContain(`#randevu=${bt}`);
+    expect((await o.ist('GET', `/api/randevu-teyit/${bt}`)).json().tur).toBe('Deniz Denemesi');
+    expect((await o.ist('POST', `/api/randevu-teyit/${bt}`, undefined, { yanit: 'Katılacağım' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/randevu-teyit/${bt}`, undefined, { yanit: 'Katılacağım', kaptanAd: 'Kaptan K', kaptanTelefon: '+905551110000' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/randevu`, ds)).json()[0]).toMatchObject({ teyit: 'Katılacağım', kaptan_ad: 'Kaptan K' });
+    expect((await o.ist('GET', '/api/randevu-teyit/' + 'a'.repeat(48))).statusCode).toBe(404);
     const { takvimDaveti } = await import('../src/randevu.js'); const ics = takvimDaveti({ uid: 'x', baslik: 'A, B', aciklama: 'C;D', yer: 'M', baslangic: new Date('2026-12-01T09:00:00Z'), dakika: 60 });
     expect(ics).toContain('DTSTART:20261201T090000Z'); expect(ics).toContain('DTEND:20261201T100000Z'); expect(ics).toContain('SUMMARY:A' + String.fromCharCode(92) + ', B');
   });

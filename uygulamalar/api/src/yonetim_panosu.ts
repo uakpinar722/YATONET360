@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { Pool } from 'pg';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { zorunluFormlar } from './zorunlu_form.js';
+import { gostergeleriHesapla } from './gosterge.js';
 
 type Gosterge = { kod: string; ad: string; deger: number; birim: string; birimAdi: string; uyari: boolean };
 /** Göstergenin sahibi olan müdürlük; Müdür kendi müdürlüğünü, Direktör bağlı müdürlüklerini, GMY ve CEO tümünü görür. */
@@ -19,13 +21,20 @@ const BAGLI: Record<string, string[]> = {
 export function yonetimPanosuYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
-  const n = async (sql: string, p: unknown[] = []) => Number((await b.db.query(sql, p)).rows[0].n ?? 0);
 
   s.get('/yonetim-panosu', oturumlu, async (i, y) => {
     const roller = (await b.db.query(`SELECT r.rol_adi, r.kademe, r.rol_sahibi_birim FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.kullanici_gruplari = 'LGM İç Rolü'`, [i.oturum!.kullanici])).rows as { rol_adi: string; kademe: string; rol_sahibi_birim: string }[];
     const tum = roller.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı');
     const birimler = new Set<string>(); for (const r of roller) { if (r.kademe === 'Müdür') birimler.add(r.rol_sahibi_birim); for (const x of BAGLI[r.rol_adi] ?? []) birimler.add(x); }
     if (!tum && !birimler.size) return yok(y);
+    const ust = roller.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı');
+    return { kapsam: tum ? 'Tümü' : [...birimler], gostergeler: await panoGostergeleri(b.db, tum, birimler), cilt1: await gostergeleriHesapla(b.db, (x) => tum || birimler.has(x)), hedefGirer: ust, uretim: new Date().toISOString() };
+  });
+}
+
+/** Pano göstergeleri; aylık CEO raporu da bunu kullanır. */
+export async function panoGostergeleri(db: Pool, tum: boolean, birimler: Set<string> = new Set()): Promise<Gosterge[]> {
+  const n = async (sql: string, p: unknown[] = []) => Number((await db.query(sql, p)).rows[0].n ?? 0);
     const gor = (birim: string) => tum || birimler.has(birim);
     const l: Gosterge[] = [];
     const ekle = async (kod: string, ad: string, birim: string, f: () => Promise<number>, br = 'adet', esik = 0) => { if (!gor(birim)) return; const d = await f(); l.push({ kod, ad, deger: d, birim: br, birimAdi: birim, uyari: d > esik }); };
@@ -37,8 +46,8 @@ export function yonetimPanosuYollari(s: FastifyInstance, b: Baglam) {
     await ekle('butce', 'Bütçe Sapması Uyarısı (Açık)', 'Teknik Müdürlük', () => n(`SELECT count(*) n FROM is_karti WHERE tur = 'Bütçe Erken Uyarısı' AND durum = 'Bekliyor'`));
     await ekle('onay', 'Süresi Geçmiş Bekleyen Onay', OP, () => n(`SELECT count(*) n FROM is_karti WHERE kategori = 'onay' AND durum = 'Bekliyor' AND son_zaman < now()`));
     if (gor('Kalite Müdürlüğü')) {
-      const acik = (await b.db.query(`SELECT kimlik FROM dosya WHERE statu NOT IN ('Kapalı', 'Teknik Kapalı') ORDER BY olusturma_zamani DESC LIMIT 200`)).rows;
-      let eksik = 0; for (const d of acik) if ((await zorunluFormlar(b.db, d.kimlik)).some((f) => !f.var)) eksik++;
+      const acik = (await db.query(`SELECT kimlik FROM dosya WHERE statu NOT IN ('Kapalı', 'Teknik Kapalı') ORDER BY olusturma_zamani DESC LIMIT 200`)).rows;
+      let eksik = 0; for (const d of acik) if ((await zorunluFormlar(db, d.kimlik)).some((f) => !f.var)) eksik++;
       l.push({ kod: 'eksik', ad: 'Zorunlu Formu Eksik Açık Dosya', deger: eksik, birim: 'adet', birimAdi: 'Kalite Müdürlüğü', uyari: eksik > 0 });
     }
     await ekle('uygunsuzluk', 'Açık Uygunsuzluk', 'Kalite Müdürlüğü', () => n(`SELECT count(*) n FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz')`));
@@ -46,6 +55,5 @@ export function yonetimPanosuYollari(s: FastifyInstance, b: Baglam) {
     await ekle('firma', 'Yakın İzlemedeki Firma', 'Firma Yönetimi Müdürlüğü', () => n(`SELECT count(*) n FROM kurulus WHERE risk_derecesi = 'Yakın İzleme'`));
     await ekle('tahsilat', 'Vadesi Geçmiş Alacak', 'Muhasebe ve Finans Müdürlüğü', () => n(`SELECT coalesce(sum(toplam_eur - tahsil_edilen_eur), 0) n FROM musteri_faturasi WHERE durum IN ('Faturalandı', 'Kısmi Tahsil') AND vade < current_date`), 'EUR');
     await ekle('garanti', 'Garanti Geri Dönüşü (Son 90 Gün)', 'Teknik Müdürlük', () => n(`SELECT count(*) n FROM garanti_sikayet WHERE olusturma_zamani > now() - interval '90 days'`));
-    return { kapsam: tum ? 'Tümü' : [...birimler], gostergeler: l, uretim: new Date().toISOString() };
-  });
+    return l;
 }

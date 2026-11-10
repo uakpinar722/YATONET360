@@ -26,7 +26,7 @@ export async function kurumsalRaporIcerik(db: Db, kurum: string, donem: string) 
   return { donem, kesim, filo, cari, bakiye };
 }
 
-kapanisKaydet(TUR, async (c, k, karar) => {
+kapanisKaydet(TUR, async (c, k, karar, yapan) => {
   const r = (await c.query(`SELECT r.*, u.unvan FROM kurumsal_rapor r JOIN kurumsal_kurum u ON u.kimlik = r.kurum_ref WHERE r.kimlik = $1::uuid AND r.durum = 'TİD Onayında'`, [k.nesne_kimligi])).rows[0];
   if (!r) return;
   if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') { await c.query(`UPDATE kurumsal_rapor SET durum = 'Hazırlıkta' WHERE kimlik = $1`, [r.kimlik]); return; }
@@ -34,9 +34,15 @@ kapanisKaydet(TUR, async (c, k, karar) => {
   const itirazSon = await isGunuSonu(c, new Date(), 10);
   await c.query(`UPDATE kurumsal_rapor SET durum = 'Gönderildi', gonderim_zamani = now(), itiraz_son = $2 WHERE kimlik = $1`, [r.kimlik, itirazSon]);
   const tarih = itirazSon.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
+  // A4 PDF rapor kaydedilir ve BLD-31 ekiyle gider.
+  const { kurumsalRaporTanim } = await import('./rapor_belge.js'); const { pdfUret } = await import('./pdf.js'); const { Depo } = await import('./depo.js'); const { Readable } = await import('node:stream');
+  const tanim = await kurumsalRaporTanim(c, r.kimlik); const pdf = await pdfUret(tanim); const depo = new Depo(); const al = await depo.al(Readable.from(pdf), pdf.length + 1); const anahtar = depo.yerlestir(al.yol, al.ozet);
+  const be = (await c.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,'Kurumsal Aylık Rapor','Gizli','Kurumsal Rapor',$2,'Sistem',(now() AT TIME ZONE 'Europe/Istanbul')::date,$3) RETURNING kimlik`, [`${tanim.ad} ${tanim.no}`, r.kimlik, yapan])).rows[0].kimlik;
+  const sv = (await c.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, yukleyen_ref, durum, onay_zamani) VALUES ($1,1,$2,'pdf',$3,$4,$5,'Sistem',$6,'Yürürlükte',now()) RETURNING kimlik`, [be, `${tanim.no}.pdf`, al.boyut, al.ozet, anahtar, yapan])).rows[0].kimlik as string;
+  await c.query(`UPDATE kurumsal_rapor SET pdf_surum_ref = $2 WHERE kimlik = $1`, [r.kimlik, sv]);
   for (const u of (await c.query(`SELECT h.e_posta FROM kurumsal_kullanici k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.kurum_ref = $1 AND h.hesap_durumu = 'Aktif' AND h.e_posta IS NOT NULL`, [r.kurum_ref])).rows) {
     const metin = await metinGetir(c, 'BLD-31', 'tr', { 'dönem': r.donem, period: r.donem, 'bağlantı': WEB, link: WEB, 'itiraz son tarihi': tarih, 'objection deadline': tarih });
-    await disGonder(c, { olay: `bld31:${r.kimlik}:${u.e_posta}`, eposta: u.e_posta, konu: `${r.unvan} · ${r.donem} Kurumsal Aylık Filo ve Cari Hesap Raporu`, metin });
+    await disGonder(c, { olay: `bld31:${r.kimlik}:${u.e_posta}`, eposta: u.e_posta, konu: `${r.unvan} · ${r.donem} Kurumsal Aylık Filo ve Cari Hesap Raporu`, metin, ekler: [sv] });
   }
 });
 

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { PoolClient } from 'pg';
@@ -38,9 +39,10 @@ export async function randevuBildir(c: PoolClient, b: Pick<Baglam, 'webAdresi' |
   const kod = RANDEVU[g.tur]; if (!kod) throw Object.assign(new Error('Randevu türü geçersiz.'), { statusCode: 400 });
   const d = (await c.query(`SELECT d.dosya_no, d.oncelik, d.yazisma_dili, d.dosya_niteligi, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [g.dosya])).rows[0];
   const dil: Dil = d.yazisma_dili === 'İngilizce' ? 'en' : 'tr'; const en = dil === 'en';
-  const alan = { Yat: d.yat_adi, Yacht: d.yat_adi, 'tarih saat': anSaat(g.zaman), 'date time': anSaat(g.zaman), yer: g.yer, place: g.yer, 'Kayıt No': g.kayitNo ?? d.dosya_no, 'Record No': g.kayitNo ?? d.dosya_no, 'iş/test': g.isTest ?? '', 'work/test': g.isTest ?? '', 'bağlantı': b.webAdresi, link: b.webAdresi };
+  const belirtec = randomBytes(24).toString('hex'); const baglanti = `${b.webAdresi}/#randevu=${belirtec}`; // teyit bağlantısı
+  const alan = { Yat: d.yat_adi, Yacht: d.yat_adi, 'tarih saat': anSaat(g.zaman), 'date time': anSaat(g.zaman), yer: g.yer, place: g.yer, 'Kayıt No': g.kayitNo ?? d.dosya_no, 'Record No': g.kayitNo ?? d.dosya_no, 'iş/test': g.isTest ?? '', 'work/test': g.isTest ?? '', 'bağlantı': baglanti, link: baglanti };
   const metin = await metinGetir(c, kod, dil, alan);
-  const k = (await c.query(`INSERT INTO randevu_bildirimi (dosya_ref, tur, bld_kodu, randevu_zamani, yer, is_test, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.dosya, g.tur, kod, g.zaman, g.yer, g.isTest ?? null, g.yapan])).rows[0].kimlik as string;
+  const k = (await c.query(`INSERT INTO randevu_bildirimi (dosya_ref, tur, bld_kodu, randevu_zamani, yer, is_test, olusturan_ref, teyit_belirteci) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [g.dosya, g.tur, kod, g.zaman, g.yer, g.isTest ?? null, g.yapan, belirtec])).rows[0].kimlik as string;
   const ics = Buffer.from(takvimDaveti({ uid: k, baslik: `${en ? TUR_EN[g.tur] : g.tur} · ${d.yat_adi}`, aciklama: metin, yer: g.yer, baslangic: g.zaman, dakika: SURE_DK[g.tur]! }), 'utf8');
   const depo = b.depo ?? new Depo(); const al = await depo.al(Readable.from(ics), ics.length + 1); const anahtar = depo.yerlestir(al.yol, al.ozet);
   const be = (await c.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,'Takvim Daveti','Gizli','Dosya',$2,'Sistem',(now() AT TIME ZONE 'Europe/Istanbul')::date,$3) RETURNING kimlik`, [`${d.dosya_no} ${g.tur} Takvim Daveti ${anSaat(g.zaman)}`, g.dosya, g.yapan])).rows[0].kimlik;
@@ -55,12 +57,28 @@ export async function randevuBildir(c: PoolClient, b: Pick<Baglam, 'webAdresi' |
 }
 
 export function randevuYollari(s: FastifyInstance, b: Baglam) {
+  // YG-552: BLD bağlantısından uygunluk/katılım teyidi; deniz denemesinde kaptan bilgisi istenir. Belirteç gizlidir, oturum gerekmez.
+  const bul = async (x: string) => (/^[0-9a-f]{48}$/.test(x) ? (await b.db.query(`SELECT r.kimlik, r.tur, r.randevu_zamani, r.yer, r.is_test, r.teyit, r.dosya_ref, y.yat_adi, d.dosya_no, d.yazisma_dili FROM randevu_bildirimi r JOIN dosya d ON d.kimlik = r.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE r.teyit_belirteci = $1 AND r.randevu_zamani > now() - interval '1 day'`, [x])).rows[0] : undefined);
+  s.get('/randevu-teyit/:b', async (i, y) => {
+    const r = await bul((i.params as { b: string }).b); if (!r) return y.code(404).send({ hata: 'Bağlantı geçersiz veya süresi dolmuştur.' });
+    return { tur: r.tur, zaman: r.randevu_zamani, yer: r.yer, isTest: r.is_test, yat: r.yat_adi, dil: r.yazisma_dili === 'İngilizce' ? 'en' : 'tr', teyit: r.teyit };
+  });
+  s.post('/randevu-teyit/:b', async (i, y) => {
+    const r = await bul((i.params as { b: string }).b); if (!r) return y.code(404).send({ hata: 'Bağlantı geçersiz veya süresi dolmuştur.' });
+    const g = (i.body ?? {}) as { yanit?: string; not?: string; kaptanAd?: string; kaptanTelefon?: string };
+    if (g.yanit !== 'Katılacağım' && g.yanit !== 'Uygun Değil') return y.code(400).send({ hata: 'Yanıtınızı seçiniz.' });
+    if (r.tur === 'Deniz Denemesi' && g.yanit === 'Katılacağım' && (!g.kaptanAd?.trim() || !g.kaptanTelefon?.trim())) return y.code(400).send({ hata: 'Kaptan adı ve telefonu zorunludur.' });
+    await b.db.query(`UPDATE randevu_bildirimi SET teyit = $2, teyit_notu = $3, kaptan_ad = $4, kaptan_telefon = $5, teyit_zamani = now(), teyit_adresi = $6 WHERE kimlik = $1`, [r.kimlik, g.yanit, g.not?.trim().slice(0, 500) || null, g.kaptanAd?.trim() || null, g.kaptanTelefon?.trim() || null, i.ip]);
+    const ds = (await b.db.query(`SELECT dosya_sorumlusu_ref k FROM dosya WHERE kimlik = $1`, [r.dosya_ref])).rows[0]?.k;
+    if (ds) await (await import('./bildirim.js')).bildir(b.db, { olay: `randevu-teyit:${r.kimlik}:${Date.now()}`, kullanicilar: [ds], baslik: `${r.dosya_no} · ${r.tur} Teyidi: ${g.yanit}`, ozet: g.not?.trim().slice(0, 120) ?? null, oncelik: g.yanit === 'Uygun Değil' ? 'Yüksek' : 'Normal' });
+    return { tamam: true };
+  });
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const ekipte = async (d: string, k: string) => Boolean((await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Yedek Sorumlu', 'Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)')`, [d, k])).rowCount);
   s.get('/dosya/:id/randevu', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string }; if (!UUID.test(id) || i.oturum!.grup !== 'LGM İç Rolü' || !(await ekipte(id, i.oturum!.kullanici))) return yok(y);
-    return (await b.db.query(`SELECT kimlik, tur, randevu_zamani, yer, is_test, alici_sayisi, olusturma_zamani FROM randevu_bildirimi WHERE dosya_ref = $1 ORDER BY randevu_zamani DESC`, [id])).rows;
+    return (await b.db.query(`SELECT kimlik, tur, randevu_zamani, yer, is_test, alici_sayisi, teyit, teyit_notu, kaptan_ad, kaptan_telefon, teyit_zamani, olusturma_zamani FROM randevu_bildirimi WHERE dosya_ref = $1 ORDER BY randevu_zamani DESC`, [id])).rows;
   });
   // Keşif bildirimi keşif planlamasıyla kendiliğinden gider; diğer randevular buradan bildirilir.
   s.post('/dosya/:id/randevu', oturumlu, async (i, y) => {

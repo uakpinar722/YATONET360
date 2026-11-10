@@ -127,10 +127,31 @@ describe('kurumsal aylık filo ve cari hesap raporu (YG-765)', () => {
     expect((await o.karar((await o.kart('Kurumsal Aylık Rapor Onayı', r.kimlik)).kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld31:${r.kimlik}:%`])).rows[0].n).toBeGreaterThanOrEqual(1);
     const km = await o.gir('idm'); const f = (await o.ist('GET', '/api/kurumsal/filo', km)).json(); expect(f.raporlar[0].durum).toBe('Gönderildi');
+    expect((await o.sup.query(`SELECT cardinality(ek_surumler) n FROM gonderim WHERE olay_anahtari LIKE $1 AND kanal = 'E-posta' LIMIT 1`, [`bld31:${r.kimlik}:%`])).rows[0].n).toBe(1);
+    const kd = await o.ist('GET', `/api/kurumsal/rapor/${r.kimlik}/belge?bicim=docx`, km); expect(kd.statusCode).toBe(200); expect(kd.rawPayload.subarray(0, 2).toString()).toBe('PK');
     expect((await o.ist('GET', '/api/kurumsal/filo', await o.gir('oy'))).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/kurumsal/rapor/${r.kimlik}/itiraz`, km, { itiraz: 'Fatura F1 tutarı' })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/kurumsal/rapor/${r.kimlik}/itiraz`, km, { itiraz: 'Tekrar' })).statusCode).toBe(409);
   });
+});
+
+describe('rapor PDF ve Word, Cilt I göstergeleri, gider planı (YG-761, YG-762, YG-765, YG-758)', () => {
+  it('RP-TIC-002 ve CEO raporu PDF/Word iner; göstergeler hedefle trafik ışığı alır; gider planı nakit tahminine girer', async () => {
+    const tid = await o.gir('tid');
+    expect((await o.ist('GET', '/api/yonetim-raporu/belge?donem=2026-10', await o.gir('ds'))).statusCode).toBe(404);
+    const w = await o.ist('GET', '/api/yonetim-raporu/belge?donem=2026-10&bicim=docx', tid); expect(w.statusCode).toBe(200); expect(w.rawPayload.subarray(0, 2).toString()).toBe('PK'); expect(w.rawPayload.includes(Buffer.from('word/document.xml'))).toBe(true);
+    const pdf = await o.ist('GET', '/api/yonetim-raporu/belge?donem=2026-10', tid); expect(pdf.statusCode).toBe(200); expect(pdf.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
+    const { ceoRaporuTanim } = await import('../src/rapor_belge.js'); const c = await ceoRaporuTanim(o.db, '2026-10'); expect(c.bolumler.map((x) => x.baslik)).toContain('Cilt I §9 Performans Göstergeleri');
+    expect((await o.ist('GET', '/api/ceo-raporu/belge?donem=2026-10&bicim=docx', tid)).statusCode).toBe(200);
+    const { gostergeleriHesapla, GOSTERGELER } = await import('../src/gosterge.js'); expect(GOSTERGELER.length).toBe(24);
+    const g0 = await gostergeleriHesapla(o.db, () => true); expect(g0.length).toBe(24);
+    expect((await o.ist('POST', '/api/gosterge/hedef', tid, { kod: 'G-9.10-5', hedef: 10, gerekce: 'G' })).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/ramak-kala', await o.gir('ds'), { faaliyet: 'Sıcak iş', aciklama: 'Yangın söndürücü yoktu' })).statusCode).toBe(200);
+    expect((await gostergeleriHesapla(o.db, () => true)).find((x) => x.kod === 'G-9.7-2')!.deger).toBe(1);
+    const t1 = (await o.ist('POST', '/api/nakit-gider-plani', tid, { kalem: 'Ofis kirası', tutar: 1000, tekrar: 'Aylık', ayinGunu: 5 })).statusCode; expect(t1).toBe(200);
+    const { nakitTahmini } = await import('../src/nakit_karlilik.js'); const h = await nakitTahmini(o.db, new Date('2026-11-10T09:00:00Z'));
+    expect(h.reduce((a, x) => a + x.gider, 0)).toBeGreaterThanOrEqual(2000);
+  }, 120_000);
 });
 
 describe('yönetim panosu (YG-758, YG-759)', () => {
@@ -159,7 +180,7 @@ describe('RP-TIC-002 aylık yönetim raporu (YG-761)', () => {
     expect(r.tahsil[0].gecikme).toBe(11);
     const { nakitTahmini, sigortaciKarlilik } = await import('../src/nakit_karlilik.js'); // YG-762
     const h = await nakitTahmini(o.db, new Date('2026-11-10T09:00:00Z')); expect(h.length).toBe(13);
-    expect(h[0]).toMatchObject({ baslangic: '2026-11-09', giris: 480 }); expect(h[2]!.cikis).toBe(250); expect(h[12]!.kumulatif).toBe(230);
+    expect(h[0]).toMatchObject({ baslangic: '2026-11-09', giris: 480 }); expect(h[2]!.cikis).toBe(250); expect(h[12]!.kumulatif).toBe(Math.round((230 - h.reduce((a, x) => a + x.gider + x.tedarik, 0)) * 100) / 100);
     await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,'Anadolu Sigorta',$2)`, [d.kimlik, o.K.ds]);
     expect(await sigortaciKarlilik(o.db, new Date('2026-11-10T09:00:00Z'))).toEqual([{ sigortaci_adi: 'Anadolu Anonim Türk Sigorta Şirketi', dosya: 1, satis: '1000.00', maliyet: '700.00', katki: '300.00', oran: '30.0' }]);
   });
