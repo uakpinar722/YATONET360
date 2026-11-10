@@ -1,0 +1,6 @@
+-- YG-1480: kilit roller (onay makamı Müdür, Direktör ve GMY rolleri kademeden türetilir; kilit_rol ek rolleri tutar); atama Direktör talebi, GMY görüşü, CEO onayıyla; atanana kadar geçici vekil.
+CREATE TABLE kilit_rol (rol_ref text PRIMARY KEY REFERENCES rol (kimlik), ekleyen text NOT NULL DEFAULT 'Sistem', zaman timestamptz NOT NULL DEFAULT now());
+CREATE SEQUENCE kilit_rol_talep_no;
+CREATE TABLE kilit_rol_talebi (kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), talep_no text NOT NULL UNIQUE, rol_ref text NOT NULL REFERENCES rol (kimlik), aday_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), vekil_ref text REFERENCES kullanici_hesabi (kimlik), vekil_atama_ref uuid REFERENCES rol_atamasi (kimlik), gerekce text NOT NULL, talep_eden_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), durum text NOT NULL DEFAULT 'Onayda' CHECK (durum IN ('Onayda', 'Onaylandı', 'Reddedildi', 'İade Edildi')), sonuc_zamani timestamptz, olusturma_zamani timestamptz NOT NULL DEFAULT now());
+CREATE UNIQUE INDEX kilit_rol_tek_acik ON kilit_rol_talebi (rol_ref) WHERE durum = 'Onayda';
+GRANT SELECT ON kilit_rol TO yatonet_uygulama; GRANT SELECT, INSERT, UPDATE ON kilit_rol_talebi TO yatonet_uygulama; GRANT USAGE ON SEQUENCE kilit_rol_talep_no TO yatonet_uygulama;

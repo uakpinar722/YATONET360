@@ -16,6 +16,8 @@ import { ArsivListesi } from './ArsivFirma';
 import { EtikBildirim, ErisimInceleme, IcDenetim } from './ErisimEtik';
 import { KurumTalepleri } from './KurumTalebi';
 import { UcretBandi } from './UcretBandi';
+import { KilitRoller } from './KilitRol';
+import { DenetimPlani, ResmiGazete, SosyalMedya } from './DenetimUyum';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -800,6 +802,10 @@ export function IdariIslemler() {
       <IcDenetim />
       <KurumTalepleri />
       <UcretBandi />
+      <KilitRoller />
+      <DenetimPlani />
+      <ResmiGazete />
+      <SosyalMedya />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

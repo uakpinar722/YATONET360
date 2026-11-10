@@ -5,6 +5,7 @@ import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
+import { silsileBildir } from './silsile.js';
 import { isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
 
@@ -57,6 +58,7 @@ export function kurumTalebiYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [TUR, id]);
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [YON, id]);
     await kartAc(b.db, { tur: YON, kategori: 'gorev', baslik: `${t.talep_no} · ${t.kurum_turu}: ${t.kurum_adi}`, ozet: 'Kurumla görüşünüz; uygunsa hesabı davetle açınız ve sonucu kaydediniz.', sahipRol: g.rol, sonZaman: await isGunuSonu(b.db, new Date(), 2), nesneTuru: YON, nesneKimligi: id });
+    await silsileBildir(b.db, g.rol, { olay: `kurum-talebi-silsile:${id}:${g.rol}`, baslik: `Birime Yönlendirilen Talep: ${t.talep_no}`, ozet: `${t.kurum_turu} · ${t.kurum_adi}` }, [o.kullanici]); // YG-1555
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Talep Yönlendirildi', nesneTuru: TUR, nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
