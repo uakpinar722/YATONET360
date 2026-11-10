@@ -27,6 +27,8 @@ import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
 import { KartelaNorm } from './KartelaNorm';
 import { TopluDuzeltme } from './TopluDuzeltme';
+import { Kesinti } from './Kesinti';
+import { FirmaHaritasi } from './FirmaHaritasi';
 import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
@@ -824,6 +826,8 @@ export function IdariIslemler() {
       <Entegrasyonlar />
       <KartelaNorm />
       <TopluDuzeltme />
+      <Kesinti />
+      <FirmaHaritasi />
       <FisAsliTeslim />
       <MenfaatListesi />
       <TatilTakvimi />

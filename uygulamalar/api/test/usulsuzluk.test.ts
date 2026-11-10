@@ -7,6 +7,38 @@ let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
 
+describe('firma haritası (YG-364, YG-365, YG-366)', () => {
+  it('statü rengi, en yakın bağlama noktası mesafesi; ad yalnız yetkili rollere; çıkarılmış firma yok', async () => {
+    const { firmaRengi, mesafeKm } = await import('../src/firma_haritasi.js');
+    expect(firmaRengi({ kayit_asamasi: 'Onaylı', ag_statusu: 'Aktif', risk_derecesi: 'Tercihli' })!.etiket).toBe('Aktif–Tercihli');
+    expect(firmaRengi({ kayit_asamasi: 'İncelemede', ag_statusu: 'Pasif', risk_derecesi: null })!.etiket).toBe('Sicil İncelemesindeki Aday');
+    expect(firmaRengi({ kayit_asamasi: 'Onaylı', ag_statusu: 'Çıkarıldı', risk_derecesi: null })).toBeNull();
+    expect(mesafeKm(36.85, 28.27, 36.85, 28.27)).toBe(0); expect(mesafeKm(36.85, 28.27, 37.03, 27.43)).toBeGreaterThan(70);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, risk_derecesi, olusturan_ref) VALUES ('S-HR1','Harita Firma','Çözüm Ortağı','Onaylı','Aktif','Standart',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO firma_tesisi (kurulus_ref, sira, tesis_kodu, ad, il, enlem, boylam) VALUES ($1,1,'S-HR1-T01','Harita Tesis','Muğla',36.85,28.27)`, [f]);
+    await o.sup.query(`INSERT INTO baglama_noktasi (nokta_no, tur, ad, il, enlem, boylam) VALUES (99901,'Marina / Yat Limanı','Marmaris Marina','Muğla',36.85,28.28),(99902,'Yerel Liman / Barınak','Bodrum Barınak','Muğla',37.03,27.43)`);
+    const di = (await o.ist('GET', '/api/firma-haritasi', await o.gir('idm'))).json(); const h = di.firmalar.find((x: { il: string; etiket: string }) => x.il === 'Muğla');
+    expect(h.ad).toBeNull(); expect(h.etiket).toBe('Aktif–Standart'); expect(h.yakin[0].ad).toBe('Marmaris Marina'); expect(h.yakin[0].km).toBeLessThan(2);
+    const op = (await o.ist('GET', '/api/firma-haritasi', await o.gir('opm'))).json(); expect(op.firmalar.some((x: { ad: string }) => x.ad === 'Harita Firma')).toBe(true);
+  });
+});
+
+describe('kesinti ve platform dışı işlem (YG-1368, YG-1284)', () => {
+  it('geçici referans üretilir, sisteme geri girilir; normalleşme testi ve uzlaştırma olmadan kapanmaz', async () => {
+    const sy = await o.gir('sy'); const d = await o.dosyaAc();
+    const k = (await o.ist('POST', '/api/kesinti', sy, { tur: 'Kesinti', neden: 'Veri merkezi elektrik kesintisi', kapsam: 'Tüm sistem' })).json().kimlik as string;
+    expect((await o.ist('POST', `/api/kesinti/${k}/referans`, sy, { sorumlu: o.K.ds, adet: 100 })).statusCode).toBe(400);
+    const r = (await o.ist('POST', `/api/kesinti/${k}/referans`, sy, { sorumlu: o.K.ds, adet: 2 })).json().referanslar as string[]; expect(r[0]).toMatch(/^GR-[0-9]{4}-[0-9]{5}$/);
+    const T = { temsiliIsAkisi: 'Başarılı', veriGuncelligi: 'Başarılı', yetki: 'Başarılı', belge: 'Başarılı', bildirim: 'Başarılı', entegrasyon: 'Başarılı' };
+    expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: { ...T, bildirim: 'Yapılmadı' } })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: T })).statusCode).toBe(409);
+    const ds = await o.gir('ds'); const l = (await o.ist('GET', '/api/kesinti', ds)).json().referanslarim as { kimlik: string; referans: string }[]; expect(l.length).toBe(2);
+    expect((await o.ist('POST', `/api/gecici-referans/${l[0]!.kimlik}/geri-giris`, ds, { kanal: 'WhatsApp' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/gecici-referans/${l[0]!.kimlik}/geri-giris`, ds, { kanal: 'Telefon Kaydı', yetkili: 'Kaptan', ozet: 'Hasar ihbarı', saklama: 'Ofis dolabı A', dosya: d.kimlik, zaman: new Date().toISOString() })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: T, kullanilmayan: [l[1]!.kimlik] })).statusCode).toBe(200);
+  });
+});
+
 describe('toplu veri düzeltme (YG-1247, YG-1248)', () => {
   it('yedek, betik özeti ve onay ister; sayı farkı açıklanır; etki uzlaşmadan kapanmaz', async () => {
     const sy = await o.gir('sy'); const yd = (await o.sup.query(`INSERT INTO yedek_kaydi (tur, bitis, durum) VALUES ('Gece Tam', now(), 'Başarılı') RETURNING kimlik`)).rows[0].kimlik;
