@@ -38,7 +38,7 @@ kapanisKaydet(IHTIYAC, async (c, k, karar) => {
   const t = (await c.query(`SELECT kimlik, talep_no, konu FROM idari_talep WHERE kimlik = $1 AND durum = 'İhtiyaç Onayında'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   await c.query(`UPDATE idari_talep SET durum = $2 WHERE kimlik = $1`, [t.kimlik, karar === 'Onayla' ? 'İdari İşlerde' : karar === 'Reddet' ? 'Reddedildi' : 'İade Edildi']);
-  if (karar === 'Onayla') await kartAc(c, { tur: 'İdari Talep Hazırlığı', kategori: 'gorev', baslik: `${t.talep_no} · ${t.konu}`, ozet: 'İhtiyaç onaylandı; siparişi hazırlayınız.', sahipRol: await rolId(c, SORUMLU), nesneTuru: 'İdari Talep', nesneKimligi: t.kimlik });
+  if (karar === 'Onayla') await kartAc(c, { tur: 'İdari Talep Hazırlığı', kategori: 'gorev', baslik: `${t.talep_no} · ${t.konu}`, ozet: 'İhtiyaç onaylandı; siparişi hazırlayınız.', sahipRol: await rolId(c, SORUMLU), sonZaman: new Date(Date.now() + 8 * 3_600_000), nesneTuru: 'İdari Talep', nesneKimligi: t.kimlik });
 });
 kapanisKaydet(SIPARIS, async (c, k, karar) => {
   if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
@@ -61,7 +61,7 @@ export function idariTalepYollari(s: FastifyInstance, b: Baglam) {
   s.get('/idari-talep', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const sorumlu = await rolVar(o.kullanici, [SORUMLU]);
-    return { sorumlu, talepler: (await b.db.query(`SELECT kimlik, talep_no, siparis_no, konu, durum, tedarikci, siparis_tutar_eur FROM idari_talep WHERE talep_eden_ref = $1 OR ($2 AND durum IN ('İdari İşlerde', 'Sipariş Onayında', 'Sipariş Onaylandı')) ORDER BY olusturma_zamani DESC LIMIT 100`, [o.kullanici, sorumlu])).rows };
+    return { sorumlu, talepler: (await b.db.query(`SELECT kimlik, talep_no, siparis_no, konu, durum, tedarikci, siparis_tutar_eur FROM idari_talep WHERE talep_eden_ref = $1 OR ($2 AND durum IN ('İdari İşlerde', 'Müdürde', 'Sipariş Onayında', 'Sipariş Onaylandı', 'Teslim Alındı')) ORDER BY olusturma_zamani DESC LIMIT 100`, [o.kullanici, sorumlu])).rows };
   });
 
   s.post('/idari-talep', oturumlu, async (i, y) => {
@@ -83,22 +83,31 @@ export function idariTalepYollari(s: FastifyInstance, b: Baglam) {
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
   });
 
+  // YG-1620: siparişe dönüştürme ve onaya sunma İdari İşler Müdüründe; tedarikçi ve tutar seçilen fiyat kartından gelir.
+  // Kart geçerliliği, BT alımında Bilgi İşlem şartnamesi ve bölünme kontrolü (aynı tedarikçiye 30 günlük toplam) uygulanır; son onay makamı toplam tutara göre belirlenir.
   s.post('/idari-talep/:id/siparis', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tedarikci?: string; tutar?: unknown };
-    if (!UUID.test(id) || !(await rolVar(o.kullanici, [SORUMLU]))) return yok(y);
-    const tutar = Number(g.tutar);
-    if (!g.tedarikci?.trim() || !(tutar > 0)) return y.code(400).send({ hata: 'Tedarikçi ve tutar zorunludur.' });
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kart?: number; teslimPlan?: string };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, ['İdari İşler Müdürü']))) return yok(y);
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
-      const t = (await c.query(`SELECT talep_no, konu, durum FROM idari_talep WHERE kimlik = $1 FOR UPDATE`, [id])).rows[0];
-      if (!t || t.durum !== 'İdari İşlerde') { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Talep sipariş aşamasında değildir.' }); }
+      const t = (await c.query(`SELECT talep_no, konu, durum, kategori, bt_sartname FROM idari_talep WHERE kimlik = $1 FOR UPDATE`, [id])).rows[0];
+      const dur = async (k: number, h: string) => { await c.query('ROLLBACK'); return y.code(k).send({ hata: h }); };
+      if (!t || t.durum !== 'Müdürde') return dur(409, 'Talep sipariş hazırlama aşamasında değildir.');
+      const f = (await c.query(`SELECT f.sira, f.tutar_eur, f.gecerlilik::text, f.tedarikci_ref, d.ad FROM idari_fiyat_karti f JOIN idari_tedarikci d ON d.kimlik = f.tedarikci_ref WHERE f.talep_ref = $1 AND f.sira = $2`, [id, Number(g.kart)])).rows[0];
+      if (!f) return dur(400, 'Fiyat kartını seçiniz.');
+      if (f.gecerlilik < new Date().toISOString().slice(0, 10)) return dur(409, 'Seçilen fiyat kartının geçerliliği dolmuştur.');
+      if (t.kategori === 'Bilgi Teknolojisi' && !t.bt_sartname) return dur(409, 'Bilgi İşlem teknik şartnamesi bekleniyor.');
+      if (!g.teslimPlan || !/^\d{4}-\d{2}-\d{2}$/.test(g.teslimPlan)) return dur(400, 'Planlanan teslim tarihini giriniz.');
+      const tutar = Number(f.tutar_eur);
+      const otuz = Number((await c.query(`SELECT coalesce(sum(siparis_tutar_eur), 0) n FROM idari_talep WHERE tedarikci_ref = $1 AND kimlik <> $2 AND siparis_no IS NOT NULL AND durum NOT IN ('Reddedildi') AND olusturma_zamani > now() - interval '30 days'`, [f.tedarikci_ref, id])).rows[0].n);
       const sp = `${t.talep_no}-SP${String(await sayac(c, `idari_siparis:${t.talep_no}`)).padStart(2, '0')}`; // YG-1618
-      await c.query(`UPDATE idari_talep SET durum = 'Sipariş Onayında', tedarikci = $2, siparis_tutar_eur = $3, hazirlayan_ref = $4, siparis_no = $5 WHERE kimlik = $1`, [id, g.tedarikci.trim(), tutar, o.kullanici, sp]);
-      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'İdari Talep Hazırlığı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
-      await kartAc(c, { tur: SIPARIS, baslik: `${t.talep_no} · ${t.konu}`, ozet: `${tutar.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR`, hazirlayan: o.kullanici, zincir: await siparisZinciri(c, tutar), nesneTuru: 'İdari Talep', nesneKimligi: id });
+      await c.query(`UPDATE idari_talep SET durum = 'Sipariş Onayında', tedarikci = $2, tedarikci_ref = $3, siparis_tutar_eur = $4, siparis_no = $5, secilen_kart = $6, teslim_plan = $7 WHERE kimlik = $1`, [id, f.ad, f.tedarikci_ref, tutar, sp, f.sira, g.teslimPlan]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur IN ('İdari Talep Hazırlığı', 'İdari Sipariş Hazırlama') AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+      const ozet = `${tutar.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR${otuz > 0 ? ` · Aynı tedarikçiye son 30 günde ${otuz.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR (bölünme kontrolü)` : ''}`;
+      await kartAc(c, { tur: SIPARIS, baslik: `${t.talep_no} · ${t.konu}`, ozet, hazirlayan: o.kullanici, zincir: await siparisZinciri(c, tutar + otuz), nesneTuru: 'İdari Talep', nesneKimligi: id });
       await c.query('COMMIT');
-      return { durum: 'Sipariş Onayında' };
+      return { durum: 'Sipariş Onayında', siparisNo: sp, bolunme: otuz > 0 };
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
   });
 

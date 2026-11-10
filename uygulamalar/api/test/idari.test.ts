@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', idr: 'İdari İşler Sorumlusu', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', mfm: 'Muhasebe ve Finans Müdürü', ide: 'İç Denetçi', idm: 'İç Denetim Müdürü', tod: 'Teknik ve Operasyon Direktörü' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', idr: 'İdari İşler Sorumlusu', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', mfm: 'Muhasebe ve Finans Müdürü', ide: 'İç Denetçi', idm: 'İç Denetim Müdürü', tod: 'Teknik ve Operasyon Direktörü', imd: 'İdari İşler Müdürü', bim: 'Bilgi İşlem Müdürü', hud: 'Hukuk ve Uyum Direktörü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test71', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -12,11 +12,17 @@ describe('idari talep (YG-1619, YG-1683)', () => {
   const durum = async (t: string) => (await o.sup.query(`SELECT durum FROM idari_talep WHERE kimlik = $1`, [t])).rows[0].durum as string;
   it('ihtiyaç onayı son makamdan sonra İdari İşlere düşer; sipariş tutara göre TİD, GMY, CEO zincirinden geçer', async () => {
     const t = await ac('ds'); expect(await durum(t)).toBe('İhtiyaç Onayında');
-    const idr = await o.gir('idr'); expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, idr, { tedarikci: 'X', tutar: 100 })).statusCode).toBe(409);
+    const idr = await o.gir('idr'); const imd = await o.gir('imd'); expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, imd, { kart: 1, teslimPlan: '2099-01-01' })).statusCode).toBe(409);
     expect((await o.karar(await kart('İdari Talep', t), 'opm', 'Onayla')).statusCode).toBe(200); expect(await durum(t)).toBe('İdari İşlerde');
     expect((await o.kart('İdari Talep Hazırlığı', t)).durum).toBe('Bekliyor');
-    expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, await o.gir('ds'), { tedarikci: 'X', tutar: 100 })).statusCode).toBe(404);
-    expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, idr, { tedarikci: 'X', tutar: 7000 })).statusCode).toBe(200);
+    expect((await o.kart('İdari Talep Hazırlığı', t)).son_zaman).toBeTruthy(); // 8 saat kayda alma
+    const td = (await o.ist('POST', '/api/idari-tedarikci', idr, { ad: 'Ofis Tedarik', iban: 'TR000000000000000000000001' })).json().kimlik as string;
+    expect((await o.kart('Tedarikçi Banka Hesabı Teyidi', td)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', `/api/idari-talep/${t}/satin-alma`, idr, { teknikSart: 'Lazer yazıcı', miktar: 1, kartlar: [] })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/idari-talep/${t}/satin-alma`, idr, { teknikSart: 'Lazer yazıcı', miktar: 1, kartlar: [{ tedarikci: td, tutar: 7000, gecerlilik: '2099-01-01' }, { tedarikci: td, tutar: 7200, gecerlilik: '2020-01-01' }] })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, idr, { kart: 1, teslimPlan: '2099-01-01' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, imd, { kart: 2, teslimPlan: '2099-01-01' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/idari-talep/${t}/siparis`, imd, { kart: 1, teslimPlan: '2099-01-01' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT talep_no, siparis_no FROM idari_talep WHERE kimlik = $1`, [t])).rows[0]).toEqual({ talep_no: expect.stringMatching(/^LGM-ID-\d{4}-\d{4}$/), siparis_no: expect.stringMatching(/^LGM-ID-\d{4}-\d{4}-SP01$/) }); // YG-1618
     const k = await kart('İdari Sipariş', t); expect((await o.karar(k, 'tid', 'Onaya Gönder')).statusCode).toBe(200); expect(await durum(t)).toBe('Sipariş Onayında');
     expect((await o.karar(k, 'gmy', 'Onayla')).statusCode).toBe(200); expect(await durum(t)).toBe('Sipariş Onaylandı');
@@ -70,5 +76,34 @@ describe('varlık ve zimmet hareketi (YG-1618 varlık)', () => {
     expect((await o.ist('POST', `/api/varlik/${v.kimlik}/iade`, idr, {})).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT array_agg(tur ORDER BY kimlik) t FROM varlik_hareketi WHERE varlik_ref = $1`, [v.kimlik])).rows[0].t).toEqual(['Teslim', 'İade']);
     expect((await o.sup.query(`SELECT iade_zamani IS NOT NULL i FROM personel_zimmet WHERE varlik_ref = $1`, [v.kimlik])).rows[0].i).toBe(true);
+  });
+});
+
+describe('İdari İşler ana ekranları A30 ve A31 (YG-1617, YG-1620)', () => {
+  it('teslim eşleşmesi, kayıp cihaz ihlal bildirimi, sayım, sarf, sözleşme 90/45/15, bütçe ve uyarılar', async () => {
+    const { idariUyariIsle } = await import('../src/idari_ek.js'); const idr = await o.gir('idr'); const imd = await o.gir('imd');
+    expect((await o.ist('GET', '/api/idari-ana', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('GET', '/api/idari-ana', imd)).json().rol).toBe('Müdür');
+    const t = (await o.sup.query(`SELECT kimlik FROM idari_talep WHERE durum = 'Sipariş Onaylandı' LIMIT 1`)).rows[0]?.kimlik as string;
+    await o.sup.query(`UPDATE idari_talep SET teslim_plan = current_date - 10 WHERE kimlik = $1`, [t]);
+    expect(await idariUyariIsle(o.db)).toBeGreaterThanOrEqual(2);
+    expect((await o.ist('POST', `/api/idari-talep/${t}/teslim`, idr, { irsaliye: 'İ1', fatura: 'F1', faturaTutar: 7100 })).json().eslesme).toBe('Fark Var');
+    const v = (await o.ist('POST', '/api/varlik', idr, { tur: 'Cihaz', ad: 'Nöbet telefonu' })).json();
+    expect((await o.ist('POST', `/api/varlik/${v.kimlik}/kayip`, idr, { aciklama: 'Sahada kayboldu' })).json().ihlalBildirimi).toBe(true);
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM is_karti WHERE tur = 'Kayıp Cihaz Veri İhlali Bildirimi' AND nesne_kimligi LIKE $1`, [`${v.kimlik}:%`])).rows[0].n)).toBe(2);
+    const v2 = (await o.ist('POST', '/api/varlik', idr, { tur: 'Cihaz', ad: 'İhbar dizüstü' })).json();
+    await o.ist('POST', `/api/varlik/${v2.kimlik}/ariza`, idr, { kritik: 'İhbar Dizüstü' }); await o.sup.query(`UPDATE varlik SET ariza_zamani = now() - interval '9 hours' WHERE kimlik = $1`, [v2.kimlik]);
+    await idariUyariIsle(o.db); expect(await o.kart('İdari Uyarı', `yedek:${v2.kimlik}`)).toBeDefined();
+    const sm = (await o.ist('POST', '/api/sarf', idr, { ad: 'A4 Kağıt', birim: 'paket', kritik: 5 })).json().kimlik;
+    expect((await o.ist('POST', '/api/sarf', idr, { kimlik: sm, tur: 'Çıkış', miktar: 1 })).statusCode).toBe(409);
+    expect((await o.ist('POST', '/api/sarf', idr, { kimlik: sm, tur: 'Giriş', miktar: 4 })).json()).toEqual({ miktar: 4, kritik: true });
+    expect((await o.ist('POST', '/api/varlik/sayim', idr, { donem: '2026-Q4', varliklar: [{ kimlik: v2.kimlik, sonuc: 'Bulunamadı' }], sarf: [{ kimlik: sm, miktar: 3 }] })).json().bulunamayan).toBe(1);
+    const sz = (await o.ist('POST', '/api/ofis-sozlesmesi', imd, { karsiTaraf: 'Temizlik Hizmeti', konu: 'Ofis temizliği', baslangic: '2026-01-01', bitis: new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10) })).json(); expect(sz.no).toMatch(/^LGM-SZ-[0-9]{4}$/);
+    await idariUyariIsle(o.db); expect((await o.kart('İdari Uyarı', `sozlesme:${sz.kimlik}:45`)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', `/api/ofis-sozlesmesi/${sz.kimlik}/oneri`, imd, { oneri: 'Yenileme', gerekce: 'Hizmet yeterli' })).statusCode).toBe(200);
+    expect((await o.karar((await o.kart('Ofis Sözleşmesi Önerisi', sz.kimlik)).kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/idari-butce', imd, { yil: 2027, kalemler: [{ kalem: 'Kira', tutar: 24000 }], gonder: true })).statusCode).toBe(200);
+    expect((await o.karar((await o.kart('İdari Bütçe', '2027')).kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM idari_butce WHERE yil = 2027`)).rows[0].durum).toBe('Onaylandı');
   });
 });

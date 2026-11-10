@@ -6,6 +6,7 @@ import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
 import { TopluOdeme } from './TopluOdeme';
 import { IdariTalep } from './IdariTalep';
+import { IdariAna } from './IdariAna';
 import { PersonelEk } from './PersonelEk';
 import { PoliceListesi } from './FirmaPolice';
 import { PersonelKarne } from './PersonelKarne';
@@ -795,6 +796,7 @@ export function IdariIslemler() {
       <KartelaResmiEtiket />
       <TicariAtamaBekleyenler />
       <TopluOdeme />
+      <IdariAna />
       <IdariTalep />
       <PersonelEk />
       <PoliceListesi />
