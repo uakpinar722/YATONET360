@@ -39,6 +39,7 @@ const hesap = async (k, rol, grup = 'LGM İç Rolü') => {
 };
 const gir = async (ep, k, w = 1280, h = 900) => {
   const ctx = await tarayici.newContext({ viewport: { width: w, height: h }, locale: 'tr-TR' });
+  await ctx.addInitScript(() => { try { localStorage.setItem('yatonet-ilk-tur-bitti', '1'); } catch { /* yok */ } });
   const hd = { ...H };
   const g = await ctx.request.post(`${KOK}/api/kimlik/giris`, { headers: hd, data: { kimlik: ep, parola: PAROLA } });
   if (!g.ok()) throw new Error(`giriş ${k}: ${await g.text()}`);

@@ -34,7 +34,7 @@ const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = [];
 const kontrol = (ad, kosul) => { sonuc.push(`${kosul ? 'GEÇTİ' : 'KALDI'}  ${ad}`); };
 const hatalar = [];
-const sayfa = async (w = 390, h = 844) => { const p = await (await tarayici.newContext({ viewport: { width: w, height: h }, locale: 'tr-TR' })).newPage(); p.on('pageerror', (e) => hatalar.push(e.message)); return p; };
+const sayfa = async (w = 390, h = 844) => { const k = await tarayici.newContext({ viewport: { width: w, height: h }, locale: 'tr-TR' }); await k.addInitScript(() => { try { localStorage.setItem('yatonet-ilk-tur-bitti', '1'); } catch { /* yok */ } }); const p = await k.newPage(); p.on('pageerror', (e) => hatalar.push(e.message)); return p; };
 const tasmaYok = (p) => p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
 try {
   // G-1 ve LGM personeli ilk adımları

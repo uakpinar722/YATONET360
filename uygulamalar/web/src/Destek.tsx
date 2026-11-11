@@ -1,3 +1,4 @@
+import { turYenidenBaslat } from './Yonlendirme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
@@ -23,7 +24,7 @@ export function DestekSayfasi({ lgm }: { lgm: boolean }) {
   const is = (u: string, g: object, ok: string) => void istek(u, g).then(() => { setM(ok); yk(); }).catch((e) => setM(e.message));
   const K = (k: 'sistemKullanilamiyor' | 'kritikSurec' | 'guvenlik' | 'veriButunlugu' | 'musteriMali', et: string) => <label className="kutu"><input type="checkbox" checked={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.checked })} /><span>{et}</span></label>;
   const c = (id: string) => cz[id] ?? { yapilan: '', degisen: '', dogrulama: '', sonuc: '' };
-  return <><h1>{lgm ? 'Yardım | BT Destek' : 'Yardım | LGM Merkez'}</h1>{m && <div className="not" role="status">{m}</div>}
+  return <><h1>{lgm ? 'Yardım | BT Destek' : 'Yardım | LGM Merkez'}</h1>{lgm && <button className="btn2 kucuk" onClick={turYenidenBaslat}>İlk Kullanım Turunu Yeniden Başlat</button>}{m && <div className="not" role="status">{m}</div>}
     <div className="bolum">Yeni Talep</div>
     <label htmlFor="ds-t">Talep Türü</label><select id="ds-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Hata', 'Öneri', 'Soru'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="ds-b">Kısa Açıklama</label><input id="ds-b" value={f.belirti} onChange={(e) => setF({ ...f, belirti: e.target.value })} />

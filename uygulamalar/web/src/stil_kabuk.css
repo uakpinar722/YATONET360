@@ -121,3 +121,9 @@ button:not(.secenek):not(.lnk) { text-align: center; }
 .rozet.yanip-1 { animation: yanip 1s infinite; }
 .rozet.yanip-gecti { background: #8E1B12; color: #fff; animation: yanip 1s infinite; }
 @media (prefers-reduced-motion: reduce) { .rozet.yanip-5, .rozet.yanip-3, .rozet.yanip-1, .rozet.yanip-gecti { animation: none; outline: 3px solid currentColor; } }
+
+/* YG-1653: sayfa açıklaması ve ilk kullanım turu */
+.sayfa-aciklama { display: flex; gap: 8px; align-items: center; margin: 0 0 6px; }
+.soru-isareti { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--ciz, #c9c4b8); background: var(--krem, #fff); font-weight: 700; cursor: pointer; flex: none; }
+.ilk-tur { position: fixed; right: 16px; bottom: 16px; max-width: min(360px, calc(100vw - 32px)); background: #fff; border: 1px solid var(--ciz, #c9c4b8); border-radius: 12px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0,0,0,.15); z-index: 50; }
+.ilk-tur p { margin: 6px 0 10px; }

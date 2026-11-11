@@ -12,6 +12,7 @@ import { KarneParametreleri, FirmaSicil } from './Sicil';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
 import { BrokerAna, YetkiBelgeleri } from './Broker';
 import { DosyaHaritasi } from './IsGorunumu';
+import { IlkKullanimTuru, SayfaAciklama } from './Yonlendirme';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
@@ -131,7 +132,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
           ))}
         </nav>
         <main>
-          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{icerik[sayfa]}
+          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{lgm && <IlkKullanimTuru />}<SayfaAciklama key={sayfa} sayfa={sayfa} />{icerik[sayfa]}
           <footer><span className="ayrac" aria-hidden="true" /><img src="/yatonet.png" alt="YATONET 360" /></footer>
         </main>
       </div>
