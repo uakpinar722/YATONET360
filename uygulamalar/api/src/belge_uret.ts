@@ -92,6 +92,9 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
     ekipBolumu(b),
     atananEkip(b),
   ];
+  // YG-709: seçilen 013 maddeleri; yalnız Türkçe teklifte (İngilizce metin onay bekliyor).
+  const mad = dil === 'tr' ? await (await import('./teklif_madde.js')).teklifMaddeleri(db, f.kimlik) : [];
+  if (mad.length) bolumler.splice(2, 0, { baslik: 'Hariç ve Ayrıca Fiyatlandırılacak Hususlar', tur: 'tablo', sutunlar: [{ ad: 'Durum' }, { ad: 'Husus' }], satirlar: mad.map((x) => [x.tur, x.metin]) });
   if (f.ana_teklif_ref) { const ana = (await db.query(`SELECT teklif_no FROM fiyat_teklifi WHERE kimlik = $1`, [f.ana_teklif_ref])).rows[0]?.teklif_no; bolumler.unshift({ baslik: dil === 'en' ? 'Related Document' : 'Bağlı Olduğu Belge', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'Quotation No' : 'Teklif No', deger: ana }] }); } // YG-658
   return {
     dosyaAdi: `${f.teklif_no}.pdf`, sinif: 'Gizli',

@@ -127,3 +127,18 @@ describe('resmî PDF (YG-665, YG-691)', () => {
     expect((await o.sup.query(`SELECT durum FROM belge_surum WHERE kimlik = $1`, [ilk.surum_ref])).rows[0].durum).toBe('Yerine Geçti');
   });
 });
+
+describe('teklif maddeleri (YG-709)', () => {
+  it('hazırlayan taslak teklife 013 maddesi seçer; belgede tablo olarak yer alır; taslak dışında seçilemez', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const t = await teklif(d, 'Taslak');
+    const ts = await o.gir('ts');
+    expect((await o.ist('POST', `/api/teklif/${t}/madde`, await o.gir('ds'), { madde: 'DN-3', tur: 'Hariç' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/teklif/${t}/madde`, ts, { madde: 'XX-1', tur: 'Hariç' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/teklif/${t}/madde`, ts, { madde: 'DN-3', tur: 'Hariç' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/teklif/${t}/madde`, ts, { madde: 'ON-2', tur: 'Ayrıca Fiyatlandırılır' })).statusCode).toBe(200);
+    const m = JSON.stringify((await teklifTanim(o.db, t, 'ABCD-1234', 'http://x')).t);
+    expect(m).toContain('Hariç ve Ayrıca Fiyatlandırılacak Hususlar'); expect(m).toContain('Sıcak iş öncesi yazılı yöntem');
+    await o.sup.query(`UPDATE fiyat_teklifi SET statu = 'İç Onayda' WHERE kimlik = $1`, [t]);
+    expect((await o.ist('POST', `/api/teklif/${t}/madde`, ts, { madde: 'DN-1', tur: 'Hariç' })).statusCode).toBe(409);
+  });
+});

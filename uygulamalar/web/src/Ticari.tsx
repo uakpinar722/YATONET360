@@ -39,6 +39,7 @@ import { SureklilikOrtam } from './SureklilikOrtam';
 import { KartelaArama } from './KartelaArama';
 import { IsletmeGideri } from './IsletmeGideri';
 import { IslemKatalogu } from './IslemKatalogu';
+import { TeklifMadde } from './TeklifMadde';
 import { FormKatalogu } from './FormKatalogu';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
@@ -238,6 +239,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <div className="dugmeler">
               {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
               {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
+              {ticari && t.statu === 'Taslak' && <TeklifMadde teklif={t.kimlik} />}
               {t.bant_disi && <span className="hata">{t.bant_onayli ? 'Bant Dışı · Onaylı' : '⚠ Bant Dışı · Ticari İşler Direktörü onayı bekleniyor'}</span>}
               {ticari && t.statu === 'Taslak' && t.bant_disi && !t.bant_onayli && <BantOnayi teklif={t.kimlik} yap={yap} />}
               {rollerim.includes('Dosya Sorumlusu') && t.statu === 'Karar' && <CaymaKaydi teklif={t.kimlik} yap={yap} />}
