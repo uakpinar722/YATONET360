@@ -1,3 +1,4 @@
+import { KatalogReferansi } from './KatalogReferansi';
 import { KurtarmaSonucKontrol } from './KurtarmaSonuc';
 import { OnDegerlendirme } from './OnDegerlendirme';
 import { IlkKapsam } from './IlkKapsam';
@@ -165,6 +166,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <IletisimBilgisi dosya={id} />
     <IcIlerleme dosya={id} />
     <IlkKapsam dosya={id} />
+    <KatalogReferansi dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />
     <GonderimDurumu id={id} />

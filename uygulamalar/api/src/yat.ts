@@ -94,7 +94,8 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
   });
   s.get('/yat/model', oturumlu, async (i) => {
     const { marka, q: a } = i.query as { marka?: string; q?: string };
-    return (await b.db.query(`SELECT kimlik, model, tekne_turu, boy_m, govde_malzemesi FROM yat_marka_model WHERE lower(marka) = lower($1) AND ($2 = '' OR lower(model) LIKE '%' || lower($2) || '%') ORDER BY lower(model) LIMIT 50`, [q(marka), q(a)])).rows.map((r) => ({ ...r, tur: anaVeriTuru(r.tekne_turu), tekne_turu: undefined, boy_m: r.boy_m === null ? null : Number(r.boy_m) }));
+    const lgm = i.oturum!.grup === 'LGM İç Rolü'; // YG-1532
+    return (await b.db.query(`SELECT kimlik, model, tekne_turu, boy_m, govde_malzemesi FROM yat_marka_model WHERE lower(marka) = lower($1) AND ($2 = '' OR lower(model) LIKE '%' || lower($2) || '%') ORDER BY lower(model) LIMIT 50`, [q(marka), q(a)])).rows.map((r) => (lgm ? { ...r, tur: anaVeriTuru(r.tekne_turu), tekne_turu: undefined, boy_m: r.boy_m === null ? null : Number(r.boy_m) } : { kimlik: r.kimlik, model: r.model }));
   });
   // YG-090: aynı adlı yat uyarısı için arama.
   s.get('/yat/ara', ihbarci, async (i) => {

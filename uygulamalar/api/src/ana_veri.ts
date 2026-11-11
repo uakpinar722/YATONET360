@@ -51,7 +51,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     const grup = dolu(f['Mükerrer Grubu']); if (grup) mukerrerFirma++;
     await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, kurumsal_telefon, il, ilce, ana_veri_no, adres, web, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,'Çözüm Ortağı','Aday','Pasif',$3,$4,$5,$6,$7,$8,$9,$10)`,
       [`LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`, ad, dolu(f['Telefon']), dolu(f['Konum İl']), dolu(f['Konum İlçe']), no, dolu(f['Adres']), /^https?:|^www\./i.test(f['Web'] ?? '') ? dolu(f['Web']) : null, grup, grup ? 'Karar bekliyor' : null]);
-    { const tel = telefonBicimi(f['Telefon']); await c.query(`UPDATE kurulus SET bolge = $2, hizmet_kumesi = $3, kurumsal_telefon = coalesce($4, kurumsal_telefon), telefon_kontrol = $5 WHERE ana_veri_no = $1`, [no, dolu(f['Bölge']), dolu(f['Hizmet Kümesi']), tel, Boolean(dolu(f['Telefon'])) && !tel]); }
+    { const tel = telefonBicimi(f['Telefon']); await c.query(`UPDATE kurulus SET bolge = $2, hizmet_kumesi = $3, kurumsal_telefon = coalesce($4, kurumsal_telefon), telefon_kontrol = $5, eski_liste_eslesme = $6, eski_liste_notu = $7, veri_notu = $8 WHERE ana_veri_no = $1`, [no, dolu(f['Bölge']), dolu(f['Hizmet Kümesi']), tel, Boolean(dolu(f['Telefon'])) && !tel, dolu(f['Eski Liste: Bağlama Eşleşmesi']), dolu(f['Eski Liste Notu']), dolu(f['Veri Notu'])]); }
     firma++;
   }
   for (const n of g.noktalar) {
@@ -61,6 +61,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     const r = await c.query(`INSERT INTO baglama_noktasi (nokta_no, tur, il, ilce, belde, ad, bolge, hizmet_kumesi, teyit_durumu, enlem, boylam, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (nokta_no) DO NOTHING`,
       [no, dolu(n['Tür']) ?? 'Belirsiz', dolu(n['İl']), dolu(n['İlçe']), dolu(n['Belde / Yerleşim']), ad, dolu(n['Bölge']), dolu(n['Hizmet Kümesi']), dolu(n['Teyit Durumu']), sayi(n['Enlem']), sayi(n['Boylam']), grup, karar === 'Karar bekliyor' ? karar : null]);
     if (r.rowCount) { nokta++; if (karar === 'Karar bekliyor') mukerrerNokta++; }
+    await c.query(`UPDATE baglama_noktasi SET uyari = $2, son_teyit_tarihi = $3 WHERE nokta_no = $1 AND uyari IS NULL`, [no, dolu(n['Uyarı']), /^\d{4}-\d{2}-\d{2}$/.test(n['Son Teyit Tarihi'] ?? '') ? n['Son Teyit Tarihi'] : null]); // YG-1266
   }
   if ((mukerrerFirma || mukerrerNokta) && await birKez(c, 'ana_veri_mukerrer', 'ilk')) await kartAc(c, { tur: 'Ana Veri Mükerrer Kararı', kategori: 'gorev', baslik: 'Ana Veri · Mükerrer Kararları', ozet: `${mukerrerFirma} firma ve ${mukerrerNokta} bağlama noktası karar bekliyor.`, sahipRol: await rolId(c, 'Sicil Sorumlusu'), nesneTuru: 'Ana Veri', nesneKimligi: 'mukerrer' });
   return { firma, atlanan, paydas, nokta, mukerrerFirma, mukerrerNokta };
@@ -96,7 +97,7 @@ export function anaVeriYollari(s: FastifyInstance, b: Baglam) {
   s.get('/baglama-noktalari', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     const q = i.query as { il?: string; ara?: string };
-    return (await b.db.query(`SELECT n.kimlik, n.nokta_no, n.tur, n.il, n.ilce, n.ad, n.teyit_durumu, t.tesis_kodu FROM baglama_noktasi n LEFT JOIN firma_tesisi t ON t.kimlik = n.tesis_ref WHERE n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi' AND ($1 = '' OR n.il = $1) AND ($2 = '' OR tr_norm(n.ad) LIKE '%' || tr_norm($2) || '%') ORDER BY n.il, n.ad LIMIT 200`, [q.il ?? '', q.ara ?? ''])).rows;
+    return (await b.db.query(`SELECT n.kimlik, n.nokta_no, n.tur, n.il, n.ilce, n.ad, n.teyit_durumu, n.son_teyit_tarihi::text, n.enlem::float8, n.boylam::float8, n.uyari, n.mukerrer_grubu, n.mukerrer_karari, t.tesis_kodu FROM baglama_noktasi n LEFT JOIN firma_tesisi t ON t.kimlik = n.tesis_ref WHERE n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi' AND ($1 = '' OR n.il = $1) AND ($2 = '' OR tr_norm(n.ad) LIKE '%' || tr_norm($2) || '%') ORDER BY n.il, n.ad LIMIT 200`, [q.il ?? '', q.ara ?? ''])).rows;
   });
 
   // ANV-1: yalnız sözleşmeli tesis kaydına bağlanır; bağlama noktası tek başına iş alan kayıt değildir.
