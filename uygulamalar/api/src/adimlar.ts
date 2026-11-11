@@ -1,6 +1,17 @@
 import type { Pool } from 'pg';
 
-export type Adim = 'kosullar' | 'aydinlatma' | 'izinler' | 'rehber';
+export type Adim = 'kosullar' | 'aydinlatma' | 'izinler' | 'rehber' | 'egitim';
+/**
+ * YG-1396: LGM personelinden ilk girişte, hesabından önce yayımlanmış Zorunlu ve Oryantasyon derslerinin; ayrıcalıklı (yüksek riskli) rolde,
+ * rol atamasından önce yayımlanmış o rolün Rol Müfredatı derslerinin "okudum, anladım" beyanı aranır. Sonradan yayımlanan ders erişimi kilitlemez; Akademi bildirimiyle izlenir.
+ */
+export async function gerekliEgitimler(db: Pool, kullanici: string): Promise<{ kimlik: string; ad: string; tur: string; icerik: string; surum: number }[]> {
+  return (await db.query(`SELECT DISTINCT d.kimlik, d.ad, d.tur, d.icerik, d.surum FROM akademi_ders d JOIN kullanici_hesabi h ON h.kimlik = $1
+    WHERE d.aktif AND h.kullanici_grubu = 'LGM İç Rolü' AND NOT EXISTS (SELECT 1 FROM akademi_beyan x WHERE x.ders_ref = d.kimlik AND x.personel_ref = $1)
+      AND ((d.tur IN ('Zorunlu', 'Oryantasyon') AND d.olusturma_zamani < h.olusturma_zamani AND (cardinality(d.roller) = 0 OR d.roller && (SELECT array_agg(r.rol_adi) FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif')))
+        OR (d.tur = 'Rol Müfredatı' AND EXISTS (SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.ayricalikli_rol AND r.rol_adi = ANY (d.roller) AND d.olusturma_zamani < a.olusturma_zamani)))
+    ORDER BY d.ad`, [kullanici])).rows;
+}
 /** YG-1396: portal rehberi beyanı yalnız Çözüm Ortağından istenir; sigorta şirketi ve diğer kullanıcılardan istenmez. */
 export const rehberAdimiVar = (grup: string) => grup === 'İş Birliği Firması';
 
@@ -37,5 +48,6 @@ export async function eksikAdimlar(db: Pool, kullanici: string): Promise<Adim[]>
   if (!(await db.query(`SELECT 1 FROM aydinlatma_kaydi WHERE ilgili_kisi_ref = $1 AND aydinlatma_metni = $2 AND metin_surumu = $3`, [kullanici, kod, s])).rowCount) e.push('aydinlatma');
   if (izinAdimiVar(h.kullanici_grubu) && !h.izin_adimi_zamani) e.push('izinler');
   if (rehberAdimiVar(h.kullanici_grubu) && !h.portal_rehberi_beyani) e.push('rehber');
+  if (h.kullanici_grubu === 'LGM İç Rolü' && (await gerekliEgitimler(db, kullanici)).length) e.push('egitim');
   return e;
 }

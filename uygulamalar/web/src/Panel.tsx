@@ -11,6 +11,7 @@ import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna, SigortaEk2, TedarikciOd
 import { KarneParametreleri, FirmaSicil } from './Sicil';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
 import { BrokerAna, YetkiBelgeleri } from './Broker';
+import { DosyaHaritasi } from './IsGorunumu';
 import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
@@ -71,7 +72,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   ];
   const b = veri?.okunmamisBildirim ?? 0;
   const icerik: Record<Sayfa, ReactNode> = {
-    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Broker') ? <><BrokerAna /><SigortaAna ben={ben} /></> : ben.grup.startsWith('Sigorta') ? <SigortaAna ben={ben} /> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
+    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Broker') ? <><BrokerAna /><SigortaAna ben={ben} /></> : ben.grup.startsWith('Sigorta') ? <><SigortaAna ben={ben} /><DosyaHaritasi /></> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
     profil: <Profilim />,
     erisim: <ErisimTalebi />,

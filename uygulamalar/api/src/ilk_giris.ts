@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { COOKIE_ADI, KURAL } from './ayarlar.js';
-import { aydinlatmaKodu, dilKodu, disKullanici, eksikAdimlar, izinAdimiVar, rehberAdimiVar, rizaBicimi, sonSurum } from './adimlar.js';
+import { aydinlatmaKodu, dilKodu, disKullanici, eksikAdimlar, gerekliEgitimler, izinAdimiVar, rehberAdimiVar, rizaBicimi, sonSurum } from './adimlar.js';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { ozet, rastgeleBelirtec } from './kripto.js';
@@ -86,6 +86,16 @@ export function ilkGirisYollari(s: FastifyInstance, b: Baglam) {
   }
 
   // YG-1396 (G2-7): Çözüm Ortağı portal rehberi; imza yok, "Okudum, anladım" beyanı kaydedilir.
+  // YG-1396: gerekli eğitimler ilk giriş adımında okunur ve beyan edilir; imza alınmaz.
+  s.get('/ilk-giris/egitim', serbest, async (i) => gerekliEgitimler(b.db, i.oturum!.kullanici));
+  s.post('/ilk-giris/egitim/:id', serbest, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const d = (await gerekliEgitimler(b.db, o.kullanici)).find((x) => x.kimlik === id); if (!d) return y.code(404).send({ hata: 'Ders bulunamadı.' });
+    await b.db.query(`INSERT INTO akademi_beyan (ders_ref, surum, personel_ref) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [id, d.surum, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Eğitim Katılım Beyanı', nesneTuru: 'Akademi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { eksik: await eksikAdimlar(b.db, o.kullanici) };
+  });
+
   s.post('/ilk-giris/rehber', serbest, async (i, y) => {
     const o = i.oturum!; const h = await grubuAl(o.kullanici);
     if (!rehberAdimiVar(h.kullanici_grubu)) return y.code(409).send({ hata: 'Bu adım hesabınız için gerekli değildir.' });

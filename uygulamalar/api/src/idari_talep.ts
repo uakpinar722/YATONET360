@@ -34,6 +34,8 @@ export async function siparisZinciri(c: PoolClient, tutar: number): Promise<stri
 }
 
 kapanisKaydet(IHTIYAC, async (c, k, karar) => {
+  // İade edilen talep düzeltilip yeniden gönderilince yeniden ihtiyaç onayına girer.
+  if (karar === 'Yeniden Gönder') { await c.query(`UPDATE idari_talep SET durum = 'İhtiyaç Onayında' WHERE kimlik = $1 AND durum = 'İade Edildi'`, [k.nesne_kimligi]); return; }
   if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
   const t = (await c.query(`SELECT kimlik, talep_no, konu FROM idari_talep WHERE kimlik = $1 AND durum = 'İhtiyaç Onayında'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;

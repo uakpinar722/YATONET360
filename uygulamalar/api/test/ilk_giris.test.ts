@@ -122,6 +122,22 @@ describe('ilk giriş adımları (KVKK-10)', () => {
     const { rows } = await sup.query(`SELECT count(*)::int n FROM acik_riza r JOIN kullanici_hesabi k ON k.kimlik = r.ilgili_kisi_ref WHERE k.e_posta = $1`, [`k${n}@deneme.yatonet.local`]);
     expect(rows[0].n).toBe(0);
   });
+  it('ilk girişte önceden yayımlanmış zorunlu eğitim, ayrıcalıklı rolde rol müfredatı beyanı aranır; sonradan yayımlanan ders kilitlemez (YG-1396)', async () => {
+    const yazar = (await sup.query(`SELECT kimlik FROM kullanici_hesabi LIMIT 1`)).rows[0].kimlik;
+    const z = (await sup.query(`INSERT INTO akademi_ders (ad, tur, icerik, olusturan_ref, olusturma_zamani) VALUES ('KVKK Temel','Zorunlu','İçerik',$1, now() - interval '1 day') RETURNING kimlik`, [yazar])).rows[0].kimlik;
+    const m = (await sup.query(`INSERT INTO akademi_ders (ad, tur, icerik, roller, olusturan_ref, olusturma_zamani) VALUES ('Ayrıcalıklı Erişim','Rol Müfredatı','İçerik','{Sistem Yöneticisi}',$1, now() - interval '1 day') RETURNING kimlik`, [yazar])).rows[0].kimlik;
+    try {
+      const c = await davetle((await yeni('LGM İç Rolü', 'Sistem Yöneticisi')).belirtec);
+      await ist('POST', '/api/ilk-giris/aydinlatma', c); await ist('POST', '/api/ilk-giris/izinler', c, {});
+      expect((await ist('GET', '/api/ben', c)).json().eksik).toEqual(['egitim']);
+      expect((await ist('GET', '/api/yetki/roller', c)).statusCode).toBe(428);
+      expect((await ist('GET', '/api/ilk-giris/egitim', c)).json().map((x: { kimlik: string }) => x.kimlik).sort()).toEqual([z, m].sort());
+      expect((await ist('POST', `/api/ilk-giris/egitim/${z}`, c)).json().eksik).toEqual(['egitim']);
+      expect((await ist('POST', `/api/ilk-giris/egitim/${m}`, c)).json().eksik).toEqual([]);
+      await sup.query(`INSERT INTO akademi_ders (ad, tur, icerik, olusturan_ref) VALUES ('Yeni Zorunlu','Zorunlu','İçerik',$1)`, [yazar]);
+      expect((await ist('GET', '/api/ben', c)).json().eksik).toEqual([]);
+    } finally { await sup.query(`UPDATE akademi_ders SET aktif = false`); }
+  });
   it('Çözüm Ortağı portal rehberi beyanı olmadan işlem yapamaz; sigorta kullanıcısından istenmez (YG-1396)', async () => {
     const c = await davetle((await yeni('İş Birliği Firması', 'Firma Yetkilisi')).belirtec);
     expect((await ist('GET', '/api/ben', c)).json().eksik).toEqual(['kosullar', 'aydinlatma', 'rehber']);

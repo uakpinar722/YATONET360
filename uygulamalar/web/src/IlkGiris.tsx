@@ -207,6 +207,7 @@ export function IlkAdimlar({ ben, bitti }: { ben: Ben; bitti: () => void }) {
       <button className="btn" onClick={() => void gonder('/ilk-giris/aydinlatma')}>{t.bilgi}</button>
     </Kabuk>
   );
+  if (adim === 'egitim') return <Kabuk adim={sira} toplam={toplam}><EgitimAdimi gonder={gonder} hata={hata} /></Kabuk>; // YG-1396
   if (adim === 'rehber') return ( // YG-1396, G2-7: yalnız Çözüm Ortağı
     <Kabuk adim={sira} toplam={toplam}>
       <h2>Portal Rehberi</h2>
@@ -244,4 +245,18 @@ export function IlkAdimlar({ ben, bitti }: { ben: Ben; bitti: () => void }) {
       <button className="btn" onClick={bitti}>{t.ana}</button>
     </Kabuk>
   );
+}
+
+/** YG-1396: ilk girişte ve ayrıcalıklı rolde gerekli eğitimler; her ders okunup "Okudum, anladım." beyanı verilir. */
+function EgitimAdimi({ gonder, hata }: { gonder: (yol: string, govde?: object) => Promise<void>; hata: string }) {
+  const [l, setL] = useState<{ kimlik: string; ad: string; tur: string; icerik: string }[]>([]); const [ok, setOk] = useState<Record<string, boolean>>({});
+  useEffect(() => { void istek<typeof l>('/ilk-giris/egitim').then(setL).catch(() => setL([])); }, []);
+  return <>
+    <h2>Gerekli Eğitimler</h2>
+    <div className="not">Devam etmeden önce aşağıdaki eğitimleri okuyup her biri için beyanınızı veriniz.</div>
+    {l.map((d) => <div className="soru" key={d.kimlik}><span><b>{d.ad}</b> · {d.tur}</span><div className="tam" style={{ whiteSpace: 'pre-wrap' }}>{d.icerik}</div>
+      <label className="kutu"><input type="checkbox" checked={!!ok[d.kimlik]} onChange={(e) => setOk({ ...ok, [d.kimlik]: e.target.checked })} /><span>Okudum, anladım.</span></label>
+      <button className="btn" disabled={!ok[d.kimlik]} onClick={() => void gonder(`/ilk-giris/egitim/${d.kimlik}`).then(() => setL(l.filter((x) => x.kimlik !== d.kimlik)))}>Beyanımı Kaydet</button></div>)}
+    {hata && <div className="hata" role="alert">{hata}</div>}
+  </>;
 }

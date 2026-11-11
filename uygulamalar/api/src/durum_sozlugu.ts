@@ -43,7 +43,7 @@ export function durumSozluguYollari(s: FastifyInstance, b: Baglam) {
     if (!dolu(g.isAnlami) || !dolu(g.girisKosulu) || !dolu(g.cikisKosulu) || !dolu(g.yetkiliRol)) return y.code(400).send({ hata: 'İş anlamı, giriş koşulu, çıkış koşulu ve yetkili rol zorunludur.' });
     const gecis = (g.izinliGecisler ?? []).filter(dolu);
     const yanlis = gecis.filter((x) => !k.durumlar.includes(x) || x === g.durum); if (yanlis.length) return y.code(400).send({ hata: `Geçişler aynı kayıt türünün diğer durumları olmalıdır: ${yanlis.join(', ')}` });
-    if (!(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1`, [g.yetkiliRol!.trim()])).rowCount) return y.code(400).send({ hata: 'Yetkili rol, Rol Kataloğundaki bir rol olmalıdır.' });
+    if (g.yetkiliRol!.trim() !== 'Sistem' && !(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1`, [g.yetkiliRol!.trim()])).rowCount) return y.code(400).send({ hata: 'Yetkili rol, Rol Kataloğundaki bir rol veya otomatik geçişlerde "Sistem" olmalıdır.' });
     const baska = (await b.db.query(`SELECT kayit_turu, is_anlami FROM durum_sozlugu WHERE durum = $1 AND kayit_turu <> $2 AND lower(trim(is_anlami)) <> lower(trim($3)) LIMIT 1`, [g.durum, g.kayitTuru, g.isAnlami])).rows[0];
     if (baska) return y.code(409).send({ hata: `"${g.durum}" durumu ${baska.kayit_turu} kaydında "${baska.is_anlami}" anlamıyla tanımlıdır; aynı ad farklı anlam taşıyamaz.` });
     await b.db.query(`INSERT INTO durum_sozlugu (kayit_turu, durum, is_anlami, giris_kosulu, cikis_kosulu, yetkili_rol, izinli_gecisler, zorunlu_aciklama, sure_durur, otomatik_bildirim, musteri_adi, guncelleyen_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)

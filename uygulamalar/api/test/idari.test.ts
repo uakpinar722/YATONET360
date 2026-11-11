@@ -124,3 +124,16 @@ describe('İdari İşler ana ekranları A30 ve A31 (YG-1617, YG-1620)', () => {
     expect((await o.sup.query(`SELECT durum FROM idari_butce WHERE yil = 2027`)).rows[0].durum).toBe('Onaylandı');
   });
 });
+
+describe('iade edilen idari talep', () => {
+  it('iade edilen talep yeniden gönderilince yeniden ihtiyaç onayına girer ve onaylanabilir', async () => {
+    const t = (await o.ist('POST', '/api/idari-talep', await o.gir('ds'), { konu: 'Toner', gerekce: 'Bitti' })).json().kimlik as string;
+    const k = (await o.kart('İdari Talep', t)).kimlik as string;
+    expect((await o.karar(k, 'opm', 'Gerekçeyle İade Et', 'Miktar eksik')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM idari_talep WHERE kimlik = $1`, [t])).rows[0].durum).toBe('İade Edildi');
+    expect((await o.karar(k, 'ds', 'Yeniden Gönder')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM idari_talep WHERE kimlik = $1`, [t])).rows[0].durum).toBe('İhtiyaç Onayında');
+    expect((await o.karar(k, 'opm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM idari_talep WHERE kimlik = $1`, [t])).rows[0].durum).toBe('İdari İşlerde');
+  });
+});
