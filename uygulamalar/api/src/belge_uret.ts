@@ -204,6 +204,9 @@ export async function mutabakatTanim(db: Db, id: string) {
     { baslik: 'Rapor', tur: 'alanlar', alanlar: [{ et: 'Sigorta Şirketi', deger: r.sigortaci_adi }, { et: 'Dönem', deger: r.donem }, { et: 'Kesim Tarihi', deger: gunAy(r.kesim_tarihi) }, { et: 'İtiraz Son Tarihi', deger: r.itiraz_son ? gunAy(r.itiraz_son) : null }, { et: 'Toplam Açık Bakiye (EUR)', deger: tutar(top) }] },
     { baslik: 'Mutabakat Satırları', tur: 'tablo', sutunlar: [{ ad: 'Dosya No' }, { ad: 'Hasar Dosya No' }, { ad: 'Fatura No' }, { ad: 'Fatura Tarihi' }, { ad: 'Onaylı (EUR)', hiza: 'sag' }, { ad: 'Ödenen (EUR)', hiza: 'sag' }, { ad: 'Açık (EUR)', hiza: 'sag' }], satirlar: s.map((x) => [x.dosya_no, x.sigorta_hasar_dosya_no, x.fatura_no, gunAy(x.fatura_tarihi), tutar(Number(x.onayli_tutar)), tutar(Number(x.odenen_tutar)), tutar(Number(x.acik_bakiye))]) },
   ];
+  // YG-767: onaylı aylık performans raporu RP-TIC-001 ile birlikte, aynı belgede gönderilir.
+  const pf = await (await import('./sigorta_performans.js')).onayliPerformans(db, r.sigortaci_adi, r.donem);
+  if (pf?.veri) bolumler.push({ baslik: 'Aylık Performans', tur: 'alanlar', alanlar: [{ et: 'Dosya Sayısı', deger: String(pf.veri.dosyaSayisi) }, { et: 'Kapanan Dosya', deger: String(pf.veri.kapananDosya) }, { et: 'Ortalama Dosya Süresi (gün)', deger: pf.veri.ortalamaDosyaSuresiGun === null ? '—' : String(pf.veri.ortalamaDosyaSuresiGun).replace('.', ',') }, { et: 'Süre Uyumu', deger: pf.veri.sureUyumuYuzde === null ? '—' : `%${String(pf.veri.sureUyumuYuzde).replace('.', ',')}` }, { et: 'Şikâyetler', deger: String(pf.veri.sikayet) }] });
   const no = `MT-${r.donem}-${String(r.sigortaci_adi).slice(0, 12).replace(/\s/g, '')}`;
   return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: 'Aylık Sigorta Mutabakat Raporu', kod: 'RP-TIC-MUT', no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, bolumler } };
 }

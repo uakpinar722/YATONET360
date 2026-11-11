@@ -29,6 +29,7 @@ import { IcDenetimOrneklem, YonetimEkleri } from './YonetimEkleri';
 import { RaporKatalogu } from './RaporKatalogu';
 import { Analiz, VeriProfili } from './Analiz';
 import { MasterPlan, UyumMatrisi } from './MasterPlan';
+import { SigortaPerformans } from './SigortaPerformans';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -844,6 +845,7 @@ export function IdariIslemler() {
       <VeriProfili />
       <MasterPlan />
       <UyumMatrisi />
+      <SigortaPerformans />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
