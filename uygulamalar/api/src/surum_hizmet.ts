@@ -51,7 +51,7 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/surum-hizmet', oturumlu, async (i, y) => {
     if (!(await rolde(i.oturum!.kullanici, BT))) return yok(y);
-    const yayinlar = (await b.db.query(`SELECT y.kimlik, y.surum, y.ortam, y.paket_ozeti, y.bilesenler, y.durum, y.zaman, (SELECT array_agg(bilet_no) FROM degisiklik_bileti d WHERE d.kimlik = ANY(y.degisiklikler)) degisiklikler, (SELECT array_agg(DISTINCT alan) FROM uretim_izleme u WHERE u.yayin_ref = y.kimlik) izlenen FROM yayin_seti y ORDER BY y.zaman DESC LIMIT 50`)).rows;
+    const yayinlar = (await b.db.query(`SELECT y.kimlik, y.surum, y.ortam, y.paket_ozeti, y.bilesenler, y.durum, y.zaman, y.acik_dosya_karari, y.acik_dosya_gerekcesi, (SELECT count(*)::int FROM dosya d WHERE d.akis_surumu = y.surum) dosya_sayisi, (SELECT array_agg(bilet_no) FROM degisiklik_bileti d WHERE d.kimlik = ANY(y.degisiklikler)) degisiklikler, (SELECT array_agg(DISTINCT alan) FROM uretim_izleme u WHERE u.yayin_ref = y.kimlik) izlenen FROM yayin_seti y ORDER BY y.zaman DESC LIMIT 50`)).rows;
     for (const x of yayinlar) x.eksik = x.ortam === 'Test' ? await testEksikleri(b.db, x.kimlik) : IZLEME_ALANI.filter((a) => !(x.izlenen ?? []).includes(a));
     return {
       yayinlar,
@@ -69,7 +69,7 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT d.bilet_no, y.surum, y.ortam, y.durum, y.uretim_zamani FROM yayin_seti y JOIN degisiklik_bileti d ON d.kimlik = ANY(y.degisiklikler) WHERE d.bilet_no = $1 ORDER BY y.zaman`, [q])).rows;
   });
   s.post('/yayin-seti', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { surum?: string; ortam?: string; paketOzeti?: string; bilesenler?: Record<string, string>; degisiklikler?: string[]; testEdilen?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { surum?: string; ortam?: string; paketOzeti?: string; bilesenler?: Record<string, string>; degisiklikler?: string[]; testEdilen?: string; acikDosyaKarari?: string; acikDosyaGerekcesi?: string };
     if (!(await rolde(o.kullanici, BT))) return yok(y);
     if (!dolu(g.surum) || !['Test', 'Üretim'].includes(g.ortam ?? '') || !/^[0-9a-f]{64}$/.test(g.paketOzeti ?? '')) return y.code(400).send({ hata: 'Sürüm, ortam ve paket özeti (SHA-256) zorunludur.' });
     const eksik = BILESENLER.filter((k) => !dolu(g.bilesenler?.[k])); if (eksik.length) return y.code(400).send({ hata: `Bileşen sürümleri eksik: ${eksik.join(', ')}` });
@@ -78,8 +78,10 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
       const t = g.testEdilen && UUID.test(g.testEdilen) ? (await b.db.query(`SELECT paket_ozeti, bilesenler, durum FROM yayin_seti WHERE kimlik = $1 AND ortam = 'Test'`, [g.testEdilen])).rows[0] : null;
       if (!t || t.durum !== 'Test Edildi') return y.code(409).send({ hata: 'Üretim seti, testi tamamlanmış bir test setine bağlanmalıdır.' });
       if (t.paket_ozeti !== g.paketOzeti || BILESENLER.some((k) => t.bilesenler[k] !== g.bilesenler![k])) return y.code(409).send({ hata: 'Paket özeti veya bileşen sürümleri test edilen paketle eşleşmiyor.' });
+      // YG-066: yeni kuralın açık dosyalara uygulanıp uygulanmayacağı yetkili kararla ve gerekçeyle belirlenir.
+      if (!['Açık dosyalara da uygulanır', 'Yalnız yeni dosyalara uygulanır'].includes(g.acikDosyaKarari ?? '') || !dolu(g.acikDosyaGerekcesi)) return y.code(400).send({ hata: 'Yeni kuralın açık dosyalara uygulanıp uygulanmayacağı kararı ve gerekçesi zorunludur.' });
     }
-    const r = (await b.db.query(`INSERT INTO yayin_seti (surum, ortam, paket_ozeti, bilesenler, degisiklikler, test_edilen_ref, durum, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (surum, ortam) DO NOTHING RETURNING kimlik`, [g.surum!.trim(), g.ortam, g.paketOzeti, Object.fromEntries(BILESENLER.map((k) => [k, (g.bilesenler?.[k] ?? '').trim()])), bilet, g.ortam === 'Üretim' ? g.testEdilen : null, g.ortam === 'Üretim' ? 'Onayda' : 'Hazırlandı', o.kullanici])).rows[0];
+    const r = (await b.db.query(`INSERT INTO yayin_seti (surum, ortam, paket_ozeti, bilesenler, degisiklikler, test_edilen_ref, durum, hazirlayan_ref, acik_dosya_karari, acik_dosya_gerekcesi) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (surum, ortam) DO NOTHING RETURNING kimlik`, [g.surum!.trim(), g.ortam, g.paketOzeti, Object.fromEntries(BILESENLER.map((k) => [k, (g.bilesenler?.[k] ?? '').trim()])), bilet, g.ortam === 'Üretim' ? g.testEdilen : null, g.ortam === 'Üretim' ? 'Onayda' : 'Hazırlandı', o.kullanici, g.ortam === 'Üretim' ? g.acikDosyaKarari : null, g.ortam === 'Üretim' ? g.acikDosyaGerekcesi!.trim() : null])).rows[0];
     if (!r) return y.code(409).send({ hata: 'Bu sürüm bu ortam için kayıtlıdır.' });
     if (g.ortam === 'Üretim') await kartAc(b.db, { tur: 'Üretime Alma Onayı', kategori: 'gorev', baslik: `${g.surum!.trim()} · Üretime Alma Onayı`, oncelik: 'Yüksek', sahipRol: await rolId(b.db, 'Bilgi İşlem Müdürü'), nesneTuru: 'Yayın Seti', nesneKimligi: r.kimlik });
     await iz(i, 'Yayın Seti Kaydı', 'Yayın Seti', r.kimlik);

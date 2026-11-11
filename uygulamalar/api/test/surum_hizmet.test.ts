@@ -36,7 +36,8 @@ describe('sürüm, test ve üretim izleme (YG-1125, YG-1134, YG-1137, YG-1138, Y
     expect((await o.ist('POST', `/api/yayin-seti/${t}/test-edildi`, sy)).statusCode).toBe(200);
     expect((await o.ist('POST', '/api/yayin-seti', sy, { surum: 'R1', ortam: 'Üretim', paketOzeti: 'b'.repeat(64), bilesenler: BIL, testEdilen: t })).statusCode).toBe(409);
     expect((await o.ist('POST', '/api/yayin-seti', sy, { surum: 'R1', ortam: 'Üretim', paketOzeti: OZ, bilesenler: { ...BIL, rapor: 'r2' }, testEdilen: t })).statusCode).toBe(409);
-    const u = (await o.ist('POST', '/api/yayin-seti', sy, { surum: 'R1', ortam: 'Üretim', paketOzeti: OZ, bilesenler: BIL, degisiklikler: [bilet], testEdilen: t })).json().kimlik as string;
+    expect((await o.ist('POST', '/api/yayin-seti', sy, { surum: 'R1', ortam: 'Üretim', paketOzeti: OZ, bilesenler: BIL, testEdilen: t })).statusCode).toBe(400); // YG-066 kararı yok
+    const u = (await o.ist('POST', '/api/yayin-seti', sy, { surum: 'R1', ortam: 'Üretim', paketOzeti: OZ, bilesenler: BIL, degisiklikler: [bilet], testEdilen: t, acikDosyaKarari: 'Yalnız yeni dosyalara uygulanır', acikDosyaGerekcesi: 'Açık dosyalarda süre hesabı değişmesin' })).json().kimlik as string;
     expect((await o.ist('POST', `/api/yayin-seti/${u}/uretime-al`, sy)).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/yayin-seti/${u}/uretime-al`, bim)).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/yayin-seti/izle?bilet=DB-T1', sy)).json().map((x: { ortam: string }) => x.ortam)).toEqual(['Test', 'Üretim']);
