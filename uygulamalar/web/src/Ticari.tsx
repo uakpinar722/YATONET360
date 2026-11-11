@@ -37,6 +37,8 @@ import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
 import { VeriKalitesi } from './VeriKalitesi';
 import { SureklilikOrtam } from './SureklilikOrtam';
 import { KartelaArama } from './KartelaArama';
+import { IsletmeGideri } from './IsletmeGideri';
+import { IslemKatalogu } from './IslemKatalogu';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -861,6 +863,8 @@ export function IdariIslemler() {
       <EntegrasyonEnvanteri />
       <VeriKalitesi />
       <SureklilikOrtam />
+      <IsletmeGideri />
+      <IslemKatalogu />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
