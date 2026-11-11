@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { istek, type Ben } from './api';
 import { DosyaHaritasi, IsListeleri, KonumPlani } from './IsGorunumu';
+import { GozdenGecirmeler } from './YonetimTakip';
 
 export interface Kart {
   kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null;
@@ -199,7 +200,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
       <div className="bolum">Görevler ve Periyodik İşler</div>
       {veri.gorev.length === 0 ? <Bos m="Bugün için görev bulunmamaktadır." /> : veri.gorev.map((k) => <IslemKarti key={k.kimlik} k={k} yenile={yenile} />)}
-      {lgm && <><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
+      {lgm && <><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
     </>
   );
 }
