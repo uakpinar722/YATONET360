@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { istek, type Ben } from './api';
 import { DosyaHaritasi, IsListeleri, KonumPlani } from './IsGorunumu';
 import { GozdenGecirmeler } from './YonetimTakip';
+import { OzelGunler } from './OzelGunler';
 
 export interface Kart {
   kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null;
@@ -16,9 +17,14 @@ const TZ = 'Europe/Istanbul';
 const sonYazi = (s: string) => new Date(s).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: TZ }).replace(',', '');
 
 /** YG-1635: 5 güne kadar saat, üzeri gün. Süresi geçen kırmızı; renk yanıp sönmez. */
-export function kalan(s: string, simdi = Date.now()): { yazi: string; sinif: string } {
+export function kalan(s: string, simdi = Date.now()): { yazi: string; sinif: string; yanip?: string } {
   const ms = new Date(s).getTime() - simdi;
-  if (ms < 0) return { yazi: `${Math.ceil(-ms / 3_600_000)} Saat Geçti`, sinif: 'kirmizi' };
+  if (ms < 0) { const dk = Math.ceil(-ms / 60_000); return { yazi: `${Math.floor(dk / 60)} Saat ${dk % 60} Dakika Geçti`, sinif: 'kirmizi', yanip: 'yanip-gecti' }; }
+  const yanip = ms <= 1_800_000 ? 'yanip-1' : ms <= 3_600_000 ? 'yanip-3' : ms <= 7_200_000 ? 'yanip-5' : undefined; // YG-1606
+  if (yanip) return { ...kalanYazi(ms), yanip };
+  return kalanYazi(ms);
+}
+function kalanYazi(ms: number): { yazi: string; sinif: string } {
   const saat = ms / 3_600_000;
   if (saat < 1) return { yazi: `${Math.max(1, Math.ceil(ms / 60_000))} Dakika Kaldı`, sinif: 'kirmizi' };
   if (saat <= 120) return { yazi: `${Math.ceil(saat)} Saat Kaldı`, sinif: saat <= 24 ? 'kirmizi' : 'sari' };
@@ -26,14 +32,14 @@ export function kalan(s: string, simdi = Date.now()): { yazi: string; sinif: str
 }
 
 const ONCELIK: Record<string, string> = { Kritik: 'kirmizi', 'Yüksek': 'sari', Normal: 'gri', 'Planlı': 'gri' };
-const Rozet = ({ s, c }: { s: string; c: string }) => <em className={`rozet ${s}`}>{c}</em>;
+const Rozet = ({ s, c, y }: { s: string; c: string; y?: string }) => <em className={`rozet ${s}${y ? ` ${y}` : ''}`}>{c}</em>;
 const Bos = ({ m }: { m: string }) => <div className="ozet bos">{m}</div>;
 
 function KartUst({ k, sayac = true }: { k: Kart; sayac?: boolean }) {
   const kl = k.son_zaman ? kalan(k.son_zaman) : null;
   return (
     <>
-      <div className="ust2"><b>{k.baslik}</b>{sayac && kl && <Rozet s={kl.sinif} c={kl.yazi} />}</div>
+      <div className="ust2"><b>{k.baslik}</b>{sayac && kl && <Rozet s={kl.sinif} c={kl.yazi} y={kl.yanip} />}</div>
       {sayac && k.son_zaman && <div className="not son">Son: {sonYazi(k.son_zaman)}</div>}
       {k.oncelik !== 'Normal' && <div><Rozet s={ONCELIK[k.oncelik] ?? 'gri'} c={k.oncelik} /></div>}
       {k.ozet && <div className="not">{k.ozet}</div>}
@@ -200,7 +206,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
       <div className="bolum">Görevler ve Periyodik İşler</div>
       {veri.gorev.length === 0 ? <Bos m="Bugün için görev bulunmamaktadır." /> : veri.gorev.map((k) => <IslemKarti key={k.kimlik} k={k} yenile={yenile} />)}
-      {lgm && <><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
+      {lgm && <><OzelGunler /><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
     </>
   );
 }

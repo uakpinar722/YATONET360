@@ -55,6 +55,8 @@ export function masterPlanYollari(s: FastifyInstance, b: Baglam) {
     const verildigi: string | null = g.verildigi || k.vt || null; const tamamlanma: string | null = g.tamamlanma || k.tt || null;
     if ((verildigi && !TARIH.test(verildigi)) || (tamamlanma && !TARIH.test(tamamlanma))) return y.code(400).send({ hata: 'Tarihleri kontrol ediniz.' });
     if (durum === 'Görev Verildi' && !verildigi) return y.code(400).send({ hata: 'Verildiği tarih zorunludur.' });
+    if (durum === 'Görev Verildi' && !(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1 AND (kademe = 'Direktör' OR rol_adi = 'Genel Müdür Yardımcısı')`, [k.muhatap])).rowCount) return y.code(409).send({ hata: 'Master Plan kartı yalnız Genel Müdür Yardımcısına veya ilgili Direktöre verilir.' });
+    if (durum === 'Tamamlandı' && k.durum !== 'Tamamlandı' && (k.muhatap === 'Genel Müdür Yardımcısı' || /faz kap/i.test(k.yapilacak)) && !r.includes('CEO')) return y.code(403).send({ hata: 'Faz kapısı ve Genel Müdür Yardımcısı kartlarını CEO kabul eder.' });
     if (durum === 'Tamamlandı' && (!tamamlanma || !(g.kayitNo ?? k.kayit_no))) return y.code(400).send({ hata: 'Tamamlanma tarihi ve kayıt numarası zorunludur.' });
     await b.db.query(`UPDATE master_plan_karti SET durum = $2, verildigi_tarih = $3, tamamlanma_tarihi = $4, kayit_no = coalesce($5, kayit_no), ceo_notu = coalesce($6, ceo_notu), guncelleyen_ref = $7, zaman = now() WHERE islem_no = $1`, [no, durum, verildigi, tamamlanma, g.kayitNo?.trim() || null, g.ceoNotu?.trim() ?? null, o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Master Plan Kartı Güncellendi', nesneTuru: 'Master Plan', nesneKimligi: no, eski: { durum: k.durum }, yeni: { durum }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

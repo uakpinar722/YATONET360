@@ -3,7 +3,8 @@ import { izYaz } from './denetim.js';
 import { kapanisKaydet } from './kapanis.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { onayMakami } from './makam.js';
+import { onayMakami, rolSahipleri } from './makam.js';
+import { bildir } from './bildirim.js';
 import { kullaniciRolleri } from './yetki.js';
 
 const UST_KADEME = new Set(['CEO', 'Genel Müdür Yardımcısı', 'Direktör', 'Müdür']);
@@ -42,6 +43,8 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
         const kart = await kartAc(c, { tur: 'Duyuru Yayımı', baslik: `Dış Duyuru Onayı · ${baslik.trim()}`, ozet: govde?.trim() || undefined, hazirlayan: o.kullanici, zincir: [await onayMakami(c, (ust ?? roller[0]!).kimlik)], nesneTuru: 'duyuru', nesneKimligi: id });
         await c.query(`UPDATE duyuru SET is_karti_ref = $2 WHERE kimlik = $1`, [id, kart]);
       }
+      { const sahip = kapsam === 'LGM' ? 'İnsan Kaynakları Müdürü' : 'Müşteri ve Paydaş İlişkileri Müdürü'; const sr = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [sahip])).rows[0]?.kimlik; // YG-562
+        const al = sr ? (await rolSahipleri(c, sr)).filter((x) => x !== o.kullanici) : []; if (al.length) await bildir(c, { olay: `duyuru-sahip:${id}`, kullanicilar: al, baslik: `Duyuru${dogrudan ? ' Yayımlandı' : ' Onaya Gönderildi'}: ${baslik.trim()}`, ozet: `Kapsam: ${kapsam}` }); }
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: dogrudan ? 'Duyuru Yayımlandı' : 'Duyuru Onaya Gönderildi', nesneTuru: 'duyuru', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { kimlik: id, durum: dogrudan ? 'Yayında' : 'Onay Bekliyor' };

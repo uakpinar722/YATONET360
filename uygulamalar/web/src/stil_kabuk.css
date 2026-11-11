@@ -113,3 +113,11 @@
 .ozet, .not, .hata, .uyari, .ood, .soru, .kutu span, .tam-metin, p { text-align: justify; }
 h1, h2, h3, .bolum, label { text-align: left; }
 button:not(.secenek):not(.lnk) { text-align: center; }
+
+/* YG-1606: süre sayacı yalnız işin sahibinin ekranında yanıp söner; hareketi azaltma ayarında kalın çerçeve. */
+@keyframes yanip { 0%, 70%, 100% { opacity: 1; } 85% { opacity: .35; } }
+.rozet.yanip-5 { background: #FBE7C2; color: #7A4B00; animation: yanip 5s infinite; }
+.rozet.yanip-3 { background: #FCD9B8; color: #8A3B00; animation: yanip 3s infinite; }
+.rozet.yanip-1 { animation: yanip 1s infinite; }
+.rozet.yanip-gecti { background: #8E1B12; color: #fff; animation: yanip 1s infinite; }
+@media (prefers-reduced-motion: reduce) { .rozet.yanip-5, .rozet.yanip-3, .rozet.yanip-1, .rozet.yanip-gecti { animation: none; outline: 3px solid currentColor; } }

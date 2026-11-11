@@ -113,6 +113,7 @@ try {
   kontrol('Operasyon Yöneticisi ve Teknik Yönetici yat değerine ekrandan ortak karar verir', (await sup.query(`SELECT durum FROM dosya_yat_degeri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].durum === 'Kesin');
   const isEmriForm = async (p, tur, kapsam, bedel, teklif) => {
     await p.getByLabel('Tür', { exact: true }).selectOption(tur);
+    await p.getByLabel('Firma', { exact: true }).locator(`option[value="${firma}"]`).waitFor({ state: 'attached', timeout: 90_000 }); // yük altında firma listesi geç gelebilir
     await p.getByLabel('Firma', { exact: true }).selectOption(firma);
     await p.getByLabel('Uygulama Yeri').fill('Marmaris'); await p.getByLabel('Kapsam', { exact: true }).fill(kapsam);
     if (bedel) await p.getByLabel('Firma Bedeli (EUR)').fill(bedel);
