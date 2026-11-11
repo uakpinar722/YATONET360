@@ -33,6 +33,7 @@ import { SigortaPerformans } from './SigortaPerformans';
 import { OnMuhasebeRaporlari, SatisGorusmeleri, YonetimDegerlendirmesi } from './YonetimTakip';
 import { SistemIzleme } from './SistemIzleme';
 import { Kapasite } from './Kapasite';
+import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -854,6 +855,7 @@ export function IdariIslemler() {
       <YonetimDegerlendirmesi />
       <SistemIzleme />
       <Kapasite />
+      <EntegrasyonEnvanteri />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
