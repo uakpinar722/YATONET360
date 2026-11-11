@@ -36,6 +36,7 @@ import { Kapasite } from './Kapasite';
 import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
 import { VeriKalitesi } from './VeriKalitesi';
 import { SureklilikOrtam } from './SureklilikOrtam';
+import { KartelaArama } from './KartelaArama';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -214,7 +215,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {tu && <>
           {satirlar.map((x, n) => <div key={n}>{x.aciklama} · {x.miktar} {x.birim} · {x.nitelik} · {x.bedel}{x.kod ? ` · ${x.kod}` : ''}</div>)}
           <label htmlFor="c-a">Açıklama</label><input id="c-a" value={satir.aciklama} onChange={(e) => setSatir({ ...satir, aciklama: e.target.value })} />
-          <label htmlFor="c-k">Kartela Kodu (Varsa)</label><input id="c-k" value={satir.kod} onChange={(e) => setSatir({ ...satir, kod: e.target.value })} />
+          <label htmlFor="c-k">Kartela Kodu (Varsa)</label><KartelaArama id="c-k" deger={satir.kod} sec={(k) => setSatir({ ...satir, kod: k })} />
           <div className="iki-tarih"><div><label htmlFor="c-n">İşin Niteliği</label><select id="c-n" value={satir.nitelik} onChange={(e) => setSatir({ ...satir, nitelik: e.target.value })}>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select></div><div><label htmlFor="c-b">Bedel Türü</label><select id="c-b" value={satir.bedel} onChange={(e) => setSatir({ ...satir, bedel: e.target.value })}>{BEDEL.map((x) => <option key={x}>{x}</option>)}</select></div></div>
           <div className="iki-tarih"><div><label htmlFor="c-m">Miktar</label><input id="c-m" inputMode="decimal" value={satir.miktar} onChange={(e) => setSatir({ ...satir, miktar: e.target.value })} /></div><div><label htmlFor="c-r">Birim</label><input id="c-r" value={satir.birim} onChange={(e) => setSatir({ ...satir, birim: e.target.value })} /></div></div>
           <button className="btn2" disabled={!satir.aciklama.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '' }); }}>Satır Ekle</button>

@@ -276,11 +276,24 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   const roller = async (k: string) => (await b.db.query(`SELECT r.rol_adi FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [k])).rows.map((r) => r.rol_adi as string);
 
   // YG-293: arama; firma portalı fiyatsız kullanır, LGM de satış fiyatını buradan görmez.
+  s.post('/kartela/es-anlam', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (!(await roller(o.kullanici)).some((r) => ['Teknik Müdür', 'Teknik ve Operasyon Direktörü', 'Ticari İşler Direktörü', 'Teknik Yönetici'].includes(r))) return y.code(403).send({ hata: 'Eş anlamlıyı Teknik Müdürlük veya Ticari İşler ekler.' });
+    const g = (i.body ?? {}) as { terim?: string; karsilik?: string };
+    if (!g.terim?.trim() || !g.karsilik?.trim() || g.terim.trim().toLocaleLowerCase('tr') === g.karsilik.trim().toLocaleLowerCase('tr')) return y.code(400).send({ hata: 'Terim ve farklı bir karşılık giriniz.' });
+    await b.db.query(`INSERT INTO islem_es_anlami (terim, karsilik, ekleyen_ref) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [g.terim.trim().toLocaleLowerCase('tr'), g.karsilik.trim().toLocaleLowerCase('tr'), o.kullanici]);
+    return { tamam: true };
+  });
   s.get('/kartela/ara', oturumlu, async (i) => {
     const q = String((i.query as { q?: string }).q ?? '').trim();
     if (q.length < 2) return [];
     const sur = await yururlukSurumu(b.db);
-    return (await b.db.query(`SELECT kod, ana_brans, tali_brans, islem, birim FROM kartela_kalemi WHERE surum = $1 AND (kod ILIKE $2 || '%' OR tr_norm(islem) LIKE '%' || tr_norm($2) || '%') ORDER BY kod LIMIT 30`, [sur, q])).rows;
+    // YG-1372: eş anlamlı terimler her iki yönde aranır; kullanıcının tekliflerinde sık seçtiği işlemler önce gelir.
+    const terimler = [q, ...(await b.db.query(`SELECT karsilik t FROM islem_es_anlami WHERE tr_norm(terim) = tr_norm($1) UNION SELECT terim FROM islem_es_anlami WHERE tr_norm(karsilik) = tr_norm($1)
+      UNION SELECT karsilik FROM islem_es_anlami WHERE tr_norm($1) LIKE '%' || tr_norm(terim) || '%' UNION SELECT terim FROM islem_es_anlami WHERE tr_norm($1) LIKE '%' || tr_norm(karsilik) || '%'`, [q])).rows.map((r) => r.t as string)];
+    return (await b.db.query(`SELECT k.kod, k.ana_brans, k.tali_brans, k.islem, k.birim, coalesce(s.n, 0)::int sik FROM kartela_kalemi k
+        LEFT JOIN (SELECT x.kartela_kodu, count(*) n FROM fiyat_teklifi_kalemi x JOIN fiyat_teklifi f ON f.kimlik = x.teklif_ref WHERE f.hazirlayan_ref = $3 AND x.kartela_kodu IS NOT NULL GROUP BY 1) s ON s.kartela_kodu = k.kod
+      WHERE k.surum = $1 AND (k.kod ILIKE $2 || '%' OR EXISTS (SELECT 1 FROM unnest($4::text[]) t WHERE tr_norm(k.islem) LIKE '%' || tr_norm(t) || '%'))
+      ORDER BY coalesce(s.n, 0) DESC, k.kod LIMIT 30`, [sur, q, i.oturum!.kullanici, terimler])).rows;
   });
 
   // YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO tarafından görülür ve taslak sürümde girilir.
