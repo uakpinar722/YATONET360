@@ -62,7 +62,7 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
   });
   s.get('/tesis-listesi', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
-    return (await b.db.query(`SELECT kimlik, ticari_unvan FROM kurulus WHERE kayit_rolu = 'Tesis' AND ag_statusu = 'Aktif' ORDER BY ticari_unvan LIMIT 300`)).rows;
+    return (await b.db.query(`SELECT kimlik, ticari_unvan FROM kurulus WHERE kayit_rolu = 'Tesis' AND ag_statusu = 'Aktif' ORDER BY ticari_unvan`)).rows;
   });
 
   const tesis = async (k: string) => { const f = await kurulusum(b.db, k); return f?.kayit_rolu === 'Tesis' ? f.kurulus_ref : undefined; };
