@@ -39,6 +39,7 @@ import { SureklilikOrtam } from './SureklilikOrtam';
 import { KartelaArama } from './KartelaArama';
 import { IsletmeGideri } from './IsletmeGideri';
 import { IslemKatalogu } from './IslemKatalogu';
+import { FormKatalogu } from './FormKatalogu';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -865,6 +866,7 @@ export function IdariIslemler() {
       <SureklilikOrtam />
       <IsletmeGideri />
       <IslemKatalogu />
+      <FormKatalogu />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />

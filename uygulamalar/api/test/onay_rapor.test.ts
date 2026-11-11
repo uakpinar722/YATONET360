@@ -10,7 +10,7 @@ const rol = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHE
 const kart = async (x: { tur?: string; oncelik?: string; zincir: string[]; simdi?: Date }) => { const z = []; for (const r of x.zincir) z.push(await rol(r)); return kartAc(o.db, { tur: x.tur ?? 'Deneme', baslik: `K${Math.random()}`, oncelik: x.oncelik ?? 'Normal', hazirlayan: o.K.ds, zincir: z, simdi: x.simdi }); };
 const yas = (id: string, dk: number) => o.sup.query(`UPDATE is_karti SET kademe_zamani = now() - make_interval(mins => $2) WHERE kimlik = $1`, [id, dk]);
 const satir = async (id: string) => (await o.sup.query(`SELECT kademe, zincir, durum FROM is_karti WHERE kimlik = $1`, [id])).rows[0];
-const R = { kapsam: 'K', incelenen: 'İ', saha: 'S', yontem: 'Y', bulgular: 'B', acikSorular: 'A', analiz: 'N', oneriler: 'Ö', uzmanlik: 'U' };
+const R = { kapsam: 'K', incelenen: 'İ', saha: 'S', yontem: 'Y', bulgular: 'B', acikSorular: 'A', analiz: 'N', oneriler: 'Ö', uzmanlik: 'U', ekInceleme: 'Hayır' };
 
 beforeAll(async () => { o = await ortamKur('yatonet360_test21', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -73,6 +73,8 @@ describe('teknik rapor (YG-200, YG-280, YG-428, YG-1518)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, await o.gir('ds'), R)).statusCode).toBe(403);
     const tu = await o.gir('tu');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, kapsam: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, ekInceleme: undefined })).json().hata).toMatch(/ek inceleme/i); // YG-714
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, ekInceleme: 'Evet' })).statusCode).toBe(400);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, R);
     expect(r.statusCode, r.body).toBe(200); expect(r.json().raporNo).toBe(`${d.dosyaNo}-TR01`);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, R)).statusCode).toBe(409);

@@ -296,6 +296,8 @@ export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }
       {tu && <>
         <label htmlFor="rp-t">Rapor Türü</label><select id="rp-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['İlk Rapor', 'Ek Teknik Rapor', 'Garanti İnceleme Raporu'].map((x) => <option key={x}>{x}</option>)}</select>
         {RAPOR_ALAN.map(([k, ad]) => <div key={k}><label htmlFor={`rp-${k}`}>{ad}</label><textarea id={`rp-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>)}
+        <label htmlFor="rp-ek">Ek İnceleme Gerektiren Alan Var mı?</label><select id="rp-ek" value={f.ekInceleme ?? ''} onChange={(e) => setF({ ...f, ekInceleme: e.target.value })}><option value="">Seçiniz</option><option>Evet</option><option>Hayır</option></select>
+        {f.ekInceleme === 'Evet' && <><label htmlFor="rp-eka">Ek İnceleme Gerektiren Alan</label><textarea id="rp-eka" value={f.ekIncelemeAlani ?? ''} onChange={(e) => setF({ ...f, ekIncelemeAlani: e.target.value })} /></>}
         <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/teknik-rapor`, f), 'Rapor kontrole gönderildi.')}>Raporu Kontrole Gönder</button>
         <div className="bolum">Kartela Önerisi</div>
         {([['ana', 'Ana Branş'], ['alt', 'Alt Branş'], ['tali', 'Tali Branş'], ['islem', 'İşlem'], ['birim', 'Birim'], ['maliyet', 'Maliyet (EUR)'], ['gerekce', 'Gerekçe']] as const).map(([k, ad]) => <div key={k}><label htmlFor={`ko-${k}`}>{ad}</label><input id={`ko-${k}`} value={ko[k]} onChange={(e) => setKo({ ...ko, [k]: e.target.value })} /></div>)}

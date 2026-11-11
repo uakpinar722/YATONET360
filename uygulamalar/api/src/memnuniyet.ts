@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool } from 'pg';
 import { dilKod, rolId, yatTarafinaYaz } from './ihbar.js';
+import { gorevFormlari } from './form_katalogu.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
@@ -92,6 +93,7 @@ export function memnuniyetYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const roller = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [o.kullanici])).rows.map((r) => r.rol_adi as string);
     tanimlar ??= JSON.parse(readFileSync(join(KOK, 'veri/sablon/rol_gorev_tanimlari.json'), 'utf-8')) as Record<string, Blok[]>;
-    return roller.filter((r) => tanimlar![r]).map((r) => ({ rol: r, bloklar: tanimlar![r] }));
+    // YG-1513: form listesi bölümü belge kataloğundan üretilir.
+    return Promise.all(roller.filter((r) => tanimlar![r]).map(async (r) => ({ rol: r, bloklar: await gorevFormlari(b.db, r, tanimlar![r]!) })));
   });
 }

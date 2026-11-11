@@ -120,6 +120,10 @@ async function raporTanim(db: Db, id: string, kod: string, web: string) {
   // YG-1441: TU'nun Gerekli işaretlediği teklif satırları.
   const ro = await (await import('./resmi_onay.js')).resmiOnayGerekenler(db, r.dosya_ref);
   if (ro.length) bolumler.push({ baslik: dil === 'en' ? 'Works Requiring Statutory / Class Approval' : 'Resmî / Klas Onayı Gereken İşler', tur: 'tablo', sutunlar: [{ ad: dil === 'en' ? 'Code' : 'Kod' }, { ad: e.aciklama }], satirlar: ro.map((x) => [x.kod, x.aciklama]) });
+  // YG-714: bulguların önem derecesine göre renkli risk değerlendirmesi ve ek inceleme sorusu.
+  const ONEM: Record<string, Renk> = { Kritik: 'kirmizi', Yüksek: 'turuncu', Orta: 'sari', Düşük: 'yesil', Gözlem: 'yesil' };
+  if (bl.length) bolumler.push({ baslik: dil === 'en' ? 'Risk Assessment' : 'Risk Değerlendirmesi', tur: 'tablo', sutunlar: [{ ad: e.bolge }, { ad: e.gozlem }, { ad: e.onem, hiza: 'ort' }], satirlar: bl.map((x) => [x.bolge_kodu, x.aciklama, { m: x.hasar_onem_derecesi, renk: ONEM[x.hasar_onem_derecesi] ?? 'sari' }]) });
+  if (r.ek_inceleme_gerekir !== null) bolumler.push({ baslik: dil === 'en' ? 'Further Inspection' : 'Ek İnceleme', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'Is there an area requiring further inspection?' : 'Ek inceleme gerektiren alan var mı?', deger: r.ek_inceleme_gerekir ? (dil === 'en' ? 'Yes' : 'Evet') : (dil === 'en' ? 'No' : 'Hayır') }, ...(r.ek_inceleme_gerekir ? [{ et: dil === 'en' ? 'Area' : 'Alan', deger: r.ek_inceleme_alani, genis: true }] : [])] });
   bolumler.push({ baslik: e.deger, tur: 'metin', metin: r.analiz_risk }, { baslik: e.oneri, tur: 'metin', metin: r.oneriler }, { baslik: e.acik, tur: 'metin', metin: r.acik_sorular }, { baslik: e.sinir, tur: 'metin', metin: r.uzmanlik_siniri }, ekipBolumu(b), atananEkip(b));
   if (gr.length) bolumler.push({ baslik: e.foto, tur: 'tablo', sutunlar: [{ ad: e.gorsel }, { ad: e.aciklama }, { ad: e.zaman }, { ad: e.konumS }], satirlar: gr.map((x) => [x.gorsel_no, x.cekim_kalemi, x.cekim_zamani ? gunAy(x.cekim_zamani) : null, x.konum]) });
   // YG-612: raporun dayandığı kayıt sürümleri.

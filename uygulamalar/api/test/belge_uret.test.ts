@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tmy: 'Teknik Müdür Yardımcısı', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü' };
 let o: Ortam; let b: { db: any; webAdresi: string; depo: Depo; eposta: any; sms: any }; let dk: string;
-const R = { kapsam: 'Kapsam', incelenen: 'Karina', saha: 'Kara park', yontem: 'Gözle', bulgular: 'Çatlak', acikSorular: 'Yok', analiz: 'Onarılabilir', oneriler: 'Laminasyon', uzmanlik: 'Tahrik' };
+const R = { kapsam: 'Kapsam', incelenen: 'Karina', saha: 'Kara park', yontem: 'Gözle', bulgular: 'Çatlak', acikSorular: 'Yok', analiz: 'Onarılabilir', oneriler: 'Laminasyon', uzmanlik: 'Tahrik' , ekInceleme: 'Evet', ekIncelemeAlani: 'Salma bölmesi alt bağlantıları' };
 const teklif = async (d: { kimlik: string; dosyaNo: string }, statu = 'Onaylı') => {
   const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,$3,1000,200,1200,1000,$4) RETURNING kimlik`, [`${d.dosyaNo}-TK01`, d.kimlik, statu, o.K.ts])).rows[0];
   await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'Laminasyon İşçiliği','Onarım','İşçilik',1,'saat',1000,1000,'Onaylandı')`, [t.kimlik]);

@@ -63,7 +63,9 @@ export async function yedekGeriYukle(dosya: string, a: { hedefVeritabani: string
     const var0 = (await c.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)).rows.map((r) => r.tablename as string);
     await c.query(`TRUNCATE ${var0.map((t) => pg.escapeIdentifier(t)).join(', ')}`);
     for (const [t, satirlar] of Object.entries(veri.tablolar)) {
-      for (let i = 0; i < satirlar.length; i += 500) await c.query(`INSERT INTO ${pg.escapeIdentifier(t)} OVERRIDING SYSTEM VALUE SELECT * FROM jsonb_populate_recordset(null::${pg.escapeIdentifier(t)}, $1::jsonb)`, [JSON.stringify(satirlar.slice(i, i + 500))]);
+      // Hesaplanan (generated) sütunlar yazılmaz; hedef veritabanı yeniden hesaplar.
+      const s = (await c.query(`SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) l FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER'`, [t])).rows[0].l as string;
+      for (let i = 0; i < satirlar.length; i += 500) await c.query(`INSERT INTO ${pg.escapeIdentifier(t)} (${s}) OVERRIDING SYSTEM VALUE SELECT ${s} FROM jsonb_populate_recordset(null::${pg.escapeIdentifier(t)}, $1::jsonb)`, [JSON.stringify(satirlar.slice(i, i + 500))]);
       sonuc[t] = satirlar.length;
     }
     for (const r of veri.siralar) await c.query(`SELECT setval($1, $2)`, [r.s, r.v]);
