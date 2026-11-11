@@ -64,3 +64,6 @@ tr:last-child td { border-bottom: 0; }
 .panel footer { display: flex; flex-direction: column; align-items: center; padding: 16px; }
 .panel footer .ayrac { width: min(420px, 70%); }
 .panel footer img { height: 26px; }
+
+/* YG-735: rapor satırından kayda geçiş */
+.baglanti { background: none; border: 0; padding: 0; color: var(--lac); text-decoration: underline; cursor: pointer; font: inherit; }

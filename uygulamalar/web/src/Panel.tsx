@@ -50,6 +50,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   const yenile = useCallback(() => istek<BugunVeri>('/bugun').then((v) => { setVeri(v); setHata(''); }).catch((e) => setHata(e.message)), []);
   useEffect(() => { void yenile(); }, [yenile, sayfa]);
   const git = (s: Sayfa) => setSayfa(s);
+  useEffect(() => { const f = (e: Event) => { setAraQ((e as CustomEvent<string>).detail); setSayfa('ara'); }; window.addEventListener('dosya-git', f); return () => window.removeEventListener('dosya-git', f); }, []); // YG-735
   const menu: { s: Sayfa; ad: string; ik: string; izin?: string }[] = [
     { s: 'ana', ad: lgm ? 'Bugün' : 'Ana Sayfa', ik: '☀' },
     ...(lgm ? [{ s: 'dosya' as Sayfa, ad: 'Dosyalar', ik: '▣' }, { s: 'nobet' as Sayfa, ad: 'Nöbet ve Acil', ik: '✚' }] : []),

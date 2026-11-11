@@ -29,7 +29,7 @@ const EKIP: Record<string, { rol: string; izin: string; tekil: boolean }> = {
   'Tedarik Sorumlusu': { rol: 'Tedarik Sorumlusu', izin: 'dosya.ata.tedarik', tekil: true },
 };
 /** YG-146, YG-958: kapasite eşikleri; Saha Sorumlusunda dosya sayısı, diğerlerinde zorluk katsayıları toplamı. */
-const KAPASITE: Record<string, number> = { 'Dosya Sorumlusu': 25, 'Teknik Uzman': 15, 'Sorumlu Teknik Uzman (Koordinatör)': 15, 'Saha Sorumlusu': 3 };
+export const KAPASITE: Record<string, number> = { 'Dosya Sorumlusu': 25, 'Teknik Uzman': 15, 'Sorumlu Teknik Uzman (Koordinatör)': 15, 'Saha Sorumlusu': 3 };
 const KAPASITE_GRUP: Record<string, string[]> = { 'Dosya Sorumlusu': ['Dosya Sorumlusu'], 'Teknik Uzman': ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)'], 'Sorumlu Teknik Uzman (Koordinatör)': ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)'], 'Saha Sorumlusu': ['Saha Sorumlusu'] };
 
 export async function kapasiteYuku(db: Db, kullanici: string, rol: string): Promise<number> {

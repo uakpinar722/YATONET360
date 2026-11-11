@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { DosyaBag } from './DosyaBag';
 
 type O = { adet: number; medyan: number | null; p90: number | null; ortalama: number | null; gizli?: boolean };
 type K = O & { grup: string };
@@ -27,7 +28,7 @@ export function Analiz() {
     {v.firma && <><div className="bolum">Firma Karşılaştırması (iş karışımına göre normalize)</div><div className="not">Endeks 1,0 = aynı branş ve öncelikteki dosyaların medyanı. En az {v.asgariGrup} dosyası olmayan firma sıralanmaz.</div>
       {v.firma.map((x) => <div className="soru" key={x.firma}><span>{x.firma} · {x.dosya} dosya · {x.endeks !== null ? `Endeks ${x.endeks.toLocaleString('tr-TR')}` : x.durum}</span></div>)}</>}
     <div className="bolum">Eğilim (son 12 ay)</div>{v.egilim.seri.map((x) => <div className="soru" key={x.ay}><span>{x.ay} · Açılan {x.acilan} · Kapanan {x.kapanan} · Net medyan {x.netMedyan ?? '—'} gün{v.egilim.kirilma.filter((k) => k.ay === x.ay).map((k) => ` · ▲ ${k.aciklama}`).join('')}</span></div>)}
-    <div className="bolum">Maliyet ve Süre Sapması</div>{v.sapma.length ? v.sapma.map((x) => <div className={x.aciklanamayan && Math.abs(x.aciklanamayan) > 0.005 ? 'soru hata' : 'soru'} key={x.dosyaNo}><span>{x.dosyaNo} · İlk plan {e(x.ilkPlan)} EUR · Onaylı değişiklik {e(x.onayliDegisiklik)} EUR{x.degisiklikNedeni ? ` (${x.degisiklikNedeni})` : ''} · Fiilî {e(x.fiili)} EUR · Açıklanamayan {e(x.aciklanamayan)} EUR · Süre sapması {x.sureSapmasiGun ?? '—'} gün (onaylı ek süre {x.onayliEkGun} gün){x.beklenmeyenKosul ? ` · Beklenmeyen koşul: ${x.beklenmeyenKosul}` : ''}</span></div>) : <div className="ozet bos">Dönemde kapanan dosya bulunmamaktadır.</div>}</details>;
+    <div className="bolum">Maliyet ve Süre Sapması</div>{v.sapma.length ? v.sapma.map((x) => <div className={x.aciklanamayan && Math.abs(x.aciklanamayan) > 0.005 ? 'soru hata' : 'soru'} key={x.dosyaNo}><span><DosyaBag no={x.dosyaNo} /> · İlk plan {e(x.ilkPlan)} EUR · Onaylı değişiklik {e(x.onayliDegisiklik)} EUR{x.degisiklikNedeni ? ` (${x.degisiklikNedeni})` : ''} · Fiilî {e(x.fiili)} EUR · Açıklanamayan {e(x.aciklanamayan)} EUR · Süre sapması {x.sureSapmasiGun ?? '—'} gün (onaylı ek süre {x.onayliEkGun} gün){x.beklenmeyenKosul ? ` · Beklenmeyen koşul: ${x.beklenmeyenKosul}` : ''}</span></div>) : <div className="ozet bos">Dönemde kapanan dosya bulunmamaktadır.</div>}</details>;
 }
 
 /** YG-745: veri profilleme. */

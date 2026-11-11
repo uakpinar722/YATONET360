@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { DosyaBag } from './DosyaBag';
 
 type Is = { kimlik: string; is_emri_no?: string; siparis_no?: string; dosya_no: string; yat_adi: string; cozum_ortagi?: string | null; tedarikci?: string; brans?: string | null; sorumlu: string | null; baslangic?: string | null; hedef?: string | null; teslim_tarihi?: string; tamamlanma?: string | null; teslim_zamani?: string | null; gecikti?: boolean };
 type L = { tur: string; tamamlanan: Is[]; devamEden: Is[]; planli: Is[]; ortalamaKesifDakika: number | null };
 const t = (s?: string | null) => (s ? new Date(s.length === 10 ? `${s}T12:00:00` : s).toLocaleDateString('tr-TR') : '');
-const satir = (x: Is, tarih: string) => <div className={x.gecikti ? 'soru hata' : 'soru'} key={x.kimlik}><span>{x.dosya_no} · {x.yat_adi}{x.is_emri_no ? ` · ${x.is_emri_no}` : ''}{x.siparis_no ? ` · ${x.siparis_no}` : ''}{x.cozum_ortagi ? ` · ${x.cozum_ortagi}` : ''}{x.tedarikci ? ` · ${x.tedarikci}` : ''}{x.brans ? ` · ${x.brans}` : ''}{x.sorumlu ? ` · ${x.sorumlu}` : ''}{tarih ? ` · ${tarih}` : ''}{x.gecikti ? ' · Hedef tarihi geçti' : ''}</span></div>;
+const satir = (x: Is, tarih: string) => <div className={x.gecikti ? 'soru hata' : 'soru'} key={x.kimlik}><span><DosyaBag no={x.dosya_no} /> · {x.yat_adi}{x.is_emri_no ? ` · ${x.is_emri_no}` : ''}{x.siparis_no ? ` · ${x.siparis_no}` : ''}{x.cozum_ortagi ? ` · ${x.cozum_ortagi}` : ''}{x.tedarikci ? ` · ${x.tedarikci}` : ''}{x.brans ? ` · ${x.brans}` : ''}{x.sorumlu ? ` · ${x.sorumlu}` : ''}{tarih ? ` · ${tarih}` : ''}{x.gecikti ? ' · Hedef tarihi geçti' : ''}</span></div>;
 /** YG-814–818: Tamamlanan, Devam Eden ve Planlı İşler; tedarik kolunda siparişler. */
 export function IsListeleri() {
   const [v, setV] = useState<L | null>(null);
