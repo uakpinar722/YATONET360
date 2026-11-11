@@ -79,6 +79,7 @@ async function kuyruk(db: Db, olay: string, k: string | null, kanal: string, hed
 export async function disGonder(db: Db, g: { olay: string; telefon?: string | null; eposta?: string | null; konu: string; metin: string; oncelik?: string; acil?: boolean; sigortaTeyitli?: boolean; ekler?: string[] }, simdi = new Date()): Promise<boolean> {
   // K-241: sigorta adresine ileti yalnız ikili teyitten geçer; unutulan bir modül burada durur.
   if (g.eposta && !g.sigortaTeyitli && (await db.query(`SELECT 1 FROM dosya_sigorta_kaydi s JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE lower(t.eposta COLLATE "C") = lower($1::text COLLATE "C") LIMIT 1`, [g.eposta])).rowCount) throw new Error('Sigorta şirketine gönderim ikili teyit gerektirir.');
+  if (g.ekler?.length) { const h = await (await import('./gorsel_gizlilik.js')).hassasEkEngeli(db, g.ekler); if (h) { await bildirGizlilikDurdurma(db, g.olay, h); return false; } } // YG-1165
   const gizlilik = await (await import('./yetki_ek.js')).disMetinEngeli(db, g); // YG-1167, YG-1623
   if (gizlilik) { await bildirGizlilikDurdurma(db, g.olay, gizlilik); return false; }
   // YG-1171: dosya belgesi eki, dosya tarafı olmayan alıcıya yalnız onaylı hasar paylaşım talebiyle gider (sigorta gönderimi ikili teyitten geçer).

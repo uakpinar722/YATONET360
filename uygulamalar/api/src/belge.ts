@@ -183,11 +183,12 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     if (!bag || !bagKimligi || (await bag(b.db, o.kullanici, bagKimligi)) !== 'tamam') return yok(y);
     const lgm = o.grup === 'LGM İç Rolü';
     const { rows } = await b.db.query(
-      `SELECT e.kimlik, e.ad, e.belge_turu, e.bilgi_sinifi, e.kaynak_kanali, e.belge_tarihi, e.olusturan_ref = $3 AS benim,
+      `SELECT e.kimlik, e.ad, e.belge_turu, e.bilgi_sinifi, e.kaynak_kanali, e.belge_tarihi, e.olusturan_ref = $3 AS benim, e.hassas_icerik, e.maskeli_kaynak_ref,
               coalesce(json_agg(json_build_object('no', s.surum_no, 'dosya', s.dosya_adi, 'boyut', s.boyut, 'durum', s.durum, 'yukleme', s.yukleme_zamani, 'yururluk', s.yururluk_tarihi, 'gerekce', CASE WHEN $4 THEN s.degisiklik_gerekcesi END) ORDER BY s.surum_no DESC), '[]') AS surumler
          FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik
         WHERE e.bag_turu = $1 AND e.bag_kimligi = $2 AND (e.bilgi_sinifi <> 'Kritik' OR e.olusturan_ref = $3) AND ($4 OR e.olusturan_ref = $3 OR s.durum = 'Yürürlükte')
           AND ($4 OR e.olusturan_ref = $3 OR (e.bilgi_sinifi <> 'Kurumsal' AND NOT e.belge_turu = ANY($5)))
+          AND ($4 OR NOT e.hassas_icerik) -- YG-1165: hassas özgün dış kullanıcıya görünmez
         GROUP BY e.kimlik ORDER BY e.olusturma_zamani DESC`, [bagTuru, bagKimligi, o.kullanici, lgm, disKapaliTurler(o.grup)]);
     return rows;
   });
