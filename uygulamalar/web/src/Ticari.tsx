@@ -28,6 +28,7 @@ import { YonetimRaporu } from './YonetimRaporu';
 import { IcDenetimOrneklem, YonetimEkleri } from './YonetimEkleri';
 import { RaporKatalogu } from './RaporKatalogu';
 import { Analiz, VeriProfili } from './Analiz';
+import { MasterPlan, UyumMatrisi } from './MasterPlan';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -841,6 +842,8 @@ export function IdariIslemler() {
       <RaporKatalogu />
       <Analiz />
       <VeriProfili />
+      <MasterPlan />
+      <UyumMatrisi />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
