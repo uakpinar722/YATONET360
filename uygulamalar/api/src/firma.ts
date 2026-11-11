@@ -176,7 +176,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/firma/uygunluk', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     const { brans, rol } = i.query as { brans?: string; rol?: string };
-    const { rows } = await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, ag_statusu, risk_derecesi FROM kurulus WHERE kayit_rolu = $1 AND kayit_asamasi <> 'Aday' ORDER BY ticari_unvan LIMIT 200`, [rol === 'Tedarikçi' ? rol : 'Çözüm Ortağı']);
+    const { rows } = await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, ag_statusu, risk_derecesi FROM kurulus WHERE kayit_rolu = $1 AND kayit_asamasi NOT IN ('Aday', 'Reddedildi') AND ag_statusu IS DISTINCT FROM 'Çıkarıldı' ORDER BY ticari_unvan`, [rol === 'Tedarikçi' ? rol : 'Çözüm Ortağı']);
     const l = []; for (const f of rows) l.push({ ...f, engel: await firmaUygunlugu(b.db, f.kimlik, brans || null) });
     return l;
   });

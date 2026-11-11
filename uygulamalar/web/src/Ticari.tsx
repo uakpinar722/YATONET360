@@ -34,6 +34,7 @@ import { OnMuhasebeRaporlari, SatisGorusmeleri, YonetimDegerlendirmesi } from '.
 import { SistemIzleme } from './SistemIzleme';
 import { Kapasite } from './Kapasite';
 import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
+import { VeriKalitesi } from './VeriKalitesi';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -856,6 +857,7 @@ export function IdariIslemler() {
       <SistemIzleme />
       <Kapasite />
       <EntegrasyonEnvanteri />
+      <VeriKalitesi />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
