@@ -117,6 +117,7 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
     await db.query(`UPDATE personel_karti SET personel_durumu = 'Ayrıldı', ayrilis_tarihi = $2 WHERE kullanici_ref = $1`, [a.personel_ref, a.son_is_gunu]);
     await db.query(`UPDATE personel_ayrilisi SET durum = 'Kapandı' WHERE kimlik = $1`, [a.kimlik]);
     await kartAc(db, { tur: 'SGK İşten Ayrılış Bildirgesi', kategori: 'islem', baslik: 'SGK İşten Ayrılış Bildirgesi', ozet: 'Bildirgenin 10 gün içinde verilmesi rica olunur.', oncelik: 'Yüksek', sonZaman: new Date(new Date(a.son_is_gunu).getTime() + 10 * 86_400_000), sahipRol: await rolId(db, IKS), nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik }); // YG-933
+    await kartAc(db, { tur: 'Çalışma Belgesi', kategori: 'islem', baslik: 'Çalışma Belgesini Veriniz', ozet: 'Çalışma belgesi sistemde üretilmiştir; Ayrılışlar listesinden indirip personele veriniz.', sahipRol: await rolId(db, IKS), nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik }); // YG-934
     n++;
   }
   for (const r of (await db.query(`SELECT k.olay_ref, k.isveren, o.ozet FROM is_kazasi k JOIN olay_kaydi o ON o.kimlik = k.olay_ref WHERE k.son_zaman < now() AND k.sgk_bildirim_tarihi IS NULL AND k.bildirim_belge IS NULL`)).rows) {
