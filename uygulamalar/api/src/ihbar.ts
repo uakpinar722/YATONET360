@@ -113,7 +113,9 @@ export async function ihbarAlindiGonder(c: Db, talepId: string, web: string) {
     await kartAc(c, { tur: 'Eksik Bilgi', kategori: 'gorev', baslik: `${t.talep_no} · Yat Sahibi İletişim Bilgisi Eksik`, ozet: 'İhbar Alındı bilgilendirmesi gönderilemedi; yat sahibi veya yetkilisinin iletişim bilgisini giriniz.', sahipKullanici: t.ilk_sorumlu_ref, nesneTuru: 'Talep', nesneKimligi: talepId });
     return false;
   }
-  return yatTarafinaYaz(c, { olay: `bld35:${talepId}`, kod: 'BLD-35', dil: dilKod(t.yazisma_dili), konu: `${t.talep_no} İhbar Alındı`, telefon, eposta, oncelik: t.oncelik, acil: t.acil_durum,
+  // YG-723, K-205: bakım ve planlı hizmette "geçmiş olsun" içermeyen BLD-35P varyantı seçilir.
+  const planli = t.oncelik === 'Planlı' || /planlı|bakım/i.test(t.ihbar_alindi_varyanti ?? '');
+  return yatTarafinaYaz(c, { olay: `bld35:${talepId}`, kod: planli ? 'BLD-35P' : 'BLD-35', dil: dilKod(t.yazisma_dili), konu: `${t.talep_no} İhbar Alındı`, telefon, eposta, oncelik: t.oncelik, acil: t.acil_durum,
     alanlar: { 'Tekne türü + Yat': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Boat type + Yacht': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Dosya No': t.talep_no, 'File No': t.talep_no, 'bağlantı': web, link: web } });
 }
 
