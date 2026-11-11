@@ -73,7 +73,8 @@ export function disaAktarimYollari(s: FastifyInstance, b: Baglam) {
     if (new Date(t.son_gecerlilik) < new Date()) { await b.db.query(`UPDATE disa_aktarim SET durum = 'Süresi Doldu' WHERE kimlik = $1`, [id]); return y.code(409).send({ hata: 'Aktarımın süresi dolmuştur; yeniden talep ediniz.' }); }
     const st = SETLER[t.veri_seti]!; const ad = { ...st.alanlar, ...st.hassas } as Record<string, string>;
     const satir = (await b.db.query(st.sql((t.alanlar as string[]).map((a) => `v.${a}`).join(', ')))).rows.slice(0, AKTARIM.azami);
-    const govde = '﻿' + [(t.alanlar as string[]).map((a) => csv(ad[a])).join(';'), ...satir.map((r) => (t.alanlar as string[]).map((a) => csv(r[a])).join(';'))].join('\r\n');
+    const ust = [`Veri Seti;${csv(t.veri_seti)}`, `Kapsam;${csv('Tüm kayıtlar (rol yetkisi kapsamında); filtre uygulanmadı')}`, `Üretim Zamanı;${csv(new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }) + ' (Europe/Istanbul)')}`, ''];
+    const govde = '﻿' + [...ust, (t.alanlar as string[]).map((a) => csv(ad[a])).join(';'), ...satir.map((r) => (t.alanlar as string[]).map((a) => csv(r[a])).join(';'))].join('\r\n');
     const ozet = createHash('sha256').update(govde).digest('hex');
     const dk = (await b.db.query(`INSERT INTO disa_aktarim_indirme (aktarim_ref, kayit_sayisi, ozet_sha256, indiren_ref, adres) VALUES ($1,$2,$3,$4,$5) RETURNING dosya_kimligi`, [id, satir.length, ozet, o.kullanici, i.ip])).rows[0].dosya_kimligi as string;
     await b.db.query(`UPDATE disa_aktarim SET durum = 'İndirildi' WHERE kimlik = $1`, [id]);

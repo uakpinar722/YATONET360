@@ -26,6 +26,7 @@ import { GeriYukleme } from './GeriYukleme';
 import { Varliklar } from './Varlik';
 import { YonetimRaporu } from './YonetimRaporu';
 import { IcDenetimOrneklem, YonetimEkleri } from './YonetimEkleri';
+import { RaporKatalogu } from './RaporKatalogu';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -836,6 +837,7 @@ export function IdariIslemler() {
       <SurumHizmet />
       <YonetimEkleri />
       <IcDenetimOrneklem />
+      <RaporKatalogu />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />

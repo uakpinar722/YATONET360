@@ -1,0 +1,36 @@
+import { useEffect, useState } from 'react';
+import { istek } from './api';
+
+type T = { kod: string; surum: number; ad: string; tur: string; sahip_rol: string; amac: string; kaynak: string; pay: string; payda: string | null; dahil: string | null; haric: string | null; zaman_boyutu: string; kesim: string; birim: string; yuvarlama: string; siklik: string; hassasiyet: string; beklenen_eylem: string | null; yururluk: string; surum_sayisi: number; son_basarili: { bitis: string; satir: number | null } | null; son_hata: string | null; planli: { surum: number; yururluk: string; not: string; etki: string }[] | null };
+type V = { tanimlar: T[]; duzenler: boolean; dagitim: { kimlik: string; kod: string; ad_soyad: string; amac: string; bitis: string; durum: string; cikis_nedeni: string | null }[]; yayinlar: { kimlik: string; kod: string; surum: number; donem: string; durum: string; gerekce: string | null; etkilenen_kararlar: string | null; dogru: string | null }[]; hedefGecmisi: { kod: string; hedef: string | null; uyari_esigi: string | null; kritik_esik: string | null; gerekce: string; ad_soyad: string | null; zaman: string }[]; kisiler: { kimlik: string; ad_soyad: string }[] };
+const zt = (s: string) => new Date(s).toLocaleString('tr-TR');
+/** YG-734–740, 742, 744, 751–754, 757: rapor ve gösterge kataloğu. */
+export function RaporKatalogu() {
+  const [v, setV] = useState<V | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<V>('/rapor-katalogu').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const is = (p: Promise<unknown>, s: string) => void p.then(() => { setM(s); return yk(); }).catch((e) => setM(e.message));
+  const al = (k: string, et: string, tip = 'text') => <span key={k}><label htmlFor={`rk-${k}`}>{et}</label><input id={`rk-${k}`} type={tip} value={g[k] ?? ''} onChange={(e) => setG({ ...g, [k]: e.target.value })} /></span>;
+  const sec = (k: string, et: string, l: string[]) => <span key={k}><label htmlFor={`rk-${k}`}>{et}</label><select id={`rk-${k}`} value={g[k] ?? ''} onChange={(e) => setG({ ...g, [k]: e.target.value })}><option value="">Seçiniz</option>{l.map((x) => <option key={x}>{x}</option>)}</select></span>;
+  const duzenle = (t: T) => setG({ kod: t.kod, ad: t.ad, tur: t.tur, sahipRol: t.sahip_rol, amac: t.amac, kaynak: t.kaynak, pay: t.pay, payda: t.payda ?? '', dahil: t.dahil ?? '', haric: t.haric ?? '', zamanBoyutu: t.zaman_boyutu, kesim: t.kesim, birim: t.birim, yuvarlama: t.yuvarlama, siklik: t.siklik, hassasiyet: t.hassasiyet, beklenenEylem: t.beklenen_eylem ?? '' });
+  return <details><summary>Rapor ve Gösterge Kataloğu · {v.tanimlar.length} tanım</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.tanimlar.map((t) => <div className={t.son_hata ? 'soru hata' : 'soru'} key={t.kod}><span><b>{t.kod}</b> · {t.ad} · {t.tur} · Sürüm {t.surum} ({t.yururluk.split('-').reverse().join('.')}) · Sahip: {t.sahip_rol} · {t.siklik} · {t.hassasiyet}
+      <br />Ölçü: {t.pay}{t.payda ? ` / ${t.payda}` : ''} · Birim: {t.birim} · Yuvarlama: {t.yuvarlama} · Zaman: {t.zaman_boyutu} tarihi · Kesim: {t.kesim}{t.dahil ? ` · Dahil: ${t.dahil}` : ''}{t.haric ? ` · Hariç: ${t.haric}` : ''}
+      <br />Kaynak: {t.kaynak.length > 160 ? `${t.kaynak.slice(0, 160)}…` : t.kaynak}{t.beklenen_eylem ? ` · Beklenen eylem: ${t.beklenen_eylem}` : ''}
+      <br />Son başarılı çalışma: {t.son_basarili ? `${zt(t.son_basarili.bitis)}${t.son_basarili.satir !== null ? ` (${t.son_basarili.satir} satır)` : ''}` : 'Henüz yok'}{t.son_hata ? ` · Son çalışma başarısız: ${zt(t.son_hata)}` : ''}
+      {t.planli?.map((p) => <span key={p.surum}><br />Sürüm {p.surum} {p.yururluk.split('-').reverse().join('.')} tarihinde yürürlüğe girecek · {p.not} · Karşılaştırma etkisi: {p.etki}</span>)}</span>
+      {v.duzenler && <button className="btn2 kucuk" onClick={() => duzenle(t)}>Yeni Sürüm</button>}</div>)}
+    {v.duzenler && <div className="tam"><div className="bolum">{g.kod ? `${g.kod} · Yeni Sürüm` : 'Yeni Tanım'}</div>
+      {al('kod', 'Kod')}{al('ad', 'Ad')}{sec('tur', 'Tür', ['Rapor', 'Gösterge'])}{al('sahipRol', 'Sahip Rol')}{al('amac', 'Amaç')}{al('kaynak', 'Kaynak Kayıtlar')}{al('pay', 'Ölçü / Pay')}{al('payda', 'Payda')}{al('dahil', 'Dahil Koşullar')}{al('haric', 'Hariç Koşullar')}
+      {sec('zamanBoyutu', 'Zaman Boyutu', ['Kayıt', 'Fiilî Olay', 'Onay', 'Kapanış', 'Fatura'])}{al('kesim', 'Kesim Zamanı ve Saat Dilimi')}{al('birim', 'Birim')}{al('yuvarlama', 'Yuvarlama')}{sec('siklik', 'Sıklık', ['Anlık', 'Günlük', 'Aylık'])}{sec('hassasiyet', 'Hassasiyet', ['Genel', 'Hassas'])}
+      {al('beklenenEylem', 'Beklenen Yönetim Eylemi')}{al('testKaniti', 'Örnek Kayıtlarla Test Kanıtı')}{al('yururluk', 'Yürürlük', 'date')}{al('degisiklikNotu', 'Değişiklik Notu')}{al('karsilastirmaEtkisi', 'Karşılaştırma Etkisi')}
+      <button className="btn2 kucuk" onClick={() => is(istek('/rapor-tanimi', g), 'Tanım kaydedildi.')}>Kaydet</button></div>}
+    <div className="bolum">Dağıtım Listesi</div>{v.dagitim.map((x) => <div className={x.durum === 'Aktif' ? 'soru' : 'soru bos'} key={x.kimlik}><span>{x.kod} · {x.ad_soyad} · {x.amac} · {x.bitis.split('-').reverse().join('.')} tarihine kadar · {x.durum}{x.cikis_nedeni ? ` (${x.cikis_nedeni})` : ''}</span>
+      {v.duzenler && x.durum === 'Aktif' && <button className="btn2 kucuk" onClick={() => is(istek(`/rapor-dagitim/${x.kimlik}/cikar`, {}), 'Alıcı çıkarıldı.')}>Çıkar</button>}</div>)}
+    {v.duzenler && <div className="tam">{sec('dKod', 'Rapor', v.tanimlar.map((t) => t.kod))}<span><label htmlFor="rk-dKisi">Alıcı</label><select id="rk-dKisi" value={g.dKisi ?? ''} onChange={(e) => setG({ ...g, dKisi: e.target.value })}><option value="">Seçiniz</option>{v.kisiler.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select></span>{al('dAmac', 'Amaç')}{al('dBitis', 'Bitiş', 'date')}
+      <button className="btn2 kucuk" onClick={() => is(istek('/rapor-dagitim', { kod: g.dKod, kullanici: g.dKisi, amac: g.dAmac, bitis: g.dBitis }), 'Alıcı eklendi.')}>Ekle</button></div>}
+    <div className="bolum">Yayınlar</div>{v.yayinlar.map((x) => <div className={x.durum === 'Geri Çağrıldı' ? 'soru hata' : 'soru'} key={x.kimlik}><span>{x.kod} · Sürüm {x.surum} · {x.donem} · {x.durum}{x.gerekce ? ` · ${x.gerekce}` : ''}{x.etkilenen_kararlar ? ` · Etkilenen kararlar: ${x.etkilenen_kararlar}` : ''}{x.dogru ? ` · Doğru sürüm: ${x.dogru}` : ''}</span>
+      {v.duzenler && x.durum === 'Yayımlandı' && <div className="tam">{al(`gg${x.kimlik}`, 'Geri Çağırma Gerekçesi')}{al(`ek${x.kimlik}`, 'Etkilenen Kararlar')}<button className="btn2 kucuk" onClick={() => is(istek(`/rapor-yayini/${x.kimlik}/geri-cagir`, { gerekce: g[`gg${x.kimlik}`], etkilenenKararlar: g[`ek${x.kimlik}`] }), 'Rapor geri çağrıldı; dağıtım listesine bildirildi.')}>Geri Çağır</button></div>}</div>)}
+    <div className="bolum">Hedef ve Eşik Değişiklikleri</div>{v.hedefGecmisi.length ? v.hedefGecmisi.map((x, i) => <div className="soru" key={i}><span>{zt(x.zaman)} · {x.kod} · Hedef {x.hedef ?? '—'} · Uyarı {x.uyari_esigi ?? '—'} · Kritik {x.kritik_esik ?? '—'} · {x.gerekce}{x.ad_soyad ? ` · ${x.ad_soyad}` : ''}</span></div>) : <div className="ozet bos">Değişiklik bulunmamaktadır.</div>}</details>;
+}

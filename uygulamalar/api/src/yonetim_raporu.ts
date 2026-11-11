@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez } from './bildirim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
+import { raporCalistir } from './rapor_katalogu.js';
 
 type Db = Pool | PoolClient;
 const GORUR = ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Yöneticisi'];
@@ -37,7 +38,7 @@ export async function yonetimRaporu(db: Db, donem: string) {
 export async function yonetimRaporuIsle(db: Pool, simdi = new Date()): Promise<boolean> {
   const o = new Date(Date.UTC(simdi.getFullYear(), simdi.getMonth() - 1, 1)); const donem = o.toISOString().slice(0, 7);
   if (!(await birKez(db, 'rp-tic-002', donem))) return false;
-  const r = await yonetimRaporu(db, donem); const t = (x: number) => x.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const r = await raporCalistir(db, 'RP-TIC-002', { donem, kaynak: 'Aylık iş' }, () => yonetimRaporu(db, donem)); const t = (x: number) => x.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const k: string[] = []; for (const ad of ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü']) { const id = (await db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0]?.kimlik; if (id) k.push(...await rolSahipleri(db, id)); }
   await bildir(db, { olay: `rp-tic-002:${donem}`, kullanicilar: [...new Set(k)], baslik: `RP-TIC-002 Aylık Yönetim Raporu Hazır: ${donem}`, ozet: `Faturalanmamış iş ${t(r.toplam.wip)} EUR · Tahsil edilmemiş ${t(r.toplam.tahsil)} EUR · Firmaya ödenmemiş ${t(r.toplam.firma)} EUR` }, simdi);
   return true;
@@ -50,6 +51,6 @@ export function yonetimRaporuYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [i.oturum!.kullanici, GORUR])).rowCount) return yok(y);
     const q = (i.query ?? {}) as { donem?: string }; const n = new Date();
     const donem = q.donem && /^\d{4}-(0[1-9]|1[0-2])$/.test(q.donem) ? q.donem : new Date(Date.UTC(n.getFullYear(), n.getMonth() - 1, 1)).toISOString().slice(0, 7);
-    return yonetimRaporu(b.db, donem);
+    return raporCalistir(b.db, 'RP-TIC-002', { donem }, () => yonetimRaporu(b.db, donem), (r) => r.wip.length + r.tahsil.length + r.firma.length); // YG-737
   });
 }

@@ -5,6 +5,7 @@ import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
+import { raporCalistir } from './rapor_katalogu.js';
 
 type Db = Pool | PoolClient;
 const GORUR = ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Strateji ve Kurumsal Gelişim Direktörü'];
@@ -102,7 +103,7 @@ export function yonetimEkYollari(s: FastifyInstance, b: Baglam) {
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolde = async (k: string, l: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, l])).rowCount);
   const donemAl = (q: unknown) => { const d = (q as { donem?: string })?.donem; const n = new Date(); return d && /^\d{4}-(0[1-9]|1[0-2])$/.test(d) ? d : new Date(Date.UTC(n.getFullYear(), n.getMonth() - 1, 1)).toISOString().slice(0, 7); };
-  s.get('/yonetim-ekleri', oturumlu, async (i, y) => (await rolde(i.oturum!.kullanici, GORUR)) ? yonetimEkleri(b.db, donemAl(i.query)) : yok(y));
+  s.get('/yonetim-ekleri', oturumlu, async (i, y) => (await rolde(i.oturum!.kullanici, GORUR)) ? raporCalistir(b.db, 'RP-YON-EK', { donem: donemAl(i.query) }, () => yonetimEkleri(b.db, donemAl(i.query))) : yok(y));
   s.get('/ic-denetim/orneklem', oturumlu, async (i, y) => {
     if (!(await rolde(i.oturum!.kullanici, DENETIM))) return yok(y);
     return (await b.db.query(`SELECT o.donem, d.kimlik, d.dosya_no, o.havuz, d.kapanis_zamani FROM ic_denetim_orneklemi o JOIN dosya d ON d.kimlik = o.dosya_ref ORDER BY o.donem DESC, d.dosya_no LIMIT 300`)).rows;
