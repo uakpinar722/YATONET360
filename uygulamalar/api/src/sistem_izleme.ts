@@ -4,8 +4,11 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 
 const BT = ['Bilgi İşlem Müdürü', 'Bilgi İşlem Müdür Yardımcısı', 'Sistem Yöneticisi', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'CEO', 'Genel Müdür Yardımcısı'];
 /** YG-778: kritik iş akışları; istek yolu önekine göre. */
-export const AKISLAR: [RegExp, string][] = [[/^\/api\/kimlik\//, 'Giriş ve Kimlik'], [/^\/api\/ihbar/, 'İhbar ve Talep'], [/^\/api\/dosya/, 'Dosya'], [/^\/api\/(teklif|fiyat-teklifi)/, 'Teklif'], [/^\/api\/is\//, 'Onay ve Görev'], [/^\/api\/(fatura|tahsilat|hakedis|odeme)/, 'Fatura ve Ödeme'], [/^\/api\/(belge|dosya-belge)/, 'Belge'], [/^\/api\/(portal|sigorta|kurumsal|firma-portal)/, 'Dış Portallar']];
-type Kova = { adet: number; hata: number; toplam: number; azami: number };
+export const AKISLAR: [RegExp, string][] = [[/^\/api\/ara\b/, 'Arama'], [/^\/api\/(yonetim-raporu|ceo-raporu|kurumsal-rapor|kurumsal\/rapor|analiz|yonetim-ekleri|rapor-katalogu|yonetim-degerlendirmesi)|\/belge(\?|$)/, 'Rapor Üretimi'], [/^\/api\/belge\/yukle|^\/api\/belge$/, 'Belge Yükleme'], [/^\/api\/kimlik\//, 'Giriş ve Kimlik'], [/^\/api\/ihbar/, 'İhbar ve Talep'], [/^\/api\/dosya/, 'Dosya'], [/^\/api\/(teklif|fiyat-teklifi)/, 'Teklif'], [/^\/api\/is\//, 'Onay ve Görev'], [/^\/api\/(fatura|tahsilat|hakedis|odeme)/, 'Fatura ve Ödeme'], [/^\/api\/(belge|dosya-belge)/, 'Belge'], [/^\/api\/(portal|sigorta|kurumsal|firma-portal)/, 'Dış Portallar']];
+type Kova = { adet: number; hata: number; toplam: number; azami: number; yavas: number };
+/** YG-1355: akış başına yanıt süresi hedefi (ms); hedefi aşan istek uç gecikme sayılır. */
+export const HEDEF_MS: Record<string, number> = { Arama: 1500, Dosya: 2000, 'Belge Yükleme': 5000, 'Onay ve Görev': 1500, 'Rapor Üretimi': 10000, 'Giriş ve Kimlik': 2000 };
+const hedef = (akis: string) => HEDEF_MS[akis] ?? 3000;
 const BELLEK = new Map<string, Kova>();
 const dakika = (d = new Date()) => { const x = new Date(d); x.setUTCSeconds(0, 0); return x.toISOString(); };
 
@@ -13,15 +16,15 @@ const dakika = (d = new Date()) => { const x = new Date(d); x.setUTCSeconds(0, 0
 export function olcumKur(s: FastifyInstance) {
   s.addHook('onResponse', async (i, y) => {
     const akis = AKISLAR.find(([r]) => r.test(i.url))?.[1] ?? 'Diğer'; const k = `${dakika()}|${akis}`;
-    const v = BELLEK.get(k) ?? { adet: 0, hata: 0, toplam: 0, azami: 0 }; const ms = Math.round(y.elapsedTime);
-    v.adet++; if (y.statusCode >= 500) v.hata++; v.toplam += ms; v.azami = Math.max(v.azami, ms); BELLEK.set(k, v);
+    const v = BELLEK.get(k) ?? { adet: 0, hata: 0, toplam: 0, azami: 0, yavas: 0 }; const ms = Math.round(y.elapsedTime);
+    v.adet++; if (ms > hedef(akis)) v.yavas++; if (y.statusCode >= 500) v.hata++; v.toplam += ms; v.azami = Math.max(v.azami, ms); BELLEK.set(k, v);
   });
 }
 
 /** Bellekteki ölçümleri yazar ve çalışma nabzını işaretler (her dakika). */
 export async function olcumYaz(db: Pool, simdi = new Date()): Promise<number> {
   const l = [...BELLEK]; BELLEK.clear();
-  for (const [k, v] of l) { const [dk, akis] = k.split('|'); await db.query(`INSERT INTO istek_olcumu (dakika, akis, adet, hata, toplam_ms, azami_ms) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (dakika, akis) DO UPDATE SET adet = istek_olcumu.adet + EXCLUDED.adet, hata = istek_olcumu.hata + EXCLUDED.hata, toplam_ms = istek_olcumu.toplam_ms + EXCLUDED.toplam_ms, azami_ms = greatest(istek_olcumu.azami_ms, EXCLUDED.azami_ms)`, [dk, akis, v.adet, v.hata, v.toplam, v.azami]); }
+  for (const [k, v] of l) { const [dk, akis] = k.split('|'); await db.query(`INSERT INTO istek_olcumu (dakika, akis, adet, hata, toplam_ms, azami_ms, yavas) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (dakika, akis) DO UPDATE SET adet = istek_olcumu.adet + EXCLUDED.adet, yavas = istek_olcumu.yavas + EXCLUDED.yavas, hata = istek_olcumu.hata + EXCLUDED.hata, toplam_ms = istek_olcumu.toplam_ms + EXCLUDED.toplam_ms, azami_ms = greatest(istek_olcumu.azami_ms, EXCLUDED.azami_ms)`, [dk, akis, v.adet, v.hata, v.toplam, v.azami, v.yavas]); }
   await db.query(`INSERT INTO calisma_nabzi (dakika) VALUES ($1) ON CONFLICT DO NOTHING`, [dakika(simdi)]);
   await db.query(`DELETE FROM istek_olcumu WHERE dakika < now() - interval '90 days'`); await db.query(`DELETE FROM calisma_nabzi WHERE dakika < now() - interval '90 days'`);
   return l.length;
@@ -37,8 +40,8 @@ async function kullanilabilirlik(db: Pool, saat: number) {
 
 export async function sistemIzleme(db: Pool) {
   await olcumYaz(db);
-  const akislar = (await db.query(`SELECT akis, sum(adet)::int adet, sum(hata)::int hata, round(sum(toplam_ms)::numeric / nullif(sum(adet), 0))::int ortalama_ms, max(azami_ms) azami_ms FROM istek_olcumu WHERE dakika > now() - interval '24 hours' GROUP BY akis ORDER BY sum(adet) DESC`)).rows
-    .map((x) => ({ ...x, hataOrani: x.adet ? Math.round((1000 * x.hata) / x.adet) / 10 : 0 }));
+  const akislar = (await db.query(`SELECT akis, sum(adet)::int adet, sum(hata)::int hata, round(sum(toplam_ms)::numeric / nullif(sum(adet), 0))::int ortalama_ms, max(azami_ms) azami_ms, sum(yavas)::int yavas FROM istek_olcumu WHERE dakika > now() - interval '24 hours' GROUP BY akis ORDER BY sum(adet) DESC`)).rows
+    .map((x) => ({ ...x, hataOrani: x.adet ? Math.round((1000 * x.hata) / x.adet) / 10 : 0, hedefMs: hedef(x.akis), ucGecikmeOrani: x.adet ? Math.round((1000 * x.yavas) / x.adet) / 10 : 0 }));
   const kapasite = (await db.query(`SELECT pg_database_size(current_database())::bigint vt_bayt, (SELECT count(*)::int FROM pg_stat_activity WHERE datname = current_database()) baglanti, current_setting('max_connections')::int azami_baglanti, (SELECT count(*)::int FROM belge) belge, (SELECT count(*)::int FROM dosya WHERE statu IN ('Açılış Kontrolünde', 'Aktif', 'Kontrollü Askıda')) acik_dosya`)).rows[0];
   const kuyruk = (await db.query(`SELECT (SELECT count(*)::int FROM gonderim WHERE durum = 'Bekliyor') gonderim, (SELECT round(extract(epoch FROM now() - min(olusturma_zamani)) / 60)::int FROM gonderim WHERE durum = 'Bekliyor') gonderim_en_eski_dk,
       (SELECT count(*)::int FROM gonderim WHERE durum = 'Bekliyor' AND deneme > 2) gonderim_tekrar, (SELECT count(*)::int FROM belge_uretim WHERE durum = 'Bekliyor') belge_uretim, (SELECT count(*)::int FROM is_karti WHERE durum = 'Bekliyor' AND son_zaman < now()) geciken_is`)).rows[0];

@@ -40,14 +40,29 @@ export function destekSonAn(baslangic: Date, saat: number, seviye: string, tatil
   return new Date(k.getTime() + 12 * SAAT - TZ);
 }
 
+/** YG-538: eskalasyon matrisi; tür, eşik, muhatap ve beklenen eylem. */
+export const ESKALASYON: Record<string, { esik: string; roller: string[]; eylem: string }> = {
+  'Teknik': { esik: 'Yanıt veya çözüm süresi aşımı', roller: ['Bilgi İşlem Müdürü'], eylem: 'Kaynak ata, geçici çözüm uygula, kullanıcıya durum bildir' },
+  'Süreç': { esik: 'Kritik süreç etkilendiğinde yanıt süresi aşımı', roller: ['Operasyon Müdürü', 'Bilgi İşlem Müdürü'], eylem: 'Süreci alternatif kayıtla sürdür, etkilenen dosyaları belirle' },
+  'Güvenlik': { esik: 'Güvenlik etkili her talepte süre beklenmeden', roller: ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Hukuk ve Uyum Direktörü'], eylem: 'Olay kaydı aç, erişimi sınırla, veri ihlali değerlendirmesi başlat' },
+  'Tedarikçi': { esik: 'Dış hizmet kaynaklı talepte çözüm süresi aşımı', roller: ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü'], eylem: 'Sağlayıcıyı hizmet seviyesi kapsamında devreye al, hizmet seviyesi ölçümüne işle' },
+  'Yönetim': { esik: 'D1 talepte geçici çözüm veya çözüm süresi aşımı', roller: ['Genel Müdür Yardımcısı', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'], eylem: 'Kaynak ve öncelik kararı ver, gerekirse iş sürekliliği planını işlet' },
+};
+export function eskalasyonTuru(t: { guvenlik: boolean; kritik_surec: boolean; hizmet: string | null; seviye: string }, asim: string): string[] {
+  const l = [t.guvenlik ? 'Güvenlik' : t.hizmet && /sağlayıcı|tedarik|dış hizmet|entegrasyon/i.test(t.hizmet) ? 'Tedarikçi' : t.kritik_surec ? 'Süreç' : 'Teknik'];
+  if (t.seviye === 'D1' && (asim === 'gecici' || asim === 'cozum')) l.push('Yönetim');
+  return l;
+}
+
 /** YG-1410: yanıt ve çözüm süresi aşılınca BT yönetimi bir kez uyarılır. */
 export async function destekSureIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;
-  for (const t of (await db.query(`SELECT kimlik, talep_no, seviye, yanit_son, yanit_zamani, cozum_son, gecici_cozum_son, gecici_cozum_zamani, durum FROM destek_talebi WHERE durum IN ('Açık', 'Yanıtlandı')`)).rows) {
+  for (const t of (await db.query(`SELECT kimlik, talep_no, seviye, yanit_son, yanit_zamani, cozum_son, gecici_cozum_son, gecici_cozum_zamani, durum, guvenlik, kritik_surec, hizmet FROM destek_talebi WHERE durum IN ('Açık', 'Yanıtlandı')`)).rows) {
     const asim = !t.yanit_zamani && new Date(t.yanit_son) < simdi ? 'yanit' : t.gecici_cozum_son && !t.gecici_cozum_zamani && new Date(t.gecici_cozum_son) < simdi ? 'gecici' : t.cozum_son && new Date(t.cozum_son) < simdi ? 'cozum' : null;
     if (!asim || !(await birKez(db, 'destek_sure', `${t.kimlik}:${asim}`))) continue;
     const al: string[] = []; for (const r of BT.slice(0, 2)) al.push(...await rolSahipleri(db, await rolId(db, r)));
-    await bildir(db, { olay: `destek-sure:${t.kimlik}:${asim}`, kullanicilar: [...new Set(al)], baslik: `${t.talep_no} · ${t.seviye} ${asim === 'yanit' ? 'Yanıt' : asim === 'gecici' ? 'Geçici Çözüm' : 'Çözüm'} Süresi Aşıldı`, oncelik: t.seviye === 'D1' ? 'Kritik' : 'Yüksek' }, simdi);
+    const turler = eskalasyonTuru(t, asim); for (const tr of turler) for (const r of ESKALASYON[tr]!.roller) al.push(...await rolSahipleri(db, await rolId(db, r))); // YG-538
+    await bildir(db, { olay: `destek-sure:${t.kimlik}:${asim}`, kullanicilar: [...new Set(al)], ozet: `Eskalasyon: ${turler.map((x) => `${x} – ${ESKALASYON[x]!.eylem}`).join('; ')}`, baslik: `${t.talep_no} · ${t.seviye} ${asim === 'yanit' ? 'Yanıt' : asim === 'gecici' ? 'Geçici Çözüm' : 'Çözüm'} Süresi Aşıldı`, oncelik: t.seviye === 'D1' ? 'Kritik' : 'Yüksek' }, simdi);
     n++;
   }
   return n;

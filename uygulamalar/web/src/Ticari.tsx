@@ -35,6 +35,7 @@ import { SistemIzleme } from './SistemIzleme';
 import { Kapasite } from './Kapasite';
 import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
 import { VeriKalitesi } from './VeriKalitesi';
+import { SureklilikOrtam } from './SureklilikOrtam';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -858,6 +859,7 @@ export function IdariIslemler() {
       <Kapasite />
       <EntegrasyonEnvanteri />
       <VeriKalitesi />
+      <SureklilikOrtam />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
