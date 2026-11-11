@@ -31,6 +31,7 @@ import { Analiz, VeriProfili } from './Analiz';
 import { MasterPlan, UyumMatrisi } from './MasterPlan';
 import { SigortaPerformans } from './SigortaPerformans';
 import { OnMuhasebeRaporlari, SatisGorusmeleri, YonetimDegerlendirmesi } from './YonetimTakip';
+import { SistemIzleme } from './SistemIzleme';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -850,6 +851,7 @@ export function IdariIslemler() {
       <OnMuhasebeRaporlari />
       <SatisGorusmeleri />
       <YonetimDegerlendirmesi />
+      <SistemIzleme />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />

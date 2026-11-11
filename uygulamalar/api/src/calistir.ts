@@ -43,6 +43,7 @@ import { disHizmetIsle } from './surum_hizmet.js';
 import { yonetimEkIsle } from './yonetim_ek.js';
 import { raporKatalogIsle } from './rapor_katalogu.js';
 import { sigortaPerformansIsle } from './sigorta_performans.js';
+import { olcumYaz } from './sistem_izleme.js';
 import { icIlerlemeGorevi } from './ic_ilerleme.js';
 import { kurumsalRaporIsle } from './kurumsal_rapor.js';
 import { bolgeTuret } from './ana_veri.js';
@@ -77,6 +78,7 @@ await s.listen({ host: '127.0.0.1', port: 3001 });
 const baglam = { db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anahtar: e.YATONET_SIFRELEME_ANAHTARI!, guvenliCerez: false, webAdresi: 'http://127.0.0.1:5173' };
 setInterval(() => { kuyrukIsle(baglam).catch((h) => s.log.error(h.message)); }, 30_000);
 setInterval(() => { onayHatirlat(db).catch((h) => s.log.error(h.message)); }, 300_000);
+setInterval(() => { olcumYaz(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { toplantiHatirlat(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); mutabakatIsle(db).catch((h) => s.log.error(h.message)); teslimIsle(db).catch((h) => s.log.error(h.message)); geciciOnarimIsle(db).catch((h) => s.log.error(h.message)); personelDurumIsle(db).catch((h) => s.log.error(h.message)); konumTemizle(db).catch((h) => s.log.error(h.message)); kvkkIsle(db).catch((h) => s.log.error(h.message)); yetkiIsle(db).catch((h) => s.log.error(h.message)); olayIsle(db).catch((h) => s.log.error(h.message)); uyumIsle(db).catch((h) => s.log.error(h.message)); caymaSureIsle(db).catch((h) => s.log.error(h.message)); gorevAyriligiIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 // YG-1274: yedek ve YG-1186: sağlık izleme
