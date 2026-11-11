@@ -187,7 +187,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <button className="btn2 kucuk" disabled={!tes.alici.trim() || !foto} onClick={() => void yap(() => istek(`/dosya/${id}/teslim-onaysiz`, { ...tes, belge: foto }), 'Teslim edildi, onay verilmedi olarak kaydedildi.')}>Onaysız Teslimi Kaydet</button>
     <button className="btn2 kucuk" disabled={!tes.alici.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/tam-ziya-teslim`, { teslimAlan: `${tes.aliciTuru}: ${tes.alici.trim()}` }), 'Tam ziya teslimi kaydedildi; kapanışı başlatabilirsiniz.')}>Tam Ziya Teslimini Kaydet</button>
 
-    <div className="bolum">Yat Kabul Tutanağı</div>
+    <div className="bolum">Yat Teslim Alma ve Envanter Tutanağı (Yat Onarım Sözleşmesi Ek-2)</div>
     <label htmlFor="ka-t">Teslim Alan Taraf</label><select id="ka-t" value={ka.teslimAlan} onChange={(e) => setKa({ ...ka, teslimAlan: e.target.value })}><option>LGM</option><option>Görevli Firma</option></select>
     <label htmlFor="ka-e">Envanter</label><input id="ka-e" value={ka.envanter} onChange={(e) => setKa({ ...ka, envanter: e.target.value })} />
     <label htmlFor="ka-a">Anahtarlar</label><input id="ka-a" value={ka.anahtarlar} onChange={(e) => setKa({ ...ka, anahtarlar: e.target.value })} />
