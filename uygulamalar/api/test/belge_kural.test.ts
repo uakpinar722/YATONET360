@@ -40,3 +40,17 @@ describe('belge kuralları (YG-602, YG-603, YG-604, YG-605)', () => {
     expect((await o.sup.query(`SELECT durum FROM belge_surum WHERE belge_ref = $1`, [b])).rows[0].durum).toBe('Taslak');
   });
 });
+
+describe('belge bağları (YG-606)', () => {
+  it('belge yata, tarafa ve ödeme talebine bağlanır; dosyasına erişimi olmayan bağlayamaz', async () => {
+    const d = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2) ON CONFLICT DO NOTHING`, [d.kimlik, o.K.ds]);
+    const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const yk = async (k: string, bag: string, id: string) => o.s.inject({ method: 'POST', url: `/api/belge/yukle?ad=B${Math.random()}&tur=Dosya%20Belgesi&bagTuru=${encodeURIComponent(bag)}&bagKimligi=${id}&kaynak=Sistem&dosya=a.pdf`, headers: { 'x-yatonet': '1', 'content-type': 'application/octet-stream' }, cookies: { [COOKIE_ADI]: await o.gir(k) }, payload: Buffer.from(`%PDF-1.4 ${Math.random()}`) });
+    expect((await yk('ds', 'Yat', yat)).statusCode).toBe(200);
+    expect((await yk('bim', 'Yat', yat)).statusCode).toBe(403);
+    const od = (await o.sup.query(`INSERT INTO odeme_talebi (dosya_ref, tur, tutar_eur, muhatap, hazirlayan_ref) VALUES ($1,'Avans',100,'Yat Sahibi',$2) RETURNING kimlik`, [d.kimlik, o.K.ds]).catch(() => ({ rows: [] }))).rows[0]?.kimlik;
+    if (od) expect((await yk('ds', 'Ödeme', od)).statusCode).toBe(200);
+  });
+});

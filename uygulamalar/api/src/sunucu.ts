@@ -145,6 +145,7 @@ import { belgeOnceligiYollari } from './belge_onceligi.js';
 import { sablonSurumYollari } from './sablon_surum.js';
 import { sozlesmeTakipYollari } from './sozlesme_takip.js';
 import { belgeKuralYollari } from './belge_kural.js';
+import './belge_bag_ek.js'; // YG-606: Yat, Taraf ve Ödeme bağları
 import { butceYollari } from './butce.js';
 import { kritikAnahtari } from './depo.js';
 import { sahaYollari } from './saha.js';
