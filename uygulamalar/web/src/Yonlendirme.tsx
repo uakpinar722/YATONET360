@@ -93,20 +93,27 @@ const FIIL: [RegExp, string][] = [
 export const dugmeAciklamasi = (ad: string): string | null => OZEL[ad] ?? FIIL.find(([r]) => r.test(ad))?.[1] ?? null;
 export function DugmeAciklamalari() {
   useEffect(() => {
-    let z: number | undefined;
-    const uygula = () => {
-      for (const b of Array.from(document.querySelectorAll('button'))) {
+    const isle = (dugmeler: Iterable<HTMLButtonElement>) => {
+      for (const b of dugmeler) {
         const ad = (b.textContent ?? '').trim();
         if (!ad || b.dataset.aciklamaAd === ad || b.classList.contains('soru-isareti')) continue;
         b.dataset.aciklamaAd = ad; const a = dugmeAciklamasi(ad);
-        if (!a) { delete b.dataset.aciklama; continue; }
-        b.dataset.aciklama = a; b.setAttribute('aria-description', a);
+        if (!a) { if (b.dataset.aciklama) { b.removeAttribute('aria-label'); b.removeAttribute('aria-description'); if (b.dataset.aciklamaOto) { b.removeAttribute('title'); delete b.dataset.aciklamaOto; } } delete b.dataset.aciklama; continue; }
+        b.dataset.aciklama = a; b.setAttribute('aria-label', ad); b.setAttribute('aria-description', a);
         if (!b.title || b.dataset.aciklamaOto) { b.title = a; b.dataset.aciklamaOto = '1'; }
       }
     };
-    const g = new MutationObserver(() => { window.clearTimeout(z); z = window.setTimeout(uygula, 50); });
-    uygula(); g.observe(document.body, { childList: true, subtree: true, characterData: true });
-    return () => { g.disconnect(); window.clearTimeout(z); };
+    // Gözlemci değişiklikleri toplu verir; yalnız değişen bölgedeki düğmeler işlenir, ad görünen metinle aynı anda güncellenir.
+    const g = new MutationObserver((kayitlar) => {
+      const s = new Set<HTMLButtonElement>();
+      for (const k of kayitlar) {
+        const h = k.target instanceof Element ? k.target : k.target.parentElement; const d = h?.closest('button'); if (d) s.add(d);
+        for (const n of Array.from(k.addedNodes)) if (n instanceof Element) { if (n instanceof HTMLButtonElement) s.add(n); n.querySelectorAll('button').forEach((x) => s.add(x)); }
+      }
+      if (s.size) isle(s);
+    });
+    isle(Array.from(document.querySelectorAll('button'))); g.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return () => g.disconnect();
   }, []);
   return null;
 }

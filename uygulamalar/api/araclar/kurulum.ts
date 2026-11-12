@@ -118,7 +118,15 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   // Onaylı metin kütüphanesi (YG-600, YG-626, YG-692). Kaynak: YATONET 360 KAYNAK\sablon.
   const tsv = (d: string) => readFileSync(join(KOK, 'veri', 'sablon', d), 'utf8').split(/\r?\n/).filter(Boolean).slice(1).map((l) => l.split('\t'));
   const metin = async (kod: string, dil: string, tur: string, baslik: string | null, m: string | undefined) => {
-    if (m) await c.query(`INSERT INTO sablon_metni (kod, dil, tur, baslik, metin) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (kod, dil, surum) DO UPDATE SET metin = EXCLUDED.metin, baslik = EXCLUDED.baslik`, [kod, dil, tur, baslik, m]);
+    if (!m) return;
+    const son = (await c.query(`SELECT surum, metin, baslik, durum, hazirlayan_ref FROM sablon_metni WHERE kod = $1 AND dil = $2 ORDER BY surum DESC LIMIT 1`, [kod, dil])).rows[0];
+    if (!son) { await c.query(`INSERT INTO sablon_metni (kod, dil, tur, baslik, metin, onay_dayanagi, yayim_zamani) VALUES ($1,$2,$3,$4,$5,'CEO onaylı metin kütüphanesi (kurulum)',now())`, [kod, dil, tur, baslik, m]); return; }
+    // YG-600: uygulama içinden yönetilen metne kurulum dokunmaz; katalogdaki değişiklik yeni sürüm olur, eski sürüm Yerine Geçti.
+    if (son.hazirlayan_ref || son.durum !== 'Yürürlükte') return;
+    if (son.metin === m && son.baslik === baslik) return;
+    if (son.metin === m) { await c.query(`UPDATE sablon_metni SET baslik = $4 WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, son.surum, baslik]); return; }
+    await c.query(`UPDATE sablon_metni SET durum = 'Yerine Geçti' WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, son.surum]);
+    await c.query(`INSERT INTO sablon_metni (kod, dil, surum, tur, baslik, metin, onay_dayanagi, degisiklik_gerekcesi, yayim_zamani) VALUES ($1,$2,$3,$4,$5,$6,'CEO onaylı metin kütüphanesi (kurulum)','Katalog güncellemesi',now())`, [kod, dil, `R${String(Number(String(son.surum).replace(/\D/g, '')) + 1).padStart(2, '0')}`, tur, baslik, m]);
   };
   for (const [kod, tr, en] of tsv('matbu_M1_M10.tsv')) { await metin(kod!, 'tr', 'Matbu', null, tr); await metin(kod!, 'en', 'Matbu', null, en); }
   for (const r of tsv('bildirim_katalog.tsv')) { await metin(r[0]!, 'tr', 'Bildirim', `${r[1]} · ${r[2]}`, r[4]); await metin(r[0]!, 'en', 'Bildirim', `${r[1]} · ${r[2]}`, r[5]); }

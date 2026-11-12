@@ -116,13 +116,13 @@ try {
     await p.getByLabel('Tür', { exact: true }).selectOption(tur);
     await p.getByLabel('Firma', { exact: true }).locator(`option[value="${firma}"]`).waitFor({ state: 'attached', timeout: 90_000 }); // yük altında firma listesi geç gelebilir
     await p.getByLabel('Firma', { exact: true }).selectOption(firma);
-    await p.getByLabel('Uygulama Yeri').fill('Marmaris'); await p.getByLabel('Kapsam', { exact: true }).fill(kapsam);
-    if (bedel) await p.getByLabel('Firma Bedeli (EUR)').fill(bedel);
-    if (teklif) await p.getByLabel('Onaylı Teklif').selectOption({ index: 1 });
+    await p.getByLabel('Uygulama Yeri', { exact: true }).fill('Marmaris'); await p.getByLabel('Kapsam', { exact: true }).fill(kapsam);
+    if (bedel) await p.getByLabel('Firma Bedeli (EUR)', { exact: true }).fill(bedel);
+    if (teklif) await p.getByLabel('Onaylı Teklif', { exact: true }).selectOption({ index: 1 });
     await tikla(p, 'İş Emri Oluştur');
   };
   const firmaIsEmri = async (no) => { const p = await al('fir', E); await p.getByRole('button', { name: 'İş Emirleri' }).first().click(); await p.locator('tr', { hasText: no }).getByRole('button', { name: 'Aç' }).click(); await p.getByRole('heading', { name: no }).waitFor(); return p; };
-  const firmaKabul = async (no) => { const p = await firmaIsEmri(no); await p.getByLabel('Onay Kodu').fill(await kod('fir')); await tikla(p, 'Kabul Ediyorum'); return p; };
+  const firmaKabul = async (no) => { const p = await firmaIsEmri(no); await p.getByLabel('Onay Kodu', { exact: true }).fill(await kod('fir')); await tikla(p, 'Kabul Ediyorum'); return p; };
 
   // Keşif iş emri ekrandan; firma kabul eder
   const pOy = await al('oy', E); await dosyaAc(pOy, d.dosyaNo);
@@ -139,7 +139,7 @@ try {
   const pTu = await al('tu', E); await dosyaAc(pTu, d.dosyaNo);
   await pTu.getByText('Onaylı kalite planı olmadan onarım işi başlatılamaz.').waitFor();
   kontrol('dosya ekranı kalite planı uyarısı gösterir', true);
-  await pTu.getByLabel('Plan Özeti').fill('Gövde onarımı'); await pTu.getByLabel('Gereklilik', { exact: true }).fill('Sızdırmazlık'); await pTu.getByLabel('Doğrulama Yöntemi').fill('Basınç testi');
+  await pTu.getByLabel('Plan Özeti', { exact: true }).fill('Gövde onarımı'); await pTu.getByLabel('Gereklilik', { exact: true }).fill('Sızdırmazlık'); await pTu.getByLabel('Doğrulama Yöntemi', { exact: true }).fill('Basınç testi');
   await tikla(pTu, 'Kalite Planını Onaya Gönder');
   const kart = (await sup.query(`SELECT kod FROM kartela_kalemi LIMIT 1`)).rows[0].kod;
   await pTu.locator('#c-a').fill('Gövde laminasyonu'); await pTu.locator('#c-k').fill(kart); await pTu.locator('#c-m').fill('10');
@@ -173,10 +173,10 @@ try {
 
   // Teklif
   const pTs = await al('ts', E); await dosyaAc(pTs, d.dosyaNo);
-  await pTs.getByLabel('Firma Fiyat Teklifi').selectOption({ index: 1 });
+  await pTs.getByLabel('Firma Fiyat Teklifi', { exact: true }).selectOption({ index: 1 });
   await tikla(pTs, 'Fiyat Teklifi Hazırla');
-  await pTs.getByLabel('Masraf Açıklaması (Tesis Bedeli)').fill('Travel lift bedeli'); await pTs.getByLabel('Gerçek Tutar (EUR)').fill('1.000,00');
-  await pTs.getByLabel('Tesis Teklifi veya Tarifesi').setInputFiles(TEMP.replace('.pdf', '5.pdf')); await pTs.getByText('Dosya yüklendi.').first().waitFor();
+  await pTs.getByLabel('Masraf Açıklaması (Tesis Bedeli)', { exact: true }).fill('Travel lift bedeli'); await pTs.getByLabel('Gerçek Tutar (EUR)', { exact: true }).fill('1.000,00');
+  await pTs.getByLabel('Tesis Teklifi veya Tarifesi', { exact: true }).setInputFiles(TEMP.replace('.pdf', '5.pdf')); await pTs.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTs, 'Masraf Ekle');
   kontrol('tesis bedeli teklife gerçek tutarıyla Masraf olarak eklenir', (await sup.query(`SELECT tutar_eur FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 AND k.bedel_turu = 'Masraf'`, [d.kimlik])).rows[0]?.tutar_eur === '1000.00');
   await tikla(pTs, 'Onaya Gönder');
@@ -185,7 +185,7 @@ try {
   await kartKarar(E, 'mfy', no, 'Onaya Gönder'); await kartKarar(E, 'mfm', no, 'Onaya Gönder'); await kartKarar(E, 'tid', no, 'Onayla');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Gönder');
   kontrol('sigortaya teklif ilk düğmeyle gitmez', (await sup.query(`SELECT statu FROM fiyat_teklifi WHERE teklif_no = $1`, [no])).rows[0].statu === 'Onaylı');
-  kontrol('teyit ekranı giden ekleri gösterir', await pTs.getByText(`Fiyat Teklifi ${no}.pdf`).first().isVisible());
+  kontrol('teyit ekranı giden ekleri gösterir', await pTs.getByText(`Fiyat Teklifi ${no}.pdf`).first().waitFor({ timeout: 8000 }).then(() => true).catch(() => false));
   const on = await pTs.getByRole('link', { name: 'Teklif PDF Önizleme' }).first().getAttribute('href');
   kontrol('teklif PDF önizlemesi açılır', (await pTs.evaluate(async (u) => (await fetch(u)).headers.get('content-type'), on)).includes('pdf'));
   await pTs.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).click();
@@ -209,7 +209,7 @@ try {
 
   await dosyaAc(pDs, d.dosyaNo);
   await pDs.getByText('Kalemler ve Eksper Raporu').first().waitFor();
-  kontrol('Dosya Sorumlusu eksper tutarı girebilir', await pDs.getByLabel('Eksper Tutarı 1').first().isEditable());
+  kontrol('Dosya Sorumlusu eksper tutarı girebilir', await pDs.getByLabel('Eksper Tutarı 1', { exact: true }).first().isEditable());
   await tasmaYok(pDs, 'eksper_karsilastirma');
   await pDs.getByText('Kalemler ve Eksper Raporu').first().scrollIntoViewIfNeeded();
   await pDs.screenshot({ path: join(CIKTI, 'eksper_karsilastirma.png') });
@@ -219,16 +219,16 @@ try {
   await sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur) VALUES ($1,1,'Pervane','Onarım','İşçilik',1,'adet',100,100), ($1,2,'Şaft','Onarım','İşçilik',1,'adet',300,300)`, [yd]);
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   const adresDugme = pDs.getByRole('button', { name: 'Adres Gir' }); await pDs.getByText('Fiyat Teklifleri').first().waitFor();
-  if (await adresDugme.count()) { await adresDugme.click(); await pDs.getByLabel('Sigorta E-postası').fill('hasar@deneme.local'); await tikla(pDs, 'Kaydet'); await pDs.getByText('Sigorta E-postası: hasar@deneme.local').waitFor(); }
+  if (await adresDugme.count()) { await adresDugme.click(); await pDs.getByLabel('Sigorta E-postası', { exact: true }).fill('hasar@deneme.local'); await tikla(pDs, 'Kaydet'); await pDs.getByText('Sigorta E-postası: hasar@deneme.local').waitFor(); }
   kontrol('sigorta adresi dosya ekranından girilir', await pDs.getByText(/Sigorta E-postası: /).first().isVisible());
   const ydKart = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
-  await ydKart.getByLabel('Kalem Seç 1').check();
-  await ydKart.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
+  await ydKart.getByLabel('Kalem Seç 1', { exact: true }).check();
+  await ydKart.getByLabel('Onaylayan Yetkili', { exact: true }).fill('Hasar Müdürü');
   await ydKart.getByLabel(/Onay Belgesi/).setInputFiles(TEMP); await pDs.getByText('Dosya yüklendi.').first().waitFor();
   await ydKart.getByRole('button', { name: 'Seçilenlerle Kısmi Onay Kaydet' }).click(); await pDs.waitForTimeout(600); await hataVarsa(pDs, 'Kısmi onay');
   kontrol('kısmi onay ekrandan kaydedilir', (await sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [yd])).rows[0].karar === 'Kısmi Onay');
-  await ydKart.getByLabel('Kalem Seç 2').check();
-  await ydKart.getByLabel('Teknik Gerekçe').fill('Salgı 0,11 mm ölçüldü');
+  await ydKart.getByLabel('Kalem Seç 2', { exact: true }).check();
+  await ydKart.getByLabel('Teknik Gerekçe', { exact: true }).fill('Salgı 0,11 mm ölçüldü');
   await ydKart.getByRole('button', { name: 'Seçilenler İçin Yeniden Değerlendirme İste' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme');
   await pDs.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).first().click();
   const yd2 = pDs.getByRole('button', { name: 'İkinci Teyit: Sigortaya Gönder' }).first(); await yd2.waitFor(); await pDs.waitForTimeout(2300);
@@ -236,8 +236,8 @@ try {
   kontrol('yeniden değerlendirme ikinci teyitle gider', (await sup.query(`SELECT durum FROM yeniden_degerlendirme WHERE teklif_ref = $1`, [yd])).rows[0].durum === 'Gönderildi');
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   const ydSon = pDs.locator('.soru', { hasText: `${d.dosyaNo}-TK98` });
-  await ydSon.getByLabel('Kalem Seç 2').check();
-  await ydSon.getByLabel('Onaylayan Yetkili').fill('Hasar Müdürü');
+  await ydSon.getByLabel('Kalem Seç 2', { exact: true }).check();
+  await ydSon.getByLabel('Onaylayan Yetkili', { exact: true }).fill('Hasar Müdürü');
   await ydSon.getByLabel(/Onay Belgesi/).setInputFiles(dosyaYaz('yd')); await pDs.getByText('Dosya yüklendi.').first().waitFor();
   await ydSon.getByRole('button', { name: 'Yeniden Değerlendirme Sonucunu Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme sonucu');
   kontrol('yeniden değerlendirme sonucu kalemi onaylar', (await sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = 2`, [yd])).rows[0].onay_durumu === 'Onaylandı');
@@ -245,25 +245,25 @@ try {
 
   // Ek-3 alanı ve ekonomik kilit ekranı
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
-  await pDs.getByLabel('Dosyaya Özel Onay Yetkilisi (Ek-3)').fill('yetkili@deneme.local'); await tikla(pDs, 'Onay Yetkilisini Kaydet');
+  await pDs.getByLabel('Dosyaya Özel Onay Yetkilisi (Ek-3)', { exact: true }).fill('yetkili@deneme.local'); await tikla(pDs, 'Onay Yetkilisini Kaydet');
   kontrol('Ek-3 onay yetkilisi ekrandan kaydedilir', (await sup.query(`SELECT onay_yetkilisi_eposta e FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].e === 'yetkili@deneme.local');
   await sup.query(`UPDATE dosya_sigorta_kaydi SET onay_yetkilisi_eposta = NULL WHERE dosya_ref = $1`, [d.kimlik]);
   await sup.query(`UPDATE dosya SET ekonomik_kilit = true WHERE kimlik = $1`, [d.kimlik]);
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   await pDs.getByText('onarıma devam kararı bekleniyor').first().waitFor();
-  await pDs.getByLabel('Onaylayan Yetkili').first().fill('Hasar Müdürü');
+  await pDs.getByLabel('Onaylayan Yetkili', { exact: true }).first().fill('Hasar Müdürü');
   await tikla(pDs, 'Sigorta Kararı: Devam');
   kontrol('ekonomik kilit sigorta kararıyla açılır', (await sup.query(`SELECT ekonomik_kilit k FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].k === false);
 
   // Firma sayfası (YG-425, YG-422)
   const pFf = await al('fir', E); await pFf.getByRole('button', { name: 'Firma' }).first().click(); await pFf.getByText('Cari Ekstre').waitFor();
   await tasmaYok(pFf, 'firma_sayfasi');
-  await pFf.getByLabel('Yeni IBAN').fill('TR200006100519786457849999'); await tikla(pFf, 'IBAN Bildir');
+  await pFf.getByLabel('Yeni IBAN', { exact: true }).fill('TR200006100519786457849999'); await tikla(pFf, 'IBAN Bildir');
   let ibF; for (let n = 0; n < 25 && !ibF; n++) { ibF = (await sup.query(`SELECT durum FROM banka_hesabi WHERE kurulus_ref = $1 AND iban = 'TR200006100519786457849999'`, [firma])).rows[0]?.durum; if (!ibF) await pFf.waitForTimeout(200); }
   kontrol('firma IBAN bildirir, karantinada başlar', ibF === 'Karantina');
   await sup.query(`UPDATE banka_hesabi SET durum = 'İptal' WHERE kurulus_ref = $1`, [firma]); // sonraki sicil adımı kendi IBAN'ını teyit eder
   await sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur IN ('Banka Hesabı Onayı', 'Banka Geri Arama Teyidi') AND baslik LIKE $1`, [`E2E Firma ${tek}%`]);
-  await pFf.getByLabel('Yeni Değer').fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et');
+  await pFf.getByLabel('Yeni Değer', { exact: true }).fill('yeni@firma.local'); await tikla(pFf, 'Değişiklik Talep Et');
   let bdF; for (let n = 0; n < 25 && !bdF; n++) { bdF = (await sup.query(`SELECT durum FROM kurum_bilgi_talebi WHERE kurulus_ref = $1`, [firma])).rows[0]?.durum; if (!bdF) await pFf.waitForTimeout(200); }
   kontrol('firma bilgi değişikliği teyide gider', bdF === 'Teyit Bekliyor');
 
@@ -271,27 +271,27 @@ try {
   await pFf.getByText('Performans Karnesi').first().waitFor();
   kontrol('firma karnesini görür, risk derecesini görmez', !(await pFf.locator('main').innerText()).includes('Risk Derecesi'));
   E.tod = await hesap('tod', 'Teknik ve Operasyon Direktörü');
-  const pTod = await al('tod', E); await pTod.getByRole('button', { name: 'Karne Parametreleri' }).first().click(); await pTod.getByLabel('Kalite: Minör uygunsuzluk kesintisi').waitFor();
+  const pTod = await al('tod', E); await pTod.getByRole('button', { name: 'Karne Parametreleri' }).first().click(); await pTod.getByLabel('Kalite: Minör uygunsuzluk kesintisi', { exact: true }).waitFor();
   await tasmaYok(pTod, 'karne_parametreleri');
-  kontrol('karne parametreleri başlangıç değerleriyle görünür', (await pTod.getByLabel('Kalite: Minör uygunsuzluk kesintisi').inputValue()) === '5');
+  kontrol('karne parametreleri başlangıç değerleriyle görünür', (await pTod.getByLabel('Kalite: Minör uygunsuzluk kesintisi', { exact: true }).inputValue()) === '5');
 
   // Sigorta Ek-2 sayfası (YG-219)
   E.mpm = await hesap('mpm', 'Müşteri ve Paydaş İlişkileri Müdürü');
   const pMpm = await al('mpm', E);
   await pMpm.getByRole('button', { name: 'Sigorta Ek-2' }).first().click();
-  await pMpm.getByLabel('Sigorta Şirketi').fill(`E2E Ek2 ${tek}`);
-  await pMpm.getByLabel('Ad Soyad').fill('Onay Yetkilisi'); await pMpm.getByLabel('E-posta', { exact: true }).fill('ek2@deneme.local');
-  await pMpm.getByLabel('Onay Adresi').check(); await pMpm.getByLabel('Kurumsal Temsilci').check();
+  await pMpm.getByLabel('Sigorta Şirketi', { exact: true }).fill(`E2E Ek2 ${tek}`);
+  await pMpm.getByLabel('Ad Soyad', { exact: true }).fill('Onay Yetkilisi'); await pMpm.getByLabel('E-posta', { exact: true }).fill('ek2@deneme.local');
+  await pMpm.getByLabel('Onay Adresi', { exact: true }).check(); await pMpm.getByLabel('Kurumsal Temsilci', { exact: true }).check();
   await tikla(pMpm, 'Listeyi Kaydet');
   await tasmaYok(pMpm, 'sigorta_ek2');
   kontrol('Ek-2 listesi ekrandan kaydedilir', (await sup.query(`SELECT count(*)::int n FROM sigorta_ek2_surum WHERE sigortaci_adi = $1 AND durum = 'Yürürlükte'`, [`E2E Ek2 ${tek}`])).rows[0].n === 1);
 
   // Garanti kararı ekranı: iyi niyet onaya gider (YG-175)
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
-  await pDs.getByLabel('Belirti').fill('Titreşim'); await tikla(pDs, 'Kaydı Aç'); await pDs.waitForTimeout(500);
+  await pDs.getByLabel('Belirti', { exact: true }).fill('Titreşim'); await tikla(pDs, 'Kaydı Aç'); await pDs.waitForTimeout(500);
   await dosyaAc(sayfalar.ty, d.dosyaNo);
-  await sayfalar.ty.getByLabel('Kapsam Kararı').first().selectOption('İyi Niyet');
-  await sayfalar.ty.getByLabel('Karar Gerekçesi').first().fill('Müşteri memnuniyeti'); await sayfalar.ty.getByLabel('İyi Niyet Tutarı (EUR)').first().fill('10');
+  await sayfalar.ty.getByLabel('Kapsam Kararı', { exact: true }).first().selectOption('İyi Niyet');
+  await sayfalar.ty.getByLabel('Karar Gerekçesi', { exact: true }).first().fill('Müşteri memnuniyeti'); await sayfalar.ty.getByLabel('İyi Niyet Tutarı (EUR)', { exact: true }).first().fill('10');
   await tikla(sayfalar.ty, 'Kararı Kaydet');
   kontrol('iyi niyet kararı onaya gider, karar yazılmaz', (await sup.query(`SELECT g.karar, (SELECT count(*)::int FROM is_karti k WHERE k.tur = 'İyi Niyet Kararı' AND k.nesne_kimligi = g.kimlik::text) n FROM garanti_sikayet g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani DESC LIMIT 1`, [d.kimlik])).rows.every((r) => r.karar === null && r.n === 1));
 
@@ -303,11 +303,11 @@ try {
   await kartKarar(E, 'opm', ie.is_emri_no, 'Onaya Gönder'); await kartKarar(E, 'tid', ie.is_emri_no, 'Onayla');
   await firmaKabul(ie.is_emri_no);
   await dosyaAc(pDs, d.dosyaNo); const ieKart = pDs.locator('.soru', { hasText: ie.is_emri_no });
-  await ieKart.getByRole('button', { name: 'Saha Kayıtları' }).click(); await ieKart.getByLabel('Başlangıç Toplantısı Tarihi').fill('2026-12-01');
-  await ieKart.getByLabel('Toplantı Katılımcıları').fill('Saha Sorumlusu, Firma Yetkilisi'); await ieKart.getByLabel('Konuşulanlar').fill('İSG ve iş programı');
+  await ieKart.getByRole('button', { name: 'Saha Kayıtları' }).click(); await ieKart.getByLabel('Başlangıç Toplantısı Tarihi', { exact: true }).fill('2026-12-01');
+  await ieKart.getByLabel('Toplantı Katılımcıları', { exact: true }).fill('Saha Sorumlusu, Firma Yetkilisi'); await ieKart.getByLabel('Konuşulanlar', { exact: true }).fill('İSG ve iş programı');
   await ieKart.getByRole('button', { name: 'Toplantıyı Kaydet' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Başlangıç toplantısı');
   kontrol('başlangıç toplantısı ekrandan kaydedilir', (await sup.query(`SELECT 1 FROM baslangic_toplantisi t JOIN is_emri e ON e.kimlik = t.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rowCount === 1);
-  await ieKart.getByLabel('Sapma Açıklaması').fill('Yöntem bildirimi eksik'); await ieKart.getByLabel('Sapma Kararı').selectOption('Değişiklik Talebi');
+  await ieKart.getByLabel('Sapma Açıklaması', { exact: true }).fill('Yöntem bildirimi eksik'); await ieKart.getByLabel('Sapma Kararı', { exact: true }).selectOption('Değişiklik Talebi');
   await dosyaAc(pTu, d.dosyaNo); for (const x of ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut']) await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByLabel(x).check(); await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: 'Başlanabilir', exact: true }).click(); await pTu.waitForTimeout(500); await hataVarsa(pTu, 'Başlanabilir');
   kontrol('Teknik Uzman başlangıç kontrolünü ekrandan verir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].statu === 'Aktif');
 
@@ -315,19 +315,19 @@ try {
   const pF2 = await firmaIsEmri(ie.is_emri_no);
   await pF2.getByLabel('Kalem', { exact: true }).selectOption({ index: 1 });
   await pF2.getByLabel('Miktar', { exact: true }).fill('10');
-  await pF2.getByLabel('Kanıt Belgesi').setInputFiles(TEMP);
+  await pF2.getByLabel('Kanıt Belgesi', { exact: true }).setInputFiles(TEMP);
   await pF2.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pF2, 'İlerleme Kaydet');
   // Günlük Kayıt ve Parça Girişi (YG-1574, YG-1430)
-  await pF2.getByLabel('Yapılan Faaliyet').fill('Söküm'); await tikla(pF2, 'Kaydı Sakla');
+  await pF2.getByLabel('Yapılan Faaliyet', { exact: true }).fill('Söküm'); await tikla(pF2, 'Kaydı Sakla');
   const glKapat = pF2.getByRole('button', { name: 'Günü Kapat', exact: true }); await glKapat.click(); await pF2.waitForTimeout(400);
   kontrol('zorunlu alan olmadan gün kapanmaz', (await pF2.getByRole('alert').first().textContent()).includes('zorunlu alan'));
-  await pF2.getByLabel('Fotoğraf').setInputFiles(dosyaYaz('gunluk')); await pF2.waitForTimeout(500);
-  await pF2.getByLabel('Bir Sonraki Çalışma Günü Planı').fill('Montaj'); await pF2.getByLabel('Sorumlu', { exact: true }).fill('Usta');
+  await pF2.getByLabel('Fotoğraf', { exact: true }).setInputFiles(dosyaYaz('gunluk')); await pF2.waitForTimeout(500);
+  await pF2.getByLabel('Bir Sonraki Çalışma Günü Planı', { exact: true }).fill('Montaj'); await pF2.getByLabel('Sorumlu', { exact: true }).fill('Usta');
   await tikla(pF2, 'Günü Kapat');
   kontrol('günlük kayıt kapatılır', (await sup.query(`SELECT g.durum FROM firma_gunluk_kaydi g JOIN is_emri e ON e.kimlik = g.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rows[0]?.durum === 'Kapatıldı');
-  await pF2.getByLabel('Ürün', { exact: true }).fill('Kovan'); await pF2.getByLabel('Parça No').fill('PN-1'); await pF2.getByLabel('Parça Miktarı').fill('1'); await pF2.getByLabel('Lot No').fill('L-1');
-  await pF2.getByLabel('İrsaliye veya Sertifika').setInputFiles(dosyaYaz('parca')); await pF2.getByRole('button', { name: 'Parça Girişini Kaydet' }).waitFor(); await pF2.waitForTimeout(500);
+  await pF2.getByLabel('Ürün', { exact: true }).fill('Kovan'); await pF2.getByLabel('Parça No', { exact: true }).fill('PN-1'); await pF2.getByLabel('Parça Miktarı', { exact: true }).fill('1'); await pF2.getByLabel('Lot No', { exact: true }).fill('L-1');
+  await pF2.getByLabel('İrsaliye veya Sertifika', { exact: true }).setInputFiles(dosyaYaz('parca')); await pF2.getByRole('button', { name: 'Parça Girişini Kaydet' }).waitFor(); await pF2.waitForTimeout(500);
   await tikla(pF2, 'Parça Girişini Kaydet');
   kontrol('firma parça girişi kontrole gider', (await sup.query(`SELECT p.kabul_karari FROM firma_parca_girisi p JOIN is_emri e ON e.kimlik = p.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rowCount === 1);
   await tasmaYok(pF2, 'firma_is_emri_ayrinti');
@@ -337,7 +337,7 @@ try {
   // Kabul
   await dosyaAc(pTu, d.dosyaNo);
   await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: /Doğrula$/ }).first().click(); await pTu.waitForTimeout(500);
-  await pTu.getByLabel('Gereklilik Kanıtı').first().setInputFiles(TEMP.replace('.pdf', '2.pdf'));
+  await pTu.getByLabel('Gereklilik Kanıtı', { exact: true }).first().setInputFiles(TEMP.replace('.pdf', '2.pdf'));
   await pTu.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTu, 'Karşılandı');
   await dosyaAc(pTu, d.dosyaNo); await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: 'Teknik Kabul' }).click(); await pTu.waitForTimeout(500); await hataVarsa(pTu, 'Teknik Kabul');
@@ -349,10 +349,10 @@ try {
   const pf = (await sup.query(`SELECT proforma_no FROM musteri_faturasi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].proforma_no;
   await kartKarar(E, 'mfm', pf, 'Onaya Gönder'); await kartKarar(E, 'tid', pf, 'Onayla');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Muhasebeye İlet');
-  await pTs.getByLabel('Fatura No (Muhasebeden)').fill(`F${tek}`); await pTs.getByLabel('Fatura Tarihi').fill('2026-11-10'); await pTs.getByLabel('TCMB Satış Kuru').fill('40,1234'); await pTs.getByLabel('Kur Tarihi').fill('2026-11-09');
+  await pTs.getByLabel('Fatura No (Muhasebeden)', { exact: true }).fill(`F${tek}`); await pTs.getByLabel('Fatura Tarihi', { exact: true }).fill('2026-11-10'); await pTs.getByLabel('TCMB Satış Kuru', { exact: true }).fill('40,1234'); await pTs.getByLabel('Kur Tarihi', { exact: true }).fill('2026-11-09');
   await tikla(pTs, 'Fatura Bilgisini Kaydet');
   const top = Number((await sup.query(`SELECT toplam_eur FROM musteri_faturasi WHERE proforma_no = $1`, [pf])).rows[0].toplam_eur);
-  await pTs.getByLabel('Tahsilat (EUR)').fill(String(top).replace('.', ',')); await pTs.getByLabel('Tahsilat Tarihi').fill('2026-11-20');
+  await pTs.getByLabel('Tahsilat (EUR)', { exact: true }).fill(String(top).replace('.', ',')); await pTs.getByLabel('Tahsilat Tarihi', { exact: true }).fill('2026-11-20');
   await tikla(pTs, 'Havale Tahsilatı');
   kontrol('proforma, fatura bilgisi ve tahsilat ekrandan tamamlanır', (await sup.query(`SELECT durum FROM musteri_faturasi WHERE proforma_no = $1`, [pf])).rows[0].durum === 'Tahsil Edildi');
   await tasmaYok(pTs, 'mali_bolum');
@@ -361,9 +361,9 @@ try {
 
   // Hakediş, IBAN, ödeme talimatı
   const pH = await firmaIsEmri(ie.is_emri_no);
-  await pH.getByLabel('Hakediş Kanıtı').setInputFiles(TEMP.replace('.pdf', '3.pdf'));
+  await pH.getByLabel('Hakediş Kanıtı', { exact: true }).setInputFiles(TEMP.replace('.pdf', '3.pdf'));
   await pH.getByText('Dosya yüklendi.').first().waitFor();
-  await pH.getByLabel('Brüt (EUR)').fill('510'); await pH.getByLabel('Fatura No').fill(`H${tek}`); await pH.getByLabel('Fatura Tarihi').fill('2026-11-10'); await pH.getByLabel('TCMB Satış Kuru').fill('40,1234');
+  await pH.getByLabel('Brüt (EUR)', { exact: true }).fill('510'); await pH.getByLabel('Fatura No', { exact: true }).fill(`H${tek}`); await pH.getByLabel('Fatura Tarihi', { exact: true }).fill('2026-11-10'); await pH.getByLabel('TCMB Satış Kuru', { exact: true }).fill('40,1234');
   await tikla(pH, 'Hakediş Gönder');
   const h = (await sup.query(`SELECT hakedis_no FROM hakedis WHERE is_emri_ref = $1`, [ie.kimlik])).rows[0];
   kontrol('firma hakedişi kanıtla portaldan gönderir', Boolean(h));
@@ -371,14 +371,14 @@ try {
   const pSc2 = await al('sc', E);
   await pSc2.getByRole('button', { name: 'Firma Sicili' }).click();
   await pSc2.locator('tr', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Seç' }).click();
-  await pSc2.getByLabel('IBAN').fill('TR330006100519786457841326');
+  await pSc2.getByLabel('IBAN', { exact: true }).fill('TR330006100519786457841326');
   await tikla(pSc2, 'IBAN Ekle');
-  await pSc2.getByLabel('Belge Türü').fill('SGK Borcu Yoktur Yazısı'); await pSc2.getByLabel('Geçerlilik Bitişi').fill('2099-01-01');
+  await pSc2.getByLabel('Belge Türü', { exact: true }).fill('SGK Borcu Yoktur Yazısı'); await pSc2.getByLabel('Geçerlilik Bitişi', { exact: true }).fill('2099-01-01');
   await tikla(pSc2, 'Belge Kaydet');
   await tasmaYok(pSc2, 'firma_sicili');
   const pMy = await al('mfy', E);
   await pMy.getByRole('button', { name: 'İdari İşlemlerim' }).click();
-  await pMy.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByLabel('Teyit Kanalı').fill('Sicildeki numaradan geri arama');
+  await pMy.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByLabel('Teyit Kanalı', { exact: true }).fill('Sicildeki numaradan geri arama');
   await pMy.locator('.soru', { hasText: `E2E Firma ${tek}` }).getByRole('button', { name: 'Teyit Et' }).click(); await pMy.waitForTimeout(400); await hataVarsa(pMy, 'IBAN');
   const ibanB = `E2E Firma ${tek} · Banka Hesabı Onayı`;
   await kartKarar(E, 'fmy', ibanB, 'Onaya Gönder'); await kartKarar(E, 'fym', ibanB, 'Onaya Gönder'); await kartKarar(E, 'mfm', ibanB, 'Onayla');
@@ -394,7 +394,7 @@ try {
   kontrol('Ticari Sorumlu dosyada mahsup ve malzeme avansı formunu görür', await pTs.getByRole('button', { name: 'Mahsup Öner' }).waitFor({ timeout: 8000 }).then(() => true, () => false));
   await pTs.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).click();
   const satirOd = pTs.locator('.soru', { hasText: h.hakedis_no });
-  await satirOd.getByLabel('Listeye Al').check();
+  await satirOd.getByLabel('Listeye Al', { exact: true }).check();
   await tikla(pTs, 'Ödeme Listesi Oluştur');
   await tasmaYok(pTs, 'odeme_listesi');
   const lst = (await sup.query(`SELECT l.liste_no, l.kimlik FROM odeme_listesi l JOIN odeme_talimati t ON t.odeme_listesi_ref = l.kimlik JOIN hakedis h ON h.kimlik = t.hakedis_ref WHERE h.is_emri_ref = $1`, [ie.kimlik])).rows[0];
@@ -402,7 +402,7 @@ try {
   await kartKarar(E, 'mfy', lst.liste_no, 'Onaya Gönder'); await kartKarar(E, 'tid', lst.liste_no, 'Onayla');
   await pTs.reload(); await pTs.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).click();
   await pTs.getByText(`${lst.liste_no}: Onaylandı`).waitFor();
-  kontrol('liste onaylanınca banka referansı alanı açılır', await pTs.locator('.soru', { hasText: h.hakedis_no }).getByLabel('Banka İşlem Referansı').isVisible());
+  kontrol('liste onaylanınca banka referansı alanı açılır', await pTs.locator('.soru', { hasText: h.hakedis_no }).getByLabel('Banka İşlem Referansı', { exact: true }).isVisible());
 
   // Teslim
   await sup.query(`UPDATE dosya SET asama = 'Teslim' WHERE kimlik = $1`, [d.kimlik]);
@@ -426,11 +426,11 @@ try {
   await pT2.locator('#kp-e').selectOption(ie2.kimlik); await pT2.locator('#kp-o').fill('Basınç'); await pT2.locator('#kp-k').fill('5 bar');
   await pT2.locator('#kp-z').fill(new Date(Date.now() + 30 * 3_600_000 + 180 * 60_000).toISOString().slice(0, 16));
   await tikla(pT2, 'Kontrol Noktası Ekle');
-  const firmaIlerleme = async (dosya) => { const p = await firmaIsEmri(ie2.is_emri_no); await p.getByLabel('Kalem', { exact: true }).selectOption({ index: 1 }); await p.getByLabel('Miktar', { exact: true }).fill('1'); await p.getByLabel('Kanıt Belgesi').setInputFiles(dosyaYaz(dosya)); await p.getByText('Dosya yüklendi.').first().waitFor(); await p.getByRole('button', { name: 'İlerleme Kaydet' }).click(); await p.waitForTimeout(500); return p; };
+  const firmaIlerleme = async (dosya) => { const p = await firmaIsEmri(ie2.is_emri_no); await p.getByLabel('Kalem', { exact: true }).selectOption({ index: 1 }); await p.getByLabel('Miktar', { exact: true }).fill('1'); await p.getByLabel('Kanıt Belgesi', { exact: true }).setInputFiles(dosyaYaz(dosya)); await p.getByText('Dosya yüklendi.').first().waitFor(); await p.getByRole('button', { name: 'İlerleme Kaydet' }).click(); await p.waitForTimeout(500); return p; };
   let pF3 = await firmaIlerleme('a');
   kontrol('bekletme noktası serbest bırakılmadan firma ilerleyemez', (await pF3.getByRole('alert').first().textContent()).includes('Bekletme noktası'));
   await dosyaAc(pT2, d2.dosyaNo);
-  await pT2.getByLabel('Kontrol Kanıtı').first().setInputFiles(dosyaYaz('b')); await pT2.getByText('Dosya yüklendi.').first().waitFor();
+  await pT2.getByLabel('Kontrol Kanıtı', { exact: true }).first().setInputFiles(dosyaYaz('b')); await pT2.getByText('Dosya yüklendi.').first().waitFor();
   await pT2.getByRole('button', { name: 'Uygun', exact: true }).click(); await pT2.waitForTimeout(500); await hataVarsa(pT2, 'Kontrol sonucu');
   kontrol('kontrol noktası ekrandan serbest bırakılır', (await sup.query(`SELECT serbest_birakma_zamani z FROM kontrol_noktasi WHERE is_emri_ref = $1`, [ie2.kimlik])).rows[0].z !== null);
   // Çalışma izni
@@ -440,7 +440,7 @@ try {
   await pF3.locator('#ci-s').fill('Marina'); await pF3.locator('#ci-n').fill('İ-1'); await pF3.locator('#ci-v').fill('Tesis Yetkilisi');
   const yerel = (s) => new Date(Date.now() + 180 * 60_000 + s * 3_600_000).toISOString().slice(0, 16);
   await pF3.locator('#ci-b').fill(yerel(-1)); await pF3.locator('#ci-e').fill(yerel(5)); await pF3.locator('#ci-o').fill('25'); await pF3.locator('#ci-y').fill('1');
-  await pF3.getByLabel('İzin Belgesi').setInputFiles(dosyaYaz('d')); await pF3.waitForTimeout(600);
+  await pF3.getByLabel('İzin Belgesi', { exact: true }).setInputFiles(dosyaYaz('d')); await pF3.waitForTimeout(600);
   await pF3.getByRole('button', { name: 'İzin Belgesini Kaydet' }).click(); await pF3.waitForTimeout(400);
   kontrol('gaz ölçümü aralık dışıysa izin kaydedilmez', (await pF3.getByRole('alert').first().textContent()).includes('Gaz ölçümü'));
   await pF3.locator('#ci-o').fill('20,9'); await tikla(pF3, 'İzin Belgesini Kaydet');
@@ -449,7 +449,7 @@ try {
   kontrol('firma izin belgesini yükler, ilerler ve işi bitirir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].statu === 'Tamamlandı');
   // Uygunsuzluk ve koşullu kabul
   const pK = await al('kk', E); await dosyaAc(pK, d2.dosyaNo);
-  await pK.locator('#n-y').fill('Güverte'); await pK.locator('#n-o').fill('Şartname 4'); await pK.locator('#n-d').fill('Çizik'); await pK.getByLabel('Uygunsuzluk Kanıtı').setInputFiles(dosyaYaz('f')); await pK.getByText('Dosya yüklendi.').first().waitFor();
+  await pK.locator('#n-y').fill('Güverte'); await pK.locator('#n-o').fill('Şartname 4'); await pK.locator('#n-d').fill('Çizik'); await pK.getByLabel('Uygunsuzluk Kanıtı', { exact: true }).setInputFiles(dosyaYaz('f')); await pK.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pK, 'Uygunsuzluk Aç');
   let uy = 0; for (let i = 0; i < 20 && uy !== 1; i++) { uy = (await sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d2.kimlik])).rows[0].n; if (uy !== 1) await pK.waitForTimeout(250); }
   kontrol('Kalite Kontrolör uygunsuzluğu ekrandan açar', uy === 1);
@@ -500,7 +500,7 @@ try {
   const mGovde = await pMar.locator('body').innerText();
   kontrol('tesise firma unvanı ve fiyat görünmez', !mGovde.includes(`E2E Firma ${tek}`) && !mGovde.includes('Teklif'));
   await tasmaYok(pMar, 'tesis_portali');
-  await pMar.getByLabel('Tesis İzin Numarası').fill('M-77');
+  await pMar.getByLabel('Tesis İzin Numarası', { exact: true }).fill('M-77');
   await tikla(pMar, 'İzin Ver');
   await pMar.getByText('İzin No: M-77').first().waitFor();
   kontrol('tesis talebi portaldan onaylar, takvimde Onaylı görünür', (await pMar.locator('body').innerText()).includes('Onaylı'));
@@ -512,7 +512,7 @@ try {
   await tikla(pTd, 'Teklif Talebi Gönder');
   const pTc = await al('tdc', E);
   for (let n = 0; n < 6; n++) { await pTc.waitForTimeout(500); const b = pTc.getByRole('button', { name: /^(Bilgilendim|Devam|Ana Ekrana Geç|Okudum, Kabul Ediyorum)$/ }); if (await b.count()) await b.first().click(); else break; }
-  await pTc.getByLabel('Birim Fiyat (EUR)').fill('40'); await pTc.getByLabel('Teslim Süresi (Gün)').fill('3');
+  await pTc.getByLabel('Birim Fiyat (EUR)', { exact: true }).fill('40'); await pTc.getByLabel('Teslim Süresi (Gün)', { exact: true }).fill('3');
   await tasmaYok(pTc, 'tedarikci_portali');
   await tikla(pTc, 'Teklifi Gönder');
   const sp2 = (await sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, statu, hazirlayan_ref) VALUES ($1,$2,$3,'T','K',80,16,96,'2027-01-20','Marina','Ö','G','Verildi',$4) RETURNING kimlik`, [`${d2.dosyaNo}-SP09`, d2.kimlik, ted, kimlikler.tds])).rows[0];
@@ -524,13 +524,13 @@ try {
   kontrol('tedarikçi alt menüde Teklifler ve Hesap vardır', await pTc.getByRole('button', { name: 'Teklifler' }).first().isVisible() && await pTc.getByRole('button', { name: 'Hesap' }).first().isVisible());
   await pTc.getByRole('button', { name: 'Hesap' }).first().click(); await pTc.getByText('Kurum Bilgileri').waitFor();
   await tasmaYok(pTc, 'kurum_hesap');
-  await pTc.getByLabel('Ad Soyad').fill('Yeni Kişi'); await pTc.getByLabel('E-posta').fill(`e2e-yeni-${tek}@deneme.local`);
+  await pTc.getByLabel('Ad Soyad', { exact: true }).fill('Yeni Kişi'); await pTc.getByLabel('E-posta', { exact: true }).fill(`e2e-yeni-${tek}@deneme.local`);
   await tikla(pTc, 'Kullanıcı Ekle');
   for (let i = 0; i < 20 && !(await sup.query(`SELECT 1 FROM kurum_kullanici_talebi WHERE eposta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rowCount; i++) await pTc.waitForTimeout(250);
   kontrol('kurum kullanıcı talebi ekrandan açılır, hesap teyitten önce açılmaz', (await sup.query(`SELECT durum FROM kurum_kullanici_talebi WHERE eposta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rows[0]?.durum === 'Teyit Bekliyor' && !(await sup.query(`SELECT 1 FROM kullanici_hesabi WHERE e_posta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rowCount);
   await pTc.getByRole('button', { name: 'Siparişler' }).first().click(); await pTc.locator(`#sv-t-${sp2.kimlik}`).waitFor();
   await pTc.locator(`#sv-t-${sp2.kimlik}`).fill('2027-01-10'); await pTc.locator(`#sv-i-${sp2.kimlik}`).fill('İ9'); await pTc.locator(`#sv-s-${sp2.kimlik}`).fill('Kargo'); await pTc.locator(`#sv-l-${sp2.kimlik}`).fill('L9');
-  await pTc.getByLabel('İrsaliye ve Sertifika').setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
+  await pTc.getByLabel('İrsaliye ve Sertifika', { exact: true }).setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTc, 'Sevk Bildir');
   const pMt = await al('mfm', E); await pMt.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).first().click(); await pMt.getByRole('heading', { name: 'Tedarikçi Ödemeleri' }).waitFor();
   kontrol('muhasebe Tedarikçi Ödemeleri sayfasını açar', await pMt.getByText('Açık Faturalar').first().isVisible());
@@ -540,7 +540,7 @@ try {
   const atlaB = `E2E Kademe ${tek}`; await sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir) VALUES ('Deneme','onay',$1,$2,$3)`, [atlaB, kimlikler.ds, [atlaR, atlaS]]);
   const pTd2 = await al('tid', E);
   const atlaK = pTd2.locator('.ozet', { hasText: atlaB }); await atlaK.waitFor();
-  await atlaK.getByLabel('Gerekçe').fill('Acil'); await atlaK.getByRole('button', { name: 'Kademeyi Atla' }).click(); await atlaK.waitFor({ state: 'detached' });
+  await atlaK.getByLabel('Gerekçe', { exact: true }).fill('Acil'); await atlaK.getByRole('button', { name: 'Kademeyi Atla' }).click(); await atlaK.waitFor({ state: 'detached' });
   kontrol('Direktör Bugün ekranından kademeyi gerekçeyle atlar', (await sup.query(`SELECT durum FROM is_karti WHERE baslik = $1`, [atlaB])).rows[0].durum === 'Onaylandı');
   const iadeB = `E2E İade ${tek}`; await sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir, durum) VALUES ('Deneme','onay',$1,$2,$3,'İade Edildi')`, [iadeB, kimlikler.ds, [atlaS]]);
   await al('ds', E); const iadeK = pDs.locator('.ozet', { hasText: iadeB }); await iadeK.waitFor();

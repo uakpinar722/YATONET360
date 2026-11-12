@@ -41,6 +41,8 @@ import { IsletmeGideri } from './IsletmeGideri';
 import { IslemKatalogu } from './IslemKatalogu';
 import { TeklifMadde } from './TeklifMadde';
 import { FormKatalogu } from './FormKatalogu';
+import { SablonMetinleri } from './SablonMetinleri';
+import { SozlesmeTakip } from './SozlesmeTakip';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
 import { Entegrasyonlar } from './Entegrasyon';
@@ -871,6 +873,8 @@ export function IdariIslemler() {
       <IsletmeGideri />
       <IslemKatalogu />
       <FormKatalogu />
+      <SablonMetinleri />
+      <SozlesmeTakip />
       <DurumSozlugu />
       <FisAsliTeslim />
       <MenfaatListesi />
