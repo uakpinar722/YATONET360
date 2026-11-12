@@ -4,6 +4,7 @@ import { HassasGorsel } from './HassasGorsel';
 import { GenelForm } from './GenelForm';
 import { ZorunluFormlar } from './ZorunluFormlar';
 import { TeknikCizim } from './TeknikCizim';
+import { BelgeOnceligi } from './BelgeOnceligi';
 import { KurtarmaSonucKontrol } from './KurtarmaSonuc';
 import { OnDegerlendirme } from './OnDegerlendirme';
 import { IlkKapsam } from './IlkKapsam';
@@ -176,6 +177,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <HassasGorsel dosya={id} />
     <ZorunluFormlar dosya={id} />
     <TeknikCizim dosya={id} />
+    <BelgeOnceligi dosya={id} />
     <GenelForm dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />

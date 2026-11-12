@@ -99,6 +99,8 @@ try {
   kontrol('süre sayacı saat olarak yazar', (await p.locator('.ozet', { hasText: ad }).first().textContent()).includes('Saat Kaldı'));
   kontrol('Olağanüstü Olay bandı görünür', await p.locator('.ood').isVisible());
   kontrol('telefonda menü altta', await p.evaluate(() => getComputedStyle(document.querySelector('.yan-menu')).position === 'fixed'));
+  await p.waitForTimeout(200);
+  kontrol('işlem düğmesinin altında ne olacağını anlatan satır (YG-1653)', await kart.getByRole('button', { name: 'Onaya Gönder' }).evaluate((b) => getComputedStyle(b, '::after').content.includes('onay zinciri')));
   await p.screenshot({ path: join(CIKTI, 'bugun_tel.png'), fullPage: true });
   await kart.getByRole('button', { name: 'Gerekçeyle İade Et' }).click();
   const iadeKart = p.locator('.ozet', { hasText: ad });

@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { belgeOnceligi } from '../src/belge_onceligi.js';
 import { cizimTanim } from '../src/teknik_cizim.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
@@ -26,5 +27,21 @@ describe('teknik çizim anteti (YG-679)', () => {
     for (const s of ['Çizim Anteti', d.dosyaNo, `${d.dosyaNo}-CZ01`, 'Teknik Uzman', 'Ölçeksiz', 'Revizyon Tablosu', 'İlk yayım', 'Ölçü eklendi', 'Genel Notlar', 'Rev.1']) expect(t).toContain(s);
     expect(t).not.toMatch(/YATONET 360|sistem notu|sistemde/i);
     const p = await o.ist('GET', `/api/teknik-cizim/${r.kimlik}/pdf`, tu); expect(p.statusCode).toBe(200);
+  });
+});
+
+describe('belge önceliği (YG-617)', () => {
+  it('bireysel müşteride tek iş, diğerlerinde çerçeve kuralı; çelişki Hukuk ve Uyum incelemesine gider', async () => {
+    const d = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Bireysel Müşteri' WHERE kimlik = $1`, [d.kimlik]);
+    const b = (await belgeOnceligi(o.db, d.kimlik))!; expect(b.kural).toBe('Tek İş Sözleşmesi'); expect(b.musteri[0]!.belge).toBe('Yat Onarım Sözleşmesi');
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Sigorta Şirketi' WHERE kimlik = $1`, [d.kimlik]);
+    const c = (await belgeOnceligi(o.db, d.kimlik))!; expect(c.kural).toBe('Çerçeve Sözleşme'); expect(c.musteri[2]!.islev).toMatch(/ana metni değiştirmez/); expect(c.celiski).toMatch(/otomatik tercih yapılmaz/);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2) ON CONFLICT DO NOTHING`, [d.kimlik, o.K.ds]);
+    const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-celiskisi`, ds, { belgeler: 'Teklif Rev.1 / Ek-2' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-celiskisi`, ds, { belgeler: 'Teklif Rev.1 / Ek-2', konu: 'Onay sınırı farklı' })).statusCode).toBe(200);
+    expect((await o.kart('Belge Çelişkisi İncelemesi', d.kimlik)).durum).toBe('Bekliyor');
   });
 });

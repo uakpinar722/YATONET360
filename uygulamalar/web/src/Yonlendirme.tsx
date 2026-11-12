@@ -54,3 +54,59 @@ export function IlkKullanimTuru() {
     <button className="btn2 kucuk" onClick={kapat}>Atla</button>
     {adim < TUR.length - 1 ? <button className="btn kucuk" onClick={() => setAdim(adim + 1)}>İleri ({adim + 1}/{TUR.length})</button> : <button className="btn kucuk" onClick={kapat}>Bitir</button>}</div></div>;
 }
+
+/** YG-1653 (3): işlem düğmesine basınca ne olacağını anlatan tek satır; fiilden türetilir (web'de üzerine gelince, telefonda düğme altında). */
+const OZEL: Record<string, string> = {
+  'Onaya Gönder': 'Kayıt onay zincirindeki makama gider; karar verilene kadar değiştirilemez.',
+  'Kontrole Gönder': 'Kayıt kontrol eden role gider; sonuçlanana kadar değiştirilemez.',
+  'Gerekçeyle İade Et': 'Kayıt gerekçeyle hazırlayana geri döner.',
+  'İptal Et': 'Kayıt iptal edilir; iptal geri alınamaz.',
+  'Geri Çek': 'Gönderdiğiniz kayıt karar verilmeden geri alınır.',
+  Vazgeç: 'Değişiklikler kaydedilmeden kapanır.',
+  Atla: 'Turu kapatır; Yardım sayfasından yeniden başlatabilirsiniz.',
+  Kapat: 'Pencere kapanır; kayıt değişmez.',
+};
+const FIIL: [RegExp, string][] = [
+  [/Kaydet$/, 'Girilen bilgiler kayda geçer.'],
+  [/Gönder$/, 'Kayıt ilgili kişiye veya makama iletilir ve iz kaydına geçer.'],
+  [/Onayla$/, 'Onayınız kayda geçer; kayıt bir sonraki adıma ilerler.'],
+  [/Reddet$/, 'Kayıt reddedilir; gerekçe kayda geçer.'],
+  [/İade Et$/, 'Kayıt hazırlayana geri döner.'],
+  [/(Aç|Oluştur)$/, 'Yeni kayıt açılır.'],
+  [/Ekle$/, 'Listeye yeni kalem eklenir.'],
+  [/(Kaldır|Çıkar)$/, 'Kalem listeden kaldırılır; işlem iz kaydına geçer.'],
+  [/Kapat$/, 'Kayıt kapanır; kapanış bilgileri kayda geçer.'],
+  [/Bildir$/, 'Bildirim ilgili role iletilir.'],
+  [/İste$/, 'Talep ilgili kişiye iletilir; yanıt beklenir.'],
+  [/Öner$/, 'Öneri karar verecek role iletilir.'],
+  [/Doğrula$/, 'Bilgi doğrulanır; sonuç kayda geçer.'],
+  [/Başlat$/, 'İşlem başlatılır.'],
+  [/Durdur$/, 'İşlem durdurulur; gerekçe kayda geçer.'],
+  [/(Güncelle|Değiştir|Düzenle|Düzelt)$/, 'Kayıt güncellenir; önceki değer iz kaydında kalır.'],
+  [/(Göster|Ara|İncele)$/, 'Sonuçlar ekranda gösterilir; kayıt değişmez.'],
+  [/Yükle$/, 'Seçilen dosya kayda eklenir.'],
+  [/(Bağla|Seç)$/, 'Seçilen kayıt bu kayda bağlanır.'],
+  [/(Planla)$/, 'Planlanan tarih kayda geçer ve ilgililere bildirilir.'],
+  [/(Ver|Al|Gir|Yap|İşle|Uygula|İşaretle|Tanımla)$/, 'İşlem kayda geçer.'],
+  [/^←|Dön$/, 'Önceki ekrana döner.'],
+];
+export const dugmeAciklamasi = (ad: string): string | null => OZEL[ad] ?? FIIL.find(([r]) => r.test(ad))?.[1] ?? null;
+export function DugmeAciklamalari() {
+  useEffect(() => {
+    let z: number | undefined;
+    const uygula = () => {
+      for (const b of Array.from(document.querySelectorAll('button'))) {
+        const ad = (b.textContent ?? '').trim();
+        if (!ad || b.dataset.aciklamaAd === ad || b.classList.contains('soru-isareti')) continue;
+        b.dataset.aciklamaAd = ad; const a = dugmeAciklamasi(ad);
+        if (!a) { delete b.dataset.aciklama; continue; }
+        b.dataset.aciklama = a; b.setAttribute('aria-description', a);
+        if (!b.title || b.dataset.aciklamaOto) { b.title = a; b.dataset.aciklamaOto = '1'; }
+      }
+    };
+    const g = new MutationObserver(() => { window.clearTimeout(z); z = window.setTimeout(uygula, 50); });
+    uygula(); g.observe(document.body, { childList: true, subtree: true, characterData: true });
+    return () => { g.disconnect(); window.clearTimeout(z); };
+  }, []);
+  return null;
+}

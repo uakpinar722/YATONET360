@@ -127,3 +127,6 @@ button:not(.secenek):not(.lnk) { text-align: center; }
 .soru-isareti { width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--ciz, #c9c4b8); background: var(--krem, #fff); font-weight: 700; cursor: pointer; flex: none; }
 .ilk-tur { position: fixed; right: 16px; bottom: 16px; max-width: min(360px, calc(100vw - 32px)); background: #fff; border: 1px solid var(--ciz, #c9c4b8); border-radius: 12px; padding: 14px 16px; box-shadow: 0 6px 24px rgba(0,0,0,.15); z-index: 50; }
 .ilk-tur p { margin: 6px 0 10px; }
+
+/* YG-1653 (3): telefonda işlem düğmesinin altında tek satır açıklama */
+@media (max-width: 600px) { button[data-aciklama]::after { content: attr(data-aciklama) / ""; display: block; font-size: 10.5px; font-weight: 400; line-height: 1.25; opacity: .8; margin-top: 2px; white-space: normal; text-align: left; } }
