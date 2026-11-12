@@ -117,7 +117,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
       const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       const surum = (await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM kalite_plani WHERE dosya_ref = $1`, [id])).rows[0].n;
       const p = (await c.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, surum, g.sinif, g.ozet!.trim(), o.kullanici])).rows[0];
-      for (const x of satir) await c.query(`INSERT INTO gereklilik_satiri (plan_ref, gereklilik, dogrulama) VALUES ($1,$2,$3)`, [p.kimlik, x.gereklilik!.trim(), x.dogrulama!.trim()]);
+      for (const [n, x] of satir.entries()) await c.query(`INSERT INTO gereklilik_satiri (plan_ref, km_no, gereklilik, dogrulama) VALUES ($1,$2,$3,$4)`, [p.kimlik, `KM${String(n + 1).padStart(2, '0')}`, x.gereklilik!.trim(), x.dogrulama!.trim()]); // FR-KLT-015 KMnn
       await kartAc(c, { tur: 'Kalite Planı', baslik: `${d.dosya_no} · Kalite Planı Rev.${surum}`, ozet: `${g.sinif} Sınıfı`, hazirlayan: o.kullanici, zincir: [await rolId(c, g.sinif === 'A' ? 'Teknik Müdür' : 'Teknik Yönetici')], nesneTuru: 'Kalite Planı', nesneKimligi: p.kimlik });
       return { kimlik: p.kimlik, surum };
     });
@@ -427,7 +427,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const q = (t: string) => b.db.query(t, [id]).then((r) => r.rows);
     return {
       planlar: await q(`SELECT kimlik, surum, kabul_sinifi, ozet, durum FROM kalite_plani WHERE dosya_ref = $1 ORDER BY surum DESC`),
-      gereklilikler: await q(`SELECT g.kimlik, g.gereklilik, g.dogrulama, g.durum FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı'`),
+      gereklilikler: await q(`SELECT g.kimlik, g.km_no, g.gereklilik, g.dogrulama, g.durum FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı'`),
       uygunsuzluklar: await q(`SELECT kimlik, uygunsuzluk_no, sinif, emniyet_isareti, gercek_durum, tasarruf_karari, hedef_zamani, statu, firma_yaniti FROM uygunsuzluk WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
       kontrolNoktalari: await q(`SELECT n.kimlik, n.kontrol_noktasi_no, n.nokta_turu, n.kontrol_ozelligi, n.planlanan_zaman, n.sonuc, n.serbest_birakma_zamani FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE e.dosya_ref = $1 ORDER BY n.planlanan_zaman`),
       testler: await q(`SELECT kimlik, test_no, test_grubu, kabul_olcutu, sonuc, durum FROM test_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),

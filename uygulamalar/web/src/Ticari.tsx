@@ -52,6 +52,7 @@ import { KurtarmaSonucFirma } from './KurtarmaSonuc';
 import { ProblemBulgu, VeriEnvanteri, VeriSozlugu } from './VeriUyum';
 import { FisAsliTeslim, MenfaatBildir, MenfaatListesi } from './MenfaatMasraf';
 import { ProsesFirma } from './Proses';
+import { GenelForm } from './GenelForm';
 import { YontemRaporuFirma } from './YontemRaporu';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
 import { IbanTeyit, NobetCizelge } from './Sicil';
@@ -439,6 +440,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       {acik.tur === 'ON' && <YontemRaporuFirma isEmri={acik.kimlik} />}
       {!['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <MenfaatBildir isEmri={acik.kimlik} />}
       {acik.statu === 'Aktif' && acik.tur !== 'KN' && <ProsesFirma isEmri={acik.kimlik} />}
+      {acik.statu === 'Aktif' && acik.tur !== 'KN' && <GenelForm isEmri={acik.kimlik} />}
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && acik.tur !== 'KN' && <Blok baslik="Hakediş">
         <BelgeSec ad="Hakediş Kanıtı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={belge} sec={setBelge} />
         <div className="iki-tarih"><div><label htmlFor="f-br">Brüt (EUR)</label><input id="f-br" inputMode="decimal" value={brut} onChange={(e) => setBrut(e.target.value)} /></div><div><label htmlFor="f-fn">Fatura No</label><input id="f-fn" value={fat} onChange={(e) => setFat(e.target.value)} /></div></div>

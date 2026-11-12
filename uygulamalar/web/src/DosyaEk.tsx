@@ -1,6 +1,7 @@
 import { KatalogReferansi } from './KatalogReferansi';
 import { YatKarada } from './YatKarada';
 import { HassasGorsel } from './HassasGorsel';
+import { GenelForm } from './GenelForm';
 import { KurtarmaSonucKontrol } from './KurtarmaSonuc';
 import { OnDegerlendirme } from './OnDegerlendirme';
 import { IlkKapsam } from './IlkKapsam';
@@ -171,6 +172,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <KatalogReferansi dosya={id} />
     <YatKarada dosya={id} />
     <HassasGorsel dosya={id} />
+    <GenelForm dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />
     <GonderimDurumu id={id} />

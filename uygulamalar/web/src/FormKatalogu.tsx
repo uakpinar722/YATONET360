@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { GenelForm } from './GenelForm';
 
 type K = { kod: string; ad: string; sinif: string; bicim: string; dolduran: string | null; onaylayan: string | null; goren: string | null; kanal: string | null; sistem_karsiligi: string | null; yerine: string | null; surum: number; yururluk_tarihi: string | null; durum: string; iptal_gerekcesi: string | null };
 type A = { kod: string; ad: string; dolduran: string | null; onaylayan: string | null; alanlar: { alan: string; tur: string; bicim: string; zorunlu: string; liste: string }[] };
@@ -21,12 +22,13 @@ export function FormKatalogu() {
     {v.kalemler.map((x) => <div className={x.durum === 'Yürürlükte' ? 'soru' : x.durum === 'İptal' ? 'soru bos' : 'soru hata'} key={x.kod}>
       <span><b>{x.kod}</b> · {x.ad} · {x.sinif} · {x.bicim} · Sürüm {x.surum} · {x.durum}{x.yerine ? ` → ${x.yerine}` : ''}{x.durum !== 'İptal' ? ` · Sistem: ${x.sistem_karsiligi ?? 'bekliyor'}` : ''}<br />
         <small>Dolduran: {x.dolduran ?? '—'} · Onaylayan: {x.onaylayan ?? '—'}</small></span>
-      <div className="tam"><button className="btn2 kucuk" onClick={() => void istek<A>(`/form-katalogu/${x.kod}/alanlar`).then(setA).catch((e) => setM(e.message))}>Alanlar</button>
+      <div className="tam"><button className="btn2 kucuk" onClick={() => void istek<A>(`/form-katalogu/${x.kod}/alanlar`).then(setA).catch((e) => setM(e.message))}>Alanlar</button>{x.durum !== 'İptal' && <a className="btn2 kucuk" href={`/api/form-katalogu/${x.kod}/bos.pdf`} target="_blank" rel="noreferrer">Boş Şablon</a>}
         {v.yonetir && x.durum !== 'İptal' && <><label htmlFor={`fk-g-${x.kod}`}>Gerekçe</label><input id={`fk-g-${x.kod}`} value={g[x.kod] ?? ''} onChange={(e) => setG({ ...g, [x.kod]: e.target.value })} />
           {x.durum === 'Taslak' && <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'Yürürlükte' }), 'Yürürlüğe alındı.')}>Yürürlüğe Al</button>}
           {x.durum === 'Yürürlükte' && <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'Yeni Sürüm', gerekce: g[x.kod] }), 'Yeni sürüm taslak olarak açıldı.')}>Yeni Sürüm</button>}
           <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'İptal', gerekce: g[x.kod] }), 'İptal edildi; kod yeniden verilmez.')}>İptal Et</button></>}</div>
       {a?.kod === x.kod && <div className="tam">{a.alanlar.length ? a.alanlar.map((l) => <div className="not" key={l.alan}>{l.alan} · {l.tur}{l.bicim ? ` · ${l.bicim}` : ''} · {l.zorunlu}{l.liste ? ` · ${l.liste}` : ''}</div>) : <div className="not">Alan sözlüğünde bu araca bağlı alan yok.</div>}</div>}</div>)}
+    <GenelForm />
     {v.yonetir && <div className="izgara"><b>Yeni Araç (taslak doğar)</b>
       {(['kod', 'ad', 'dolduran', 'onaylayan', 'goren'] as const).map((k) => <div key={k}><label htmlFor={`fk-y-${k}`}>{{ kod: 'Kod', ad: 'Ad', dolduran: 'Dolduran', onaylayan: 'Onaylayan', goren: 'Gören' }[k]}</label><input id={`fk-y-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>)}
       <div><label htmlFor="fk-y-sinif">Sınıf</label><select id="fk-y-sinif" value={f.sinif} onChange={(e) => setF({ ...f, sinif: e.target.value })}>{['İç', 'Dışa', 'Firmaya', 'Firmadan'].map((s) => <option key={s}>{s}</option>)}</select></div>

@@ -38,7 +38,7 @@ export interface BelgeTanim {
 
 const k = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const css = (s: string) => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r?\n/g, '\\A ');
-const dolu = (x: unknown) => (x === null || x === undefined || x === '' ? '—' : String(x)); // YG-687, YG-686
+const dolu = (x: unknown) => (x === null || x === undefined || x === '' ? '---' : String(x)); // YG-687, YG-686, YG-1377: boş alan "---" (CEO 12.11.2026)
 const b64 = (yol: string) => readFileSync(join(KOK, yol)).toString('base64');
 const onbellek = new Map<string, string>();
 const gorsel = (yol: string) => { if (!onbellek.has(yol)) onbellek.set(yol, `data:image/png;base64,${b64(yol)}`); return onbellek.get(yol)!; };

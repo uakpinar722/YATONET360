@@ -5,25 +5,26 @@ import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
 /** YG-709: LGM-2026-013 "Uygulama ön koşulu" ve "Mühendislik durdurma noktaları" paragraflarının maddeleri; metin belgeden aynen alınır. */
-export const TEKLIF_MADDELERI: { kod: string; grup: 'Ön Koşul' | 'Durdurma Noktası'; metin: string }[] = [
-  { kod: 'ON-1', grup: 'Ön Koşul', metin: 'Yatın kimliği, boyu/tonajı, kullanım türü, bayrağı, varsa klas durumu, üretici verisi ve onaylı çizimlerinin doğrulanması' },
-  { kod: 'ON-2', grup: 'Ön Koşul', metin: 'Tasarım hesabı, iş izni, seyire elverişlilik veya resmî sertifika' },
-  { kod: 'DN-1', grup: 'Durdurma Noktası', metin: 'Taşıyıcı yapı veya gövde geçişi değişikliği öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-2', grup: 'Durdurma Noktası', metin: 'Ağırlık merkezi/stabilite etkisi olan müdahale öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-3', grup: 'Durdurma Noktası', metin: 'Sıcak iş öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-4', grup: 'Durdurma Noktası', metin: 'Basınç ve yük deneyi öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-5', grup: 'Durdurma Noktası', metin: 'Havuzlama öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-6', grup: 'Durdurma Noktası', metin: 'Kaldırma öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-7', grup: 'Durdurma Noktası', metin: 'Enerji/yakıt/gaz ve yangın sisteminde müdahale öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı' },
-  { kod: 'DN-8', grup: 'Durdurma Noktası', metin: 'Gizli iş kapatılmadan muayene kanıtı' },
-  { kod: 'DN-9', grup: 'Durdurma Noktası', metin: 'Teslimden önce güncel çizim, deney sonucu, kalan kusur ve kullanım kısıtının dosyalanması' },
+export const TEKLIF_MADDELERI: { kod: string; grup: 'Ön Koşul' | 'Durdurma Noktası'; metin: string; en: string }[] = [
+  { kod: 'ON-1', grup: 'Ön Koşul', metin: 'Yatın kimliği, boyu/tonajı, kullanım türü, bayrağı, varsa klas durumu, üretici verisi ve onaylı çizimlerinin doğrulanması', en: 'Verification of the yacht’s identity, length/tonnage, type of use, flag, class status (if any), manufacturer data and approved drawings' },
+  { kod: 'ON-2', grup: 'Ön Koşul', metin: 'Tasarım hesabı, iş izni, seyire elverişlilik veya resmî sertifika', en: 'Design calculations, work permits, seaworthiness or statutory certification' },
+  { kod: 'DN-1', grup: 'Durdurma Noktası', metin: 'Taşıyıcı yapı veya gövde geçişi değişikliği öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before modification of load-bearing structure or hull penetrations' },
+  { kod: 'DN-2', grup: 'Durdurma Noktası', metin: 'Ağırlık merkezi/stabilite etkisi olan müdahale öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before any intervention affecting the centre of gravity/stability' },
+  { kod: 'DN-3', grup: 'Durdurma Noktası', metin: 'Sıcak iş öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before hot work' },
+  { kod: 'DN-4', grup: 'Durdurma Noktası', metin: 'Basınç ve yük deneyi öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before pressure and load testing' },
+  { kod: 'DN-5', grup: 'Durdurma Noktası', metin: 'Havuzlama öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before docking' },
+  { kod: 'DN-6', grup: 'Durdurma Noktası', metin: 'Kaldırma öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before lifting' },
+  { kod: 'DN-7', grup: 'Durdurma Noktası', metin: 'Enerji/yakıt/gaz ve yangın sisteminde müdahale öncesi yazılı yöntem, emniyet sınırı ve gerekli üretici/klas/bayrak onayı', en: 'Written method statement, safety limits and any required manufacturer/class/flag approval before intervention on energy/fuel/gas and fire systems' },
+  { kod: 'DN-8', grup: 'Durdurma Noktası', metin: 'Gizli iş kapatılmadan muayene kanıtı', en: 'Inspection evidence before concealed work is closed up' },
+  { kod: 'DN-9', grup: 'Durdurma Noktası', metin: 'Teslimden önce güncel çizim, deney sonucu, kalan kusur ve kullanım kısıtının dosyalanması', en: 'Filing of up-to-date drawings, test results, remaining defects and operating restrictions before delivery' },
 ];
 export const MADDE_TURU = ['Hariç', 'Ayrıca Fiyatlandırılır'] as const;
+const TUR_EN: Record<string, string> = { Hariç: 'Excluded', 'Ayrıca Fiyatlandırılır': 'Priced Separately' };
 
 /** Teklif belgesindeki "Hariç ve Ayrıca Fiyatlandırılacak Hususlar" bölümü satırları. */
-export async function teklifMaddeleri(db: Db, teklif: string): Promise<{ tur: string; metin: string }[]> {
+export async function teklifMaddeleri(db: Db, teklif: string, dil: 'tr' | 'en' = 'tr'): Promise<{ tur: string; metin: string }[]> {
   const r = (await db.query(`SELECT madde, tur FROM teklif_maddesi WHERE teklif_ref = $1 ORDER BY tur, madde`, [teklif])).rows as { madde: string; tur: string }[];
-  return r.map((x) => ({ tur: x.tur, metin: TEKLIF_MADDELERI.find((m) => m.kod === x.madde)?.metin ?? x.madde }));
+  return r.map((x) => { const m = TEKLIF_MADDELERI.find((k) => k.kod === x.madde); return { tur: dil === 'en' ? TUR_EN[x.tur] ?? x.tur : x.tur, metin: (dil === 'en' ? m?.en : m?.metin) ?? x.madde }; });
 }
 
 export function teklifMaddeYollari(s: FastifyInstance, b: Baglam) {
@@ -45,8 +46,6 @@ export function teklifMaddeYollari(s: FastifyInstance, b: Baglam) {
     if (!TEKLIF_MADDELERI.some((m) => m.kod === g.madde)) return y.code(400).send({ hata: 'Maddeyi seçiniz.' });
     if (g.kaldir) { await b.db.query(`DELETE FROM teklif_maddesi WHERE teklif_ref = $1 AND madde = $2`, [id, g.madde]); return { tamam: true }; }
     if (!MADDE_TURU.includes(g.tur as never)) return y.code(400).send({ hata: 'Hariç veya Ayrıca Fiyatlandırılır seçiniz.' });
-    // Maddelerin İngilizce metni onaylanmadığından İngilizce teklifte kullanılmaz.
-    if (t.yazisma_dili === 'İngilizce') return y.code(409).send({ hata: 'Bu maddelerin İngilizce metni henüz onaylı değildir; İngilizce teklifte kullanılamaz.' });
     await b.db.query(`INSERT INTO teklif_maddesi (teklif_ref, madde, tur, giren_ref) VALUES ($1,$2,$3,$4) ON CONFLICT (teklif_ref, madde) DO UPDATE SET tur = EXCLUDED.tur, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [id, g.madde, g.tur, o.kullanici]);
     return { tamam: true };
   });

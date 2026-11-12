@@ -149,7 +149,7 @@ describe('uyuşmazlık (YG-107)', () => {
     expect((await o.kart('Savunma Süresi', r.json().kimlik)).baslik).toContain('Savunma');
     expect((await o.ist('POST', `/api/uyusmazlik/${r.json().kimlik}/paket`, await o.gir('hud'), {})).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Uyuşmazlık Paketi' AND nesne = $1`, [r.json().kimlik])).rowCount).toBe(1);
-    const t = await uyusmazlikTanim(o.db, r.json().kimlik, 'K'); expect(t.t.kod).toBe('FR-KLT-012'); expect(JSON.stringify(t.t.bolumler)).toContain('700,00'); expect(JSON.stringify(t.t.bolumler)).toContain('2026/1');
+    const t = await uyusmazlikTanim(o.db, r.json().kimlik, 'K'); expect('kod' in t.t).toBe(false); // Ek II'de kodlu araç değil (V-450) expect(JSON.stringify(t.t.bolumler)).toContain('700,00'); expect(JSON.stringify(t.t.bolumler)).toContain('2026/1');
   });
 });
 

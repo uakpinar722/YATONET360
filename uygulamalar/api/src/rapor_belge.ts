@@ -12,9 +12,9 @@ import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
 const t = (x: unknown) => Number(x ?? 0).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const g = (s: string | null | undefined) => (s ? s.slice(0, 10).split('-').reverse().join('.') : '—');
+const g = (s: string | null | undefined) => (s ? s.slice(0, 10).split('-').reverse().join('.') : '---');
 const bugun = () => new Date().toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' });
-const deger = (v: number | null, b: string) => (v === null ? '—' : b === 'EUR' ? `${t(v)} EUR` : b === '%' ? `%${String(v).replace('.', ',')}` : `${String(v).replace('.', ',')} ${b}`);
+const deger = (v: number | null, b: string) => (v === null ? '---' : b === 'EUR' ? `${t(v)} EUR` : b === '%' ? `%${String(v).replace('.', ',')}` : `${String(v).replace('.', ',')} ${b}`);
 
 /** YG-761: RP-TIC-002 Aylık Yönetim Raporu (iç kayıt). */
 export async function yonetimRaporuTanim(db: Db, donem: string): Promise<BelgeTanim> {
@@ -34,10 +34,10 @@ export async function ceoRaporuTanim(db: Db, donem: string): Promise<BelgeTanim>
   const n = await nakitTahmini(db); const k = await sigortaciKarlilik(db);
   const bolumler: Bolum[] = [
     { baslik: 'Ticari Özet (RP-TIC-002)', tur: 'alanlar', alanlar: [{ et: 'Dönem', deger: donem }, { et: 'Faturalanmamış İş', deger: `${t(r.toplam.wip)} EUR` }, { et: 'Tahsil Edilmemiş Fatura', deger: `${t(r.toplam.tahsil)} EUR` }, { et: 'Tahsil Edildi, Firmaya Ödenmedi', deger: `${t(r.toplam.firma)} EUR` }] },
-    { baslik: 'Cilt I §9 Performans Göstergeleri', tur: 'tablo', sutunlar: [{ ad: 'Tablo', hiza: 'ort' }, { ad: 'Gösterge' }, { ad: 'Değer', hiza: 'sag' }, { ad: 'Hedef', hiza: 'sag' }, { ad: 'Durum' }, { ad: 'Sahip Birim' }], satirlar: gs.map((x) => [x.tablo, x.ad, deger(x.deger, x.birim), x.hedef === null ? '—' : deger(x.hedef, x.birim), x.renk ? { m: x.durum, renk: x.renk } : x.durum, x.birimAdi]) },
+    { baslik: 'Cilt I §9 Performans Göstergeleri', tur: 'tablo', sutunlar: [{ ad: 'Tablo', hiza: 'ort' }, { ad: 'Gösterge' }, { ad: 'Değer', hiza: 'sag' }, { ad: 'Hedef', hiza: 'sag' }, { ad: 'Durum' }, { ad: 'Sahip Birim' }], satirlar: gs.map((x) => [x.tablo, x.ad, deger(x.deger, x.birim), x.hedef === null ? '---' : deger(x.hedef, x.birim), x.renk ? { m: x.durum, renk: x.renk } : x.durum, x.birimAdi]) },
     { baslik: 'Operasyon Panosu', tur: 'tablo', sutunlar: [{ ad: 'Gösterge' }, { ad: 'Değer', hiza: 'sag' }, { ad: 'Birim' }], satirlar: pano.map((x) => [x.ad, x.birim === 'EUR' ? `${t(x.deger)} EUR` : x.deger, x.birimAdi]) },
     { baslik: '13 Haftalık Nakit Tahmini (EUR)', tur: 'tablo', sutunlar: [{ ad: 'Hafta' }, { ad: 'Giriş', hiza: 'sag' }, { ad: 'Firma', hiza: 'sag' }, { ad: 'Tedarikçi', hiza: 'sag' }, { ad: 'Genel Gider', hiza: 'sag' }, { ad: 'Net', hiza: 'sag' }, { ad: 'Kümülatif', hiza: 'sag' }], satirlar: n.map((h) => [g(h.baslangic), t(h.giris), t(h.firma), t(h.tedarik), t(h.gider), t(h.net), t(h.kumulatif)]) },
-    { baslik: 'Sigortacı Bazında Kârlılık (Son 12 Ay)', tur: 'tablo', sutunlar: [{ ad: 'Sigorta Şirketi' }, { ad: 'Dosya', hiza: 'sag' }, { ad: 'Satış (EUR)', hiza: 'sag' }, { ad: 'Maliyet (EUR)', hiza: 'sag' }, { ad: 'Katkı (EUR)', hiza: 'sag' }, { ad: 'Oran', hiza: 'sag' }], satirlar: k.map((x) => [x.sigortaci_adi, x.dosya, t(x.satis), t(x.maliyet), t(x.katki), x.oran ? `%${String(x.oran).replace('.', ',')}` : '—']) },
+    { baslik: 'Sigortacı Bazında Kârlılık (Son 12 Ay)', tur: 'tablo', sutunlar: [{ ad: 'Sigorta Şirketi' }, { ad: 'Dosya', hiza: 'sag' }, { ad: 'Satış (EUR)', hiza: 'sag' }, { ad: 'Maliyet (EUR)', hiza: 'sag' }, { ad: 'Katkı (EUR)', hiza: 'sag' }, { ad: 'Oran', hiza: 'sag' }], satirlar: k.map((x) => [x.sigortaci_adi, x.dosya, t(x.satis), t(x.maliyet), t(x.katki), x.oran ? `%${String(x.oran).replace('.', ',')}` : '---']) },
   ];
   return { ad: 'Aylık CEO Raporu', no: `CEO-${donem}`, tarih: bugun(), surum: 'Rev.1', dil: 'tr', icKayit: true, rapor: true, bolumler };
 }
@@ -47,7 +47,7 @@ export async function kurumsalRaporTanim(db: Db, id: string): Promise<BelgeTanim
   const r = (await db.query(`SELECT r.donem, r.icerik, r.itiraz_son, u.unvan FROM kurumsal_rapor r JOIN kurumsal_kurum u ON u.kimlik = r.kurum_ref WHERE r.kimlik = $1`, [id])).rows[0];
   const i = r.icerik as { kesim: string; filo: { yat_adi: string; dosya_no: string; statu: string; asama: string | null; acilis: string }[]; cari: { dosya_no: string; fatura_no: string; fatura_tarihi: string; vade: string | null; toplam_eur: string; tahsil: string }[]; bakiye: number };
   const bolumler: Bolum[] = [
-    { baslik: 'Kurum ve Dönem', tur: 'alanlar', alanlar: [{ et: 'Kurum', deger: r.unvan, genis: true }, { et: 'Dönem', deger: r.donem }, { et: 'Kesim Tarihi', deger: g(i.kesim) }, { et: 'İtiraz Son Tarihi', deger: r.itiraz_son ? new Date(r.itiraz_son).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' }) : '—' }] },
+    { baslik: 'Kurum ve Dönem', tur: 'alanlar', alanlar: [{ et: 'Kurum', deger: r.unvan, genis: true }, { et: 'Dönem', deger: r.donem }, { et: 'Kesim Tarihi', deger: g(i.kesim) }, { et: 'İtiraz Son Tarihi', deger: r.itiraz_son ? new Date(r.itiraz_son).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' }) : '---' }] },
     { baslik: 'Filo ve Dosyalar', tur: 'tablo', sutunlar: [{ ad: 'Yat' }, { ad: 'Dosya No' }, { ad: 'Statü' }, { ad: 'Aşama' }, { ad: 'Açılış' }], satirlar: i.filo.map((x) => [x.yat_adi, x.dosya_no, x.statu, x.asama, x.acilis]) },
     { baslik: 'Cari Hesap', tur: 'tablo', sutunlar: [{ ad: 'Dosya No' }, { ad: 'Fatura No' }, { ad: 'Fatura Tarihi' }, { ad: 'Vade' }, { ad: 'Tutar (EUR)', hiza: 'sag' }, { ad: 'Tahsil (EUR)', hiza: 'sag' }, { ad: 'Kalan (EUR)', hiza: 'sag' }], satirlar: i.cari.map((x) => [x.dosya_no, x.fatura_no, g(x.fatura_tarihi), g(x.vade), t(x.toplam_eur), t(x.tahsil), t(Number(x.toplam_eur) - Number(x.tahsil))]), toplamlar: [{ et: 'Açık Bakiye', deger: t(i.bakiye), ana: true }] },
   ];

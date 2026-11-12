@@ -21,6 +21,14 @@ const FORMLAR: Form[] = [
   { kod: 'FR-KLT-009', ad: 'Kabul Kaydı', sql: DOSYA('kabul_kaydi'), teklifSonrasi: true },
 ];
 
+/** YG-636: koşula bağlı formlar; koşul gerçekleşince zorunlu sete eklenir. */
+const KOSULLU: (Form & { kosul: string })[] = [
+  { kod: 'FR-KLT-001', ad: 'Kontrol Noktası (ITP) · A/B sınıfı iş', kosul: `SELECT 1 FROM kalite_plani WHERE dosya_ref = $1 AND durum = 'Onaylı' AND kabul_sinifi IN ('A', 'B') LIMIT 1`, sql: ISE('kontrol_noktasi'), teklifSonrasi: true },
+  { kod: 'FR-MLZ-003', ad: 'Malzeme Giriş Kabulü · teslim alınan malzeme', kosul: `SELECT 1 FROM tedarik_siparisi WHERE dosya_ref = $1 AND statu IN ('Kısmi Teslim', 'Teslim Alındı', 'Kapalı') LIMIT 1`, sql: `SELECT 1 FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE s.dosya_ref = $1 LIMIT 1`, teklifSonrasi: true },
+  { kod: 'FR-UYG-004', ad: 'Kök Neden Analizi · Majör/Kritik uygunsuzluk', kosul: `SELECT 1 FROM uygunsuzluk WHERE dosya_ref = $1 AND sinif IN ('Majör', 'Kritik') AND statu <> 'Geçersiz' LIMIT 1`, sql: `SELECT 1 FROM uygunsuzluk u WHERE u.dosya_ref = $1 AND u.sinif IN ('Majör', 'Kritik') AND u.statu <> 'Geçersiz' AND NOT EXISTS (SELECT 1 FROM kok_neden_analizi k WHERE k.uygunsuzluk_ref = u.kimlik) HAVING count(*) = 0`, teklifSonrasi: true },
+  { kod: 'FR-ISG-001', ad: 'İzin Belgesi Kaydı · sıcak iş', kosul: `SELECT 1 FROM form_kaydi WHERE dosya_ref = $1 AND form_kodu = 'FR-ONR-004' LIMIT 1`, sql: ISE('calisma_izni_belgesi'), teklifSonrasi: true },
+  { kod: 'FR-TIC-004', ad: 'Avans ve Mahsup İzleme · firma avansı', kosul: `SELECT 1 FROM firma_malzeme_avansi WHERE dosya_ref = $1 LIMIT 1`, sql: DOSYA('hakedis_mahsubu'), teklifSonrasi: true },
+];
 export type FormDurumu = { kod: string; ad: string; var: boolean };
 /** Teklif aşamasından önce kapanan dosyada yalnız o aşamaya kadarki formlar aranır. */
 export async function zorunluFormlar(db: Db, dosya: string): Promise<FormDurumu[]> {
@@ -29,5 +37,6 @@ export async function zorunluFormlar(db: Db, dosya: string): Promise<FormDurumu[
   const planli = Boolean((await db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND oncelik = 'Planlı' AND dosya_niteligi <> 'Sigorta bağlantılı'`, [dosya])).rowCount);
   const l: FormDurumu[] = [];
   for (const f of FORMLAR) if ((teklif || !f.teklifSonrasi) && !(planli && f.kod === 'RP-RAP-002')) l.push({ kod: f.kod, ad: f.ad, var: Boolean((await db.query(f.sql, [dosya])).rowCount) });
+  for (const f of KOSULLU) if ((await db.query(f.kosul, [dosya])).rowCount) l.push({ kod: f.kod, ad: f.ad, var: Boolean((await db.query(f.sql, [dosya])).rowCount) });
   return l;
 }

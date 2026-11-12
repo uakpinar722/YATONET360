@@ -38,7 +38,7 @@ const E = {
 };
 const oran = (x: unknown) => String(Number(x)).replace('.', ',');
 const anSaat = (z: Date | string) => `${gunAy(z)} ${new Date(z).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })}`;
-const para = (x: unknown, d: Dil) => (x === null || x === undefined ? '—' : tutar(Number(x), d));
+const para = (x: unknown, d: Dil) => (x === null || x === undefined ? '---' : tutar(Number(x), d));
 const ROL_EN: Record<string, string> = { 'Dosya Sorumlusu': 'File Manager', 'Operasyon Yöneticisi': 'Operations Manager', 'Teknik Uzman': 'Technical Expert', 'Teknik Yönetici': 'Technical Manager', 'Saha Sorumlusu': 'Site Supervisor' };
 
 async function dosyaBilgi(db: Db, id: string, hazirlik: string) {
@@ -92,9 +92,9 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
     ekipBolumu(b),
     atananEkip(b),
   ];
-  // YG-709: seçilen 013 maddeleri; yalnız Türkçe teklifte (İngilizce metin onay bekliyor).
-  const mad = dil === 'tr' ? await (await import('./teklif_madde.js')).teklifMaddeleri(db, f.kimlik) : [];
-  if (mad.length) bolumler.splice(2, 0, { baslik: 'Hariç ve Ayrıca Fiyatlandırılacak Hususlar', tur: 'tablo', sutunlar: [{ ad: 'Durum' }, { ad: 'Husus' }], satirlar: mad.map((x) => [x.tur, x.metin]) });
+  // YG-709: seçilen 013 maddeleri (Türkçe ve İngilizce metin).
+  const mad = await (await import('./teklif_madde.js')).teklifMaddeleri(db, f.kimlik, dil);
+  if (mad.length) bolumler.splice(2, 0, { baslik: dil === 'en' ? 'Exclusions and Separately Priced Items' : 'Hariç ve Ayrıca Fiyatlandırılacak Hususlar', tur: 'tablo', sutunlar: [{ ad: dil === 'en' ? 'Status' : 'Durum' }, { ad: dil === 'en' ? 'Item' : 'Husus' }], satirlar: mad.map((x) => [x.tur, x.metin]) });
   if (f.ana_teklif_ref) { const ana = (await db.query(`SELECT teklif_no FROM fiyat_teklifi WHERE kimlik = $1`, [f.ana_teklif_ref])).rows[0]?.teklif_no; bolumler.unshift({ baslik: dil === 'en' ? 'Related Document' : 'Bağlı Olduğu Belge', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'Quotation No' : 'Teklif No', deger: ana }] }); } // YG-658
   return {
     dosyaAdi: `${f.teklif_no}.pdf`, sinif: 'Gizli',
@@ -134,7 +134,7 @@ async function raporTanim(db: Db, id: string, kod: string, web: string) {
   bolumler.push({ baslik: dil === 'en' ? 'Records Used' : 'Kullanılan Kayıtlar', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'File No' : 'Dosya No', deger: b.d.dosya_no }, { et: dil === 'en' ? 'Report Version' : 'Rapor Sürümü', deger: `Rev.${r.surum}` }, { et: dil === 'en' ? 'Surveys' : 'Keşif Kaydı', deger: String(ky.kesif) }, { et: dil === 'en' ? 'Scope Schedule Version' : 'Kapsam Cetveli Sürümü', deger: ky.cetvel ? `Rev.${ky.cetvel}` : null }, { et: dil === 'en' ? 'Findings' : 'Bulgu Sayısı', deger: String(bl.length) }, { et: dil === 'en' ? 'Visual Evidence' : 'Görsel Kanıt Sayısı', deger: String(gr.length) }] });
   return {
     dosyaAdi: `${r.rapor_no}.pdf`, sinif: 'Kritik',
-    t: { bandEk: [{ et: dil === 'en' ? 'Inspection Date' : 'İnceleme Tarihi', deger: ky.kesifT ? gunAy(ky.kesifT) : '—' }, { et: dil === 'en' ? 'Report Type' : 'Rapor Türü', deger: r.rapor_turu ?? '—' }], ad: e.Rapor, kod: 'RP-RAP-002', no: r.rapor_no, dosyaNo: b.d.dosya_no, tarih: gunAy(new Date()), surum: `Rev.${r.surum}`, dil, yat: b.d.yat_adi, rapor: true, matbuBas: [hitap(b, e.Rapor), dil === 'en' ? 'This report is based on the on-site inspection, measurements and records made on the stated date and under the stated conditions. No opinion is given on parts that were not dismantled, accessible or inspected. The report may be revised if new information or findings arise.' : 'Bu rapor, belirtilen tarihte ve koşullarda yerinde yapılan inceleme, ölçüm ve kayıtlara dayanır. Söküm yapılmayan, erişilemeyen veya incelenmeyen bölümler için görüş verilmemiştir. Yeni bilgi veya bulgu ortaya çıkarsa rapor revize edilebilir.'], bolumler, matbuSon: [sozlesme(b.d, dil), gizli(dil), dogrula(dil, kod, web), tesekkur(dil)], onay: kapanis ? { rol: kapanis.rol_adi ?? '', zaman: anSaat(kapanis.zaman), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim,
+    t: { bandEk: [{ et: dil === 'en' ? 'Inspection Date' : 'İnceleme Tarihi', deger: ky.kesifT ? gunAy(ky.kesifT) : '---' }, { et: dil === 'en' ? 'Report Type' : 'Rapor Türü', deger: r.rapor_turu ?? '---' }], ad: e.Rapor, kod: 'RP-RAP-002', no: r.rapor_no, dosyaNo: b.d.dosya_no, tarih: gunAy(new Date()), surum: `Rev.${r.surum}`, dil, yat: b.d.yat_adi, rapor: true, matbuBas: [hitap(b, e.Rapor), dil === 'en' ? 'This report is based on the on-site inspection, measurements and records made on the stated date and under the stated conditions. No opinion is given on parts that were not dismantled, accessible or inspected. The report may be revised if new information or findings arise.' : 'Bu rapor, belirtilen tarihte ve koşullarda yerinde yapılan inceleme, ölçüm ve kayıtlara dayanır. Söküm yapılmayan, erişilemeyen veya incelenmeyen bölümler için görüş verilmemiştir. Yeni bilgi veya bulgu ortaya çıkarsa rapor revize edilebilir.'], bolumler, matbuSon: [sozlesme(b.d, dil), gizli(dil), dogrula(dil, kod, web), tesekkur(dil)], onay: kapanis ? { rol: kapanis.rol_adi ?? '', zaman: anSaat(kapanis.zaman), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim,
   };
 }
 
@@ -199,7 +199,7 @@ export async function uyusmazlikTanim(db: Db, id: string, kod: string) {
   ];
   bolumler.push(...await (await import('./uyusmazlik_ek.js')).uyusmazlikEkBolumleri(db, u.dosya_ref)); // YG-107
   const no = await altNumara(db, u.dosya_no, 'UP');
-  return { dosyaAdi: `${no}.pdf`, sinif: 'Kritik', t: { ad: 'Uyuşmazlık Dışa Aktarım Paketi', kod: 'FR-KLT-012', no, dosyaNo: u.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, yat: u.yat_adi, icKayit: true, bolumler, kodEk: kod } };
+  return { dosyaAdi: `${no}.pdf`, sinif: 'Kritik', t: { ad: 'Uyuşmazlık Dışa Aktarım Paketi', no, dosyaNo: u.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, yat: u.yat_adi, icKayit: true, bolumler, kodEk: kod } };
 }
 
 /** YG-456: sigorta şirketi başına aylık mutabakat raporu. */
@@ -213,9 +213,9 @@ export async function mutabakatTanim(db: Db, id: string) {
   ];
   // YG-767: onaylı aylık performans raporu RP-TIC-001 ile birlikte, aynı belgede gönderilir.
   const pf = await (await import('./sigorta_performans.js')).onayliPerformans(db, r.sigortaci_adi, r.donem);
-  if (pf?.veri) bolumler.push({ baslik: 'Aylık Performans', tur: 'alanlar', alanlar: [{ et: 'Dosya Sayısı', deger: String(pf.veri.dosyaSayisi) }, { et: 'Kapanan Dosya', deger: String(pf.veri.kapananDosya) }, { et: 'Ortalama Dosya Süresi (gün)', deger: pf.veri.ortalamaDosyaSuresiGun === null ? '—' : String(pf.veri.ortalamaDosyaSuresiGun).replace('.', ',') }, { et: 'Süre Uyumu', deger: pf.veri.sureUyumuYuzde === null ? '—' : `%${String(pf.veri.sureUyumuYuzde).replace('.', ',')}` }, { et: 'Şikâyetler', deger: String(pf.veri.sikayet) }] });
+  if (pf?.veri) bolumler.push({ baslik: 'Aylık Performans', tur: 'alanlar', alanlar: [{ et: 'Dosya Sayısı', deger: String(pf.veri.dosyaSayisi) }, { et: 'Kapanan Dosya', deger: String(pf.veri.kapananDosya) }, { et: 'Ortalama Dosya Süresi (gün)', deger: pf.veri.ortalamaDosyaSuresiGun === null ? '---' : String(pf.veri.ortalamaDosyaSuresiGun).replace('.', ',') }, { et: 'Süre Uyumu', deger: pf.veri.sureUyumuYuzde === null ? '---' : `%${String(pf.veri.sureUyumuYuzde).replace('.', ',')}` }, { et: 'Şikâyetler', deger: String(pf.veri.sikayet) }] });
   const no = `MT-${r.donem}-${String(r.sigortaci_adi).slice(0, 12).replace(/\s/g, '')}`;
-  return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: 'Aylık Sigorta Mutabakat Raporu', kod: 'RP-TIC-MUT', no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, bolumler } };
+  return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: 'Aylık Sigorta Mutabakat Raporu', kod: 'RP-TIC-001', no, tarih: gunAy(new Date()), surum: 'Rev.1', dil: 'tr' as Dil, bolumler } };
 }
 
 /** YNT-2, K-192: yat sahibine bilgi nüshası; yalnız kapsam ve uygulama sırası, firma, fiyat, malzeme tablosu ve proses sınırı yok. */
@@ -320,7 +320,7 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
 export async function hasarIhbarTanim(db: Db, dosya: string) {
   const t = (await db.query(`SELECT t.* FROM talep t JOIN dosya d ON d.talep_ref = t.kimlik WHERE d.kimlik = $1`, [dosya])).rows[0];
   const b = await dosyaBilgi(db, dosya, '');
-  const bolumler: Bolum[] = [...ortak(b), { baslik: 'İhbar Bilgileri', tur: 'alanlar', alanlar: [{ et: 'Kanal', deger: t.bildirim_kanali }, { et: 'Talep Sahibi', deger: t.talep_sahibi_adi }, { et: 'Talep Sahibi Türü', deger: t.talep_sahibi_turu }, { et: 'Telefon', deger: t.talep_sahibi_telefon }, { et: 'E-Posta', deger: t.talep_sahibi_eposta }, { et: 'Yetki Durumu', deger: t.ihbar_yetki_durumu }, { et: 'Olay Tarihi', deger: t.olay_tarihi ? gunAy(t.olay_tarihi) : null }, { et: 'Olay Yeri', deger: t.olay_yeri }, { et: 'Yatın Mevcut Konumu', deger: t.yat_mevcut_konumu }, { et: 'Yatın Durumu', deger: t.yat_mevcut_durumu }, { et: 'Öncelik', deger: t.oncelik }, { et: 'İhtiyaç', deger: t.ihtiyac_tanimi, genis: true }] }, { baslik: 'Özgün Bildirim', tur: 'metin', metin: t.ozgun_bildirim ?? '—' }];
+  const bolumler: Bolum[] = [...ortak(b), { baslik: 'İhbar Bilgileri', tur: 'alanlar', alanlar: [{ et: 'Kanal', deger: t.bildirim_kanali }, { et: 'Talep Sahibi', deger: t.talep_sahibi_adi }, { et: 'Talep Sahibi Türü', deger: t.talep_sahibi_turu }, { et: 'Telefon', deger: t.talep_sahibi_telefon }, { et: 'E-Posta', deger: t.talep_sahibi_eposta }, { et: 'Yetki Durumu', deger: t.ihbar_yetki_durumu }, { et: 'Olay Tarihi', deger: t.olay_tarihi ? gunAy(t.olay_tarihi) : null }, { et: 'Olay Yeri', deger: t.olay_yeri }, { et: 'Yatın Mevcut Konumu', deger: t.yat_mevcut_konumu }, { et: 'Yatın Durumu', deger: t.yat_mevcut_durumu }, { et: 'Öncelik', deger: t.oncelik }, { et: 'İhtiyaç', deger: t.ihtiyac_tanimi, genis: true }] }, { baslik: 'Özgün Bildirim', tur: 'metin', metin: t.ozgun_bildirim ?? '---' }];
   return { dosyaAdi: `${t.talep_no}-IHBAR.pdf`, sinif: 'Gizli', t: { ad: 'Hasar İhbar ve İlk Kayıt', kod: 'FR-OPS-009', no: t.talep_no, dosyaNo: b.d.dosya_no, tarih: gunAy(t.olusturma_zamani), surum: 'Rev.1', dil: 'tr' as Dil, yat: b.d.yat_adi, icKayit: true, bandEk: [{ et: 'Bildirim Zamanı', deger: anSaat(t.bildirim_alinma_zamani) }, { et: 'Kayıt Zamanı', deger: anSaat(t.kayda_gecis_zamani ?? t.olusturma_zamani) }], bolumler } as BelgeTanim };
 }
 

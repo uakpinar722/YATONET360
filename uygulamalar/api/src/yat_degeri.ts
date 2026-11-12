@@ -59,7 +59,7 @@ export async function ekonomikIzle(c: PoolClient, dosya: string, tutar: number):
     if (v.dosya_niteligi === 'Sigorta bağlantılı' && await birKez(c, 'Ekonomik Kilit', dosya)) {
       await c.query(`UPDATE dosya SET ekonomik_kilit = true WHERE kimlik = $1`, [dosya]);
       const sg = (await c.query(`SELECT s.sigortaci_adi, s.sigorta_hasar_dosya_no, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [dosya])).rows[0];
-      if (sg?.eposta) await sigortayaHazirla(c, { dosya, tur: 'BLD-57', nesne: dosya, alici: sg.eposta, konu: `${v.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-57', dilKod(v.yazisma_dili), { Kurum: sg.sigortaci_adi ?? '', Institution: sg.sigortaci_adi ?? '', 'Dosya No': v.dosya_no, 'File No': v.dosya_no, 'Hasar Dosya No': sg.sigorta_hasar_dosya_no ?? '—', 'Claim No': sg.sigorta_hasar_dosya_no ?? '—' }), acil: true });
+      if (sg?.eposta) await sigortayaHazirla(c, { dosya, tur: 'BLD-57', nesne: dosya, alici: sg.eposta, konu: `${v.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-57', dilKod(v.yazisma_dili), { Kurum: sg.sigortaci_adi ?? '', Institution: sg.sigortaci_adi ?? '', 'Dosya No': v.dosya_no, 'File No': v.dosya_no, 'Hasar Dosya No': sg.sigorta_hasar_dosya_no ?? '---', 'Claim No': sg.sigorta_hasar_dosya_no ?? '---' }), acil: true });
       else await sigortaAdresiBekleniyor(c, dosya);
     }
     if (t && !v.vefat_isareti) await yatTarafinaYaz(c, { olay: `ekonomik:${dosya}`, kod: v.dosya_niteligi === 'Sigorta bağlantılı' ? 'BLD-58' : 'BLD-59', dil: dilKod(v.yazisma_dili), konu: `${v.dosya_no} Onarım Planı`, telefon: t.telefon, eposta: t.eposta, alanlar: { Yat: v.yat_adi, Yacht: v.yat_adi } });

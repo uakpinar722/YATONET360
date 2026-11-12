@@ -23,7 +23,7 @@ const r = (t: unknown, o: { b?: boolean; sz?: number; renk?: string } = {}) => `
 const p = (ic: string, o: { hiza?: 'left' | 'center' | 'right'; once?: number; sonra?: number } = {}) => `<w:p><w:pPr><w:spacing w:before="${o.once ?? 0}" w:after="${o.sonra ?? 80}"/>${o.hiza ? `<w:jc w:val="${o.hiza}"/>` : ''}</w:pPr>${ic}</w:p>`;
 const hucre = (ic: string, o: { gen?: number; zemin?: string; hiza?: 'left' | 'center' | 'right' } = {}) => `<w:tc><w:tcPr>${o.gen ? `<w:tcW w:w="${o.gen}" w:type="dxa"/>` : ''}${o.zemin ? `<w:shd w:val="clear" w:color="auto" w:fill="${o.zemin}"/>` : ''}</w:tcPr>${p(ic, { hiza: o.hiza, sonra: 0 })}</w:tc>`;
 const tablo = (satirlar: string[]) => `<w:tbl><w:tblPr><w:tblW w:w="5000" w:type="pct"/><w:tblBorders>${['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map((k) => `<w:${k} w:val="single" w:sz="4" w:color="B8C2CC"/>`).join('')}</w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr>${satirlar.map((s) => `<w:tr>${s}</w:tr>`).join('')}</w:tbl>${p('', { sonra: 60 })}`;
-const metinHucre = (h: Hucre) => (h && typeof h === 'object' ? h.m : h ?? '—');
+const metinHucre = (h: Hucre) => (h && typeof h === 'object' ? h.m : h ?? '---');
 const HIZA = { sol: 'left', ort: 'center', sag: 'right' } as const;
 const UNVAN = 'LİMİT GLOBAL MARINE Denizcilik Onarım ve Teknik Hizmetler Sanayi ve Ticaret Limited Şirketi';
 
@@ -40,7 +40,7 @@ export function docxUret(t: BelgeTanim): Buffer {
   for (const b of t.bolumler) {
     g.push(p(r(`${b.numarasiz ? '' : `${String(++n).padStart(2, '0')} · `}${b.baslik.toLocaleUpperCase(en ? 'en' : 'tr-TR')}`, { b: true, sz: 20, renk: LAC }), { once: 160, sonra: 60 }));
     if (b.tur === 'metin') for (const s of b.metin.split(/\r?\n/)) g.push(p(r(s)));
-    else if (b.tur === 'alanlar') g.push(tablo(b.alanlar.map((a) => hucre(r(a.et, { b: true, sz: 18, renk: LAC }), { gen: 2800, zemin: 'F4F7FA' }) + hucre(r(a.deger ?? '—', { sz: 18 })))));
+    else if (b.tur === 'alanlar') g.push(tablo(b.alanlar.map((a) => hucre(r(a.et, { b: true, sz: 18, renk: LAC }), { gen: 2800, zemin: 'F4F7FA' }) + hucre(r(a.deger ?? '---', { sz: 18 })))));
     else {
       const sat = [b.sutunlar.map((s) => hucre(r(s.ad, { b: true, sz: 16, renk: 'FFFFFF' }), { zemin: LAC, hiza: s.hiza ? HIZA[s.hiza] : undefined })).join('')];
       for (const s of b.satirlar) sat.push(s.map((h, i) => hucre(r(metinHucre(h), { sz: 18 }), { hiza: b.sutunlar[i]?.hiza ? HIZA[b.sutunlar[i]!.hiza!] : undefined })).join(''));

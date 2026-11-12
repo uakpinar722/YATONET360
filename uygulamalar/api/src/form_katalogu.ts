@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
+import { gunAy } from './metin.js';
+import type { Bolum } from './pdf.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 
 type Db = Pool | PoolClient;
@@ -27,7 +29,7 @@ export async function formSecilebilir(db: Db, kod: string): Promise<boolean> {
 }
 
 /** Rol adı metinde geçiyor mu ("Teknik Müdür" "Teknik Müdür Yardımcısı"nı kapsamaz). */
-const rolGecer = (metin: string | null, rol: string) => Boolean(metin) && new RegExp(`${rol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])(?! Yardımcısı)`, 'u').test(metin!);
+export const rolGecer = (metin: string | null, rol: string) => Boolean(metin) && new RegExp(`${rol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])(?! Yardımcısı)`, 'u').test(metin!);
 
 /** YG-1513: görev tanımındaki "Kullandığı formlar ve kayıtlar" bölümü katalogdan üretilir: ad ve durum katalogdan gelir, iptal kod düşer,
  * katalogda rolün dolduran veya onaylayan olarak geçtiği araçlar eklenir. */
@@ -55,7 +57,7 @@ export async function gorevFormlari(db: Db, rol: string, bloklar: Blok[]): Promi
   return [...bloklar.slice(0, i), ...bolum, ...(son < 0 ? [] : bloklar.slice(son))];
 }
 
-type Alan = { varlik: string; alan: string; tip: string; bicim: string; zorunlu: string; liste: string; dogrulama: string; sahip: string; ekran: string };
+export type Alan = { varlik: string; alan: string; teknik: string; aciklama: string; tip: string; bicim: string; zorunlu: string; liste: string; dogrulama: string; sahip: string; ekran: string };
 let sozluk: Alan[] | undefined;
 const norm = (s: string) => s.replace(/\(.*?\)/g, ' ').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim();
 /** Adı sözlük varlığıyla birebir örtüşmeyen araçların varlığı. */
@@ -65,10 +67,13 @@ const VARLIK: Record<string, string> = {
   'FR-SCL-002': 'Branş Yetkinliği', 'FR-SCL-004': 'Görevlendirme Uygunluk Kontrolü', 'FR-TIC-004': 'Teminat ve Garanti Kesintisi', 'FR-TIC-011': 'Personel Masraf Fişi',
   'FR-TIC-014': 'Ön Bilgilendirme ve Cayma Kaydı', 'FR-UYG-006': 'Öğrenilen Ders ve Bölüm Kapanışı', 'RP-RAP-001': 'İlerleme Raporu', 'RP-RAP-004': 'Nihai Kapanış Raporu',
   'RP-TIC-001': 'Sigorta Mutabakat Satırı',
+  'FR-KLT-010': 'Nihai Teslim ve Doküman Paketi', 'FR-OPS-017': 'YATONET 360 Onay Kaydı', 'FR-TIC-010': 'Müşteri Faturası (Proforma ve Fatura)', 'FR-SCL-001': 'Kuruluş',
+  'FR-TIC-012': 'İş Birliği Firması Fiyat Teklifi', 'FR-TIC-002': 'Ticari Onay Kaydı', 'RP-TIC-002': 'Aylık Fatura, Tahsilat ve Firma Ödeme Raporu',
 };
 /** YG-633: aracın alanları YATONET 360 alan sözlüğünden gelir (varlık adında kod, birebir ad veya eşleme); dolduran ve onaylayan katalogdan. */
 export function aracAlanlari(kod: string, ad: string): Alan[] {
-  sozluk ??= JSON.parse(readFileSync(join(KOK, 'veri/sablon/alan_sozlugu.json'), 'utf-8')) as Alan[];
+  // Ek sözlük: Ek II zorunlu alan tablolarından, sözlükte varlığı olmayan dışa giden belgeler.
+  sozluk ??= [...JSON.parse(readFileSync(join(KOK, 'veri/sablon/alan_sozlugu.json'), 'utf-8')), ...JSON.parse(readFileSync(join(KOK, 'veri/sablon/alan_sozlugu_ek.json'), 'utf-8'))] as Alan[];
   const v = kod.startsWith('KL-') ? 'Kontrol Listesi Maddesi' : VARLIK[kod];
   return sozluk.filter((x) => (x.varlik.includes(kod) || (v ? x.varlik === v : norm(x.varlik) === norm(ad))) && !/^Gösterilmez/.test(x.ekran ?? ''));
 }
@@ -91,6 +96,24 @@ export function formKataloguYollari(s: FastifyInstance, b: Baglam) {
     if (o.grup !== 'LGM İç Rolü' || !KOD.test(kod)) return yok(y);
     const k = (await b.db.query(`SELECT kod, ad, dolduran, onaylayan FROM form_katalogu WHERE kod = $1`, [kod])).rows[0]; if (!k) return yok(y);
     return { ...k, alanlar: aracAlanlari(kod, k.ad).map((x) => ({ alan: x.alan, tur: x.tip, bicim: x.bicim, zorunlu: x.zorunlu, liste: x.liste, dogrulama: x.dogrulama, sahip: x.sahip })) };
+  });
+  // YG-666: boş şablon; kimlik bandı, dosya ve yat kutusu, sözlükten alan kutuları ve onay bölümü aynı tasarım düzeninde.
+  s.get('/form-katalogu/:kod/bos.pdf', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { kod } = i.params as { kod: string };
+    if (o.grup !== 'LGM İç Rolü' || !KOD.test(kod)) return yok(y);
+    const k = (await b.db.query(`SELECT kod, ad, surum, durum FROM form_katalogu WHERE kod = $1`, [kod])).rows[0]; if (!k) return yok(y);
+    if (k.durum === 'İptal') return y.code(409).send({ hata: 'İptal edilmiş aracın şablonu üretilmez.' });
+    const ORTAK = new Set(['kimlik', 'kayit_no', 'dosya', 'sablon_surumu', 'statu', 'hazirlayan', 'onaylayan', 'onay_zamani', 'olusturma_zamani', 'olusturan', 'guncelleme_zamani']);
+    const al = aracAlanlari(kod, k.ad).filter((x) => !ORTAK.has(x.teknik) && x.tip !== 'Sistem kimliği');
+    if (!al.length) return y.code(409).send({ hata: 'Alan sözlüğünde bu araca bağlı alan yok.' });
+    const BOS = ' ';
+    const bolumler: Bolum[] = [
+      { baslik: 'Dosya ve Yat', tur: 'alanlar', alanlar: [{ et: 'Dosya No', deger: BOS }, { et: 'Yat Adı', deger: BOS }, { et: 'Kayıt No', deger: BOS }] },
+      { baslik: k.ad, tur: 'alanlar', alanlar: al.map((x) => ({ et: `${x.alan}${x.zorunlu === 'Zorunlu' ? ' *' : ''}`, deger: BOS, genis: x.tip === 'Uzun metin' })) },
+      { baslik: 'Onay', tur: 'alanlar', numarasiz: true, alanlar: [{ et: 'Hazırlayan', deger: BOS }, { et: 'Kontrol Eden / Onaylayan', deger: BOS }, { et: 'Tarih', deger: BOS }] },
+    ];
+    const { pdfUret } = await import('./pdf.js');
+    return y.type('application/pdf').header('Content-Disposition', `inline; filename="${kod}_R${k.surum}_bos.pdf"`).send(await pdfUret({ ad: k.ad, kod, no: `${kod} R${k.surum}`, tarih: gunAy(new Date()), surum: `R${k.surum}`, dil: 'tr', bolumler }));
   });
   // Yeni araç Taslak doğar; kod tekildir ve iptal edilmiş kod yeniden verilemez (birincil anahtar, silme yasağı).
   s.post('/form-katalogu', oturumlu, async (i, y) => {

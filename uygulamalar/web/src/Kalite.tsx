@@ -33,7 +33,7 @@ const KM = 'Kalite Müdürü'; const KK = 'Kalite Uzmanı (Kalite Kontrolör)';
 
 interface KaliteV {
   planlar: { kimlik: string; surum: number; kabul_sinifi: string; ozet: string; durum: string }[];
-  gereklilikler: { kimlik: string; gereklilik: string; dogrulama: string; durum: string }[];
+  gereklilikler: { kimlik: string; km_no?: string | null; gereklilik: string; dogrulama: string; durum: string }[];
   uygunsuzluklar: { kimlik: string; uygunsuzluk_no: string; sinif: string; emniyet_isareti: boolean; gercek_durum: string; tasarruf_karari: string | null; statu: string; firma_yaniti: string | null }[];
   kontrolNoktalari: { kimlik: string; kontrol_noktasi_no: string; nokta_turu: string; kontrol_ozelligi: string; sonuc: string | null; serbest_birakma_zamani: string | null }[];
   testler: { kimlik: string; test_no: string; test_grubu: string; kabul_olcutu: string; sonuc: string | null; durum: string }[];
@@ -65,7 +65,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
       <Blok baslik="Kalite Planı">
         {v.planlar.length === 0 && <div className="not">Onaylı kalite planı olmadan onarım işi başlatılamaz.</div>}
         {v.planlar.map((x) => <div key={x.kimlik}>Rev.{x.surum} · {x.kabul_sinifi} Sınıfı · {x.durum}</div>)}
-        {v.gereklilikler.map((g) => <div className="soru" key={g.kimlik}><span>{g.gereklilik} · {g.dogrulama} · {g.durum}</span>{g.durum !== 'Karşılandı' && teknik && <>
+        {v.gereklilikler.map((g) => <div className="soru" key={g.kimlik}><span>{g.km_no ? `${g.km_no} · ` : ''}{g.gereklilik} · {g.dogrulama} · {g.durum}</span>{g.durum !== 'Karşılandı' && teknik && <>
           <BelgeSec ad="Gereklilik Kanıtı" bagTuru="Dosya" bagKimligi={id} deger={gk[g.kimlik] ?? ''} sec={(k) => setGk({ ...gk, [g.kimlik]: k })} />
           <button className="btn2 kucuk" disabled={!gk[g.kimlik]} onClick={() => void yap(() => istek(`/gereklilik/${g.kimlik}/kanit`, { belge: gk[g.kimlik], durum: 'Karşılandı' }))}>Karşılandı</button></>}</div>)}
         {teknik && <>
