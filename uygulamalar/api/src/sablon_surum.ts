@@ -2,20 +2,31 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kapanisKaydet } from './kapanis.js';
+import { bildir } from './bildirim.js';
 import { kartAc } from './is_motoru.js';
+import { rolSahipleri } from './makam.js';
+import type { Pool, PoolClient } from 'pg';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 
-/** YG-600, YG-626: metin kütüphanesinin sahibi BT ve Firma Yönetimi Direktörlüğü; anlamı etkileyen değişiklik yeni sürümle ve CEO onayıyla yayımlanır (dışa giden yeni metin CEO onayı ister). */
+/** YG-600, YG-626: metin kütüphanesinin sahibi BT ve Firma Yönetimi Direktörlüğü; anlamı etkileyen değişiklik yeni sürümle ve Genel Müdür Yardımcısı onayıyla yayımlanır, CEO bilgilendirilir (CEO 12.11.2026). */
+const ONAY = 'Genel Müdür Yardımcısı';
 const SAHIP = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü';
 const DUZENLER = [SAHIP, 'Müşteri ve Paydaş İlişkileri Müdürü'];
 /** Sürüm etiketi Rnn biçimindedir. */
 export const sonrakiSurum = (s: string) => `R${String(Number(String(s).replace(/\D/g, '')) + 1).padStart(2, '0')}`;
+
+/** Metin değişikliği yürürlüğe girince CEO'ya bilgi bildirimi gider. */
+async function ceoBilgi(db: Pool | PoolClient, baslik: string, ozet: string) {
+  const k = await rolSahipleri(db, await rolId(db, 'CEO'));
+  if (k.length) await bildir(db, { olay: `metin:${baslik}`, kullanicilar: k, baslik: `Metin Değişikliği · ${baslik}`, ozet: ozet.slice(0, 300) });
+}
 
 kapanisKaydet('Şablon Metni Onayı', async (c, k, karar, yapan) => {
   const [kod, dil, surum] = String(k.nesne_kimligi).split('|');
   if (karar === 'Onayla') {
     await c.query(`UPDATE sablon_metni SET durum = 'Yerine Geçti' WHERE kod = $1 AND dil = $2 AND durum = 'Yürürlükte'`, [kod, dil]);
     await c.query(`UPDATE sablon_metni SET durum = 'Yürürlükte', onaylayan_ref = $4, yayim_zamani = now() WHERE kod = $1 AND dil = $2 AND surum = $3 AND durum = 'Onayda'`, [kod, dil, surum, yapan]);
+    await ceoBilgi(c, `${kod} (${String(dil).toUpperCase()}) ${surum} yürürlüğe girdi`, `Genel Müdür Yardımcısı onayıyla. ${k.ozet ?? ''}`);
   } else if (karar === 'Gerekçeyle İade Et' || karar === 'Reddet') await c.query(`UPDATE sablon_metni SET durum = 'Taslak' WHERE kod = $1 AND dil = $2 AND surum = $3 AND durum = 'Onayda'`, [kod, dil, surum]);
   else if (karar === 'Yeniden Gönder') await c.query(`UPDATE sablon_metni SET durum = 'Onayda' WHERE kod = $1 AND dil = $2 AND surum = $3 AND durum = 'Taslak'`, [kod, dil, surum]);
 });
@@ -44,9 +55,9 @@ export function sablonSurumYollari(s: FastifyInstance, b: Baglam) {
     if (g.metin.trim() === son.metin) return y.code(409).send({ hata: 'Metin değişmemiştir.' });
     const yeni = sonrakiSurum(son.surum); const anlam = g.anlamEtkiler !== false;
     await b.db.query(`INSERT INTO sablon_metni (kod, dil, surum, tur, baslik, metin, durum, sahip_rol, degisiklik_gerekcesi, onay_dayanagi, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [kod, dil, yeni, son.tur, son.baslik, g.metin.trim(), anlam ? 'Onayda' : 'Yürürlükte', SAHIP, g.gerekce.trim(), anlam ? 'CEO onayı (YATONET 360)' : 'Yazım düzeltmesi · metin sahibi', o.kullanici]);
-    if (anlam) await kartAc(b.db, { tur: 'Şablon Metni Onayı', baslik: `${kod} (${dil.toUpperCase()}) · ${yeni}`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}` });
-    else { await b.db.query(`UPDATE sablon_metni SET durum = 'Yerine Geçti' WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, son.surum]); await b.db.query(`UPDATE sablon_metni SET yayim_zamani = now(), onaylayan_ref = $4 WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, yeni, o.kullanici]); }
+      [kod, dil, yeni, son.tur, son.baslik, g.metin.trim(), anlam ? 'Onayda' : 'Yürürlükte', SAHIP, g.gerekce.trim(), anlam ? 'Genel Müdür Yardımcısı onayı (YATONET 360)' : 'Yazım düzeltmesi · metin sahibi', o.kullanici]);
+    if (anlam) await kartAc(b.db, { tur: 'Şablon Metni Onayı', baslik: `${kod} (${dil.toUpperCase()}) · ${yeni}`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, ONAY)], nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}` });
+    else { await ceoBilgi(b.db, `${kod} (${dil.toUpperCase()}) ${yeni} yürürlüğe girdi`, `Yazım düzeltmesi. ${g.gerekce.trim()}`); await b.db.query(`UPDATE sablon_metni SET durum = 'Yerine Geçti' WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, son.surum]); await b.db.query(`UPDATE sablon_metni SET yayim_zamani = now(), onaylayan_ref = $4 WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, yeni, o.kullanici]); }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Şablon Metni Yeni Sürüm', nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}`, eski: { metin: son.metin }, yeni: { metin: g.metin.trim() }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { surum: yeni, durum: anlam ? 'Onayda' : 'Yürürlükte' };
   });

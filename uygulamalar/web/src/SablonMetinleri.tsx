@@ -17,7 +17,7 @@ export function SablonMetinleri() {
         <label htmlFor={`sm-m-${k}`}>Yeni Metin</label><textarea id={`sm-m-${k}`} value={d.metin} onChange={(e) => setD({ ...d, metin: e.target.value })} />
         <label htmlFor={`sm-g-${k}`}>Değişiklik Gerekçesi</label><input id={`sm-g-${k}`} value={d.gerekce} onChange={(e) => setD({ ...d, gerekce: e.target.value })} />
         <label className="kutu"><input type="checkbox" checked={!d.anlam} onChange={(e) => setD({ ...d, anlam: !e.target.checked })} /><span>Yalnız yazım düzeltmesi (anlam değişmiyor)</span></label>
-        <div className="not">{d.anlam ? 'Gönderilecek: CEO' : 'Metin sahibi kaydıyla doğrudan yürürlüğe girer.'}</div>
-        <button className="btn2 kucuk" onClick={() => void istek<{ durum: string }>(`/sablon-metni/${encodeURIComponent(x.kod)}/${x.dil}`, { metin: d.metin, gerekce: d.gerekce, anlamEtkiler: d.anlam }).then((r) => { setM(r.durum === 'Onayda' ? 'Yeni sürüm CEO onayına gönderildi.' : 'Yeni sürüm yürürlüğe girdi.'); setD(null); yk(); }).catch((e) => setM(e.message))}>Yeni Sürüm Kaydet</button></div>
+        <div className="not">{d.anlam ? 'Gönderilecek: Genel Müdür Yardımcısı · CEO bilgilendirilir' : 'Metin sahibi kaydıyla doğrudan yürürlüğe girer; CEO bilgilendirilir.'}</div>
+        <button className="btn2 kucuk" onClick={() => void istek<{ durum: string }>(`/sablon-metni/${encodeURIComponent(x.kod)}/${x.dil}`, { metin: d.metin, gerekce: d.gerekce, anlamEtkiler: d.anlam }).then((r) => { setM(r.durum === 'Onayda' ? 'Yeni sürüm Genel Müdür Yardımcısı onayına gönderildi.' : 'Yeni sürüm yürürlüğe girdi.'); setD(null); yk(); }).catch((e) => setM(e.message))}>Yeni Sürüm Kaydet</button></div>
         : <button className="btn2 kucuk" onClick={() => setD({ anahtar: k, metin: x.metin, gerekce: '', anlam: true })}>Yeni Sürüm</button>)}</div>; })}</details>;
 }
