@@ -1,3 +1,4 @@
+import { izYaz } from './denetim.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez } from './bildirim.js';
@@ -113,6 +114,19 @@ export function kapanisEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     return zorunluFormlar(b.db, id);
+  });
+  // Ek II: kullanılmayan zorunlu form için Dosya Sorumlusu gerekçeli istisna ve eşdeğer kontrolü kaydeder; kayıt değişmez.
+  s.post('/dosya/:id/zorunlu-form-istisnasi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kod?: string; gerekce?: string; esdegerKontrol?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if ((await b.db.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'İstisnayı Dosya Sorumlusu kaydeder.' });
+    const f = (await zorunluFormlar(b.db, id)).find((x) => x.kod === g.kod);
+    if (!f) return y.code(400).send({ hata: 'Bu form dosyada zorunlu değildir.' });
+    if (f.var) return y.code(409).send({ hata: f.istisna ? 'İstisna kayıtlıdır.' : 'Form kayıtlıdır; istisna gerekmez.' });
+    if (!g.gerekce?.trim() || !g.esdegerKontrol?.trim()) return y.code(400).send({ hata: 'Gerekçe ve eşdeğer kontrol zorunludur.' });
+    await b.db.query(`INSERT INTO zorunlu_form_istisnasi (dosya_ref, form_kodu, gerekce, esdeger_kontrol, kaydeden_ref) VALUES ($1,$2,$3,$4,$5)`, [id, g.kod, g.gerekce.trim(), g.esdegerKontrol.trim(), o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Zorunlu Form İstisnası', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: `${g.kod}: ${g.gerekce.trim()}`, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-785: hedef ve gerçekleşen süreler kayıttan gelir; müşteri kararı, erişim ve üçüncü taraf beklemesi düşülür.

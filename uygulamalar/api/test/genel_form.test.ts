@@ -58,3 +58,20 @@ describe('Ek II kod uyumu (YG-631, YG-646)', () => {
     expect(kodlar.filter((x) => k.get(x) !== 'Yürürlükte')).toEqual([]);
   });
 });
+
+describe('koşullu formlar ve istisna (YG-636, BRANS)', () => {
+  it('onaylı kalemin ana branşı kontrol listesi, proses ve test formunu ister; Dosya Sorumlusu gerekçeli istisna kaydeder', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,'Onaylı',1,0,1,1,$3) RETURNING kimlik`, [`${d.dosyaNo}-TK09`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, kartela_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'ELEKTRIK-01.02.03-01','Pano','Onarım','İşçilik',1,'adet',1,1,'Onaylandı')`, [t]);
+    const ds = await o.gir('ds');
+    const f = (await o.ist('GET', `/api/dosya/${d.kimlik}/zorunlu-formlar`, ds)).json() as { kod: string; var: boolean }[];
+    for (const k of ['KL-TEK-006', 'KL-TEK-007', 'FR-ONR-008', 'FR-KLT-006']) expect(f.find((x) => x.kod === k)?.var).toBe(false);
+    expect(f.some((x) => x.kod === 'FR-ONR-004')).toBe(false);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/zorunlu-form-istisnasi`, ds, { kod: 'FR-KLT-006', gerekce: 'Yalnız kapak değişimi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/zorunlu-form-istisnasi`, await o.gir('oy'), { kod: 'FR-KLT-006', gerekce: 'G', esdegerKontrol: 'E' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/zorunlu-form-istisnasi`, ds, { kod: 'FR-KLT-006', gerekce: 'Yalnız kapak değişimi', esdegerKontrol: 'Görsel kontrol ve işlev denemesi FR-ONR-008 kaydında' })).statusCode).toBe(200);
+    const s = (await o.ist('GET', `/api/dosya/${d.kimlik}/zorunlu-formlar`, ds)).json().find((x: { kod: string }) => x.kod === 'FR-KLT-006');
+    expect(s).toMatchObject({ var: true }); expect(s.istisna).toMatch(/Eşdeğer kontrol/);
+  });
+});
