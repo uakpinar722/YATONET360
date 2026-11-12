@@ -3,6 +3,7 @@ import { YatKarada } from './YatKarada';
 import { HassasGorsel } from './HassasGorsel';
 import { GenelForm } from './GenelForm';
 import { ZorunluFormlar } from './ZorunluFormlar';
+import { TeknikCizim } from './TeknikCizim';
 import { KurtarmaSonucKontrol } from './KurtarmaSonuc';
 import { OnDegerlendirme } from './OnDegerlendirme';
 import { IlkKapsam } from './IlkKapsam';
@@ -174,6 +175,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <YatKarada dosya={id} />
     <HassasGorsel dosya={id} />
     <ZorunluFormlar dosya={id} />
+    <TeknikCizim dosya={id} />
     <GenelForm dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />

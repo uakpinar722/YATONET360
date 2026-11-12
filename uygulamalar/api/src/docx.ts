@@ -40,6 +40,7 @@ export function docxUret(t: BelgeTanim): Buffer {
   for (const b of t.bolumler) {
     g.push(p(r(`${b.numarasiz ? '' : `${String(++n).padStart(2, '0')} · `}${b.baslik.toLocaleUpperCase(en ? 'en' : 'tr-TR')}`, { b: true, sz: 20, renk: LAC }), { once: 160, sonra: 60 }));
     if (b.tur === 'metin') for (const s of b.metin.split(/\r?\n/)) g.push(p(r(s)));
+    else if (b.tur === 'gorsel') g.push(p(r(b.altyazi ?? '', { sz: 16 }))); // YG-679: görsel yalnız PDF'te gömülür
     else if (b.tur === 'alanlar') g.push(tablo(b.alanlar.map((a) => hucre(r(a.et, { b: true, sz: 18, renk: LAC }), { gen: 2800, zemin: 'F4F7FA' }) + hucre(r(a.deger ?? '---', { sz: 18 })))));
     else {
       const sat = [b.sutunlar.map((s) => hucre(r(s.ad, { b: true, sz: 16, renk: 'FFFFFF' }), { zemin: LAC, hiza: s.hiza ? HIZA[s.hiza] : undefined })).join('')];

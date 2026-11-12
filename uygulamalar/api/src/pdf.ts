@@ -20,6 +20,8 @@ export type Hucre = string | number | null | undefined | { m: string; renk: Renk
 export type Bolum =
   | { baslik: string; tur: 'alanlar'; alanlar: { et: string; deger: string | null | undefined; genis?: boolean }[]; numarasiz?: boolean }
   | { baslik: string; tur: 'metin'; metin: string; numarasiz?: boolean }
+  /** YG-679: çizim veya kroki görseli (data URI); altında antet ve revizyon tablosu ayrı bölümlerdir. */
+  | { baslik: string; tur: 'gorsel'; src: string; altyazi?: string; numarasiz?: boolean }
   | { baslik: string; tur: 'tablo'; sutunlar: { ad: string; hiza?: Hiza }[]; satirlar: Hucre[][]; toplamlar?: { et: string; deger: string; ana?: boolean }[]; numarasiz?: boolean };
 
 export interface BelgeTanim {
@@ -67,6 +69,7 @@ h1, .kapak h1 { font-family: Cambria, Caladea, Georgia, serif; font-weight: 400;
 .ic { margin-top: 3mm; padding: 1.5mm; text-align: center; font-weight: 700; color: #B3261E; border: .6pt solid #B3261E; }
 table { width: 100%; border-collapse: collapse; margin-top: 4mm; }
 table.band { margin-top: 5mm; }
+table.gorsel td { border: .5pt solid #D9D4CC; padding: 3mm; text-align: center; } table.gorsel img { max-width: 100%; max-height: 150mm; } .altyazi { font-size: 8.5pt; color: #5A6478; margin-top: 2mm; }
 .band td { border: .5pt solid #D9D4CC; border-top: 1.5pt solid #A6743E; background: #F7F5F1; padding: 3pt 6pt; }
 .band b { display: block; font-size: 11pt; margin-top: 1pt; }
 .et { font-size: 8pt; color: #6B6B6B; }
@@ -114,6 +117,7 @@ const bolumAdi = (t: BelgeTanim, bolumler: Bolum[], b: Bolum) => {
 function bolumHtml(t: BelgeTanim, bolumler: Bolum[], b: Bolum, yalnizIlk = false): string {
   const ad = k(bolumAdi(t, bolumler, b));
   if (b.tur === 'metin') return `<table><thead><tr><th class="kb">${ad}</th></tr></thead><tbody><tr class="mt"><td class="metin">${k(yalnizIlk ? b.metin.slice(0, 40) : b.metin)}</td></tr></tbody></table>`;
+  if (b.tur === 'gorsel') return `<table class="gorsel"><thead><tr><th class="kb">${ad}</th></tr></thead><tbody><tr><td><img src="${b.src}" alt="${k(b.altyazi ?? '')}">${b.altyazi ? `<div class="altyazi">${k(b.altyazi)}</div>` : ''}</td></tr></tbody></table>`;
   if (b.tur === 'tablo') {
     const n = b.sutunlar.length;
     const satirlar = yalnizIlk ? b.satirlar.slice(0, 1) : b.satirlar;
