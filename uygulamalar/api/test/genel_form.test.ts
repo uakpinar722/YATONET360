@@ -75,3 +75,15 @@ describe('koşullu formlar ve istisna (YG-636, BRANS)', () => {
     expect(s).toMatchObject({ var: true }); expect(s.istisna).toMatch(/Eşdeğer kontrol/);
   });
 });
+
+describe('Ek II ad uyumu (YG-646)', () => {
+  it('sabit adla üretilen belgenin adı katalogdaki adın parantez öncesi kısmıyla aynıdır (Garanti Belgesi onaylı şablon başlığını taşır)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const s = readFileSync(new URL('../src/belge_uret.ts', import.meta.url), 'utf-8');
+    const ciftler = [...s.matchAll(/ad: '([^']+)', kod: '([A-Z]{2}-[A-Z]{3}-\d{3})'/g)].map((m) => [m[1]!, m[2]!] as const);
+    const k = new Map((await o.sup.query(`SELECT kod, ad FROM form_katalogu`)).rows.map((r) => [r.kod, String(r.ad).replace(/\s*\(.*\)\s*$/, '')]));
+    expect(ciftler.length).toBeGreaterThan(3);
+    // FR-OPS-013: katalogda kısa ad ("Kurtarma Operasyonu"); belge Rol Görev Tanımlarındaki tutanak adını taşır (V-464).
+    expect(ciftler.filter(([ad, kod]) => kod !== 'FR-OPS-013' && k.get(kod) !== ad)).toEqual([]);
+  });
+});

@@ -24,6 +24,8 @@ const tek = randomBytes(3).toString('hex');
 const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = []; const hatalar = [];
 const kontrol = (ad, k) => { sonuc.push(`${k ? 'GEÇTİ' : 'KALDI'}  ${ad}`); };
+/** Sunucu işlemi arka planda sürerken veritabanı sonucunu birkaç saniye yoklar. */
+const yokla = async (ad, f) => { for (let i = 0; i < 16; i++) { if (await f()) return kontrol(ad, true); await new Promise((r) => setTimeout(r, 250)); } kontrol(ad, false); };
 const H = { 'x-yatonet': '1' };
 const gizliler = {}; const kimlikler = {};
 const hesap = async (k, rol, grup = 'LGM İç Rolü') => {
@@ -66,7 +68,7 @@ const dosyaAc = async (p, no) => {
   await p.getByRole('heading', { name: new RegExp(no) }).first().waitFor();
 };
 const hataVarsa = async (p, ne) => { const a = p.getByRole('alert'); if (await a.count()) { const t = await a.first().textContent(); if (t) throw new Error(`${ne}: ${t}`); } };
-const tikla = async (p, ad) => { await p.getByRole('button', { name: ad, exact: true }).first().click(); await p.waitForTimeout(350); await hataVarsa(p, ad); };
+const tikla = async (p, ad) => { await p.getByRole('button', { name: ad, exact: true }).first().click(); await p.waitForTimeout(350); await p.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {}); await hataVarsa(p, ad); };
 const sayfalar = {};
 const al = async (k, E) => { if (!sayfalar[k]) sayfalar[k] = await gir(E[k], k); else { await sayfalar[k].goto(KOK); await sayfalar[k].reload(); } return sayfalar[k]; };
 const kartKarar = async (E, kim, baslik, karar) => {
@@ -246,14 +248,14 @@ try {
   // Ek-3 alanı ve ekonomik kilit ekranı
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   await pDs.getByLabel('Dosyaya Özel Onay Yetkilisi (Ek-3)', { exact: true }).fill('yetkili@deneme.local'); await tikla(pDs, 'Onay Yetkilisini Kaydet');
-  kontrol('Ek-3 onay yetkilisi ekrandan kaydedilir', (await sup.query(`SELECT onay_yetkilisi_eposta e FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].e === 'yetkili@deneme.local');
+  await yokla('Ek-3 onay yetkilisi ekrandan kaydedilir', async () => (await sup.query(`SELECT onay_yetkilisi_eposta e FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].e === 'yetkili@deneme.local');
   await sup.query(`UPDATE dosya_sigorta_kaydi SET onay_yetkilisi_eposta = NULL WHERE dosya_ref = $1`, [d.kimlik]);
   await sup.query(`UPDATE dosya SET ekonomik_kilit = true WHERE kimlik = $1`, [d.kimlik]);
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);
   await pDs.getByText('onarıma devam kararı bekleniyor').first().waitFor();
   await pDs.getByLabel('Onaylayan Yetkili', { exact: true }).first().fill('Hasar Müdürü');
   await tikla(pDs, 'Sigorta Kararı: Devam');
-  kontrol('ekonomik kilit sigorta kararıyla açılır', (await sup.query(`SELECT ekonomik_kilit k FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].k === false);
+  await yokla('ekonomik kilit sigorta kararıyla açılır', async () => (await sup.query(`SELECT ekonomik_kilit k FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].k === false);
 
   // Firma sayfası (YG-425, YG-422)
   const pFf = await al('fir', E); await pFf.getByRole('button', { name: 'Firma' }).first().click(); await pFf.getByText('Cari Ekstre').waitFor();
@@ -293,7 +295,7 @@ try {
   await sayfalar.ty.getByLabel('Kapsam Kararı', { exact: true }).first().selectOption('İyi Niyet');
   await sayfalar.ty.getByLabel('Karar Gerekçesi', { exact: true }).first().fill('Müşteri memnuniyeti'); await sayfalar.ty.getByLabel('İyi Niyet Tutarı (EUR)', { exact: true }).first().fill('10');
   await tikla(sayfalar.ty, 'Kararı Kaydet');
-  kontrol('iyi niyet kararı onaya gider, karar yazılmaz', (await sup.query(`SELECT g.karar, (SELECT count(*)::int FROM is_karti k WHERE k.tur = 'İyi Niyet Kararı' AND k.nesne_kimligi = g.kimlik::text) n FROM garanti_sikayet g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani DESC LIMIT 1`, [d.kimlik])).rows.every((r) => r.karar === null && r.n === 1));
+  await yokla('iyi niyet kararı onaya gider, karar yazılmaz', async () => (await sup.query(`SELECT g.karar, (SELECT count(*)::int FROM is_karti k WHERE k.tur = 'İyi Niyet Kararı' AND k.nesne_kimligi = g.kimlik::text) n FROM garanti_sikayet g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani DESC LIMIT 1`, [d.kimlik])).rows.every((r) => r.karar === null && r.n === 1));
 
   // Onarım iş emri
   await dosyaAc(pOy, d.dosyaNo);
@@ -332,7 +334,7 @@ try {
   kontrol('firma parça girişi kontrole gider', (await sup.query(`SELECT p.kabul_karari FROM firma_parca_girisi p JOIN is_emri e ON e.kimlik = p.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rowCount === 1);
   await tasmaYok(pF2, 'firma_is_emri_ayrinti');
   await tikla(pF2, 'İş Tamamlandı');
-  kontrol('firma ilerlemeyi dosya yükleyerek girer ve işi bitirir', (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].statu === 'Tamamlandı');
+  await yokla('firma ilerlemeyi dosya yükleyerek girer ve işi bitirir', async () => (await sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].statu === 'Tamamlandı');
 
   // Kabul
   await dosyaAc(pTu, d.dosyaNo);
@@ -341,7 +343,7 @@ try {
   await pTu.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTu, 'Karşılandı');
   await dosyaAc(pTu, d.dosyaNo); await pTu.locator('.soru', { hasText: ie.is_emri_no }).getByRole('button', { name: 'Teknik Kabul' }).click(); await pTu.waitForTimeout(500); await hataVarsa(pTu, 'Teknik Kabul');
-  kontrol('Teknik Uzman ilerlemeyi doğrular, gerekliliği kanıtlar, teknik kabul verir', (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].s === 'Kabul');
+  await yokla('Teknik Uzman ilerlemeyi doğrular, gerekliliği kanıtlar, teknik kabul verir', async () => (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie.kimlik])).rows[0].s === 'Kabul');
 
   // Proforma, fatura, tahsilat
   await dosyaAc(pTs, d.dosyaNo);
