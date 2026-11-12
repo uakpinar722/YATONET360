@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { belgeKuyruguIsle, belgeUret, garantiTanim, gizlilikIsareti, teklifTanim, TURKCE_ESAS } from '../src/belge_uret.js';
+import { belgeKuyruguIsle, belgeUret, degisiklikKaydiTanim, garantiTanim, gizlilikIsareti, teklifTanim, TURKCE_ESAS } from '../src/belge_uret.js';
 import { kuyrukIsle } from '../src/bildirim.js';
 import { Depo } from '../src/depo.js';
 import { pdfKapat, sayfaSayisi } from '../src/pdf.js';
@@ -175,5 +175,16 @@ describe('garanti belgesi (YG-624)', () => {
     const m = JSON.stringify((await garantiTanim(o.db, ts)).t);
     for (const s of ['Garanti Belgesi', 'FR-KLT-010', 'Kanuni haklarınız saklıdır', 'Geçici onarım olarak teslim edilen işler', 'Şaft salmastrasında damlama kontrolü', 'Yat Onarım ve Teknik Hizmet Sözleşmesi']) expect(m).toContain(s);
     expect(m).not.toContain('[●]');
+    await belgeUret(o.db, { tur: 'Garanti Belgesi', nesne: ts, dosya: d.kimlik }); await belgeKuyruguIsle(b as never);
+    expect((await durum('Garanti Belgesi', ts)).durum).toBe('Üretildi');
+  });
+});
+
+describe('değişiklik belgeleri (YG-656)', () => {
+  it('iç Değişiklik Kaydı FR-UYG-003 koduyla üretilir', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const p = (await o.sup.query(`INSERT INTO degisiklik_protokolu (degisiklik_no, dosya_ref, tur, mevcut, onerilen, bedel_farki_eur, kanal, hazirlayan_ref) VALUES ($1,$2,'İlave İş','A','B',100,'YATONET 360',$3) RETURNING kimlik`, [`${d.dosyaNo}-DG01`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    const t = (await degisiklikKaydiTanim(o.db, p)).t;
+    expect(t).toMatchObject({ ad: 'Değişiklik Kaydı', kod: 'FR-UYG-003', icKayit: true });
   });
 });

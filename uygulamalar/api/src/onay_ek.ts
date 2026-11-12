@@ -230,6 +230,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
       const no = await altNumara(c, d.dosya_no, 'DG');
       const yeni = Number(g.yeniToplam) >= 0 && g.yeniToplam !== undefined ? g.yeniToplam : null;
       const r = (await c.query(`INSERT INTO degisiklik_protokolu (degisiklik_no, dosya_ref, tur, mevcut, onerilen, bedel_farki_eur, yeni_toplam_eur, ek_sure_gun, kanal, belge_ref, sigorta_onayi, sigorta_onay_tarihi, durum, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`, [no, id, g.tur, g.mevcut!.trim(), g.onerilen!.trim(), Number(g.bedelFarki) || 0, yeni, Number(g.ekSure) || 0, g.kanal, g.belge ?? null, si, si === 'Alındı' ? g.sigortaTarih : null, g.kanal === 'YATONET 360' ? 'Onay Bekliyor' : 'Onaylandı', o.kullanici])).rows[0];
+      await belgeUret(c, { tur: 'Değişiklik Kaydı', nesne: r.kimlik, dosya: id }); // YG-656: iç FR-UYG-003
       if (g.kanal === 'YATONET 360') {
         const dl = dilKod(d.yazisma_dili); const ts = tutar(Number(yeni ?? 0), dl);
         const on = await onayTalebiAc(c, { dosya: id, ony: 'ONY-05', dil: dl, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'Değişiklik No / Sürüm': no, 'Change No / Version': no, 'bağlantı': b.webAdresi, link: b.webAdresi, '0.000,00': ts, '0,000.00': ts }, tutar: yeni, taraf: yt.kimlik, kullanici: yt.kullanici_ref, aliciAd: yt.kisi_adi_soyadi, telefon: yt.telefon, eposta: yt.eposta, nesneTuru: 'Değişiklik', nesneKimligi: r.kimlik, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: `${d.dosya_no} Değişiklik Onayı` });
