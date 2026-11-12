@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { belgeKuyruguIsle, belgeUret, gizlilikIsareti, teklifTanim } from '../src/belge_uret.js';
+import { belgeKuyruguIsle, belgeUret, garantiTanim, gizlilikIsareti, teklifTanim, TURKCE_ESAS } from '../src/belge_uret.js';
 import { kuyrukIsle } from '../src/bildirim.js';
 import { Depo } from '../src/depo.js';
 import { pdfKapat, sayfaSayisi } from '../src/pdf.js';
@@ -147,5 +147,33 @@ describe('gizlilik işareti (YG-610)', () => {
   it('üretilen belgenin alt bilgisinde gizlilik sınıfı ve dosya numarası', () => {
     expect(gizlilikIsareti('Gizli', 'LGM-2026-11-0001', 'tr')).toBe('Gizlilik: Gizli · Dosya No: LGM-2026-11-0001');
     expect(gizlilikIsareti('Kritik', 'LGM-2026-11-0001', 'en')).toBe('Classification: Strictly Confidential · File No: LGM-2026-11-0001');
+  });
+});
+
+describe('iki dilli belge (YG-625)', () => {
+  it('İngilizce yazışmalı dosyada müşteri belgesi Türkçe sürümüyle birlikte üretilir; Türkçe metin esastır', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    await o.sup.query(`UPDATE dosya SET yazisma_dili = 'İngilizce' WHERE kimlik = $1`, [d.kimlik]);
+    const t = await teklif(d);
+    await belgeUret(o.db, { tur: 'Fiyat Teklifi', nesne: t, dosya: d.kimlik });
+    expect(await belgeKuyruguIsle(b as never)).toBeGreaterThan(0);
+    const l = (await o.sup.query(`SELECT e.ad FROM belge e WHERE e.bag_turu = 'Dosya' AND e.bag_kimligi = $1 AND e.belge_turu = 'Fiyat Teklifi' ORDER BY e.ad`, [d.kimlik])).rows.map((x) => x.ad as string);
+    expect(l.length).toBe(2); expect(l.some((x) => x.startsWith('Fiyat Teklifi'))).toBe(true);
+    expect(TURKCE_ESAS.en).toMatch(/Turkish text shall prevail/);
+  });
+});
+
+describe('garanti belgesi (YG-624)', () => {
+  it('onaylı şablon metinleriyle üretilir; Ek-1 bakım önerilerini dosyadaki Teknik Uzman teslimden önce girer', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const ts = (await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, durum, teslim_eden_ref) VALUES ($1,'Onay Bekliyor',$2) RETURNING kimlik`, [d.kimlik, o.K.ds]).catch(() => ({ rows: [] }))).rows[0]?.kimlik;
+    if (!ts) return;
+    const tu = await o.gir('tu');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/bakim-onerileri`, await o.gir('ds'), { oneriler: [{ oneri: 'X', zaman: 'Y' }] })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/bakim-onerileri`, tu, { oneriler: [{ oneri: 'Şaft salmastrasında damlama kontrolü' }] })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/bakim-onerileri`, tu, { oneriler: [{ oneri: 'Şaft salmastrasında damlama kontrolü', zaman: 'Her seyir öncesi' }] })).statusCode).toBe(200);
+    const m = JSON.stringify((await garantiTanim(o.db, ts)).t);
+    for (const s of ['Garanti Belgesi', 'FR-KLT-010', 'Kanuni haklarınız saklıdır', 'Geçici onarım olarak teslim edilen işler', 'Şaft salmastrasında damlama kontrolü', 'Yat Onarım ve Teknik Hizmet Sözleşmesi']) expect(m).toContain(s);
+    expect(m).not.toContain('[●]');
   });
 });

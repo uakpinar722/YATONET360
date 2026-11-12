@@ -1,0 +1,136 @@
+{
+ "tr": {
+  "ad": "Garanti Belgesi",
+  "konu": "Konu: İşçilik Garantisi",
+  "giris": "Yatınızda yapılan işler {tarih} tarihinde {tutanak} numaralı Yat Teslim Tutanağıyla teslim edilmiştir. Bu belge tutanağın ekidir ve ayrıca onay gerektirmez; tutanakla aynı e-postayla PDF olarak gönderilmiş olup YATONET 360’ta da erişiminize açıktır.",
+  "b1": "Yat ve Teslim",
+  "yat": "Yat Adı",
+  "marka": "Marka / Model",
+  "sahip": "Yat Sahibi",
+  "tutanak": "Teslim Tutanağı",
+  "devir": "Sorumluluk Devri",
+  "sonuc": "Kabul Sonucu",
+  "b2": "İşçilik Garantisi (İş Paketi Bazında)",
+  "paket": "Paket",
+  "kalem": "Kalem",
+  "sure": "Süre",
+  "bas": "Garanti Başlangıcı",
+  "bit": "Garanti Bitişi",
+  "ay": "12 ay",
+  "kural": "Garanti süresi, aksi yazılmadıkça her iş paketi için 12 aydır ve teslim tarihinde başlar. Garanti süresi içinde düzeltilen kalemde süre, düzeltmenin tamamlandığı tarihten itibaren yeniden 12 ay olarak işler; yeni bitiş tarihi YATONET 360’ta kaydedilir ve size bildirilir. Açık iş olarak teslim edilen kalemin garantisi tamamlandığı tarihte başlar. Kanuni haklarınız saklıdır.",
+  "b3": "İşçilik Garantisi Dışında Kalan Hâller",
+  "no": "No",
+  "dis": "Aşağıdaki Hâllerde İşçilik Garantisi Uygulanmaz",
+  "haller": [
+   "Yatın veya sistemin kullanım kılavuzuna ya da teslimde bildirilen kullanım sınırlarına aykırı kullanımı",
+   "LİMİT GLOBAL MARINE’ın bilgisi dışında yapılan müdahale, söküm veya değişiklik",
+   "Ek-1’deki bakım önerilerinin uygulanmaması",
+   "Teslimden sonra meydana gelen yeni olay (çarpma, oturma, yangın vb.)",
+   "Olağan aşınma ve sarf malzemeleri",
+   "Geçici onarım olarak teslim edilen işler"
+  ],
+  "b4": "Garanti Başvurusu",
+  "kanal": "YATONET 360",
+  "kanalD": "Dosyanızdan “Garanti Bildirimi”",
+  "basvuru": "Başvuruda",
+  "basvuruD": "Fotoğraf, tarih, belirti ve kullanım koşullarını paylaşmanızı rica ederiz; yatın güvenliğini tehlikeye atacak müdahaleden kaçınınız.",
+  "nezaket": "Tekrar geçmiş olsun dileklerimizi iletir, motor yatınızı sağlıklı ve mutlu günlerde, keyifle kullanmanızı dileriz.",
+  "tabi": "Bu belge, taraflar arasındaki Yat Onarım ve Teknik Hizmet Sözleşmesi hükümlerine tabidir ve onunla birlikte değerlendirilir.",
+  "ekler": "Ekler",
+  "ek": "Ek",
+  "baslik": "Başlık",
+  "icerik": "İçerik",
+  "ekListe": [
+   [
+    "Ek-1",
+    "Kullanım ve Bakım Önerileri",
+    "İlk çalıştırma, izleme ve periyodik bakım önerileri"
+   ],
+   [
+    "Ek-2",
+    "Parça Listesi",
+    "Takılan parçalar, parça numarası, seri / parti ve miktar"
+   ],
+   [
+    "Ek-3",
+    "Parça Sertifikaları",
+    "Üretici ve malzeme sertifikaları, üretici garanti belgeleri"
+   ],
+   [
+    "Ek-4",
+    "Fotoğraflar",
+    "Teslim anı ve tamamlanan işlerin fotoğrafları"
+   ]
+  ],
+  "ek1": "Ek-1 · Kullanım ve Bakım Önerileri",
+  "oneri": "Öneri",
+  "zaman": "Zaman"
+ },
+ "en": {
+  "ad": "Warranty Certificate",
+  "konu": "Subject: Workmanship Warranty",
+  "giris": "The work carried out on your yacht was handed over on {tarih} with Yacht Handover Record no. {tutanak}. This document is an annex to that record and requires no separate approval; it has been sent as a PDF in the same e-mail as the record and remains available to you in YATONET 360.",
+  "b1": "Yacht and Handover",
+  "yat": "Yacht Name",
+  "marka": "Make / Model",
+  "sahip": "Yacht Owner",
+  "tutanak": "Handover Record",
+  "devir": "Transfer of Custody",
+  "sonuc": "Acceptance Result",
+  "b2": "Workmanship Warranty (Per Work Package)",
+  "paket": "Package",
+  "kalem": "Item",
+  "sure": "Period",
+  "bas": "Warranty Start",
+  "bit": "Warranty End",
+  "ay": "12 months",
+  "kural": "Unless otherwise stated, the warranty period is 12 months for each work package and starts on the handover date. For an item corrected within the warranty period, the period restarts for 12 months from the date the correction is completed; the new end date is recorded in YATONET 360 and notified to you. For an item handed over as an open item, the warranty starts on the date it is completed. Your statutory rights are reserved.",
+  "b3": "Cases Not Covered by the Workmanship Warranty",
+  "no": "No",
+  "dis": "The Workmanship Warranty Does Not Apply in the Following Cases",
+  "haller": [
+   "Use of the yacht or system contrary to the operating manual or to the operating limits notified at handover",
+   "Intervention, dismantling or modification carried out without the knowledge of LİMİT GLOBAL MARINE",
+   "Failure to follow the maintenance recommendations in Annex 1",
+   "A new incident occurring after handover (impact, grounding, fire, etc.)",
+   "Normal wear and tear and consumables",
+   "Work handed over as a temporary repair"
+  ],
+  "b4": "Warranty Claims",
+  "kanal": "YATONET 360",
+  "kanalD": "“Warranty Notification” from your file",
+  "basvuru": "With Your Claim",
+  "basvuruD": "We kindly ask you to share photographs, the date, symptoms and conditions of use; please avoid any intervention that could endanger the safety of the yacht.",
+  "nezaket": "Once again, we are sorry for the incident and wish you many healthy and happy days enjoying your motor yacht.",
+  "tabi": "This document is subject to, and shall be read together with, the Yacht Repair and Technical Services Agreement between the parties.",
+  "ekler": "Annexes",
+  "ek": "Annex",
+  "baslik": "Title",
+  "icerik": "Contents",
+  "ekListe": [
+   [
+    "Annex 1",
+    "Recommendations for Use and Maintenance",
+    "Initial start-up, monitoring and periodic maintenance recommendations"
+   ],
+   [
+    "Annex 2",
+    "Parts List",
+    "Parts fitted, part number, serial / batch and quantity"
+   ],
+   [
+    "Annex 3",
+    "Parts Certificates",
+    "Manufacturer and material certificates, manufacturer warranty documents"
+   ],
+   [
+    "Annex 4",
+    "Photographs",
+    "Photographs at handover and of the completed work"
+   ]
+  ],
+  "ek1": "Annex 1 · Recommendations for Use and Maintenance",
+  "oneri": "Recommendation",
+  "zaman": "When"
+ }
+}
