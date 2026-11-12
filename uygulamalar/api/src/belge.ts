@@ -184,7 +184,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const lgm = o.grup === 'LGM İç Rolü';
     const { rows } = await b.db.query(
       `SELECT e.kimlik, e.ad, e.belge_turu, e.bilgi_sinifi, e.kaynak_kanali, e.belge_tarihi, e.olusturan_ref = $3 AS benim, e.hassas_icerik, e.maskeli_kaynak_ref,
-              coalesce(json_agg(json_build_object('no', s.surum_no, 'dosya', s.dosya_adi, 'boyut', s.boyut, 'durum', s.durum, 'yukleme', s.yukleme_zamani, 'yururluk', s.yururluk_tarihi, 'gerekce', CASE WHEN $4 THEN s.degisiklik_gerekcesi END) ORDER BY s.surum_no DESC), '[]') AS surumler
+              coalesce(json_agg(json_build_object('no', s.surum_no, 'kapsam', s.yururluk_kapsami, 'gecis', s.gecis_kurali, 'dosya', s.dosya_adi, 'boyut', s.boyut, 'durum', s.durum, 'yukleme', s.yukleme_zamani, 'yururluk', s.yururluk_tarihi, 'gerekce', CASE WHEN $4 THEN s.degisiklik_gerekcesi END) ORDER BY s.surum_no DESC), '[]') AS surumler
          FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik
         WHERE e.bag_turu = $1 AND e.bag_kimligi = $2 AND (e.bilgi_sinifi <> 'Kritik' OR e.olusturan_ref = $3) AND ($4 OR e.olusturan_ref = $3 OR s.durum = 'Yürürlükte')
           AND ($4 OR e.olusturan_ref = $3 OR (e.bilgi_sinifi <> 'Kurumsal' AND NOT e.belge_turu = ANY($5)))
@@ -208,8 +208,12 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
   s.post('/belge/:id/surum/:no/onaya-gonder', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id, no } = i.params as { id: string; no: string };
     if (o.grup !== 'LGM İç Rolü' || !UUID.test(id)) return yok(y);
-    const { yururluk } = (i.body ?? {}) as { yururluk?: string };
+    const { yururluk, kapsam, gecis } = (i.body ?? {}) as { yururluk?: string; kapsam?: string; gecis?: string };
     if (yururluk && !/^\d{4}-\d{2}-\d{2}$/.test(yururluk)) return y.code(400).send({ hata: 'Geçersiz yürürlük tarihi.' });
+    // YG-597: ileri tarihli sürümde kapsam ve geçiş kuralı zorunludur.
+    const ileri = Boolean(yururluk && yururluk > new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10));
+    if (ileri && !['Yürürlükten sonra açılan kayıtlar', 'Açık kayıtlar dahil'].includes(kapsam ?? '')) return y.code(400).send({ hata: 'İleri tarihli sürümde kapsamı seçiniz: yürürlükten sonra açılan kayıtlar veya açık kayıtlar dahil.' });
+    if (ileri && !gecis?.trim()) return y.code(400).send({ hata: 'İleri tarihli sürümde geçiş kuralını yazınız (doldurulmuş kayıtlar geriye dönük değişmez; açık işe ek kontrol veya geçiş formuyla uygulanır).' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -218,8 +222,8 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
       if (r.durum !== 'Taslak') { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Bu sürüm onaya uygun durumda değildir.' }); }
       const rol = (await kullaniciRolleri(b.db, o.kullanici))[0];
       if (!rol) { await c.query('ROLLBACK'); return y.code(403).send({ hata: 'Aktif rolünüz bulunmamaktadır.' }); }
-      const kart = await kartAc(c, { tur: 'Belge Onayı', baslik: `Belge Onayı · ${r.ad}`, ozet: `${no}. sürüm${yururluk ? ` · Yürürlük: ${yururluk.split('-').reverse().join('.')}` : ''}`, hazirlayan: o.kullanici, zincir: [await onayMakami(c, rol.kimlik)], nesneTuru: 'belge_surum', nesneKimligi: r.kimlik });
-      await c.query(`UPDATE belge_surum SET durum = 'İncelemede', yururluk_tarihi = $2, is_karti_ref = $3 WHERE kimlik = $1`, [r.kimlik, yururluk ?? null, kart]);
+      const kart = await kartAc(c, { tur: 'Belge Onayı', baslik: `Belge Onayı · ${r.ad}`, ozet: `${no}. sürüm${yururluk ? ` · Yürürlük: ${yururluk.split('-').reverse().join('.')}` : ''}${ileri ? ` · Kapsam: ${kapsam} · Geçiş: ${gecis!.trim()}` : ''}`, hazirlayan: o.kullanici, zincir: [await onayMakami(c, rol.kimlik)], nesneTuru: 'belge_surum', nesneKimligi: r.kimlik });
+      await c.query(`UPDATE belge_surum SET durum = 'İncelemede', yururluk_tarihi = $2, is_karti_ref = $3, yururluk_kapsami = $4, gecis_kurali = $5 WHERE kimlik = $1`, [r.kimlik, yururluk ?? null, kart, ileri ? kapsam : null, ileri ? gecis!.trim() : null]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Onaya Gönderildi', nesneTuru: 'belge', nesneKimligi: id, yeni: { surum: Number(no) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { kart };

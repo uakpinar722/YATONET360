@@ -12,7 +12,7 @@ interface Sure { tur: string; baslangic: string; bitis: string; kaydirma_notu: s
 interface Ekip { kimlik: string; rol: string; ad_soyad: string; kullanici: string }
 interface Bekleme { kimlik: string; neden: string; hedef_tarih: string; sayac_durur: boolean; uzatma_sayisi: number; olusturma_zamani: string; kaldirilma_zamani: string | null; sorumlu: string }
 interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string; hedef_tarih: string; sahip: string; gecikmis: boolean }
-interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string }[] }
+interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string; yururluk?: string | null }[] }
 interface DosyaAyrinti extends DosyaSatir {
   musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
   kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null };
@@ -275,7 +275,9 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       </Blok>}
       <Blok baslik="Belgeler">
         {belgeler.length === 0 && <div className="not">Belge bulunmamaktadır.</div>}
-        {belgeler.map((b) => <div key={b.kimlik}>{b.ad} · {b.belge_turu} · {b.surumler[0]?.durum} · <a href={`/api/belge/${b.kimlik}/surum/${b.surumler[0]?.no}/indir`}>İndir</a> <Paylas belge={b.kimlik} no={b.surumler[0]?.no} /></div>)}
+        {belgeler.map((b) => { const gecerli = b.surumler.find((s) => s.durum === 'Yürürlükte') ?? b.surumler[0]; return <div key={b.kimlik}>{b.ad} · {b.belge_turu} · Rev.{gecerli?.no} {gecerli?.durum}{gecerli?.yururluk ? ` · Yürürlük: ${String(gecerli.yururluk).slice(0, 10).split('-').reverse().join('.')}` : ''} · <a href={`/api/belge/${b.kimlik}/surum/${gecerli?.no}/indir`}>İndir</a> <Paylas belge={b.kimlik} no={gecerli?.no} />
+          {/* YG-593: yerine geçilen sürümler kullanım dışı olarak gösterilir */}
+          {b.surumler.filter((s) => s !== gecerli).map((s) => <div className="not" key={s.no}>Rev.{s.no} · {s.durum === 'Yerine Geçti' || s.durum === 'Arşiv' ? `Kullanım dışı (${s.durum})` : s.durum} · <a href={`/api/belge/${b.kimlik}/surum/${s.no}/indir`}>İndir</a></div>)}</div>; })}
         <label htmlFor="b-y">Belge Yükle</label><input id="b-y" type="file" onChange={(e) => { const f = e.target.files?.[0]; if (f) void yap(() => yukleBelge(f)); }} />
       </Blok>
       {d.statu !== 'Kapalı' && <Blok baslik="Beklemede İşareti">

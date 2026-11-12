@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { belgeKuyruguIsle, belgeUret, teklifTanim } from '../src/belge_uret.js';
+import { belgeKuyruguIsle, belgeUret, gizlilikIsareti, teklifTanim } from '../src/belge_uret.js';
 import { kuyrukIsle } from '../src/bildirim.js';
 import { Depo } from '../src/depo.js';
 import { pdfKapat, sayfaSayisi } from '../src/pdf.js';
@@ -140,5 +140,12 @@ describe('teklif maddeleri (YG-709)', () => {
     expect(m).toContain('Hariç ve Ayrıca Fiyatlandırılacak Hususlar'); expect(m).toContain('Sıcak iş öncesi yazılı yöntem');
     await o.sup.query(`UPDATE fiyat_teklifi SET statu = 'İç Onayda' WHERE kimlik = $1`, [t]);
     expect((await o.ist('POST', `/api/teklif/${t}/madde`, ts, { madde: 'DN-1', tur: 'Hariç' })).statusCode).toBe(409);
+  });
+});
+
+describe('gizlilik işareti (YG-610)', () => {
+  it('üretilen belgenin alt bilgisinde gizlilik sınıfı ve dosya numarası', () => {
+    expect(gizlilikIsareti('Gizli', 'LGM-2026-11-0001', 'tr')).toBe('Gizlilik: Gizli · Dosya No: LGM-2026-11-0001');
+    expect(gizlilikIsareti('Kritik', 'LGM-2026-11-0001', 'en')).toBe('Classification: Strictly Confidential · File No: LGM-2026-11-0001');
   });
 });

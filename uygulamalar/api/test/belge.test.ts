@@ -132,7 +132,7 @@ describe('sürüm ve erişim (YG-591…YG-609)', () => {
 describe('onay ve yürürlük (YG-594…YG-597, YG-691)', () => {
   const onayla = async (id: string, no: number, yururluk?: string) => {
     const d = await gir(DES), b = await gir(BIM);
-    const r = await ist('POST', `/api/belge/${id}/surum/${no}/onaya-gonder`, d, yururluk ? { yururluk } : {});
+    const r = await ist('POST', `/api/belge/${id}/surum/${no}/onaya-gonder`, d, yururluk ? { yururluk, kapsam: 'Yürürlükten sonra açılan kayıtlar', gecis: 'Açık kayıtlar önceki sürümle tamamlanır.' } : {});
     expect(r.statusCode).toBe(200);
     expect((await ist('POST', `/api/is/${r.json().kart}/karar`, b, { karar: 'Onayla' })).statusCode).toBe(200);
     return (await sup.query(`SELECT durum, dogrulama_kodu, onaylayan_ref FROM belge_surum WHERE belge_ref = $1 AND surum_no = $2`, [id, no])).rows[0];
@@ -154,7 +154,9 @@ describe('onay ve yürürlük (YG-594…YG-597, YG-691)', () => {
   it('ileri tarihli sürüm tarihi gelince yürürlüğe girer', async () => {
     const d = await gir(DES);
     const id = (await yukle(d, PDF('i1'), { ad: 'İleri' })).json().belge;
+    expect((await ist('POST', `/api/belge/${id}/surum/1/onaya-gonder`, await gir(DES), { yururluk: '2099-01-01' })).json().hata).toMatch(/kapsamı seçiniz/); // YG-597
     expect((await onayla(id, 1, '2099-01-01')).durum).toBe('Onaylı');
+    expect((await sup.query(`SELECT yururluk_kapsami, gecis_kurali FROM belge_surum WHERE belge_ref = $1`, [id])).rows[0]).toMatchObject({ yururluk_kapsami: 'Yürürlükten sonra açılan kayıtlar' });
     expect(await belgeYururlukIsle(db)).toBe(0);
     await sup.query(`UPDATE belge_surum SET yururluk_tarihi = current_date WHERE belge_ref = $1`, [id]);
     expect(await belgeYururlukIsle(db)).toBe(1);

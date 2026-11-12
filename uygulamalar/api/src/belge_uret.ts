@@ -397,6 +397,11 @@ export async function sigortaOnayBelgesiUret(c: Db, teklif: string): Promise<voi
 }
 
 /** CEO 09.11: kaşe basılan belgeler; sözleşmeler ve karşı tarafın beyan/onay belgeleri dışarıda. */
+/** YG-610: üretilen belgenin alt bilgisinde gizlilik sınıfı ve dosya referansı. */
+export function gizlilikIsareti(sinif: string, dosyaNo: string | undefined, dil: Dil): string {
+  const EN: Record<string, string> = { Gizli: 'Confidential', Kritik: 'Strictly Confidential', Kurumsal: 'Internal', Genel: 'Public' };
+  return dil === 'en' ? `Classification: ${EN[sinif] ?? sinif}${dosyaNo ? ` · File No: ${dosyaNo}` : ''}` : `Gizlilik: ${sinif}${dosyaNo ? ` · Dosya No: ${dosyaNo}` : ''}`;
+}
 const KASELI = ['Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 'Ödeme Talebi', 'İş Emri', 'Teslim Tutanağı', 'Mutabakat Raporu', 'Yöntem Bilgi Nüshası', 'Nihai Kapanış Özeti', 'Kurtarma Sonuç Tutanağı'];
 
 /** Kuyruktaki belgeleri üretir, dosyaya resmî sürüm olarak bağlar, ekiyle gönderir. Hata üç denemeden sonra Dosya Sorumlusuna düşer. */
@@ -410,6 +415,7 @@ export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
       const kod = dogrulamaKodu();
       const v = u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, b.webAdresi) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, b.webAdresi);
       { const me = await (await import('./yetki_ek.js')).belgeMaskeEngeli(c, u.tur, u.dosya_ref, JSON.stringify(v.t)); if (me) throw new Error(me); }
+      { const tt = v.t as BelgeTanim; tt.isaret ??= gizlilikIsareti(v.sinif, tt.dosyaNo, tt.dil); } // YG-610
       const pdf = await pdfUret(KASELI.includes(u.tur) ? { ...v.t, kase: true } : v.t);
       const al = await depo.al(Readable.from(pdf), pdf.length + 1);
       const anahtar = depo.yerlestir(al.yol, al.ozet);
