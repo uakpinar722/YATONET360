@@ -144,11 +144,14 @@ describe('ölçüm, bölge, kontrol listesi (YG-131, YG-134, YG-135)', () => {
     const k = (await o.ist('POST', `/api/dosya/${d.kimlik}/kontrol-listesi`, c, { kod: 'KL-ISG-001' })).json();
     expect(k.kayitNo).toBe(`${d.dosyaNo}-KL-ISG-001-01`); expect(k.maddeler.length).toBeGreaterThan(2);
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: k.maddeler[0], sonuc: 'Uygun Değil' })).statusCode).toBe(400);
-    for (const m of k.maddeler) await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: m, sonuc: m === k.maddeler[0] ? 'Uygun Değil' : 'Uygun', aciklama: 'A' });
+    expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: k.maddeler[1], sonuc: 'Uygun' })).json().hata).toMatch(/kanıt sayılmaz/); // YG-613
+    const kanit = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Giriş teyidi','Fotoğraf','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.tu])).rows[0].kimlik;
+    for (const m of k.maddeler) await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: m, sonuc: m === k.maddeler[0] ? 'Uygun Değil' : 'Uygun', aciklama: 'A', kanit });
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/tamamla`, c, { eksikler: 'E' })).statusCode).toBe(403);
     const ty = await o.gir('ty');
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/tamamla`, ty, {})).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/tamamla`, ty, { eksikler: 'E' })).statusCode).toBe(200);
+    expect(Number((await o.sup.query(`SELECT count(*) n FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND kanit_kontrol_eden_ref IS NOT NULL`, [k.kimlik])).rows[0].n)).toBeGreaterThan(0);
   });
 });
 

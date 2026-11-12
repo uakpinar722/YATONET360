@@ -260,24 +260,29 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { kod } = (i.body ?? {}) as { kod?: string };
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
-    const m = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_KONTROL_LISTESI_MADDESI' AND deger LIKE $1 || ' / %' ORDER BY sira`, [kod ?? ''])).rows;
+    const m = (await b.db.query(`SELECT deger, substring(aciklama FROM '(?:Kanıt|Kayıt/Kabul):\\s*(.+)$') kanit FROM deger_listesi WHERE liste_kodu = 'LST_KONTROL_LISTESI_MADDESI' AND deger LIKE $1 || ' / %' ORDER BY sira`, [kod ?? ''])).rows;
     if (!m.length) return y.code(400).send({ hata: 'Kontrol listesini seçiniz.' });
     return islem(async (c) => {
       const no = `${d.dosya_no}-${kod}-${String((await c.query(`SELECT count(*)::int + 1 n FROM kontrol_listesi_kaydi WHERE dosya_ref = $1 AND kontrol_listesi = $2`, [id, kod])).rows[0].n).padStart(2, '0')}`;
       const k = (await c.query(`INSERT INTO kontrol_listesi_kaydi (kayit_no, dosya_ref, kontrol_listesi, hazirlayan_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [no, id, kod, o.kullanici])).rows[0];
-      for (const r of m) await c.query(`INSERT INTO kontrol_listesi_maddesi (kayit_ref, madde, sorumlu_ref) VALUES ($1,$2,$3)`, [k.kimlik, r.deger, o.kullanici]);
+      for (const r of m) await c.query(`INSERT INTO kontrol_listesi_maddesi (kayit_ref, madde, sorumlu_ref, kanit_tanimi) VALUES ($1,$2,$3,$4)`, [k.kimlik, r.deger, o.kullanici, r.kanit?.trim() || null]); // YG-613
       return { kimlik: k.kimlik, kayitNo: no, maddeler: m.map((r) => r.deger as string) };
     });
   });
   s.post('/kontrol-listesi/:id/madde', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { madde?: string; sonuc?: string; aciklama?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { madde?: string; sonuc?: string; aciklama?: string; kanit?: string };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT dosya_ref, statu FROM kontrol_listesi_kaydi WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
     if (k.statu !== 'Taslak') return y.code(409).send({ hata: 'Kayıt tamamlanmıştır.' });
     if (!['Uygun', 'Uygun Değil', 'Geçerli Değil'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
     if (g.sonuc === 'Uygun Değil' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Uygun değil sonucunda açıklama zorunludur.' });
-    const r = await b.db.query(`UPDATE kontrol_listesi_maddesi SET sonuc = $3, aciklama = $4 WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde, g.sonuc, g.aciklama?.trim() || null]);
+    // YG-613: kanıt tanımlı maddede Uygun sonucu, dosyaya yüklenmiş kanıt belgesi olmadan kabul edilmez.
+    const md = (await b.db.query(`SELECT kanit_tanimi, kanit_belge_ref FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde])).rows[0];
+    if (!md) return y.code(404).send({ hata: 'Madde bulunamadı.' });
+    if (g.kanit && !(UUID.test(g.kanit) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [g.kanit, k.dosya_ref])).rowCount)) return y.code(400).send({ hata: 'Kanıt bu dosyaya yüklenmiş bir belge olmalıdır.' });
+    if (g.sonuc === 'Uygun' && md.kanit_tanimi && !g.kanit && !md.kanit_belge_ref) return y.code(400).send({ hata: `Bu madde kanıt ister (${md.kanit_tanimi}); kutunun işaretlenmesi kanıt sayılmaz. Kanıt belgesini ekleyiniz.` });
+    const r = await b.db.query(`UPDATE kontrol_listesi_maddesi SET sonuc = $3, aciklama = $4, kanit_belge_ref = coalesce($5, kanit_belge_ref), kanit_kontrol_eden_ref = NULL, kanit_kontrol_zamani = NULL WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde, g.sonuc, g.aciklama?.trim() || null, g.kanit || null]);
     if (!r.rowCount) return y.code(404).send({ hata: 'Madde bulunamadı.' });
     return { tamam: true };
   });
@@ -290,6 +295,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const m = (await b.db.query(`SELECT sonuc FROM kontrol_listesi_maddesi WHERE kayit_ref = $1`, [id])).rows;
     if (m.some((x) => !x.sonuc)) return y.code(409).send({ hata: 'Tüm maddeleri yanıtlayınız.' });
     if (m.some((x) => x.sonuc === 'Uygun Değil') && !eksikler?.trim()) return y.code(400).send({ hata: 'Uygun dışı madde varken eksikler alanı zorunludur.' });
+    // YG-613: hazırlayan dışındaki onaylayan, kanıtlı maddelerin kanıtını kontrol etmiş olarak kayda geçer.
+    if ((await b.db.query(`SELECT 1 FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND sonuc = 'Uygun' AND kanit_tanimi IS NOT NULL AND kanit_belge_ref IS NULL LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Kanıtı eksik Uygun madde var.' });
+    await b.db.query(`UPDATE kontrol_listesi_maddesi SET kanit_kontrol_eden_ref = $2, kanit_kontrol_zamani = now() WHERE kayit_ref = $1 AND kanit_belge_ref IS NOT NULL`, [id, o.kullanici]);
     await b.db.query(`UPDATE kontrol_listesi_kaydi SET statu = 'Tamamlandı', eksikler = $2, onaylayan_ref = $3, onay_zamani = now() WHERE kimlik = $1`, [id, eksikler?.trim() || null, o.kullanici]);
     return { tamam: true };
   });

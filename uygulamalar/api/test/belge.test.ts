@@ -38,7 +38,7 @@ async function gir(ep: string) {
 }
 const yukle = async (c: string, govde: Buffer, q: Record<string, string> = {}) => s.inject({
   method: 'POST', headers: { ...H, 'content-type': 'application/octet-stream' }, cookies: { [COOKIE_ADI]: c }, payload: govde,
-  url: `/api/belge/yukle?${new URLSearchParams({ ad: 'Sözleşme', tur: 'Sözleşme', bagTuru: 'Onay', bagKimligi: kart, kaynak: 'E-posta', dosya: 'a.pdf', ...q })}`,
+  url: `/api/belge/yukle?${new URLSearchParams({ ad: 'Sözleşme', tur: 'Sözleşme', bagTuru: 'Onay', bagKimligi: kart, kaynak: 'E-posta', dosya: 'a.pdf', belgeTarihi: '2026-11-01', ...q })}`,
 });
 
 beforeAll(async () => {

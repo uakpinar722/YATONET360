@@ -1,3 +1,4 @@
+import { kuralEksigi, tanimliKapali } from './belge_kural.js';
 import { randomBytes, randomInt } from 'node:crypto';
 import type { Readable } from 'node:stream';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -29,7 +30,7 @@ export function disKapaliTurler(grup: string): string[] {
 }
 export function disTurEngeli(grup: string, e: { belge_turu: string; bilgi_sinifi: string }): boolean {
   if (grup === 'LGM İç Rolü') return false;
-  return e.bilgi_sinifi === 'Kurumsal' || disKapaliTurler(grup).includes(e.belge_turu);
+  return e.bilgi_sinifi === 'Kurumsal' || disKapaliTurler(grup).includes(e.belge_turu) || tanimliKapali(grup, e.belge_turu); // YG-605
 }
 const KOD_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const PAYLASIM_KOD_DK = 10; const PAYLASIM_HATA = 5;
@@ -135,6 +136,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const durum = bag ? await bag(b.db, o.kullanici, bagKimligi) : 'yok';
     if (durum === 'yok') return red(400, 'Bağlanacak kayıt bulunamadı.');
     if (durum === 'yetkisiz') return red(403, 'Bu kayda belge ekleme yetkiniz yok.');
+    { const ke = await kuralEksigi(b.db, tur.trim(), { belge_tarihi: belgeTarihi, kaynak_kisi: kaynakKisi }); if (ke) return red(400, ke); } // YG-603, YG-605
     const uzanti = dosya.includes('.') ? dosya.split('.').pop()!.toLowerCase() : '';
     const sinir = (await b.db.query(`SELECT azami_bayt FROM dosya_siniri WHERE $1 = ANY(uzantilar)`, [uzanti])).rows[0];
     if (!sinir) return red(400, 'Bu dosya türü yüklenemez.');
@@ -145,7 +147,11 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     }
     const ic = icerikHatasi(uzanti, basiniOku(al.yol));
     if (ic) { depo.vazgec(al.yol); return y.code(400).send({ hata: ic }); }
-    if (!(await tarayici.temizMi(al.yol))) {
+    // YG-602: tarayıcıya ulaşılamazsa dosya karantinaya alınır ve taranana kadar kullanılamaz.
+    let temiz: boolean | null; try { temiz = await tarayici.temizMi(al.yol); } catch { temiz = null; }
+    const karantina = temiz === null && sinif !== 'Kritik';
+    if (temiz === null && !karantina) { depo.vazgec(al.yol); return y.code(503).send({ hata: 'Zararlı içerik taraması şu an yapılamıyor; Kritik belgeyi daha sonra yükleyiniz.' }); }
+    if (temiz === false) {
       depo.vazgec(al.yol);
       await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Zararlı Dosya Engellendi', nesneKimligi: dosya, sonuc: 'Başarısız', adres: i.ip, iliski: i.id });
       return y.code(422).send({ hata: 'Dosyada zararlı içerik bulundu; yüklenmedi.' });
@@ -168,11 +174,11 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
           [ad.trim(), tur.trim(), sinif ?? 'Gizli', bagTuru, bagKimligi, kaynak, kaynakKisi?.trim() || null, belgeTarihi || null, o.kullanici])).rows[0];
       }
       const anahtar = sinif === 'Kritik' ? depo.yerlestirKritik(al.yol, al.ozet) : depo.yerlestir(al.yol, al.ozet); // DEP-1a
-      const r = (await c.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, degisiklik_gerekcesi, yukleyen_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`,
-        [e.kimlik, no, dosya.trim(), uzanti, al.boyut, al.ozet, anahtar, tarayici.ad, gerekce?.trim() || null, o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, degisiklik_gerekcesi, yukleyen_ref, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, $11) RETURNING kimlik`,
+        [e.kimlik, no, dosya.trim(), uzanti, al.boyut, al.ozet, anahtar, karantina ? 'Bekliyor' : tarayici.ad, gerekce?.trim() || null, o.kullanici, karantina ? 'Karantina' : 'Taslak'])).rows[0];
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Yüklendi', nesneTuru: 'belge', nesneKimligi: e.kimlik, yeni: { surum: no, ozet: al.ozet, boyut: al.boyut }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
-      return { belge: e.kimlik, surum: no, surumKimligi: r.kimlik };
+      return { belge: e.kimlik, surum: no, surumKimligi: r.kimlik, ...(karantina ? { karantina: true, uyari: 'Dosya karantinaya alındı; tarama tamamlanınca kullanılabilir.' } : {}) };
     } catch (x) { await c.query('ROLLBACK').catch(() => {}); depo.vazgec(al.yol); throw x; } finally { c.release(); }
   });
 
@@ -198,7 +204,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const a = await erisim(o.kullanici, o.grup, id);
     if (!a) return yok(y);
     const r = (await b.db.query(`SELECT dosya_adi, depo_anahtari, boyut, durum FROM belge_surum WHERE belge_ref = $1 AND surum_no = $2`, [id, Number(no) || 0])).rows[0];
-    if (!r || (!a.tum && r.durum !== 'Yürürlükte')) return yok(y);
+    if (!r || (!a.tum && r.durum !== 'Yürürlükte') || ['Karantina', 'İptal'].includes(r.durum)) return yok(y); // YG-602
     if ((await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND imha_zamani IS NOT NULL`, [id])).rowCount) return yok(y); // YG-1233
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İndirildi', nesneTuru: 'belge', nesneKimligi: id, yeni: { surum: Number(no) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return y.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; ${dosyaAdi(r.dosya_adi)}`).header('x-content-type-options', 'nosniff').send(depo.bagla(r.depo_anahtari));
