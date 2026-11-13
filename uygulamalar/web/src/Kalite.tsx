@@ -305,6 +305,8 @@ export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }
         <label htmlFor="rp-t">Rapor Türü</label><select id="rp-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['İlk Rapor', 'Ek Teknik Rapor', 'Garanti İnceleme Raporu'].map((x) => <option key={x}>{x}</option>)}</select>
         {RAPOR_ALAN.map(([k, ad]) => <div key={k}><label htmlFor={`rp-${k}`}>{ad}</label><textarea id={`rp-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>)}
         <label htmlFor="rp-ek">Ek İnceleme Gerektiren Alan Var mı?</label><select id="rp-ek" value={f.ekInceleme ?? ''} onChange={(e) => setF({ ...f, ekInceleme: e.target.value })}><option value="">Seçiniz</option><option>Evet</option><option>Hayır</option></select>
+        <label htmlFor="rp-bu">Beyan ve Bulgu Uyumu</label><select id="rp-bu" value={f.beyanUyum ?? ''} onChange={(e) => setF({ ...f, beyanUyum: e.target.value })}><option value="">Seçiniz</option>{['Uyumlu', 'Kısmen Uyumlu', 'Uyumsuz'].map((x) => <option key={x}>{x}</option>)}</select>
+        {f.beyanUyum && f.beyanUyum !== 'Uyumlu' && <><label htmlFor="rp-ua">Uyumsuzluk Açıklaması</label><textarea id="rp-ua" value={f.uyumAciklamasi ?? ''} onChange={(e) => setF({ ...f, uyumAciklamasi: e.target.value })} /></>}
         {f.ekInceleme === 'Evet' && <><label htmlFor="rp-eka">Ek İnceleme Gerektiren Alan</label><textarea id="rp-eka" value={f.ekIncelemeAlani ?? ''} onChange={(e) => setF({ ...f, ekIncelemeAlani: e.target.value })} /></>}
         <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/teknik-rapor`, f), 'Rapor kontrole gönderildi.')}>Raporu Kontrole Gönder</button>
         <div className="bolum">Kartela Önerisi</div>

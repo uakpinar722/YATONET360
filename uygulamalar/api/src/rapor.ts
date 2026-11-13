@@ -104,6 +104,9 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     // YG-714: ek inceleme gerektiren alan sorusu yanıtsız geçilemez.
     if (!['Evet', 'Hayır'].includes(g.ekInceleme ?? '')) return y.code(400).send({ hata: 'Ek inceleme gerektiren alan bulunup bulunmadığını belirtiniz.' });
     if (g.ekInceleme === 'Evet' && !g.ekIncelemeAlani?.trim()) return y.code(400).send({ hata: 'Ek inceleme gerektiren alanı yazınız.' });
+    // YG-712: beyan edilen olay ile gözlenen teknik işaretlerin uyumu; uyumsuzluk olduğu gibi yazılır ve Hukuk ve Uyum'a bildirilir.
+    if (!['Uyumlu', 'Kısmen Uyumlu', 'Uyumsuz'].includes(g.beyanUyum ?? '')) return y.code(400).send({ hata: 'Beyan–bulgu uyumunu seçiniz: Uyumlu, Kısmen Uyumlu, Uyumsuz.' });
+    if (g.beyanUyum !== 'Uyumlu' && !g.uyumAciklamasi?.trim()) return y.code(400).send({ hata: 'Uyumsuzluğun açıklamasını yazınız.' });
     if ((await b.db.query(`SELECT 1 FROM teknik_rapor WHERE dosya_ref = $1 AND durum IN ('Kontrolde', 'İade Edildi') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Sonuçlanmamış bir rapor vardır.' });
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no, oncelik, yazisma_dili FROM dosya WHERE kimlik = $1`, [id])).rows[0];
@@ -118,6 +121,8 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO teknik_rapor (rapor_no, rapor_turu, ana_rapor_ref, dosya_ref, dayanak_firma_raporu_ref, kapsam, incelenen_alan, saha_kosullari, yontem_olcut, bulgular, acik_sorular, analiz_risk, oneriler, uzmanlik_siniri, rapor_dili, son_zaman, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`, [no, tur, ana, id, f?.kimlik ?? null, g.kapsam!.trim(), g.incelenen!.trim(), g.saha!.trim(), g.yontem!.trim(), g.bulgular!.trim(), g.acikSorular!.trim(), g.analiz!.trim(), g.oneriler!.trim(), g.uzmanlik!.trim(), d.yazisma_dili ?? 'Türkçe', son, o.kullanici])).rows[0];
       if (onceki.length) await c.query(`UPDATE teknik_rapor SET onceki_raporlar = $2 WHERE kimlik = $1`, [r.kimlik, onceki]); // YG-095
       await c.query(`UPDATE teknik_rapor SET ek_inceleme_gerekir = $2, ek_inceleme_alani = $3 WHERE kimlik = $1`, [r.kimlik, g.ekInceleme === 'Evet', g.ekInceleme === 'Evet' ? g.ekIncelemeAlani!.trim() : null]); // YG-714
+      await c.query(`UPDATE teknik_rapor SET beyan_bulgu_uyumu = $2, uyum_aciklamasi = $3 WHERE kimlik = $1`, [r.kimlik, g.beyanUyum, g.beyanUyum === 'Uyumlu' ? null : g.uyumAciklamasi!.trim()]); // YG-712
+      if (g.beyanUyum === 'Uyumsuz') await kartAc(c, { tur: 'Beyan Bulgu Uyumsuzluğu', kategori: 'gorev', baslik: `${no} · Beyan ile Bulgu Uyumsuz`, ozet: g.uyumAciklamasi!.trim().slice(0, 200), oncelik: 'Yüksek', sahipRol: await rolId(c, 'Hukuk ve Uyum Uzmanı'), nesneTuru: 'Teknik Rapor', nesneKimligi: r.kimlik });
       if (f) {
         await c.query(`UPDATE firma_teknik_raporu SET lgm_inceleyen_ref = $2, lgm_inceleme_zamani = now() WHERE kimlik = $1`, [f.kimlik, o.kullanici]);
         const degisen = g.bulgular!.trim() !== f.bulgular || g.oneriler!.trim() !== f.onerilen_islemler;
