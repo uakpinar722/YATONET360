@@ -84,7 +84,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-471, YG-474, YG-1500: ONY-03, 06, 07, 08, 09, 10; onay PDF'i onay akışından e-postayla gider.
   s.post('/dosya/:id/onay-iste', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ony?: string; parca?: string; tutar?: number; zaman?: string; kayitNo?: string; teklifNo?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ony?: string; parca?: string; tutar?: number; zaman?: string; kayitNo?: string; teklifNo?: string; yapilmayanIs?: string; teknikEtki?: string; kullanimSiniri?: string; onerilenKontrol?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!ONAYLAR.includes(g.ony ?? '')) return y.code(400).send({ hata: 'Onay türünü seçmenizi rica ederiz.' });
     if (['ONY-07', 'ONY-08'].includes(g.ony!) && !g.parca?.trim()) return y.code(400).send({ hata: 'Parça adını yazmanızı rica ederiz.' });
@@ -92,6 +92,8 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (g.ony === 'ONY-09' && !g.zaman) return y.code(400).send({ hata: 'Deneme tarih ve saatini yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-10' && !g.kayitNo?.trim()) return y.code(400).send({ hata: 'Garanti kayıt numarasını yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-06' && !g.teklifNo?.trim()) return y.code(400).send({ hata: 'Teklif numarasını yazmanızı rica ederiz.' });
+    // YG-726: kullanım sınırı bildirimi alanları (yapılmayan iş, olası teknik etki, kullanım sınırı, önerilen kontrol).
+    if (g.ony === 'ONY-06' && (!g.yapilmayanIs?.trim() || !g.teknikEtki?.trim() || !g.kullanimSiniri?.trim() || !g.onerilenKontrol?.trim())) return y.code(400).send({ hata: 'Yapılmayan iş, olası teknik etki, kullanım sınırı ve önerilen kontrol zorunludur.' });
     if (g.ony === 'ONY-09') { const he = await hizaEngeli(b.db, id); if (he) return y.code(409).send({ hata: he }); } // YG-409
     const d = await dosya(id); const t = await sahip(id);
     if (!t) return y.code(409).send({ hata: 'Yat sahibi kaydı bulunamadı.' });
@@ -100,6 +102,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const alanlar = { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, Yat: d.yat_adi, Yacht: d.yat_adi, 'bağlantı': web, link: web, 'Parça adı': g.parca ?? '', 'Part name': g.parca ?? '', '0.000,00': ts, '0,000.00': ts, 'tarih saat': zm, 'date time': zm, 'Kayıt No': g.kayitNo ?? '', 'Record No': g.kayitNo ?? '', 'Teklif No / Sürüm': g.teklifNo ?? '', 'Quotation No / Version': g.teklifNo ?? '' };
     return islem(async (c) => {
       const on = await onayTalebiAc(c, { dosya: id, ony: g.ony!, dil, alanlar, baslikAlanlari: alanlar, tutar: g.ony === 'ONY-08' ? g.tutar : null, taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, nesneTuru: 'Dosya', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: web, konu: `${d.dosya_no} Onayınız Bekleniyor` });
+      if (g.ony === 'ONY-06') await c.query(`INSERT INTO ek_is_reddi (dosya_ref, onay_talebi_ref, teklif_no, yapilmayan_is, teknik_etki, kullanim_siniri, onerilen_kontrol, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, on.kimlik, g.teklifNo!.trim(), g.yapilmayanIs!.trim(), g.teknikEtki!.trim(), g.kullanimSiniri!.trim(), g.onerilenKontrol!.trim(), o.kullanici]); // YG-726
       return { kimlik: on.kimlik };
     });
   });
@@ -190,7 +193,22 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/sokulen-parca', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string }; const k = i.oturum!.kullanici;
     if (!UUID.test(id) || !((await dosyaErisimi(b.db, k, id)) || (await musteriMi(id, k)))) return yok(y);
-    return (await b.db.query(`SELECT kimlik, parca_adi, konum, secim, son_tarih::text FROM sokulen_parca WHERE dosya_ref = $1 ORDER BY olusturma_zamani`, [id])).rows;
+    return (await b.db.query(`SELECT kimlik, parca_adi, konum, secim, son_tarih::text, sonuc, sonuc_zamani FROM sokulen_parca WHERE dosya_ref = $1 ORDER BY olusturma_zamani`, [id])).rows;
+  });
+  // YG-730: teslim veya imha fotoğrafla kayda alınır, imza alınmaz; sigortalı dosyada imha sigorta şirketinin onay belgesiyle yapılır.
+  s.post('/sokulen-parca/:id/sonuc', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { foto?: string; sigortaOnay?: string };
+    if (!UUID.test(id)) return yok(y);
+    const p = (await b.db.query(`SELECT p.*, d.dosya_niteligi FROM sokulen_parca p JOIN dosya d ON d.kimlik = p.dosya_ref WHERE p.kimlik = $1`, [id])).rows[0];
+    if (!p || !(await dosyaErisimi(b.db, o.kullanici, p.dosya_ref))) return yok(y);
+    if (p.sonuc) return y.code(409).send({ hata: 'Parçanın sonucu kayıtlıdır.' });
+    if (!['İade', 'Hurda-Bertaraf'].includes(p.secim ?? '')) return y.code(409).send({ hata: 'Sonuç yalnız İade veya Hurda-Bertaraf seçiminde kaydedilir.' });
+    const dosyaBelgesi = async (x?: string) => Boolean(x && UUID.test(x) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [x, p.dosya_ref])).rowCount);
+    if (!(await dosyaBelgesi(g.foto))) return y.code(400).send({ hata: 'Teslim veya imha fotoğrafını dosyaya yükleyip seçiniz.' });
+    const imha = p.secim === 'Hurda-Bertaraf';
+    if (imha && p.dosya_niteligi === 'Sigorta bağlantılı' && !(await dosyaBelgesi(g.sigortaOnay))) return y.code(409).send({ hata: 'Sigortalı dosyada imha için sigorta şirketinin onay belgesini seçiniz.' });
+    await b.db.query(`UPDATE sokulen_parca SET sonuc = $2, sonuc_foto_ref = $3, sigorta_onay_ref = $4, sonuc_kaydeden_ref = $5, sonuc_zamani = now() WHERE kimlik = $1`, [id, imha ? 'İmha Edildi' : 'Teslim Edildi', g.foto, imha ? g.sigortaOnay ?? null : null, o.kullanici]);
+    return { sonuc: imha ? 'İmha Edildi' : 'Teslim Edildi' };
   });
   s.post('/sokulen-parca/:id/secim', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const secim = ((i.body ?? {}) as { secim?: string }).secim;

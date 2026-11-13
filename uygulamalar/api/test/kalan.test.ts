@@ -1226,3 +1226,18 @@ describe('yurt dışı garanti (YG-1422)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM garanti_sikayet WHERE dosya_ref = $1 AND kesif_son IS NOT NULL`, [d.kimlik])).rows[0].n).toBe(1);
   });
 });
+
+describe('imzalı nüshalar (YG-589)', () => {
+  it('imzalı ön bilgilendirme teklife bağlanır; kâğıt cayma formu caymayı işler', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, musteri_turu = 'Bireysel Müşteri' WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-IM-${Date.now()}`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    const bel = async () => (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('İmzalı ' || gen_random_uuid(),'Sözleşme','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik as string;
+    const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/teklif/${t}/imzali-on-bilgi`, ds, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/teklif/${t}/imzali-on-bilgi`, ds, { belge: await bel() })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/cayma-formu`, ds, { belge: await bel() })).statusCode).toBe(409);
+    await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days')`, [t, d.kimlik]);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/cayma-formu`, ds, { belge: await bel() })).json().cayma).toBe(true);
+    expect((await o.sup.query(`SELECT kanal, iade_durumu FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [t])).rows[0]).toEqual({ kanal: 'Islak İmzalı Form', iade_durumu: 'Hesap Bekliyor' });
+  });
+});

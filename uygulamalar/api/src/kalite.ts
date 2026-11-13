@@ -90,7 +90,12 @@ export async function kaliteSureIsle(db: Pool, simdi = new Date()): Promise<numb
 }
 
 kapanisKaydet('Kalite Planı', async (c, k, karar) => {
-  if (karar === 'Onayla') await c.query(`UPDATE kalite_plani SET durum = 'Onaylı' WHERE kimlik = $1`, [k.nesne_kimligi]);
+  if (karar === 'Onayla') {
+    const p = (await c.query(`UPDATE kalite_plani p SET durum = 'Onaylı' FROM dosya d WHERE p.kimlik = $1 AND d.kimlik = p.dosya_ref RETURNING p.dosya_ref, p.kabul_sinifi, d.dosya_no`, [k.nesne_kimligi])).rows[0];
+    // YG-1485: kabul sınıflı planda Kalite Kontrolör atanmamışsa Kalite Müdürüne atama görevi açılır.
+    if (p && !(await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Kalite Kontrolör' AND bitis_zamani IS NULL`, [p.dosya_ref])).rowCount)
+      await kartAc(c, { tur: 'Kalite Kontrolör Ataması', kategori: 'islem', baslik: `${p.dosya_no} · Kalite Kontrolör Ata`, ozet: `${p.kabul_sinifi} sınıfı kalite planı onaylandı`, sahipRol: await rolId(c, KM), nesneTuru: 'Dosya', nesneKimligi: p.dosya_ref });
+  }
   else if (karar === 'Reddet') await c.query(`UPDATE kalite_plani SET durum = 'Reddedildi' WHERE kimlik = $1`, [k.nesne_kimligi]);
 });
 
@@ -299,6 +304,10 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
   s.post('/dosya/:id/test', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { grup?: string; amac?: string; yontem?: string; olcut?: string; durdurma?: string; cihazlar?: string[]; onceki?: string };
     if (!(await erisim(id, o.kullanici))) return yok(y);
+    // YG-1485: test kaydını dosyanın Kalite Kontrolörü girer; atanmamışsa Teknik Uzman girer, kontrol ve kararı Teknik Yönetici kademesi verir.
+    { const ekip = (await b.db.query(`SELECT kullanici_ref, rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND rol IN ('Kalite Kontrolör', 'Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)')`, [id])).rows;
+      const kk = ekip.filter((x) => x.rol === 'Kalite Kontrolör');
+      if (kk.length ? !kk.some((x) => x.kullanici_ref === o.kullanici) : !ekip.some((x) => x.kullanici_ref === o.kullanici)) return y.code(403).send({ hata: kk.length ? 'Test kaydını dosyanın Kalite Kontrolörü girer.' : 'Kalite Kontrolör atanmamış dosyada test kaydını Teknik Uzman girer.' }); }
     if (!['Gövde ve Yapısal', 'Makine ve Tahrik', 'Elektrik/Elektronik', 'Tesisat ve Yardımcı', 'Seyir ve Haberleşme', 'İç Mekân ve Donanım', 'Arayüz / Bütünleşik'].includes(g.grup ?? '')) return y.code(400).send({ hata: 'Test grubunu seçiniz.' });
     if (!g.amac?.trim() || !g.yontem?.trim() || !g.olcut?.trim() || !g.durdurma?.trim()) return y.code(400).send({ hata: 'Amaç, yöntem, kabul ölçütü ve durdurma koşulu zorunludur.' });
     if (/^\s*(normal|iyi|uygun|çalışıyor)\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Kabul ölçütünü ölçülebilir biçimde yazmanızı rica ederiz.' });

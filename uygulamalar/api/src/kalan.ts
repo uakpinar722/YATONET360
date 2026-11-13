@@ -174,6 +174,38 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);
 
+  // YG-589: marinada tablet veya kâğıtla imzalatılan ön bilgilendirme nüshası teklife bağlanır; kâğıt cayma formu Dosya Sorumlusunca kayda alınır ve cayma işler.
+  const dsMi = async (dosya: string, k: string) => Boolean((await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [dosya, k])).rowCount);
+  const dosyaBelgesi = async (x: unknown, dosya: string) => typeof x === 'string' && UUID.test(x) && Boolean((await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [x, dosya])).rowCount);
+  s.post('/teklif/:id/imzali-on-bilgi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { belge } = (i.body ?? {}) as { belge?: string };
+    if (!UUID.test(id)) return yok(y);
+    const f = (await b.db.query(`SELECT f.dosya_ref, d.musteri_turu FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [id])).rows[0];
+    if (!f || !(await dsMi(f.dosya_ref, o.kullanici))) return yok(y);
+    if (f.musteri_turu !== 'Bireysel Müşteri') return y.code(409).send({ hata: 'Ön bilgilendirme yalnız bireysel müşteride vardır.' });
+    if (!(await dosyaBelgesi(belge, f.dosya_ref))) return y.code(400).send({ hata: 'İmzalı nüshayı dosyaya yükleyip seçiniz.' });
+    await b.db.query(`UPDATE fiyat_teklifi SET imzali_ob_ref = $2 WHERE kimlik = $1`, [id, belge]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İmzalı Ön Bilgilendirme Nüshası Bağlandı', nesneTuru: 'Fiyat Teklifi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  s.post('/dosya/:id/cayma-formu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { belge } = (i.body ?? {}) as { belge?: string };
+    if (!UUID.test(id) || !(await dsMi(id, o.kullanici))) return yok(y);
+    const k = (await b.db.query(`SELECT kimlik, cayma_bitis, cayma_zamani FROM on_bilgilendirme_cayma_kaydi WHERE dosya_ref = $1 ORDER BY sozlesme_zamani DESC LIMIT 1`, [id])).rows[0];
+    if (!k) return y.code(409).send({ hata: 'Bu dosyada cayma hakkı kaydı bulunmamaktadır.' });
+    if (k.cayma_zamani) return y.code(409).send({ hata: 'Cayma bildirimi alınmıştır.' });
+    if (!(await dosyaBelgesi(belge, id))) return y.code(400).send({ hata: 'İmzalı cayma formunu dosyaya yükleyip seçiniz.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE on_bilgilendirme_cayma_kaydi SET cayma_belge_ref = $2 WHERE kimlik = $1`, [k.kimlik, belge]);
+      const ok = await caymaIsle(c, k.kimlik, 'Islak İmzalı Form');
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kâğıt Cayma Formu Kaydedildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { cayma: ok };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
   // YG-1450: yat sahibi cayma düğmesi; ONY-18 kodlu ekran açılır.
   s.post('/portal/dosya/:id/cayma', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };

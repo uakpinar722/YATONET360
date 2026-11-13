@@ -87,3 +87,14 @@ describe('Ek II ad uyumu (YG-646)', () => {
     expect(ciftler.filter(([ad, kod]) => kod !== 'FR-OPS-013' && k.get(kod) !== ad)).toEqual([]);
   });
 });
+
+describe('periyodik gözden geçirme (YG-599)', () => {
+  it('eylemler göreve döner, sonraki gözden geçirme takvimden kurulur', async () => {
+    const { gozdenGecirmeIsle } = await import('../src/genel_form.js');
+    const f = (await o.sup.query(`INSERT INTO form_kaydi (kayit_no, form_kodu, form_surumu, veriler, hazirlayan_ref, durum) VALUES ($1,'FR-KLT-013',1,$2,$3,'Onaylı') RETURNING kimlik`, [`GG-${Date.now()}`, JSON.stringify({ gozden_gecirme_turu: 'Erişim incelemesi', karar: 'Koşullu', eylemler: 'Ayrıcalıklı hesapları kapat | 01.12.2026\nRaporu arşivle' }), o.K.ds])).rows[0].kimlik;
+    await gozdenGecirmeIsle(o.db, f);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Gözden Geçirme Eylemi' AND nesne_kimligi = $1`, [f])).rows[0].n).toBe(2);
+    expect((await o.kart('Periyodik Gözden Geçirme', f))).toBeDefined();
+    expect((await o.sup.query(`SELECT veriler->>'sonraki_tarih' s FROM form_kaydi WHERE kimlik = $1`, [f])).rows[0].s).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});

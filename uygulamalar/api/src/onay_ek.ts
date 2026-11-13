@@ -1,3 +1,4 @@
+import { bilgiBelgesiMi, BILGI_HATA } from './belge_kural.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez } from './bildirim.js';
@@ -223,6 +224,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const si = g.sigortaOnayi ?? 'Gerekli Değil';
     if (!['Gerekli Değil', 'Alındı'].includes(si) || (si === 'Alındı' && !g.sigortaTarih)) return y.code(400).send({ hata: 'Sigorta şirketi onay tarihini girmenizi rica ederiz.' });
     if (g.kanal !== 'YATONET 360' && !(await dosyaBelgesi(g.belge, id))) return y.code(400).send({ hata: 'İmzalı protokolü dosyaya yükleyip seçmenizi rica ederiz.' });
+    if (g.kanal !== 'YATONET 360' && (await bilgiBelgesiMi(b.db, g.belge!))) return y.code(409).send({ hata: BILGI_HATA }); // YG-622
     const d = (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili FROM dosya d WHERE d.kimlik = $1`, [id])).rows[0];
     const yt = (await b.db.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [id])).rows[0];
     if (g.kanal === 'YATONET 360' && !yt) return y.code(409).send({ hata: 'Yat sahibi kaydı bulunamadı.' });
@@ -335,6 +337,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return yok(y);
     if (t.teklif_muhatabi !== 'Kurumsal Müşteri' || t.statu !== 'Gönderildi') return y.code(409).send({ hata: 'Bu işlem gönderilmiş kurumsal teklifte yapılır.' });
     if (!g.gonderen?.trim() || !(await dosyaBelgesi(g.belge, t.dosya_ref))) return y.code(400).send({ hata: 'Gönderen adresi ve onay e-postasını eklemenizi rica ederiz.' });
+    if (await bilgiBelgesiMi(b.db, g.belge!)) return y.code(409).send({ hata: BILGI_HATA }); // YG-622
     const bz = await (await import('./teyit.js')).benzerAlanKontrolu(b.db, g.gonderen, o.kullanici, t.dosya_ref); if (bz) return y.code(409).send({ hata: bz }); // YG-1272
     const u = (await b.db.query(`SELECT u.onay_siniri, c.ek2_onay_siniri FROM kurumsal_kullanici u JOIN kurumsal_kurum c ON c.kimlik = u.kurum_ref JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref JOIN yat ky ON ky.yat_sahibi_ref = c.taraf_ref JOIN dosya d ON d.yat_ref = ky.kimlik WHERE d.kimlik = $1 AND lower(h.e_posta COLLATE "C") = lower($2::text COLLATE "C") AND u.rol = 'Onaylayan' AND h.hesap_durumu = 'Aktif'`, [t.dosya_ref, g.gonderen.trim()])).rows[0];
     if (!u) return y.code(409).send({ hata: 'Bu adres kurumun onay yetkilisi olarak tanımlı değildir.' });

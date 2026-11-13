@@ -199,6 +199,11 @@ async function onayTanim(db: Db, id: string, kod: string, web: string) {
     { baslik: e.kayit, tur: 'alanlar', alanlar: [{ et: e.onaylayan, deger: `${t.onaylayan_ad} · ${e.sahip}` }, { et: e.yontemO, deger: e.smsY }, { et: e.kodO, deger: t.onay_kodu }, { et: e.zaman, deger: anSaat(t.onay_zamani) }] },
     ekipBolumu({ ...b, dil, ekip: b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu') }),
   ];
+  // YG-726: Ek İş Reddi ve Kullanım Sınırı Bildirimi; yat sahibi okudum onayını SMS koduyla verir.
+  const er = t.ony_kod === 'ONY-06' ? (await db.query(`SELECT * FROM ek_is_reddi WHERE onay_talebi_ref = $1`, [id])).rows[0] : null;
+  if (er) bolumler.splice(3, 0, { baslik: dil === 'en' ? 'Additional Work Rejection and Usage Limitation Notice' : 'Ek İş Reddi ve Kullanım Sınırı Bildirimi', tur: 'alanlar', alanlar: [
+    { et: dil === 'en' ? 'Quotation' : 'Teklif', deger: er.teklif_no }, { et: dil === 'en' ? 'Work Not Carried Out' : 'Yapılmayan İş', deger: er.yapilmayan_is, genis: true }, { et: dil === 'en' ? 'Possible Technical Effect' : 'Olası Teknik Etki', deger: er.teknik_etki, genis: true },
+    { et: dil === 'en' ? 'Usage Limitation' : 'Kullanım Sınırı', deger: er.kullanim_siniri, genis: true }, { et: dil === 'en' ? 'Recommended Check' : 'Önerilen Kontrol', deger: er.onerilen_kontrol, genis: true }] });
   return { dosyaAdi: `${no}.pdf`, sinif: 'Gizli', t: { ad: e.Onay, kod: 'FR-OPS-017', no, dosyaNo: t.dosya_no, tarih: gunAy(t.onay_zamani), surum: 'Rev.1', dil, yat: b.d.yat_adi, matbuBas: dil === 'en' ? ['SUBJECT: YOUR APPROVAL HAS BEEN RECEIVED', 'Your approval has been received on the YATONET 360 approval screen and recorded with the details below. This certificate has been sent to your registered e-mail address together with a PDF copy of the document you approved.'] : ['KONU: ONAYINIZ ALINMIŞTIR', 'Değerli onayınız YATONET 360 onay ekranında alınmış ve aşağıdaki bilgilerle kayda geçirilmiştir. Bu belge, onayladığınız belgenin PDF örneğiyle birlikte kayıtlı e-posta adresinize gönderilmiştir.'], bolumler, matbuSon: [sozlesme({ musteri_turu: 'Bireysel' }, dil), dogrula(dil, kod, web), tesekkur(dil)] } as BelgeTanim };
 }
 
@@ -331,6 +336,7 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   const testler = (await db.query(`SELECT test_grubu, sonuc, sonuc_gerekcesi FROM test_kaydi WHERE dosya_ref = $1 AND sonuc IS NOT NULL ORDER BY test_no`, [k.dosya_ref])).rows;
   const kabul = (await db.query(`SELECT kimlik, kabul_turu, olusturma_zamani FROM kabul_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 1`, [k.dosya_ref])).rows[0];
   const acik = (await db.query(`SELECT a.tanim, a.hedef_tarih FROM acik_is_kalemi a JOIN kabul_kaydi x ON x.kimlik = a.kabul_ref WHERE x.dosya_ref = $1 AND a.kapanis_zamani IS NULL ORDER BY a.hedef_tarih`, [k.dosya_ref])).rows;
+  const red = (await db.query(`SELECT r.yapilmayan_is, r.kullanim_siniri FROM ek_is_reddi r JOIN onay_talebi o ON o.kimlik = r.onay_talebi_ref WHERE r.dosya_ref = $1 AND o.durum = 'Onaylandı' ORDER BY r.olusturma_zamani`, [k.dosya_ref])).rows;
   const onay = (await db.query(`SELECT r.onay_kodu, r.onay_zamani, r.onaylayan_ad FROM onay_talebi o JOIN yatonet_onay_kaydi r ON r.onay_talebi_ref = o.kimlik WHERE o.dosya_ref = $1 AND o.ony_kod = 'ONY-27' AND r.karar = 'Onaylandı' ORDER BY r.onay_zamani DESC LIMIT 1`, [k.dosya_ref])).rows[0];
   const eden = b.ekip.find((x) => x.kullanici === k.teslim_eden_ref)?.rol as string | undefined;
   const taraflar = (await db.query(`SELECT taraf_rolu, kisi_adi_soyadi, telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Kaptan')`, [k.dosya_ref])).rows;
@@ -353,12 +359,14 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   bolumler.push({ baslik: T.kab, tur: 'tablo', sutunlar: [{ ad: en ? 'Item' : 'Konu' }, { ad: en ? 'Status' : 'Durum', hiza: 'ort' }], satirlar: [
     [en ? 'Acceptance Record' : 'Kabul Kaydı', kabul ? `FR-KLT-009 · ${anSaat(kabul.olusturma_zamani)}` : null], /* YG-647 */
     [T.ktur, kabul ? { m: kabul.kabul_turu, renk: /Koşullu/.test(kabul.kabul_turu) ? 'turuncu' : 'yesil' } : null],
-    [T.acik, acik.length ? { m: `${T.var}  ·  ${acik.length}`, renk: 'sari' } : yok],
+    [T.acik, acik.length + red.length ? { m: `${T.var}  ·  ${acik.length + red.length}`, renk: 'sari' } : yok],
     [en ? 'Missing Against Inventory' : 'Envantere Göre Eksik', k.envanter_eksik ? { m: k.envanter_eksik, renk: 'sari' } : yok],
     [en ? 'Recipient’s Reservation' : 'Teslim Alanın Çekincesi', k.cekince ? { m: k.cekince, renk: 'turuncu' } : yok],
     ...(ks ? [[en ? 'Winterisation Responsible' : 'Kışlık Hazırlık Sorumlusu', ks]] : []),
   ] });
-  if (acik.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: en ? 'Responsible' : 'Sorumlu' }, { ad: T.sor }], satirlar: acik.map((x) => [x.tanim, en ? 'LGM File Manager' : 'LGM Dosya Sorumlusu', gunAy(x.hedef_tarih)]) }); // YG-725
+  // YG-726: yat sahibinin reddettiği ek işler (ONY-06 onaylı) Açık İşler tablosunda kullanım sınırıyla yer alır.
+  const acikSat = [...acik.map((x) => [x.tanim, en ? 'LGM File Manager' : 'LGM Dosya Sorumlusu', gunAy(x.hedef_tarih)]), ...red.map((x) => [`${en ? 'Additional work not carried out' : 'Yapılmayan ek iş'}: ${x.yapilmayan_is} · ${en ? 'Usage limitation' : 'Kullanım sınırı'}: ${x.kullanim_siniri}`, en ? 'Yacht Owner' : 'Yat Sahibi', null])];
+  if (acikSat.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: en ? 'Responsible' : 'Sorumlu' }, { ad: T.sor }], satirlar: acikSat }); // YG-725
   bolumler.push(
     { baslik: e.iletisim, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.ad }, { ad: e.tel }, { ad: e.eposta }], satirlar: [
       ...taraflar.map((x) => [x.taraf_rolu === 'Kaptan' ? T.kpt : T.sah, x.kisi_adi_soyadi, x.telefon, x.eposta]),
@@ -469,10 +477,10 @@ export async function siparisTanim(db: Db, id: string, kod: string, web: string)
 
 /** YG-656: FR-UYG-003 Değişiklik Kaydı iç belgedir; yat sahibi/sigortaya ONY-05 Değişiklik Onayı, firmaya Ek İş Emri gider. */
 export async function degisiklikKaydiTanim(db: Db, id: string) {
-  const p = (await db.query(`SELECT p.*, h.ad_soyad hazirlayan FROM degisiklik_protokolu p LEFT JOIN kullanici_hesabi h ON h.kimlik = p.hazirlayan_ref WHERE p.kimlik = $1`, [id])).rows[0];
+  const p = (await db.query(`SELECT p.*, h.ad_soyad hazirlayan, (SELECT f.teklif_no || ' Rev.' || f.surum_no FROM fiyat_teklifi f WHERE f.dosya_ref = p.dosya_ref AND f.statu = 'Onaylı' AND f.teklif_muhatabi <> 'Firma' ORDER BY f.olusturma_zamani DESC LIMIT 1) dayanak FROM degisiklik_protokolu p LEFT JOIN kullanici_hesabi h ON h.kimlik = p.hazirlayan_ref WHERE p.kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, p.dosya_ref, '');
   const bolumler: Bolum[] = [
-    { baslik: 'Değişiklik', tur: 'alanlar', alanlar: [{ et: 'Değişiklik No', deger: p.degisiklik_no }, { et: 'Tür', deger: p.tur }, { et: 'Durum', deger: p.durum }, { et: 'Onay Kanalı', deger: p.kanal }, { et: 'Sigorta Onayı', deger: p.sigorta_onayi }] },
+    { baslik: 'Değişiklik', tur: 'alanlar', alanlar: [{ et: 'Değişiklik No', deger: p.degisiklik_no }, { et: 'Dayanak Teklif', deger: p.dayanak }, { et: 'Tür', deger: p.tur }, { et: 'Durum', deger: p.durum }, { et: 'Onay Kanalı', deger: p.kanal }, { et: 'Sigorta Onayı', deger: p.sigorta_onayi }] },
     { baslik: 'Mevcut Kapsam', tur: 'metin', metin: p.mevcut },
     { baslik: 'Önerilen Kapsam', tur: 'metin', metin: p.onerilen },
     { baslik: 'Etki', tur: 'alanlar', alanlar: [{ et: 'Bedel Farkı (EUR)', deger: tutar(Number(p.bedel_farki_eur), 'tr') }, { et: 'Yeni Toplam (EUR)', deger: p.yeni_toplam_eur === null ? null : tutar(Number(p.yeni_toplam_eur), 'tr') }, { et: 'Ek Süre', deger: `${p.ek_sure_gun} gün` }] },
@@ -557,6 +565,9 @@ export async function sigortaOnayTanim(db: Db, id: string, kod: string, web: str
     ...ortak(b).slice(0, 2),
     { baslik: T.ozet, tur: 'alanlar', alanlar: [{ et: T.belge, deger: `${T.ft} · ${s.teklif_no} · Rev.${s.surum_no}`, genis: true }, { et: T.toplam, deger: `${para(R(a.genel + m.genel), dil)} EUR` }, { et: T.on, deger: `${para(a.genel, dil)} EUR` }, { et: T.onm, deger: `${para(m.genel, dil)} EUR` }] },
   ];
+  // YG-639: LGM'ye ödenecek tutar (sigortanın onayladığı) ve yat sahibine ayrı sipariş olarak sunulan kalemler ayrıca yazılır.
+  bolumler.push({ baslik: en ? 'Payment Breakdown' : 'Ödeme Dağılımı', tur: 'alanlar', alanlar: [{ et: en ? 'Payable to LGM by the Insurer (VAT Incl.)' : 'Sigortaca LGM’ye Ödenecek Tutar (KDV Dahil)', deger: `${para(a.genel, dil)} EUR` }, { et: en ? 'Claim File No' : 'Hasar Dosya No', deger: b.d.sigorta_hasar_dosya_no },
+    { et: en ? 'Offered to the Yacht Owner as a Separate Order' : 'Yat Sahibine Ayrı Sipariş Olarak Sunulan', deger: onm.length ? `${onm.length} ${en ? 'item(s)' : 'kalem'} · ${para(m.genel, dil)} EUR` : (en ? 'None' : 'Yok') }] });
   if (on.length) bolumler.push(tablo(T.onT, on, T.onTop));
   if (onm.length) bolumler.push(tablo(T.onmT, onm, T.onmTop));
   bolumler.push({ baslik: T.kayit, tur: 'alanlar', alanlar: [{ et: T.kim, deger: [s.onaylayan_yetkili, b.d.sigortaci_adi].filter(Boolean).join(' · ') }, { et: T.yon, deger: ytn ? (en ? 'YATONET 360 approval screen · two-factor authenticated session' : 'YATONET 360 onay ekranı · iki aşamalı doğrulamalı oturum') : s.onay_kanali }, { et: T.zam, deger: anSaat(s.onay_tarihi) }, { et: T.sur, deger: `${s.teklif_no} · Rev.${s.surum_no}` }, { et: T.say, deger: `${on.length} / ${kl.length}` }] }, ekipBolumu(b));

@@ -74,8 +74,29 @@ export function formDogrula(alanlar: FormAlani[], v: Record<string, unknown>): {
   return { veri };
 }
 
+/** YG-599: FR-KLT-013 onaylanınca her eylem satırı (Eylem | gg.aa.yyyy) sorumlusuna görev olur; sonraki gözden geçirme tarihi takvimin sıklığından kurulur ve görev açılır. */
+const SIKLIK: [RegExp, number][] = [[/aylık/i, 1], [/3 ayda bir/i, 3], [/6 ayda bir/i, 6], [/yılda bir|yıllık|her yıl/i, 12]];
+export async function gozdenGecirmeIsle(c: Db, id: string) {
+  const f = (await c.query(`SELECT kimlik, kayit_no, veriler, hazirlayan_ref, form_kodu FROM form_kaydi WHERE kimlik = $1`, [id])).rows[0];
+  if (!f || f.form_kodu !== 'FR-KLT-013') return;
+  const v = (f.veriler ?? {}) as Record<string, string>;
+  const satirlar = String(v.eylemler ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  for (const [n, s] of satirlar.entries()) {
+    const [eylem, tarih] = s.split('|').map((x) => x.trim()); const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(tarih ?? '');
+    const son = m ? new Date(`${m[3]}-${m[2]}-${m[1]}T18:00:00+03:00`) : new Date(Date.now() + 30 * 86_400_000);
+    await kartAc(c, { tur: 'Gözden Geçirme Eylemi', kategori: 'gorev', baslik: `${f.kayit_no} · Eylem ${n + 1}`, ozet: eylem!.slice(0, 200), sahipKullanici: f.hazirlayan_ref, sonZaman: son, nesneTuru: 'Form Kaydı', nesneKimligi: f.kimlik });
+  }
+  let sonraki = v.sonraki_tarih ? new Date(v.sonraki_tarih) : null;
+  if (!sonraki) {
+    const ack = (await c.query(`SELECT aciklama FROM deger_listesi WHERE liste_kodu = 'LST_GOZDEN_GECIRME_TAKVIMI' AND deger = $1`, [v.gozden_gecirme_turu ?? ''])).rows[0]?.aciklama as string | undefined;
+    const ay = SIKLIK.find(([r]) => r.test(ack ?? ''))?.[1];
+    if (ay) { sonraki = new Date(); sonraki.setMonth(sonraki.getMonth() + ay); await c.query(`UPDATE form_kaydi SET veriler = veriler || jsonb_build_object('sonraki_tarih', $2::text) WHERE kimlik = $1`, [f.kimlik, sonraki.toISOString().slice(0, 10)]); }
+  }
+  if (sonraki) await kartAc(c, { tur: 'Periyodik Gözden Geçirme', kategori: 'gorev', baslik: `${v.gozden_gecirme_turu ?? 'Gözden Geçirme'} · Sonraki Gözden Geçirme`, ozet: `Önceki kayıt: ${f.kayit_no}`, sahipKullanici: f.hazirlayan_ref, sonZaman: sonraki, nesneTuru: 'Form Kaydı', nesneKimligi: f.kimlik });
+}
+
 kapanisKaydet('Form Onayı', async (c, k, karar, yapan) => {
-  if (karar === 'Onayla') await c.query(`UPDATE form_kaydi SET durum = 'Onaylı', onaylayan_ref = $2, onay_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1::uuid AND durum = 'Kontrolde'`, [k.nesne_kimligi, yapan]);
+  if (karar === 'Onayla') { await c.query(`UPDATE form_kaydi SET durum = 'Onaylı', onaylayan_ref = $2, onay_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1::uuid AND durum = 'Kontrolde'`, [k.nesne_kimligi, yapan]); await gozdenGecirmeIsle(c, k.nesne_kimligi!); }
   else if (karar === 'Gerekçeyle İade Et' || karar === 'Reddet') await c.query(`UPDATE form_kaydi SET durum = 'Açık', iade_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1::uuid AND durum = 'Kontrolde'`, [k.nesne_kimligi, karar]);
   else if (karar === 'Yeniden Gönder') await c.query(`UPDATE form_kaydi SET durum = 'Kontrolde', iade_nedeni = NULL WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
@@ -160,7 +181,7 @@ export function genelFormYollari(s: FastifyInstance, b: Baglam) {
     if (f.durum !== 'Açık') return y.code(409).send({ hata: 'Kayıt açık değildir.' });
     const roller = (await b.db.query(`SELECT rol_adi FROM rol`)).rows.map((r) => r.rol_adi as string).filter((r) => rolGecer(f.onaylayan, r));
     const rol = roller.sort((a, c) => (f.onaylayan as string).indexOf(a) - (f.onaylayan as string).indexOf(c))[0];
-    if (!rol) { await b.db.query(`UPDATE form_kaydi SET durum = 'Onaylı', onay_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik]); return { durum: 'Onaylı' }; }
+    if (!rol) { await b.db.query(`UPDATE form_kaydi SET durum = 'Onaylı', onay_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik]); await gozdenGecirmeIsle(b.db, f.kimlik); return { durum: 'Onaylı' }; }
     await b.db.query(`UPDATE form_kaydi SET durum = 'Kontrolde', iade_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik]);
     await kartAc(b.db, { tur: 'Form Onayı', baslik: `${f.kayit_no} · ${f.ad}`, ozet: `Kontrol: ${rol}`, hazirlayan: o.kullanici, zincir: [await rolId(b.db, rol)], nesneTuru: 'Form Kaydı', nesneKimligi: f.kimlik });
     return { durum: 'Kontrolde', gonderilecek: rol };

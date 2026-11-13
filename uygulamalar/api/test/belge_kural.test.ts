@@ -54,3 +54,15 @@ describe('belge bağları (YG-606)', () => {
     if (od) expect((await yk('ds', 'Ödeme', od)).statusCode).toBe(200);
   });
 });
+
+describe('yalnız bilgi belgesi (YG-622)', () => {
+  it('yabancı sigortacı yazısı onay veya muvafakat kanıtı olamaz', async () => {
+    const { bilgiBelgesiMi } = await import('../src/belge_kural.js');
+    const d = await o.dosyaAc();
+    const e = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, kaynak_kisi, olusturan_ref) VALUES ($1,'Yabancı Sigortacı Ödeme Yazısı','Dosya',$2,'E-posta',current_date,'Sörveyör',$3) RETURNING kimlik`, [`YS ${Date.now()}`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    expect(await bilgiBelgesiMi(o.db, e)).toBe(true);
+    await o.sup.query(`UPDATE yat SET lehtar_adi = 'Banka' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2)`, [d.kimlik, o.K.ds]);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/muvafakat`, await o.gir('ds'), { belge: e })).statusCode).toBe(409);
+  });
+});

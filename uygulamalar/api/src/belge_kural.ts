@@ -20,6 +20,11 @@ export async function kurallariYukle(db: Db) {
   KURAL.clear(); for (const x of r) KURAL.set(x.belge_turu, { zorunlu: x.zorunlu_alanlar, disKapali: x.dis_kapali_gruplar });
 }
 /** Türün tanımlı dış kapalılığı; grup adı başlangıcıyla eşleşir (ör. "Tesis"). */
+/** YG-622: yalnız bilgi belgesi türleri onay, muvafakat veya imzalı protokol kanıtı olamaz. */
+export async function bilgiBelgesiMi(db: Db, belge: string): Promise<boolean> {
+  return Boolean((await db.query(`SELECT 1 FROM belge e JOIN belge_turu_kurali k ON k.belge_turu = e.belge_turu WHERE e.kimlik = $1 AND k.yalniz_bilgi`, [belge])).rowCount);
+}
+export const BILGI_HATA = 'Bu belge yalnız bilgi belgesidir (yabancı sigortacı yazısı); onay kanıtı olarak kullanılamaz. Teklif, onay ve fatura muhatabı yat sahibidir.';
 export function tanimliKapali(grup: string, tur: string): boolean {
   return (KURAL.get(tur)?.disKapali ?? []).some((g) => grup === g || grup.startsWith(g));
 }

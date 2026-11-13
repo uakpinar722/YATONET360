@@ -17,8 +17,10 @@ describe('onay ekranları (YG-471, YG-474, YG-472, YG-1500)', () => {
     expect((await o.ist('POST', u, ds, { ony: 'ONY-99' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, ds, { ony: 'ONY-07' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, ds, { ony: 'ONY-08', parca: 'P' })).statusCode).toBe(400);
-    for (const g of [{ ony: 'ONY-03' }, { ony: 'ONY-06', teklifNo: 'T-1' }, { ony: 'ONY-07', parca: 'Pompa' }, { ony: 'ONY-08', parca: 'Şaft', tutar: 1234.5 }, { ony: 'ONY-09', zaman: '2026-12-01T10:00:00Z' }, { ony: 'ONY-10', kayitNo: 'GK-1' }]) { const r = await o.ist('POST', u, ds, g); expect(r.statusCode, r.body).toBe(200); const m = (await o.sup.query(`SELECT metin FROM onay_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].metin as string; expect(m).not.toMatch(/\[[^\]]+\]/); }
+    for (const g of [{ ony: 'ONY-03' }, { ony: 'ONY-06', teklifNo: 'T-1', yapilmayanIs: 'Şaft yatağı yenileme', teknikEtki: 'Titreşim', kullanimSiniri: '1.500 dev/dk üstü kullanılmamalı', onerilenKontrol: '50 saat sonra kontrol' }, { ony: 'ONY-07', parca: 'Pompa' }, { ony: 'ONY-08', parca: 'Şaft', tutar: 1234.5 }, { ony: 'ONY-09', zaman: '2026-12-01T10:00:00Z' }, { ony: 'ONY-10', kayitNo: 'GK-1' }]) { const r = await o.ist('POST', u, ds, g); expect(r.statusCode, r.body).toBe(200); const m = (await o.sup.query(`SELECT metin FROM onay_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].metin as string; expect(m).not.toMatch(/\[[^\]]+\]/); }
     expect((await o.sup.query(`SELECT metin FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-08'`, [d.kimlik])).rows[0].metin).toContain('1.234,50');
+    expect((await o.ist('POST', u, ds, { ony: 'ONY-06', teklifNo: 'T-2' })).statusCode).toBe(400); // YG-726
+    expect((await o.sup.query(`SELECT kullanim_siniri FROM ek_is_reddi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].kullanim_siniri).toBe('1.500 dev/dk üstü kullanılmamalı');
   });
   it('ONY-28 yalnız sigortasız dosyada', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
@@ -104,5 +106,19 @@ describe('sökülen parça (YG-482)', () => {
     expect((await o.ist('POST', `/api/sokulen-parca/${r.json().kimlik}/secim`, ds, { secim: 'Sigorta Eksperi İncelemesi İçin Bekletme' })).statusCode).toBe(200);
     const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/sokulen-parca`, ds)).json(); expect(l[0].secim).toContain('Eksper');
     expect((new Date(l[0].son_tarih).getTime() - Date.now()) / 86_400_000).toBeGreaterThan(28);
+  });
+});
+
+describe('sökülen parça sonucu (YG-730)', () => {
+  it('fotoğrafsız kayıt yok; sigortalı dosyada imha sigorta onay belgesi ister', async () => {
+    const d = await dosya();
+    await o.sup.query(`UPDATE dosya SET dosya_niteligi = 'Sigorta bağlantılı' WHERE kimlik = $1`, [d.kimlik]);
+    const ds = await o.gir('ds');
+    const p = (await o.ist('POST', `/api/dosya/${d.kimlik}/sokulen-parca`, ds, { ad: 'Pervane' })).json().kimlik;
+    await o.ist('POST', `/api/sokulen-parca/${p}/secim`, ds, { secim: 'Hurda-Bertaraf' });
+    const foto = await belge(d.kimlik); const onay = await belge(d.kimlik);
+    expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, { foto })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, { foto, sigortaOnay: onay })).json().sonuc).toBe('İmha Edildi');
   });
 });

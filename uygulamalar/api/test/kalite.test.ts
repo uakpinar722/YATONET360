@@ -61,6 +61,7 @@ describe('kalite planı (YG-288)', () => {
     const k = await o.kart('Kalite Planı', p.json().kimlik);
     expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).not.toBe(200);
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.kart('Kalite Kontrolör Ataması', d.kimlik))).toBeUndefined(); // YG-1485: dosyada Kalite Kontrolör atanmış
     expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'] })).json().hata).toContain('toplantısı');
     await o.sup.query(`INSERT INTO baslangic_toplantisi (is_emri_ref, tarih, katilimcilar, konusulanlar, kaydeden_ref) VALUES ($1,current_date,'K','K',$2)`, [on, o.K.ds]);
     expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'] })).statusCode).toBe(200);
@@ -109,9 +110,9 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
 });
 describe('test (YG-286, YG-396, YG-397)', () => {
   it('öznel ölçüt yok, kalibrasyonsuz cihaz yok, üç ayrı kişi, yeniden test yeni numara; başarısızı başarılı yenileme kapıyı açar', async () => {
-    const d = await dosya(); const tu = await o.gir('tu'); const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const u = `/api/dosya/${d.kimlik}/test`;
+    const d = await dosya(); const tu = await o.gir('kk'); /* YG-1485: test kaydını Kalite Kontrolör girer */ const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const u = `/api/dosya/${d.kimlik}/test`;
     expect((await o.ist('POST', u, tu, { ...T, olcut: 'normal' })).statusCode).toBe(400);
-    const c = (await o.ist('POST', '/api/olcum-cihazi', tu, { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01' })).json().kimlik;
+    const c = (await o.ist('POST', '/api/olcum-cihazi', await o.gir('tu'), { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01' })).json().kimlik;
     expect((await o.ist('POST', u, tu, { ...T, cihazlar: [c] })).json().hata).toContain('kalibrasyonu');
     const t = await o.ist('POST', u, tu, T);
     expect(t.statusCode, t.body).toBe(200); expect(t.json().testNo).toBe(`${d.dosyaNo}-TS01`);
@@ -131,14 +132,14 @@ describe('test (YG-286, YG-396, YG-397)', () => {
     const a = await o.ist('POST', `/api/test/${t2.kimlik}/kontrol`, tu); expect(a.statusCode).toBe(409);
   });
   it('dış uzman / muayene raporu sonucu test sonucuna eşlenir (YG-398)', async () => {
-    const d = await dosya(); const tu = await o.gir('tu'); const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const ham = await o.belge(d.kimlik, 'ds');
+    const d = await dosya(); const tu = await o.gir('kk'); /* YG-1485: test kaydını Kalite Kontrolör girer */ const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const ham = await o.belge(d.kimlik, 'ds');
     const dx = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, T)).json().kimlik;
     expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', sonuc: 'Başarılı', gerekce: 'G', hamVeri: ham })).json().hata).toContain('Başarısız');
     expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', gerekce: 'G', hamVeri: ham })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT sonuc, dis_rapor_sonucu FROM test_kaydi WHERE kimlik = $1`, [dx])).rows[0]).toEqual({ sonuc: 'Başarısız', dis_rapor_sonucu: 'Uygun Değil' });
   });
   it('hazırlayan kontrol edemez, kontrol eden karar veremez', async () => {
-    const d = await dosya(); const tu = await o.gir('tu'); const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '5 bar', durdurma: 'D' })).json().kimlik;
+    const d = await dosya(); const tu = await o.gir('kk'); /* YG-1485: test kaydını Kalite Kontrolör girer */ const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '5 bar', durdurma: 'D' })).json().kimlik;
     await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarılı', gerekce: 'G', hamVeri: await o.belge(d.kimlik, 'ds') });
     expect((await o.ist('POST', `/api/test/${id}/kontrol`, tu)).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/test/${id}/kontrol`, await o.gir('ty'))).statusCode).toBe(200);
