@@ -284,7 +284,9 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (!g) return y.code(400).send({ hata: 'Gerekçeyi yazmanızı rica ederiz.' });
     const f = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0];
     if (!f) return yok(y);
-    const k = await kartAc(b.db, { tur: 'Kalıcı Askı Önerisi', baslik: `${f.ticari_unvan} · Kalıcı Askı Önerisi`, ozet: g, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, TM), await rolId(b.db, HUD), await rolId(b.db, OPM), await rolId(b.db, BTD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
+    // YG-1426: Hukuk ve Uyum görüşü kademe sayacına girmez; ayrı kartta "Hukuk ve Uyum Görüşü Bekleniyor" olarak yürür. Direktör görüş verilmeden karar vermez.
+    const k = await kartAc(b.db, { tur: 'Kalıcı Askı Önerisi', baslik: `${f.ticari_unvan} · Kalıcı Askı Önerisi`, ozet: g, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, TM), await rolId(b.db, OPM), await rolId(b.db, BTD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
+    await kartAc(b.db, { tur: 'Kalıcı Askı Hukuk Görüşü', baslik: `${f.ticari_unvan} · Hukuk ve Uyum Görüşü Bekleniyor`, ozet: `Kalıcı askı önerisi: ${g}`, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, HUD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
     return { kimlik: k };
   });
 

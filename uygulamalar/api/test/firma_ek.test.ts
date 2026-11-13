@@ -100,8 +100,10 @@ describe('firma portalı ve kapanış (YG-411, YG-423, YG-867, YG-1660, YG-416)'
   it('kalıcı askı üç görüşten geçer', async () => {
     const f = await firma(); expect((await o.ist('POST', `/api/firma/${f}/kalici-aski-onerisi`, await o.gir('sc'), { gerekce: 'G' })).statusCode).toBe(403);
     const r = await o.ist('POST', `/api/firma/${f}/kalici-aski-onerisi`, await o.gir('fym'), { gerekce: 'Tekrarlı' }); expect(r.statusCode).toBe(200);
-    const k = await o.kart('Kalıcı Askı Önerisi', f); expect(k.zincir).toHaveLength(4);
-    await o.karar(k.kimlik, 'tm', 'Onaya Gönder', 'Görüş'); await o.karar(k.kimlik, 'hud', 'Onaya Gönder', 'Görüş'); await o.karar(k.kimlik, 'opm', 'Onaya Gönder', 'Görüş');
+    const k = await o.kart('Kalıcı Askı Önerisi', f); expect(k.zincir).toHaveLength(3); // YG-1426
+    await o.karar(k.kimlik, 'tm', 'Onaya Gönder', 'Görüş'); await o.karar(k.kimlik, 'opm', 'Onaya Gönder', 'Görüş');
+    expect((await o.karar(k.kimlik, 'btd', 'Onayla')).statusCode).toBe(409);
+    const h = await o.kart('Kalıcı Askı Hukuk Görüşü', f); expect((await o.karar(h.kimlik, 'hud', 'Onayla', 'Uygun')).statusCode).toBe(200);
     expect((await o.karar(k.kimlik, 'btd', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT ag_statusu FROM kurulus WHERE kimlik = $1`, [f])).rows[0].ag_statusu).toBe('Askıda');
   });

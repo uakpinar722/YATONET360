@@ -304,6 +304,7 @@ async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
     { ...ortY!, alanlar: [...(ortY as Extract<Bolum, { tur: 'alanlar' }>).alanlar.slice(0, -1), { et: 'Çalışma Adresi', deger: e.uygulama_yeri, genis: true }] } as Bolum,
     ortO!,
     { baslik: 'Kapsam', tur: 'metin', metin: e.kapsam },
+    ...(e.haricler || e.varsayimlar || e.bagimliliklar ? [{ baslik: 'Hariçler, Varsayımlar ve Bağımlılıklar', tur: 'alanlar' as const, alanlar: [{ et: 'Kapsam Dışı', deger: e.haricler, genis: true }, { et: 'Varsayımlar', deger: e.varsayimlar, genis: true }, { et: 'Bağımlılıklar', deger: e.bagimliliklar, genis: true }] }] : []), // YG-321
   ];
   void ortM;
   if (kl.length) bolumler.push({ baslik: 'İş Paketleri', tur: 'tablo', sutunlar: [{ ad: 'Paket', hiza: 'ort' }, { ad: 'Kapsam' }, { ad: 'Miktar', hiza: 'sag' }], satirlar: kl.map((k, n) => [n + 1, k.aciklama, miktarYaz(k, dil)]) });

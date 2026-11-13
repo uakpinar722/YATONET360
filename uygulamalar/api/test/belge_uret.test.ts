@@ -41,6 +41,7 @@ describe('resmî PDF (YG-665, YG-691)', () => {
     const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); await o.sup.query(`DELETE FROM teknik_rapor WHERE dosya_ref = $1`, [d.kimlik]);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, await o.gir('tu'), R); expect(r.statusCode, r.body).toBe(200);
     expect(r.json().raporNo).toBe(`${d.dosyaNo}-TR01`);
+    { const ro = await o.ist('GET', `/api/dosya/${d.kimlik}/rapor-onerileri`, await o.gir('tu')); expect(ro.statusCode, ro.body).toBe(200); expect(ro.json().satirlar.length).toBeGreaterThan(0); } // YG-280
     const k = await o.kart('Teknik Rapor', r.json().kimlik);
     await o.karar(k.kimlik, 'ty', 'Onaya Gönder'); await o.karar(k.kimlik, 'tmy', 'Onaya Gönder'); await o.karar(k.kimlik, 'tm', 'Onayla');
     expect((await durum('Teknik Rapor', r.json().kimlik)).durum).toBe('Bekliyor');

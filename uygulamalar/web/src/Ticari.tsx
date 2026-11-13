@@ -209,7 +209,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); void istek<{ yer: string; kapsam: string }>(`/dosya/${id}/kesif-talebi`).then((r) => setIe((x) => ({ ...x, yer: x.yer || r.yer, kapsam: x.kapsam || r.kapsam }))).catch(() => {}); }, [id]);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
-  const [ie, setIe] = useState({ tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
+  const [ie, setIe] = useState({ bag: '', secim: '', tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
   const [envEksik, setEnvEksik] = useState(''); const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [gonderen, setGonderen] = useState(''); const [onayBelge, setOnayBelge] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
   if (!v) return null;
   const ticari = roller.includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
@@ -222,6 +222,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {v.cetveller.map((c) => <div key={c.kimlik}>Rev.{c.surum} · {c.satir} satır · {c.durum}</div>)}
         {tu && <>
           {satirlar.map((x, n) => <div key={n}>{x.aciklama} · {x.miktar} {x.birim} · {x.nitelik} · {x.bedel}{x.kod ? ` · ${x.kod}` : ''}</div>)}
+          <button className="btn2 kucuk" onClick={() => void yap(async () => { const r = await istek<{ rapor: string | null; satirlar: string[] }>(`/dosya/${id}/rapor-onerileri`); if (!r.rapor) throw new Error('Önerisi olan teknik rapor bulunmamaktadır.'); setSatirlar([...satirlar, ...r.satirlar.map((x) => ({ ...satir, aciklama: x, kod: '' }))]); }, 'Teknik rapor önerileri satır olarak aktarıldı; kartela kodu, miktar ve birimi düzeltiniz.')}>Teknik Rapor Önerilerini Aktar</button>
           <label htmlFor="c-a">Açıklama</label><input id="c-a" value={satir.aciklama} onChange={(e) => setSatir({ ...satir, aciklama: e.target.value })} />
           <label htmlFor="c-k">Kartela Kodu (Varsa)</label><KartelaArama id="c-k" deger={satir.kod} sec={(k) => setSatir({ ...satir, kod: k })} />
           <div className="iki-tarih"><div><label htmlFor="c-n">İşin Niteliği</label><select id="c-n" value={satir.nitelik} onChange={(e) => setSatir({ ...satir, nitelik: e.target.value })}>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select></div><div><label htmlFor="c-b">Bedel Türü</label><select id="c-b" value={satir.bedel} onChange={(e) => setSatir({ ...satir, bedel: e.target.value })}>{BEDEL.map((x) => <option key={x}>{x}</option>)}</select></div></div>
@@ -244,6 +245,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
               {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
               {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
               {ticari && t.statu === 'Taslak' && <TeklifMadde teklif={t.kimlik} />}
+              {ticari && t.statu === 'Taslak' && <TeklifIndirim teklif={t.kimlik} yap={yap} />}
               {t.bant_disi && <span className="hata">{t.bant_onayli ? 'Bant Dışı · Onaylı' : '⚠ Bant Dışı · Ticari İşler Direktörü onayı bekleniyor'}</span>}
               {ticari && t.statu === 'Taslak' && t.bant_disi && !t.bant_onayli && <BantOnayi teklif={t.kimlik} yap={yap} />}
               {rollerim.includes('Dosya Sorumlusu') && t.statu === 'Karar' && <CaymaKaydi teklif={t.kimlik} yap={yap} />}
@@ -290,13 +292,15 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <label htmlFor="e-t">Tür</label><select id="e-t" value={ie.tur} onChange={(x) => setIe({ ...ie, tur: x.target.value })}>{[['KN', 'Keşif'], ['ON', 'Onarım'], ['EK', 'Ek İş'], ['GR', 'Garanti ve Düzeltme'], ['PH', 'Planlı Hizmet']].map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select>
           <label htmlFor="e-f">Firma</label><select id="e-f" value={ie.firma} onChange={(x) => setIe({ ...ie, firma: x.target.value })}><option value="">Seçiniz</option>{firmalar.map((f) => <option key={f.kimlik} value={f.kimlik} disabled={Boolean(f.engel)}>{f.ticari_unvan}{f.engel ? ` · ${f.engel}` : ''}</option>)}</select>
           <FirmaAdaylari dosya={id} sec={(k) => setIe({ ...ie, firma: k })} />
+          <label htmlFor="e-sg">Firma Seçim Gerekçesi</label><input id="e-sg" value={ie.secim} onChange={(x) => setIe({ ...ie, secim: x.target.value })} />
           <label htmlFor="e-y">Uygulama Yeri</label><input id="e-y" value={ie.yer} onChange={(x) => setIe({ ...ie, yer: x.target.value })} />
+          <label htmlFor="e-bg">Bağımlılıklar (Önce Tamamlanacak İş veya Girdi)</label><input id="e-bg" value={ie.bag} onChange={(x) => setIe({ ...ie, bag: x.target.value })} />
           <label htmlFor="e-k">Kapsam</label><input id="e-k" value={ie.kapsam} onChange={(x) => setIe({ ...ie, kapsam: x.target.value })} />
           {ie.tur !== 'KN' && <><label htmlFor="e-b">Firma Bedeli (EUR)</label><input id="e-b" inputMode="decimal" value={ie.bedel} onChange={(x) => setIe({ ...ie, bedel: x.target.value })} /></>}
           {(ie.tur === 'ON' || ie.tur === 'EK' || ie.tur === 'PH') && <><label htmlFor="e-tk">Onaylı Teklif</label><select id="e-tk" value={ie.teklif} onChange={(x) => setIe({ ...ie, teklif: x.target.value })}><option value="">Seçiniz</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
           {ie.tur === 'EK' && v.zarfSapmalari.length > 0 && <><label htmlFor="e-sp">Onarım Zarfı Sapması</label><select id="e-sp" value={ie.sapma} onChange={(x) => setIe({ ...ie, sapma: x.target.value })}><option value="">Bağlama</option>{v.zarfSapmalari.map((z) => <option key={z.kimlik} value={z.kimlik}>{z.is_emri_no} · {z.aciklama}</option>)}</select></>}
           {(ie.tur === 'EK' || ie.tur === 'GR') && <><label htmlFor="e-an">Ana İş Emri</label><select id="e-an" value={ie.ana} onChange={(x) => setIe({ ...ie, ana: x.target.value })}><option value="">Seçiniz</option>{v.isEmirleri.map((e) => <option key={e.kimlik} value={e.kimlik}>{e.is_emri_no}</option>)}</select></>}
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/is-emri`, { tur: ie.tur, firma: ie.firma, yer: ie.yer, kapsam: ie.kapsam, bedel: ie.bedel ? Number(ie.bedel.replace(',', '.')) : undefined, teklif: ie.teklif || undefined, ana: ie.ana || undefined, sapma: ie.sapma || undefined }), 'İş emri oluşturuldu.')}>İş Emri Oluştur</button>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/is-emri`, { bagimliliklar: ie.bag || undefined, secimGerekcesi: ie.secim || undefined, tur: ie.tur, firma: ie.firma, yer: ie.yer, kapsam: ie.kapsam, bedel: ie.bedel ? Number(ie.bedel.replace(',', '.')) : undefined, teklif: ie.teklif || undefined, ana: ie.ana || undefined, sapma: ie.sapma || undefined }), 'İş emri oluşturuldu.')}>İş Emri Oluştur</button>
         </>}
       </Blok>
       {m && <Blok baslik="Ödeme ve Fatura">
@@ -920,8 +924,15 @@ function CaymaKaydi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<an
 
 /** YG-304: kapsamaya göre süzülmüş liste; seçim kişidedir, fiyat ve mesafe sıralamaya girmez. */
 function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void }) {
-  const [b, setB] = useState(''); const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; kapsama: string; sonuc: string; engeller: string[]; uyarilar: string[] }[] | null>(null); const [h, setH] = useState('');
-  return <><label htmlFor={`fa-${dosya}`}>Branş (Uygun Firmaları Listelemek İçin)</label><input id={`fa-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}`).then(setL).catch((e) => setH(e.message)); }}>Uygun Firmaları Listele</button>{h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve bölgede uygun firma bulunmamaktadır.</div>}{l?.map((f) => <div key={f.kimlik}>{f.ticari_unvan} · {f.kapsama} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
+  /* YG-1539: katmanlı aday listesi; Bölge varsayılan, düğmelerle Komşu, Mobil Ekip ve Ulusal katmanı açılır. */
+  const [b, setB] = useState(''); const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; kapsama: string; katman: string; bolgeDisi: boolean; sonuc: string; engeller: string[]; uyarilar: string[] }[] | null>(null); const [h, setH] = useState('');
+  const [mobil, setMobil] = useState(false); const [uygun, setUygun] = useState(false);
+  const getir = (katman: string) => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}&katman=${encodeURIComponent(katman)}${mobil ? '&yalnizMobil=1' : ''}${uygun ? '&yalnizUygun=1' : ''}`).then(setL).catch((e) => setH(e.message)); };
+  return <><label htmlFor={`fa-${dosya}`}>Branş (Uygun Firmaları Listelemek İçin)</label><input id={`fa-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} />
+    <label><input type="checkbox" checked={mobil} onChange={(e) => setMobil(e.target.checked)} /> Yalnız mobil ekibi olanlar</label><label><input type="checkbox" checked={uygun} onChange={(e) => setUygun(e.target.checked)} /> Yalnız belgesi geçerli ve uygun olanlar</label>
+    <div className="dugmeler"><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Bölge')}>Uygun Firmaları Listele</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Komşu')}>Komşu bölgeleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Mobil Ekip')}>Mobil ekipleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Ulusal')}>Ulusal ekipleri göster</button></div>
+    {h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve katmanda uygun firma bulunmamaktadır.</div>}
+    {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
 }
 
 /** YG-1070, D-135: Ek-2 kaydı; her kayıt yeni sürüm, sınır kuruma yansır; PDF kayıttan üretilir. */
@@ -938,4 +949,15 @@ export function KurumsalEk2({ yap }: { yap: (f: () => Promise<any>, tamam?: stri
       {['Sörveyör', 'Broker', 'Lehtar', 'Klas Kuruluşu'].map((x) => <label className="kutu" key={x}><input type="checkbox" checked={b.includes(x)} onChange={(e) => setB(e.target.checked ? [...b, x] : b.filter((z) => z !== x))} /><span>Bilgi Paylaşım İzni: {x}</span></label>)}
       <button className="btn2" onClick={() => void yap(() => istek(`/kurumsal-kurum/${k}/ek2`, { satirlar: { muhatap: { ad: f.muhatapAd, iletisim: f.muhatapIl }, kapsam: { ad: f.kapsamAd, iletisim: f.kapsamIl }, fiyat: { ad: f.fiyatAd, iletisim: f.fiyatIl, limit: sayi(f.limit) }, teslim: { ad: f.teslimAd, iletisim: f.teslimIl, belge: f.teslimBelge }, kaptan: { ad: f.kaptanAd, iletisim: f.kaptanIl, limit: sayi(f.kaptanLimit) }, lgm: { ad: f.lgmAd, iletisim: f.lgmIl } }, dayanak: f.dayanak, gunluk: f.gunluk, resmi: f.resmi, yatlar: f.yatlar.split(',').map((s) => s.trim()).filter(Boolean), islemler: ['ONY-23', 'ONY-25', 'ONY-27'], bitis: f.bitis, bilgi: b }).then(yk), 'Ek-2 sürümü temsilcinin SMS kodlu onayına gönderildi.')}>Ek-2’yi Temsilci Onayına Gönder</button>
       {l.find((x) => x.kimlik === k)?.surum && <div className="dugmeler"><a href={`/api/kurumsal-kurum/${k}/ek2.pdf`} target="_blank" rel="noreferrer">Ek-2 PDF (Türkçe)</a> <a href={`/api/kurumsal-kurum/${k}/ek2.pdf?dil=en`} target="_blank" rel="noreferrer">Ek-2 PDF (English)</a></div>}</>}</Blok>;
+}
+
+/** YG-231: indirim %1–%10 tam sayı, gerekçe zorunlu; %5'e kadar Genel Müdür Yardımcısı, üzeri CEO (yetki sunucuda denetlenir). */
+function TeklifIndirim({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [ac, setAc] = useState(false); const [oran, setOran] = useState(''); const [ger, setGer] = useState('');
+  if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>İndirim Uygula</button>;
+  return <span className="satir">
+    <label htmlFor={`ti-o-${teklif}`}>İndirim Oranı (%)</label><input id={`ti-o-${teklif}`} inputMode="numeric" value={oran} onChange={(x) => setOran(x.target.value)} />
+    <label htmlFor={`ti-g-${teklif}`}>İndirim Gerekçesi</label><input id={`ti-g-${teklif}`} value={ger} onChange={(x) => setGer(x.target.value)} />
+    <button className="btn2 kucuk" disabled={!oran || !ger.trim()} onClick={() => void yap(() => istek(`/teklif/${teklif}/indirim`, { oran: Number(oran), gerekce: ger }), 'İndirim uygulandı.').then(() => setAc(false))}>Uygula</button>
+  </span>;
 }

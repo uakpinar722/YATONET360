@@ -87,6 +87,14 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-200, YG-280, YG-427: firma girdisi rapora kendiliğinden gelir; LGM yalnız düzeltir, düzeltme kayda geçer. Firma raporu dışa giden rapora yazılmaz.
+  // YG-280: firma raporundan aktarılıp LGM'ce düzeltilen öneriler cetvel satırı taslağı olarak döner (firma raporu dışa gitmez).
+  s.get('/dosya/:id/rapor-onerileri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const r = (await b.db.query(`SELECT rapor_no, oneriler FROM teknik_rapor WHERE dosya_ref = $1 AND oneriler IS NOT NULL ORDER BY (durum = 'Onaylı') DESC, olusturma_zamani DESC LIMIT 1`, [id])).rows[0];
+    if (!r) return { rapor: null, satirlar: [] };
+    return { rapor: r.rapor_no, satirlar: String(r.oneriler).split(/\r?\n|;/).map((x) => x.replace(/^\s*(?:[-•*]|\d+[.)])\s*/, '').trim()).filter(Boolean) };
+  });
   s.get('/dosya/:id/teknik-rapor', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);

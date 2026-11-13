@@ -291,6 +291,10 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const benimRol = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2)`, [o.kullanici, gereken])).rows.map((r) => r.rol_adi as string);
     if (!benimRol.length) return y.code(403).send({ hata: `Bu noktayı ${gereken.join(' ve ')} serbest bırakır.` });
     if ((await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND teknik_kabul_eden_ref = $2`, [k.is_emri_ref, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Görev ayrılığı gereği teknik kabulü veren kalite kontrolünü doğrulayamaz.' }); // YG-1037
+    // YG-382: kanıt dosyaya bağlı olmalı; incelenen yürürlükteki sürüm ve kullanılan ölçüt sonuçla birlikte kaydedilir.
+    const ks = (await b.db.query(`SELECT s.kimlik FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.kimlik = $1 AND e.bag_turu IN ('Dosya', 'İş Emri') AND (e.bag_kimligi = $2::text OR e.bag_kimligi = $3::text) AND s.durum NOT IN ('İptal', 'Karantina', 'Yerine Geçti', 'Arşiv') ORDER BY s.surum_no DESC LIMIT 1`, [g.kanit, k.dosya_ref, k.is_emri_ref])).rows[0];
+    if (!ks) return y.code(400).send({ hata: 'Kanıt bu dosyaya veya iş emrine yüklenmiş geçerli bir belge olmalıdır.' });
+    await b.db.query(`UPDATE kontrol_noktasi SET kanit_surum_ref = $2, kullanilan_olcut = $3 WHERE kimlik = $1`, [id, ks.kimlik, k.kabul_olcutu]);
     await b.db.query(`UPDATE kontrol_noktasi SET dogrulayanlar = array_append(dogrulayanlar, $2) WHERE kimlik = $1 AND NOT ($2 = ANY(dogrulayanlar))`, [id, o.kullanici]);
     if (g.sonuc !== 'Uygun' && g.sonuc !== 'Koşullu uygun') { await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4 WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null]); return { sonuc: g.sonuc, serbest: false, uygunsuzlukGerekli: true }; }
     const onay = [...new Set([...(k.onaylar as string[]), ...benimRol])];

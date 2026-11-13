@@ -108,6 +108,8 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       if (k.ayrik_kullanicilar?.includes(o.kullanici)) return dur(403, 'Görev ayrılığı gereği bu kaydı onaylayamazsınız; teknik kabulü veren kişi ödemeyi onaylamaz.'); // YG-827, YG-1036
       const makam: string | undefined = k.zincir[k.kademe];
       const sonMakam = k.kademe === k.zincir.length - 1;
+      // YG-1426: kalıcı askı kararı Hukuk ve Uyum görüşü verilmeden son makamda kapanmaz.
+      if (k.tur === 'Kalıcı Askı Önerisi' && sonMakam && (karar === 'Onayla' || karar === 'Reddet') && (await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Kalıcı Askı Hukuk Görüşü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [k.nesne_kimligi])).rowCount) return dur(409, 'Hukuk ve Uyum Görüşü Bekleniyor; görüş verildikten sonra karar verebilirsiniz.');
       let yeni: { durum: string; kademe: number; kapanir: boolean };
       let hedef: string[] = []; let baslik = ''; let kapanisKarari: string = karar!;
       if (karar === 'Geri Çek') { // YG-167

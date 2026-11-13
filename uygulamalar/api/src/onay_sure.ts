@@ -22,7 +22,9 @@ export async function onaySureIsle(db: Pool, simdi = new Date()): Promise<number
   const { rows } = await db.query(`SELECT k.kimlik, k.tur, k.baslik, k.oncelik, k.zincir, k.kademe, k.kademe_zamani, r.rol_adi FROM is_karti k JOIN rol r ON r.kimlik = k.zincir[k.kademe + 1] WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay'`);
   let n = 0;
   for (const k of rows) {
-    const adim = sureAdimi(k.oncelik, (simdi.getTime() - new Date(k.kademe_zamani).getTime()) / 60_000, par.get(DK[k.oncelik]!) ?? 240);
+    // YG-1426: kalıcı askıda Direktör kademesi 120 saattir.
+    const ozel = k.tur === 'Kalıcı Askı Önerisi' && k.kademe === k.zincir.length - 1 ? 120 * 60 : undefined;
+    const adim = sureAdimi(k.oncelik, (simdi.getTime() - new Date(k.kademe_zamani).getTime()) / 60_000, ozel ?? par.get(DK[k.oncelik]!) ?? 240);
     if (!adim) continue;
     const makam = k.zincir[k.kademe] as string; const son = k.kademe === k.zincir.length - 1;
     const sahip = await rolSahipleri(db, makam);

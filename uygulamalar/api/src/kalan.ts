@@ -260,14 +260,19 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-304: atama listesi kapsamadan süzülür, tüm kapılar birlikte değerlendirilir; en yakın veya en ucuz otomatik seçilmez, fiyat ve mesafe sıralamaya girmez.
   s.get('/dosya/:id/firma-adaylari', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const brans = ((i.query ?? {}) as { brans?: string }).brans?.trim();
+    const o = i.oturum!; const { id } = i.params as { id: string }; const q = (i.query ?? {}) as { brans?: string; katman?: string; yalnizMobil?: string; yalnizUygun?: string }; const brans = q.brans?.trim();
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!brans) return y.code(400).send({ hata: 'Branşı seçiniz.' });
     const konum = String((await b.db.query(`SELECT konum FROM dosya WHERE kimlik = $1`, [id])).rows[0].konum).toLocaleLowerCase('tr');
-    const l = (await b.db.query(`SELECT u.kimlik, u.ticari_unvan, y.kapsama, y.bolge FROM brans_yetkinligi y JOIN kurulus u ON u.kimlik = y.kurulus_ref WHERE y.ana_brans = $1 AND y.durum = 'Aktif' AND u.kayit_rolu = 'Çözüm Ortağı' AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [brans])).rows.filter((f) => f.kapsama !== 'Bölge' || !f.bolge || konum.includes(String(f.bolge).toLocaleLowerCase('tr')));
+    const l0 = (await b.db.query(`SELECT u.kimlik, u.ticari_unvan, y.kapsama, y.bolge FROM brans_yetkinligi y JOIN kurulus u ON u.kimlik = y.kurulus_ref WHERE y.ana_brans = $1 AND y.durum = 'Aktif' AND u.kayit_rolu = 'Çözüm Ortağı' AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [brans])).rows;
+    // YG-1539: katmanlar Bölge (varsayılan), Komşu, Mobil Ekip, Ulusal; istenen katmana kadar birikimli listelenir.
+    const SIRA = ['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal']; const ust = Math.max(0, SIRA.indexOf(q.katman ?? 'Bölge'));
+    const katmanOf = (f: { kapsama: string; bolge: string | null }) => f.kapsama === 'Bölge' ? (!f.bolge || konum.includes(String(f.bolge).toLocaleLowerCase('tr')) ? 'Bölge' : null) : f.kapsama;
+    const mobiller = new Set((await b.db.query(`SELECT DISTINCT kurulus_ref FROM brans_yetkinligi WHERE kapsama = 'Mobil Ekip' AND durum = 'Aktif'`)).rows.map((r) => r.kurulus_ref as string));
+    const l = l0.map((f) => ({ ...f, katman: katmanOf(f) })).filter((f) => f.katman && SIRA.indexOf(f.katman) <= ust && (q.yalnizMobil !== '1' || mobiller.has(f.kimlik)));
     const S = { Kabul: 0, 'Koşullu Kabul': 1, Ret: 2 } as const; const sonuc = [];
-    for (const f of l) { const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, sonuc: k.sonuc, engeller: k.engeller, uyarilar: k.uyarilar }); }
-    return sonuc.sort((a, c) => S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
+    for (const f of l) { const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); if (q.yalnizUygun === '1' && k.sonuc === 'Ret') continue; sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: f.katman !== 'Bölge' ? [...k.uyarilar, 'Bölge dışı: varış süresi ve yol, konaklama maliyeti artabilir.'] : k.uyarilar }); }
+    return sonuc.sort((a, c) => SIRA.indexOf(a.katman!) - SIRA.indexOf(c.katman!) || S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
   });
 
   // YG-1070: yat sahibi kendisini gösteren yetkili kayıtlarını görür ve atar. Kaptanda limit girilmezse sıfırdır.

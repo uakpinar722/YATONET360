@@ -207,7 +207,12 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     { const u = await import('./uyum.js'); for (const ol of u.isEmriUyumOlaylari(g.kapsam!)) { const ue = await u.uyumEngeli(b.db, ol, 'Dosya', id, d.oncelik === 'Kritik'); if (ue) return y.code(409).send({ hata: ue }); } }
     // YG-306: görevlendirme kontrolü; Ret engeller, Koşullu Kabul uyarıyla geçer.
     const gk = await gorevlendirmeKontrolu(b.db, { firma: g.firma, dosya: id, brans: g.brans ?? null, tutar: g.bedel ?? null, cokBrans: g.cokBrans, anaSistem: g.anaSistem, kritik: g.kritik });
-    await b.db.query(`INSERT INTO gorevlendirme_kontrolu (dosya_ref, kurulus_ref, gorev_sinifi, sonuc, engeller, uyarilar, yapan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, g.firma, gk.sinif, gk.sonuc, gk.engeller, gk.uyarilar, o.kullanici]);
+    // YG-305: aynı branşta uygun olmayan diğer aktif firmalar elenme nedeniyle kaydedilir; seçim gerekçesi karar sahibince yazılır.
+    const elenen: { firma: string; neden: string }[] = [];
+    for (const f of (await b.db.query(`SELECT kimlik, ticari_unvan FROM kurulus WHERE kayit_rolu = 'Çözüm Ortağı' AND ag_statusu = 'Aktif' AND kimlik <> $1 ORDER BY ticari_unvan LIMIT 25`, [g.firma])).rows) {
+      const en = await firmaUygunlugu(b.db, f.kimlik, g.brans ?? null); if (en) elenen.push({ firma: f.ticari_unvan, neden: en });
+    }
+    await b.db.query(`INSERT INTO gorevlendirme_kontrolu (dosya_ref, kurulus_ref, gorev_sinifi, sonuc, engeller, uyarilar, yapan_ref, secim_gerekcesi, elenen_adaylar) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id, g.firma, gk.sinif, gk.sonuc, gk.engeller, gk.uyarilar, o.kullanici, (g as { secimGerekcesi?: string }).secimGerekcesi?.trim() || null, JSON.stringify(elenen)]);
     if (gk.sonuc === 'Ret') return y.code(409).send({ hata: gk.engeller[0] });
     if ((g.tur === 'EK' || g.tur === 'GR') && (!g.ana || !UUID.test(g.ana) || !(await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND dosya_ref = $2`, [g.ana, id])).rowCount)) return y.code(400).send({ hata: 'Ek İş ve Garanti iş emri bir ana iş emrine bağlanır.' }); // YG-316
     const karar = (g.tur === 'ON' || g.tur === 'EK' || g.tur === 'PH');
@@ -240,6 +245,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       const no = await altNumara(c, d.dosya_no, g.tur!);
       const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, ana_is_emri_ref, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, baslangic_tarihi, hedef_bitis_tarihi, tehlikeli_atik, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [no, g.tur, g.ana ?? null, id, g.teklif ?? null, g.firma, g.yer!.trim(), g.kapsam!.trim(), g.bedel ?? null, g.baslangic ?? null, g.bitis ?? null, Boolean(g.tehlikeliAtik), o.kullanici])).rows[0];
+      // YG-321: onaylı teklifin kapsam cetvelindeki hariç ve varsayımlar iş emrine kopyalanır; bağımlılıklar ekrandan yazılır.
+      { const cv = g.teklif && UUID.test(g.teklif) ? (await c.query(`SELECT k.dahil_haric, k.varsayimlar FROM fiyat_teklifi f JOIN kapsam_cetveli k ON k.kimlik = f.cetvel_ref WHERE f.kimlik = $1`, [g.teklif])).rows[0] : null;
+        await c.query(`UPDATE is_emri SET haricler = $2, varsayimlar = $3, bagimliliklar = $4 WHERE kimlik = $1`, [e.kimlik, cv?.dahil_haric ?? null, cv?.varsayimlar ?? null, (g as { bagimliliklar?: string }).bagimliliklar?.trim() || null]); }
       if (g.tur === 'KN') await (await import('./ticari_atama.js')).ticariAtamaAc(c, id); // YG-1600
       if (g.tur === 'ON') await ym.yontemSinirAktar(c, e.kimlik, id); // PRS-1
       if (g.tur === 'EK' && g.sapma && UUID.test(g.sapma)) { const zs = await c.query(`UPDATE sapma_kaydi SET ek_is_emri_ref = $3 WHERE kimlik = $1 AND dosya_ref = $2 AND zarf_genisledi AND ek_is_emri_ref IS NULL RETURNING kimlik`, [g.sapma, id, e.kimlik]); if (zs.rowCount) await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Ek İş İş Emri Gerekli' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.sapma]); } // YG-407

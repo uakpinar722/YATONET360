@@ -187,11 +187,12 @@ describe('firma adayları, tarama alanı, kapanış (YG-304, YG-916, YG-416)', (
     await fk('Bodrum Firma', 'Bölge', 'Bodrum'); const m = await fk('Muğla Firma', 'Bölge', 'Muğla'); await fk('Ulusal Firma', 'Ulusal', null);
     const c = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/firma-adaylari?brans=${encodeURIComponent('BranşX')}`;
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/firma-adaylari`, c)).statusCode).toBe(400);
-    const a = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a.map((x) => x.ticari_unvan).sort()).toEqual(['Muğla Firma', 'Ulusal Firma']);
+    const a = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a.map((x) => x.ticari_unvan)).toEqual(['Muğla Firma']); // YG-1539 varsayılan Bölge
+    const au = (await o.ist('GET', `${u}&katman=Ulusal`, c)).json() as { ticari_unvan: string; bolgeDisi: boolean }[]; expect(au.map((x) => x.ticari_unvan)).toEqual(['Muğla Firma', 'Ulusal Firma']); expect(au[1]!.bolgeDisi).toBe(true);
     const ta = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, olusturan_ref) VALUES ($1,'Gerçek kişi','Bireysel Müşteri','Sahip','{Yat Sahibi}',$2) RETURNING kimlik`, [`TR-A${++n}`, o.K.ds])).rows[0].kimlik;
     await o.sup.query(`UPDATE yat SET yat_sahibi_ref = $2 WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik, ta]);
     await o.sup.query(`INSERT INTO cikar_beyani (kurulus_ref, taraf_ref, aciklama, kaydeden_ref) VALUES ($1,$2,'X',$3)`, [m, ta, o.K.ds]);
-    const a2 = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a2.at(-1)).toMatchObject({ ticari_unvan: 'Muğla Firma', sonuc: 'Ret' });
+    const a2 = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a2.at(-1)).toMatchObject({ ticari_unvan: 'Muğla Firma', sonuc: 'Ret' }); expect((await o.ist('GET', `${u}&yalnizUygun=1`, c)).json()).toHaveLength(0);
     expect((await o.ist('GET', u, await o.gir('sc'))).statusCode).toBe(404);
   });
   it('tarama sonucu yetkisiz role görünmez; açık sipariş kapanışı durdurur', async () => {
