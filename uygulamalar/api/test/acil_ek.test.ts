@@ -168,3 +168,24 @@ describe('konum (YG-1658)', () => {
     expect((await o.ist('GET', '/api/acil-konum', await o.gir('ds'))).json().some((x: any) => x.talep_ref === t)).toBe(false);
   });
 });
+
+describe('acil müsaitlik hatırlatması (YG-327)', () => {
+  it('7 gündür güncellenmeyen firmaya haftada bir hatırlatma', async () => {
+    const { musaitlikHatirlat } = await import('../src/acil_ek.js');
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, ag_statusu, kayit_asamasi, acil_hizmet_verir, acil_musaitlik_zamani, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı','Aktif','Onaylı',true,now() - interval '9 days',$3) RETURNING kimlik`, [`MS${Date.now()}`, `Müsaitlik ${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO kurulus_kullanici (kurulus_ref, kullanici_ref) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [f, o.K.ds]);
+    const n1 = await musaitlikHatirlat(o.db); const n2 = await musaitlikHatirlat(o.db);
+    expect(n1).toBeGreaterThanOrEqual(1); expect(n2).toBe(0);
+  });
+});
+
+describe('geçici ithalat hatırlatması (YG-557)', () => {
+  it('bitişe 30 gün kala Dosya Sorumlusuna bir kez', async () => {
+    const { geciciIthalatHatirlat } = await import('../src/acil_ek.js');
+    const d = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await o.sup.query(`UPDATE yat SET gecici_ithalat_bitis = current_date + 20 WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    expect(await geciciIthalatHatirlat(o.db)).toBeGreaterThanOrEqual(1);
+    expect(await geciciIthalatHatirlat(o.db)).toBe(0);
+  });
+});

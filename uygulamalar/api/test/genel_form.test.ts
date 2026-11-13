@@ -98,3 +98,14 @@ describe('periyodik gözden geçirme (YG-599)', () => {
     expect((await o.sup.query(`SELECT veriler->>'sonraki_tarih' s FROM form_kaydi WHERE kimlik = $1`, [f])).rows[0].s).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
+
+describe('bildirim bağlantısı ve gizleme (YG-514, YG-509)', () => {
+  it('dosya numarası döner; gizlenen listelenmez', async () => {
+    const k = 'ds'; const id = (await o.sup.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet, olay_anahtari) VALUES ($1,'LGM-2026-11-0099 · Deneme','Ö',$2) RETURNING kimlik`, [o.K[k], `deneme:${Date.now()}`])).rows[0].kimlik;
+    const c = await o.gir(k);
+    const l = (await o.ist('GET', '/api/bildirimler', c)).json() as { kimlik: string; dosya_no: string }[];
+    expect(l.find((x) => x.kimlik === id)?.dosya_no).toBe('LGM-2026-11-0099');
+    expect((await o.ist('POST', `/api/bildirim/${id}/gizle`, c, {})).statusCode).toBe(200);
+    expect(((await o.ist('GET', '/api/bildirimler', c)).json() as { kimlik: string }[]).some((x) => x.kimlik === id)).toBe(false);
+  });
+});

@@ -176,8 +176,14 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1626: okunmamışlar önde.
   s.get('/bildirimler', oturumlu, async (i) => {
-    const { rows } = await b.db.query(`SELECT kimlik, zaman, baslik, ozet, okunma_zamani FROM bildirim WHERE kullanici_ref = $1 ORDER BY (okunma_zamani IS NULL) DESC, zaman DESC LIMIT 200`, [i.oturum!.kullanici]);
+    // YG-514: kayıt bağlantısı (dosya numarası başlıktan, iş kartı is_ref'ten); YG-509: gizlenenler listelenmez.
+    const { rows } = await b.db.query(`SELECT kimlik, zaman, baslik, ozet, okunma_zamani, is_ref, substring(baslik FROM 'LGM-[0-9]{4}-[0-9]{2}-[0-9]{4}') dosya_no FROM bildirim WHERE kullanici_ref = $1 AND gizlenme_zamani IS NULL ORDER BY (okunma_zamani IS NULL) DESC, zaman DESC LIMIT 200`, [i.oturum!.kullanici]);
     return rows;
+  });
+  s.post('/bildirim/:id/gizle', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    const r = await b.db.query(`UPDATE bildirim SET gizlenme_zamani = now(), okunma_zamani = coalesce(okunma_zamani, now()) WHERE kimlik::text = $1 AND kullanici_ref = $2 AND gizlenme_zamani IS NULL`, [id, i.oturum!.kullanici]);
+    return r.rowCount ? { tamam: true } : y.code(404).send({ hata: 'Bildirim bulunamadı.' });
   });
   s.post('/bildirimler/okundu', oturumlu, async (i) => {
     await b.db.query(`UPDATE bildirim SET okunma_zamani = now() WHERE kullanici_ref = $1 AND okunma_zamani IS NULL`, [i.oturum!.kullanici]);

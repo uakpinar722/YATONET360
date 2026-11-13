@@ -143,7 +143,7 @@ function TeklifIslemleri({ id, teklifler, firma, ticari, yap }: { id: string; te
 /** İP-5: yat sahibi onayları, teslime hazır, onaysız teslim, yat kabul, sökülen parça, kapanış hesabı. */
 function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null); const [pf, setPf] = useState({ belge: '', aciklama: '' });
-  const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string }>>({});
+  const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
   const yp = () => istek<typeof parca>(`/dosya/${id}/sokulen-parca`).then(setParca);
   useEffect(() => { void yp().catch(() => {}); }, [id]);
   const AD: Record<string, string> = { 'ONY-03': 'Sigorta Bilgilendirmesi', 'ONY-06': 'Ek İş Ret Beyanı', 'ONY-07': 'Muadil Parça', 'ONY-08': 'İadesi Mümkün Olmayan Parça', 'ONY-09': 'Deniz Denemesi', 'ONY-10': 'Garanti İşi Planı' };
@@ -210,10 +210,11 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
 
     <div className="bolum">Sökülen Parçalar</div>
     {parca.map((p) => <div key={p.kimlik}><label htmlFor={`spl-${p.kimlik}`}>{p.parca_adi} · Son: {gun(p.son_tarih)}</label><select id={`spl-${p.kimlik}`} value={p.secim ?? ''} onChange={(e) => void yap(() => istek(`/sokulen-parca/${p.kimlik}/secim`, { secim: e.target.value }).then(yp))}><option value="">Seçiniz</option>{['İade', 'Montaj', 'Süreli Bekletme', 'Hurda-Bertaraf', 'Sigorta Eksperi İncelemesi İçin Bekletme'].map((x) => <option key={x}>{x}</option>)}</select>
-      {p.sonuc ? <div className="not">{p.sonuc}</div> : ['İade', 'Hurda-Bertaraf'].includes(p.secim ?? '') && <div className="tam">
-        <BelgeSec ad={p.secim === 'İade' ? 'Teslim Fotoğrafı' : 'İmha Fotoğrafı'} bagTuru="Dosya" bagKimligi={id} deger={ps[p.kimlik]?.foto ?? ''} sec={(x) => setPs({ ...ps, [p.kimlik]: { ...ps[p.kimlik], foto: x } })} />
-        {p.secim === 'Hurda-Bertaraf' && <BelgeSec ad="Sigorta İmha Onayı (sigortalı dosyada)" bagTuru="Dosya" bagKimligi={id} deger={ps[p.kimlik]?.sigorta ?? ''} sec={(x) => setPs({ ...ps, [p.kimlik]: { ...ps[p.kimlik], sigorta: x } })} />}
-        <button className="btn2 kucuk" disabled={!ps[p.kimlik]?.foto} onClick={() => void yap(() => istek(`/sokulen-parca/${p.kimlik}/sonuc`, { foto: ps[p.kimlik]?.foto, sigortaOnay: ps[p.kimlik]?.sigorta || undefined }).then(yp), 'Parça sonucu kaydedildi.')}>Sonucu Kaydet</button></div>}</div>)}
+      {p.sonuc ? <div className="not">Akıbet: {p.sonuc}</div> : p.secim && <div className="tam">
+        <label htmlFor={`spk-${p.kimlik}`}>Akıbet</label><select id={`spk-${p.kimlik}`} value={ps[p.kimlik]?.akibet ?? ''} onChange={(e) => setPs({ ...ps, [p.kimlik]: { ...ps[p.kimlik], akibet: e.target.value } })}><option value="">Seçiniz</option>{['Yeniden Kullanım', 'İnceleme-Delil', 'Müşteriye İade', 'Garanti İadesi', 'Hurda', 'Çevresel Bertaraf'].map((x) => <option key={x}>{x}</option>)}</select>
+        <BelgeSec ad="Akıbet Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={ps[p.kimlik]?.foto ?? ''} sec={(x) => setPs({ ...ps, [p.kimlik]: { ...ps[p.kimlik], foto: x } })} />
+        {['Hurda', 'Çevresel Bertaraf'].includes(ps[p.kimlik]?.akibet ?? '') && <BelgeSec ad="Sigorta İmha Onayı (sigortalı dosyada)" bagTuru="Dosya" bagKimligi={id} deger={ps[p.kimlik]?.sigorta ?? ''} sec={(x) => setPs({ ...ps, [p.kimlik]: { ...ps[p.kimlik], sigorta: x } })} />}
+        <button className="btn2 kucuk" disabled={!ps[p.kimlik]?.foto || !ps[p.kimlik]?.akibet} onClick={() => void yap(() => istek(`/sokulen-parca/${p.kimlik}/sonuc`, { akibet: ps[p.kimlik]?.akibet, foto: ps[p.kimlik]?.foto, sigortaOnay: ps[p.kimlik]?.sigorta || undefined }).then(yp), 'Parça sonucu kaydedildi.')}>Sonucu Kaydet</button></div>}</div>)}
     <label htmlFor="sp-a">Parça Adı</label><input id="sp-a" value={pa} onChange={(e) => setPa(e.target.value)} />
     <button className="btn2 kucuk" disabled={!pa.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/sokulen-parca`, { ad: pa }).then(() => { setPa(''); return yp(); }), 'Parça eklendi.')}>Parça Ekle</button>
   </>);

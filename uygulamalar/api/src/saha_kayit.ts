@@ -27,6 +27,20 @@ export async function isDurduBildir(c: Db, e: { kimlik: string; is_emri_no: stri
   await bildir(c, { olay: `is-emri-durdu:${e.kimlik}:${Date.now()}`, kullanicilar: [...new Set(al)], baslik: `${emniyet ? 'Emniyet Olayı · ' : ''}İş Durduruldu: ${e.is_emri_no}`, ozet: neden.slice(0, 200), oncelik: emniyet ? 'Kritik' : 'Yüksek', eposta: true, sms: emniyet, acil: true });
 }
 
+/** YG-1445: ek bulguyla durdurulan işte BLD-04 yat sahibine ve sigortalı dosyada sigorta şirketine (teyitli e-posta) gider; iş başına bir kez. */
+export async function ekBulguBildir(c: Db, dosya: string, isEmri: string): Promise<void> {
+  if (!(await birKez(c, 'bld04', isEmri))) return;
+  const d = (await c.query(`SELECT d.dosya_no, d.yazisma_dili, d.dosya_niteligi, d.vefat_isareti, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
+  const { dilKod, yatTarafinaYaz } = await import('./ihbar.js'); const { metinGetir } = await import('./metin.js');
+  const alan = { Yat: d.yat_adi, Yacht: d.yat_adi, 'bağlantı': '', link: '' }; const dil = dilKod(d.yazisma_dili);
+  const t = d.vefat_isareti ? null : (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [dosya])).rows[0];
+  if (t) await yatTarafinaYaz(c, { olay: `bld04:${isEmri}`, kod: 'BLD-04', dil, konu: `${d.dosya_no} Ek Bulgu`, telefon: t.telefon, eposta: t.eposta, alanlar: alan });
+  if (d.dosya_niteligi === 'Sigorta bağlantılı') {
+    const sg = (await c.query(`SELECT coalesce(s.onay_yetkilisi_eposta, p.eposta) eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1 LIMIT 1`, [dosya])).rows[0];
+    if (sg) await (await import('./sigorta_gonderim.js')).sigortayaHazirla(c, { dosya, tur: 'BLD-04', nesne: isEmri, alici: sg.eposta ?? null, konu: `${d.dosya_no} Ek Bulgu – İş Durduruldu`, metin: await metinGetir(c, 'BLD-04', dil, alan), acil: true });
+  }
+}
+
 /** YG-580: her mobilizasyonda TPL-07; keşif ve acil ilk tedbir toplantıyı beklemez. */
 export async function baslangicToplantiEngeli(db: Db, isEmri: string, tur: string): Promise<string | null> {
   if (tur === 'KN' || tur === 'AC') return null;
@@ -178,7 +192,7 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const r = (await c.query(`INSERT INTO sapma_kaydi (is_emri_ref, dosya_ref, tur, aciklama, karar, firma_kaynakli, isg_ihlali, onaysiz_ek_is, giren_ref, hedef_tarih, sorumlu_ref, ek_test_ref, zarf_genisledi, bulgu_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`, [e.kimlik, e.dosya_ref, g.tur, g.aciklama.trim(), g.karar, g.firmaKaynakli !== false, Boolean(g.isgIhlali), Boolean(g.onaysizEkIs), o.kullanici, g.hedef || null, (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].r, g.ekTest ?? null, Boolean(g.zarfGenisledi), g.zarfGenisledi ? g.bulgu : null])).rows[0];
-      if (g.karar === 'İşi Durdur' && e.statu === 'Aktif') { await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, g.aciklama.trim()]); await isDurduBildir(c, e, g.aciklama.trim(), g.tur === 'Güvenlik' || Boolean(g.isgIhlali)); }
+      if (g.karar === 'İşi Durdur' && e.statu === 'Aktif') { await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, g.aciklama.trim()]); await isDurduBildir(c, e, g.aciklama.trim(), g.tur === 'Güvenlik' || Boolean(g.isgIhlali)); if (g.bulgu) await ekBulguBildir(c, e.dosya_ref, e.kimlik); }
       const ds = (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].r;
       if (ds) await kartAc(c, { tur: 'Sapma Kaydı', kategori: 'gorev', baslik: `${e.is_emri_no} · ${g.tur} Sapması · ${g.karar}`, ozet: g.aciklama.trim().slice(0, 200), oncelik: g.karar === 'İşi Durdur' || g.isgIhlali ? 'Yüksek' : 'Normal', sahipKullanici: ds, sonZaman: g.hedef ? new Date(`${g.hedef}T18:00:00+03:00`) : undefined, nesneTuru: 'Sapma', nesneKimligi: r.kimlik });
       if (g.zarfGenisledi) { const oy = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Operasyon Yöneticisi' AND bitis_zamani IS NULL LIMIT 1`, [e.dosya_ref])).rows[0]?.kullanici_ref ?? ds; if (oy) await kartAc(c, { tur: 'Ek İş İş Emri Gerekli', kategori: 'gorev', baslik: `${e.is_emri_no} · Onarım Zarfı Genişledi`, ozet: g.aciklama.trim().slice(0, 200), oncelik: 'Yüksek', sahipKullanici: oy, nesneTuru: 'Sapma', nesneKimligi: r.kimlik }); }

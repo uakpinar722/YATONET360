@@ -119,6 +119,7 @@ describe('sökülen parça sonucu (YG-730)', () => {
     const foto = await belge(d.kimlik); const onay = await belge(d.kimlik);
     expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, {})).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, { foto })).statusCode).toBe(409);
-    expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, { foto, sigortaOnay: onay })).json().sonuc).toBe('İmha Edildi');
+    expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, { akibet: 'Uydurma', foto, sigortaOnay: onay })).statusCode).toBe(400); // YG-406
+    expect((await o.ist('POST', `/api/sokulen-parca/${p}/sonuc`, ds, { akibet: 'Çevresel Bertaraf', foto, sigortaOnay: onay })).json().sonuc).toBe('Çevresel Bertaraf');
   });
 });

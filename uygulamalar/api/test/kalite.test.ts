@@ -187,6 +187,7 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Bekletmede' })).statusCode).toBe(400); // YG-649 gerekçe
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Bekletmede', gerekce: 'Parça bekleniyor' })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/is-emri/${e}/kapat`, tu, {})).statusCode).not.toBe(200);
+    expect((await o.sup.query(`SELECT neden FROM beklemede_isareti WHERE kayit_referansi = $1 AND kaldirilma_zamani IS NULL`, [e])).rows[0]?.neden).toBe('Kabul Bekletmede'); // YG-399
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).statusCode).toBe(200);
   });
 });

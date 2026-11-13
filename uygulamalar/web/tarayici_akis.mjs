@@ -233,8 +233,9 @@ try {
   await ydKart.getByLabel('Kalem Seç 2', { exact: true }).check();
   await ydKart.getByLabel('Teknik Gerekçe', { exact: true }).fill('Salgı 0,11 mm ölçüldü');
   await ydKart.getByRole('button', { name: 'Seçilenler İçin Yeniden Değerlendirme İste' }).click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme');
-  await pDs.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).first().click();
-  const yd2 = pDs.getByRole('button', { name: 'İkinci Teyit: Sigortaya Gönder' }).first(); await yd2.waitFor(); await pDs.waitForTimeout(2300);
+  const ydG = pDs.locator('.soru', { hasText: 'Yeniden Değerlendirme' }).filter({ has: pDs.getByRole('button', { name: /Teyit/ }) }).last(); /* BLD-68 de listededir (YG-1445) */
+  await ydG.getByRole('button', { name: 'Birinci Teyit: İçeriği Gördüm' }).click();
+  const yd2 = ydG.getByRole('button', { name: 'İkinci Teyit: Sigortaya Gönder' }); await yd2.waitFor(); await pDs.waitForTimeout(2300);
   await yd2.click(); await pDs.waitForTimeout(500); await hataVarsa(pDs, 'Yeniden değerlendirme teyidi');
   kontrol('yeniden değerlendirme ikinci teyitle gider', (await sup.query(`SELECT durum FROM yeniden_degerlendirme WHERE teklif_ref = $1`, [yd])).rows[0].durum === 'Gönderildi');
   await pDs.reload(); await dosyaAc(pDs, d.dosyaNo);

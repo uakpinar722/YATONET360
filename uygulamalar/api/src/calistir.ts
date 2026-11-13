@@ -6,7 +6,7 @@ import { kuyrukIsle, onayHatirlat } from './bildirim.js';
 import { DenemeKutusu, denemeEpostaKutusu } from './sms.js';
 import { beklemedeIsle, sureIsle } from './dosya.js';
 import { acilIsle } from './acil.js';
-import { nobetCagriIsle } from './acil_ek.js';
+import { geciciIthalatHatirlat, musaitlikHatirlat, nobetCagriIsle } from './acil_ek.js';
 import { mutabakatIsle } from './onay_ek.js';
 import { teslimIsle } from './teslim_ek.js';
 import { geciciOnarimIsle, kapsamaRaporIsle } from './firma_ek.js';
@@ -91,7 +91,7 @@ setInterval(() => { periyodikIsle(db).catch((h) => s.log.error(h.message)); muta
 // YG-1274: yedek ve YG-1186: sağlık izleme
 const YEDEK = { veritabani: 'yatonet360', superParola: e.POSTGRES_SUPER_PAROLA!, anahtar: e.YATONET_SIFRELEME_ANAHTARI!, klasor: e.YATONET_YEDEK_KLASORU || join(KOK, '.yedek'), ikinciKlasor: e.YATONET_YEDEK_IKINCI || undefined, depoKok: e.YATONET_DEPO || join(KOK, '.veri', 'belgeler') };
 setInterval(() => { saglikIzle(db, YEDEK.klasor).catch((h) => s.log.error(h.message)); yedekIsle(db, YEDEK).catch((h) => s.log.error(h.message)); }, 1_800_000);
-setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); butceDonemiIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); butceDonemiIsle(db).catch((h) => s.log.error(h.message)); musaitlikHatirlat(db).catch((h) => s.log.error(h.message)); geciciIthalatHatirlat(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
 setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);

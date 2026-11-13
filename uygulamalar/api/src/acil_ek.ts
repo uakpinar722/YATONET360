@@ -107,6 +107,28 @@ onaySonucKaydet('ONY-30', async (c, t, karar) => {
   if (karar === 'Onaylandı') await c.query(`UPDATE kurtarma_operasyonu SET yat_sahibi_onay_zamani = now() WHERE onay_talebi_ref = $1`, [t.kimlik]);
 });
 
+/** YG-557: açık dosyadaki yabancı bayraklı yatın geçici ithalat süresinin bitmesine 30 gün kala Dosya Sorumlusuna bir kez bildirim. */
+export async function geciciIthalatHatirlat(db: Pool, simdi = new Date()): Promise<number> {
+  let n = 0;
+  for (const r of (await db.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref, y.yat_adi, to_char(y.gecici_ithalat_bitis, 'DD.MM.YYYY') bitis, y.gecici_ithalat_bitis::text b FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref
+    WHERE d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND d.dosya_sorumlusu_ref IS NOT NULL AND y.gecici_ithalat_bitis BETWEEN ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date AND ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date + 30`, [simdi])).rows) {
+    if (!(await birKez(db, 'gecici_ithalat_30', `${r.kimlik}:${r.b}`))) continue;
+    await bildir(db, { olay: `gecici-ithalat:${r.kimlik}:${r.b}`, kullanicilar: [r.dosya_sorumlusu_ref], baslik: `${r.dosya_no} · Geçici İthalat ${r.bitis} Tarihinde Bitiyor`, ozet: `${r.yat_adi} için geçici ithalat süresinin bitmesine 30 günden az kaldı; teslim planını ve gümrük işlemlerini gözden geçiriniz.`, oncelik: 'Yüksek', eposta: true }, simdi); n++;
+  }
+  return n;
+}
+
+/** YG-327: acil hizmet veren firma müsaitliğini 7 gündür güncellemediyse firma kullanıcılarına haftada bir hatırlatma gider. */
+export async function musaitlikHatirlat(db: Pool, simdi = new Date()): Promise<number> {
+  const hafta = Math.floor(simdi.getTime() / (7 * 86_400_000)); let n = 0;
+  for (const f of (await db.query(`SELECT k.kimlik, k.ticari_unvan FROM kurulus k WHERE k.kayit_rolu = 'Çözüm Ortağı' AND k.acil_hizmet_verir AND k.ag_statusu = 'Aktif' AND coalesce(k.acil_musaitlik_zamani, k.olusturma_zamani) < $1::timestamptz - interval '7 days'`, [simdi])).rows) {
+    if (!(await birKez(db, 'acil_musaitlik_hatirlat', `${f.kimlik}:${hafta}`))) continue;
+    const kisiler = (await db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [f.kimlik])).rows.map((r) => r.kullanici_ref as string);
+    if (kisiler.length) { await bildir(db, { olay: `acil-musaitlik:${f.kimlik}:${hafta}`, kullanicilar: kisiler, baslik: 'Acil Müsaitlik Güncellemesi', ozet: 'Acil müdahale müsaitliğinizi 7 gündür güncellemediniz; portaldan güncellemenizi rica ederiz.', oncelik: 'Normal', eposta: true }, simdi); n++; }
+  }
+  return n;
+}
+
 export function acilEkYollari(s: FastifyInstance, b: Baglam) {
   webAdresiKapanis = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -241,7 +263,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     const f = await firmam(i.oturum!.kullanici); const g = (i.body ?? {}) as { musait?: boolean; yanitDk?: number };
     if (!f) return yok(y);
     if (typeof g.musait !== 'boolean' || !(Number(g.yanitDk) > 0)) return y.code(400).send({ hata: 'Müsaitlik ve yanıt süresini girmenizi rica ederiz.' });
-    await b.db.query(`UPDATE kurulus SET acil_musaitlik = $2, acil_yanit_dk = $3 WHERE kimlik = $1`, [f, g.musait, g.yanitDk]);
+    await b.db.query(`UPDATE kurulus SET acil_musaitlik = $2, acil_yanit_dk = $3, acil_musaitlik_zamani = now() WHERE kimlik = $1`, [f, g.musait, g.yanitDk]); // YG-327
     return { tamam: true };
   });
 

@@ -197,18 +197,22 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-730: teslim veya imha fotoğrafla kayda alınır, imza alınmaz; sigortalı dosyada imha sigorta şirketinin onay belgesiyle yapılır.
   s.post('/sokulen-parca/:id/sonuc', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { foto?: string; sigortaOnay?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { foto?: string; sigortaOnay?: string; akibet?: string };
     if (!UUID.test(id)) return yok(y);
     const p = (await b.db.query(`SELECT p.*, d.dosya_niteligi FROM sokulen_parca p JOIN dosya d ON d.kimlik = p.dosya_ref WHERE p.kimlik = $1`, [id])).rows[0];
     if (!p || !(await dosyaErisimi(b.db, o.kullanici, p.dosya_ref))) return yok(y);
     if (p.sonuc) return y.code(409).send({ hata: 'Parçanın sonucu kayıtlıdır.' });
-    if (!['İade', 'Hurda-Bertaraf'].includes(p.secim ?? '')) return y.code(409).send({ hata: 'Sonuç yalnız İade veya Hurda-Bertaraf seçiminde kaydedilir.' });
+    if (!p.secim) return y.code(409).send({ hata: 'Önce parçanın seçimi yapılmalıdır.' });
+    // YG-406: akıbet altı değerden biridir; Hurda ve Çevresel Bertaraf imhadır.
+    const AKIBET = ['Yeniden Kullanım', 'İnceleme-Delil', 'Müşteriye İade', 'Garanti İadesi', 'Hurda', 'Çevresel Bertaraf'];
+    const akibet = g.akibet ?? (p.secim === 'İade' ? 'Müşteriye İade' : p.secim === 'Hurda-Bertaraf' ? 'Hurda' : '');
+    if (!AKIBET.includes(akibet)) return y.code(400).send({ hata: `Akıbeti seçiniz: ${AKIBET.join(', ')}.` });
     const dosyaBelgesi = async (x?: string) => Boolean(x && UUID.test(x) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [x, p.dosya_ref])).rowCount);
     if (!(await dosyaBelgesi(g.foto))) return y.code(400).send({ hata: 'Teslim veya imha fotoğrafını dosyaya yükleyip seçiniz.' });
-    const imha = p.secim === 'Hurda-Bertaraf';
+    const imha = akibet === 'Hurda' || akibet === 'Çevresel Bertaraf';
     if (imha && p.dosya_niteligi === 'Sigorta bağlantılı' && !(await dosyaBelgesi(g.sigortaOnay))) return y.code(409).send({ hata: 'Sigortalı dosyada imha için sigorta şirketinin onay belgesini seçiniz.' });
-    await b.db.query(`UPDATE sokulen_parca SET sonuc = $2, sonuc_foto_ref = $3, sigorta_onay_ref = $4, sonuc_kaydeden_ref = $5, sonuc_zamani = now() WHERE kimlik = $1`, [id, imha ? 'İmha Edildi' : 'Teslim Edildi', g.foto, imha ? g.sigortaOnay ?? null : null, o.kullanici]);
-    return { sonuc: imha ? 'İmha Edildi' : 'Teslim Edildi' };
+    await b.db.query(`UPDATE sokulen_parca SET sonuc = $2, sonuc_foto_ref = $3, sigorta_onay_ref = $4, sonuc_kaydeden_ref = $5, sonuc_zamani = now() WHERE kimlik = $1`, [id, akibet, g.foto, imha ? g.sigortaOnay ?? null : null, o.kullanici]);
+    return { sonuc: akibet };
   });
   s.post('/sokulen-parca/:id/secim', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const secim = ((i.body ?? {}) as { secim?: string }).secim;

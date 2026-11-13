@@ -132,3 +132,14 @@ describe('saklama grubu (YG-1222)', () => {
     expect(await g(ks)).toMatchObject({ saklama_grubu: 'ILS-5', s: '2026-03-01' });
   });
 });
+
+describe('saklama süresi tanımsız gruplar (YG-1227)', () => {
+  it('eski destek talebi ve toplantı imha listesine girer', async () => {
+    const { imhaListesiUret } = await import('../src/kvkk.js');
+    const ilk = Object.values(o.K)[0];
+    const dt = (await o.sup.query(`INSERT INTO destek_talebi (talep_no, konu, aciklama, kategori, oncelik, durum, acan_ref, olusturma_zamani, kapanis_zamani) VALUES ($1,'Eski','A','Diğer','Düşük','Kapalı',$2,now() - interval '7 years',now() - interval '6 years') RETURNING kimlik`, [`DT-ESKI-${Date.now()}`, ilk]).catch(() => ({ rows: [] }))).rows[0]?.kimlik;
+    const l = await imhaListesiUret(o.db, new Date(Date.UTC(2031, 0, 15)));
+    expect(l).toBeTruthy();
+    if (dt) expect((await o.sup.query(`SELECT grup_kod FROM imha_kalemi WHERE liste_ref = $1 AND nesne_kimligi = $2`, [l, dt])).rows[0]?.grup_kod).toBe('DST-5');
+  });
+});

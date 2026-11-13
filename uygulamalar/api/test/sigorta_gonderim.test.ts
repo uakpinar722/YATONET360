@@ -55,7 +55,7 @@ describe('ikili teyit (K-241)', () => {
   });
   it('liste yalnız yetkiliye gelir', async () => {
     const d = await dosya(); await hazir(d.kimlik);
-    expect((await o.ist('GET', `/api/sigorta-gonderim?dosya=${d.kimlik}`, await o.gir('ds'))).json()).toHaveLength(1);
+    expect(((await o.ist('GET', `/api/sigorta-gonderim?dosya=${d.kimlik}`, await o.gir('ds'))).json() as { tur: string }[]).filter((x) => x.tur !== 'BLD-68')).toHaveLength(1); /* BLD-68 dosya açılış bildirimi ayrıca listelenir (YG-1445) */
     expect((await o.ist('GET', `/api/sigorta-gonderim?dosya=${d.kimlik}`, await o.gir('ic'))).json()).toHaveLength(0);
   });
 });

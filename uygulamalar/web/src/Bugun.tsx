@@ -1,3 +1,4 @@
+import { DosyaBag } from './DosyaBag';
 import { useEffect, useState } from 'react';
 import { istek, type Ben } from './api';
 import { DosyaHaritasi, IsListeleri, KonumPlani } from './IsGorunumu';
@@ -211,7 +212,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
   );
 }
 
-interface Bildirim { kimlik: string; zaman: string; baslik: string; ozet: string | null; okunma_zamani: string | null }
+interface Bildirim { kimlik: string; zaman: string; baslik: string; ozet: string | null; okunma_zamani: string | null; dosya_no?: string | null }
 
 /** YG-1626: tarih-saatiyle, okunmamışlar önde. */
 export function Bildirimler({ yenile }: { yenile: () => void }) {
@@ -230,6 +231,7 @@ export function Bildirimler({ yenile }: { yenile: () => void }) {
           <div className="ust2"><b>{b.baslik}</b>{!b.okunma_zamani && <Rozet s="sari" c="Yeni" />}</div>
           <div className="not son">{sonYazi(b.zaman)}</div>
           {b.ozet && <div className="not">{b.ozet}</div>}
+          <div className="dugmeler">{b.dosya_no && <DosyaBag no={b.dosya_no} />}<button className="btn2 kucuk" onClick={() => void istek(`/bildirim/${b.kimlik}/gizle`, {}).then(() => { yenile(); return istek<Bildirim[]>('/bildirimler'); }).then(setL).catch((e) => setHata(e.message))}>Gizle</button></div>
         </div>
       ))}
     </>

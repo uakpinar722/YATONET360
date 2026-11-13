@@ -371,6 +371,13 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         await c.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [id, g.kullanici]);
         // YG-722, V-481: ilk Dosya Sorumlusu atanınca FR-OPS-016 yat sahibine gider (sigortalı/sigortasız hasar, planlı hizmet varyantı); devirde yeniden gönderilmez.
         const ia = (await c.query(`SELECT d.musteri_turu, d.oncelik, d.hizmet_turu, (SELECT eposta FROM dosya_tarafi WHERE dosya_ref = d.kimlik AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci') AND eposta IS NOT NULL ORDER BY taraf_rolu = 'Yat Sahibi' DESC LIMIT 1) eposta FROM dosya d WHERE d.kimlik = $1`, [id])).rows[0];
+        // YG-1445: sigortalı dosyada BLD-68 "görevlendirmeniz alındı, dosya açıldı" sigortaya teyitli e-postayla gider (bir kez).
+        if (ia.musteri_turu === 'Sigorta Şirketi') {
+          const sg = (await c.query(`SELECT s.sigortaci_adi, s.sigorta_hasar_dosya_no, coalesce(s.onay_yetkilisi_eposta, p.eposta) eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1 LIMIT 1`, [id])).rows[0];
+          const dl = (await c.query(`SELECT yazisma_dili FROM dosya WHERE kimlik = $1`, [id])).rows[0].yazisma_dili;
+          if (sg) await (await import('./sigorta_gonderim.js')).sigortayaHazirla(c, { dosya: id, tur: 'BLD-68', nesne: id, alici: sg.eposta ?? null, konu: `${d.dosya_no} Görevlendirme Alındı`, sorumlu: g.kullanici,
+            metin: await (await import('./metin.js')).metinGetir(c, 'BLD-68', dilKod(dl), { Kurum: sg.sigortaci_adi ?? '', Institution: sg.sigortaci_adi ?? '', 'Hasar Dosya No': sg.sigorta_hasar_dosya_no ?? '---', 'Claim No': sg.sigorta_hasar_dosya_no ?? '---', 'Dosya No': d.dosya_no, 'File No': d.dosya_no }) });
+        }
         if (!(await c.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [id])).rowCount)
           await (await import('./belge_uret.js')).belgeUret(c, { tur: 'İhbar Alındı', nesne: id, dosya: id, gonder: ia.eposta ? { olay: `ihbar-alindi-pdf:${id}`, eposta: ia.eposta, konu: `${d.dosya_no} İhbar Alındı`, metin: `${d.dosya_no} İhbar Alındı` } : undefined });
       }

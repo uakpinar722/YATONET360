@@ -75,6 +75,11 @@ export async function imhaListesiUret(db: Pool, simdi = new Date()): Promise<str
   for (const p of (await db.query(`SELECT kullanici_ref FROM personel_karti WHERE ayrilis_tarihi < $1 AND brut_aylik_tl IS NOT NULL`, [sinir(120)])).rows) if (!(await hukukiKorumaVar(db, 'OZL-10', { kullanici: p.kullanici_ref }))) await ekle('OZL-10', 'Personel', p.kullanici_ref, 'Özlük kaydı');
   for (const o of (await db.query(`SELECT o.kimlik FROM olay_kaydi o WHERE o.olusturma_zamani < $1 AND o.ozet <> $2`, [sinir(60), IMHA_METNI])).rows) await ekle('DST-5', 'Olay', o.kimlik, 'Olay kaydı');
   for (const v of (await db.query(`SELECT kimlik, olay_no FROM veri_ihlali WHERE durum = 'Kapalı' AND kapanis_zamani < $1`, [sinir(120)])).rows) await ekle('IHL-10', 'Veri İhlali', v.kimlik, v.olay_no);
+  // YG-1227: erişim incelemesi kayıttan 2 yıl; destek talebi, nöbet çizelgesi ve toplantı kapanıştan 5 yıl sonra listeye girer.
+  for (const x of (await db.query(`SELECT kimlik, donem FROM erisim_inceleme WHERE olusturma_zamani < $1`, [sinir(24)])).rows) await ekle('ERS-2', 'Erişim İncelemesi', x.kimlik, `Erişim incelemesi ${x.donem ?? ''}`.trim());
+  for (const x of (await db.query(`SELECT kimlik, talep_no FROM destek_talebi WHERE coalesce(kapanis_zamani, cozum_zamani) < $1`, [sinir(60)])).rows) await ekle('DST-5', 'Destek Talebi', x.kimlik, x.talep_no);
+  for (const x of (await db.query(`SELECT kimlik, donem FROM nobet_cizelgesi WHERE coalesce(yayim_zamani, olusturma_zamani) < $1`, [sinir(60)])).rows) await ekle('DST-5', 'Nöbet Çizelgesi', x.kimlik, `Nöbet çizelgesi ${x.donem ?? ''}`.trim());
+  for (const x of (await db.query(`SELECT kimlik, konu FROM toplanti WHERE kapanis_zamani < $1`, [sinir(60)])).rows) await ekle('DST-5', 'Toplantı', x.kimlik, String(x.konu ?? 'Toplantı').slice(0, 120));
   const n = Number((await db.query(`SELECT count(*) n FROM imha_kalemi WHERE liste_ref = $1`, [l])).rows[0].n);
   await kartAc(db, { tur: 'İmha Listesi', kategori: 'islem', baslik: `${yil} ${donem} · İmha Listesi`, ozet: `${n} kayıt süresi dolmuştur; listeyi incelemeniz rica olunur.`, sahipRol: await rolId(db, HUU), nesneTuru: 'İmha Listesi', nesneKimligi: l });
   return l;

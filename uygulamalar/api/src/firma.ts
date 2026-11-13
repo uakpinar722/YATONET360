@@ -197,6 +197,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!roller.includes(yetkili)) return y.code(403).send({ hata: `Bu iş emrini ${yetkili} çıkarır.` });
     if (!g.yer?.trim() || !g.kapsam?.trim()) return y.code(400).send({ hata: 'Uygulama yeri ve kapsam zorunludur.' });
     if (!g.firma || !UUID.test(g.firma)) return y.code(400).send({ hata: 'Firmayı seçiniz.' });
+    // YG-311: aynı dosyada aynı türdeki işi reddeden firmaya iş, gerekçesi yazılmadan yeniden atanamaz; yeniden atama denetim izine geçer.
+    const red = (await b.db.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1 AND kurulus_ref = $2 AND is_emri_turu = $3 AND firma_yaniti = 'Ret' LIMIT 1`, [id, g.firma, g.tur])).rows[0];
+    if (red && !(g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi?.trim()) return y.code(409).send({ hata: `Firma ${red.is_emri_no} iş emrini reddetmiştir; aynı firmaya yeniden atama için gerekçe yazınız.`, yenidenAtama: true });
+    if (red) await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Reddeden Firmaya Yeniden Atama', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: (g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi!.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     const engel = await firmaUygunlugu(b.db, g.firma, g.brans ?? null);
     if (engel) return y.code(409).send({ hata: engel });
     // YG-1548: dalış ve sıcak işte kanıt yoksa iş emri açılmaz; acil işler beklemez.
@@ -462,9 +466,13 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       if (!['Aktif', 'Tamamlandı'].includes(e.statu)) return y.code(409).send({ hata: 'İş emri aktif veya tamamlanmış olmalıdır.' });
       await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);
       await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Teknik Kabul: ${sonuc}`, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      // YG-399: kabul tamamlanamadıysa dosya Bekletmede işaretiyle izlenir (sayaç durmaz; 7 gün hedef).
+      if (sonuc === 'Bekletmede' && !(await b.db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND kayit_referansi = $2 AND kaldirilma_zamani IS NULL`, [e.dosya_ref, e.kimlik])).rowCount)
+        await b.db.query(`INSERT INTO beklemede_isareti (dosya_ref, kayit_turu, kayit_referansi, neden, sorumlu_ref, hedef_tarih, durum_mesaji, sayac_durur, olusturan_ref) VALUES ($1,'İş Emri',$2,'Kabul Bekletmede',$3,(now() AT TIME ZONE 'Europe/Istanbul')::date + 7,$4,false,$3)`, [e.dosya_ref, e.kimlik, o.kullanici, gerekce.trim().slice(0, 200)]);
       return { tamam: true };
     }
     if (e.statu !== 'Tamamlandı') return y.code(409).send({ hata: 'Firma işi tamamlandı bildirmemiştir.' });
+    await b.db.query(`UPDATE beklemede_isareti SET kaldirilma_zamani = now() WHERE kayit_referansi = $1 AND neden = 'Kabul Bekletmede' AND kaldirilma_zamani IS NULL`, [e.kimlik]); // YG-399
     { const ga = await (await import('./yetki_ek.js')).teknikKabulAyrimi(b.db, e, o.kullanici); if (ga) return y.code(403).send({ hata: ga }); } // YG-1036, YG-1037
     const ke = await kabulEngeli(b.db, e, sonuc!); if (ke) return y.code(409).send({ hata: ke });
     if (sonuc === 'Koşullu Kabul') return y.code(400).send({ hata: 'Koşullu kabul açık iş listesiyle ayrı kaydedilir.' });
