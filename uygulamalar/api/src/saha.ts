@@ -10,7 +10,7 @@ import { kapanisKaydet } from './kapanis.js';
 import { garantiKarneIsle } from './karne.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayTalebiAc } from './onay.js';
-import { altNumara, sureBaslat, sureBitir, sureKur } from './sure.js';
+import { altNumara, sureBaslat, sureBitir, sureKur, talepNumarasi } from './sure.js';
 import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 import { birKez, bildir, disGonder } from './bildirim.js';
@@ -394,6 +394,32 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-024: mükerrer dosya silinmez; Birleştirildi nedeniyle kapanır, eski numara ana dosyaya yönlendirir, açık sayaç ve bekleyen onaylar ana dosyaya geçer.
+  // YG-003: ayrı yetki veya bütçe gerektiren iş alt dosyada yürür; yatın geçmişi tek dosyada toplanmaz. Alt dosya ana talepten türetilen yeni talep numarasını alır.
+  s.post('/dosya/:id/alt-dosya', { preHandler: izinGerekli(b, 'dosya.ata.operasyon') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tanim?: string; gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    if (!g.tanim?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Alt dosyanın kısa teknik tanımı ve ayrı dosya gerekçesi (yetki/bütçe) zorunludur.' });
+    const tanim = g.tanim.trim(), gerekce = g.gerekce.trim();
+    return islem(async (c) => {
+      const a = (await c.query(`SELECT * FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+      if (!a) throw Object.assign(new Error('Dosya bulunamadı.'), { statusCode: 404 });
+      if (['Kapalı', 'Teknik Kapalı'].includes(a.statu)) throw Object.assign(new Error('Kapalı dosyaya alt dosya açılmaz.'), { statusCode: 409 });
+      if (a.ana_dosya_ref) throw Object.assign(new Error('Alt dosyaya ayrıca alt dosya açılmaz; ana dosyadan açınız.'), { statusCode: 409 });
+      const kol = (await c.query(`SELECT string_agg(column_name, ', ' ORDER BY ordinal_position) k FROM information_schema.columns WHERE table_name = 'talep' AND table_schema = 'public' AND is_generated = 'NEVER' AND column_name NOT IN ('kimlik', 'talep_no', 'dosya_ref', 'statu', 'olusturma_zamani', 'guncelleme_zamani')`)).rows[0].k as string;
+      const no = await talepNumarasi(c, new Date());
+      const t = (await c.query(`INSERT INTO talep (talep_no, statu, ${kol}) SELECT $1, 'Dosyaya Dönüştü', ${kol} FROM talep WHERE kimlik = $2 RETURNING kimlik`, [no, a.talep_ref])).rows[0];
+      const d = (await c.query(`INSERT INTO dosya (dosya_no, talep_ref, yat_ref, bildirim_tarihi, olay_tarihi, konum, kisa_teknik_tanim, hizmet_turu, musteri_turu, dosya_niteligi, odeme_sorumlusu, oncelik, yazisma_dili, ana_dosya_ref, olusturan_ref)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik, dosya_no`, [no, t.kimlik, a.yat_ref, a.bildirim_tarihi, a.olay_tarihi, a.konum, tanim, a.hizmet_turu, a.musteri_turu, a.dosya_niteligi, a.odeme_sorumlusu, a.oncelik, a.yazisma_dili, id, o.kullanici])).rows[0];
+      await c.query(`UPDATE talep SET dosya_ref = $2 WHERE kimlik = $1`, [t.kimlik, d.kimlik]);
+      await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_ref, taraf_rolu, kurulus_unvani, kisi_adi_soyadi, gorevi, sifat, telefon, eposta, kullanici_ref, olusturan_ref) SELECT $2, taraf_ref, taraf_rolu, kurulus_unvani, kisi_adi_soyadi, gorevi, sifat, telefon, eposta, kullanici_ref, $3 FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif`, [id, d.kimlik, o.kullanici]);
+      await c.query(`INSERT INTO dosya_iliskisi (kaynak_ref, hedef_ref, tur, gerekce, olusturan_ref) VALUES ($1,$2,'Ana-Alt',$3,$4)`, [id, d.kimlik, gerekce, o.kullanici]);
+      await c.query(`INSERT INTO dosya_statu_gecmisi (dosya_ref, yeni_statu, gerekce, sonraki_sorumlu_rol, olusturan_ref) VALUES ($1,'Açılış Kontrolünde',$2,'Operasyon Müdürü',$3)`, [d.kimlik, `Alt dosya: ana ${a.dosya_no}. ${gerekce}`, o.kullanici]);
+      await kartAc(c, { tur: 'Dosya Ekibi Ataması', baslik: `${d.dosya_no} · Dosya Sorumlusu ve Operasyon Yöneticisi Ata`, ozet: `Alt dosya (ana ${a.dosya_no}): ${tanim.slice(0, 150)}`, sahipRol: await rolId(c, 'Operasyon Müdürü'), kategori: 'islem', nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Alt Dosya Açıldı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { alt: d.dosya_no }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { kimlik: d.kimlik, dosyaNo: d.dosya_no };
+    });
+  });
+
   s.post('/dosya/:id/birlestir', { preHandler: izinGerekli(b, 'dosya.ata.operasyon') }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ana?: string; anaNo?: string; gerekce?: string };
     if (!g.ana && g.anaNo?.trim()) g.ana = (await b.db.query(`SELECT kimlik FROM dosya WHERE dosya_no = $1`, [g.anaNo.trim()])).rows[0]?.kimlik; // YG-024: ana dosya numarasıyla

@@ -285,3 +285,14 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
   });
 });
 
+describe('ana–alt dosya (YG-003)', () => {
+  it('alt dosya kendi numarasıyla açılır, ana dosyaya bağlanır, taraflar kopyalanır', async () => {
+    const a = await o.dosyaAc(); const opm = await o.gir('opm');
+    expect((await o.ist('POST', `/api/dosya/${a.kimlik}/alt-dosya`, opm, { tanim: 'Elektrik' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${a.kimlik}/alt-dosya`, opm, { tanim: 'Elektrik panosu yenileme', gerekce: 'Ayrı bütçe' });
+    expect(r.statusCode, r.body).toBe(200); expect(r.json().dosyaNo).not.toBe(a.dosyaNo);
+    expect((await o.sup.query(`SELECT ana_dosya_ref FROM dosya WHERE kimlik = $1`, [r.json().kimlik])).rows[0].ana_dosya_ref).toBe(a.kimlik);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM dosya_tarafi WHERE dosya_ref = $1`, [r.json().kimlik])).rows[0].n).toBeGreaterThan(0);
+    expect((await o.ist('POST', `/api/dosya/${r.json().kimlik}/alt-dosya`, opm, { tanim: 'X', gerekce: 'Y' })).statusCode).toBe(409);
+  });
+});

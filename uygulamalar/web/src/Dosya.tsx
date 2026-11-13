@@ -213,7 +213,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
 
 function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; roller: string[] }) {
   const [d, setD] = useState<DosyaAyrinti | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
-  const [yd, setYd] = useState<Record<string, string> | null>(null); const [tBit, setTBit] = useState<Record<string, string>>({}); const [birA, setBirA] = useState(''); const [birG, setBirG] = useState(''); const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
+  const [yd, setYd] = useState<Record<string, string> | null>(null); const [tBit, setTBit] = useState<Record<string, string>>({}); const [alt, setAlt] = useState({ tanim: '', gerekce: '' }); const [birA, setBirA] = useState(''); const [birG, setBirG] = useState(''); const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
   const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bKanit, setBKanit] = useState('');
   const [oYeni, setOYeni] = useState(''); const [oGerekce, setOGerekce] = useState(''); const [aGerekce, setAGerekce] = useState('');
   const [gnsl, setGnsl] = useState(''); const [drn, setDrn] = useState('');
@@ -261,6 +261,12 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         <div className="iki-tarih"><div><label htmlFor="y-gn">Kalıp Genişliği (m)</label><input id="y-gn" inputMode="decimal" value={gnsl} onChange={(e) => setGnsl(e.target.value)} /></div><div><label htmlFor="y-dr">Kalıp Derinliği (m)</label><input id="y-dr" inputMode="decimal" value={drn} onChange={(e) => setDrn(e.target.value)} /></div></div>
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/yat-bilgisi`, { boy: boy ? Number(boy.replace(',', '.')) : undefined, govde: govde || undefined, tahrik: tahrik || undefined, kaynak, genislik: gnsl ? Number(gnsl.replace(',', '.')) : undefined, derinlik: drn ? Number(drn.replace(',', '.')) : undefined }))}>Yat Bilgisini Kaydet</button>
       </Blok>
+      {d.izinler.includes('dosya.ata.operasyon') && !['Kapalı', 'Teknik Kapalı'].includes(d.statu) && <Blok baslik="Alt Dosya">
+        <div className="not">Ayrı yetki veya bütçe gerektiren iş için ana dosyaya bağlı alt dosya açılır; taraflar kopyalanır, ekip ayrıca atanır.</div>
+        <label htmlFor="ad-t">Kısa Teknik Tanım</label><input id="ad-t" value={alt.tanim} onChange={(e) => setAlt({ ...alt, tanim: e.target.value })} />
+        <label htmlFor="ad-g">Ayrı Dosya Gerekçesi</label><input id="ad-g" value={alt.gerekce} onChange={(e) => setAlt({ ...alt, gerekce: e.target.value })} />
+        <button className="btn2" disabled={!alt.tanim.trim() || !alt.gerekce.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/alt-dosya`, alt))}>Alt Dosya Aç</button>
+      </Blok>}
       {d.izinler.includes('dosya.ata.operasyon') && d.statu !== 'Kapalı' && <Blok baslik="Mükerrer Dosyayı Birleştir">
         <div className="not">Bu dosya kapanır, Birleştirildi statüsü alır; bekleyen görevler, onaylar ve açık süre sayaçları ana dosyaya geçer. Belgeler kopyalanmaz.</div>
         <label htmlFor="br-a">Ana Dosya No</label><input id="br-a" value={birA} onChange={(e) => setBirA(e.target.value)} />
