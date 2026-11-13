@@ -15,7 +15,7 @@ interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string;
 interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string; yururluk?: string | null }[] }
 interface DosyaAyrinti extends DosyaSatir {
   musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
-  kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null };
+  kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null; lehtar_var?: boolean; lehtar_muvafakati_ref?: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
@@ -341,7 +341,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
   const [amac, setAmac] = useState(''); const [kBas, setKBas] = useState(''); const [kBit, setKBit] = useState(''); const [inc, setInc] = useState(''); const [cikis, setCikis] = useState('Hazır'); const [sup, setSup] = useState('Hayır'); const [sayim, setSayim] = useState(false); const [eris, setEris] = useState(''); const [erisT, setErisT] = useState('');
   const [bKonum, setBKonum] = useState(''); const [bBolge, setBBolge] = useState(''); const [bAcik, setBAcik] = useState(''); const [bOnem, setBOnem] = useState('Orta'); const [bHedef, setBHedef] = useState('');
   const [gKalem, setGKalem] = useState(KALEMLER[0]!); const [gBelge, setGBelge] = useState(''); const [gBolge, setGBolge] = useState(''); const [gOlcek, setGOlcek] = useState(''); const [gNeden, setGNeden] = useState('');
-  const [iTur, setITur] = useState('Askı'); const [iNeden, setINeden] = useState(''); const [iGer, setIGer] = useState(''); const [iYapilan, setIYapilan] = useState(''); const [iAcik, setIAcik] = useState(''); const [iTeslim, setITeslim] = useState(''); const [iDev, setIDev] = useState('');
+  const [lmBelge, setLmBelge] = useState(''); const [iTur, setITur] = useState('Askı'); const [iNeden, setINeden] = useState(''); const [iGer, setIGer] = useState(''); const [iYapilan, setIYapilan] = useState(''); const [iAcik, setIAcik] = useState(''); const [iTeslim, setITeslim] = useState(''); const [iDev, setIDev] = useState('');
   const [kNeden, setKNeden] = useState(''); const [beyan, setBeyan] = useState(false);
   const [gsTur, setGsTur] = useState('Garanti bildirimi'); const [gsYd, setGsYd] = useState(false); const [gsYer, setGsYer] = useState(false); const [gsAcik, setGsAcik] = useState('');
   const yukle = () => istek<Saha>(`/dosya/${id}/saha`).then(setV).catch((e) => setHata(e.message));
@@ -394,6 +394,12 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
           <label className="kutu"><input type="checkbox" checked={beyan} onChange={(e) => setBeyan(e.target.checked)} /><span>Bu dosyayla ilgili aktarılmamış yazışma yok</span></label>
           <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kapanis`, { cikis: d.statu === 'Teknik Kapalı' ? 'Kapalı' : 'Teknik Kapalı', neden: kNeden || undefined, yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: beyan }), 'Operasyon Müdürünün onayına gönderildi.')}>{d.statu === 'Teknik Kapalı' ? 'Kapanışı Onaya Gönder' : 'Teknik Kapanışı Onaya Gönder'}</button>
         </Blok>
+        {d.yat.lehtar_var && <Blok baslik="FR-HUK-003 Lehtar Muvafakatı">
+          <div className="not">{d.yat.lehtar_muvafakati_ref ? 'Lehtar muvafakati girilmiştir.' : 'Lehtar muvafakati girilmeden teklif onayı açılmaz.'}</div>
+          <div className="dugmeler"><a className="btn2 kucuk" href={`/api/dosya/${id}/lehtar-muvafakat.pdf?dil=tr`} target="_blank" rel="noreferrer">Muvafakat Yazısı Örneği (TR)</a><a className="btn2 kucuk" href={`/api/dosya/${id}/lehtar-muvafakat.pdf?dil=en`} target="_blank" rel="noreferrer">Muvafakat Yazısı Örneği (EN)</a></div>
+          {!d.yat.lehtar_muvafakati_ref && <><label htmlFor="lm-b">Muvafakat Belgesi</label><select id="lm-b" value={lmBelge} onChange={(e) => setLmBelge(e.target.value)}><option value="">Seçiniz</option>{belgeler.map((b) => <option key={b.kimlik} value={b.kimlik}>{b.ad}</option>)}</select>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/muvafakat`, { belge: lmBelge }))}>Muvafakati Kaydet</button></>}
+        </Blok>}
         <Blok baslik="FR-OPS-011 Dosya Askı, İptal, Fesih ve Devir Kaydı">
           <label htmlFor="is-t">İşlem</label><select id="is-t" value={iTur} onChange={(e) => setITur(e.target.value)}>{['Askı', 'İptal', 'Fesih', 'Devir'].map((x) => <option key={x}>{x}</option>)}</select>
           {iTur !== 'Askı' && <><label htmlFor="is-n">Kapanma Nedeni</label><select id="is-n" value={iNeden} onChange={(e) => setINeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select></>}

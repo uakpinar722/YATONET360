@@ -188,3 +188,49 @@ describe('değişiklik belgeleri (YG-656)', () => {
     expect(t).toMatchObject({ ad: 'Değişiklik Kaydı', kod: 'FR-UYG-003', icKayit: true });
   });
 });
+
+describe('Lehtar Muvafakat Yazısı (YG-729)', () => {
+  it('lehtarlı yatta TR/EN örnek PDF üretilir; onaylı metin ve kayıttaki hak türü; lehtarsız yatta 409', async () => {
+    const { lehtarMuvafakatTanim } = await import('../src/lehtar_muvafakat.js');
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const ds = await o.gir('ds');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/lehtar-muvafakat.pdf`, ds)).statusCode).toBe(409);
+    await o.sup.query(`UPDATE yat SET lehtar_adi = 'Örnek Bank A.Ş.', mulkiyet_turu = 'Finansal kiralama (leasing)' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
+    const tr = (await lehtarMuvafakatTanim(o.db, d.kimlik, 'tr'))!.t; const en = (await lehtarMuvafakatTanim(o.db, d.kimlik, 'en'))!.t;
+    expect(tr).toMatchObject({ kod: 'FR-HUK-003', ad: 'Lehtar Muvafakat Yazısı' }); expect(en.ad).toBe('Loss Payee Consent Letter');
+    const s = JSON.stringify(tr.bolumler);
+    expect(s).toContain('Örnek Bank A.Ş.'); expect(s).toContain('☐ İpotek ☒ Leasing'); expect(s).toContain('Onarım bedelinin LİMİT GLOBAL MARINE’a ödenmesine');
+    const p = await o.ist('GET', `/api/dosya/${d.kimlik}/lehtar-muvafakat.pdf?dil=en`, ds); expect(p.statusCode).toBe(200); expect(p.headers['content-type']).toContain('pdf');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}`, ds)).json().yat).toMatchObject({ lehtar_var: true, lehtar_muvafakati_ref: null });
+  });
+});
+
+describe('Tedarik Siparişi belgesi (YG-621, YG-1514)', () => {
+  it('fiyat yazmaz, dayanak teklife atıf yapar, dosya numarası taşımaz, onay kutusu basılır', async () => {
+    const { siparisTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    const k = (await o.sup.query(`SELECT kimlik FROM kurulus LIMIT 1`)).rows[0].kimlik;
+    const s = (await o.sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, hazirlayan_ref) VALUES ('SP-TEST-01',$1,$2,'TT-77','Bodrum',1234.5,0,1234.5,current_date + 5,'Örnek Marina','Orijinal ambalaj','Fiyat',$3) RETURNING kimlik`, [d.kimlik, k, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur) VALUES ($1,1,'Pervane','P-1',2,'adet',617.25,1234.5)`, [s]);
+    const t = (await siparisTanim(o.db, s, 'KOD1', 'https://x')).t;
+    const j = JSON.stringify(t);
+    expect(t).toMatchObject({ kod: 'FR-MLZ-002', ad: 'Tedarik Siparişi' }); expect(t.dosyaNo).toBeUndefined();
+    expect(j).toContain('TT-77'); expect(j).not.toMatch(/1\.?234,5|617,25/); expect(j).not.toContain(d.dosyaNo);
+  });
+});
+
+describe('Teknik Rapor kanıt sayfaları (YG-678, YG-713)', () => {
+  it('ölçüm kaynağı dipnotla, fotoğraflar Şekil n altyazısıyla; hassas görsel basılmaz', async () => {
+    const { raporFotoOgeleri, raporKaynaklari } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    const foto = async (no: string, hassas: boolean) => { const b = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref, hassas_icerik) VALUES ($1,'Fotoğraf','Dosya',$2,'Sistem',current_date,$3,$4) RETURNING kimlik`, [no, d.kimlik, o.K.ds, hassas])).rows[0].kimlik;
+      await o.sup.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, yukleyen_ref, durum) VALUES ($1,1,'a.jpg','jpg',1,repeat('a',64),'yok/yok','Test',$2,'Yürürlükte')`, [b, o.K.ds]);
+      await o.sup.query(`INSERT INTO gorsel_kanit (gorsel_no, dosya_ref, belge_ref, cekim_zamani, ceken_ref, ceken_rol, konum, asama, cekim_kalemi, cekim_turu) VALUES ($1,$2,$3,now(),$4,'Teknik Uzman','Sancak','Keşif','Pervane','Detay')`, [no, d.kimlik, b, o.K.ds]); };
+    await foto('F1', false); await foto('F2', true); await foto('F3', false);
+    const fo = await raporFotoOgeleri(o.db, d.kimlik, 'tr', 1);
+    expect(fo.map((x) => x.altyazi.split(' · ')[0])).toEqual(['Şekil 1 — F1', 'Şekil 2 — F3']);
+    expect(fo[0]!.src).toBeNull(); // depoda dosya yok: alan "---"
+    const k = await raporKaynaklari(o.db, d.kimlik, 'tr', '2026-11-01');
+    expect(JSON.stringify(k)).toContain('Beyan · olay tarihi ve özeti 01.11.2026 tarihli hasar ihbarındaki beyana dayanır');
+  });
+});

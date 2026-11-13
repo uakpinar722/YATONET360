@@ -14,7 +14,7 @@ import { pdfUret, type BelgeTanim, type Bolum, type Renk } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Değişiklik Kaydı' | 'Garanti Belgesi' | 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
+export type UretimTuru = 'Tedarik Siparişi' | 'Değişiklik Kaydı' | 'Garanti Belgesi' | 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -113,6 +113,41 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
   };
 }
 
+let aktifDepo: Depo | undefined;
+/** YG-713: dosya fotoğrafları; hassas işaretli görsel ve yürürlükte olmayan sürüm basılmaz (YG-1165). */
+async function fotoOgeleri(db: Db, dosya: string, dil: Dil, ilkSekil: number, azami = 24) {
+  const r = (await db.query(`SELECT g.gorsel_no, g.cekim_kalemi, g.cekim_zamani, g.konum, s.depo_anahtari, lower(s.uzanti) uzanti FROM gorsel_kanit g JOIN belge e ON e.kimlik = g.belge_ref
+    JOIN LATERAL (SELECT depo_anahtari, uzanti FROM belge_surum WHERE belge_ref = e.kimlik AND durum = 'Yürürlükte' ORDER BY surum_no DESC LIMIT 1) s ON true
+    WHERE g.dosya_ref = $1 AND NOT coalesce(e.hassas_icerik, false) AND lower(s.uzanti) IN ('jpg', 'jpeg', 'png') ORDER BY g.gorsel_no LIMIT $2`, [dosya, azami])).rows;
+  const depo = aktifDepo ?? new Depo(); const ogeler: { src: string | null; altyazi: string }[] = [];
+  for (const [n, x] of r.entries()) {
+    let src: string | null = null;
+    try { const p: Buffer[] = []; for await (const y of depo.bagla(x.depo_anahtari)) p.push(y as Buffer); src = `data:image/${x.uzanti === 'png' ? 'png' : 'jpeg'};base64,${Buffer.concat(p).toString('base64')}`; } catch { src = null; }
+    ogeler.push({ src, altyazi: [`${dil === 'en' ? 'Figure' : 'Şekil'} ${ilkSekil + n} — ${x.gorsel_no}`, x.cekim_kalemi, x.cekim_zamani ? anSaat(x.cekim_zamani) : null, x.konum].filter(Boolean).join(' · ') });
+  }
+  return ogeler;
+}
+
+export const raporFotoOgeleri = (db: Db, dosya: string, dil: Dil, ilk: number) => fotoOgeleri(db, dosya, dil, ilk);
+export const raporKaynaklari = (db: Db, dosya: string, dil: Dil, bildirim: string | null) => kaynakBolumleri(db, dosya, dil, bildirim);
+/** YG-678: bilgi kaynağı dipnotu (ölçüm / belge / beyan). */
+async function kaynakBolumleri(db: Db, dosya: string, dil: Dil, bildirim: Date | string | null): Promise<Bolum[]> {
+  const en = dil === 'en';
+  const ol = (await db.query(`SELECT o.olcum_no, o.olcum_noktasi, o.olculen_buyukluk, o.birim, o.ozet_deger, o.nominal_deger, o.tolerans, o.sinir_disi, o.gecerlilik, o.cihaz, o.kalibrasyon_durumu, o.yontem, o.olcum_zamani FROM olcum_kaydi o
+    WHERE o.dosya_ref = $1 AND o.gecerlilik <> 'Geçersiz' AND NOT EXISTS (SELECT 1 FROM olcum_kaydi n WHERE n.onceki_ref = o.kimlik) ORDER BY o.olcum_no`, [dosya])).rows;
+  const dip: string[] = [];
+  const no = (s: string) => { dip.push(s); return `[${dip.length}]`; };
+  const B: Bolum[] = [];
+  if (ol.length) B.push({ baslik: en ? 'Measurements' : 'Ölçümler', tur: 'tablo', sutunlar: [{ ad: en ? 'Point' : 'Nokta' }, { ad: en ? 'Quantity' : 'Büyüklük' }, { ad: en ? 'Value' : 'Değer', hiza: 'sag' }, { ad: en ? 'Nominal / Tolerance' : 'Nominal / Tolerans' }, { ad: en ? 'Result' : 'Sonuç' }, { ad: en ? 'Source' : 'Kaynak', hiza: 'ort' }],
+    satirlar: ol.map((x) => [x.olcum_noktasi, x.olculen_buyukluk, [x.ozet_deger, x.birim].filter(Boolean).join(' '), [x.nominal_deger, x.tolerans].filter(Boolean).join(' / ') || null,
+      x.sinir_disi ? { m: en ? 'Out of limit' : 'Sınır dışı', renk: 'kirmizi' as Renk } : (en ? 'Within limit' : 'Sınır içinde'),
+      no(`${en ? 'Measurement' : 'Ölçüm'} ${x.olcum_no} · ${[x.yontem, x.cihaz, `${en ? 'calibration' : 'kalibrasyon'}: ${x.kalibrasyon_durumu}`, x.gecerlilik === 'Sınırlı' ? (en ? 'for information only' : 'bilgi amaçlı') : null, anSaat(x.olcum_zamani)].filter(Boolean).join(' · ')}`)]) });
+  no(en ? `Statement · incident date and summary as declared in the damage notification${bildirim ? ` of ${gunAy(bildirim)}` : ''}` : `Beyan · olay tarihi ve özeti${bildirim ? ` ${gunAy(bildirim)} tarihli` : ''} hasar ihbarındaki beyana dayanır`);
+  no(en ? 'Document · yacht particulars from the yacht documents recorded on YATONET 360' : 'Belge · yat bilgileri YATONET 360’ta kayıtlı yat belgelerinden alınmıştır');
+  B.push({ baslik: en ? 'Notes on Sources' : 'Kaynak Dipnotları', tur: 'tablo', numarasiz: true, sutunlar: [{ ad: 'No', hiza: 'ort' }, { ad: en ? 'Source' : 'Kaynak' }], satirlar: dip.map((s, n) => [`[${n + 1}]`, s]) });
+  return B;
+}
+
 async function raporTanim(db: Db, id: string, kod: string, web: string) {
   const r = (await db.query(`SELECT * FROM teknik_rapor WHERE kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, r.dosya_ref, r.hazirlayan_ref); const dil = b.dil; const e = E[dil];
@@ -136,7 +171,10 @@ async function raporTanim(db: Db, id: string, kod: string, web: string) {
   if (bl.length) bolumler.push({ baslik: dil === 'en' ? 'Risk Assessment' : 'Risk Değerlendirmesi', tur: 'tablo', sutunlar: [{ ad: e.bolge }, { ad: e.gozlem }, { ad: e.onem, hiza: 'ort' }], satirlar: bl.map((x) => [x.bolge_kodu, x.aciklama, { m: x.hasar_onem_derecesi, renk: ONEM[x.hasar_onem_derecesi] ?? 'sari' }]) });
   if (r.ek_inceleme_gerekir !== null) bolumler.push({ baslik: dil === 'en' ? 'Further Inspection' : 'Ek İnceleme', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'Is there an area requiring further inspection?' : 'Ek inceleme gerektiren alan var mı?', deger: r.ek_inceleme_gerekir ? (dil === 'en' ? 'Yes' : 'Evet') : (dil === 'en' ? 'No' : 'Hayır') }, ...(r.ek_inceleme_gerekir ? [{ et: dil === 'en' ? 'Area' : 'Alan', deger: r.ek_inceleme_alani, genis: true }] : [])] });
   bolumler.push({ baslik: e.deger, tur: 'metin', metin: r.analiz_risk }, { baslik: e.oneri, tur: 'metin', metin: r.oneriler }, { baslik: e.acik, tur: 'metin', metin: r.acik_sorular }, { baslik: e.sinir, tur: 'metin', metin: r.uzmanlik_siniri }, ekipBolumu(b), atananEkip(b));
-  if (gr.length) bolumler.push({ baslik: e.foto, tur: 'tablo', sutunlar: [{ ad: e.gorsel }, { ad: e.aciklama }, { ad: e.zaman }, { ad: e.konumS }], satirlar: gr.map((x) => [x.gorsel_no, x.cekim_kalemi, x.cekim_zamani ? gunAy(x.cekim_zamani) : null, x.konum]) });
+  void gr;
+  bolumler.push(...await kaynakBolumleri(db, r.dosya_ref, dil, b.d.bildirim_tarihi)); // YG-678
+  const fo = await fotoOgeleri(db, r.dosya_ref, dil, 1); // YG-713
+  if (fo.length) bolumler.push({ baslik: dil === 'en' ? 'Photographic Evidence' : 'Fotoğraf Kanıtları', tur: 'fotolar', ogeler: fo });
   // YG-612: raporun dayandığı kayıt sürümleri.
   const ky = (await db.query(`SELECT (SELECT count(*)::int FROM kesif WHERE dosya_ref = $1) kesif, (SELECT max(surum)::int FROM kapsam_cetveli WHERE dosya_ref = $1) cetvel, (SELECT max(kesif_tarihi) FROM kesif WHERE dosya_ref = $1) "kesifT"`, [r.dosya_ref])).rows[0];
   bolumler.push({ baslik: dil === 'en' ? 'Records Used' : 'Kullanılan Kayıtlar', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'File No' : 'Dosya No', deger: b.d.dosya_no }, { et: dil === 'en' ? 'Report Version' : 'Rapor Sürümü', deger: `Rev.${r.surum}` }, { et: dil === 'en' ? 'Surveys' : 'Keşif Kaydı', deger: String(ky.kesif) }, { et: dil === 'en' ? 'Scope Schedule Version' : 'Kapsam Cetveli Sürümü', deger: ky.cetvel ? `Rev.${ky.cetvel}` : null }, { et: dil === 'en' ? 'Findings' : 'Bulgu Sayısı', deger: String(bl.length) }, { et: dil === 'en' ? 'Visual Evidence' : 'Görsel Kanıt Sayısı', deger: String(gr.length) }] });
@@ -355,6 +393,28 @@ export async function garantiTanim(db: Db, id: string) {
       onay: onay ? { rol: dil === 'en' ? 'Yacht Owner' : 'Yat Sahibi', zaman: anSaat(onay.onay_zamani), kanal: 'YATONET 360', kod: onay.onay_kodu } : undefined } as BelgeTanim,
   };
 }
+/** YG-621, YG-1514: FR-MLZ-002 Tedarik Siparişi; tutar yazılmaz, kabul edilen tedarikçi teklifine atıf yapılır; dosya kimliği tedarikçiye görünmez (YG-298); imza bloğu yerine YATONET 360 Onay Kaydı. */
+export async function siparisTanim(db: Db, id: string, kod: string, web: string) {
+  const s = (await db.query(`SELECT s.*, k.ticari_unvan FROM tedarik_siparisi s JOIN kurulus k ON k.kimlik = s.kurulus_ref WHERE s.kimlik = $1`, [id])).rows[0];
+  const kl = (await db.query(`SELECT satir_no, urun_tanimi, uretici_parca_no, miktar, birim FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 ORDER BY satir_no`, [id])).rows;
+  const lgm = (await db.query(`SELECT r.rol_adi, a.zaman FROM is_karti k JOIN is_karti_adim a ON a.is_ref = k.kimlik LEFT JOIN rol r ON r.kimlik = a.rol_ref WHERE k.tur = 'Tedarik Siparişi' AND k.nesne_kimligi = $1 AND a.karar = 'Onayla' ORDER BY a.zaman DESC LIMIT 1`, [id])).rows[0];
+  const dil: Dil = 'tr';
+  const bolumler: Bolum[] = [
+    { baslik: 'Sipariş', tur: 'alanlar', alanlar: [{ et: 'Tedarikçi', deger: s.ticari_unvan }, { et: 'Dayanak Teklif', deger: s.tedarikci_teklif_ref }, { et: 'Kısmi Teslim', deger: s.kismi_teslim_izni ? 'İzinli' : 'İzinli değil' }, { et: 'Termin', deger: s.uzun_terminli ? 'Uzun terminli' : null }] },
+    { baslik: 'Kalemler', tur: 'tablo', sutunlar: [{ ad: 'Sıra', hiza: 'ort' }, { ad: 'Ürün Tanımı' }, { ad: 'Üretici Parça No' }, { ad: 'Miktar', hiza: 'sag' }, { ad: 'Birim', hiza: 'ort' }],
+      satirlar: kl.map((x) => [x.satir_no, x.urun_tanimi, x.uretici_parca_no, String(Number(x.miktar)).replace('.', ','), x.birim]) },
+    { baslik: 'Teslim', tur: 'alanlar', alanlar: [{ et: 'Teslim Tarihi', deger: gunAy(s.teslim_tarihi) }, { et: 'Teslim Yeri', deger: s.teslim_yeri, genis: true }, { et: 'Nihai Kullanım Yeri', deger: s.nihai_kullanim_yeri, genis: true }] },
+    { baslik: 'Kabul Ölçütü', tur: 'metin', metin: s.kabul_olcutu },
+    { baslik: 'Bedel Dayanağı', tur: 'alanlar', alanlar: [{ et: 'Bedel Dayanağı', deger: `Kabul edilen tedarikçi teklifi ${s.tedarikci_teklif_ref}  ·  sipariş fiyat içermez`, genis: true }] },
+  ];
+  return {
+    dosyaAdi: `${s.siparis_no}.pdf`, sinif: 'Gizli',
+    t: { ad: 'Tedarik Siparişi', kod: 'FR-MLZ-002', no: s.siparis_no, tarih: gunAy(lgm?.zaman ?? s.olusturma_zamani), surum: `Rev.${s.surum_no}`, dil, bolumler,
+      matbuSon: [gizli(dil), dogrula(dil, kod, web)],
+      onay: lgm ? { rol: lgm.rol_adi, zaman: anSaat(lgm.zaman), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim,
+  };
+}
+
 /** YG-656: FR-UYG-003 Değişiklik Kaydı iç belgedir; yat sahibi/sigortaya ONY-05 Değişiklik Onayı, firmaya Ek İş Emri gider. */
 export async function degisiklikKaydiTanim(db: Db, id: string) {
   const p = (await db.query(`SELECT p.*, h.ad_soyad hazirlayan FROM degisiklik_protokolu p LEFT JOIN kullanici_hesabi h ON h.kimlik = p.hazirlayan_ref WHERE p.kimlik = $1`, [id])).rows[0];
@@ -460,7 +520,7 @@ const KASELI = ['Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 
 /** Kuyruk kaydının belge tanımı. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tanimYap(c: PoolClient, u: any, kod: string, web: string) {
-  return u.tur === 'Değişiklik Kaydı' ? await degisiklikKaydiTanim(c, u.nesne) : u.tur === 'Garanti Belgesi' ? await garantiTanim(c, u.nesne) : u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, web) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, web) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, web) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, web) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, web) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, web) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, web) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, web);
+  return u.tur === 'Tedarik Siparişi' ? await siparisTanim(c, u.nesne, kod, web) : u.tur === 'Değişiklik Kaydı' ? await degisiklikKaydiTanim(c, u.nesne) : u.tur === 'Garanti Belgesi' ? await garantiTanim(c, u.nesne) : u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, web) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, web) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, web) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, web) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, web) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, web) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, web) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, web);
 }
 /** YG-625: iki dilli üretilen müşteri belgeleri ve "Türkçe metin esastır" satırı (kurtarma sözleşmesi 11.4'ün belgeye uyarlaması). */
 const IKI_DILLI = ['Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Teslim Tutanağı', 'Onay Belgesi', 'Ödeme Sorumluluğu', 'Nihai Kapanış Özeti', 'Proforma', 'Ödeme Talebi', 'Kurtarma Sonuç Tutanağı', 'Ön Bilgilendirme Formu'];
@@ -486,7 +546,7 @@ async function uretKaydet(c: PoolClient, depo: Depo, u: any, v: { t: BelgeTanim 
 }
 
 export async function belgeKuyruguIsle(b: Baglam, limit = 10): Promise<number> {
-  const depo = b.depo ?? new Depo(); let n = 0;
+  const depo = b.depo ?? new Depo(); let n = 0; aktifDepo = depo;
   const { rows } = await b.db.query(`SELECT * FROM belge_uretim WHERE durum = 'Bekliyor' ORDER BY olusturma_zamani LIMIT $1`, [limit]);
   for (const u of rows) {
     const c = await b.db.connect();

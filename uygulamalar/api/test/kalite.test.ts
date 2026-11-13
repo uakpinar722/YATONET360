@@ -216,6 +216,7 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
     const G = { satir: 1, miktar: 2, lot: 'L1', irsaliye: 'İ1', bekletmeYeri: firma };
     expect((await o.ist('POST', `/api/siparis/${id}/giris`, c, G)).statusCode).toBe(409);
     await o.karar(k.kimlik, 'tym', 'Onaya Gönder'); await o.karar(k.kimlik, 'to', 'Onaya Gönder'); expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Tedarik Siparişi' AND nesne = $1`, [id])).rowCount).toBe(1); // YG-1514
     expect((await o.ist('POST', `/api/siparis/${id}/giris`, c, { ...G, lot: '' })).json().hata).toContain('lot');
     expect((await o.ist('POST', `/api/siparis/${id}/giris`, c, { ...G, miktar: 3 })).json().hata).toContain('Fazla');
     const g = await o.ist('POST', `/api/siparis/${id}/giris`, c, G);

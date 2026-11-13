@@ -22,6 +22,8 @@ export type Bolum =
   | { baslik: string; tur: 'metin'; metin: string; numarasiz?: boolean }
   /** YG-679: çizim veya kroki görseli (data URI); altında antet ve revizyon tablosu ayrı bölümlerdir. */
   | { baslik: string; tur: 'gorsel'; src: string; altyazi?: string; numarasiz?: boolean }
+  /** YG-713: fotoğraf kanıt sayfası; iki sütun, her görselin altında Şekil n altyazısı. */
+  | { baslik: string; tur: 'fotolar'; ogeler: { src: string | null; altyazi: string }[]; numarasiz?: boolean }
   | { baslik: string; tur: 'tablo'; sutunlar: { ad: string; hiza?: Hiza }[]; satirlar: Hucre[][]; toplamlar?: { et: string; deger: string; ana?: boolean }[]; numarasiz?: boolean };
 
 export interface BelgeTanim {
@@ -69,6 +71,7 @@ h1, .kapak h1 { font-family: Cambria, Caladea, Georgia, serif; font-weight: 400;
 .ic { margin-top: 3mm; padding: 1.5mm; text-align: center; font-weight: 700; color: #B3261E; border: .6pt solid #B3261E; }
 table { width: 100%; border-collapse: collapse; margin-top: 4mm; }
 table.band { margin-top: 5mm; }
+table.fotolar td { width: 50%; border: .5pt solid #D9D4CC; padding: 2mm; text-align: center; vertical-align: top; page-break-inside: avoid; } table.fotolar img { max-width: 100%; max-height: 70mm; } table.fotolar .bos { height: 40mm; line-height: 40mm; color: #5A6478; }
 table.gorsel td { border: .5pt solid #D9D4CC; padding: 3mm; text-align: center; } table.gorsel img { max-width: 100%; max-height: 150mm; } .altyazi { font-size: 8.5pt; color: #5A6478; margin-top: 2mm; }
 .band td { border: .5pt solid #D9D4CC; border-top: 1.5pt solid #A6743E; background: #F7F5F1; padding: 3pt 6pt; }
 .band b { display: block; font-size: 11pt; margin-top: 1pt; }
@@ -121,6 +124,11 @@ const hizaBul = (s: { ad: string; hiza?: Hiza }): Hiza => s.hiza ?? (ORTA.test(s
 function bolumHtml(t: BelgeTanim, bolumler: Bolum[], b: Bolum, yalnizIlk = false): string {
   const ad = k(bolumAdi(t, bolumler, b));
   if (b.tur === 'metin') return `<table><thead><tr><th class="kb">${ad}</th></tr></thead><tbody><tr class="mt"><td class="metin">${k(yalnizIlk ? b.metin.slice(0, 40) : b.metin)}</td></tr></tbody></table>`;
+  if (b.tur === 'fotolar') {
+    const h = (x: { src: string | null; altyazi: string } | undefined) => (x ? `<td>${x.src ? `<img src="${x.src}" alt="${k(x.altyazi)}">` : '<div class="bos">---</div>'}<div class="altyazi">${k(x.altyazi)}</div></td>` : '<td></td>');
+    const satir: string[] = []; for (let n = 0; n < b.ogeler.length; n += 2) satir.push(`<tr>${h(b.ogeler[n])}${h(b.ogeler[n + 1])}</tr>`);
+    return `<table class="fotolar"><thead><tr><th class="kb" colspan="2">${ad}</th></tr></thead><tbody>${satir.join('')}</tbody></table>`;
+  }
   if (b.tur === 'gorsel') return `<table class="gorsel"><thead><tr><th class="kb">${ad}</th></tr></thead><tbody><tr><td><img src="${b.src}" alt="${k(b.altyazi ?? '')}">${b.altyazi ? `<div class="altyazi">${k(b.altyazi)}</div>` : ''}</td></tr></tbody></table>`;
   if (b.tur === 'tablo') {
     const n = b.sutunlar.length;

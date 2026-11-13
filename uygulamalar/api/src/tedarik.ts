@@ -11,6 +11,7 @@ import { parametre, parasalZincir, sonMakam } from './teklif.js';
 import { sozlesmeEngeli } from './alacak.js';
 import { muadilEngeli } from './firma_ek.js';
 import { avansHesapla } from './ticari.js';
+import { belgeUret } from './belge_uret.js';
 import { UUID } from './yat.js';
 
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
@@ -45,7 +46,11 @@ export async function tedarikSureIsle(db: Pool, simdi = new Date()): Promise<num
 }
 
 kapanisKaydet('Tedarik Siparişi', async (c, k, karar) => {
-  if (karar === 'Onayla') await c.query(`UPDATE tedarik_siparisi SET statu = 'Verildi' WHERE kimlik = $1`, [k.nesne_kimligi]);
+  if (karar === 'Onayla') {
+    const s = (await c.query(`UPDATE tedarik_siparisi s SET statu = 'Verildi' FROM kurulus k WHERE s.kimlik = $1 AND k.kimlik = s.kurulus_ref RETURNING s.siparis_no, s.dosya_ref, k.kurumsal_eposta`, [k.nesne_kimligi])).rows[0];
+    // YG-1514: onaylanan sipariş PDF'i (YATONET 360 Onay Kaydı kutusuyla) tedarikçinin kurumsal adresine ekli gider.
+    if (s) await belgeUret(c, { tur: 'Tedarik Siparişi', nesne: k.nesne_kimligi!, dosya: s.dosya_ref, gonder: s.kurumsal_eposta ? { olay: `siparis-pdf:${k.nesne_kimligi}`, eposta: s.kurumsal_eposta, konu: `Tedarik Siparişi: ${s.siparis_no}`, metin: `Tedarik Siparişi: ${s.siparis_no}` } : undefined });
+  }
   else if (karar === 'Reddet') await c.query(`UPDATE tedarik_siparisi SET statu = 'İptal' WHERE kimlik = $1`, [k.nesne_kimligi]);
 });
 

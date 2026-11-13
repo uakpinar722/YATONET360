@@ -1,0 +1,110 @@
+{
+ "tr": {
+  "ad": "Lehtar Muvafakat Yazısı",
+  "dosyaNo": "Dosya No",
+  "tarih": "Tarih",
+  "ref": "Lehtar Referansı",
+  "muhatap": "Muhatap",
+  "kime": "Kime",
+  "kimeD": "LİMİT GLOBAL MARINE Denizcilik, Onarım ve Teknik Hizmetler Sanayi ve Ticaret Limited Şirketi · Adres Barbaros Mah. Begonya Sk. Nidakule Ataşehir Batı No:1 İç Kapı No:2 Ataşehir/İstanbul",
+  "konu": "Konu",
+  "konuD": "Onarım ve teknik hizmet işlerine muvafakat",
+  "b1": "Yat ve Dosya Kimliği",
+  "yat": "Yat Adı",
+  "marka": "Marka / Model",
+  "bayrak": "Bayrak / Sicil Limanı",
+  "ruhsat": "Ruhsat / Tonilato No",
+  "malik": "Malik",
+  "lgmNo": "LGM Dosya No",
+  "lehtar": "Lehtar",
+  "hak": "Hak Türü",
+  "hakD": "☐ İpotek ☐ Leasing ☐ Rehin ☐ Diğer",
+  "tescil": "Sözleşme / Tescil No",
+  "b2": "İzin Verilen İşler",
+  "no": "No",
+  "is": "İş",
+  "not": "Not",
+  "isler": [
+   [
+    "Keşif, söküm ve yeniden montaj",
+    "Hasar tespiti için"
+   ],
+   [
+    "Fiyat teklifinde yazılı onarım ve yenileme işleri",
+    "{teklif} ve ekleri"
+   ],
+   [
+    "Gerekli olması hâlinde karaya alma, taşıma ve denize indirme",
+    "İşin yapılacağı yer içinde"
+   ],
+   [
+    "Deniz denemesi",
+    "Onarım sonrası kabul için"
+   ]
+  ],
+  "b3": "İşin Yapılacağı Yer",
+  "yer": "Yer",
+  "sure": "Tahmini Süre",
+  "b4": "Muvafakat",
+  "beyan": "Beyan",
+  "beyanD": "Yukarıda kimliği yazılı yat üzerinde lehtar sıfatıyla hakkımız bulunmaktadır. Bu yat üzerinde 02 numaralı bölümde yazılı işlerin 03 numaralı bölümde belirtilen yerde LİMİT GLOBAL MARINE tarafından yapılmasına muvafakat ederiz. Onarım bedelinin LİMİT GLOBAL MARINE’a ödenmesine muvafakat ederiz. Bu muvafakat yalnız yukarıda yazılı dosya ve işler için verilmiştir.",
+  "b5": "Lehtar Yetkilisi",
+  "yetkili": "Yetkili",
+  "imza": "İmza ve Kaşe",
+  "not2": "Lehtar bu örnek yerine kendi antetli metnini verebilir; metinde yat ve dosya kimliği, izin verilen işler, işin yapılacağı yer ve onarım bedelinin LİMİT GLOBAL MARINE’a ödenmesine muvafakat satırı bulunmalıdır."
+ },
+ "en": {
+  "ad": "Loss Payee Consent Letter",
+  "dosyaNo": "File No",
+  "tarih": "Date",
+  "ref": "Loss Payee Reference",
+  "muhatap": "Addressee",
+  "kime": "To",
+  "kimeD": "LİMİT GLOBAL MARINE Denizcilik, Onarım ve Teknik Hizmetler Sanayi ve Ticaret Limited Şirketi · Address Barbaros Mah. Begonya Sk. Nidakule Ataşehir Batı No:1 İç Kapı No:2 Ataşehir/İstanbul",
+  "konu": "Subject",
+  "konuD": "Consent to repair and technical service work",
+  "b1": "Yacht and File Identification",
+  "yat": "Yacht Name",
+  "marka": "Make / Model",
+  "bayrak": "Flag / Port of Registry",
+  "ruhsat": "Registration / Tonnage No",
+  "malik": "Owner",
+  "lgmNo": "LGM File No",
+  "lehtar": "Loss Payee",
+  "hak": "Type of Right",
+  "hakD": "☐ Mortgage ☐ Leasing ☐ Pledge ☐ Other",
+  "tescil": "Agreement / Registration No",
+  "b2": "Permitted Work",
+  "no": "No",
+  "is": "Work",
+  "not": "Note",
+  "isler": [
+   [
+    "Survey, dismantling and reassembly",
+    "For damage assessment"
+   ],
+   [
+    "Repair and renewal work stated in the price quotation",
+    "{teklif} and its annexes"
+   ],
+   [
+    "Hauling out, transport and launching where necessary",
+    "Within the work location"
+   ],
+   [
+    "Sea trial",
+    "For acceptance after repair"
+   ]
+  ],
+  "b3": "Work Location",
+  "yer": "Location",
+  "sure": "Estimated Duration",
+  "b4": "Consent",
+  "beyan": "Statement",
+  "beyanD": "We hold rights as loss payee over the yacht identified above. We consent to the work stated in section 02 being carried out on this yacht by LİMİT GLOBAL MARINE at the location stated in section 03. We consent to the repair cost being paid to LİMİT GLOBAL MARINE. This consent is given solely for the file and work stated above.",
+  "b5": "Loss Payee Authorised Signatory",
+  "yetkili": "Authorised Signatory",
+  "imza": "Signature and Stamp",
+  "not2": "The loss payee may issue its own letterhead text instead of this sample; the text should contain the yacht and file identification, the permitted work, the work location and the line consenting to the repair cost being paid to LİMİT GLOBAL MARINE."
+ }
+}
