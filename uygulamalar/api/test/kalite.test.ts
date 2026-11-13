@@ -180,6 +180,9 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).json().hata).toContain('gerekliliğin');
     const g = (await o.sup.query(`SELECT kimlik FROM gereklilik_satiri WHERE plan_ref = $1`, [p])).rows[0].kimlik;
     expect((await o.ist('POST', `/api/gereklilik/${g}/kanit`, tu, { belge: await o.belge(d.kimlik, 'ds'), durum: 'Karşılandı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Bekletmede' })).statusCode).toBe(400); // YG-649 gerekçe
+    expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Bekletmede', gerekce: 'Parça bekleniyor' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/is-emri/${e}/kapat`, tu, {})).statusCode).not.toBe(200);
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).statusCode).toBe(200);
   });
 });

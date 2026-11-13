@@ -51,7 +51,8 @@ const dilZorla = new AsyncLocalStorage<Dil>();
 async function dosyaBilgi(db: Db, id: string, hazirlik: string) {
   const d = (await db.query(`SELECT d.dosya_no, d.konum, d.kisa_teknik_tanim, d.olay_tarihi, d.bildirim_tarihi, d.musteri_turu, d.yazisma_dili, d.dosya_niteligi, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi, y.uretim_yili, y.bayrak, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model, s.sigortaci_adi, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE d.kimlik = $1`, [id])).rows[0];
   const sahip = (await db.query(`SELECT kisi_adi_soyadi FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [id])).rows[0]?.kisi_adi_soyadi as string | undefined;
-  const ekip = (await db.query(`SELECT a.rol, a.atama_zamani, h.kimlik AS kullanici, h.ad_soyad, h.cep_telefonu, h.e_posta FROM dosya_ekibi_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.dosya_ref = $1 AND a.bitis_zamani IS NULL AND a.rol IN ('Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Uzman', 'Teknik Yönetici', 'Saha Sorumlusu')`, [id])).rows;
+  const ekip = (await db.query(`SELECT a.rol, a.atama_zamani, h.kimlik AS kullanici, h.ad_soyad, h.cep_telefonu, h.e_posta FROM dosya_ekibi_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.dosya_ref = $1 AND a.bitis_zamani IS NULL AND a.rol IN ('Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Uzman', 'Teknik Yönetici', 'Saha Sorumlusu')
+    ORDER BY array_position(ARRAY['Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Uzman', 'Saha Sorumlusu', 'Teknik Yönetici'], a.rol), a.atama_zamani`, [id])).rows; // YG-688
   void hazirlik;
   return { d, sahip, ekip, dil: dilZorla.getStore() ?? ((d.yazisma_dili === 'İngilizce' ? 'en' : 'tr') as Dil) };
 }
@@ -65,8 +66,8 @@ function ortak(b: Awaited<ReturnType<typeof dosyaBilgi>>): Bolum[] {
     { baslik: e.olay, tur: 'alanlar', alanlar: [{ et: e.tarih, deger: d.olay_tarihi ? gunAy(d.olay_tarihi) : null }, { et: e.ozet, deger: d.kisa_teknik_tanim, genis: true }] },
   ];
 }
-const ekipBolumu = (b: Awaited<ReturnType<typeof dosyaBilgi>>): Bolum => { const e = E[b.dil]; return { baslik: e.iletisim, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.ad }, { ad: e.tel }, { ad: e.eposta }], satirlar: b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu' || x.rol === 'Teknik Uzman').map((x) => [b.dil === 'en' ? ROL_EN[x.rol] ?? x.rol : x.rol, x.ad_soyad, x.cep_telefonu, x.e_posta]) }; };
-const atananEkip = (b: Awaited<ReturnType<typeof dosyaBilgi>>): Bolum => { const e = E[b.dil]; return { baslik: e.ekip, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.ad }, { ad: e.zaman }], satirlar: b.ekip.map((x) => [b.dil === 'en' ? ROL_EN[x.rol] ?? x.rol : x.rol, x.ad_soyad, anSaat(x.atama_zamani)]) }; };
+const ekipBolumu = (b: Awaited<ReturnType<typeof dosyaBilgi>>): Bolum => { const e = E[b.dil]; return { baslik: e.iletisim, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.tel }, { ad: e.eposta }], satirlar: b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu' || x.rol === 'Teknik Uzman').map((x) => [b.dil === 'en' ? ROL_EN[x.rol] ?? x.rol : x.rol, x.cep_telefonu, x.e_posta]) }; }; // YG-689
+const atananEkip = (b: Awaited<ReturnType<typeof dosyaBilgi>>): Bolum => { const e = E[b.dil]; return { baslik: e.ekip, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.zaman }], satirlar: b.ekip.map((x) => [b.dil === 'en' ? ROL_EN[x.rol] ?? x.rol : x.rol, anSaat(x.atama_zamani)]) }; }; // YG-689
 const hitap = (b: Awaited<ReturnType<typeof dosyaBilgi>>, belge: string) => { const { d, sahip, dil } = b; const kim = d.musteri_turu === 'Sigorta Şirketi' ? d.sigortaci_adi : sahip; const t = gunAy(d.bildirim_tarihi); return dil === 'en' ? `Dear ${kim ?? 'Sir/Madam'}, the ${belge} prepared under your request dated ${t} and file no. ${d.dosya_no} is submitted for your information.` : `Sayın ${kim ?? 'Yetkili'}${d.musteri_turu === 'Sigorta Şirketi' ? ' Yetkilisi' : ''}, ${t} tarihli talebiniz ve ${d.dosya_no} numaralı dosya kapsamında hazırlanan ${belge} bilginize sunulur.`; };
 const sozlesme = (d: { musteri_turu: string }, dil: Dil) => (d.musteri_turu === 'Sigorta Şirketi' ? (dil === 'en' ? 'This document is subject to, and shall be read together with, the Insurance Company Framework Service Agreement and Insurance Assignment between the parties.' : 'Bu belge, taraflar arasındaki Sigorta Şirketi Çerçeve Hizmet Sözleşmesi ve Sigorta Görevlendirmesi hükümlerine tabidir ve onunla birlikte değerlendirilir.') : (dil === 'en' ? 'This document is subject to, and shall be read together with, the Yacht Repair and Technical Services Agreement between the parties.' : 'Bu belge, taraflar arasındaki Yat Onarım ve Teknik Hizmet Sözleşmesi hükümlerine tabidir ve onunla birlikte değerlendirilir.'));
 const gizli = (dil: Dil) => (dil === 'en' ? 'This document has been prepared solely for the proceedings of the named file. Except where required by law, its contents may not be shared with third parties without the written consent of LİMİT GLOBAL MARINE.' : 'Bu belge, yalnız adı geçen dosyanın işlemleri için hazırlanmıştır. İçeriği, yasal zorunluluklar dışında LİMİT GLOBAL MARINE’ın yazılı onayı olmadan üçüncü kişilerle paylaşılamaz.');
@@ -168,7 +169,7 @@ export async function odemeTanim(db: Db, tur: 'Proforma' | 'Ödeme Talebi', id: 
   const no = f.no ?? await altNumara(db, b.d.dosya_no, 'OT');
   const kl = tur === 'Proforma' ? (await db.query(`SELECT sira_no, kartela_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' ORDER BY sira_no`, [f.teklif_ref])).rows : [];
   const bolumler: Bolum[] = [
-    { baslik: e.musteri, tur: 'alanlar', alanlar: [{ et: e.must, deger: b.d.musteri_turu === 'Sigorta Şirketi' ? b.d.sigortaci_adi : b.sahip }, { et: e.talepT, deger: f.talep_turu }, { et: e.dosyaNo, deger: b.d.dosya_no }, { et: e.yatAdi, deger: b.d.yat_adi }, { et: e.dayanak, deger: f.teklif_no }, { et: e.son, deger: f.vade ? gunAy(f.vade) : null }] },
+    { baslik: e.musteri, tur: 'alanlar', alanlar: [{ et: e.must, deger: b.d.musteri_turu === 'Sigorta Şirketi' ? b.d.sigortaci_adi : b.sahip }, { et: e.talepT, deger: f.talep_turu }, { et: e.dosyaNo, deger: b.d.dosya_no }, { et: e.yatAdi, deger: b.d.yat_adi }, { et: e.marka, deger: [b.d.marka, b.d.model].filter(Boolean).join(' · ') }, { et: e.dayanak, deger: f.teklif_no }, { et: e.son, deger: f.vade ? gunAy(f.vade) : null }] },
   ];
   if (kl.length) bolumler.push({ baslik: e.talep, tur: 'tablo', sutunlar: [{ ad: e.sira, hiza: 'ort' }, { ad: e.kod }, { ad: e.aciklama }, { ad: e.bedel }, { ad: e.miktar, hiza: 'sag' }, { ad: e.fiyat, hiza: 'sag' }, { ad: e.tutar, hiza: 'sag' }], satirlar: kl.map((k) => [k.sira_no, k.kartela_kodu, k.aciklama, k.bedel_turu, miktarYaz(k, dil), para(k.birim_satis_fiyati_eur, dil), para(k.tutar_eur, dil)]), toplamlar: [...(Number(f.kesif_mahsubu_eur) > 0 ? [{ et: e.kesifM, deger: `− ${para(f.kesif_mahsubu_eur, dil)}` }] : []), { et: e.ara, deger: para(f.kdv_haric_eur, dil) }, { et: `${e.kdv} %${oran(f.kdv_orani)}`, deger: para(f.kdv_eur, dil) }, { et: e.genel, deger: para(f.toplam_eur, dil) }, { et: e.onceki, deger: para(onceki, dil) }, { et: e.odenecek, deger: para(Number(f.toplam_eur) - onceki, dil), ana: true }] });
   else bolumler.push({ baslik: e.talep, tur: 'alanlar', alanlar: [{ et: e.aciklama, deger: f.talep_turu }, { et: e.genel, deger: para(f.toplam_eur, dil) }] });
@@ -257,7 +258,7 @@ async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
   const satir = (g: string, ad: unknown, tel: unknown, ep: unknown) => [g, ad as string, tel as string, ep as string];
   bolumler.push(
     { baslik: E.tr.iletisim, tur: 'tablo', sutunlar: [{ ad: 'Görev' }, { ad: 'Ad Soyad' }, { ad: 'Telefon' }, { ad: 'E-posta' }], satirlar: [
-      ...b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu' || x.rol === 'Saha Sorumlusu').map((x) => satir(`LGM ${x.rol}`, x.ad_soyad, x.cep_telefonu, x.e_posta)),
+      ...b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu' || x.rol === 'Saha Sorumlusu').map((x) => satir(`LGM ${x.rol}`, null, x.cep_telefonu, x.e_posta)), // YG-689
       ...taraflar.map((x) => satir(x.taraf_rolu === 'Kaptan' ? 'Yatın Kaptanı' : 'Tesis Yetkilisi', x.kisi_adi_soyadi, x.telefon, x.eposta)),
       ...(yetkili ? [satir('Firma Yetkilisi', yetkili.ad_soyad, yetkili.cep_telefonu, yetkili.e_posta)] : []),
     ] },
@@ -302,11 +303,11 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   // YG-650: kışa sarkan dosyada kışlık hazırlık sorumlusu teslim tutanağına yazılır.
   const ks = (await db.query(`SELECT coalesce(h.ad_soyad, t.kisi_adi_soyadi || ' (' || t.taraf_rolu || ')') ad FROM dosya d LEFT JOIN kullanici_hesabi h ON h.kimlik = d.kislik_sorumlu_kullanici_ref LEFT JOIN dosya_tarafi t ON t.kimlik = d.kislik_sorumlu_taraf_ref WHERE d.kimlik = $1`, [k.dosya_ref])).rows[0]?.ad as string | null;
   bolumler.push({ baslik: T.kab, tur: 'alanlar', alanlar: [{ et: T.ktur, deger: kabul?.kabul_turu }, { et: T.acik, deger: acik.length ? `${T.var}  ·  ${acik.length}` : T.yok }, ...(ks ? [{ et: en ? 'Winterisation Responsible' : 'Kışlık Hazırlık Sorumlusu', deger: ks }] : [])] });
-  if (acik.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: T.sor }], satirlar: acik.map((x) => [x.tanim, gunAy(x.hedef_tarih)]) });
+  if (acik.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: en ? 'Responsible' : 'Sorumlu' }, { ad: T.sor }], satirlar: acik.map((x) => [x.tanim, en ? 'LGM File Manager' : 'LGM Dosya Sorumlusu', gunAy(x.hedef_tarih)]) }); // YG-725
   bolumler.push(
     { baslik: e.iletisim, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.ad }, { ad: e.tel }, { ad: e.eposta }], satirlar: [
       ...taraflar.map((x) => [x.taraf_rolu === 'Kaptan' ? T.kpt : T.sah, x.kisi_adi_soyadi, x.telefon, x.eposta]),
-      ...b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu').map((x) => [`LGM ${en ? 'File Manager' : x.rol}`, x.ad_soyad, x.cep_telefonu, x.e_posta]),
+      ...b.ekip.filter((x) => x.rol === 'Dosya Sorumlusu').map((x) => [`LGM ${en ? 'File Manager' : x.rol}`, null, x.cep_telefonu, x.e_posta]), // YG-689
     ] },
     atananEkip(b),
   );

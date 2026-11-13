@@ -333,10 +333,10 @@ interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum
 
 /** YG-371, YG-372, YG-373: izni firma tesisten alır ve belgesini yükler; LGM düzenlemez. Sıcak iş ve kapalı alanda gaz ölçümü istenir. */
 function CalismaIzni({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
-  const [f, setF] = useState({ tur: 'Sıcak İş', tesis: '', no: '', veren: '', baslangic: '', bitis: '', belge: '', oksijen: '', yanici: '' });
+  const [f, setF] = useState({ tur: 'Sıcak iş', tesis: '', no: '', veren: '', baslangic: '', bitis: '', belge: '', oksijen: '', yanici: '' });
   const gaz = /sıcak|kapalı/i.test(f.tur);
   return <Blok baslik="Çalışma İzni Belgesi">
-    <label htmlFor="ci-t">İzin Türü</label><select id="ci-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Sıcak İş', 'Kapalı Alan', 'Yüksekte Çalışma', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="ci-t">İzin Türü</label><select id="ci-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Sıcak iş', 'Kapalı alan', 'Yüksekte çalışma', 'Enerji kesme/kilitleme'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="ci-s">Tesis</label><input id="ci-s" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })} />
     <label htmlFor="ci-n">İzin No</label><input id="ci-n" value={f.no} onChange={(e) => setF({ ...f, no: e.target.value })} />
     <label htmlFor="ci-v">İzni Veren</label><input id="ci-v" value={f.veren} onChange={(e) => setF({ ...f, veren: e.target.value })} />

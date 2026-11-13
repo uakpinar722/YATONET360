@@ -565,7 +565,7 @@ try {
   kontrol('İnsan Kaynakları personel kartını ekrandan girer', (await sup.query(`SELECT ek3_yil FROM personel_karti WHERE kullanici_ref = $1`, [kimlikler.ds])).rows[0]?.ek3_yil === 2026);
   await pDs3.getByRole('button', { name: 'İdari İşlemlerim' }).click(); await pDs3.locator('#pu-t').waitFor();
   await pDs3.locator('#pu-t').fill('2026-11-02'); await pDs3.locator('#pu-i').fill('09:00'); await pDs3.locator('#pu-c').fill('18:00'); await tikla(pDs3, 'Puantaj Kaydet'); await pDs3.waitForTimeout(600); await hataVarsa(pDs3, 'Puantaj');
-  kontrol('personel puantajı ekrandan girer', (await sup.query(`SELECT net_dakika n FROM puantaj_kaydi WHERE personel_ref = $1 AND tarih = '2026-11-02'`, [kimlikler.ds])).rows[0]?.n === 480);
+  await yokla('personel puantajı ekrandan girer', async () => (await sup.query(`SELECT net_dakika n FROM puantaj_kaydi WHERE personel_ref = $1 AND tarih = '2026-11-02'`, [kimlikler.ds])).rows[0]?.n === 480);
   const pDs4 = await al('ds', E); await dosyaAc(pDs4, d.dosyaNo);
   await pDs4.locator('#go-i').fill('Yama'); await pDs4.locator('#go-k').fill('Limanda'); await pDs4.locator('#go-u').fill('2026-11-05'); await pDs4.locator('#go-s').fill('2026-11-20'); await tikla(pDs4, 'Geçici Onarım Kaydet'); await pDs4.waitForTimeout(600); await hataVarsa(pDs4, 'Geçici onarım');
   kontrol('geçici onarım ekrandan kaydedilir', (await sup.query(`SELECT 1 FROM gecici_onarim WHERE dosya_ref = $1`, [d.kimlik])).rowCount === 1);

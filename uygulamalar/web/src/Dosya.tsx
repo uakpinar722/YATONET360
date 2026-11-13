@@ -394,7 +394,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
           <label className="kutu"><input type="checkbox" checked={beyan} onChange={(e) => setBeyan(e.target.checked)} /><span>Bu dosyayla ilgili aktarılmamış yazışma yok</span></label>
           <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kapanis`, { cikis: d.statu === 'Teknik Kapalı' ? 'Kapalı' : 'Teknik Kapalı', neden: kNeden || undefined, yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: beyan }), 'Operasyon Müdürünün onayına gönderildi.')}>{d.statu === 'Teknik Kapalı' ? 'Kapanışı Onaya Gönder' : 'Teknik Kapanışı Onaya Gönder'}</button>
         </Blok>
-        <Blok baslik="Askı, İptal, Fesih, Devir">
+        <Blok baslik="FR-OPS-011 Dosya Askı, İptal, Fesih ve Devir Kaydı">
           <label htmlFor="is-t">İşlem</label><select id="is-t" value={iTur} onChange={(e) => setITur(e.target.value)}>{['Askı', 'İptal', 'Fesih', 'Devir'].map((x) => <option key={x}>{x}</option>)}</select>
           {iTur !== 'Askı' && <><label htmlFor="is-n">Kapanma Nedeni</label><select id="is-n" value={iNeden} onChange={(e) => setINeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select></>}
           {iTur === 'Devir' && <><label htmlFor="is-d">Devralan Taraf</label><input id="is-d" value={iDev} onChange={(e) => setIDev(e.target.value)} /></>}

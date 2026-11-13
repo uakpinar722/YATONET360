@@ -406,6 +406,9 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND kurulus_ref = $2`, [id, f])).rowCount) return yok(y);
     if (!g.tur?.trim() || !g.tesis?.trim() || !g.no?.trim() || !g.veren?.trim() || !g.baslangic || !g.bitis) return y.code(400).send({ hata: 'Tür, tesis, izin no, izni veren ve geçerlilik zorunludur.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'İzin belgesi zorunludur.' });
+    // YG-638: izin türü LST_CALISMA_IZNI_TURU listesinden; kayıtta listedeki biçimiyle tutulur.
+    { const l = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_CALISMA_IZNI_TURU'`)).rows.map((r) => r.deger as string); const tr = (x: string) => x.toLocaleLowerCase('tr-TR').trim();
+      const eslesen = l.find((x) => tr(x) === tr(g.tur!) || tr(x).startsWith(tr(g.tur!))); if (!eslesen) return y.code(400).send({ hata: `İzin türünü listeden seçiniz: ${l.join(', ')}.` }); g.tur = eslesen; }
     const sure = (new Date(g.bitis).getTime() - new Date(g.baslangic).getTime()) / 3_600_000;
     if (sure <= 0 || sure > 12) return y.code(400).send({ hata: 'İzin başlangıçtan en fazla 12 saat geçerlidir.' });
     if (/sıcak|kapalı/i.test(g.tur) && !gazUygun(Number(g.oksijen), Number(g.yanici))) return y.code(400).send({ hata: 'Gaz ölçümü uygun aralıkta değildir: oksijen %19,5–23,5; yanıcı gaz alt patlama sınırının %10 altında.' });

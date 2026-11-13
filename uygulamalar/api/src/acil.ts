@@ -78,7 +78,7 @@ async function cagriGonder(c: PoolClient, dosya: string, simdi: Date): Promise<s
     await bildir(c, { olay: `kaynak-yok:${dosya}`, kullanicilar: al, baslik: `Kaynak Bulunamadı: ${d.dosya_no}`, ozet: 'Uygun acil sağlayıcı yanıt vermedi.', oncelik: 'Kritik', sms: true, acil: true }, simdi);
     return null;
   }
-  const no = await altNumara(c, d.dosya_no, 'ÇA');
+  const no = await altNumara(c, d.dosya_no, 'CA');
   const son = new Date(simdi.getTime() + (await parametre(c, 'acil_cagri_dk')) * 60_000);
   await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, gonderim, son_zaman) VALUES ($1,$2,$3,$4,$5)`, [no, dosya, f.kimlik, simdi, son]);
   const kisi = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [f.kimlik])).rows.map((r) => r.kullanici_ref as string);
@@ -296,7 +296,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no, konum, kisa_teknik_tanim FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
       await c.query(`UPDATE acil_gorev_cagrisi SET durum = 'İptal' WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [dosya]);
-      const no = await altNumara(c, d.dosya_no, 'ÇA');
+      const no = await altNumara(c, d.dosya_no, 'CA');
       const r = await acKabul(c, { ...d, dosya_ref: dosya }, g.firma!, o.kullanici, Number(g.tahmini ?? 0), new Date());
       await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, durum, son_zaman, yanit_zamani, is_emri_ref, elle_kayit) VALUES ($1,$2,$3,'Kabul',now(),now(),$4,$5)`, [no, dosya, g.firma, r.isEmri, JSON.stringify({ kanal: g.kanal, kisi: g.kisi, talimat: g.talimat, giren: o.kullanici })]);
       return r;

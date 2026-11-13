@@ -114,6 +114,10 @@ const bolumAdi = (t: BelgeTanim, bolumler: Bolum[], b: Bolum) => {
 };
 
 /** YG-672: bölüm başlığı thead'dedir, sayfa bölününce tekrarlanır. YG-668: dikey sütun çizgileri. YG-670: hizalar. */
+/** YG-670: başlığa göre varsayılan hiza. */
+const ORTA = /^(Durum|Tür|Etiket|Kabul Sınıfı|Kabul|Tarih|.*Tarihi|İşin Niteliği|Nitelik|Bedel Türü|Sonuç|Önem|Rev\.|No|Sıra|Paket|Süre|Status|Type|Label|Date|.*Date|Nature|Cost Type|Result|Severity|Package|Period)$/i;
+const SAG = /(Tutar|Fiyat|Miktar|EUR|TL|Amount|Price|Qty|Quantity)/i;
+const hizaBul = (s: { ad: string; hiza?: Hiza }): Hiza => s.hiza ?? (ORTA.test(s.ad.trim()) ? 'ort' : SAG.test(s.ad) ? 'sag' : 'sol');
 function bolumHtml(t: BelgeTanim, bolumler: Bolum[], b: Bolum, yalnizIlk = false): string {
   const ad = k(bolumAdi(t, bolumler, b));
   if (b.tur === 'metin') return `<table><thead><tr><th class="kb">${ad}</th></tr></thead><tbody><tr class="mt"><td class="metin">${k(yalnizIlk ? b.metin.slice(0, 40) : b.metin)}</td></tr></tbody></table>`;
@@ -122,8 +126,8 @@ function bolumHtml(t: BelgeTanim, bolumler: Bolum[], b: Bolum, yalnizIlk = false
     const n = b.sutunlar.length;
     const satirlar = yalnizIlk ? b.satirlar.slice(0, 1) : b.satirlar;
     const top = yalnizIlk ? [] : b.toplamlar ?? [];
-    return `<table><thead><tr><th class="kb" colspan="${n}">${ad}</th></tr><tr>${b.sutunlar.map((s) => `<th class="su ${s.hiza ?? 'sol'}">${k(s.ad)}</th>`).join('')}</tr></thead><tbody>${
-      satirlar.map((r) => `<tr>${r.map((h, i) => hucre(h, b.sutunlar[i]?.hiza)).join('')}</tr>`).join('')}${
+    return `<table><thead><tr><th class="kb" colspan="${n}">${ad}</th></tr><tr>${b.sutunlar.map((s) => `<th class="su ${hizaBul(s)}">${k(s.ad)}</th>`).join('')}</tr></thead><tbody>${
+      satirlar.map((r) => `<tr>${r.map((h, i) => hucre(h, b.sutunlar[i] ? hizaBul(b.sutunlar[i]!) : undefined)).join('')}</tr>`).join('')}${
       top.map((x) => `<tr class="${x.ana ? 'ana' : ''}"><td class="top" colspan="${n - 1}">${k(x.et)}</td><td class="top">${k(x.deger)}</td></tr>`).join('')}</tbody></table>`;
   }
   // Alanlar üç sütunda dizilir; satır sonunda boş hücre kalmaz (YG-686).

@@ -452,11 +452,19 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-387: firma işinin teknik kabulü (kısmi kabul dahil) LGM yetkilisince; YG-413: kanıt eksikse kapanmaz; YG-330: tehlikeli atık belgesi.
   s.post('/is-emri/:id/teknik-kabul', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc } = (i.body ?? {}) as { sonuc?: string };
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc, gerekce } = (i.body ?? {}) as { sonuc?: string; gerekce?: string };
     if (!e) return yok(y);
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']))) return y.code(403).send({ hata: 'Teknik kabulü Teknik Uzman verir.' });
+    // YG-649: Paket Kabulü iş devam ederken teslim edilen paketi kabul eder; Bekletmede gerekçeyle sonucu erteler.
+    if (!['Kabul', 'Koşullu Kabul', 'Paket Kabulü', 'Ret', 'Bekletmede'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz: Kabul, Koşullu Kabul, Paket Kabulü, Ret, Bekletmede.' });
+    if (sonuc === 'Paket Kabulü' || sonuc === 'Bekletmede') {
+      if (!gerekce?.trim()) return y.code(400).send({ hata: sonuc === 'Paket Kabulü' ? 'Kabul edilen paketi yazınız.' : 'Bekletme gerekçesini yazınız.' });
+      if (!['Aktif', 'Tamamlandı'].includes(e.statu)) return y.code(409).send({ hata: 'İş emri aktif veya tamamlanmış olmalıdır.' });
+      await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);
+      await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Teknik Kabul: ${sonuc}`, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { tamam: true };
+    }
     if (e.statu !== 'Tamamlandı') return y.code(409).send({ hata: 'Firma işi tamamlandı bildirmemiştir.' });
-    if (!['Kabul', 'Koşullu Kabul', 'Ret'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
     { const ga = await (await import('./yetki_ek.js')).teknikKabulAyrimi(b.db, e, o.kullanici); if (ga) return y.code(403).send({ hata: ga }); } // YG-1036, YG-1037
     const ke = await kabulEngeli(b.db, e, sonuc!); if (ke) return y.code(409).send({ hata: ke });
     if (sonuc === 'Koşullu Kabul') return y.code(400).send({ hata: 'Koşullu kabul açık iş listesiyle ayrı kaydedilir.' });
@@ -469,7 +477,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { atikBelgesi } = (i.body ?? {}) as { atikBelgesi?: string };
     if (!e) return yok(y);
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Dosya Sorumlusu']))) return y.code(403).send({ hata: 'İş emrini Dosya Sorumlusu kapatır.' });
-    if (!e.teknik_kabul_sonucu || e.teknik_kabul_sonucu === 'Ret') return y.code(409).send({ hata: 'İş emrini kapatmak için Teknik kabul bekleniyor.' });
+    if (!['Kabul', 'Koşullu Kabul'].includes(e.teknik_kabul_sonucu ?? '')) return y.code(409).send({ hata: 'İş emrini kapatmak için Teknik kabul bekleniyor.' });
     if (e.tehlikeli_atik && !atikBelgesi && !e.atik_teslim_belgesi_ref) return y.code(409).send({ hata: 'Kapanış için Tehlikeli atık teslim belgesi bekleniyor.' });
     await b.db.query(`UPDATE is_emri SET statu = 'Kapalı', kapanis_zamani = now(), atik_teslim_belgesi_ref = coalesce($2, atik_teslim_belgesi_ref), guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, atikBelgesi ?? null]);
     await performansOlayIsle(b.db, e.kimlik); // YG-350: karne her iş emri kapanışında güncellenir

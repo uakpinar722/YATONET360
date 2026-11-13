@@ -90,7 +90,7 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
 describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
   it('kısa kayıtla dosya açılır, Kritik, tedbir bildirimi silsilesiz gider, sıradaki sağlayıcıya çağrı düşer', async () => {
     const r = await cagri();
-    expect(r.cagri).toBe(`${r.dosyaNo}-ÇA01`); expect(r.uyari112).toContain('112');
+    expect(r.cagri).toBe(`${r.dosyaNo}-CA01`); expect(r.uyari112).toContain('112');
     const d = (await o.sup.query(`SELECT statu, asama, oncelik, acil_gecici_acilis, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [r.kimlik])).rows[0];
     expect(d).toMatchObject({ statu: 'Aktif', oncelik: 'Kritik', acil_gecici_acilis: true, dosya_sorumlusu_ref: o.K.ds });
     for (const k of ['opm', 'tm', 'tod', 'gmy']) expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND baslik = $2`, [o.K[k], `Acil İlk Tedbir: ${r.dosyaNo}`])).rowCount).toBe(1);
@@ -117,7 +117,7 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
   it('müsait değil yanıtı sıradakine geçirir; müsait olmayan atlanır', async () => {
     await cagri();
     const y = await o.ist('POST', `/api/firma-portal/acil-cagri/${await firmaCagriId()}/yanit`, firmaC, { yanit: 'Müsait Değil' });
-    expect(y.json().durum).toBe('Müsait Değil'); expect(y.json().siradaki).toContain('ÇA02');
+    expect(y.json().durum).toBe('Müsait Değil'); expect(y.json().siradaki).toContain('CA02');
     await o.sup.query(`UPDATE kurulus SET acil_musaitlik = false WHERE kimlik = $1`, [f1]);
     const r = await cagri();
     expect((await o.sup.query(`SELECT kurulus_ref FROM acil_gorev_cagrisi WHERE dosya_ref = $1`, [r.kimlik])).rows[0].kurulus_ref).toBe(f2);

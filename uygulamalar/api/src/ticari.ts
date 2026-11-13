@@ -482,7 +482,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!h) return yok(y);
     if (h.statu !== 'Doğrulandı') return y.code(409).send({ hata: 'Hakediş doğrulanmamıştır.' });
     { const bl = await blokeEngeli(b.db, h.kurulus_ref); if (bl) return y.code(409).send({ hata: bl }); } // YG-915
-    if (!h.teknik_kabul_sonucu || h.teknik_kabul_sonucu === 'Ret') return y.code(409).send({ hata: 'Ödeme planı için Teknik kabul bekleniyor.' });
+    if (!['Kabul', 'Koşullu Kabul', 'Paket Kabulü'].includes(h.teknik_kabul_sonucu ?? '')) return y.code(409).send({ hata: 'Ödeme planı için Teknik kabul bekleniyor.' }); // YG-649
     if (!h.firma_fatura_no) return y.code(409).send({ hata: 'Ödeme planı için Firma faturası bekleniyor.' });
     if ((await b.db.query(`SELECT 1 FROM hakedis WHERE firma_fatura_no = $1 AND kimlik <> $2 AND statu <> 'Reddedildi'`, [h.firma_fatura_no, id])).rowCount) return y.code(409).send({ hata: 'Bu fatura numarasıyla kayıt vardır; mükerrer ödeme engellendi.' });
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [h.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli IBAN kaydı yoktur.' });

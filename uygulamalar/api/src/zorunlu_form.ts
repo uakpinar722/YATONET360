@@ -51,7 +51,7 @@ const BRANS_FORM: { kod: string; ad: string; branslar: string[]; sql: string }[]
   { kod: 'FR-KLT-007', ad: 'Test Kaydı (Deniz Denemesi)', branslar: ['MAKINE-01', 'TAHRIK-01', 'MANEVRA-01'], sql: `SELECT 1 FROM test_kaydi WHERE dosya_ref = $1 AND test_grubu = 'Makine ve Tahrik' LIMIT 1` },
 ];
 /** YG-636: onaylı iş emri bedeli olan ve teknik kabulü yapılan işte hakediş. */
-const HAKEDIS = { kod: 'FR-TIC-003', ad: 'Hakediş · teknik kabulü yapılan iş', kosul: `SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND coalesce(firma_bedeli_eur, 0) > 0 AND teknik_kabul_sonucu IS NOT NULL LIMIT 1`, sql: DOSYA('hakedis'), teklifSonrasi: true };
+const HAKEDIS = { kod: 'FR-TIC-003', ad: 'Hakediş · teknik kabulü yapılan iş', kosul: `SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND coalesce(firma_bedeli_eur, 0) > 0 AND teknik_kabul_sonucu IN ('Kabul', 'Koşullu Kabul') LIMIT 1`, sql: DOSYA('hakedis'), teklifSonrasi: true };
 export type FormDurumu = { kod: string; ad: string; var: boolean; istisna?: string };
 /** Teklif aşamasından önce kapanan dosyada yalnız o aşamaya kadarki formlar aranır. */
 export async function zorunluFormlar(db: Db, dosya: string): Promise<FormDurumu[]> {
