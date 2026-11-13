@@ -421,16 +421,22 @@ export async function ihbarAlindiTanim(db: Db, dosya: string) {
   const bildirim = gunAy(d.bildirim_tarihi);
   const yt = (M.yatTur as Record<string, string>)[d.yat_turu ?? ''] ?? M.yatTur[''];
   const ds = b.ekip.find((x) => x.rol === 'Dosya Sorumlusu');
+  // V-481: planlı hizmet/bakım varyantı (geçmiş olsun yok) ve sigortasız hasar varyantı (3. adım onayınıza sunulur).
+  const x = (await db.query(`SELECT oncelik, hizmet_turu, musteri_turu, musteri_hedef_tarihi FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  const P = x.oncelik === 'Planlı' || x.hizmet_turu !== 'Hasar onarımı' ? M.planli : null;
+  const adimlar = (P ? P.adimlar : (M.adimlar as string[][]).map(([a, h], n) => [n === 2 && x.musteri_turu !== 'Sigorta Şirketi' ? M.adim3Sigortasiz : a, h])) as string[][];
   const bolumler: Bolum[] = [
-    { baslik: M.b1, tur: 'alanlar', alanlar: [{ et: M.yat, deger: d.yat_adi }, { et: M.marka, deger: d.marka }, { et: M.model, deger: d.model }, { et: M.olayT, deger: d.olay_tarihi ? gunAy(d.olay_tarihi) : null }, { et: M.olayTur, deger: null }, { et: M.hasarNo, deger: d.sigorta_hasar_dosya_no }] },
-    { baslik: M.b2, tur: 'tablo', sutunlar: [{ ad: M.adim, hiza: 'ort' }, { ad: M.aciklama }, { ad: M.hedef }], satirlar: (M.adimlar as string[][]).map(([a, h], n) => [n + 1, a, h]) },
+    P ? { baslik: P.b1, tur: 'alanlar', alanlar: [{ et: M.yat, deger: d.yat_adi }, { et: M.marka, deger: d.marka }, { et: M.model, deger: d.model }, { et: P.hizmet, deger: x.hizmet_turu }, { et: P.hedefT, deger: x.musteri_hedef_tarihi ? gunAy(x.musteri_hedef_tarihi) : null }] }
+      : { baslik: M.b1, tur: 'alanlar', alanlar: [{ et: M.yat, deger: d.yat_adi }, { et: M.marka, deger: d.marka }, { et: M.model, deger: d.model }, { et: M.olayT, deger: d.olay_tarihi ? gunAy(d.olay_tarihi) : null }, { et: M.olayTur, deger: null }, { et: M.hasarNo, deger: d.sigorta_hasar_dosya_no }] },
+    { baslik: M.b2, tur: 'tablo', sutunlar: [{ ad: M.adim, hiza: 'ort' }, { ad: M.aciklama }, { ad: M.hedef }], satirlar: adimlar.map(([a, h], n) => [n + 1, a, h]) },
     { baslik: M.b3, tur: 'tablo', sutunlar: [{ ad: M.gorev }, { ad: M.tel }, { ad: M.eposta }], satirlar: [[M.ds, ds?.cep_telefonu, ds?.e_posta]] },
     { baslik: M.b3, tur: 'metin', numarasiz: true, metin: M.ekBilgi },
   ];
   return {
     dosyaAdi: `${d.dosya_no}-IHBAR-ALINDI${dil === 'en' ? '-EN' : ''}.pdf`, sinif: 'Gizli',
-    t: { ad: M.ad, kod: 'FR-OPS-016', no: d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: d.yat_adi, bandEk: [{ et: M.bildirim, deger: bildirim }], bolumler,
-      matbuBas: [String(M.hitap).replace('{bildirim}', bildirim).replace('{dosya}', d.dosya_no), String(M.gecmis).replace('{yat}', yt), `${M.konu} ${String(M.konuD).replace('{bildirim}', bildirim)}`],
+    t: { ad: P ? P.ad : M.ad, kod: 'FR-OPS-016', no: d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: d.yat_adi, bandEk: [{ et: M.bildirim, deger: bildirim }], bolumler,
+      matbuBas: P ? [String(P.hitap).replace('{bildirim}', bildirim).replace('{dosya}', d.dosya_no), `${P.konu} ${String(P.konuD).replace('{bildirim}', bildirim)}`]
+        : [String(M.hitap).replace('{bildirim}', bildirim).replace('{dosya}', d.dosya_no), String(M.gecmis).replace('{yat}', yt), `${M.konu} ${String(M.konuD).replace('{bildirim}', bildirim)}`],
       matbuSon: [M.tesekkur] } as BelgeTanim,
   };
 }

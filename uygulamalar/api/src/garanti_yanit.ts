@@ -76,7 +76,10 @@ export async function garantiYanitTanim(db: Db, id: string): Promise<{ dosyaAdi:
   bolumler.push({ baslik: T.b6, tur: 'tablo', sutunlar: [{ ad: T.gorev }, { ad: T.tel }, { ad: T.eposta }], satirlar: ekip.map((x) => [x.rol === 'Dosya Sorumlusu' ? T.ds : T.ts, x.cep_telefonu, x.e_posta]) });
   bolumler.push({ baslik: T.onay, tur: 'alanlar', numarasiz: true, alanlar: [{ et: T.hazirlayan, deger: `${y.hazirlayan_rol ? (T.roller as Record<string, string>)[y.hazirlayan_rol] ?? y.hazirlayan_rol : '---'} · ${anSaat(y.olusturma_zamani)} · YATONET 360` },
     ...(y.onay_zamani ? [{ et: T.onaylayan, deger: `${(T.roller as Record<string, string>)[ONAYCI]} · ${anSaat(y.onay_zamani)} · YATONET 360` }] : [])] });
-  const konu = y.varyant === 'Şikâyet Yanıtı' ? `${T.konuS} ${String(T.konuSD).replace('{tarih}', gunAy(g.bildirim_zamani))}` : `${T.konu}: ${V.toLocaleUpperCase(en ? 'en' : 'tr-TR')}`;
+  // Konu tarihi: itirazda itiraz, takipte düzeltme, diğerlerinde bildirim tarihi.
+  const duz = y.varyant === 'Takip Kontrolü' ? (await db.query(`SELECT duzeltme_tarihi FROM garanti_sikayet_yazisi WHERE kayit_ref = $1 AND duzeltme_tarihi IS NOT NULL ORDER BY olusturma_zamani DESC LIMIT 1`, [y.kayit_ref])).rows[0]?.duzeltme_tarihi : null;
+  const kt = y.varyant === 'İtiraz İnceleme Sonucu' && g.itiraz_zamani ? g.itiraz_zamani : duz ?? g.bildirim_zamani;
+  const konu = y.varyant === 'Şikâyet Yanıtı' ? `${T.konuS} ${String(T.konuSD).replace('{tarih}', gunAy(g.bildirim_zamani))}` : T.konuV?.[y.varyant] ? String(T.konuV[y.varyant]).replace('{tarih}', gunAy(kt)) : `${T.konu}: ${V.toLocaleUpperCase(en ? 'en' : 'tr-TR')}`;
   const sozlesme = g.musteri_turu === 'Sigorta Şirketi' ? T.sozlesmeSg : T.sozlesme;
   return {
     dosyaAdi: `${y.yazi_no}.pdf`, sinif: 'Gizli',

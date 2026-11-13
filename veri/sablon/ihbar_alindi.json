@@ -4,29 +4,137 @@
   "bildirim": "Bildirim Tarihi",
   "hitap": "Sayın Yat Sahibi, {bildirim} tarihli bildirim ve {dosya} numaralı dosyanız kapsamında hazırlanan İhbar Alındı Bilgilendirmesi bilginize sunulur.",
   "gecmis": "{yat} meydana gelen hasar nedeniyle geçmiş olsun dileklerimizi iletir, sürecin her aşamasında yanınızda olacağımızı belirtmek isteriz.",
-  "yatTur": { "Motor Yat": "Motor yatınızda", "Yelkenli Yat": "Yelkenli yatınızda", "": "Yatınızda" },
+  "yatTur": {
+   "Motor Yat": "Motor yatınızda",
+   "Yelkenli Yat": "Yelkenli yatınızda",
+   "": "Yatınızda"
+  },
   "konu": "KONU: HASAR BİLDİRİMİNİZ ALINDI",
   "konuD": "{bildirim} tarihinde yatınızla ilgili tarafımıza yapılan hasar bildirimi kayda alınmış ve aşağıdaki numarayla dosyanız açılmıştır. Dosyanızın her aşamasında sizi YATONET 360 ve kayıtlı iletişim kanallarınız üzerinden bilgilendireceğiz.",
-  "b1": "Yat ve Olay", "yat": "Yat Adı", "marka": "Marka", "model": "Model", "olayT": "Olay Tarihi", "olayTur": "Olay Türü", "hasarNo": "Hasar Dosya No",
-  "b2": "Sonraki Adımlar", "adim": "Adım", "aciklama": "Açıklama", "hedef": "Hedef",
-  "adimlar": [["Keşif randevusu için Dosya Sorumlumuz sizinle iletişime geçecek", "En kısa sürede"], ["Yatınız teknik uzmanımızca incelenecek", "Randevu tarihinde"], ["Teknik Rapor ve Fiyat Teklifi hazırlanarak sigorta şirketinize iletilecek ve bilginize sunulacaktır", "Keşiften sonra"]],
-  "b3": "İletişim Kişileri", "gorev": "Görev", "tel": "Telefon", "eposta": "E-posta", "ds": "Dosya Sorumlusu",
+  "b1": "Yat ve Olay",
+  "yat": "Yat Adı",
+  "marka": "Marka",
+  "model": "Model",
+  "olayT": "Olay Tarihi",
+  "olayTur": "Olay Türü",
+  "hasarNo": "Hasar Dosya No",
+  "b2": "Sonraki Adımlar",
+  "adim": "Adım",
+  "aciklama": "Açıklama",
+  "hedef": "Hedef",
+  "adimlar": [
+   [
+    "Keşif randevusu için Dosya Sorumlumuz sizinle iletişime geçecek",
+    "En kısa sürede"
+   ],
+   [
+    "Yatınız teknik uzmanımızca incelenecek",
+    "Randevu tarihinde"
+   ],
+   [
+    "Teknik Rapor ve Fiyat Teklifi hazırlanarak sigorta şirketinize iletilecek ve bilginize sunulacaktır",
+    "Keşiften sonra"
+   ]
+  ],
+  "b3": "İletişim Kişileri",
+  "gorev": "Görev",
+  "tel": "Telefon",
+  "eposta": "E-posta",
+  "ds": "Dosya Sorumlusu",
   "ekBilgi": "Ek bilgi veya belge gerekirse Dosya Sorumlunuz sizinle iletişime geçecektir.",
-  "tesekkur": "LİMİT GLOBAL MARINE’ı tercih ettiğiniz için teşekkür ederiz."
+  "tesekkur": "LİMİT GLOBAL MARINE’ı tercih ettiğiniz için teşekkür ederiz.",
+  "adim3Sigortasiz": "Teknik Rapor ve Fiyat Teklifi hazırlanarak onayınıza sunulacaktır",
+  "planli": {
+   "ad": "Hizmet Talebi Alındı Bilgilendirmesi",
+   "hitap": "Sayın Yat Sahibi, {bildirim} tarihli talebiniz ve {dosya} numaralı dosyanız kapsamında hazırlanan Hizmet Talebi Alındı Bilgilendirmesi bilginize sunulur.",
+   "konu": "KONU: HİZMET TALEBİNİZ ALINDI",
+   "konuD": "{bildirim} tarihinde yatınızla ilgili tarafımıza iletilen hizmet talebi kayda alınmış ve aşağıdaki numarayla dosyanız açılmıştır. Dosyanızın her aşamasında sizi YATONET 360 ve kayıtlı iletişim kanallarınız üzerinden bilgilendireceğiz.",
+   "b1": "Yat ve Talep",
+   "hizmet": "Talep Edilen Hizmet",
+   "hedefT": "Hedef Tarih",
+   "adimlar": [
+    [
+     "Hizmetin kapsamı ve uygun tarih için Dosya Sorumlumuz sizinle iletişime geçecek",
+     "En kısa sürede"
+    ],
+    [
+     "Yatınız teknik uzmanımızca incelenecek ve kapsam netleştirilecek",
+     "Randevu tarihinde"
+    ],
+    [
+     "Fiyat Teklifi hazırlanarak onayınıza sunulacaktır",
+     "İncelemeden sonra"
+    ]
+   ]
+  }
  },
  "en": {
   "ad": "Notification Acknowledgement",
   "bildirim": "Notified On",
   "hitap": "Dear Yacht Owner, the Notification Acknowledgement prepared under the notification dated {bildirim} and your file no. {dosya} is submitted for your information.",
   "gecmis": "We are sorry to hear about the damage to {yat} and would like to assure you that we will be with you at every stage of the process.",
-  "yatTur": { "Motor Yat": "your motor yacht", "Yelkenli Yat": "your sailing yacht", "": "your yacht" },
+  "yatTur": {
+   "Motor Yat": "your motor yacht",
+   "Yelkenli Yat": "your sailing yacht",
+   "": "your yacht"
+  },
   "konu": "SUBJECT: YOUR DAMAGE NOTIFICATION HAS BEEN RECEIVED",
   "konuD": "The damage notification concerning your yacht received on {bildirim} has been recorded and your file has been opened under the number below. We will keep you informed at every stage through YATONET 360 and your registered contact channels.",
-  "b1": "Yacht and Incident", "yat": "Yacht Name", "marka": "Make", "model": "Model", "olayT": "Incident Date", "olayTur": "Incident Type", "hasarNo": "Claim No",
-  "b2": "Next Steps", "adim": "Step", "aciklama": "Description", "hedef": "Target",
-  "adimlar": [["Our File Manager will contact you to arrange the survey", "As soon as possible"], ["Your yacht will be inspected by our technical specialist", "On the agreed date"], ["The Technical Report and Price Quotation will be prepared, sent to your insurance company and provided for your information", "After the survey"]],
-  "b3": "Contacts", "gorev": "Role", "tel": "Phone", "eposta": "E-mail", "ds": "File Manager",
+  "b1": "Yacht and Incident",
+  "yat": "Yacht Name",
+  "marka": "Make",
+  "model": "Model",
+  "olayT": "Incident Date",
+  "olayTur": "Incident Type",
+  "hasarNo": "Claim No",
+  "b2": "Next Steps",
+  "adim": "Step",
+  "aciklama": "Description",
+  "hedef": "Target",
+  "adimlar": [
+   [
+    "Our File Manager will contact you to arrange the survey",
+    "As soon as possible"
+   ],
+   [
+    "Your yacht will be inspected by our technical specialist",
+    "On the agreed date"
+   ],
+   [
+    "The Technical Report and Price Quotation will be prepared, sent to your insurance company and provided for your information",
+    "After the survey"
+   ]
+  ],
+  "b3": "Contacts",
+  "gorev": "Role",
+  "tel": "Phone",
+  "eposta": "E-mail",
+  "ds": "File Manager",
   "ekBilgi": "Should any additional information or documents be required, your File Manager will contact you.",
-  "tesekkur": "Thank you for choosing LİMİT GLOBAL MARINE."
+  "tesekkur": "Thank you for choosing LİMİT GLOBAL MARINE.",
+  "adim3Sigortasiz": "The Technical Report and Price Quotation will be prepared and submitted for your approval",
+  "planli": {
+   "ad": "Service Request Acknowledgement",
+   "hitap": "Dear Yacht Owner, the Service Request Acknowledgement prepared under your request dated {bildirim} and your file no. {dosya} is submitted for your information.",
+   "konu": "SUBJECT: YOUR SERVICE REQUEST HAS BEEN RECEIVED",
+   "konuD": "The service request concerning your yacht received on {bildirim} has been recorded and your file has been opened under the number below. We will keep you informed at every stage through YATONET 360 and your registered contact channels.",
+   "b1": "Yacht and Request",
+   "hizmet": "Requested Service",
+   "hedefT": "Target Date",
+   "adimlar": [
+    [
+     "Our File Manager will contact you to agree the scope of the service and a suitable date",
+     "As soon as possible"
+    ],
+    [
+     "Your yacht will be inspected by our technical specialist and the scope will be finalised",
+     "On the agreed date"
+    ],
+    [
+     "The Price Quotation will be prepared and submitted for your approval",
+     "After the inspection"
+    ]
+   ]
+  }
  }
 }

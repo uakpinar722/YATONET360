@@ -32,5 +32,6 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('tm'), { sonuc: 'Kısmen Kabul', gerekce: 'Ek rötuş' })).statusCode).toBe(200);
     const r2 = await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, ds, { varyant: 'İtiraz İnceleme Sonucu', inceleme: 'Üst kademe inceledi.' });
     expect(r2.json().yaziNo).toBe(`${d.dosyaNo}-SK01-Y2`);
+    expect((await garantiYanitTanim(o.db, r2.json().kimlik)).t.matbuBas![1]).toMatch(/^KONU: İTİRAZINIZIN İNCELEME SONUCU \d{2}\.\d{2}\.\d{4} tarihinde ilettiğiniz itirazınız/);
   });
 });

@@ -250,7 +250,10 @@ describe('İhbar Alındı Bilgilendirmesi (YG-722)', () => {
     expect(j).toContain('Keşif randevusu için Dosya Sorumlumuz sizinle iletişime geçecek'); expect(j).toContain('"Dosya Sorumlusu"');
     const ad = (await o.sup.query(`SELECT h.ad_soyad FROM dosya_ekibi_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.dosya_ref = $1 AND a.rol = 'Dosya Sorumlusu'`, [d.kimlik])).rows[0].ad_soyad;
     expect(j).not.toContain(ad);
-    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [d.kimlik])).rowCount).toBe(0); // bireysel dosya
+    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [d.kimlik])).rowCount).toBe(1); // V-481: bireysel dosyada da
+    expect(JSON.stringify(t.bolumler)).toContain('Teknik Rapor ve Fiyat Teklifi hazırlanarak onayınıza sunulacaktır');
+    await o.sup.query(`UPDATE dosya SET oncelik = 'Planlı' WHERE kimlik = $1`, [d.kimlik]);
+    const pl = (await ihbarAlindiTanim(o.db, d.kimlik)).t; expect(pl.ad).toBe('Hizmet Talebi Alındı Bilgilendirmesi'); expect(pl.matbuBas!.join(' ')).not.toContain('geçmiş olsun');
     const s = await o.dosyaAc({}, { musteriTuru: 'Sigorta Şirketi', sigortaci: 'Örnek Sigorta' }); await o.ekipKur(s.kimlik);
     expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [s.kimlik])).rowCount).toBe(1);
   });
