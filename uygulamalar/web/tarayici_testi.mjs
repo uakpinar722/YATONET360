@@ -33,6 +33,7 @@ await sifirla(ep); await sifirla(epYat);
 const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = [];
 const kontrol = (ad, kosul) => { sonuc.push(`${kosul ? 'GEÇTİ' : 'KALDI'}  ${ad}`); };
+const yokla = async (ad, f) => { for (let i = 0; i < 16; i++) { if (await f()) return kontrol(ad, true); await new Promise((r) => setTimeout(r, 250)); } kontrol(ad, false); };
 const hatalar = [];
 const sayfa = async (w = 390, h = 844) => { const k = await tarayici.newContext({ viewport: { width: w, height: h }, locale: 'tr-TR' }); await k.addInitScript(() => { try { localStorage.setItem('yatonet-ilk-tur-bitti', '1'); } catch { /* yok */ } }); const p = await k.newPage(); p.on('pageerror', (e) => hatalar.push(e.message)); return p; };
 const tasmaYok = (p) => p.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
@@ -217,7 +218,7 @@ try {
   await p.getByLabel('Talep Edilen Süre Sonu', { exact: true }).fill('2030-01-15');
   await p.getByRole('button', { name: 'Talebi Gönder' }).click();
   await p.getByText('birim onayına gönderilmiştir').waitFor();
-  kontrol('erişim talebi numara alır, listede görünür', await p.locator('tbody tr').filter({ hasText: 'Birim Onayında' }).count() > 0);
+  await yokla('erişim talebi numara alır, listede görünür', async () => await p.locator('tbody tr').filter({ hasText: 'Birim Onayında' }).count() > 0);
   await p.screenshot({ path: join(CIKTI, 'erisim_web.png') });
   await sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Erişim Talebi' AND ozet LIKE '%Tarayıcı testi%'`);
   await sup.query(`UPDATE erisim_talebi SET talep_asamasi = 'Reddedildi' WHERE is_gerekcesi = 'Tarayıcı testi'`);

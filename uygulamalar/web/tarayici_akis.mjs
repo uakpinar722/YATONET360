@@ -113,7 +113,7 @@ try {
   }
   await (await al('ty', E)); await dosyaAc(sayfalar.ty, d.dosyaNo);
   await sayfalar.ty.getByText('900.000,50 EUR').first().waitFor();
-  kontrol('Operasyon Yöneticisi ve Teknik Yönetici yat değerine ekrandan ortak karar verir', (await sup.query(`SELECT durum FROM dosya_yat_degeri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].durum === 'Kesin');
+  await yokla('Operasyon Yöneticisi ve Teknik Yönetici yat değerine ekrandan ortak karar verir', async () => (await sup.query(`SELECT durum FROM dosya_yat_degeri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].durum === 'Kesin');
   const isEmriForm = async (p, tur, kapsam, bedel, teklif) => {
     await p.getByLabel('Tür', { exact: true }).selectOption(tur);
     await p.getByLabel('Firma', { exact: true }).locator(`option[value="${firma}"]`).waitFor({ state: 'attached', timeout: 90_000 }); // yük altında firma listesi geç gelebilir

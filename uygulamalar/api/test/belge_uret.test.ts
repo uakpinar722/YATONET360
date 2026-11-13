@@ -267,3 +267,32 @@ describe('teslim paketi e-postası (YG-1451)', () => {
     expect((await o.sup.query(`SELECT gonder FROM belge_uretim WHERE tur = 'Teslim Tutanağı' AND nesne = $1`, [ts])).rows[0].gonder).toBeNull();
   });
 });
+
+describe('yetkili servis ve kabul kaydı atfı (YG-647, YG-697)', () => {
+  it('garanti süren ekipmanda yetkili servis yalnız garanti belgesinde; tutanak kabul kaydına atıf yapar', async () => {
+    const { garantiTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı',$3) RETURNING kimlik, ticari_unvan`, [`YS${Date.now()}`, `Yetkili Servis ${Date.now()}`, o.K.ds])).rows[0];
+    await o.sup.query(`INSERT INTO yetkili_servis (kurulus_ref, marka) VALUES ($1,'Volvo Penta') ON CONFLICT DO NOTHING`, [f.kimlik]);
+    await o.sup.query(`UPDATE dosya SET garantili_ekipman = true, garantili_ekipman_marka = 'Volvo Penta', garanti_bitis = current_date + 100 WHERE kimlik = $1`, [d.kimlik]);
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON09`, d.kimlik, f.kimlik, o.K.ds]);
+    const ts = (await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, durum, teslim_eden_ref, teslim_zamani) VALUES ($1,'Teslim Edildi',$2,now()) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    const j = JSON.stringify((await garantiTanim(o.db, ts)).t.bolumler);
+    expect(j).toContain(`${f.ticari_unvan} (Volvo Penta)`);
+    await o.sup.query(`UPDATE dosya SET garanti_bitis = current_date - 1 WHERE kimlik = $1`, [d.kimlik]);
+    expect(JSON.stringify((await garantiTanim(o.db, ts)).t.bolumler)).not.toContain('Yetkili Servisi');
+  });
+});
+
+describe('proforma kalem yapısı (YG-1602)', () => {
+  it('işin niteliği sütunu, uygulanan indirim satırı ve fatura kuruyla TL karşılığı', async () => {
+    const { odemeTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, ara_toplam_eur, indirim_orani, indirim_tutari_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,'Onaylı',1000,10,100,180,1080,1,$3) RETURNING kimlik`, [`${d.dosyaNo}-TK05`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, kartela_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'K-1','Pervane','Onarım','İşçilik',1,'adet',1000,1000,'Onaylandı')`, [t]);
+    const m = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, vade, kur, kur_tarihi, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',900,180,1080,'Faturalandı',current_date,35.5,'2026-11-12',$4) RETURNING kimlik`, [`${d.dosyaNo}-PF01`, d.kimlik, t, o.K.ds])).rows[0].kimlik;
+    const b = (await odemeTanim(o.db, 'Proforma', m, 'K', 'https://x')).t.bolumler.find((x) => x.tur === 'tablo' && x.sutunlar.some((s) => s.ad === 'Nitelik'));
+    expect(b).toBeDefined(); const j = JSON.stringify(b);
+    expect(j).toContain('Onarım'); expect(j).toContain('İndirim %10'); expect(j).toMatch(/38\.340,00 TL/);
+  });
+});
