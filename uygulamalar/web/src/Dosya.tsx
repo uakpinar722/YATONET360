@@ -17,9 +17,9 @@ interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string;
 interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string; yururluk?: string | null }[] }
 interface DosyaAyrinti extends DosyaSatir {
   musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
-  kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null; lehtar_var?: boolean; lehtar_muvafakati_ref?: string | null };
+  kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null; kimlik?: string; turkiye_kalis_bitis?: string | null; yabanci_yat_belgesi?: string | null; yabanci_yat_belge_no?: string | null; yabanci_yat_belge_gecerlilik?: string | null; gecici_ithalat_bitis?: string | null; kislama_yeri?: string | null; lehtar_var?: boolean; lehtar_muvafakati_ref?: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
-  taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null }[];
+  musteri_risk_olayi?: string | null; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null; baslangic_zamani?: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
   ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean }[];
   gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null }[];
@@ -213,7 +213,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
 
 function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; roller: string[] }) {
   const [d, setD] = useState<DosyaAyrinti | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
-  const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
+  const [yd, setYd] = useState<Record<string, string> | null>(null); const [tBit, setTBit] = useState<Record<string, string>>({}); const [birA, setBirA] = useState(''); const [birG, setBirG] = useState(''); const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
   const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bKanit, setBKanit] = useState('');
   const [oYeni, setOYeni] = useState(''); const [oGerekce, setOGerekce] = useState(''); const [aGerekce, setAGerekce] = useState('');
   const [gnsl, setGnsl] = useState(''); const [drn, setDrn] = useState('');
@@ -240,6 +240,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <h1>{d.dosya_no} · {d.yat.yat_adi}</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {not && <div className="uyari" role="status">{not}</div>}
+      {d.musteri_risk_olayi && <div className="uyari" role="status">Müşteri Risk Olayı: {d.musteri_risk_olayi}</div>}
       <div className="ozet">
         <div><Oncelik o={d.oncelik} /> · {d.statu}{d.asama ? ` · ${d.asama}` : ''}{d.hasar_ilerleyebilir ? ' · Hasar İlerleyebilir' : ''}</div>
         {acikBekleme.map((b) => <div key={b.kimlik} className="uyari">Beklemede: {b.neden} · Hedef: {gun(b.hedef_tarih)} · {b.sorumlu}{b.sayac_durur ? ' · Süre Durdu' : ''} <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/beklemede/${b.kimlik}/kaldir`, {}))}>Kaldır</button></div>)}
@@ -260,6 +261,12 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         <div className="iki-tarih"><div><label htmlFor="y-gn">Kalıp Genişliği (m)</label><input id="y-gn" inputMode="decimal" value={gnsl} onChange={(e) => setGnsl(e.target.value)} /></div><div><label htmlFor="y-dr">Kalıp Derinliği (m)</label><input id="y-dr" inputMode="decimal" value={drn} onChange={(e) => setDrn(e.target.value)} /></div></div>
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/yat-bilgisi`, { boy: boy ? Number(boy.replace(',', '.')) : undefined, govde: govde || undefined, tahrik: tahrik || undefined, kaynak, genislik: gnsl ? Number(gnsl.replace(',', '.')) : undefined, derinlik: drn ? Number(drn.replace(',', '.')) : undefined }))}>Yat Bilgisini Kaydet</button>
       </Blok>
+      {d.izinler.includes('dosya.ata.operasyon') && d.statu !== 'Kapalı' && <Blok baslik="Mükerrer Dosyayı Birleştir">
+        <div className="not">Bu dosya kapanır, Birleştirildi statüsü alır; bekleyen görevler, onaylar ve açık süre sayaçları ana dosyaya geçer. Belgeler kopyalanmaz.</div>
+        <label htmlFor="br-a">Ana Dosya No</label><input id="br-a" value={birA} onChange={(e) => setBirA(e.target.value)} />
+        <label htmlFor="br-g">Gerekçe</label><input id="br-g" value={birG} onChange={(e) => setBirG(e.target.value)} />
+        <button className="btn2" disabled={!birA.trim() || !birG.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/birlestir`, { anaNo: birA, gerekce: birG }))}>Dosyayı Birleştir</button>
+      </Blok>}
       <Blok baslik="Dosya Ekibi">
         {d.ekip.length === 0 && <div className="not">Henüz atama yapılmadı.</div>}
         {d.ekip.map((e) => <div key={e.kimlik}>{e.rol}: {e.ad_soyad}</div>)}
@@ -310,7 +317,20 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <TesisIslemleri id={id} ds={d.rollerim.includes('Dosya Sorumlusu')} />
       <TeklifTalebiBolumu id={id} roller={roller} />
       <TedarikBolumu id={id} roller={roller} />
-      <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik}>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '—'} · {t.eposta ?? '—'}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</div>)}</Blok>
+      <Blok baslik="Yat Belgeleri ve Kışlama">
+        <div>Kışlama Yeri: {d.yat.kislama_yeri ?? '---'} · Yabancı Yat Belgesi: {d.yat.yabanci_yat_belgesi ?? '---'}{d.yat.yabanci_yat_belge_no ? ` (${d.yat.yabanci_yat_belge_no})` : ''} · Geçerlilik: {d.yat.yabanci_yat_belge_gecerlilik ?? '---'} · Geçici İthalat Bitişi: {d.yat.gecici_ithalat_bitis ?? '---'} · Türkiye'de Kalış Bitişi: {d.yat.turkiye_kalis_bitis ?? '---'}</div>
+        {yd ? <div className="tam">
+          <label htmlFor="yb-k">Kışlama Yeri</label><input id="yb-k" value={yd.kislama_yeri ?? ''} onChange={(e) => setYd({ ...yd, kislama_yeri: e.target.value })} />
+          <label htmlFor="yb-t">Yabancı Yat Belgesi</label><select id="yb-t" value={yd.yabanci_yat_belgesi ?? ''} onChange={(e) => setYd({ ...yd, yabanci_yat_belgesi: e.target.value })}><option value="">Yok / Türk bayraklı</option><option>Seyir İzin Belgesi (Transit Log)</option><option>Yat Kayıt Belgesi</option></select>
+          <label htmlFor="yb-n">Belge No</label><input id="yb-n" value={yd.yabanci_yat_belge_no ?? ''} onChange={(e) => setYd({ ...yd, yabanci_yat_belge_no: e.target.value })} />
+          <label htmlFor="yb-g">Belge Geçerlilik Tarihi</label><input id="yb-g" type="date" value={yd.yabanci_yat_belge_gecerlilik ?? ''} onChange={(e) => setYd({ ...yd, yabanci_yat_belge_gecerlilik: e.target.value })} />
+          <label htmlFor="yb-i">Geçici İthalat Bitiş Tarihi</label><input id="yb-i" type="date" value={yd.gecici_ithalat_bitis ?? ''} onChange={(e) => setYd({ ...yd, gecici_ithalat_bitis: e.target.value })} />
+          <label htmlFor="yb-s">Türkiye'de Kalış Bitiş Tarihi</label><input id="yb-s" type="date" value={yd.turkiye_kalis_bitis ?? ''} onChange={(e) => setYd({ ...yd, turkiye_kalis_bitis: e.target.value })} />
+          <label htmlFor="yb-r">Değişiklik Gerekçesi</label><input id="yb-r" value={yd.gerekce ?? ''} onChange={(e) => setYd({ ...yd, gerekce: e.target.value })} />
+          <button className="btn2 kucuk" disabled={!yd.gerekce?.trim()} onClick={() => { const { gerekce, ...alanlar } = yd; void yap(() => istek(`/yat/${d.yat.kimlik}/duzelt`, { alanlar, gerekce, kaynak: 'Ruhsat' })).then(() => setYd(null)); }}>Kaydet</button></div>
+          : d.yat.kimlik && <button className="btn2 kucuk" onClick={() => setYd({ kislama_yeri: d.yat.kislama_yeri ?? '', yabanci_yat_belgesi: d.yat.yabanci_yat_belgesi ?? '', yabanci_yat_belge_no: d.yat.yabanci_yat_belge_no ?? '', yabanci_yat_belge_gecerlilik: d.yat.yabanci_yat_belge_gecerlilik ?? '', gecici_ithalat_bitis: d.yat.gecici_ithalat_bitis ?? '', turkiye_kalis_bitis: d.yat.turkiye_kalis_bitis ?? '', gerekce: '' })}>Yat Belgelerini Düzelt</button>}
+      </Blok>
+      <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik} className="soru"><span>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '---'} · {t.eposta ?? '---'}{t.baslangic_zamani ? ` · Başlangıç: ${new Date(t.baslangic_zamani).toLocaleDateString('tr-TR')}` : ''}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</span>{d.rollerim.includes('Dosya Sorumlusu') && <div className="tam"><label htmlFor={`tb-${t.kimlik}`}>Sonlandırma Gerekçesi</label><input id={`tb-${t.kimlik}`} value={tBit[t.kimlik] ?? ''} onChange={(e) => setTBit({ ...tBit, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!tBit[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/dosya-tarafi/${t.kimlik}/bitir`, { gerekce: tBit[t.kimlik] }))}>İlişkiyi Sonlandır</button></div>}</div>)}</Blok>
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
     </>
   );

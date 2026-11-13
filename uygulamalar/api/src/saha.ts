@@ -395,7 +395,8 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-024: mükerrer dosya silinmez; Birleştirildi nedeniyle kapanır, eski numara ana dosyaya yönlendirir, açık sayaç ve bekleyen onaylar ana dosyaya geçer.
   s.post('/dosya/:id/birlestir', { preHandler: izinGerekli(b, 'dosya.ata.operasyon') }, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ana?: string; gerekce?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ana?: string; anaNo?: string; gerekce?: string };
+    if (!g.ana && g.anaNo?.trim()) g.ana = (await b.db.query(`SELECT kimlik FROM dosya WHERE dosya_no = $1`, [g.anaNo.trim()])).rows[0]?.kimlik; // YG-024: ana dosya numarasıyla
     if (!UUID.test(id) || !g.ana || !UUID.test(g.ana) || id === g.ana) return y.code(400).send({ hata: 'Ana dosyayı seçiniz.' });
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
     return islem(async (c) => {
@@ -408,6 +409,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`INSERT INTO dosya_iliskisi (kaynak_ref, hedef_ref, tur, gerekce, olusturan_ref) VALUES ($1,$2,'Birleştirildi',$3,$4)`, [id, g.ana, g.gerekce!.trim(), o.kullanici]);
       await c.query(`UPDATE is_karti SET nesne_kimligi = $2 WHERE nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id, g.ana]);
       await c.query(`UPDATE onay_talebi SET dosya_ref = $2 WHERE dosya_ref = $1 AND durum = 'Bekliyor'`, [id, g.ana]);
+      // YG-024: açık süre sayaçları ana dosyaya taşınır; aynı türde açık sayaç ana dosyada varsa birleştirilen dosyanınki kapanır.
+      await c.query(`UPDATE dosya_sure s SET tamamlanma = now(), kaydirma_notu = coalesce(kaydirma_notu || ' · ', '') || 'Birleştirmede kapandı' WHERE s.dosya_ref = $1 AND s.tamamlanma IS NULL AND EXISTS (SELECT 1 FROM dosya_sure x WHERE x.dosya_ref = $2 AND x.tur = s.tur AND x.tamamlanma IS NULL)`, [id, g.ana]);
+      await c.query(`UPDATE dosya_sure SET dosya_ref = $2, kaydirma_notu = coalesce(kaydirma_notu || ' · ', '') || $3 WHERE dosya_ref = $1 AND tamamlanma IS NULL`, [id, g.ana, `Birleştirilen ${d.dosya_no} dosyasından`]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dosya Birleştirildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { ana: a.dosya_no }, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { anaNo: a.dosya_no };
     });

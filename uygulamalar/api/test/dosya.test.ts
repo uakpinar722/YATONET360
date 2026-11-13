@@ -468,3 +468,25 @@ describe('arama ve erişim', () => {
     expect((await ist('GET', '/api/ihbar', o)).statusCode).toBe(403);
   });
 });
+
+describe('taraf ilişkisi tarihleri (YG-092, YG-515)', () => {
+  it('ilişki gerekçeyle sonlanır, kimlik silinmez, listeden düşer', async () => {
+    const d = await dosyaAc(); await sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, K.ds]);
+    await sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2) ON CONFLICT DO NOTHING`, [d.kimlik, K.ds]).catch(() => undefined);
+    const t = (await sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, olusturan_ref) VALUES ($1,'Yetkili Temsilci','Eski Temsilci',$2) RETURNING kimlik`, [d.kimlik, K.ds])).rows[0].kimlik;
+    const c = await gir('ds');
+    expect((await ist('POST', `/api/dosya-tarafi/${t}/bitir`, c, {})).statusCode).toBe(400);
+    expect((await ist('POST', `/api/dosya-tarafi/${t}/bitir`, c, { gerekce: 'Vekâlet sona erdi' })).statusCode).toBe(200);
+    expect((await sup.query(`SELECT aktif, bitis_gerekcesi FROM dosya_tarafi WHERE kimlik = $1`, [t])).rows[0]).toEqual({ aktif: false, bitis_gerekcesi: 'Vekâlet sona erdi' });
+  });
+});
+
+describe('yat belgeleri ve kışlama (YG-098)', () => {
+  it('kışlama yeri ve yabancı yat belge alanları düzeltilir ve dosyada görünür', async () => {
+    const d = await dosyaAc(); const c = await gir('ds');
+    const yat = (await sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const r = await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { kislama_yeri: 'Göcek Marina', yabanci_yat_belgesi: 'Seyir İzin Belgesi (Transit Log)', yabanci_yat_belge_no: 'TL-1', gecici_ithalat_bitis: '2027-05-01' }, gerekce: 'Ruhsattan', kaynak: 'Ruhsat' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await sup.query(`SELECT kislama_yeri, gecici_ithalat_bitis::text g FROM yat WHERE kimlik = $1`, [yat])).rows[0]).toEqual({ kislama_yeri: 'Göcek Marina', g: '2027-05-01' });
+  });
+});

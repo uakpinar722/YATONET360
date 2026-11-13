@@ -237,7 +237,7 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
   s.post('/taraf-risk-olayi', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tarafNo?: string; olay?: string };
     if (!(await rolVar(o.kullanici, [HUD, MFM, TID]))) return y.code(403).send({ hata: 'Risk olayını Hukuk ve Uyum Direktörü, Ticari İşler Direktörü veya Muhasebe ve Finans Müdürü işaretler.' });
-    if (!g.tarafNo?.trim() || !['İflas', 'Konkordato'].includes(g.olay ?? '')) return y.code(400).send({ hata: 'Taraf no ve risk olayını girmenizi rica ederiz.' });
+    if (!g.tarafNo?.trim() || !['İflas', 'Konkordato', 'Tasfiye'].includes(g.olay ?? '')) return y.code(400).send({ hata: 'Taraf no ve risk olayını (İflas, Konkordato, Tasfiye) girmenizi rica ederiz.' }); // YG-105
     const r = await b.db.query(`UPDATE taraf SET risk_olayi = $2 WHERE taraf_no = $1 RETURNING kimlik, unvan_ad_soyad`, [g.tarafNo.trim(), g.olay]);
     if (!r.rowCount) return y.code(404).send({ hata: 'Bu numarada taraf kaydı bulunamadı.' });
     await bildir(b.db, { olay: `risk:${r.rows[0].kimlik}:${g.olay}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, HUD)), baslik: `${r.rows[0].unvan_ad_soyad} · Risk Olayı: ${g.olay}`, oncelik: 'Yüksek' });

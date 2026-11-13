@@ -121,6 +121,9 @@ export function yatDegeriYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const d = (await c.query(`SELECT dosya_no, hizmet_turu FROM dosya WHERE kimlik = $1 FOR UPDATE`, [id])).rows[0];
+      // YG-1716: görüş değişince eski değer ve dayanak denetim izinde korunur; her görüş dayanağıyla ize yazılır.
+      const eskiG = (await c.query(`SELECT deger_eur, dayanak, kullanici_ref, zaman FROM dosya_yat_degeri_gorusu WHERE dosya_ref = $1 AND rol = $2`, [id, roller[0]])).rows[0];
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: eskiG ? 'Yat Değeri Görüşü Değişti' : 'Yat Değeri Görüşü', nesneTuru: 'Dosya', nesneKimligi: id, eski: eskiG ? { rol: roller[0], deger: Number(eskiG.deger_eur), dayanak: eskiG.dayanak, kullanici: eskiG.kullanici_ref, zaman: eskiG.zaman } : undefined, yeni: { rol: roller[0], deger: Number(g.deger), dayanak: g.dayanak!.trim() }, gerekce: g.dayanak!.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query(`INSERT INTO dosya_yat_degeri_gorusu (dosya_ref, rol, kullanici_ref, deger_eur, dayanak) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (dosya_ref, rol) DO UPDATE SET kullanici_ref = $3, deger_eur = $4, dayanak = $5, zaman = now()`, [id, roller[0], o.kullanici, g.deger, g.dayanak.trim()]);
       const gr = (await c.query(`SELECT rol, deger_eur FROM dosya_yat_degeri_gorusu WHERE dosya_ref = $1`, [id])).rows;
       const al = (r: string) => { const x = gr.find((z) => z.rol === r); return x ? Number(x.deger_eur) : null; };
