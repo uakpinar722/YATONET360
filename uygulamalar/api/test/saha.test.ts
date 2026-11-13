@@ -70,7 +70,7 @@ describe('keşif (YG-049, YG-056, YG-111)', () => {
   });
   it('katalogdan gelen bilgi teyit edilmeden keşif kapanmaz', async () => {
     const m = (await o.sup.query(`SELECT kimlik FROM yat_marka_model WHERE boy_m IS NOT NULL AND govde_malzemesi IS NOT NULL LIMIT 1`)).rows[0].kimlik;
-    const d = await hazir({ yat: { adi: 'Katalog Teyit', markaModelId: m } }); const k = (await kesifAc(d.kimlik)).json().kimlik; await genelFoto(d.kimlik); const c = await o.gir('tu');
+    const d = await hazir({ yat: { adi: 'Katalog Teyit', markaModelId: m, bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } }); const k = (await kesifAc(d.kimlik)).json().kimlik; await genelFoto(d.kimlik); const c = await o.gir('tu');
     const r = await o.ist('POST', `/api/kesif/${k}/tamamla`, c, TAMAM);
     expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('teyit');
     await o.ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { teyit: 'Teyit edildi' });

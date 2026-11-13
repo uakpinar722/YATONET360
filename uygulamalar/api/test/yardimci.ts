@@ -64,7 +64,7 @@ export async function ortamKur(vt: string, kadro: Record<string, string>): Promi
     karar: async (id, k, kr, gerekce) => ist('POST', `/api/is/${id}/karar`, await gir(k), { karar: kr, gerekce }),
     dosyaAc: async (x = {}, ac = {}) => {
       const c = await gir('ds');
-      const t = await ist('POST', '/api/ihbar', c, { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', yat: { adi: `Yat ${vt} ${++n}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip${n}@deneme.yatonet.local` }, cevaplar: {}, ...x });
+      const t = await ist('POST', '/api/ihbar', c, { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', yat: { adi: `Yat ${vt} ${++n}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip${n}@deneme.yatonet.local` }, cevaplar: {}, ...x });
       expect(t.statusCode, t.body).toBe(200);
       await ist('POST', `/api/ihbar/${t.json().kimlik}/mukerrerlik`, c, { sonuc: 'Mükerrer değil' });
       const r = await ist('POST', `/api/ihbar/${t.json().kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Açılış', musteriTuru: 'Bireysel Müşteri', ...ac });

@@ -135,6 +135,9 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/ihbar', ihbarci, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as IhbarGirdisi;
+    // YG-1438: Dosya Sorumlusu bayrak, özel/ticari kullanım ve klas durumunu girer; yabancı bayrakta Türkiye'de kalış bitişi sorulur.
+    if (!g.yat?.yatId && (!g.yat?.bayrak?.trim() || !['Özel', 'Ticari'].includes(g.yat?.kullanim ?? '') || !['Evet', 'Hayır', 'Bilinmiyor'].includes(g.yat?.klas ?? ''))) return y.code(400).send({ hata: 'Bayrak, kullanım (Özel/Ticari) ve klas durumunu (Evet/Hayır/Bilinmiyor) giriniz.' });
+    if (g.yat?.klas === 'Evet' && !g.yat.klasKurulusu?.trim() && !g.yat?.yatId) return y.code(400).send({ hata: 'Klaslı yatta klas kuruluşunu yazınız.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

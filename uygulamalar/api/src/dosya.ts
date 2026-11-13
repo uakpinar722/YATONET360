@@ -196,7 +196,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   // YG-030: açılış kararı olmadan sahaya görev açılmaz. Kabul doğrulanmış yetki ister; Koşullu Açılışta izinli ve yasak işler yazılır.
   s.post('/ihbar/:id/acilis', ihbarci, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { karar?: string; ozet?: string; kosullar?: string; yenidenTarih?: string; gerekce?: string; musteriTuru?: string; hizmetTuru?: string; acilGecici?: boolean; eksikGerekce?: string; tamamlamaTarih?: string; garantiliEkipman?: boolean; garantiMarka?: string; garantiBitis?: string; sigortaci?: string; hasarNo?: string; policeNo?: string; kapsam?: string };
+    const g = (i.body ?? {}) as { garantiModel?: string; karar?: string; ozet?: string; kosullar?: string; yenidenTarih?: string; gerekce?: string; musteriTuru?: string; hizmetTuru?: string; acilGecici?: boolean; eksikGerekce?: string; tamamlamaTarih?: string; garantiliEkipman?: boolean; garantiMarka?: string; garantiBitis?: string; sigortaci?: string; hasarNo?: string; policeNo?: string; kapsam?: string };
     if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
     if (!['Kabul', 'Koşullu Açılış', 'Bekletme', 'Yönlendirme', 'Ret'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Açılış kararını seçiniz.' });
     if (!g.ozet?.trim()) return y.code(400).send({ hata: 'Açılış özeti zorunludur.' });
@@ -246,6 +246,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING kimlik, dosya_no`,
         [t.talep_no, id, t.yat_ref, t.bildirim_alinma_zamani, t.olay_tarihi, t.yat_mevcut_konumu, t.ihtiyac_tanimi, g.hizmetTuru ?? 'Hasar onarımı', musteri, sigortali ? 'Sigorta bağlantılı' : 'Doğrudan hizmet', sigortali ? ['Sigorta'] : ['Yat sahibi'], t.oncelik, t.onerilen_oncelik, t.musteri_hedef_tarihi, acil, g.eksikGerekce?.trim() || null, g.tamamlamaTarih || null, g.garantiliEkipman ?? null, g.garantiMarka ?? null, g.garantiBitis || null, t.yazisma_dili, Boolean(hasarIlerler), o.kullanici])).rows[0];
       { const k6 = (await c.query(`SELECT x.kisi_turu, y.kullanim_amaci FROM yat y LEFT JOIN taraf x ON x.kimlik = y.yat_sahibi_ref WHERE y.kimlik = $1`, [t.yat_ref])).rows[0]; await c.query(`UPDATE dosya SET kapsam_6502 = $2 WHERE kimlik = $1`, [d.kimlik, (await import('./onay_ek.js')).kapsam6502(musteri, k6?.kisi_turu ?? null, k6?.kullanim_amaci ?? null)]); } // YG-027
+      if (g.garantiModel?.trim()) await c.query(`UPDATE dosya SET garantili_ekipman_model = $2 WHERE kimlik = $1`, [d.kimlik, g.garantiModel.trim()]); // YG-109
       await c.query(`INSERT INTO dosya_statu_gecmisi (dosya_ref, yeni_statu, gerekce, sonraki_sorumlu_rol, olusturan_ref) VALUES ($1,'Açılış Kontrolünde',$2,'Operasyon Müdürü',$3)`, [d.kimlik, `Açılış kararı: ${g.karar}`, o.kullanici]);
       await c.query(`UPDATE talep SET statu = 'Dosyaya Dönüştü', dosya_ref = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, d.kimlik]);
       await karar(d.kimlik);

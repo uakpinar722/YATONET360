@@ -98,7 +98,7 @@ try {
 
   // Dosya ve ekip (Adım 4 ekranları tarayici_testi.mjs içinde sınanır)
   const pDs = await al('ds', E);
-  const t = await pDs.api('/ihbar', { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', sigortaci: sgAd, hasarNo: `H${tek}`, yat: { adi: `E2E Yat ${tek}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip${tek}@deneme.yatonet.local` }, cevaplar: {} });
+  const t = await pDs.api('/ihbar', { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', sigortaci: sgAd, hasarNo: `H${tek}`, yat: { adi: `E2E Yat ${tek}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip${tek}@deneme.yatonet.local` }, cevaplar: {} });
   await pDs.api(`/ihbar/${t.kimlik}/mukerrerlik`, { sonuc: 'Mükerrer değil' });
   const d = await pDs.api(`/ihbar/${t.kimlik}/acilis`, { karar: 'Kabul', ozet: 'Açılış', musteriTuru: 'Sigorta Şirketi' });
   const pOpm = await al('opm', E); const pTm = await al('tm', E);
@@ -416,7 +416,7 @@ try {
   sonuc.push(`DOSYA ${d.dosyaNo}`);
 
   // İkinci dosya: bekletme noktası, çalışma izni, uygunsuzluk, koşullu kabul, tedarik; nöbet çizelgesi
-  const t2 = await pDs.api('/ihbar', { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', sigortaci: sgAd, hasarNo: `J${tek}`, yat: { adi: `E2E Yat2 ${tek}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip2${tek}@deneme.yatonet.local` }, cevaplar: {} });
+  const t2 = await pDs.api('/ihbar', { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', sigortaci: sgAd, hasarNo: `J${tek}`, yat: { adi: `E2E Yat2 ${tek}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip2${tek}@deneme.yatonet.local` }, cevaplar: {} });
   await pDs.api(`/ihbar/${t2.kimlik}/mukerrerlik`, { sonuc: 'Mükerrer değil' });
   const d2 = await pDs.api(`/ihbar/${t2.kimlik}/acilis`, { karar: 'Kabul', ozet: 'Açılış', musteriTuru: 'Sigorta Şirketi' });
   for (const [p, k, r] of [[pOpm, 'ds', 'Dosya Sorumlusu'], [pOpm, 'oy', 'Operasyon Yöneticisi'], [pTm, 'tu', 'Teknik Uzman'], [pTm, 'ty', 'Teknik Yönetici']]) await p.api(`/dosya/${d2.kimlik}/ekip`, { kullanici: kimlikler[k], rol: r });

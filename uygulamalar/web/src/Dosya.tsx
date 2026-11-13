@@ -79,7 +79,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
   const [konum, setKonum] = useState(''); const [durum, setDurum] = useState(''); const [ozet, setOzet] = useState(''); const [acil, setAcil] = useState(false); const [dil, setDil] = useState('Türkçe');
   const [cevap, setCevap] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState('Normal'); const [oncelik, setOncelik] = useState('');
   const [yTur, setYTur] = useState(''); const [yAd, setYAd] = useState(''); const [marka, setMarka] = useState(''); const [markalar, setMarkalar] = useState<{ marka: string }[]>([]); const [modeller, setModeller] = useState<{ kimlik: string; model: string; boy_m: number | null; govde_malzemesi: string | null }[]>([]);
-  const [modelId, setModelId] = useState(''); const [diger, setDiger] = useState(false); const [dMarka, setDMarka] = useState(''); const [dModel, setDModel] = useState(''); const [boy, setBoy] = useState(''); const [govde, setGovde] = useState('Bilinmiyor'); const [bayrak, setBayrak] = useState('Türkiye'); const [kullanim, setKullanim] = useState('Özel'); const [klas, setKlas] = useState('Bilinmiyor'); const [yil, setYil] = useState(''); const [garanti, setGaranti] = useState('');
+  const [modelId, setModelId] = useState(''); const [diger, setDiger] = useState(false); const [dMarka, setDMarka] = useState(''); const [dModel, setDModel] = useState(''); const [boy, setBoy] = useState(''); const [kalis, setKalis] = useState(''); const [klasK, setKlasK] = useState(''); const [govde, setGovde] = useState('Bilinmiyor'); const [bayrak, setBayrak] = useState('Türkiye'); const [kullanim, setKullanim] = useState('Özel'); const [klas, setKlas] = useState('Bilinmiyor'); const [yil, setYil] = useState(''); const [garanti, setGaranti] = useState('');
   const [sahipAd, setSahipAd] = useState(''); const [sahipTel, setSahipTel] = useState(''); const [sahipEp, setSahipEp] = useState(''); const [sigortaci, setSigortaci] = useState(''); const [hasarNo, setHasarNo] = useState('');
   useEffect(() => { void istek<Secenek>('/ihbar/secenek').then((x) => { setS(x); setTur(x.turler[0] ?? ''); setYTur(x.tekneTuru[0] ?? ''); }).catch((e) => setHata(e.message)); }, []);
   useEffect(() => { void istek<{ onerilen: string }>('/ihbar/oncelik-oner', { cevaplar: cevap, acil }).then((r) => { setOneri(r.onerilen); setOncelik(''); }).catch(() => {}); }, [cevap, acil]);
@@ -94,7 +94,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       const r = await istek<{ kimlik: string; talepNo: string }>('/ihbar', {
         kanal, sahibiAdi: ad, sahibiTuru: tur, sahibiTuruAciklama: turAcik, telefon: tel, eposta: ep || undefined, konum, yatDurumu: durum, ihtiyac: ozet, acil, cevaplar: cevap, oncelik: oncelik || undefined, dil, sigortaci: sigortaci || undefined, hasarNo: hasarNo || undefined,
         yatSahibi: sahipAd ? { ad: sahipAd, telefon: sahipTel || undefined, eposta: sahipEp || undefined } : undefined,
-        yat: { adi: yAd, tur: yTur, markaModelId: modelId || undefined, markaDiger: diger ? dMarka : undefined, modelDiger: diger ? dModel : undefined, boy: boy ? Number(boy.replace(',', '.')) : undefined, govde, bayrak, kullanim, klas, uretimYili: yil ? Number(yil) : undefined },
+        yat: { adi: yAd, tur: yTur, markaModelId: modelId || undefined, markaDiger: diger ? dMarka : undefined, modelDiger: diger ? dModel : undefined, boy: boy ? Number(boy.replace(',', '.')) : undefined, govde, bayrak, kullanim, klas, uretimYili: yil ? Number(yil) : undefined, turkiyeKalisBitis: kalis || undefined, klasKurulusu: klasK || undefined },
       });
       bitti(r.kimlik);
     } catch (x) { setHata((x as Error).message); window.scrollTo(0, 0); }
@@ -125,8 +125,11 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       {secili?.boy_m ? <div className="not">Boy: {secili.boy_m} m (Katalogdan – Teyit Bekliyor)</div> : <><label htmlFor="i-boy">4. Yaklaşık Boy (m)</label><input id="i-boy" inputMode="decimal" value={boy} onChange={(e) => setBoy(e.target.value)} /></>}
       {secili?.govde_malzemesi ? <div className="not">Gövde: {secili.govde_malzemesi} (Katalogdan – Teyit Bekliyor)</div> : <><label htmlFor="i-govde">5. Gövde Malzemesi</label><select id="i-govde" value={govde} onChange={(e) => setGovde(e.target.value)}>{s.govde.map((x) => <option key={x}>{x}</option>)}</select></>}
       <label htmlFor="i-bayrak">6. Bayrak</label><input id="i-bayrak" value={bayrak} onChange={(e) => setBayrak(e.target.value)} />
+      {bayrak.trim() && !/^(türk|türkiye|tr|turkish|turkey)$/i.test(bayrak.trim()) && <><label htmlFor="i-kalis">Türkiye'de Kalış Bitiş Tarihi</label><input id="i-kalis" type="date" value={kalis} onChange={(e) => setKalis(e.target.value)} />
+        {kalis && new Date(kalis).getTime() - Date.now() < 60 * 86_400_000 && <div className="uyari">Kalış süresi 60 günden kısa; planlanan onarım bitişinden önce dolabilir. Dosya açılışında teslim planını buna göre kurunuz.</div>}</>}
       <label htmlFor="i-kull">7. Kullanım</label><select id="i-kull" value={kullanim} onChange={(e) => setKullanim(e.target.value)}><option>Özel</option><option>Ticari</option></select>
       <label htmlFor="i-klas">8. Klas</label><select id="i-klas" value={klas} onChange={(e) => setKlas(e.target.value)}>{s.klas.map((x) => <option key={x}>{x}</option>)}</select>
+      {klas === 'Evet' && <><label htmlFor="i-klk">Klas Kuruluşu</label><input id="i-klk" value={klasK} onChange={(e) => setKlasK(e.target.value)} /></>}
       <label htmlFor="i-yil">9. İmal Yılı (Bilinmiyorsa Boş)</label><input id="i-yil" inputMode="numeric" value={yil} onChange={(e) => setYil(e.target.value)} />
       {garantiAcik && <><label htmlFor="i-gar">10. Garanti</label><select id="i-gar" value={garanti} onChange={(e) => setGaranti(e.target.value)}><option value="">Bilinmiyor</option><option>Evet</option><option>Hayır</option></select></>}
       <div className="bolum">Yat Sahibi (Biliniyorsa)</div>
@@ -153,7 +156,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
 
 function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void }) {
   const [t, setT] = useState<any>(null); const [hata, setHata] = useState(''); const [dayanak, setDayanak] = useState(''); const [gerekce, setGerekce] = useState('');
-  const [karar, setKarar] = useState('Kabul'); const [ozet, setOzet] = useState(''); const [musteri, setMusteri] = useState('Bireysel Müşteri'); const [kosul, setKosul] = useState(''); const [tarih, setTarih] = useState(''); const [acilGecici, setAcilGecici] = useState(false); const [eksik, setEksik] = useState('');
+  const [gar, setGar] = useState({ var: '', marka: '', model: '', bitis: '' }); const [karar, setKarar] = useState('Kabul'); const [ozet, setOzet] = useState(''); const [musteri, setMusteri] = useState('Bireysel Müşteri'); const [kosul, setKosul] = useState(''); const [tarih, setTarih] = useState(''); const [acilGecici, setAcilGecici] = useState(false); const [eksik, setEksik] = useState('');
   const yukle = () => istek<any>(`/ihbar/${id}`).then(setT).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, [id]);
   const yap = async (f: () => Promise<any>) => { setHata(''); try { await f(); await yukle(); } catch (x) { setHata((x as Error).message); } };
@@ -161,7 +164,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
   const acilis = async () => {
     setHata('');
     try {
-      const r = await istek<{ kimlik?: string }>(`/ihbar/${id}/acilis`, { karar, ozet, musteriTuru: musteri, kosullar: kosul, yenidenTarih: tarih, gerekce, acilGecici, eksikGerekce: eksik, tamamlamaTarih: tarih });
+      const r = await istek<{ kimlik?: string }>(`/ihbar/${id}/acilis`, { karar, ozet, musteriTuru: musteri, kosullar: kosul, yenidenTarih: tarih, gerekce, acilGecici, eksikGerekce: eksik, tamamlamaTarih: tarih, garantiliEkipman: gar.var === 'Evet' ? true : gar.var === 'Hayır' ? false : undefined, garantiMarka: gar.marka || undefined, garantiModel: gar.model || undefined, garantiBitis: gar.bitis || undefined });
       geri(r.kimlik);
     } catch (x) { setHata((x as Error).message); }
   };
@@ -193,6 +196,8 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
       </Blok>}
       <Blok baslik="3. Açılış Kararı">
         <label htmlFor="a-k">Karar</label><select id="a-k" value={karar} onChange={(e) => setKarar(e.target.value)}>{['Kabul', 'Koşullu Açılış', 'Bekletme', 'Yönlendirme', 'Ret'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="a-g">Garanti Süresinde Ekipman Var mı?</label><select id="a-g" value={gar.var} onChange={(e) => setGar({ ...gar, var: e.target.value })}><option value="">Bilinmiyor</option><option>Evet</option><option>Hayır</option></select>
+        {gar.var === 'Evet' && <><label htmlFor="a-gm">Ekipman Markası</label><input id="a-gm" value={gar.marka} onChange={(e) => setGar({ ...gar, marka: e.target.value })} /><label htmlFor="a-gmo">Ekipman Modeli</label><input id="a-gmo" value={gar.model} onChange={(e) => setGar({ ...gar, model: e.target.value })} /><label htmlFor="a-gb">Garanti Bitiş Tarihi</label><input id="a-gb" type="date" value={gar.bitis} onChange={(e) => setGar({ ...gar, bitis: e.target.value })} /></>}
         <label htmlFor="a-o">Açılış Özeti</label><textarea id="a-o" rows={2} value={ozet} onChange={(e) => setOzet(e.target.value)} />
         {(karar === 'Kabul' || karar === 'Koşullu Açılış') && <><label htmlFor="a-m">Müşteri Türü</label><select id="a-m" value={musteri} onChange={(e) => setMusteri(e.target.value)}>{['Bireysel Müşteri', 'Kurumsal Müşteri', 'Sigorta Şirketi'].map((x) => <option key={x}>{x}</option>)}</select></>}
         {karar === 'Koşullu Açılış' && <><label htmlFor="a-ko">İzinli ve Yasak İşler</label><textarea id="a-ko" rows={2} value={kosul} onChange={(e) => setKosul(e.target.value)} /></>}

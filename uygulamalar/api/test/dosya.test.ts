@@ -34,7 +34,7 @@ const SORU_SU = 'Su alma veya batma riski var mı?'; const SORU_KOZ = 'Kozmetik 
 let sayac = 0;
 const ihbarGovde = (e: object = {}) => ({
   kanal: 'Telefon', sahibiAdi: 'Deneme Kaptan', sahibiTuru: 'Yatın Kaptanı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Pervane hasarı',
-  yat: { adi: `Deneme Yat ${++sayac}`, markaDiger: 'Marka', modelDiger: 'Model', boy: 14, govde: 'Fiber', tur: 'Motor Yat' }, yatSahibi: { ad: 'Deneme Sahip', telefon: '+905550002222', eposta: 'sahip@deneme.yatonet.local' }, cevaplar: {}, ...e,
+  yat: { adi: `Deneme Yat ${++sayac}`, markaDiger: 'Marka', modelDiger: 'Model', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Deneme Sahip', telefon: '+905550002222', eposta: 'sahip@deneme.yatonet.local' }, cevaplar: {}, ...e,
 });
 const ihbar = async (e: object = {}, k = 'ds') => { const r = await ist('POST', '/api/ihbar', await gir(k), ihbarGovde(e)); expect(r.statusCode, r.body).toBe(200); return r.json(); };
 const dosyaAc = async (e: object = {}, ac: object = {}) => {
@@ -126,12 +126,12 @@ describe('marka-model (YG-1527, YG-1529)', () => {
     expect((await ist('GET', '/api/yat/marka?q=3D', c)).json().some((m: any) => m.marka === '3D Tender')).toBe(true);
     const m = (await ist('GET', `/api/yat/model?marka=${encodeURIComponent('3D Tender')}&q=DREAM%207`, c)).json()[0];
     expect(m.boy_m).toBe(7.47); expect(m.govde_malzemesi).toBe('Fiber');
-    const t = await ihbar({ yat: { adi: 'Katalog Yat', markaModelId: m.kimlik } });
+    const t = await ihbar({ yat: { adi: 'Katalog Yat', markaModelId: m.kimlik, bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
     const y = (await sup.query(`SELECT y.* FROM yat y JOIN talep t ON t.yat_ref = y.kimlik WHERE t.kimlik = $1`, [t.kimlik])).rows[0];
     expect([Number(y.tam_boy_m), y.govde_malzemesi, y.katalog_teyit, y.boy_kaynagi, y.gecici_kayit]).toEqual([7.47, 'Fiber', 'Katalogdan – teyit bekliyor', 'Ana veri (katalog)', true]);
   });
   it('marka seçilmeden veya "Diğer" yazılmadan kayıt olmaz', async () => {
-    expect((await ist('POST', '/api/ihbar', await gir('ds'), ihbarGovde({ yat: { adi: 'Markasız' } }))).statusCode).toBe(400);
+    expect((await ist('POST', '/api/ihbar', await gir('ds'), ihbarGovde({ yat: { adi: 'Markasız', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } }))).statusCode).toBe(400);
   });
 });
 
@@ -229,8 +229,8 @@ describe('mükerrerlik ve açılış kararı (YG-007, YG-023, YG-030, YG-100)', 
     expect((await ist('POST', `/api/ihbar/${t.kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Ö', musteriTuru: 'Bireysel Müşteri' })).statusCode).toBe(409);
   });
   it('aynı yatta açık dosya aday olarak görünür; ayrı olay gerekçe ister', async () => {
-    const a = await dosyaAc({ yat: { adi: 'Mükerrer Yat', markaDiger: 'M', modelDiger: 'M', boy: 10, govde: 'Fiber', govdeNo: 'GOV-1' } });
-    const t = await ihbar({ yat: { adi: 'Mükerrer Yat', govdeNo: 'GOV-1', markaDiger: 'M', modelDiger: 'M' } }); const c = await gir('ds');
+    const a = await dosyaAc({ yat: { adi: 'Mükerrer Yat', markaDiger: 'M', modelDiger: 'M', boy: 10, govde: 'Fiber', govdeNo: 'GOV-1', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
+    const t = await ihbar({ yat: { adi: 'Mükerrer Yat', govdeNo: 'GOV-1', markaDiger: 'M', modelDiger: 'M', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } }); const c = await gir('ds');
     const j = (await ist('GET', `/api/ihbar/${t.kimlik}`, c)).json();
     expect(j.adaylar.map((x: any) => x.dosya_no)).toContain(a.dosyaNo);
     expect(j.adaylar[0].neden).toBe('Aynı Yat');
@@ -287,7 +287,7 @@ describe('dosya ekibi (YG-047, YG-048, YG-146, YG-1530)', () => {
     expect((await sup.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].r).toBe(K.ds2);
   });
   it('boy ve gövde bilinmeyen Normal dosyada Teknik Uzman atanmaz; tamamlanınca kart açılır; Yüksekte ön şart yok', async () => {
-    const yat = { adi: 'Eksik Yat', markaDiger: 'X', modelDiger: 'Y' };
+    const yat = { adi: 'Eksik Yat', markaDiger: 'X', modelDiger: 'Y', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' };
     const d = await dosyaAc({ yat });
     expect((await ata(d.kimlik, 'tu', 'Teknik Uzman', 'tm')).statusCode).toBe(409);
     expect(await kart('Teknik Ekip Ataması', d.kimlik)).toBeUndefined();
@@ -297,7 +297,7 @@ describe('dosya ekibi (YG-047, YG-048, YG-146, YG-1530)', () => {
     expect((await ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { boy: 12, govde: 'Ahşap', kaynak: 'Ruhsat' })).statusCode).toBe(200);
     expect(await kart('Teknik Ekip Ataması', d.kimlik)).toBeDefined();
     expect((await ata(d.kimlik, 'tu', 'Teknik Uzman', 'tm')).statusCode).toBe(200);
-    const y = await dosyaAc({ yat: { adi: 'Eksik Yüksek', markaDiger: 'X', modelDiger: 'Y' }, oncelik: 'Yüksek' });
+    const y = await dosyaAc({ yat: { adi: 'Eksik Yüksek', markaDiger: 'X', modelDiger: 'Y', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, oncelik: 'Yüksek' });
     expect((await ata(y.kimlik, 'tu', 'Teknik Uzman', 'tm')).statusCode).toBe(200);
   });
   it('kapasite: %80 uyarı, %100 atama reddi; Saha Sorumlusu en fazla 3', async () => {
@@ -454,7 +454,7 @@ describe('süre aşımı ve açık konu (YG-040, YG-059)', () => {
 
 describe('arama ve erişim', () => {
   it('yalnız erişilebilir dosya döner; dosya.tum her şeyi görür', async () => {
-    const d = await dosyaAc({ yat: { adi: 'Aranan Tekne', markaDiger: 'X', modelDiger: 'Y', boy: 10, govde: 'Fiber' } });
+    const d = await dosyaAc({ yat: { adi: 'Aranan Tekne', markaDiger: 'X', modelDiger: 'Y', boy: 10, govde: 'Fiber', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
     expect((await ist('GET', '/api/ara?q=Aranan', await gir('saha'))).json().dosyalar).toEqual([]);
     expect((await ist('GET', '/api/ara?q=Aranan', await gir('opm'))).json().dosyalar[0].dosya_no).toBe(d.dosyaNo);
     expect((await ist('GET', '/api/dosya', await gir('saha'))).json().find((x: any) => x.dosya_no === d.dosyaNo)).toBeUndefined();

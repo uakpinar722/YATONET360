@@ -38,7 +38,7 @@ const kaydol = async (tel: string, ad = 'Deneme Sahip') => {
 };
 const dosyaAc = async (e: { sahipTel?: string; dil?: string } = {}) => {
   const c = await gir('ds');
-  const t = await ist('POST', '/api/ihbar', c, { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', dil: e.dil, yat: { adi: `Portal Yat ${++n}`, markaDiger: 'A', modelDiger: 'B', boy: 12, govde: 'Fiber' }, yatSahibi: { ad: 'Sahip', telefon: e.sahipTel ?? '+905550002222', eposta: `yatsahip${n}@deneme.yatonet.local` } });
+  const t = await ist('POST', '/api/ihbar', c, { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', dil: e.dil, yat: { adi: `Portal Yat ${++n}`, markaDiger: 'A', modelDiger: 'B', boy: 12, govde: 'Fiber', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: e.sahipTel ?? '+905550002222', eposta: `yatsahip${n}@deneme.yatonet.local` } });
   expect(t.statusCode, t.body).toBe(200);
   await ist('POST', `/api/ihbar/${t.json().kimlik}/mukerrerlik`, c, { sonuc: 'Mükerrer değil' });
   const a = await ist('POST', `/api/ihbar/${t.json().kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Ö', musteriTuru: 'Bireysel Müşteri' });
