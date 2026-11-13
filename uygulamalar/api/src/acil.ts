@@ -26,6 +26,25 @@ const CAN_CEVRE = ['Can Güvenliği', 'Kirlilik'];
 const DEVIR_LISTESI = ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu'];
 
 /** YG-1517: olay tarih-saatine denk gelen yürürlükteki vardiya. Çizelge boşsa null. */
+/** YG-240: nöbet saatleri hafta içi 18:00–09:00, Cumartesi 15:00 sonrası, Pazar ve resmî tatil tüm gün; her katmanda (Dosya Sorumlusu, Teknik Uzman, Yönetici) her saat bir vardiyayla kapsanmalıdır. */
+export async function nobetKapsamaBosluklari(db: Db, donem: string, vardiyalar: { katman: string; baslangic: string; bitis: string }[]): Promise<string[]> {
+  const tatil = new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil WHERE NOT yarim_gun`)).rows.map((r) => r.t as string));
+  const [yil, ay] = donem.split('-').map(Number) as [number, number]; const bos: string[] = [];
+  for (const katman of ['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici']) {
+    const vl = vardiyalar.filter((v) => v.katman === katman).map((v) => [new Date(v.baslangic).getTime(), new Date(v.bitis).getTime()] as const);
+    let acik: string | null = null;
+    for (let g = new Date(Date.UTC(yil, ay - 1, 1, -3)); g.getTime() < Date.UTC(yil, ay, 1, -3); g = new Date(g.getTime() + 3_600_000)) {
+      const yr = new Date(g.getTime() + 3 * 3_600_000); const s = yr.getUTCHours(); const dow = yr.getUTCDay(); const gun = yr.toISOString().slice(0, 10);
+      const nobet = dow === 0 || tatil.has(gun) || (dow === 6 ? s < 9 || s >= 15 : s < 9 || s >= 18);
+      const kapali = !nobet || vl.some(([b, e]) => b <= g.getTime() && e >= g.getTime() + 3_600_000);
+      if (!kapali && !acik) acik = `${katman} ${gun.split('-').reverse().join('.')} ${String(s).padStart(2, '0')}:00`;
+      if (kapali && acik) { bos.push(acik); acik = null; }
+    }
+    if (acik) bos.push(acik);
+  }
+  return bos;
+}
+
 export async function nobetci(db: Db, katman: 'Dosya Sorumlusu' | 'Teknik Uzman' | 'Yönetici', zaman = new Date()): Promise<string | null> {
   return (await db.query(`SELECT v.kullanici_ref FROM nobet_vardiyasi v JOIN nobet_cizelgesi c ON c.kimlik = v.cizelge_ref WHERE c.durum = 'Yürürlükte' AND v.katman = $1 AND v.baslangic <= $2 AND v.bitis > $2 ORDER BY v.baslangic DESC LIMIT 1`, [katman, zaman])).rows[0]?.kullanici_ref ?? null;
 }
@@ -161,6 +180,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       if (!['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'].includes(v.katman ?? '') || !v.kullanici || !v.baslangic || !v.bitis || new Date(v.bitis) <= new Date(v.baslangic)) return y.code(400).send({ hata: 'Vardiya katman, kişi ve zaman içermelidir.' });
     }
     { const e3 = await (await import('./ik.js')).ek3Engeli(b.db, g.vardiyalar.map((v) => v.kullanici!), Number(g.donem!.slice(0, 4))); if (e3) return y.code(409).send({ hata: e3 }); } // Yönetmelik 4.1
+    { const bos = await nobetKapsamaBosluklari(b.db, g.donem!, g.vardiyalar as { katman: string; baslangic: string; bitis: string }[]); if (bos.length) return y.code(409).send({ hata: `Nöbet saatleri kapsanmıyor: ${bos.slice(0, 3).join('; ')}${bos.length > 3 ? ` (+${bos.length - 3})` : ''}.`, bosluklar: bos }); } // YG-240
     return islem(async (c) => {
       const sur = (await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM nobet_cizelgesi WHERE donem = $1`, [g.donem])).rows[0].n;
       const t = (await c.query(`INSERT INTO nobet_cizelgesi (donem, surum, durum, hazirlayan_ref) VALUES ($1,$2,'Onayda',$3) RETURNING kimlik`, [g.donem, sur, o.kullanici])).rows[0];

@@ -355,6 +355,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         if (yuk + ek > sinir && !ood) return dur(409, 'Kişinin kapasitesi doludur; başka birini seçiniz.');
         if ((yuk + ek) / sinir >= 0.8) uyari = `Kişinin kapasitesi %${Math.round(((yuk + ek) / sinir) * 100)} dolu.`;
       }
+      // YG-248: nöbetteki kişi sahaya gitmez; vardiyası süren kişi Saha Sorumlusu atanamaz (firmayı uzaktan görevlendirir).
+      if (g.rol === 'Saha Sorumlusu' && (await c.query(`SELECT 1 FROM nobet_vardiyasi v JOIN nobet_cizelgesi z ON z.kimlik = v.cizelge_ref WHERE z.durum = 'Yürürlükte' AND v.kullanici_ref = $1 AND now() BETWEEN v.baslangic AND v.bitis`, [g.kullanici])).rowCount) return dur(409, 'Kişi şu an nöbettedir; nöbetçi sahaya gitmez, işi firmaya uzaktan görevlendirir.');
       if (t.tekil) {
         const eski = (await c.query(`SELECT kimlik, kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = $2 AND bitis_zamani IS NULL FOR UPDATE`, [id, g.rol])).rows[0];
         if (eski?.kullanici_ref === g.kullanici) return dur(409, 'Kişi bu rolde zaten atanmıştır.');
