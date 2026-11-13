@@ -1,3 +1,5 @@
+import { GarantiYanit } from './GarantiYanit';
+import { KontrolListeleri } from './KontrolListeleri';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { SigortaListesi } from './SigortaListesi';
 import { istek, type Ben } from './api';
@@ -314,7 +316,7 @@ interface Saha {
   bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null }[];
   gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
-  kontrolListeleri: { kimlik: string; kayit_no: string; statu: string }[];
+  kontrolListeleri: { kimlik: string; kayit_no: string; kontrol_listesi: string; statu: string }[];
   fotoEksik: string[];
   garantiKayitlari: { kimlik: string; kayit_no: string; statu: string; oncelik: string; yanit_son: string | null; karar: string | null; sikayet_sonucu: string | null }[];
 }
@@ -411,8 +413,9 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
           <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/islem`, { tur: iTur, neden: iNeden || undefined, devralan: iDev || undefined, gerekce: iGer, talepEden: 'Dosya Sorumlusu', yatDurumu: d.talep.yat_mevcut_durumu, yapilan: iYapilan, acik: iAcik, teslim: iTeslim }), 'Operasyon Müdürünün onayına gönderildi.')}>Tutanağı Onaya Gönder</button>
         </Blok>
       </>}
+      <Blok baslik="Kontrol Listeleri"><KontrolListeleri dosya={id} kayitlar={v.kontrolListeleri} yap={yap} /></Blok>
       <Blok baslik="Garanti ve Şikâyet">
-        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}{!g.karar && g.statu !== 'Kapalı' && <GarantiKarar id={g.kimlik} yap={yap} />}</div>)}
+        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}{!g.karar && g.statu !== 'Kapalı' && <GarantiKarar id={g.kimlik} yap={yap} />}<GarantiYanit id={g.kimlik} yap={yap} /></div>)}
         <label htmlFor="gs-t">Kayıt Türü</label><select id="gs-t" value={gsTur} onChange={(e) => setGsTur(e.target.value)}><option>Garanti bildirimi</option><option>Şikâyet</option></select>
         <label htmlFor="gs-a">{gsTur === 'Şikâyet' ? 'Şikâyet Konusu' : 'Belirti'}</label><input id="gs-a" value={gsAcik} onChange={(e) => setGsAcik(e.target.value)} />
         {gsTur !== 'Şikâyet' && <><label><input type="checkbox" checked={gsYd} onChange={(e) => setGsYd(e.target.checked)} /> Yat Yurt Dışında</label>{gsYd && <label><input type="checkbox" checked={gsYer} onChange={(e) => setGsYer(e.target.checked)} /> Yerinde Müdahale İsteniyor (Ayrı Teklif)</label>}</>}

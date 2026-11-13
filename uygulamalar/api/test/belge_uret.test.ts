@@ -216,6 +216,9 @@ describe('Tedarik Siparişi belgesi (YG-621, YG-1514)', () => {
     const j = JSON.stringify(t);
     expect(t).toMatchObject({ kod: 'FR-MLZ-002', ad: 'Tedarik Siparişi' }); expect(t.dosyaNo).toBeUndefined();
     expect(j).toContain('TT-77'); expect(j).not.toMatch(/1\.?234,5|617,25/); expect(j).not.toContain(d.dosyaNo);
+    await o.sup.query(`UPDATE tedarik_siparisi SET dil = 'İngilizce' WHERE kimlik = $1`, [s]);
+    const te = (await siparisTanim(o.db, s, 'KOD2', 'https://x')).t;
+    expect(te.ad).toBe('Purchase Order'); expect(JSON.stringify(te)).toContain('this order contains no prices');
   });
 });
 

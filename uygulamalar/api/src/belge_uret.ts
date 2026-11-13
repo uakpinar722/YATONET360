@@ -14,7 +14,7 @@ import { pdfUret, type BelgeTanim, type Bolum, type Renk } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'İhbar Alındı' | 'Tedarik Siparişi' | 'Değişiklik Kaydı' | 'Garanti Belgesi' | 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
+export type UretimTuru = 'Garanti Şikâyet Yanıtı' | 'İhbar Alındı' | 'Tedarik Siparişi' | 'Değişiklik Kaydı' | 'Garanti Belgesi' | 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -440,20 +440,22 @@ export async function siparisTanim(db: Db, id: string, kod: string, web: string)
   const s = (await db.query(`SELECT s.*, k.ticari_unvan FROM tedarik_siparisi s JOIN kurulus k ON k.kimlik = s.kurulus_ref WHERE s.kimlik = $1`, [id])).rows[0];
   const kl = (await db.query(`SELECT satir_no, urun_tanimi, uretici_parca_no, miktar, birim FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 ORDER BY satir_no`, [id])).rows;
   const lgm = (await db.query(`SELECT r.rol_adi, a.zaman FROM is_karti k JOIN is_karti_adim a ON a.is_ref = k.kimlik LEFT JOIN rol r ON r.kimlik = a.rol_ref WHERE k.tur = 'Tedarik Siparişi' AND k.nesne_kimligi = $1 AND a.karar = 'Onayla' ORDER BY a.zaman DESC LIMIT 1`, [id])).rows[0];
-  const dil: Dil = 'tr';
+  const dil: Dil = dilZorla.getStore() ?? (s.dil === 'İngilizce' ? 'en' : 'tr'); const en = dil === 'en';
+  const L = en ? { ad: 'Purchase Order', sip: 'Order', ted: 'Supplier', day: 'Reference Quotation', kis: 'Partial Delivery', izin: 'Permitted', izinYok: 'Not permitted', ter: 'Lead Time', uzun: 'Long lead time', kal: 'Items', sira: 'No', urun: 'Product Description', parca: 'Manufacturer Part No', mik: 'Quantity', bir: 'Unit', tes: 'Delivery', tt: 'Delivery Date', ty: 'Delivery Address', nk: 'End-Use Location', olc: 'Acceptance Criteria', bd: 'Price Basis', bdD: `Accepted supplier quotation ${s.tedarikci_teklif_ref}  ·  this order contains no prices` }
+    : { ad: 'Tedarik Siparişi', sip: 'Sipariş', ted: 'Tedarikçi', day: 'Dayanak Teklif', kis: 'Kısmi Teslim', izin: 'İzinli', izinYok: 'İzinli değil', ter: 'Termin', uzun: 'Uzun terminli', kal: 'Kalemler', sira: 'Sıra', urun: 'Ürün Tanımı', parca: 'Üretici Parça No', mik: 'Miktar', bir: 'Birim', tes: 'Teslim', tt: 'Teslim Tarihi', ty: 'Teslim Yeri', nk: 'Nihai Kullanım Yeri', olc: 'Kabul Ölçütü', bd: 'Bedel Dayanağı', bdD: `Kabul edilen tedarikçi teklifi ${s.tedarikci_teklif_ref}  ·  sipariş fiyat içermez` };
   const bolumler: Bolum[] = [
-    { baslik: 'Sipariş', tur: 'alanlar', alanlar: [{ et: 'Tedarikçi', deger: s.ticari_unvan }, { et: 'Dayanak Teklif', deger: s.tedarikci_teklif_ref }, { et: 'Kısmi Teslim', deger: s.kismi_teslim_izni ? 'İzinli' : 'İzinli değil' }, { et: 'Termin', deger: s.uzun_terminli ? 'Uzun terminli' : null }] },
-    { baslik: 'Kalemler', tur: 'tablo', sutunlar: [{ ad: 'Sıra', hiza: 'ort' }, { ad: 'Ürün Tanımı' }, { ad: 'Üretici Parça No' }, { ad: 'Miktar', hiza: 'sag' }, { ad: 'Birim', hiza: 'ort' }],
-      satirlar: kl.map((x) => [x.satir_no, x.urun_tanimi, x.uretici_parca_no, String(Number(x.miktar)).replace('.', ','), x.birim]) },
-    { baslik: 'Teslim', tur: 'alanlar', alanlar: [{ et: 'Teslim Tarihi', deger: gunAy(s.teslim_tarihi) }, { et: 'Teslim Yeri', deger: s.teslim_yeri, genis: true }, { et: 'Nihai Kullanım Yeri', deger: s.nihai_kullanim_yeri, genis: true }] },
-    { baslik: 'Kabul Ölçütü', tur: 'metin', metin: s.kabul_olcutu },
-    { baslik: 'Bedel Dayanağı', tur: 'alanlar', alanlar: [{ et: 'Bedel Dayanağı', deger: `Kabul edilen tedarikçi teklifi ${s.tedarikci_teklif_ref}  ·  sipariş fiyat içermez`, genis: true }] },
+    { baslik: L.sip, tur: 'alanlar', alanlar: [{ et: L.ted, deger: s.ticari_unvan }, { et: L.day, deger: s.tedarikci_teklif_ref }, { et: L.kis, deger: s.kismi_teslim_izni ? L.izin : L.izinYok }, { et: L.ter, deger: s.uzun_terminli ? L.uzun : null }] },
+    { baslik: L.kal, tur: 'tablo', sutunlar: [{ ad: L.sira, hiza: 'ort' }, { ad: L.urun }, { ad: L.parca }, { ad: L.mik, hiza: 'sag' }, { ad: L.bir, hiza: 'ort' }],
+      satirlar: kl.map((x) => [x.satir_no, x.urun_tanimi, x.uretici_parca_no, en ? String(Number(x.miktar)) : String(Number(x.miktar)).replace('.', ','), x.birim]) },
+    { baslik: L.tes, tur: 'alanlar', alanlar: [{ et: L.tt, deger: gunAy(s.teslim_tarihi) }, { et: L.ty, deger: s.teslim_yeri, genis: true }, { et: L.nk, deger: s.nihai_kullanim_yeri, genis: true }] },
+    { baslik: L.olc, tur: 'metin', metin: s.kabul_olcutu },
+    { baslik: L.bd, tur: 'alanlar', alanlar: [{ et: L.bd, deger: L.bdD, genis: true }] },
   ];
   return {
-    dosyaAdi: `${s.siparis_no}.pdf`, sinif: 'Gizli',
-    t: { ad: 'Tedarik Siparişi', kod: 'FR-MLZ-002', no: s.siparis_no, tarih: gunAy(lgm?.zaman ?? s.olusturma_zamani), surum: `Rev.${s.surum_no}`, dil, bolumler,
+    dosyaAdi: `${s.siparis_no}${en ? '-EN' : ''}.pdf`, sinif: 'Gizli',
+    t: { ad: L.ad, kod: 'FR-MLZ-002', no: s.siparis_no, tarih: gunAy(lgm?.zaman ?? s.olusturma_zamani), surum: `Rev.${s.surum_no}`, dil, bolumler,
       matbuSon: [gizli(dil), dogrula(dil, kod, web)],
-      onay: lgm ? { rol: lgm.rol_adi, zaman: anSaat(lgm.zaman), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim,
+      onay: lgm ? { rol: en ? ROL_EN[lgm.rol_adi] ?? lgm.rol_adi : lgm.rol_adi, zaman: anSaat(lgm.zaman), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim,
   };
 }
 
@@ -567,10 +569,10 @@ const KASELI = ['Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 
 /** Kuyruk kaydının belge tanımı. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tanimYap(c: PoolClient, u: any, kod: string, web: string) {
-  return u.tur === 'İhbar Alındı' ? await ihbarAlindiTanim(c, u.nesne) : u.tur === 'Tedarik Siparişi' ? await siparisTanim(c, u.nesne, kod, web) : u.tur === 'Değişiklik Kaydı' ? await degisiklikKaydiTanim(c, u.nesne) : u.tur === 'Garanti Belgesi' ? await garantiTanim(c, u.nesne) : u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, web) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, web) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, web) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, web) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, web) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, web) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, web) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, web);
+  return u.tur === 'Garanti Şikâyet Yanıtı' ? await (await import('./garanti_yanit.js')).garantiYanitTanim(c, u.nesne) : u.tur === 'İhbar Alındı' ? await ihbarAlindiTanim(c, u.nesne) : u.tur === 'Tedarik Siparişi' ? await siparisTanim(c, u.nesne, kod, web) : u.tur === 'Değişiklik Kaydı' ? await degisiklikKaydiTanim(c, u.nesne) : u.tur === 'Garanti Belgesi' ? await garantiTanim(c, u.nesne) : u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, web) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, web) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, web) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, web) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, web) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, web) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, web) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, web);
 }
 /** YG-625: iki dilli üretilen müşteri belgeleri ve "Türkçe metin esastır" satırı (kurtarma sözleşmesi 11.4'ün belgeye uyarlaması). */
-const IKI_DILLI = ['İhbar Alındı', 'Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Teslim Tutanağı', 'Onay Belgesi', 'Ödeme Sorumluluğu', 'Nihai Kapanış Özeti', 'Proforma', 'Ödeme Talebi', 'Kurtarma Sonuç Tutanağı', 'Ön Bilgilendirme Formu'];
+const IKI_DILLI = ['Tedarik Siparişi', 'İhbar Alındı', 'Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Teslim Tutanağı', 'Onay Belgesi', 'Ödeme Sorumluluğu', 'Nihai Kapanış Özeti', 'Proforma', 'Ödeme Talebi', 'Kurtarma Sonuç Tutanağı', 'Ön Bilgilendirme Formu'];
 export const TURKCE_ESAS = { tr: 'Bu belgenin İngilizce sürümü bilgi amaçlıdır; metinler arasında farklılık olması hâlinde Türkçe metin esas alınır.', en: 'The English version of this document is for information only; in case of any discrepancy between the texts, the Turkish text shall prevail.' };
 /** Belgeyi üretir, dosyaya resmî sürüm olarak bağlar. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -170,7 +170,7 @@ interface Siparisler { siparisler: { kimlik: string; siparis_no: string; statu: 
 
 /** YG-823, YG-404, YG-1589: sipariş Tedarik Sorumlusundan onay zincirine gider; giriş kontrolünü Saha Sorumlusu, yoksa Teknik Uzman yapar. */
 export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) {
-  const [f, setF] = useState({ tedarikci: '', teklifRef: '', kullanim: '', teslimTarihi: '', teslimYeri: '', olcut: '', gerekce: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', bedel: '' });
+  const [f, setF] = useState({ dil: 'Türkçe', tedarikci: '', teklifRef: '', kullanim: '', teslimTarihi: '', teslimYeri: '', olcut: '', gerekce: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', bedel: '' });
   const [v, setV] = useState<Siparisler | null>(null); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [yer, setYer] = useState<{ kimlik: string; ticari_unvan: string }[]>([]);
   const [g, setG] = useState({ lot: '', irsaliye: '', miktar: '', bekletmeYeri: '' }); const [fa, setFa] = useState({ no: '', tarih: '', tutar: '' });
   const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
@@ -204,6 +204,7 @@ export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) 
       {v.girisler.map((m) => <div className="soru" key={m.kimlik}><span>{m.kayit_no} · Lot {m.lot_no} · {m.miktar} · {m.kabul_karari ?? 'Kontrol Bekliyor'}</span>{m.benim && !m.kabul_karari && <div className="dugmeler">{['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => yap(istek(`/malzeme-giris/${m.kimlik}/karar`, { karar: k }), 'Karar kaydedildi.')}>{k}</button>)}</div>}</div>)}
       {ts && <>
         <label htmlFor="sp-ted">Tedarikçi</label><select id="sp-ted" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })}><option value="">Seçiniz</option>{ted.map((x) => <option key={x.kimlik} value={x.kimlik} disabled={Boolean(x.engel)}>{x.ticari_unvan}{x.engel ? ` · ${x.engel}` : ''}</option>)}</select>
+        <label htmlFor="sp-dil">Sipariş Dili</label><select id="sp-dil" value={f.dil} onChange={(e) => setF({ ...f, dil: e.target.value })}>{['Türkçe', 'İngilizce'].map((x) => <option key={x}>{x}</option>)}</select>
         {yaz('teklifRef', 'Tedarikçi Teklif No')}{yaz('kullanim', 'Nihai Kullanım Yeri')}{yaz('teslimTarihi', 'Teslim Tarihi', 'date')}{yaz('teslimYeri', 'Teslim Yeri')}{yaz('olcut', 'Kabul Ölçütü')}{yaz('gerekce', 'Seçim Gerekçesi')}{yaz('tanim', 'Ürün')}{yaz('parcaNo', 'Üretici Parça No')}{yaz('miktar', 'Sipariş Miktarı')}{yaz('birim', 'Birim')}{yaz('bedel', 'Birim Bedel (EUR)')}
         <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/siparis`, { ...f, kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: sayi(f.miktar), birim: f.birim, bedel: sayi(f.bedel) }] }), 'Sipariş onaya gönderildi.')}>Siparişi Onaya Gönder</button>
       </>}
