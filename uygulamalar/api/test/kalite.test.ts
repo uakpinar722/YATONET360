@@ -229,6 +229,8 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
     expect((await o.ist('POST', `/api/malzeme-giris/${g.json().kimlik}/karar`, c, { karar: 'Kabul' })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/malzeme-giris/${g.json().kimlik}/karar`, await o.gir('tu'), { karar: 'Kabul' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT statu FROM tedarik_siparisi WHERE kimlik = $1`, [id])).rows[0].statu).toBe('Teslim Alındı');
+    { const kb = await o.belge(d.kimlik, 'ds'); const nu = await o.ist('POST', `/api/dosya/${d.kimlik}/uygunsuzluk`, await o.gir('tu'), { giris: g.json().kimlik, kaynak: 'Malzeme Girişi', yer: 'Depo', olcut: 'Sertifika', durum: 'Sertifika eksik', belge: kb, sinif: 'Minör' }); // YG-298
+      expect(nu.statusCode, nu.body).toBe(200); expect((await o.sup.query(`SELECT sorumlu_firma_ref FROM uygunsuzluk WHERE kimlik = $1`, [nu.json().kimlik])).rows[0].sorumlu_firma_ref).toBe(tedarikci); }
     expect((await o.ist('POST', `/api/siparis/${id}/eslestirme`, c, { no: 'F1', tarih: ileri(0), tutar: 200 })).json().sonuc).toBe('Eşleşti');
     expect((await o.ist('POST', `/api/siparis/${id}/eslestirme`, c, { no: 'F1', tarih: ileri(0), tutar: 200 })).statusCode).toBe(409);
   });

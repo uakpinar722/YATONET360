@@ -368,6 +368,10 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
     [en ? 'Recipient’s Reservation' : 'Teslim Alanın Çekincesi', k.cekince ? { m: k.cekince, renk: 'turuncu' } : yok],
     ...(ks ? [[en ? 'Winterisation Responsible' : 'Kışlık Hazırlık Sorumlusu', ks]] : []),
   ] });
+  // YG-289: gereklilik ve kabul matrisi teslim paketinde yer alır.
+  const km = (await db.query(`SELECT g.km_no, g.gereklilik, g.dogrulama, g.durum, g.kanit_belge_ref IS NOT NULL kanit FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı' ORDER BY g.km_no`, [k.dosya_ref])).rows;
+  if (km.length) bolumler.push({ baslik: en ? 'Requirements and Acceptance Matrix' : 'Gereklilik ve Kabul Matrisi', tur: 'tablo', sutunlar: [{ ad: 'KM', hiza: 'ort' }, { ad: en ? 'Requirement' : 'Gereklilik' }, { ad: en ? 'Verification' : 'Doğrulama' }, { ad: en ? 'Status' : 'Durum', hiza: 'ort' }],
+    satirlar: km.map((x) => [x.km_no, x.gereklilik, x.dogrulama, { m: x.durum, renk: (x.durum === 'Karşılandı' ? 'yesil' : x.durum === 'Koşullu' ? 'turuncu' : 'sari') as Renk }]) });
   // YG-726: yat sahibinin reddettiği ek işler (ONY-06 onaylı) Açık İşler tablosunda kullanım sınırıyla yer alır.
   const acikSat = [...acik.map((x) => [x.tanim, en ? 'LGM File Manager' : 'LGM Dosya Sorumlusu', gunAy(x.hedef_tarih)]), ...red.map((x) => [`${en ? 'Additional work not carried out' : 'Yapılmayan ek iş'}: ${x.yapilmayan_is} · ${en ? 'Usage limitation' : 'Kullanım sınırı'}: ${x.kullanim_siniri}`, en ? 'Yacht Owner' : 'Yat Sahibi', null])];
   if (acikSat.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: en ? 'Responsible' : 'Sorumlu' }, { ad: T.sor }], satirlar: acikSat }); // YG-725

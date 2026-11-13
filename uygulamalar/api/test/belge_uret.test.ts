@@ -330,3 +330,14 @@ describe('Hasar İhbar iletişim kişileri (YG-719)', () => {
     expect(JSON.stringify((await hasarIhbarTanim(o.db, d.kimlik)).t.bolumler)).toContain('Önerilen Öncelik'); // YG-033 expect(r).toContain('{"m":"Bilinmiyor","renk":"sari"}'); expect(r).toContain('{"m":"Hayır","renk":"yesil"}');
   });
 });
+
+describe('kabul matrisi teslim paketinde (YG-289)', () => {
+  it('onaylı plandaki gereklilikler renkli durumla tutanakta', async () => {
+    const { tutanakTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    const p = (await o.sup.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, durum, hazirlayan_ref) VALUES ($1,0,'C','Ö','Onaylı',$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO gereklilik_satiri (plan_ref, km_no, gereklilik, dogrulama, durum) VALUES ($1,'KM01','Sızdırmazlık','Basınç testi','Koşullu')`, [p]);
+    const ts = (await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, durum, teslim_eden_ref, teslim_zamani) VALUES ($1,'Teslim Edildi',$2,now()) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    expect(JSON.stringify((await tutanakTanim(o.db, ts, 'K', 'https://x')).t.bolumler)).toContain('{"m":"Koşullu","renk":"turuncu"}');
+  });
+});

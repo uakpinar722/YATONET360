@@ -342,6 +342,18 @@ export function KurumHesap({ baslik }: { baslik: string }) {
   );
 }
 
+/** YG-298: tedarikçi yalnız kendi teslimatındaki uygunsuzluğu görür ve yanıtlar; müşteri kimliği görünmez. */
+function TedarikciUygunsuzluk({ yap }: { yap: (f: () => Promise<unknown>, m?: string) => Promise<void> }) {
+  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; sinif: string; gercek_durum: string; dayanak_olcut: string; statu: string; firma_yaniti: string | null }[]>([]); const [yn, setYn] = useState<Record<string, string>>({});
+  const yukle = () => istek<typeof l>('/firma-portal/uygunsuzluklar').then(setL).catch(() => setL([]));
+  useEffect(() => { void yukle(); }, []);
+  const acik = l.filter((u) => u.statu !== 'Kapalı' && u.statu !== 'Geçersiz');
+  if (!acik.length) return null;
+  return <Blok baslik="Uygunsuzluklar">{acik.map((u) => <div className="soru" key={u.kimlik}><span>{u.uygunsuzluk_no} · {u.sinif} · {u.gercek_durum} · Ölçüt: {u.dayanak_olcut}{u.firma_yaniti ? ` · Yanıtınız: ${u.firma_yaniti}` : ''}</span>
+    <label htmlFor={`tu-${u.kimlik}`}>Yanıt ve Düzeltici Faaliyet</label><input id={`tu-${u.kimlik}`} value={yn[u.kimlik] ?? ''} onChange={(e) => setYn({ ...yn, [u.kimlik]: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!yn[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/uygunsuzluk/${u.kimlik}/yanit`, { yanit: yn[u.kimlik] }), 'Yanıtınız iletildi.').then(yukle)}>Yanıtı Gönder</button></div>)}</Blok>;
+}
+
 export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'siparis' | 'teklif' }) {
   const [v, setV] = useState<TedarikciV | null>(null); const [fy, setFy] = useState<Record<string, { fiyat: string; sure: string }>>({});
   const [ka, setKa] = useState<Record<string, { kod: string; teslim: string; gerekce: string }>>({});
@@ -357,6 +369,7 @@ export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' |
   return (
     <>
       <h1>{bolum === 'siparis' ? 'Siparişler' : bolum === 'teklif' ? 'Teklifler' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      {bolum !== 'teklif' && <TedarikciUygunsuzluk yap={yap} />}
       {bolum !== 'siparis' && <Blok baslik="Teklif Talepleri">
         {bekT.length === 0 && <div className="not">Bekleyen teklif talebi bulunmamaktadır.</div>}
         {bekT.map((t) => (

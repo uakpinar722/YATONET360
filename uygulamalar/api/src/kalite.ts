@@ -148,9 +148,13 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-283, YG-388, YG-390: uygunsuzluk açılır; Kritik veya Emniyette ilgili iş derhal durur.
   s.post('/dosya/:id/uygunsuzluk', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { isEmri?: string; kaynak?: string; yer?: string; olcut?: string; durum?: string; belge?: string; sinif?: string; emniyet?: boolean; yaygin?: boolean; hasarOnemi?: string; yeniHasar?: boolean };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { giris?: string; isEmri?: string; kaynak?: string; yer?: string; olcut?: string; durum?: string; belge?: string; sinif?: string; emniyet?: boolean; yaygin?: boolean; hasarOnemi?: string; yeniHasar?: boolean };
     if (!(await erisim(id, o.kullanici))) return yok(y);
     if (!g.kaynak || !g.yer?.trim() || !g.olcut?.trim() || !g.durum?.trim()) return y.code(400).send({ hata: 'Tespit kaynağı, yer, dayanak ölçüt ve gerçek durum zorunludur.' });
+    // YG-298: malzeme giriş kabulünden açılan uygunsuzluğun sorumlusu siparişin tedarikçisidir; tedarikçi portalda görür ve yanıtlar.
+    const gk = g.giris && UUID.test(g.giris) ? (await b.db.query(`SELECT m.kimlik, s.kurulus_ref FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE m.kimlik = $1 AND s.dosya_ref = $2`, [g.giris, id])).rows[0] : undefined;
+    if (g.giris && !gk) return y.code(400).send({ hata: 'Malzeme giriş kaydı bu dosyada bulunamadı.' });
+    const tedarikci = gk?.kurulus_ref as string | undefined;
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Kanıt zorunludur.' });
     if (!['Kritik', 'Majör', 'Minör', 'Gözlem'].includes(g.sinif ?? '')) return y.code(400).send({ hata: 'Sınıfı seçiniz.' });
     const e = g.isEmri && UUID.test(g.isEmri) ? (await b.db.query(`SELECT kimlik, kurulus_ref, statu FROM is_emri WHERE kimlik = $1 AND dosya_ref = $2`, [g.isEmri, id])).rows[0] : undefined;
@@ -162,7 +166,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
       const d = (await c.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       const no = await altNumara(c, d.dosya_no, 'NCR');
       const dur = g.sinif === 'Kritik' || Boolean(g.emniyet);
-      const r = (await c.query(`INSERT INTO uygunsuzluk (uygunsuzluk_no, dosya_ref, is_emri_ref, tespit_kaynagi, yer_nitelik, dayanak_olcut, gercek_durum, kanit_belge_ref, sinif, yaygin_isareti, emniyet_isareti, hedef_zamani, is_durduruldu, sorumlu_firma_ref, firma_yeni_hasar, acan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`, [no, id, e?.kimlik ?? null, g.kaynak, g.yer!.trim(), g.olcut!.trim(), g.durum!.trim(), g.belge, g.sinif, Boolean(g.yaygin), Boolean(g.emniyet), ncrHedefi(g.sinif!), dur && Boolean(e), e?.kurulus_ref ?? null, Boolean(g.yeniHasar), o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO uygunsuzluk (uygunsuzluk_no, dosya_ref, is_emri_ref, tespit_kaynagi, yer_nitelik, dayanak_olcut, gercek_durum, kanit_belge_ref, sinif, yaygin_isareti, emniyet_isareti, hedef_zamani, is_durduruldu, sorumlu_firma_ref, firma_yeni_hasar, acan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`, [no, id, e?.kimlik ?? null, g.kaynak, g.yer!.trim(), g.olcut!.trim(), g.durum!.trim(), g.belge, g.sinif, Boolean(g.yaygin), Boolean(g.emniyet), ncrHedefi(g.sinif!), dur && Boolean(e), e?.kurulus_ref ?? tedarikci ?? null, Boolean(g.yeniHasar), o.kullanici])).rows[0];
+      if (gk) await c.query(`UPDATE malzeme_giris_kabulu SET uygunsuzluk_ref = $2 WHERE kimlik = $1`, [gk.kimlik, r.kimlik]); // YG-298
       if (dur && e && ['Aktif', 'Başlangıç Kontrolünde'].includes(e.statu)) await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, `Uygunsuzluk ${no}`]);
       const alici = [d.dosya_sorumlusu_ref, ...await rolSahipleri(c, await rolId(c, dur ? KM : KK))].filter(Boolean);
       await bildir(c, { olay: `ncr:${r.kimlik}`, kullanicilar: alici, baslik: `${no} · ${g.sinif} Uygunsuzluk`, oncelik: dur ? 'Kritik' : 'Normal' });
@@ -372,6 +377,9 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO kabul_kaydi (dosya_ref, is_emri_ref, kabul_turu, kosul_bitis, kaydeden_ref) VALUES ($1,$2,'Koşullu Kabul',$3,$4) RETURNING kimlik`, [e.dosya_ref, id, g.bitis, o.kullanici])).rows[0];
       for (const x of kl) await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur) VALUES ($1,$2,$3,$4,$5,$6)`, [r.kimlik, id, x.tanim!.trim(), x.etki!.trim(), x.hedef, x.bedel]);
+      // YG-289: onaylı plandaki açık veya koşullu gereklilik satırları koşul bitişine hedefli eksik iş olarak taşınır.
+      for (const m of (await c.query(`SELECT g.km_no, g.gereklilik, g.durum FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı' AND g.durum IN ('Açık', 'Koşullu')`, [e.dosya_ref])).rows)
+        await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur) VALUES ($1,$2,$3,$4,$5,0)`, [r.kimlik, id, `${m.km_no ?? 'KM'} · ${m.gereklilik}`, `Gereklilik ${m.durum.toLocaleLowerCase('tr-TR')}; doğrulama kanıtı bekleniyor`, g.bitis]);
       await c.query(`UPDATE is_emri SET teknik_kabul_sonucu = 'Koşullu Kabul', teknik_kabul_eden_ref = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
       return { kimlik: r.kimlik };
     });

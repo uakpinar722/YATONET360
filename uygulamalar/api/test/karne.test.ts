@@ -126,3 +126,13 @@ describe('firma karnesi (YG-351, YG-789–795)', () => {
     expect((await o.ist('GET', '/api/karne-parametre', await o.gir('tod'))).json().yururlukte.surum).toBe(1);
   });
 });
+
+describe('punch gecikmesi karnede (YG-287)', () => {
+  it('geciken açık iş Minör ağırlığıyla kalite puanını düşürür', async () => {
+    const { dosyaPuani } = await import('../src/karne.js');
+    const P = { kabul: 100, kosullu_kabul: 70, ret: 0, ilk_sefer: 10, majoer: 20, minoer: 5, basarisiz_test: 10, garanti: 15, sure_asim: 1, tol_normal: 0, tol_belirsiz: 0, maliyet_1: 5, maliyet_2: 15, maliyet_1_puan: 70, isg: 20, prosedur: 10, denetim_majoer: 15, denetim_minoer: 5, eksik_belge: 5 } as never;
+    const g = { oncelik: 'Normal', kabul: 'Kabul', ilkSeferdeKabul: true, majoer: 0, minoer: 0, basarisizTest: 0, garanti: 0, planlananGun: null, firmaGecikmeGun: 0, teshisiBelirsiz: false, butce: null, ekIs: 0, fatura: null, onaysizEkIs: false, yanitUyum: null, raporZamaninda: null, oncedenBildirim: null, isg: 0, prosedur: 0, denetimMajoer: 0, denetimMinoer: 0, eksikBelge: 0, emniyetOlayi: false };
+    const a = dosyaPuani(g, P) as { kalite: number | null }; const b2 = dosyaPuani({ ...g, gecikenAcikIs: 2 }, P) as { kalite: number | null };
+    expect(b2.kalite).toBe((a.kalite ?? 0) - 10);
+  });
+});
