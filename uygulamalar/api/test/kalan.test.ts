@@ -146,6 +146,10 @@ describe('ön bilgilendirme PDF (YG-618, YG-619)', () => {
     for (const x of ['Ek-1. Cayma Formu', 'Ek-2.', 'Ek-3.', `T-${n} / 1`, d.dosyaNo]) expect(m).toContain(x);
     expect(m).not.toContain('[●]');
     expect((await pdfUret(v.t)).length).toBeGreaterThan(5000);
+    expect(v.t.onay).toBeUndefined(); // YG-1514: onaydan önce kutu yok
+    const ot = (await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik, nesne_turu, nesne_kimligi) VALUES ($1,'ONY-23','k','m','d','a','+905550002222',$2,'Onaylandı',now(),'Fiyat Teklifi',$3) RETURNING kimlik`, [d.kimlik, `ob${n}`, t])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO yatonet_onay_kaydi (onay_talebi_ref, karar, metin_ozeti, kanal, onay_kodu, onay_zamani, onaylayan_ad) VALUES ($1,'Onaylandı',repeat('a',64),'SMS Kodu','OK-123456',now(),'Sahip')`, [ot]);
+    expect((await onBilgiTanim(o.db, t, 'ABC')).t.onay).toMatchObject({ rol: 'Yat Sahibi', kanal: 'YATONET 360', kod: 'OK-123456' });
   });
 });
 

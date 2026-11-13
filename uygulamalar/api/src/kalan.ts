@@ -54,7 +54,10 @@ export async function onBilgiTanim(db: Db, teklif: string, kod: string): Promise
     { baslik: m.et.ekler!, tur: 'metin', metin: m.eknot },
     ...m.ekler.map((e): Bolum => ({ baslik: e.ad, tur: 'tablo', sutunlar: [{ ad: m.et.alan! }, { ad: m.et.bilgi! }], satirlar: e.satirlar.map((r) => [bos(r[0]!), bos(r[1]!)]) })),
   ];
-  return { dosyaAdi: `${k.teklif_no}-OB.pdf`, sinif: 'Gizli', t: { ad: m.ad, no: `${k.teklif_no}-OB`, dosyaNo: k.dosya_no, tarih: gunAy(new Date()), surum: `Rev.${k.surum_no}`, dil, yat: k.yat_adi, bolumler, dogrulamaKodu: kod } as unknown as BelgeTanim };
+  // YG-1514: yat sahibi teklifi onayladıysa imza bloğu yerine YATONET 360 Onay Kaydı kutusu basılır.
+  const on = (await db.query(`SELECT r.onay_kodu, r.onay_zamani FROM onay_talebi o JOIN yatonet_onay_kaydi r ON r.onay_talebi_ref = o.kimlik WHERE o.ony_kod = 'ONY-23' AND o.nesne_kimligi = $1::text AND r.karar = 'Onaylandı' ORDER BY r.onay_zamani DESC LIMIT 1`, [teklif])).rows[0];
+  const onay = on ? { rol: dil === 'en' ? 'Yacht Owner' : 'Yat Sahibi', zaman: `${gunAy(on.onay_zamani)} ${new Date(on.onay_zamani).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })}`, kanal: 'YATONET 360', kod: on.onay_kodu } : undefined;
+  return { dosyaAdi: `${k.teklif_no}-OB.pdf`, sinif: 'Gizli', t: { ad: m.ad, no: `${k.teklif_no}-OB`, dosyaNo: k.dosya_no, tarih: gunAy(new Date()), surum: `Rev.${k.surum_no}`, dil, yat: k.yat_adi, bolumler, onay, dogrulamaKodu: kod } as unknown as BelgeTanim };
 }
 
 /** YG-1070, D-135: Ek-2 onaylı sözleşme metniyle kayıttan üretilir. Kaptan satırı yalnız yetki varsa dolar; "Fatura / Rapor Alıcısı" satırı yoktur. */
