@@ -14,7 +14,7 @@ import { pdfUret, type BelgeTanim, type Bolum, type Renk } from './pdf.js';
 import { altNumara } from './sure.js';
 
 type Db = Pool | PoolClient;
-export type UretimTuru = 'Tedarik Siparişi' | 'Değişiklik Kaydı' | 'Garanti Belgesi' | 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
+export type UretimTuru = 'İhbar Alındı' | 'Tedarik Siparişi' | 'Değişiklik Kaydı' | 'Garanti Belgesi' | 'Fiyat Teklifi' | 'Teknik Rapor' | 'Onay Belgesi' | 'Proforma' | 'Ödeme Talebi' | 'İş Emri' | 'Teslim Tutanağı' | 'Ödeme Sorumluluğu' | 'Uyuşmazlık Paketi' | 'Mutabakat Raporu' | 'Kurtarma Sözleşmesi' | 'Ön Bilgilendirme Formu' | 'Yöntem Bilgi Nüshası' | 'Nihai Kapanış Özeti' | 'Ön Değerlendirme Raporu' | 'Kurtarma Sonuç Tutanağı' | 'Hasar İhbar ve İlk Kayıt' | 'Sigorta Onay Belgesi';
 interface Gonderim { olay: string; eposta: string; konu: string; metin: string; acil?: boolean; sigortaTeyitli?: boolean; ekle?: UretimTuru[] }
 
 /** YG-469, YG-558: PDF kuyruğa yazılır; işlem üretim hatasından etkilenmez. Hata Dosya Sorumlusuna bildirilir. */
@@ -393,6 +393,29 @@ export async function garantiTanim(db: Db, id: string) {
       onay: onay ? { rol: dil === 'en' ? 'Yacht Owner' : 'Yat Sahibi', zaman: anSaat(onay.onay_zamani), kanal: 'YATONET 360', kod: onay.onay_kodu } : undefined } as BelgeTanim,
   };
 }
+/** YG-722: FR-OPS-016 İhbar Alındı Bilgilendirmesi; metinler onaylı şablondan (ŞABLONLAR\FR-OPS-016, TR/EN). Şablon sigortalı hasar dosyası içindir.
+ *  Dosya Sorumlusunun adı yazılmaz (YG-689); 7/24 Destek Hattı, web ve KVKK bağlantısı satırları şirket iletişim bilgileri belli olunca eklenecek. */
+let ihbarMetni: Record<Dil, Record<string, any>> | undefined;
+export async function ihbarAlindiTanim(db: Db, dosya: string) {
+  ihbarMetni ??= JSON.parse(readFileSync(join(KOK, 'veri', 'sablon', 'ihbar_alindi.json'), 'utf8'));
+  const b = await dosyaBilgi(db, dosya, ''); const dil = b.dil; const M = ihbarMetni![dil]!; const d = b.d;
+  const bildirim = gunAy(d.bildirim_tarihi);
+  const yt = (M.yatTur as Record<string, string>)[d.yat_turu ?? ''] ?? M.yatTur[''];
+  const ds = b.ekip.find((x) => x.rol === 'Dosya Sorumlusu');
+  const bolumler: Bolum[] = [
+    { baslik: M.b1, tur: 'alanlar', alanlar: [{ et: M.yat, deger: d.yat_adi }, { et: M.marka, deger: d.marka }, { et: M.model, deger: d.model }, { et: M.olayT, deger: d.olay_tarihi ? gunAy(d.olay_tarihi) : null }, { et: M.olayTur, deger: null }, { et: M.hasarNo, deger: d.sigorta_hasar_dosya_no }] },
+    { baslik: M.b2, tur: 'tablo', sutunlar: [{ ad: M.adim, hiza: 'ort' }, { ad: M.aciklama }, { ad: M.hedef }], satirlar: (M.adimlar as string[][]).map(([a, h], n) => [n + 1, a, h]) },
+    { baslik: M.b3, tur: 'tablo', sutunlar: [{ ad: M.gorev }, { ad: M.tel }, { ad: M.eposta }], satirlar: [[M.ds, ds?.cep_telefonu, ds?.e_posta]] },
+    { baslik: M.b3, tur: 'metin', numarasiz: true, metin: M.ekBilgi },
+  ];
+  return {
+    dosyaAdi: `${d.dosya_no}-IHBAR-ALINDI${dil === 'en' ? '-EN' : ''}.pdf`, sinif: 'Gizli',
+    t: { ad: M.ad, kod: 'FR-OPS-016', no: d.dosya_no, tarih: gunAy(new Date()), surum: 'Rev.1', dil, yat: d.yat_adi, bandEk: [{ et: M.bildirim, deger: bildirim }], bolumler,
+      matbuBas: [String(M.hitap).replace('{bildirim}', bildirim).replace('{dosya}', d.dosya_no), String(M.gecmis).replace('{yat}', yt), `${M.konu} ${String(M.konuD).replace('{bildirim}', bildirim)}`],
+      matbuSon: [M.tesekkur] } as BelgeTanim,
+  };
+}
+
 /** YG-621, YG-1514: FR-MLZ-002 Tedarik Siparişi; tutar yazılmaz, kabul edilen tedarikçi teklifine atıf yapılır; dosya kimliği tedarikçiye görünmez (YG-298); imza bloğu yerine YATONET 360 Onay Kaydı. */
 export async function siparisTanim(db: Db, id: string, kod: string, web: string) {
   const s = (await db.query(`SELECT s.*, k.ticari_unvan FROM tedarik_siparisi s JOIN kurulus k ON k.kimlik = s.kurulus_ref WHERE s.kimlik = $1`, [id])).rows[0];
@@ -520,10 +543,10 @@ const KASELI = ['Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Proforma', 
 /** Kuyruk kaydının belge tanımı. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function tanimYap(c: PoolClient, u: any, kod: string, web: string) {
-  return u.tur === 'Tedarik Siparişi' ? await siparisTanim(c, u.nesne, kod, web) : u.tur === 'Değişiklik Kaydı' ? await degisiklikKaydiTanim(c, u.nesne) : u.tur === 'Garanti Belgesi' ? await garantiTanim(c, u.nesne) : u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, web) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, web) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, web) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, web) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, web) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, web) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, web) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, web);
+  return u.tur === 'İhbar Alındı' ? await ihbarAlindiTanim(c, u.nesne) : u.tur === 'Tedarik Siparişi' ? await siparisTanim(c, u.nesne, kod, web) : u.tur === 'Değişiklik Kaydı' ? await degisiklikKaydiTanim(c, u.nesne) : u.tur === 'Garanti Belgesi' ? await garantiTanim(c, u.nesne) : u.tur === 'Sigorta Onay Belgesi' ? await sigortaOnayTanim(c, u.nesne, kod, web) : u.tur === 'Hasar İhbar ve İlk Kayıt' ? await hasarIhbarTanim(c, u.nesne) : u.tur === 'Kurtarma Sonuç Tutanağı' ? await kurtarmaSonucTanim(c, u.nesne) : u.tur === 'Ön Değerlendirme Raporu' ? await onDegerlendirmeTanim(c, u.nesne) : u.tur === 'Nihai Kapanış Özeti' ? await kapanisOzetiTanim(c, u.nesne) : u.tur === 'Yöntem Bilgi Nüshası' ? await yontemBilgiTanim(c, u.nesne) : u.tur === 'Fiyat Teklifi' ? await teklifTanim(c, u.nesne, kod, web) : u.tur === 'Teknik Rapor' ? await raporTanim(c, u.nesne, kod, web) : u.tur === 'Onay Belgesi' ? await onayTanim(c, u.nesne, kod, web) : u.tur === 'İş Emri' ? await isEmriTanim(c, u.nesne, kod, web) : u.tur === 'Teslim Tutanağı' ? await tutanakTanim(c, u.nesne, kod, web) : u.tur === 'Ödeme Sorumluluğu' ? await sorumlulukTanim(c, u.nesne, kod, web) : u.tur === 'Uyuşmazlık Paketi' ? await uyusmazlikTanim(c, u.nesne, kod) : u.tur === 'Mutabakat Raporu' ? await mutabakatTanim(c, u.nesne) : u.tur === 'Kurtarma Sözleşmesi' ? await (await import('./kalan.js')).kurtarmaTanim(c, u.nesne, kod) : u.tur === 'Ön Bilgilendirme Formu' ? await (await import('./kalan.js')).onBilgiTanim(c, u.nesne, kod) : await odemeTanim(c, u.tur, u.nesne, kod, web);
 }
 /** YG-625: iki dilli üretilen müşteri belgeleri ve "Türkçe metin esastır" satırı (kurtarma sözleşmesi 11.4'ün belgeye uyarlaması). */
-const IKI_DILLI = ['Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Teslim Tutanağı', 'Onay Belgesi', 'Ödeme Sorumluluğu', 'Nihai Kapanış Özeti', 'Proforma', 'Ödeme Talebi', 'Kurtarma Sonuç Tutanağı', 'Ön Bilgilendirme Formu'];
+const IKI_DILLI = ['İhbar Alındı', 'Garanti Belgesi', 'Fiyat Teklifi', 'Teknik Rapor', 'Teslim Tutanağı', 'Onay Belgesi', 'Ödeme Sorumluluğu', 'Nihai Kapanış Özeti', 'Proforma', 'Ödeme Talebi', 'Kurtarma Sonuç Tutanağı', 'Ön Bilgilendirme Formu'];
 export const TURKCE_ESAS = { tr: 'Bu belgenin İngilizce sürümü bilgi amaçlıdır; metinler arasında farklılık olması hâlinde Türkçe metin esas alınır.', en: 'The English version of this document is for information only; in case of any discrepancy between the texts, the Turkish text shall prevail.' };
 /** Belgeyi üretir, dosyaya resmî sürüm olarak bağlar. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

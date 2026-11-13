@@ -367,7 +367,13 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         const dv = (await c.query(`SELECT dosya_no, hizmet_turu FROM dosya WHERE kimlik = $1`, [id])).rows[0];
         if (dv.hizmet_turu === 'Hasar onarımı') await kartAc(c, { tur: 'Yat Değeri Görüşü', kategori: 'islem', baslik: `${dv.dosya_no} · Yat Değeri Ortak Kararı`, sahipKullanici: g.kullanici, nesneTuru: 'Dosya', nesneKimligi: id });
       }
-      if (g.rol === 'Dosya Sorumlusu') await c.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [id, g.kullanici]);
+      if (g.rol === 'Dosya Sorumlusu') {
+        await c.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [id, g.kullanici]);
+        // YG-722: ilk Dosya Sorumlusu atanınca sigortalı hasar dosyasında FR-OPS-016 yat sahibine gider (devirde yeniden gönderilmez; planlı hizmet ve sigortasız dosya metni CEO onayı bekliyor).
+        const ia = (await c.query(`SELECT d.musteri_turu, d.oncelik, d.hizmet_turu, (SELECT eposta FROM dosya_tarafi WHERE dosya_ref = d.kimlik AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci') AND eposta IS NOT NULL ORDER BY taraf_rolu = 'Yat Sahibi' DESC LIMIT 1) eposta FROM dosya d WHERE d.kimlik = $1`, [id])).rows[0];
+        if (ia.musteri_turu === 'Sigorta Şirketi' && ia.oncelik !== 'Planlı' && ia.hizmet_turu === 'Hasar onarımı' && !(await c.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [id])).rowCount)
+          await (await import('./belge_uret.js')).belgeUret(c, { tur: 'İhbar Alındı', nesne: id, dosya: id, gonder: ia.eposta ? { olay: `ihbar-alindi-pdf:${id}`, eposta: ia.eposta, konu: `${d.dosya_no} İhbar Alındı`, metin: `${d.dosya_no} İhbar Alındı` } : undefined });
+      }
       if (g.rol === 'Yedek Sorumlu') await c.query(`UPDATE dosya SET yedek_sorumlu_ref = $2 WHERE kimlik = $1`, [id, g.kullanici]);
       if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') await sureBitir(c, { tur: 'Teknik Uzman Ataması', dosya: id });
       const atananRoller = new Set((await c.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [id])).rows.map((r) => r.rol as string));

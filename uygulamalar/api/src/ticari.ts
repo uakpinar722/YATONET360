@@ -200,7 +200,12 @@ onaySonucKaydet('ONY-27', async (c, t, karar, k) => {
   if (karar !== 'Onaylandı') return;
   // YG-475, YG-414: Kabul veya Koşullu Kabul (çekinceli); çekince kayda geçer.
   const ts = (await c.query(`UPDATE teslim_kaydi SET durum = 'Teslim Edildi', teslim_alan = $2, teslim_zamani = $3, alici_turu = 'Yat Sahibi', karar = $4, cekince = $5 WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' RETURNING kimlik`, [t.dosya_ref, t.alici_ad, k.zaman, k.form?.teslimKarar === 'Koşullu Kabul' ? 'Koşullu Kabul' : 'Kabul', k.form?.cekince?.trim() || null])).rows[0];
-  if (ts) { await belgeUret(c, { tur: 'Teslim Tutanağı', nesne: ts.kimlik, dosya: t.dosya_ref }); await belgeUret(c, { tur: 'Garanti Belgesi', nesne: ts.kimlik, dosya: t.dosya_ref }); } // YG-624
+  if (ts) {
+    // YG-1451: tutanak (FR-OPS-010) ve eki Garanti Belgesi (FR-KLT-010) yat sahibine aynı e-postayla gider; garanti tutanaktan sonra üretilir.
+    const dn = (await c.query(`SELECT d.dosya_no, (SELECT eposta FROM dosya_tarafi WHERE dosya_ref = d.kimlik AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci') AND eposta IS NOT NULL ORDER BY taraf_rolu = 'Yat Sahibi' DESC LIMIT 1) eposta FROM dosya d WHERE d.kimlik = $1`, [t.dosya_ref])).rows[0];
+    await belgeUret(c, { tur: 'Teslim Tutanağı', nesne: ts.kimlik, dosya: t.dosya_ref });
+    await belgeUret(c, { tur: 'Garanti Belgesi', nesne: ts.kimlik, dosya: t.dosya_ref, gonder: dn?.eposta ? { olay: `teslim-paketi:${ts.kimlik}`, eposta: dn.eposta, konu: `${dn.dosya_no} Yat Teslim Tutanağı ve Garanti Belgesi`, metin: `${dn.dosya_no} Yat Teslim Tutanağı ve Garanti Belgesi`, ekle: ['Teslim Tutanağı'] } : undefined });
+  } // YG-624
   await tesisSerbestBirak(c, t.dosya_ref, t.alici_ad); // YG-554
 });
 

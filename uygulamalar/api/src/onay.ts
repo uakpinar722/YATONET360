@@ -27,6 +27,7 @@ export interface OnayGirdisi {
 export type OnaySonuc = (c: PoolClient, t: Record<string, any>, karar: 'Onaylandı' | 'Reddedildi', kayit: { kimlik: string; zaman: Date; form: any; kutular: Record<string, boolean> }) => Promise<void>;
 const SONUC = new Map<string, OnaySonuc>();
 export function onaySonucKaydet(ony: string, f: OnaySonuc) { SONUC.set(ony, f); }
+export const onaySonucu = (ony: string) => SONUC.get(ony);
 /** Form doğrulaması: beyan gibi veri alan ekranlar. Hata metni döner. */
 const FORM = new Map<string, (db: Db, t: Record<string, any>, f: any) => Promise<string | null>>();
 export function onayFormKaydet(tur: string, f: (db: Db, t: Record<string, any>, f: any) => Promise<string | null>) { FORM.set(tur, f); }

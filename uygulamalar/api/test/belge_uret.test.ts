@@ -234,3 +234,36 @@ describe('Teknik Rapor kanıt sayfaları (YG-678, YG-713)', () => {
     expect(JSON.stringify(k)).toContain('Beyan · olay tarihi ve özeti 01.11.2026 tarihli hasar ihbarındaki beyana dayanır');
   });
 });
+
+describe('İhbar Alındı Bilgilendirmesi (YG-722)', () => {
+  it('onaylı şablon metniyle; Dosya Sorumlusu adı yazılmaz, rol ve iletişim yazılır', async () => {
+    const { ihbarAlindiTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const t = (await ihbarAlindiTanim(o.db, d.kimlik)).t;
+    expect(t).toMatchObject({ kod: 'FR-OPS-016', ad: 'İhbar Alındı Bilgilendirmesi' });
+    expect(t.matbuBas![0]).toMatch(/^Sayın Yat Sahibi, .* tarihli bildirim ve .* numaralı dosyanız kapsamında hazırlanan İhbar Alındı Bilgilendirmesi bilginize sunulur\.$/);
+    expect(t.matbuBas![2]).toMatch(/^KONU: HASAR BİLDİRİMİNİZ ALINDI /);
+    const j = JSON.stringify(t.bolumler);
+    expect(j).toContain('Keşif randevusu için Dosya Sorumlumuz sizinle iletişime geçecek'); expect(j).toContain('"Dosya Sorumlusu"');
+    const ad = (await o.sup.query(`SELECT h.ad_soyad FROM dosya_ekibi_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.dosya_ref = $1 AND a.rol = 'Dosya Sorumlusu'`, [d.kimlik])).rows[0].ad_soyad;
+    expect(j).not.toContain(ad);
+    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [d.kimlik])).rowCount).toBe(0); // bireysel dosya
+    const s = await o.dosyaAc({}, { musteriTuru: 'Sigorta Şirketi', sigortaci: 'Örnek Sigorta' }); await o.ekipKur(s.kimlik);
+    expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [s.kimlik])).rowCount).toBe(1);
+  });
+});
+
+describe('teslim paketi e-postası (YG-1451)', () => {
+  it('yat sahibi teslimi onaylayınca garanti belgesi tutanakla aynı iletide gider', async () => {
+    await import('../src/ticari.js'); const { onaySonucu } = await import('../src/onay.js');
+    const d = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya_tarafi SET eposta = 'sahip@deneme.local' WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]);
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, eposta, olusturan_ref) SELECT $1, 'Yat Sahibi', 'Sahip', 'sahip@deneme.local', $2 WHERE NOT EXISTS (SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi')`, [d.kimlik, o.K.ds]);
+    const ts = (await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, durum, teslim_eden_ref) VALUES ($1,'Onay Bekliyor',$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    const c = await o.db.connect();
+    try { await onaySonucu('ONY-27')!(c, { dosya_ref: d.kimlik, alici_ad: 'Sahip' }, 'Onaylandı', { kimlik: ts, zaman: new Date(), form: {}, kutular: {} }); } finally { c.release(); }
+    const g = (await o.sup.query(`SELECT gonder FROM belge_uretim WHERE tur = 'Garanti Belgesi' AND nesne = $1`, [ts])).rows[0].gonder;
+    expect(g).toMatchObject({ eposta: 'sahip@deneme.local', ekle: ['Teslim Tutanağı'] });
+    expect((await o.sup.query(`SELECT gonder FROM belge_uretim WHERE tur = 'Teslim Tutanağı' AND nesne = $1`, [ts])).rows[0].gonder).toBeNull();
+  });
+});

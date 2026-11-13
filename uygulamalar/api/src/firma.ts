@@ -257,14 +257,14 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   const firmaIsEmri = async (id: string, k: string) => {
     const f = await firmam(k);
     if (!f || !UUID.test(id)) return undefined;
-    return (await b.db.query(`SELECT e.*, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
+    return (await b.db.query(`SELECT e.*, (SELECT a.is_emri_no FROM is_emri a WHERE a.kimlik = e.ana_is_emri_ref) AS ana_is_emri_no, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
   };
-  const firmaGorunum = (e: Record<string, any>) => ({ kimlik: e.kimlik, dosya: e.dosya_ref, isEmriNo: e.is_emri_no, tur: e.is_emri_turu, statu: e.statu, anaIsEmri: e.ana_is_emri_ref, dosyaNo: e.dosya_no, oncelik: e.oncelik, yat: e.yat_adi, yatTuru: e.yat_turu, boy: e.tam_boy_m, govde: e.govde_malzemesi, yer: e.uygulama_yeri, kapsam: e.kapsam, bedel: e.firma_bedeli_eur, baslangic: e.baslangic_tarihi, bitis: e.hedef_bitis_tarihi, yanitSon: e.yanit_son, yanit: e.firma_yaniti, tehlikeliAtik: e.tehlikeli_atik });
+  const firmaGorunum = (e: Record<string, any>) => ({ kimlik: e.kimlik, dosya: e.dosya_ref, isEmriNo: e.is_emri_no, tur: e.is_emri_turu, statu: e.statu, anaIsEmri: e.ana_is_emri_ref, anaIsEmriNo: e.ana_is_emri_no ?? null, dosyaNo: e.dosya_no, oncelik: e.oncelik, yat: e.yat_adi, yatTuru: e.yat_turu, boy: e.tam_boy_m, govde: e.govde_malzemesi, yer: e.uygulama_yeri, kapsam: e.kapsam, bedel: e.firma_bedeli_eur, baslangic: e.baslangic_tarihi, bitis: e.hedef_bitis_tarihi, yanitSon: e.yanit_son, yanit: e.firma_yaniti, tehlikeliAtik: e.tehlikeli_atik });
 
   s.get('/firma-portal/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const f = await firmam(o.kullanici);
     if (!f) return y.code(403).send({ hata: 'Bu sayfa Çözüm Ortağı kullanıcılarına açıktır.' });
-    const { rows } = await b.db.query(`SELECT e.*, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kurulus_ref = $1 AND e.statu NOT IN ('Taslak', 'İç Onayda', 'İptal', 'Yerine Geçti') ORDER BY e.statu = 'Kabul Bekliyor' DESC, e.yanit_son, e.olusturma_zamani DESC`, [f]);
+    const { rows } = await b.db.query(`SELECT e.*, (SELECT a.is_emri_no FROM is_emri a WHERE a.kimlik = e.ana_is_emri_ref) AS ana_is_emri_no, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kurulus_ref = $1 AND e.statu NOT IN ('Taslak', 'İç Onayda', 'İptal', 'Yerine Geçti') ORDER BY e.statu = 'Kabul Bekliyor' DESC, e.yanit_son, e.olusturma_zamani DESC`, [f]);
     return { isEmirleri: rows.map(firmaGorunum) };
   });
 

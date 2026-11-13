@@ -149,7 +149,7 @@ interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string;
 interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
   ekonomikKilit: boolean;
-  teklifler: { bant_disi?: boolean; bant_onayli?: boolean; kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
+  teklifler: { ana_teklif_no?: string | null; bant_disi?: boolean; bant_onayli?: boolean; kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string; aralik_disi?: number }[];
   zarfSapmalari: { kimlik: string; aciklama: string; is_emri_no: string }[];
   isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; paket_statusu: string | null; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
@@ -238,7 +238,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         </div></div>}
         {v.teklifler.map((t) => (
           <div key={t.kimlik} className="soru">
-            <span>{t.teklif_no} Rev.{t.surum_no} · {t.teklif_muhatabi} · {t.statu}{t.karar ? ` · ${t.karar}` : ''} · {eur(t.genel_toplam_eur)}{t.gecerlilik_bitis_tarihi ? ` · Geçerlilik: ${t.gecerlilik_bitis_tarihi.split('-').reverse().join('.')}` : ''}</span>
+            <span>{t.teklif_no} Rev.{t.surum_no} · {t.teklif_muhatabi} · {t.statu}{t.ana_teklif_no ? ` · Bağlı Olduğu Belge: ${t.ana_teklif_no}` : ''}{t.karar ? ` · ${t.karar}` : ''} · {eur(t.genel_toplam_eur)}{t.gecerlilik_bitis_tarihi ? ` · Geçerlilik: ${t.gecerlilik_bitis_tarihi.split('-').reverse().join('.')}` : ''}</span>
             <div className="dugmeler">
               {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
               {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
@@ -272,7 +272,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {v.isEmirleri.length === 0 && <div className="not">İş emri bulunmamaktadır.</div>}
         {v.isEmirleri.map((e) => (
           <div key={e.kimlik} className="soru">
-            <span>{e.ana_is_emri_ref ? '↳ ' : ''}{e.is_emri_no} · {e.firma} · {e.statu}{e.paket_statusu ? ` · Paket: ${e.paket_statusu}` : ''}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
+            <span>{e.is_emri_no} · {e.firma} · {e.statu}{e.ana_is_emri_ref ? ` · Bağlı Olduğu İş Emri: ${v.isEmirleri.find((a) => a.kimlik === e.ana_is_emri_ref)?.is_emri_no ?? '---'}` : ''}{e.paket_statusu ? ` · Paket: ${e.paket_statusu}` : ''}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}</span>
             <div className="dugmeler">
               {e.aski && <AskiKarari aski={e.aski} yap={yap} />}
               {e.is_emri_turu === 'KN' && e.statu === 'Taslak' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/firmaya-gonder`, {}), 'Keşif iş emri firmaya gönderildi.')}>Firmaya Gönder</button>}
@@ -327,7 +327,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   );
 }
 
-interface IsEmri { kimlik: string; dosya: string; isEmriNo: string; tur: string; statu: string; dosyaNo: string; oncelik: string; yat: string; yatTuru: string | null; yer: string; kapsam: string; bedel: string | null; yanitSon: string | null; yanit: string | null }
+interface IsEmri { kimlik: string; dosya: string; isEmriNo: string; anaIsEmriNo?: string | null; tur: string; statu: string; dosyaNo: string; oncelik: string; yat: string; yatTuru: string | null; yer: string; kapsam: string; bedel: string | null; yanitSon: string | null; yanit: string | null }
 interface FirmaAyrinti extends IsEmri { kalemler: { aciklama: string; miktar: string; birim: string; gerceklesen_miktar: string }[] }
 interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum: string; yat_tipi: string | null; olay_turu: string; tehlike: string }
 
@@ -416,7 +416,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   if (acik) return (
     <>
       <button className="lnk" onClick={() => setAcik(null)}>← İş Emirleri</button>
-      <h1>{acik.isEmriNo}</h1><Mesaj />
+      <h1>{acik.isEmriNo}</h1><Mesaj />{acik.anaIsEmriNo && <div className="not">Bağlı Olduğu İş Emri: {acik.anaIsEmriNo}</div>}
       <div className="ozet"><div>{acik.yat} · {acik.yatTuru ?? '—'} · {acik.yer}</div><div>{acik.kapsam}</div><div>Bedel: {eur(acik.bedel)} · {acik.statu}</div>{acik.yanitSon && acik.statu === 'Kabul Bekliyor' && <div>Yanıt Son: {saat(acik.yanitSon)}</div>}</div>
       {acik.kalemler.length > 0 && <Blok baslik="Kapsam">{acik.kalemler.map((k) => <div key={k.aciklama}>{k.aciklama} · {k.gerceklesen_miktar}/{k.miktar} {k.birim}</div>)}</Blok>}
       {acik.statu === 'Kabul Bekliyor' && <Blok baslik="Yanıt">
