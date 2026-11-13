@@ -325,6 +325,7 @@ describe('Hasar İhbar iletişim kişileri (YG-719)', () => {
     expect(JSON.stringify(b)).toContain('Eksper Kişi');
     await o.sup.query(`UPDATE talep SET oncelik_cevaplari = '{"Su alma var mı?":"Evet","Çevre kirliliği var mı?":"Bilinmiyor","Can güvenliği riski var mı?":"Hayır"}' WHERE kimlik = (SELECT talep_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]); // YG-684
     const r = JSON.stringify((await hasarIhbarTanim(o.db, d.kimlik)).t.bolumler.find((x) => x.baslik === 'Acil Durum ve Risk Soruları'));
-    expect(r).toContain('{"m":"Evet","renk":"kirmizi"}'); expect(r).toContain('{"m":"Bilinmiyor","renk":"sari"}'); expect(r).toContain('{"m":"Hayır","renk":"yesil"}');
+    expect(r).toContain('{"m":"Evet","renk":"kirmizi"}');
+    expect(JSON.stringify((await hasarIhbarTanim(o.db, d.kimlik)).t.bolumler)).toContain('Önerilen Öncelik'); // YG-033 expect(r).toContain('{"m":"Bilinmiyor","renk":"sari"}'); expect(r).toContain('{"m":"Hayır","renk":"yesil"}');
   });
 });

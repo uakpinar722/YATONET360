@@ -179,6 +179,7 @@ try {
   await tikla(pTs, 'Fiyat Teklifi Hazırla');
   await pTs.getByLabel('Masraf Açıklaması (Tesis Bedeli)', { exact: true }).fill('Travel lift bedeli'); await pTs.getByLabel('Gerçek Tutar (EUR)', { exact: true }).fill('1.000,00');
   await pTs.getByLabel('Tesis Teklifi veya Tarifesi', { exact: true }).setInputFiles(TEMP.replace('.pdf', '5.pdf')); await pTs.getByText('Dosya yüklendi.').first().waitFor();
+  await pTs.locator('[id^="mk-n-"]').first().selectOption('Bakım');
   await tikla(pTs, 'Masraf Ekle');
   kontrol('tesis bedeli teklife gerçek tutarıyla Masraf olarak eklenir', (await sup.query(`SELECT tutar_eur FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 AND k.bedel_turu = 'Masraf'`, [d.kimlik])).rows[0]?.tutar_eur === '1000.00');
   await tikla(pTs, 'Onaya Gönder');

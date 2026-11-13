@@ -43,6 +43,8 @@ describe('hukuk kararı (YG-820, YG-912, YG-914)', () => {
   });
   it('60. günde sistem önerisi açılır; muhataba göre yol', async () => {
     expect(alacakYolu('Bireysel Müşteri', 100)).toContain('Tüketici Hakem Heyeti');
+    expect(alacakYolu('Bireysel Müşteri', 1000, { kur: 50, kurTarihi: '01.12.2026', sinirTl: 186000 })).toContain('altında: Tüketici Hakem Heyeti'); // YG-913
+    expect(alacakYolu('Bireysel Müşteri', 10000, { kur: 50, kurTarihi: '01.12.2026', sinirTl: 186000 })).toContain('üstünde: zorunlu arabuluculuk');
     expect(alacakYolu('Sigorta Şirketi', 100)).toContain('arabuluculuk'); expect(alacakYolu('Sigorta Şirketi', 100)).not.toContain('Hakem');
     const { d } = await kurumsal(); const f = await fatura(d, { toplam: 900, vade: '2026-01-01' });
     await alacakIsle(o.db, new Date('2026-03-15T12:00:00Z'));

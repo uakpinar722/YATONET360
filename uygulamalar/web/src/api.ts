@@ -24,7 +24,8 @@ async function gonder<T>(yol: string, govde?: object, anahtar?: string): Promise
       ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Yatonet': '1', ...(anahtar ? { 'X-Islem-Anahtari': anahtar } : {}) }, body: JSON.stringify(govde), credentials: 'same-origin' }
       : { credentials: 'same-origin' });
     const j = await y.json().catch(() => ({}));
-    if (!y.ok) throw new ApiHatasi(y.status, j.hata ?? 'İşlem tamamlanamadı; yeniden deneyiniz.');
+    // YG-1402: sunucu hatasında destek için kısa ilişki kodu gösterilir (teknik ayrıntı gösterilmez; olay sunucu günlüğünde kodla kayıtlıdır).
+    if (!y.ok) throw new ApiHatasi(y.status, `${j.hata ?? 'İşlem tamamlanamadı; yeniden deneyiniz.'}${y.status >= 500 && j.iliski ? ` Destek kodu: ${String(j.iliski).slice(-8)}` : ''}`);
     return j as T;
   } finally { bekleyen--; bildir(); }
 }

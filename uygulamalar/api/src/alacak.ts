@@ -21,9 +21,16 @@ const KARAR_TURLERI = ['Dava', 'İcra Takibi', 'Şüpheli Alacak', 'Alacak Silme
 const AY_FAIZ_GUN = 36500;
 
 /** YG-912: 60. günde sistem önerisi; HUD ve GMY görüş, CEO onay. Hakem heyeti parasal sınırı yıllık değiştiği için metinde sayı yazılmaz. */
-export function alacakYolu(musteriTuru: string, tutarEur: number): string {
+export function alacakYolu(musteriTuru: string, tutarEur: number, sinir?: { kur: number; kurTarihi: string; sinirTl: number } | null): string {
   const t = tutar(tutarEur);
-  if (musteriTuru === 'Bireysel Müşteri') return `${t} EUR alacak için parasal sınıra göre Tüketici Hakem Heyeti veya zorunlu arabuluculuk ve Tüketici Mahkemesi.`;
+  // YG-913: bireyselde TL karşılığı (fatura kuru) hakem heyeti parasal sınırıyla karşılaştırılır; kur yoksa iki yol birlikte yazılır.
+  if (musteriTuru === 'Bireysel Müşteri' && sinir) {
+    const tl = Math.round(tutarEur * sinir.kur * 100) / 100;
+    return tl <= sinir.sinirTl
+      ? `${t} EUR alacak (${tutar(tl)} TL, ${sinir.kurTarihi} kuru) parasal sınırın (${tutar(sinir.sinirTl)} TL) altında: Tüketici Hakem Heyeti.`
+      : `${t} EUR alacak (${tutar(tl)} TL, ${sinir.kurTarihi} kuru) parasal sınırın (${tutar(sinir.sinirTl)} TL) üstünde: zorunlu arabuluculuk ve Tüketici Mahkemesi.`;
+  }
+  if (musteriTuru === 'Bireysel Müşteri') return `${t} EUR alacak için parasal sınıra göre Tüketici Hakem Heyeti veya zorunlu arabuluculuk ve Tüketici Mahkemesi (fatura kuru girilmediği için tutar sınırla karşılaştırılamadı).`;
   if (musteriTuru === 'Sigorta Şirketi') return `${t} EUR alacak için önce yazısız görüşme, sonuç alınamazsa zorunlu arabuluculuk ve icra takibi.`;
   return `${t} EUR alacak için zorunlu arabuluculuk ve icra takibi.`;
 }
@@ -31,7 +38,8 @@ export function alacakYolu(musteriTuru: string, tutarEur: number): string {
 /** Üç makam sırayla: nihai kararı yalnız CEO verir (YG-820). */
 const hukukZinciri = async (c: Db) => [await rolId(c, HUD), await rolId(c, GMY), await rolId(c, 'CEO')];
 export async function alacakYoluAc(c: Db, f: { kimlik: string; dosya_ref: string; dosya_no: string; musteri_turu: string; kalan: number }) {
-  const oneri = alacakYolu(f.musteri_turu, f.kalan);
+  const sr = (await c.query(`SELECT m.kur, to_char(m.kur_tarihi, 'DD.MM.YYYY') kt, (SELECT deger FROM sistem_parametresi WHERE kod = 'hakem_heyeti_siniri_tl') s FROM musteri_faturasi m WHERE m.kimlik = $1`, [f.kimlik])).rows[0];
+  const oneri = alacakYolu(f.musteri_turu, f.kalan, sr?.kur && sr.s ? { kur: Number(sr.kur), kurTarihi: sr.kt, sinirTl: Number(sr.s) } : null);
   const r = (await c.query(`INSERT INTO hukuk_karari (tur, dosya_ref, fatura_ref, tutar_eur, oneri) VALUES ('Alacak Yolu',$1,$2,$3,$4) RETURNING kimlik`, [f.dosya_ref, f.kimlik, f.kalan, oneri])).rows[0];
   await kartAc(c, { tur: 'Hukuk Kararı', baslik: `${f.dosya_no} · Alacak Yolu Önerisi`, ozet: oneri, oncelik: 'Yüksek', zincir: await hukukZinciri(c), nesneTuru: 'Hukuk Kararı', nesneKimligi: r.kimlik });
 }

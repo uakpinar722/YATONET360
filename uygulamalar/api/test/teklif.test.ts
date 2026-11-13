@@ -349,7 +349,8 @@ describe('tesis bedeli Masraf kalemi (MSR-1, KRT-10)', () => {
     const once = (await o.sup.query(`SELECT ara_toplam_eur a FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].a;
     expect((await o.ist('POST', u, await o.gir('ds'), { aciklama: 'Travel lift', tutar: 500, belge })).statusCode).toBe(403);
     expect((await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500 })).statusCode).toBe(400);
-    const r = await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500, belge });
+    expect((await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500, belge })).json().hata).toMatch(/niteliğini/); // YG-179
+    const r = await o.ist('POST', u, c, { aciklama: 'Travel lift', nitelik: 'Bakım', tutar: 500, belge });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().araToplam).toBe(Number(once) + 500);
     const k = (await o.sup.query(`SELECT bedel_turu, birim_satis_fiyati_eur, tutar_eur, kartela_kodu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = $2`, [t.kimlik, r.json().sira])).rows[0];
     expect(k).toEqual({ bedel_turu: 'Masraf', birim_satis_fiyati_eur: '500.00', tutar_eur: '500.00', kartela_kodu: null });

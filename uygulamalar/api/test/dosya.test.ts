@@ -109,10 +109,12 @@ describe('kimlik doğrulamaları (YG-926)', () => {
   });
   it('taraf: mükerrer kimlik reddedilir, TCKN maskeli döner', async () => {
     const c = await gir('ds');
-    const a = await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Maskeli Kişi', tckn: '10000000146' });
+    const a = await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Maskeli Kişi', tckn: '10000000146', telefon: '+905550001234' });
     expect(a.statusCode, a.body).toBe(200); expect(a.json().taraf_no).toMatch(/^TR-\d{6}$/);
-    expect((await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Başka', tckn: '10000000146' })).statusCode).toBe(409);
-    expect((await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Hatalı', tckn: '10000000147' })).statusCode).toBe(400);
+    expect((await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Başka', tckn: '10000000146', telefon: '+905550001234' })).statusCode).toBe(409);
+    expect((await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Hatalı', tckn: '10000000147', telefon: '+905550001234' })).statusCode).toBe(400);
+    expect((await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'İletişimsiz' })).json().hata).toMatch(/en az birini/); // YG-1378
+    expect((await ist('POST', '/api/taraf', c, { kisiTuru: 'Gerçek kişi', ad: 'Hatalı Posta', eposta: 'abc@' })).json().hata).toMatch(/E-posta/);
     expect((await ist('GET', '/api/taraf/ara?q=Maskeli', c)).json()[0].tckn).toBe('10*******46');
   });
 });

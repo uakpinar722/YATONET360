@@ -133,6 +133,10 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { kisiTuru?: string; musteriTuru?: string; ad?: string; tckn?: string; vergiNo?: string; vergiDairesi?: string; telefon?: string; eposta?: string; adres?: string; il?: string; ulke?: string; roller?: string[] };
     if (!['Gerçek kişi', 'Tüzel kişi'].includes(g.kisiTuru ?? '')) return y.code(400).send({ hata: 'Kişi türünü seçiniz.' });
     if (!g.ad?.trim()) return y.code(400).send({ hata: 'Ad soyad veya unvan zorunludur.' });
+    // YG-1378: telefon veya e-postadan en az biri; e-posta ve telefon biçimi denetlenir.
+    if (!g.telefon?.trim() && !g.eposta?.trim()) return y.code(400).send({ hata: 'Telefon veya e-postadan en az birini giriniz.' });
+    if (g.eposta?.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta.trim())) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
+    if (g.telefon?.trim() && !/^\+?[0-9 ()-]{10,20}$/.test(g.telefon.trim())) return y.code(400).send({ hata: 'Telefon numarası geçersiz.' });
     if (g.tckn && !tcknGecerli(g.tckn)) return y.code(400).send({ hata: 'T.C. Kimlik Numarası geçersiz.' });
     if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarası geçersiz.' });
     const es = await b.db.query(`SELECT taraf_no FROM taraf WHERE vergi_no = $1 OR tckn = $2 LIMIT 1`, [g.vergiNo ?? null, g.tckn ?? null]);

@@ -436,10 +436,11 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!e) return yok(y);
     if (!(Number(g.brut) > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Hakediş için Gerçekleşme kanıtını eklemenizi rica ederiz.' });
+    if (e.firma_bedeli_eur === null || e.firma_bedeli_eur === undefined) return y.code(409).send({ hata: 'İş emrinin firma bedeli tanımlı değildir; boş bedel sıfır sayılmaz. Bedeli değişiklik onayıyla tanımlayınız.' }); // YG-852
     if ((await b.db.query(`SELECT 1 FROM hakedis WHERE kanit_belge_ref = $1`, [g.belge])).rowCount) return y.code(409).send({ hata: 'Aynı kanıt daha önce kullanılmıştır; bu dönemin kanıtını eklemenizi rica ederiz.' });
     return islem(async (c) => {
       const kum = Number((await c.query(`SELECT coalesce(sum(bu_donem_brut), 0) t FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].t);
-      const bedel = Number(e.firma_bedeli_eur ?? 0);
+      const bedel = Number(e.firma_bedeli_eur);
       if (R2(kum + Number(g.brut)) > bedel) throw Object.assign(new Error('Kümülatif tutar iş emri bedelini aşıyor; değişiklik onayı gereklidir.'), { statusCode: 409 });
       // YG-837: hakediş aylık ya da dilim tutarı (20.000,00 EUR) kadar verilir; iş emri bedelini tamamlayan son hakediş beklemez.
       const dilim = await parametre(c, 'hakedis_dilim_eur'); const son = (await c.query(`SELECT max(olusturma_zamani) z FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].z ?? e.baslangic_tarihi ?? e.olusturma_zamani;

@@ -104,6 +104,10 @@ export async function teklifTanim(db: Db, id: string, kod: string, web: string):
   ];
   // YG-709: seçilen 013 maddeleri (Türkçe ve İngilizce metin).
   const mad = await (await import('./teklif_madde.js')).teklifMaddeleri(db, f.kimlik, dil);
+  // YG-139: kapsam cetvelindeki kapsam dışı kalanlar ve varsayımlar teklife kendiliğinden aktarılır.
+  const cv = f.cetvel_ref ? (await db.query(`SELECT dahil_haric, varsayimlar FROM kapsam_cetveli WHERE kimlik = $1`, [f.cetvel_ref])).rows[0] : null;
+  if (cv?.varsayimlar?.trim()) bolumler.splice(2, 0, { baslik: dil === 'en' ? 'Assumptions' : 'Varsayımlar', tur: 'metin', metin: cv.varsayimlar.trim() });
+  if (cv?.dahil_haric?.trim()) bolumler.splice(2, 0, { baslik: dil === 'en' ? 'Out of Scope' : 'Kapsam Dışı Kalanlar', tur: 'metin', metin: cv.dahil_haric.trim() });
   if (mad.length) bolumler.splice(2, 0, { baslik: dil === 'en' ? 'Exclusions and Separately Priced Items' : 'Hariç ve Ayrıca Fiyatlandırılacak Hususlar', tur: 'tablo', sutunlar: [{ ad: dil === 'en' ? 'Status' : 'Durum' }, { ad: dil === 'en' ? 'Item' : 'Husus' }], satirlar: mad.map((x) => [x.tur, x.metin]) });
   if (f.ana_teklif_ref) { const ana = (await db.query(`SELECT teklif_no FROM fiyat_teklifi WHERE kimlik = $1`, [f.ana_teklif_ref])).rows[0]?.teklif_no; bolumler.unshift({ baslik: dil === 'en' ? 'Related Document' : 'Bağlı Olduğu Belge', tur: 'alanlar', alanlar: [{ et: dil === 'en' ? 'Quotation No' : 'Teklif No', deger: ana }] }); } // YG-658
   return {
@@ -332,7 +336,7 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   const no = await altNumara(db, b.d.dosya_no, 'TT');
   const teslim = k.teslim_zamani ?? new Date();
   const bitis = new Date(teslim); bitis.setFullYear(bitis.getFullYear() + 1);
-  const isler = (await db.query(`SELECT m.aciklama, (SELECT kabul_turu FROM kabul_kaydi x WHERE x.is_emri_ref = i.kimlik ORDER BY x.olusturma_zamani DESC LIMIT 1) AS kabul FROM is_emri_kalemi m JOIN is_emri i ON i.kimlik = m.is_emri_ref WHERE i.dosya_ref = $1 AND i.is_emri_turu IN ('ON', 'EK', 'GR', 'AC') AND i.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak') ORDER BY i.is_emri_no, m.aciklama`, [k.dosya_ref])).rows;
+  const isler = (await db.query(`SELECT m.aciklama, (SELECT kabul_turu FROM kabul_kaydi x WHERE x.is_emri_ref = i.kimlik ORDER BY x.olusturma_zamani DESC LIMIT 1) AS kabul, (coalesce((SELECT s.gecici_onarim FROM kapsam_satiri s WHERE s.kimlik = m.satir_ref), false) OR coalesce((SELECT k2.isin_niteligi FROM fiyat_teklifi_kalemi k2 WHERE k2.kimlik = m.teklif_kalem_ref), '') = 'Geçici / Acil Önlem' OR i.is_emri_turu = 'AC') AS gecici FROM is_emri_kalemi m JOIN is_emri i ON i.kimlik = m.is_emri_ref WHERE i.dosya_ref = $1 AND i.is_emri_turu IN ('ON', 'EK', 'GR', 'AC') AND i.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak') ORDER BY i.is_emri_no, m.aciklama`, [k.dosya_ref])).rows;
   const testler = (await db.query(`SELECT test_grubu, sonuc, sonuc_gerekcesi FROM test_kaydi WHERE dosya_ref = $1 AND sonuc IS NOT NULL ORDER BY test_no`, [k.dosya_ref])).rows;
   const kabul = (await db.query(`SELECT kimlik, kabul_turu, olusturma_zamani FROM kabul_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 1`, [k.dosya_ref])).rows[0];
   const acik = (await db.query(`SELECT a.tanim, a.hedef_tarih FROM acik_is_kalemi a JOIN kabul_kaydi x ON x.kimlik = a.kabul_ref WHERE x.dosya_ref = $1 AND a.kapanis_zamani IS NULL ORDER BY a.hedef_tarih`, [k.dosya_ref])).rows;
@@ -349,7 +353,7 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   ];
   if (isler.length) {
     bolumler.push({ baslik: T.is, tur: 'tablo', sutunlar: [{ ad: T.paket, hiza: 'ort' }, { ad: e.aciklama }, { ad: T.test }], satirlar: isler.map((x, n) => [n + 1, x.aciklama, x.kabul]) });
-    bolumler.push({ baslik: T.gar, tur: 'tablo', sutunlar: [{ ad: T.paket, hiza: 'ort' }, { ad: T.kalem }, { ad: T.bas }, { ad: T.bit }, { ad: T.not }], satirlar: isler.map((x, n) => [n + 1, x.aciklama, gunAy(teslim), gunAy(bitis), T.gn]) });
+    bolumler.push({ baslik: T.gar, tur: 'tablo', sutunlar: [{ ad: T.paket, hiza: 'ort' }, { ad: T.kalem }, { ad: T.bas }, { ad: T.bit }, { ad: T.not }], satirlar: isler.map((x, n) => x.gecici ? [n + 1, x.aciklama, null, null, en ? 'Excluded from warranty (temporary repair)' : 'Garanti dışı (geçici onarım)'] : [n + 1, x.aciklama, gunAy(teslim), gunAy(bitis), T.gn]) }); // YG-871
   }
   if (testler.length) bolumler.push({ baslik: T.ozet, tur: 'tablo', sutunlar: [{ ad: T.tt }, { ad: T.ts }, { ad: T.not }], satirlar: testler.map((x) => [x.test_grubu, x.sonuc, x.sonuc_gerekcesi]) });
   // YG-650: kışa sarkan dosyada kışlık hazırlık sorumlusu teslim tutanağına yazılır.
@@ -397,7 +401,7 @@ export async function garantiTanim(db: Db, id: string) {
   const teslim = k.teslim_zamani ?? new Date(); const bitis = new Date(teslim); bitis.setFullYear(bitis.getFullYear() + 1);
   const tt = (await db.query(`SELECT e.ad FROM belge_uretim u JOIN belge e ON e.kimlik = u.belge_ref WHERE u.tur = 'Teslim Tutanağı' AND u.nesne = $1 ORDER BY u.olusturma_zamani DESC LIMIT 1`, [id])).rows[0]?.ad as string | undefined;
   const tutanakNo = tt ? tt.split(' ').pop()! : '---';
-  const isler = (await db.query(`SELECT m.aciklama FROM is_emri_kalemi m JOIN is_emri i ON i.kimlik = m.is_emri_ref WHERE i.dosya_ref = $1 AND i.is_emri_turu IN ('ON', 'EK', 'GR', 'AC') AND i.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak') ORDER BY i.is_emri_no, m.aciklama`, [k.dosya_ref])).rows;
+  const isler = (await db.query(`SELECT m.aciklama, (coalesce((SELECT s.gecici_onarim FROM kapsam_satiri s WHERE s.kimlik = m.satir_ref), false) OR coalesce((SELECT k2.isin_niteligi FROM fiyat_teklifi_kalemi k2 WHERE k2.kimlik = m.teklif_kalem_ref), '') = 'Geçici / Acil Önlem' OR i.is_emri_turu = 'AC') AS gecici FROM is_emri_kalemi m JOIN is_emri i ON i.kimlik = m.is_emri_ref WHERE i.dosya_ref = $1 AND i.is_emri_turu IN ('ON', 'EK', 'GR', 'AC') AND i.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak') ORDER BY i.is_emri_no, m.aciklama`, [k.dosya_ref])).rows;
   const onay = (await db.query(`SELECT r.onay_kodu, r.onay_zamani FROM onay_talebi o JOIN yatonet_onay_kaydi r ON r.onay_talebi_ref = o.kimlik WHERE o.dosya_ref = $1 AND o.ony_kod = 'ONY-27' AND r.karar = 'Onaylandı' ORDER BY r.onay_zamani DESC LIMIT 1`, [k.dosya_ref])).rows[0];
   const planli = (await db.query(`SELECT oncelik = 'Planlı' p FROM dosya WHERE kimlik = $1`, [k.dosya_ref])).rows[0]?.p;
   const oneriler = ((k.bakim_onerileri ?? []) as { oneri: string; zaman: string }[]);
@@ -407,7 +411,7 @@ export async function garantiTanim(db: Db, id: string) {
   const bolumler: Bolum[] = [
     { baslik: G.b1, tur: 'alanlar', alanlar: [{ et: G.yat, deger: b.d.yat_adi }, { et: G.sahip, deger: b.sahip }, { et: G.tutanak, deger: `FR-OPS-010 · ${tutanakNo}` }, { et: G.devir, deger: anSaat(teslim) }, { et: G.sonuc, deger: k.karar },
       ...(ys ? [{ et: dil === 'en' ? 'Manufacturer’s Authorised Service' : 'Üretici Yetkili Servisi', deger: `${ys.unvan} (${ys.marka})` }] : [])] },
-    { baslik: G.b2, tur: 'tablo', sutunlar: [{ ad: G.paket, hiza: 'ort' }, { ad: G.kalem }, { ad: G.sure }, { ad: G.bas }, { ad: G.bit }], satirlar: isler.map((x, n) => [n + 1, x.aciklama, G.ay, gunAy(teslim), gunAy(bitis)]) },
+    { baslik: G.b2, tur: 'tablo', sutunlar: [{ ad: G.paket, hiza: 'ort' }, { ad: G.kalem }, { ad: G.sure }, { ad: G.bas }, { ad: G.bit }], satirlar: isler.map((x, n) => x.gecici ? [n + 1, x.aciklama, dil === 'en' ? 'Excluded (temporary repair)' : 'Garanti dışı (geçici onarım)', null, null] : [n + 1, x.aciklama, G.ay, gunAy(teslim), gunAy(bitis)]) }, // YG-871
     { baslik: G.b2, tur: 'metin', numarasiz: true, metin: G.kural },
     { baslik: G.b3, tur: 'tablo', sutunlar: [{ ad: G.no, hiza: 'ort' }, { ad: G.dis }], satirlar: (G.haller as string[]).map((h, n) => [n + 1, h]) },
     { baslik: G.b4, tur: 'alanlar', alanlar: [{ et: G.kanal, deger: G.kanalD }, { et: G.basvuru, deger: G.basvuruD, genis: true }] },
@@ -492,7 +496,9 @@ export async function degisiklikKaydiTanim(db: Db, id: string) {
 export async function hasarIhbarTanim(db: Db, dosya: string) {
   const t = (await db.query(`SELECT t.* FROM talep t JOIN dosya d ON d.talep_ref = t.kimlik WHERE d.kimlik = $1`, [dosya])).rows[0];
   const b = await dosyaBilgi(db, dosya, '');
-  const bolumler: Bolum[] = [...ortak(b), { baslik: 'İhbar Bilgileri', tur: 'alanlar', alanlar: [{ et: 'Kanal', deger: t.bildirim_kanali }, { et: 'Talep Sahibi', deger: t.talep_sahibi_adi }, { et: 'Talep Sahibi Türü', deger: t.talep_sahibi_turu }, { et: 'Telefon', deger: t.talep_sahibi_telefon }, { et: 'E-Posta', deger: t.talep_sahibi_eposta }, { et: 'Yetki Durumu', deger: t.ihbar_yetki_durumu }, { et: 'Olay Tarihi', deger: t.olay_tarihi ? gunAy(t.olay_tarihi) : null }, { et: 'Olay Yeri', deger: t.olay_yeri }, { et: 'Yatın Mevcut Konumu', deger: t.yat_mevcut_konumu }, { et: 'Yatın Durumu', deger: t.yat_mevcut_durumu }, { et: 'Öncelik', deger: t.oncelik }, { et: 'İhtiyaç', deger: t.ihtiyac_tanimi, genis: true }] }, { baslik: 'Özgün Bildirim', tur: 'metin', metin: t.ozgun_bildirim ?? '---' }];
+  // YG-033: sistemin önerdiği öncelik, keşif süresi ve müşterinin hedef tarihi ihbar kaydında görünür.
+  const { SURE_SAAT } = await import('./sure.js'); const ks = SURE_SAAT['Keşif']?.[t.oncelik];
+  const bolumler: Bolum[] = [...ortak(b), { baslik: 'Öncelik ve Hedef', tur: 'alanlar', alanlar: [{ et: 'Önerilen Öncelik', deger: t.onerilen_oncelik }, { et: 'Belirlenen Öncelik', deger: t.oncelik }, { et: 'Keşif Süresi', deger: ks ? `${ks} saat` : t.oncelik === 'Kritik' ? 'Acil müdahale (sahaya ulaşma 4 saat)' : null }, { et: 'Müşterinin Hedef Tarihi', deger: t.musteri_hedef_tarihi ? gunAy(t.musteri_hedef_tarihi) : null }] }, { baslik: 'İhbar Bilgileri', tur: 'alanlar', alanlar: [{ et: 'Kanal', deger: t.bildirim_kanali }, { et: 'Talep Sahibi', deger: t.talep_sahibi_adi }, { et: 'Talep Sahibi Türü', deger: t.talep_sahibi_turu }, { et: 'Telefon', deger: t.talep_sahibi_telefon }, { et: 'E-Posta', deger: t.talep_sahibi_eposta }, { et: 'Yetki Durumu', deger: t.ihbar_yetki_durumu }, { et: 'Olay Tarihi', deger: t.olay_tarihi ? gunAy(t.olay_tarihi) : null }, { et: 'Olay Yeri', deger: t.olay_yeri }, { et: 'Yatın Mevcut Konumu', deger: t.yat_mevcut_konumu }, { et: 'Yatın Durumu', deger: t.yat_mevcut_durumu }, { et: 'Öncelik', deger: t.oncelik }, { et: 'İhtiyaç', deger: t.ihtiyac_tanimi, genis: true }] }, { baslik: 'Özgün Bildirim', tur: 'metin', metin: t.ozgun_bildirim ?? '---' }];
   // YG-684: risk/acil durum soruları renkli yanıtla (Hayır yeşil, Bilinmiyor sarı, Kısmen turuncu, Evet kırmızı; sorular evet = risk).
   const RR: Record<string, Renk> = { Hayır: 'yesil', Bilinmiyor: 'sari', Kısmen: 'turuncu', Evet: 'kirmizi' };
   const oc = Object.entries((t.oncelik_cevaplari ?? {}) as Record<string, string>);

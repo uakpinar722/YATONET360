@@ -166,12 +166,13 @@ function IlerlemeDogrula({ isEmri }: { isEmri: string }) {
 
 /** MSR-1: tesisin kendi tarifesiyle fiyatladığı bedel, belgesiyle ve gerçek tutarıyla Masraf kalemi olur; fiyat kuralı uygulanmaz. */
 function MasrafKalemi({ dosya, teklif, yap }: { dosya: string; teklif: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
-  const [f, setF] = useState({ aciklama: '', tutar: '', belge: '' });
+  const [f, setF] = useState({ aciklama: '', tutar: '', belge: '', nitelik: '' });
   return <div className="soru">
+    <label htmlFor={`mk-n-${teklif}`}>İşin Niteliği</label><select id={`mk-n-${teklif}`} value={f.nitelik} onChange={(e) => setF({ ...f, nitelik: e.target.value })}><option value="">Seçiniz</option>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor={`mk-a-${teklif}`}>Masraf Açıklaması (Tesis Bedeli)</label><input id={`mk-a-${teklif}`} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
     <label htmlFor={`mk-t-${teklif}`}>Gerçek Tutar (EUR)</label><input id={`mk-t-${teklif}`} inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
     <BelgeSec ad="Tesis Teklifi veya Tarifesi" bagTuru="Dosya" bagKimligi={dosya} deger={f.belge} sec={(x) => setF({ ...f, belge: x })} />
-    <button className="btn2 kucuk" disabled={!f.belge} onClick={() => void yap(() => istek(`/teklif/${teklif}/masraf-kalemi`, { aciklama: f.aciklama, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')), belge: f.belge }), 'Masraf kalemi eklendi.').then(() => setF({ aciklama: '', tutar: '', belge: '' }))}>Masraf Ekle</button>
+    <button className="btn2 kucuk" disabled={!f.belge} onClick={() => void yap(() => istek(`/teklif/${teklif}/masraf-kalemi`, { aciklama: f.aciklama, nitelik: f.nitelik, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')), belge: f.belge }), 'Masraf kalemi eklendi.').then(() => setF({ aciklama: '', tutar: '', belge: '', nitelik: '' }))}>Masraf Ekle</button>
   </div>;
 }
 

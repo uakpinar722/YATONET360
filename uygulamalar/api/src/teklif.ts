@@ -492,10 +492,13 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     // YG-1418: geçerli garantide yan masraf yat sahibine yazılmaz.
     if ((await b.db.query(`SELECT 1 FROM garanti_sikayet WHERE dosya_ref = $1 AND karar = 'Garanti' LIMIT 1`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Geçerli garantide bu masraf yat sahibine yazılmaz; firma hakedişinden mahsup edilir.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Tesis teklifi veya tarife belgesini eklemenizi rica ederiz.' });
+    // YG-179, YG-1770: işin niteliği listeden zorunlu (varsayılan yazılmaz); belge bu dosyaya yüklenmiş olmalıdır.
+    if (!NITELIK.includes(g.nitelik ?? '')) return y.code(400).send({ hata: `İşin niteliğini seçiniz: ${NITELIK.join(', ')}.` });
+    if (!(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [g.belge, t.dosya_ref])).rowCount) return y.code(400).send({ hata: 'Belge bu dosyaya yüklenmiş olmalıdır.' });
     return islem(async (c) => {
       const tutarE = R2(Number(g.tutar));
       const sira = (await c.query(`SELECT coalesce(max(sira_no), 0) + 1 n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows[0].n;
-      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi) VALUES ($1,$2,$3,$4,'Masraf',1,'adet',$5,$5,$5,false)`, [t.kimlik, sira, g.aciklama!.trim(), g.nitelik ?? 'Onarım', tutarE]);
+      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi) VALUES ($1,$2,$3,$4,'Masraf',1,'adet',$5,$5,$5,false)`, [t.kimlik, sira, g.aciklama!.trim(), g.nitelik, tutarE]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklife Masraf Eklendi', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { aciklama: g.aciklama, tutar: tutarE, belge: g.belge }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       const kl = (await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
       const top = toplamlar(kl, t.indirim_orani === null ? null : Number(t.indirim_orani), Number(t.kesif_mahsubu_eur), Number(t.kdv_orani));
