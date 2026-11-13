@@ -89,11 +89,18 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     for (const x of fot) if (!(await isBelgesi(x, e.kimlik))) return y.code(400).send({ hata: 'Fotoğrafı bu iş emrine yüklemenizi rica ederiz.' });
     const onceki = await b.db.query(`SELECT 1 FROM firma_gunluk_kaydi WHERE fotograflar && $1::uuid[] AND NOT (is_emri_ref = $2 AND tarih = (now() AT TIME ZONE 'Europe/Istanbul')::date) LIMIT 1`, [fot, e.kimlik]);
     if (onceki.rowCount) return y.code(409).send({ hata: 'Aynı fotoğraf başka bir kayıtta kanıt olarak kullanılmıştır.' });
-    if (g.kapat && (!g.faaliyet?.trim() || !fot.length || !g.sonrakiPlan?.trim() || !g.sorumlu?.trim())) return y.code(400).send({ hata: 'Günü kapatabilmeniz için zorunlu alanları tamamlamanızı rica ederiz.' });
+    // YG-504: ölçüm ve engel de zorunludur; yoksa "Yok" yazılır.
+    if (g.kapat && (!g.faaliyet?.trim() || !fot.length || !g.sonrakiPlan?.trim() || !g.sorumlu?.trim() || !g.olcumler?.trim() || !g.engel?.trim())) return y.code(400).send({ hata: 'Günü kapatabilmeniz için zorunlu alanları (faaliyet, fotoğraf, ölçümler, engel; yoksa "Yok", sonraki gün planı, sorumlu) tamamlamanızı rica ederiz.' });
     const r = (await b.db.query(`INSERT INTO firma_gunluk_kaydi (is_emri_ref, kurulus_ref, tarih, faaliyet, fotograflar, olcumler, engel, sonraki_plan, sorumlu, durum, giren_ref, kapanis_zamani) VALUES ($1,$2,(now() AT TIME ZONE 'Europe/Istanbul')::date,$3,$4,$5,$6,$7,$8,$9,$10,$11)
       ON CONFLICT (is_emri_ref, tarih) DO UPDATE SET faaliyet = EXCLUDED.faaliyet, fotograflar = EXCLUDED.fotograflar, olcumler = EXCLUDED.olcumler, engel = EXCLUDED.engel, sonraki_plan = EXCLUDED.sonraki_plan, sorumlu = EXCLUDED.sorumlu, durum = EXCLUDED.durum, kapanis_zamani = EXCLUDED.kapanis_zamani WHERE firma_gunluk_kaydi.durum = 'Açık' RETURNING kimlik, durum`,
     [e.kimlik, e.kurulus_ref, g.faaliyet?.trim() || null, fot, g.olcumler?.trim() || null, g.engel?.trim() || null, g.sonrakiPlan?.trim() || null, g.sorumlu?.trim() || null, g.kapat ? 'Kapatıldı' : 'Açık', o.kullanici, g.kapat ? new Date() : null])).rows[0];
     if (!r) return y.code(409).send({ hata: 'Bugünün kaydı kapatılmıştır.' });
+    // YG-504: kapanan gündeki engel açık konu günlüğüne Dosya Sorumlusu sahipliğinde aktarılır.
+    if (g.kapat && g.engel?.trim() && !/^(yok|none|-+)$/i.test(g.engel.trim())) {
+      const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref FROM dosya d WHERE d.kimlik = $1`, [e.dosya_ref])).rows[0];
+      if (d?.dosya_sorumlusu_ref) await b.db.query(`INSERT INTO acik_konu (konu_no, dosya_ref, baslik, aciklama, sahip_ref, hedef_tarih, olusturan_ref) VALUES ($1,$2,'Saha Engeli',$3,$4,(now() AT TIME ZONE 'Europe/Istanbul')::date + 2,$5)`,
+        [await (await import('./sure.js')).altNumara(b.db, d.dosya_no, 'AK'), d.kimlik, `${e.is_emri_no}: ${g.engel.trim()}`.slice(0, 500), d.dosya_sorumlusu_ref, o.kullanici]);
+    }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.kapat ? 'Günü Kapat' : 'Günlük Kayıt', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Firma Portalı' });
     return { durum: r.durum };
   });

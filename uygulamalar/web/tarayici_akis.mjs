@@ -327,7 +327,7 @@ try {
   const glKapat = pF2.getByRole('button', { name: 'Günü Kapat', exact: true }); await glKapat.click(); await pF2.waitForTimeout(400);
   kontrol('zorunlu alan olmadan gün kapanmaz', (await pF2.getByRole('alert').first().textContent()).includes('zorunlu alan'));
   await pF2.getByLabel('Fotoğraf', { exact: true }).setInputFiles(dosyaYaz('gunluk')); await pF2.waitForTimeout(500);
-  await pF2.getByLabel('Bir Sonraki Çalışma Günü Planı', { exact: true }).fill('Montaj'); await pF2.getByLabel('Sorumlu', { exact: true }).fill('Usta');
+  await pF2.getByLabel('Bir Sonraki Çalışma Günü Planı', { exact: true }).fill('Montaj'); await pF2.getByLabel('Sorumlu', { exact: true }).fill('Usta'); await pF2.getByLabel('Ölçümler', { exact: true }).fill('Yok'); await pF2.getByLabel('Engel', { exact: true }).fill('Yok');
   await tikla(pF2, 'Günü Kapat');
   kontrol('günlük kayıt kapatılır', (await sup.query(`SELECT g.durum FROM firma_gunluk_kaydi g JOIN is_emri e ON e.kimlik = g.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rows[0]?.durum === 'Kapatıldı');
   await pF2.getByLabel('Ürün', { exact: true }).fill('Kovan'); await pF2.getByLabel('Parça No', { exact: true }).fill('PN-1'); await pF2.getByLabel('Parça Miktarı', { exact: true }).fill('1'); await pF2.getByLabel('Lot No', { exact: true }).fill('L-1');
@@ -487,7 +487,14 @@ try {
   const pOp2 = await al('opm', E);
   await pOp2.getByRole('button', { name: 'Nöbet ve Acil' }).click();
   await pOp2.locator('#nb-d').fill('2027-03'); await pOp2.locator('#nb-u').selectOption(kimlikler.ds); await pOp2.locator('#nb-b').fill('2027-03-01T18:00'); await pOp2.locator('#nb-s').fill('2027-03-02T09:00');
-  await tikla(pOp2, 'Vardiya Ekle'); await tikla(pOp2, 'Çizelgeyi Onaya Gönder');
+  await pOp2.getByRole('button', { name: 'Vardiya Ekle' }).click(); await pOp2.getByRole('button', { name: 'Çizelgeyi Onaya Gönder' }).click();
+  await pOp2.getByText('Nöbet saatleri kapsanmıyor').first().waitFor();
+  kontrol('nöbet saatlerini kapsamayan çizelge alınmaz (YG-240)', true);
+  for (const [kat, kim] of [['Dosya Sorumlusu', kimlikler.ds], ['Teknik Uzman', kimlikler.ds], ['Yönetici', kimlikler.ds]]) { /* aday listesi 500 kişiyle sınırlı; tek kişi üç katmanda */
+    await pOp2.locator('#nb-k').selectOption(kat); await pOp2.locator('#nb-u').selectOption(kim); await pOp2.locator('#nb-b').fill('2027-03-01T00:00'); await pOp2.locator('#nb-s').fill('2027-04-01T00:00');
+    await pOp2.getByRole('button', { name: 'Vardiya Ekle' }).click();
+  }
+  await tikla(pOp2, 'Çizelgeyi Onaya Gönder');
   await pOp2.getByText('Çizelge onaya gönderildi.').waitFor();
   kontrol('nöbet çizelgesi ekrandan onaya gönderilir', true);
   // A8 Tesis

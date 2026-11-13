@@ -45,8 +45,10 @@ describe('günlük kayıt (YG-1574, YG-381)', () => {
     expect((await o.ist('POST', u, fC, { faaliyet: 'Söküm', kapat: true })).statusCode).toBe(400);
     expect((await o.ist('POST', u, fC, { faaliyet: 'Söküm' })).json().durum).toBe('Açık');
     expect((await o.ist('GET', '/api/firma-portal/gunluk', fC)).json().acik.some((x: { is_emri: string }) => x.is_emri === e)).toBe(true);
-    const tam = { faaliyet: 'Söküm', fotograflar: [b1], sonrakiPlan: 'Montaj', sorumlu: 'Usta', engel: 'Parça gecikti' };
+    const tam = { faaliyet: 'Söküm', fotograflar: [b1], sonrakiPlan: 'Montaj', sorumlu: 'Usta', engel: 'Parça gecikti', olcumler: 'Şaft salgısı 0,05 mm' };
+    expect((await o.ist('POST', u, fC, { ...tam, olcumler: '', kapat: true })).statusCode).toBe(400); // YG-504
     expect((await o.ist('POST', u, fC, { ...tam, kapat: true })).json().durum).toBe('Kapatıldı');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM acik_konu WHERE baslik = 'Saha Engeli' AND aciklama LIKE '%Parça gecikti'`)).rows[0].n).toBeGreaterThanOrEqual(0);
     expect((await o.ist('POST', u, fC, tam)).statusCode).toBe(409);
     expect((await o.ist('GET', '/api/firma-portal/gunluk', fC)).json().acik.some((x: { is_emri: string }) => x.is_emri === e)).toBe(false);
     const ik = await isEmri();
