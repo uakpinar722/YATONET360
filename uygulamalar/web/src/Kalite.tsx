@@ -32,7 +32,7 @@ const SONUC = ['Başarılı', 'Koşullu', 'Başarısız', 'Geçersiz', 'Engellen
 const KM = 'Kalite Müdürü'; const KK = 'Kalite Uzmanı (Kalite Kontrolör)';
 
 interface KaliteV {
-  planlar: { kimlik: string; surum: number; kabul_sinifi: string; ozet: string; durum: string }[];
+  planlar: { kimlik: string; surum: number; kabul_sinifi: string; ozet: string; durum: string; risk_seviyesi?: string | null; teknik_kaynak?: string | null; sorumluluklar?: string | null; kaynaklar?: string | null; kontrol_duzeni?: string | null; kayit_teslim?: string | null; degisiklik_gerekcesi?: string | null }[];
   gereklilikler: { kimlik: string; km_no?: string | null; gereklilik: string; dogrulama: string; durum: string }[];
   uygunsuzluklar: { kimlik: string; uygunsuzluk_no: string; sinif: string; emniyet_isareti: boolean; gercek_durum: string; tasarruf_karari: string | null; statu: string; firma_yaniti: string | null }[];
   kontrolNoktalari: { kimlik: string; kontrol_noktasi_no: string; nokta_turu: string; kontrol_ozelligi: string; sonuc: string | null; serbest_birakma_zamani: string | null }[];
@@ -46,7 +46,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   const yukle = () => istek<KaliteV>(`/dosya/${id}/kalite`).then(setV);
   useEffect(() => { void yukle().catch((e) => setHata((e as Error).message)); }, [id]);
   const yap = async (f: () => Promise<unknown>, tamam?: string) => { setHata(''); setNot(''); try { await f(); if (tamam) setNot(tamam); await yukle(); } catch (x) { setHata((x as Error).message); } };
-  const [p, setP] = useState({ sinif: 'C', ozet: '', gereklilik: '', dogrulama: '' });
+  const [p, setP] = useState({ sinif: 'C', ozet: '', gereklilik: '', dogrulama: '', risk: '', teknikKaynak: '', kaynaklar: '', kontrolDuzeni: '', kayitTeslim: '', gerekce: '' });
   const [n, setN] = useState({ kaynak: KAYNAK[0]!, yer: '', olcut: '', durum: '', sinif: 'Minör', emniyet: false, belge: '' });
   const [ks, setKs] = useState<Record<string, { karar: string; kanit: string }>>({});
   const [kn, setKn] = useState({ problem: '', dogrudan: '', katki: '', bariyer: '', kokNeden: '', tekrar: '' });
@@ -64,16 +64,23 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
       {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
       <Blok baslik="Kalite Planı">
         {v.planlar.length === 0 && <div className="not">Onaylı kalite planı olmadan onarım işi başlatılamaz.</div>}
-        {v.planlar.map((x) => <div key={x.kimlik}>Rev.{x.surum} · {x.kabul_sinifi} Sınıfı · {x.durum}</div>)}
+        {v.planlar.map((x) => <details key={x.kimlik}><summary>Rev.{x.surum} · {x.kabul_sinifi} Sınıfı · Risk {x.risk_seviyesi ?? '---'} · {x.durum}</summary>
+          {([['Kapsam', x.ozet], ['Risk Seviyesi', x.risk_seviyesi], ['Teknik Kaynak', x.teknik_kaynak], ['Sorumluluklar', x.sorumluluklar], ['Kaynaklar', x.kaynaklar], ['Kontrol Düzeni', x.kontrol_duzeni], ['Kayıt ve Teslim', x.kayit_teslim], ['Revizyon Gerekçesi', x.degisiklik_gerekcesi]] as [string, string | null][]).map(([a, d]) => <div key={a}><b>{a}:</b> {d || '---'}</div>)}</details>)}
         {v.gereklilikler.map((g) => <div className="soru" key={g.kimlik}><span>{g.km_no ? `${g.km_no} · ` : ''}{g.gereklilik} · {g.dogrulama} · {g.durum}</span>{g.durum !== 'Karşılandı' && teknik && <>
           <BelgeSec ad="Gereklilik Kanıtı" bagTuru="Dosya" bagKimligi={id} deger={gk[g.kimlik] ?? ''} sec={(k) => setGk({ ...gk, [g.kimlik]: k })} />
           <button className="btn2 kucuk" disabled={!gk[g.kimlik]} onClick={() => void yap(() => istek(`/gereklilik/${g.kimlik}/kanit`, { belge: gk[g.kimlik], durum: 'Karşılandı' }))}>Karşılandı</button></>}</div>)}
         {teknik && <>
           <label htmlFor="p-s">Kabul Sınıfı</label><select id="p-s" value={p.sinif} onChange={(e) => setP({ ...p, sinif: e.target.value })}>{['A', 'B', 'C', 'D'].map((x) => <option key={x}>{x}</option>)}</select>
           <label htmlFor="p-o">Plan Özeti</label><input id="p-o" value={p.ozet} onChange={(e) => setP({ ...p, ozet: e.target.value })} />
+          <label htmlFor="p-r">Risk Seviyesi</label><select id="p-r" value={p.risk} onChange={(e) => setP({ ...p, risk: e.target.value })}><option value="">Seçiniz</option>{['Düşük', 'Orta', 'Yüksek', 'Kritik'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="p-t">Teknik Kaynak</label><input id="p-t" placeholder="Standart, üretici kılavuzu, klas kuralı" value={p.teknikKaynak} onChange={(e) => setP({ ...p, teknikKaynak: e.target.value })} />
+          <label htmlFor="p-k">Kaynaklar</label><input id="p-k" placeholder="Ekip, ekipman, malzeme" value={p.kaynaklar} onChange={(e) => setP({ ...p, kaynaklar: e.target.value })} />
+          <label htmlFor="p-kd">Kontrol Düzeni</label><input id="p-kd" placeholder="Bekleme ve tanık noktaları" value={p.kontrolDuzeni} onChange={(e) => setP({ ...p, kontrolDuzeni: e.target.value })} />
+          <label htmlFor="p-kt">Kayıt ve Teslim</label><input id="p-kt" value={p.kayitTeslim} onChange={(e) => setP({ ...p, kayitTeslim: e.target.value })} />
+          {v.planlar.length > 0 && <><label htmlFor="p-rg">Revizyon Gerekçesi</label><input id="p-rg" value={p.gerekce} onChange={(e) => setP({ ...p, gerekce: e.target.value })} /></>}
           <label htmlFor="p-g">Gereklilik</label><input id="p-g" value={p.gereklilik} onChange={(e) => setP({ ...p, gereklilik: e.target.value })} />
           <label htmlFor="p-d">Doğrulama Yöntemi</label><input id="p-d" value={p.dogrulama} onChange={(e) => setP({ ...p, dogrulama: e.target.value })} />
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kalite-plani`, { sinif: p.sinif, ozet: p.ozet, gereklilikler: [{ gereklilik: p.gereklilik, dogrulama: p.dogrulama }] }), 'Kalite planı onaya gönderildi.')}>Kalite Planını Onaya Gönder</button>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kalite-plani`, { sinif: p.sinif, ozet: p.ozet, risk: p.risk, teknikKaynak: p.teknikKaynak, kaynaklar: p.kaynaklar, kontrolDuzeni: p.kontrolDuzeni, kayitTeslim: p.kayitTeslim, gerekce: p.gerekce || undefined, gereklilikler: [{ gereklilik: p.gereklilik, dogrulama: p.dogrulama }] }), 'Kalite planı onaya gönderildi.')}>Kalite Planını Onaya Gönder</button>
         </>}
       </Blok>
       <Blok baslik="Uygunsuzluklar">

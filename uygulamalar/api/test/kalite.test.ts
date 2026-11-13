@@ -51,10 +51,13 @@ describe('kalite planı (YG-288)', () => {
     expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı'] })).json().eksikler).toEqual(['Absorban ve Bariyer Mevcut']); // YG-370
     expect((await o.ist('POST', `/api/is-emri/${kn}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı'] })).statusCode).toBe(200);
     const G = [{ gereklilik: 'Sızdırmazlık', dogrulama: 'Basınç testi' }];
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, await o.gir('ds'), { sinif: 'A', ozet: 'Ö', gereklilikler: G })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, await o.gir('ds'), { sinif: 'A', ozet: 'Ö', risk: 'Orta', teknikKaynak: 'ISO 12215', gereklilikler: G })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'A', ozet: 'Ö', gereklilikler: [{ gereklilik: 'X' }] })).statusCode).toBe(400);
-    const p = await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'A', ozet: 'Ö', gereklilikler: G });
-    expect(p.statusCode, p.body).toBe(200);
+    const p = await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'A', ozet: 'Ö', risk: 'Orta', teknikKaynak: 'ISO 12215', gereklilikler: G });
+    expect(p.statusCode, p.body).toBe(200); expect(p.json().surum).toBe(0); // YG-648: Rev.0
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'A', ozet: 'Ö', teknikKaynak: 'K', gereklilikler: G })).json().hata).toMatch(/Risk seviyesini/);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'A', ozet: 'Ö', risk: 'Orta', teknikKaynak: 'K', gereklilikler: G })).json().hata).toMatch(/revizyon gerekçesini/);
+    expect((await o.sup.query(`SELECT sorumluluklar FROM kalite_plani WHERE kimlik = $1`, [p.json().kimlik])).rows[0].sorumluluklar).toContain('Onay: Teknik Müdür');
     const k = await o.kart('Kalite Planı', p.json().kimlik);
     expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).not.toBe(200);
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
@@ -175,7 +178,7 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
   });
   it('kanıtsız gereklilik tam kabulü durdurur', async () => {
     const d = await dosya(); const e = await isEmri(d, 'Tamamlandı'); const tu = await o.gir('tu');
-    const p = (await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'C', ozet: 'Ö', gereklilikler: [{ gereklilik: 'G', dogrulama: 'D' }] })).json().kimlik;
+    const p = (await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'C', ozet: 'Ö', risk: 'Orta', teknikKaynak: 'ISO 12215', gereklilikler: [{ gereklilik: 'G', dogrulama: 'D' }] })).json().kimlik;
     await o.karar((await o.kart('Kalite Planı', p)).kimlik, 'ty', 'Onayla');
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).json().hata).toContain('gerekliliğin');
     const g = (await o.sup.query(`SELECT kimlik FROM gereklilik_satiri WHERE plan_ref = $1`, [p])).rows[0].kimlik;

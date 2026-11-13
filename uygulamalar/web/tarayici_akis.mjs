@@ -141,7 +141,7 @@ try {
   const pTu = await al('tu', E); await dosyaAc(pTu, d.dosyaNo);
   await pTu.getByText('Onaylı kalite planı olmadan onarım işi başlatılamaz.').waitFor();
   kontrol('dosya ekranı kalite planı uyarısı gösterir', true);
-  await pTu.getByLabel('Plan Özeti', { exact: true }).fill('Gövde onarımı'); await pTu.getByLabel('Gereklilik', { exact: true }).fill('Sızdırmazlık'); await pTu.getByLabel('Doğrulama Yöntemi', { exact: true }).fill('Basınç testi');
+  await pTu.getByLabel('Plan Özeti', { exact: true }).fill('Gövde onarımı'); await pTu.getByLabel('Gereklilik', { exact: true }).fill('Sızdırmazlık'); await pTu.getByLabel('Doğrulama Yöntemi', { exact: true }).fill('Basınç testi'); await pTu.getByLabel('Risk Seviyesi', { exact: true }).selectOption('Orta'); await pTu.getByLabel('Teknik Kaynak', { exact: true }).fill('ISO 12215');
   await tikla(pTu, 'Kalite Planını Onaya Gönder');
   const kart = (await sup.query(`SELECT kod FROM kartela_kalemi LIMIT 1`)).rows[0].kod;
   await pTu.locator('#c-a').fill('Gövde laminasyonu'); await pTu.locator('#c-k').fill(kart); await pTu.locator('#c-m').fill('10');
