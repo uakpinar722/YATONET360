@@ -296,3 +296,15 @@ describe('proforma kalem yapısı (YG-1602)', () => {
     expect(j).toContain('Onarım'); expect(j).toContain('İndirim %10'); expect(j).toMatch(/38\.340,00 TL/);
   });
 });
+
+describe('teslim kabul durum tablosu (YG-724)', () => {
+  it('çekince turuncu, envanter eksiği sarı, açık iş yoksa yeşil', async () => {
+    const { tutanakTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    const ts = (await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, durum, teslim_eden_ref, teslim_alan, teslim_zamani, karar, cekince, envanter_eksik) VALUES ($1,'Teslim Edildi',$2,'Sahip',now(),'Koşullu Kabul','Boya rötuşu','Yedek halat') RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    const b = (await tutanakTanim(o.db, ts, 'K', 'https://x')).t.bolumler.find((x) => x.tur === 'tablo' && x.satirlar.some((r) => r[0] === 'Envantere Göre Eksik'));
+    expect(b).toBeDefined(); const j = JSON.stringify(b);
+    expect(j).toContain('{"m":"Boya rötuşu","renk":"turuncu"}');
+    expect(JSON.stringify((await tutanakTanim(o.db, ts, 'K', 'https://x')).t.bolumler)).toContain('"et":"Teslim Adresi"'); // YG-717 expect(j).toContain('{"m":"Yedek halat","renk":"sari"}'); expect(j).toContain('"renk":"yesil"');
+  });
+});

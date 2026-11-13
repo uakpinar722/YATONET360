@@ -404,7 +404,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'Onaya Gönderildi' };
   });
   s.post('/dosya/:id/teslim', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { envanterEksik } = (i.body ?? {}) as { envanterEksik?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT d.*, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [id])).rows[0];
     if (d.asama !== 'Teslim') return y.code(409).send({ hata: 'Dosya Teslim aşamasında değildir.' });
@@ -418,7 +418,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const zaman = new Date().toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
       const alan = { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': b.webAdresi, link: b.webAdresi, Yat: d.yat_adi, Yacht: d.yat_adi, 'tarih saat': zaman, 'date time': zaman };
       const kut = kutuAyikla(s0.metin).kutular.map((k) => ({ ad: k.replace(/\[([^\]]+)\]/g, (_t, a: string) => (alan as Record<string, string>)[a] ?? a), zorunlu: true }));
-      await c.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref) VALUES ($1,$2)`, [id, o.kullanici]);
+      await c.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref, envanter_eksik) VALUES ($1,$2,$3)`, [id, o.kullanici, envanterEksik?.trim() || null]); // YG-724
       await (await import('./uyum.js')).uyumOlay(c, 'teslim', 'Dosya', id); // YG-1546
       await onayTalebiAc(c, { dosya: id, ony: 'ONY-27', dil, alanlar: alan, baslikAlanlari: alan, kutular: kut, formTuru: 'Teslim Kararı', taraf: sah.kimlik, kullanici: sah.kullanici_ref, aliciAd: sah.kisi_adi_soyadi, telefon: sah.telefon, eposta: sah.eposta, belgeAdi: 'Teslim Tutanağı', hazirlayan: o.kullanici, gun: 7, webAdresi: b.webAdresi });
       return { durum: 'Teslim Onayı Bekleniyor' };

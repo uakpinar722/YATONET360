@@ -57,12 +57,14 @@ async function dosyaBilgi(db: Db, id: string, hazirlik: string) {
   return { d, sahip, ekip, dil: dilZorla.getStore() ?? ((d.yazisma_dili === 'İngilizce' ? 'en' : 'tr') as Dil) };
 }
 
-function ortak(b: Awaited<ReturnType<typeof dosyaBilgi>>): Bolum[] {
+/** YG-717: adres satırının adı belge türüne göre (varsayılan Yatın Bulunduğu Adres). */
+const ADRES = { inceleme: { tr: 'İnceleme Adresi', en: 'Inspection Address' }, teslim: { tr: 'Teslim Adresi', en: 'Delivery Address' } } as const;
+function ortak(b: Awaited<ReturnType<typeof dosyaBilgi>>, adresEt?: string): Bolum[] {
   const { d, sahip, dil } = b; const e = E[dil]; const sg = d.musteri_turu === 'Sigorta Şirketi';
   const boy = d.tam_boy_m ? `${tutar(Number(d.tam_boy_m), dil)} m` : null;
   return [
     { baslik: e.musteri, tur: 'alanlar', alanlar: [{ et: e.must, deger: sg ? d.sigortaci_adi : sahip }, { et: e.dosyaNo, deger: d.dosya_no }, { et: e.hasar, deger: d.sigorta_hasar_dosya_no }, { et: e.odeme, deger: d.musteri_turu }] },
-    { baslik: e.yat, tur: 'alanlar', alanlar: [{ et: e.yatAdi, deger: d.yat_adi }, { et: e.marka, deger: [d.marka, d.model].filter(Boolean).join(' · ') }, { et: e.tur, deger: d.yat_turu }, { et: e.boy, deger: boy }, { et: e.govde, deger: d.govde_malzemesi }, { et: e.yil, deger: d.uretim_yili }, { et: e.bayrak, deger: d.bayrak }, { et: e.adres, deger: d.konum, genis: true }] },
+    { baslik: e.yat, tur: 'alanlar', alanlar: [{ et: e.yatAdi, deger: d.yat_adi }, { et: e.marka, deger: [d.marka, d.model].filter(Boolean).join(' · ') }, { et: e.tur, deger: d.yat_turu }, { et: e.boy, deger: boy }, { et: e.govde, deger: d.govde_malzemesi }, { et: e.yil, deger: d.uretim_yili }, { et: e.bayrak, deger: d.bayrak }, { et: adresEt ?? e.adres, deger: d.konum, genis: true }] },
     { baslik: e.olay, tur: 'alanlar', alanlar: [{ et: e.tarih, deger: d.olay_tarihi ? gunAy(d.olay_tarihi) : null }, { et: e.ozet, deger: d.kisa_teknik_tanim, genis: true }] },
   ];
 }
@@ -154,7 +156,7 @@ async function raporTanim(db: Db, id: string, kod: string, web: string) {
   const bl = (await db.query(`SELECT bulgu_no, konum_referansi, bolge_kodu, aciklama, bulgu_etiketi, hasar_onem_derecesi FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`, [r.dosya_ref])).rows;
   const gr = (await db.query(`SELECT gorsel_no, cekim_kalemi, cekim_zamani, konum FROM gorsel_kanit WHERE dosya_ref = $1 AND belge_ref IS NOT NULL ORDER BY gorsel_no`, [r.dosya_ref])).rows;
   const kapanis = (await db.query(`SELECT r.rol_adi, a.zaman FROM is_karti k JOIN is_karti_adim a ON a.is_ref = k.kimlik LEFT JOIN rol r ON r.kimlik = a.rol_ref WHERE k.tur = 'Teknik Rapor' AND k.nesne_kimligi = $1 AND a.karar = 'Onayla' ORDER BY a.kimlik DESC LIMIT 1`, [id])).rows[0];
-  const bolumler: Bolum[] = [...ortak(b),
+  const bolumler: Bolum[] = [...ortak(b, ADRES.inceleme[dil]),
     { baslik: e.kapsam, tur: 'alanlar', alanlar: [{ et: e.soru, deger: r.kapsam, genis: true }, { et: e.kosulS, deger: r.saha_kosullari, genis: true }, { et: e.konumS, deger: r.incelenen_alan, genis: true }] },
     { baslik: e.yontem, tur: 'metin', metin: r.yontem_olcut },
     { baslik: e.bulgu, tur: 'metin', metin: r.bulgular },
@@ -332,7 +334,7 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   const taraflar = (await db.query(`SELECT taraf_rolu, kisi_adi_soyadi, telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Kaptan')`, [k.dosya_ref])).rows;
   const T = en ? { h: 'Handover', tur: 'Type', turD: 'Handover to Owner', eden: 'Handed Over By', alan: 'Received By', sonuc: 'Acceptance Result', devir: 'Time of Transfer of Custody', is: 'Completed Work', paket: 'Package', test: 'Test and Acceptance Result', ozet: 'Summary of Test Results', tt: 'Test', ts: 'Result', not: 'Note', gar: 'Warranty Information', kalem: 'Item', bas: 'Warranty Start', bit: 'Warranty End', gn: 'Restarts for 12 months if corrected', kab: 'Acceptance', ktur: 'Acceptance Type', acik: 'Open Item', var: 'Yes', yok: 'None', sor: 'Completion Date', ad: 'Yacht Handover Record', ko: 'Received By', kap: 'Yat', sah: 'Yacht Owner', kpt: 'Yacht Captain' }
     : { h: 'Teslim', tur: 'Tür', turD: 'Teslim Etme', eden: 'Teslim Eden', alan: 'Teslim Alan', sonuc: 'Kabul Sonucu', devir: 'Sorumluluk Devri Saati', is: 'Tamamlanan İşler', paket: 'Paket', test: 'Test ve Kabul Sonucu', ozet: 'Test Sonuçları Özeti', tt: 'Test', ts: 'Sonuç', not: 'Not', gar: 'Garanti Bilgisi', kalem: 'Kalem', bas: 'Garanti Başlangıcı', bit: 'Garanti Bitişi', gn: 'Düzeltilirse yeniden 12 ay', kab: 'Kabul', ktur: 'Kabul Türü', acik: 'Açık İş', var: 'Var', yok: 'Yok', sor: 'Tamamlama Tarihi', ad: 'Yat Teslim Tutanağı', ko: 'Teslim Alan', kap: 'Yat', sah: 'Yat Sahibi', kpt: 'Yatın Kaptanı' };
-  const [, ortY] = ortak(b);
+  const [, ortY] = ortak(b, ADRES.teslim[en ? 'en' : 'tr']);
   const bolumler: Bolum[] = [
     { baslik: T.h, tur: 'alanlar', alanlar: [{ et: T.tur, deger: T.turD }, { et: T.eden, deger: eden ? `LGM ${en ? ROL_EN[eden] ?? eden : eden}` : 'LGM' }, { et: T.alan, deger: k.teslim_alan }, { et: e.must, deger: b.d.musteri_turu === 'Sigorta Şirketi' ? b.d.sigortaci_adi : b.sahip }, { et: e.hasar, deger: b.d.sigorta_hasar_dosya_no }, { et: T.sonuc, deger: kabul?.kabul_turu }, { et: T.devir, deger: anSaat(teslim) }] },
     ortY!,
@@ -344,7 +346,16 @@ export async function tutanakTanim(db: Db, id: string, kod: string, web: string)
   if (testler.length) bolumler.push({ baslik: T.ozet, tur: 'tablo', sutunlar: [{ ad: T.tt }, { ad: T.ts }, { ad: T.not }], satirlar: testler.map((x) => [x.test_grubu, x.sonuc, x.sonuc_gerekcesi]) });
   // YG-650: kışa sarkan dosyada kışlık hazırlık sorumlusu teslim tutanağına yazılır.
   const ks = (await db.query(`SELECT coalesce(h.ad_soyad, t.kisi_adi_soyadi || ' (' || t.taraf_rolu || ')') ad FROM dosya d LEFT JOIN kullanici_hesabi h ON h.kimlik = d.kislik_sorumlu_kullanici_ref LEFT JOIN dosya_tarafi t ON t.kimlik = d.kislik_sorumlu_taraf_ref WHERE d.kimlik = $1`, [k.dosya_ref])).rows[0]?.ad as string | null;
-  bolumler.push({ baslik: T.kab, tur: 'alanlar', alanlar: [{ et: en ? 'Acceptance Record' : 'Kabul Kaydı', deger: kabul ? `FR-KLT-009 · ${anSaat(kabul.olusturma_zamani)}` : null }, { et: T.ktur, deger: kabul?.kabul_turu }, /* YG-647 */ { et: T.acik, deger: acik.length ? `${T.var}  ·  ${acik.length}` : T.yok }, ...(ks ? [{ et: en ? 'Winterisation Responsible' : 'Kışlık Hazırlık Sorumlusu', deger: ks }] : [])] });
+  // YG-724: kabul bölümü kısa satırlı renkli durum tablosu; Koşullu Kabul turuncu, açık iş ve eksik sarı, yok yeşil.
+  const yok = { m: T.yok, renk: 'yesil' as Renk };
+  bolumler.push({ baslik: T.kab, tur: 'tablo', sutunlar: [{ ad: en ? 'Item' : 'Konu' }, { ad: en ? 'Status' : 'Durum', hiza: 'ort' }], satirlar: [
+    [en ? 'Acceptance Record' : 'Kabul Kaydı', kabul ? `FR-KLT-009 · ${anSaat(kabul.olusturma_zamani)}` : null], /* YG-647 */
+    [T.ktur, kabul ? { m: kabul.kabul_turu, renk: /Koşullu/.test(kabul.kabul_turu) ? 'turuncu' : 'yesil' } : null],
+    [T.acik, acik.length ? { m: `${T.var}  ·  ${acik.length}`, renk: 'sari' } : yok],
+    [en ? 'Missing Against Inventory' : 'Envantere Göre Eksik', k.envanter_eksik ? { m: k.envanter_eksik, renk: 'sari' } : yok],
+    [en ? 'Recipient’s Reservation' : 'Teslim Alanın Çekincesi', k.cekince ? { m: k.cekince, renk: 'turuncu' } : yok],
+    ...(ks ? [[en ? 'Winterisation Responsible' : 'Kışlık Hazırlık Sorumlusu', ks]] : []),
+  ] });
   if (acik.length) bolumler.push({ baslik: T.acik, tur: 'tablo', sutunlar: [{ ad: T.acik }, { ad: en ? 'Responsible' : 'Sorumlu' }, { ad: T.sor }], satirlar: acik.map((x) => [x.tanim, en ? 'LGM File Manager' : 'LGM Dosya Sorumlusu', gunAy(x.hedef_tarih)]) }); // YG-725
   bolumler.push(
     { baslik: e.iletisim, tur: 'tablo', sutunlar: [{ ad: e.gorev }, { ad: e.ad }, { ad: e.tel }, { ad: e.eposta }], satirlar: [
