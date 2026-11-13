@@ -308,3 +308,14 @@ describe('teslim kabul durum tablosu (YG-724)', () => {
     expect(JSON.stringify((await tutanakTanim(o.db, ts, 'K', 'https://x')).t.bolumler)).toContain('"et":"Teslim Adresi"'); // YG-717 expect(j).toContain('{"m":"Yedek halat","renk":"sari"}'); expect(j).toContain('"renk":"yesil"');
   });
 });
+
+describe('Hasar İhbar iletişim kişileri (YG-719)', () => {
+  it('dört rol sabit sırayla; eksper Sigorta Eksperi adıyla', async () => {
+    const { hasarIhbarTanim } = await import('../src/belge_uret.js');
+    const d = await o.dosyaAc();
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Eksper','Eksper Kişi','+905550009999',$2)`, [d.kimlik, o.K.ds]);
+    const b = (await hasarIhbarTanim(o.db, d.kimlik)).t.bolumler.find((x) => x.baslik === 'İletişim Kişileri');
+    expect(b && b.tur === 'tablo' && b.satirlar.map((r) => r[0])).toEqual(['Yat Sahibi', 'Yatın Kaptanı', 'Sigorta Hasar Yetkilisi', 'Sigorta Eksperi']);
+    expect(JSON.stringify(b)).toContain('Eksper Kişi');
+  });
+});

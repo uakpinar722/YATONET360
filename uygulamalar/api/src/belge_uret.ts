@@ -475,6 +475,11 @@ export async function hasarIhbarTanim(db: Db, dosya: string) {
   const t = (await db.query(`SELECT t.* FROM talep t JOIN dosya d ON d.talep_ref = t.kimlik WHERE d.kimlik = $1`, [dosya])).rows[0];
   const b = await dosyaBilgi(db, dosya, '');
   const bolumler: Bolum[] = [...ortak(b), { baslik: 'İhbar Bilgileri', tur: 'alanlar', alanlar: [{ et: 'Kanal', deger: t.bildirim_kanali }, { et: 'Talep Sahibi', deger: t.talep_sahibi_adi }, { et: 'Talep Sahibi Türü', deger: t.talep_sahibi_turu }, { et: 'Telefon', deger: t.talep_sahibi_telefon }, { et: 'E-Posta', deger: t.talep_sahibi_eposta }, { et: 'Yetki Durumu', deger: t.ihbar_yetki_durumu }, { et: 'Olay Tarihi', deger: t.olay_tarihi ? gunAy(t.olay_tarihi) : null }, { et: 'Olay Yeri', deger: t.olay_yeri }, { et: 'Yatın Mevcut Konumu', deger: t.yat_mevcut_konumu }, { et: 'Yatın Durumu', deger: t.yat_mevcut_durumu }, { et: 'Öncelik', deger: t.oncelik }, { et: 'İhtiyaç', deger: t.ihtiyac_tanimi, genis: true }] }, { baslik: 'Özgün Bildirim', tur: 'metin', metin: t.ozgun_bildirim ?? '---' }];
+  // YG-719, YG-671: iletişim kişileri sütun çizgili tabloda dört rolle; kayıt yoksa satır "---" ile kalır; eksper "Sigorta Eksperi" adıyla.
+  const tr = (await db.query(`SELECT taraf_rolu, kisi_adi_soyadi, telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Kaptan', 'Sigorta Şirketi', 'Eksper') ORDER BY olusturma_zamani`, [dosya])).rows;
+  const ROLLER: [string, string][] = [['Yat Sahibi', 'Yat Sahibi'], ['Kaptan', 'Yatın Kaptanı'], ['Sigorta Şirketi', 'Sigorta Hasar Yetkilisi'], ['Eksper', 'Sigorta Eksperi']];
+  bolumler.push({ baslik: 'İletişim Kişileri', tur: 'tablo', sutunlar: [{ ad: 'Görev' }, { ad: 'Ad Soyad' }, { ad: 'Telefon' }, { ad: 'E-Posta' }],
+    satirlar: ROLLER.map(([r, ad]) => { const x = tr.find((y) => y.taraf_rolu === r); return [ad, x?.kisi_adi_soyadi, x?.telefon, x?.eposta]; }) });
   return { dosyaAdi: `${t.talep_no}-IHBAR.pdf`, sinif: 'Gizli', t: { ad: 'Hasar İhbarı ve İlk Kayıt', kod: 'FR-OPS-009', no: t.talep_no, dosyaNo: b.d.dosya_no, tarih: gunAy(t.olusturma_zamani), surum: 'Rev.1', dil: 'tr' as Dil, yat: b.d.yat_adi, icKayit: true, bandEk: [{ et: 'Bildirim Zamanı', deger: anSaat(t.bildirim_alinma_zamani) }, { et: 'Kayıt Zamanı', deger: anSaat(t.kayda_gecis_zamani ?? t.olusturma_zamani) }], bolumler } as BelgeTanim };
 }
 
