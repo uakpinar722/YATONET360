@@ -296,3 +296,15 @@ describe('ana–alt dosya (YG-003)', () => {
     expect((await o.ist('POST', `/api/dosya/${r.json().kimlik}/alt-dosya`, opm, { tanim: 'X', gerekce: 'Y' })).statusCode).toBe(409);
   });
 });
+
+describe('bulgu teyidi (YG-128)', () => {
+  it('Çelişkili Bilgi teyit bekler; teyitsiz rapor yok; teyitle tür değişir', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik);
+    const r = await bulgu(d.kimlik, { bilgiTuru: 'Çelişkili Bilgi' }); expect(r.statusCode, r.body).toBe(200);
+    const bk = (await o.sup.query(`SELECT kimlik, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1`, [d.kimlik])).rows[0]; expect(bk.teyit_bekliyor).toBe(true);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, await o.gir('tu'), { kapsam: 'K' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/bulgu/${bk.kimlik}/teyit`, await o.gir('tu'), { bilgiTuru: 'Beyan' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/bulgu/${bk.kimlik}/teyit`, await o.gir('tu'), { bilgiTuru: 'Beyan', gerekce: 'Kaptan beyanı, gözlemle doğrulanamadı' })).body).toBe('{"tamam":true}');
+    expect((await o.sup.query(`SELECT bilgi_turu, teyit_bekliyor FROM bulgu WHERE kimlik = $1`, [bk.kimlik])).rows[0]).toMatchObject({ bilgi_turu: 'Beyan', teyit_bekliyor: false });
+  });
+});

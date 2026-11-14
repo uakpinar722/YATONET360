@@ -166,6 +166,17 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-037, YG-130: önem bulguya verilir; dosya önceliği en ağır bulgudan önerilir. Konum bağlamsız olamaz.
+  // YG-128: teyit bekleyen bulgu Teknik Uzman veya Dosya Sorumlusunca ayrıştırılır; yeni bilgi türü ve gerekçe izde kalır.
+  s.post('/bulgu/:id/teyit', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { bilgiTuru?: string; gerekce?: string };
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    const bu = (await b.db.query(`SELECT dosya_ref, bilgi_turu FROM bulgu WHERE kimlik = $1 AND teyit_bekliyor`, [id])).rows[0];
+    if (!bu || !(await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Dosya Sorumlusu', 'Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [bu.dosya_ref, o.kullanici])).rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    if (!['Doğrulanmış Olgu', 'Beyan', 'İlk Gözlem', 'Teknik Varsayım'].includes(g.bilgiTuru ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Ayrıştırılan bilgi türünü ve teyit gerekçesini giriniz.' });
+    await b.db.query(`UPDATE bulgu SET bilgi_turu = $2, teyit_bekliyor = false, teyit_eden_ref = $3, teyit_zamani = now() WHERE kimlik = $1`, [id, g.bilgiTuru, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Bulgu Teyidi', nesneTuru: 'Bulgu', nesneKimligi: id, eski: { bilgiTuru: bu.bilgi_turu }, yeni: { bilgiTuru: g.bilgiTuru }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/dosya/:id/bulgu', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const g = (i.body ?? {}) as { konum?: string; bolge?: string; aciklama?: string; etiket?: string; bilgiTuru?: string; onem?: string; islevEtkisi?: string; brans?: string; yonlendirme?: string; sorumlu?: string; hedefTarih?: string; beyanlaCelisen?: boolean; tamZiya?: boolean; anaBulgu?: string };
@@ -187,6 +198,8 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       if (!mevcut || ONCELIK_SIRA.indexOf(oneriS) > ONCELIK_SIRA.indexOf(mevcut)) await c.query(`UPDATE dosya SET onerilen_oncelik = $2 WHERE kimlik = $1`, [id, oneriS]);
       // YG-129: beyanla çelişen bulgu tarafsız kaydedilir ve sigortaya bildirilmek üzere Dosya Sorumlusuna düşer. Bulgu Tam Ziya önerisi de sigortacıya gider.
       if ((g.beyanlaCelisen || g.tamZiya) && d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Sigorta Bildirimi', kategori: 'gorev', baslik: `${d.dosya_no} · ${g.tamZiya ? 'Tam Ziya Önerisi' : 'Beyanla Çelişen Bulgu'} Sigortaya Bildirilecek`, ozet: k.bulgu_no, oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Bulgu', nesneKimligi: k.kimlik });
+      // YG-128: beyan ile gözlem ayrıştırılamıyorsa (Çelişkili Bilgi) kayıt teyit bekler.
+      if (g.bilgiTuru === 'Çelişkili Bilgi') await c.query(`UPDATE bulgu SET teyit_bekliyor = true WHERE kimlik = $1`, [k.kimlik]);
       if (g.onem === 'Kritik') await (await import('./kritik_bulgu.js')).kritikBulguBildir(c, { dosya: id, dosyaNo: d.dosya_no, bulgu: k.kimlik, bulguNo: k.bulgu_no, aciklama: g.aciklama!.trim(), yapan: o.kullanici }); // YG-545
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Bulgu Kaydedildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { no: k.bulgu_no, onem: g.onem }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: k.kimlik, bulguNo: k.bulgu_no, onerilenOncelik: oneriS };
@@ -312,7 +325,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const ustKademe = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.kademe = 'Direktör' OR x.rol_adi IN ('CEO', 'Genel Müdür Yardımcısı')) LIMIT 1`, [o.kullanici])).rowCount);
     return {
       kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
-      bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
+      bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
       gorseller: await q(`SELECT g.gorsel_no, g.asama, g.cekim_kalemi, g.bolge_kodu, g.cekilemedi_nedeni, g.cekim_zamani, g.belge_ref FROM gorsel_kanit g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani`),
       olcumler: await q(`SELECT olcum_no, olcum_noktasi, olculen_buyukluk, ozet_deger, birim, gecerlilik, sinir_disi FROM olcum_kaydi WHERE dosya_ref = $1 ORDER BY olcum_no`),
       bolgeler: await q(`SELECT DISTINCT ON (bolge_kodu) bolge_kodu, gorunus, referans_hat, boyuna_konum_m, surum, incelenmedi FROM hasar_bolgesi WHERE dosya_ref = $1 ORDER BY bolge_kodu, surum DESC`),

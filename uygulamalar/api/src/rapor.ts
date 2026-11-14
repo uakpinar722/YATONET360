@@ -106,6 +106,8 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as Record<string, string | undefined>;
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Teknik Raporu dosyanın Teknik Uzmanı hazırlar.' });
+    // YG-128: beyan ile gözlemi ayrıştırılmamış (teyit bekleyen) bulgu varken rapor kaydedilmez.
+    if ((await b.db.query(`SELECT 1 FROM bulgu WHERE dosya_ref = $1 AND teyit_bekliyor LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Teyit bekleyen (beyan ile gözlemi ayrıştırılmamış) bulgu vardır; önce teyit ediniz.' });
     const tur = g.tur ?? 'İlk Rapor';
     if (!['İlk Rapor', 'Ek Teknik Rapor', 'Garanti İnceleme Raporu'].includes(tur)) return y.code(400).send({ hata: 'Rapor türünü seçiniz.' });
     if (['kapsam', 'incelenen', 'saha', 'yontem', 'bulgular', 'acikSorular', 'analiz', 'oneriler', 'uzmanlik'].some((a) => !g[a]?.trim())) return y.code(400).send({ hata: 'Raporun tüm zorunlu alanlarını doldurmanızı rica ederiz.' });

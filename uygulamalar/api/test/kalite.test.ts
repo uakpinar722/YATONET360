@@ -121,6 +121,7 @@ describe('test (YG-286, YG-396, YG-397)', () => {
     expect((await o.ist('POST', `/api/test/${id}/sonuc`, await o.gir('ty'), { sonuc: 'Başarısız', gerekce: 'G', hamVeri: ham })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarısız', gerekce: 'G' })).statusCode).toBe(400);
     expect((await bitir(id, 'Başarısız')).json().sonuc).toBe('Başarısız');
+    { const pd = await o.ist('GET', `/api/test/${id}/pdf`, tu); expect(pd.statusCode).toBe(200); expect(pd.headers['content-type']).toContain('pdf'); } // YG-1451
     expect((await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarılı', gerekce: 'G', hamVeri: ham })).statusCode).toBe(409);
     const E = { kimlik: '00000000-0000-0000-0000-000000000000', dosya_ref: d.kimlik };
     expect(await kabulEngeli(o.db, E, 'Kabul')).toContain('Başarısız');

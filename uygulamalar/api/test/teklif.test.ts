@@ -28,7 +28,7 @@ async function ceoGir() {
 }
 const KARTELA = 'KESIF-01.01.03-01'; // maliyet 51,00; bant 56,36–76,25
 const cetvel = async (id: string, satirlar: object[] = [{ aciklama: 'İnceleme', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 10, birim: 'saat', kartela: KARTELA }]) => {
-  const r = await o.ist('POST', `/api/dosya/${id}/cetvel`, await o.gir('tu'), { satirlar });
+  const r = await o.ist('POST', `/api/dosya/${id}/cetvel`, await o.gir('tu'), { satirlar: satirlar.map((x) => ({ olcut: 'Ölçüt', ...x })) }); // YG-137
   expect(r.statusCode, r.body).toBe(200);
   const k = await o.kart('Kapsam Cetveli', r.json().kimlik);
   expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).toBe(200);
@@ -112,7 +112,7 @@ describe('kartela ve cetvel (YG-195, YG-198, YG-1706)', () => {
   });
   it('cetveli Teknik Uzman hazırlar; nitelik, bedel, miktar zorunlu; Yat Sahibi Talebi kısıtı teklif muhatabında', async () => {
     const d = await o.dosyaAc({ sigortaci: 'SG', hasarNo: 'H1' }, { musteriTuru: 'Sigorta Şirketi' }); await o.ekipKur(d.kimlik); const tu = await o.gir('tu');
-    const c = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, tu, { satirlar: [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat', ...x }] });
+    const c = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, tu, { satirlar: [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat', olcut: 'Ö', ...x }] });
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('ds'), { satirlar: [{}] })).statusCode).toBe(403);
     expect((await c({ nitelik: 'Yanlış' })).statusCode).toBe(400);
     expect((await c({ bedel: 'Yanlış' })).statusCode).toBe(400);

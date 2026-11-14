@@ -45,7 +45,7 @@ interface IhbarGirdisi {
   bildirimZamani?: string; kanal?: string; sahibiAdi?: string; sahibiTuru?: string; sahibiTuruAciklama?: string; yetkiDurumu?: string; sifat?: string; telefon?: string; eposta?: string; yetkiBeyani?: string;
   yat?: YatGirdisi; yatSahibi?: { ad?: string; telefon?: string; eposta?: string; kisiTuru?: string };
   olayTarihi?: string; olayYeri?: string; konum?: string; yatDurumu?: string; ihtiyac?: string; acil?: boolean; cevaplar?: Record<string, string>; oncelik?: string; hedefTarih?: string;
-  sigortaci?: string; policeNo?: string; hasarNo?: string; ozgun?: string; dil?: string; varyant?: string;
+  sigortaci?: string; policeNo?: string; hasarNo?: string; ozgun?: string; dil?: string; varyant?: string; iletisimKisileri?: string;
 }
 
 /** Ortak kayıt: personel ihbar ekranı ve portal kısa formu aynı yoldan geçer (YG-011: her kanaldan tek kayıt). */
@@ -93,6 +93,7 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$6) RETURNING kimlik`,
     [no, bildirimZamani, simdi, varyant, g.kanal, kullanici, g.sahibiAdi.trim(), g.sahibiTuru, g.sahibiTuruAciklama ?? null, durum, g.sifat ?? null, g.telefon?.trim() || null, g.eposta?.trim() || null, g.yetkiBeyani ?? null, yat.kimlik, olay, g.olayYeri ?? null, g.konum.trim(), g.yatDurumu.trim(), g.ihtiyac.trim(), Boolean(g.acil), JSON.stringify(cevaplar), onerilen, oncelik, g.hedefTarih || null, g.sigortaci ?? null, g.policeNo ?? null, g.hasarNo ?? null, g.ozgun?.trim() || g.ihtiyac.trim(), statu, dil, baglam.ilkSorumlu]);
   const id = rows[0].kimlik as string;
+  if (g.iletisimKisileri?.trim()) await c.query(`UPDATE talep SET iletisim_kisileri = $2 WHERE kimlik = $1`, [id, g.iletisimKisileri.trim()]); // YG-018
   await sureBaslat(c, { tur: 'İlk Yanıt', oncelik, baslangic: bildirimZamani, talep: id });
   await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: baglam.ilkSorumlu, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
   // YG-026: Kritik öncelikte son onay Operasyon Yöneticisindedir.
@@ -138,6 +139,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
     // YG-1438: Dosya Sorumlusu bayrak, özel/ticari kullanım ve klas durumunu girer; yabancı bayrakta Türkiye'de kalış bitişi sorulur.
     if (!g.yat?.yatId && (!g.yat?.bayrak?.trim() || !['Özel', 'Ticari'].includes(g.yat?.kullanim ?? '') || !['Evet', 'Hayır', 'Bilinmiyor'].includes(g.yat?.klas ?? ''))) return y.code(400).send({ hata: 'Bayrak, kullanım (Özel/Ticari) ve klas durumunu (Evet/Hayır/Bilinmiyor) giriniz.' });
     if (g.yat?.klas === 'Evet' && !g.yat.klasKurulusu?.trim() && !g.yat?.yatId) return y.code(400).send({ hata: 'Klaslı yatta klas kuruluşunu yazınız.' });
+    if (!g.yat?.yatId && !g.yat?.markaModelId && (!g.yat?.markaDiger?.trim() || !g.yat?.modelDiger?.trim())) return y.code(400).send({ hata: '"Diğer" seçildiğinde marka ve modeli yazınız; bilinmiyorsa "Bilinmiyor" yazınız.' }); // YG-018
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -151,7 +153,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
   });
 
   s.get('/ihbar', ihbarci, async () => (await b.db.query(
-    `SELECT t.kimlik, t.talep_no, t.statu, t.oncelik, t.ihtiyac_tanimi, t.yat_mevcut_konumu, t.bildirim_alinma_zamani, t.ilk_yanit_zamani, t.talep_sahibi_adi, t.talep_sahibi_turu, y.yat_adi, u.bitis AS ilk_yanit_son
+    `SELECT t.kimlik, t.talep_no, t.statu, t.oncelik, t.ihtiyac_tanimi, t.iletisim_kisileri, t.yat_mevcut_konumu, t.bildirim_alinma_zamani, t.ilk_yanit_zamani, t.talep_sahibi_adi, t.talep_sahibi_turu, y.yat_adi, u.bitis AS ilk_yanit_son
        FROM talep t JOIN yat y ON y.kimlik = t.yat_ref LEFT JOIN dosya_sure u ON u.talep_ref = t.kimlik AND u.tur = 'İlk Yanıt'
       WHERE t.statu NOT IN ('Dosyaya Dönüştü', 'Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY array_position(ARRAY['Kritik','Yüksek','Normal','Planlı'], t.oncelik), t.bildirim_alinma_zamani LIMIT 200`)).rows);
 

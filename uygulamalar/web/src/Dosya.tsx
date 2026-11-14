@@ -8,7 +8,7 @@ import { KaliteBolumu, RaporBolumu, SigortaEposta, SigortaGonderimBolumu, Tedari
 import { TeklifTalebiBolumu, TesisIslemleri } from './Portallar';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
-interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
+interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
 interface DosyaSatir { kimlik: string; dosya_no: string; statu: string; asama: string | null; oncelik: string; konum: string; yat_adi: string; dosya_sorumlusu: string | null; beklemede: string | null; sonraki_son: string | null }
 interface Sure { tur: string; baslangic: string; bitis: string; kaydirma_notu: string | null; tamamlanma: string | null; renk: 'yeşil' | 'sarı' | 'kırmızı' | null }
 interface Ekip { kimlik: string; rol: string; ad_soyad: string; kullanici: string }
@@ -76,7 +76,7 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
 function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
   const [s, setS] = useState<Secenek | null>(null); const [hata, setHata] = useState('');
   const [kanal, setKanal] = useState('Telefon'); const [ad, setAd] = useState(''); const [tur, setTur] = useState(''); const [turAcik, setTurAcik] = useState(''); const [tel, setTel] = useState(''); const [ep, setEp] = useState('');
-  const [konum, setKonum] = useState(''); const [durum, setDurum] = useState(''); const [ozet, setOzet] = useState(''); const [acil, setAcil] = useState(false); const [dil, setDil] = useState('Türkçe');
+  const [konum, setKonum] = useState(''); const [durum, setDurum] = useState(''); const [iKisi, setIKisi] = useState(''); const [ozet, setOzet] = useState(''); const [acil, setAcil] = useState(false); const [dil, setDil] = useState('Türkçe');
   const [cevap, setCevap] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState('Normal'); const [oncelik, setOncelik] = useState('');
   const [yTur, setYTur] = useState(''); const [yAd, setYAd] = useState(''); const [marka, setMarka] = useState(''); const [markalar, setMarkalar] = useState<{ marka: string }[]>([]); const [modeller, setModeller] = useState<{ kimlik: string; model: string; boy_m: number | null; govde_malzemesi: string | null }[]>([]);
   const [modelId, setModelId] = useState(''); const [diger, setDiger] = useState(false); const [dMarka, setDMarka] = useState(''); const [dModel, setDModel] = useState(''); const [boy, setBoy] = useState(''); const [kalis, setKalis] = useState(''); const [klasK, setKlasK] = useState(''); const [govde, setGovde] = useState('Bilinmiyor'); const [bayrak, setBayrak] = useState('Türkiye'); const [kullanim, setKullanim] = useState('Özel'); const [klas, setKlas] = useState('Bilinmiyor'); const [yil, setYil] = useState(''); const [garanti, setGaranti] = useState('');
@@ -92,7 +92,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
     e.preventDefault(); setHata('');
     try {
       const r = await istek<{ kimlik: string; talepNo: string }>('/ihbar', {
-        kanal, sahibiAdi: ad, sahibiTuru: tur, sahibiTuruAciklama: turAcik, telefon: tel, eposta: ep || undefined, konum, yatDurumu: durum, ihtiyac: ozet, acil, cevaplar: cevap, oncelik: oncelik || undefined, dil, sigortaci: sigortaci || undefined, hasarNo: hasarNo || undefined,
+        kanal, sahibiAdi: ad, sahibiTuru: tur, sahibiTuruAciklama: turAcik, telefon: tel, eposta: ep || undefined, konum, yatDurumu: durum, ihtiyac: ozet, iletisimKisileri: iKisi || undefined, acil, cevaplar: cevap, oncelik: oncelik || undefined, dil, sigortaci: sigortaci || undefined, hasarNo: hasarNo || undefined,
         yatSahibi: sahipAd ? { ad: sahipAd, telefon: sahipTel || undefined, eposta: sahipEp || undefined } : undefined,
         yat: { adi: yAd, tur: yTur, markaModelId: modelId || undefined, markaDiger: diger ? dMarka : undefined, modelDiger: diger ? dModel : undefined, boy: boy ? Number(boy.replace(',', '.')) : undefined, govde, bayrak, kullanim, klas, uretimYili: yil ? Number(yil) : undefined, turkiyeKalisBitis: kalis || undefined, klasKurulusu: klasK || undefined },
       });
@@ -138,6 +138,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       <div className="bolum">Olay</div>
       <label htmlFor="i-konum">Adres (Yatın Mevcut Konumu)</label><input id="i-konum" value={konum} onChange={(e) => setKonum(e.target.value)} />
       <label htmlFor="i-durum">Yatın Mevcut Durumu</label><input id="i-durum" value={durum} onChange={(e) => setDurum(e.target.value)} />
+      <label htmlFor="i-ik">İletişim Kişileri (Ad, Rol, Telefon)</label><textarea id="i-ik" rows={2} value={iKisi} onChange={(e) => setIKisi(e.target.value)} />
       <label htmlFor="i-ozet">Olay Özeti</label><textarea id="i-ozet" rows={3} value={ozet} onChange={(e) => setOzet(e.target.value)} />
       <div className="iki-tarih"><div><label htmlFor="i-sg">Sigorta Şirketi</label><input id="i-sg" list="sigorta-listesi" value={sigortaci} onChange={(e) => setSigortaci(e.target.value)} /><SigortaListesi /></div><div><label htmlFor="i-hn">Sigorta Hasar Dosya No</label><input id="i-hn" value={hasarNo} onChange={(e) => setHasarNo(e.target.value)} /></div></div>
       <div className="bolum">Öncelik Soruları</div>
@@ -179,6 +180,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
         <div>Yetki Durumu: {t.ihbar_yetki_durumu}</div>
         <div>Konum: {t.yat_mevcut_konumu} · Durum: {t.yat_mevcut_durumu}</div>
         <div>Olay Özeti: {t.ihtiyac_tanimi}</div>
+        {t.iletisim_kisileri && <div>İletişim Kişileri: {t.iletisim_kisileri}</div>}
         <div>Marka/Model: {t.marka ?? '—'} {t.model ?? ''} · Boy: {t.tam_boy_m ?? '—'} m · Gövde: {t.govde_malzemesi ?? '—'}</div>
         {t.ilk_yanit_son && !t.ilk_yanit_zamani && <div>İlk Yanıt Son: {saat(t.ilk_yanit_son)} <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/ihbar/${id}/ilk-yanit`, {}))}>İlk Yanıt Verildi</button></div>}
       </div>
@@ -344,7 +346,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
 
 interface Saha {
   kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null }[];
-  bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null }[];
+  bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null; teyit_bekliyor?: boolean }[];
   gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
   kontrolListeleri: { kimlik: string; kayit_no: string; kontrol_listesi: string; statu: string }[];
@@ -372,6 +374,7 @@ function GarantiKarar({ id, yap }: { id: string; yap: (f: () => Promise<any>, ta
 function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; belgeler: Belge[]; yenile: () => void }) {
   const [v, setV] = useState<Saha | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const [amac, setAmac] = useState(''); const [kBas, setKBas] = useState(''); const [kBit, setKBit] = useState(''); const [inc, setInc] = useState(''); const [cikis, setCikis] = useState('Hazır'); const [sup, setSup] = useState('Hayır'); const [sayim, setSayim] = useState(false); const [eris, setEris] = useState(''); const [erisT, setErisT] = useState('');
+  const [bTur, setBTur] = useState('İlk Gözlem'); const [bTy, setBTy] = useState<Record<string, { tur: string; ger: string }>>({});
   const [bKonum, setBKonum] = useState(''); const [bBolge, setBBolge] = useState(''); const [bAcik, setBAcik] = useState(''); const [bOnem, setBOnem] = useState('Orta'); const [bHedef, setBHedef] = useState('');
   const [gKalem, setGKalem] = useState(KALEMLER[0]!); const [gBelge, setGBelge] = useState(''); const [gBolge, setGBolge] = useState(''); const [gOlcek, setGOlcek] = useState(''); const [gNeden, setGNeden] = useState('');
   const [lmBelge, setLmBelge] = useState(''); const [iTur, setITur] = useState('Askı'); const [iNeden, setINeden] = useState(''); const [iGer, setIGer] = useState(''); const [iYapilan, setIYapilan] = useState(''); const [iAcik, setIAcik] = useState(''); const [iTeslim, setITeslim] = useState(''); const [iDev, setIDev] = useState('');
@@ -405,12 +408,17 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         </>}
       </Blok>
       <Blok baslik="Bulgular">
+        {v.bulgular.filter((b) => b.teyit_bekliyor).map((b) => { const x = bTy[b.kimlik] ?? { tur: 'Beyan', ger: '' }; return <div className="uyari" key={`t-${b.kimlik}`}>Teyit Bekliyor: {b.bulgu_no} · {b.aciklama}
+          <label htmlFor={`bt-t-${b.kimlik}`}>Ayrıştırılan Bilgi Türü</label><select id={`bt-t-${b.kimlik}`} value={x.tur} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, tur: e.target.value } })}>{['Beyan', 'İlk Gözlem', 'Doğrulanmış Olgu', 'Teknik Varsayım'].map((s) => <option key={s}>{s}</option>)}</select>
+          <label htmlFor={`bt-g-${b.kimlik}`}>Teyit Gerekçesi</label><input id={`bt-g-${b.kimlik}`} value={x.ger} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, ger: e.target.value } })} />
+          <button className="btn2 kucuk" disabled={!x.ger.trim()} onClick={() => void yap(() => istek(`/bulgu/${b.kimlik}/teyit`, { bilgiTuru: x.tur, gerekce: x.ger }), 'Bulgu teyit edildi.')}>Teyit Et</button></div>; })}
         {v.bulgular.map((b) => <div key={b.kimlik}>{b.bulgu_no} · {b.hasar_onem_derecesi}{b.bolge_kodu ? ` · ${b.bolge_kodu}` : ''} · {b.konum_referansi} · {b.aciklama}{(b.beyanla_celisen || b.tam_ziya_onerisi) && (b.sigortaciya_bildirim_zamani ? ' · Sigortaya Bildirildi' : <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/bulgu/${b.kimlik}/sigorta-bildirimi`, {}))}>Sigortaya Bildirildi</button>)}</div>)}
         <label htmlFor="bg-k">Konum Referansı</label><input id="bg-k" value={bKonum} onChange={(e) => setBKonum(e.target.value)} placeholder="Baştan 8 m, sancak" />
         <div className="iki-tarih"><div><label htmlFor="bg-b">Bölge Kodu</label><input id="bg-b" value={bBolge} onChange={(e) => setBBolge(e.target.value)} placeholder="S1" /></div><div><label htmlFor="bg-o">Önem</label><select id="bg-o" value={bOnem} onChange={(e) => setBOnem(e.target.value)}>{['Kritik', 'Yüksek', 'Orta', 'Düşük', 'Gözlem'].map((x) => <option key={x}>{x}</option>)}</select></div></div>
         <label htmlFor="bg-a">Açıklama</label><input id="bg-a" value={bAcik} onChange={(e) => setBAcik(e.target.value)} />
+        <label htmlFor="bg-bt">Bilgi Türü</label><select id="bg-bt" value={bTur} onChange={(e) => setBTur(e.target.value)}>{['İlk Gözlem', 'Doğrulanmış Olgu', 'Beyan', 'Teknik Varsayım', 'Çelişkili Bilgi'].map((x) => <option key={x} value={x}>{x === 'Çelişkili Bilgi' ? 'Çelişkili Bilgi (beyan ile gözlem ayrıştırılamıyor, teyit bekler)' : x}</option>)}</select>
         <label htmlFor="bg-h">Hedef Tarih</label><input id="bg-h" type="date" value={bHedef} onChange={(e) => setBHedef(e.target.value)} />
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/bulgu`, { konum: bKonum, bolge: bBolge || undefined, aciklama: bAcik, etiket: 'Hasar', bilgiTuru: 'İlk Gözlem', onem: bOnem, yonlendirme: 'Onarım', sorumlu: d.ekip.find((e) => e.rol.includes('Teknik Uzman'))?.kullanici, hedefTarih: bHedef }))}>Bulgu Ekle</button>
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/bulgu`, { konum: bKonum, bolge: bBolge || undefined, aciklama: bAcik, etiket: 'Hasar', bilgiTuru: bTur, onem: bOnem, yonlendirme: 'Onarım', sorumlu: d.ekip.find((e) => e.rol.includes('Teknik Uzman'))?.kullanici, hedefTarih: bHedef }))}>Bulgu Ekle</button>
       </Blok>
       <Blok baslik="Yönlendirmeli Fotoğraf">
         {KALEMLER.map((k) => { const y = v.gorseller.find((g) => g.cekim_kalemi === k); return <div key={k}>{y ? '✔' : '○'} {k}{y?.gorsel_no ? ` · ${y.gorsel_no}` : ''}{y?.cekilemedi_nedeni ? ` · ${y.cekilemedi_nedeni}` : ''}</div>; })}

@@ -341,7 +341,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   // YG-195, YG-198: cetveli Teknik Uzman hazırlar, Teknik Yönetici onaylar; bedel türü ve nitelik satırda seçilir.
   s.post('/dosya/:id/cetvel', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { satirlar?: { kod?: string; kartela?: string; aciklama?: string; nitelik?: string; bedel?: string; miktar?: number; birim?: string; bolge?: string; kabul?: string; gecici?: boolean }[]; dahilHaric?: string; varsayimlar?: string };
+    const g = (i.body ?? {}) as { satirlar?: { kod?: string; kartela?: string; aciklama?: string; nitelik?: string; bedel?: string; miktar?: number; birim?: string; bolge?: string; kabul?: string; olcut?: string; gecici?: boolean }[]; dahilHaric?: string; varsayimlar?: string };
     const d = await dosyam(id, o.kullanici);
     if (!d) return yok(y);
     const ekip = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount;
@@ -351,14 +351,15 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     for (const [n, x] of g.satirlar.entries()) {
       if (!x.aciklama?.trim() || !(Number(x.miktar) > 0) || !x.birim?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda açıklama, miktar ve birim zorunludur.` });
       if (!NITELIK.includes(x.nitelik ?? '')) return y.code(400).send({ hata: `${n + 1}. satırda işin niteliğini seçiniz.` });
+      if (!x.olcut?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda kabul ölçütünü yazınız; ölçütsüz iş fiyatlanmaz ve atanmaz.` }); // YG-137
       if (!BEDEL.includes(x.bedel ?? '')) return y.code(400).send({ hata: `${n + 1}. satırda bedel türünü seçiniz.` });
       if (x.kartela && !(await b.db.query(`SELECT 1 FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [x.kartela, sur])).rowCount) return y.code(400).send({ hata: `${n + 1}. satırdaki kartela kodu bulunamadı: ${x.kartela}` });
     }
     return islem(async (c) => {
       const surum = (await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM kapsam_cetveli WHERE dosya_ref = $1`, [id])).rows[0].n;
       const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric ?? null, g.varsayimlar ?? null])).rows[0];
-      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici)]);
+      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim()]);
       await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no} · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
       return { kimlik: t.kimlik, surum };
     });

@@ -10,6 +10,8 @@ import { rolSahipleri } from './makam.js';
 import { kapanisKapisi } from './saha.js';
 import { altNumara } from './sure.js';
 import { UUID } from './yat.js';
+import { gunAy } from './metin.js';
+import { pdfUret, type Bolum } from './pdf.js';
 
 type Db = Pool | PoolClient;
 const KK = 'Kalite Uzmanı (Kalite Kontrolör)';
@@ -303,6 +305,22 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     return { sonuc: g.sonuc, serbest: tam, bekleyen: gereken.filter((r) => !onay.includes(r)) };
   });
 
+  // YG-1451: RP-RAP-003 Test Kaydı standart akışta dışa gitmez; sigorta şirketi istediğinde LGM personeli PDF'i üretir.
+  s.get('/test/:id/pdf', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || o.grup !== 'LGM İç Rolü') return yok(y);
+    const t = (await b.db.query(`SELECT t.*, d.dosya_no FROM test_kaydi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [id])).rows[0];
+    if (!t || !(await erisim(t.dosya_ref, o.kullanici))) return yok(y);
+    const cihaz = t.cihazlar?.length ? (await b.db.query(`SELECT ad, seri_no, kalibrasyon_tarihi FROM olcum_cihazi WHERE kimlik::text = ANY($1::text[])`, [t.cihazlar])).rows : [];
+    const renk = t.sonuc === 'Başarılı' ? 'yesil' : t.sonuc ? 'kirmizi' : 'sari';
+    const bolumler: Bolum[] = [
+      { baslik: 'Test Bilgileri', tur: 'alanlar', alanlar: [{ et: 'Test No', deger: t.test_no }, { et: 'Test Grubu', deger: t.test_grubu }, { et: 'Amaç ve Kapsam', deger: t.amac_kapsam, genis: true }, { et: 'Yöntem', deger: t.yontem, genis: true }, { et: 'Kabul Ölçütü', deger: t.kabul_olcutu, genis: true }, { et: 'Durdurma Koşulu', deger: t.durdurma_kosulu, genis: true }] },
+      ...(cihaz.length ? [{ baslik: 'Ölçüm Cihazları', tur: 'tablo' as const, sutunlar: [{ ad: 'Cihaz' }, { ad: 'Seri No', hiza: 'ort' as const }, { ad: 'Kalibrasyon', hiza: 'ort' as const }], satirlar: cihaz.map((c) => [c.ad, c.seri_no, c.kalibrasyon_tarihi ? gunAy(c.kalibrasyon_tarihi) : null]) }] : []),
+      { baslik: 'Sonuç', tur: 'tablo', sutunlar: [{ ad: 'Sonuç', hiza: 'ort' }, { ad: 'Gerekçe' }, { ad: 'Gözlemler' }], satirlar: [[{ m: t.sonuc ?? 'Bekliyor', renk }, t.sonuc_gerekcesi, t.gozlemler ?? t.durdurma_olayi]] },
+    ];
+    const pdf = await pdfUret({ ad: 'Test Kaydı (Test Sonuç Raporu)', kod: 'RP-RAP-003', no: t.test_no, dosyaNo: t.dosya_no, tarih: gunAy(t.olusturma_zamani), surum: 'Rev.0', dil: 'tr', bolumler });
+    return y.type('application/pdf').header('Content-Disposition', `inline; filename="${encodeURIComponent(t.test_no)}.pdf"`).send(pdf);
+  });
   s.post('/olcum-cihazi', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; seri?: string; tarih?: string; aralik?: number; kabul?: boolean };
     if (!(await rolVar(o.kullanici, [...TEKNIK, KK, KM]))) return y.code(403).send({ hata: 'Bu işlem teknik ve kalite birimlerine aittir.' });

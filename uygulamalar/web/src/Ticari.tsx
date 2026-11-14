@@ -145,7 +145,7 @@ function useYap(yenile: () => unknown) {
 
 const NITELIK = ['Onarım', 'Yenileme (Değişim)', 'Bakım', 'Keşif ve Test', 'Geçici / Acil Önlem', 'Yat Sahibi Talebi'];
 const BEDEL = ['Malzeme', 'İşçilik', 'Nakliye', 'Masraf', 'Kurtarma', 'Çekme / Refakat', 'Dalgıçlık', 'Ulaşım', 'Konaklama', 'Harcırah', 'Gümrük ve İzin Giderleri'];
-interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string }
+interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string; olcut?: string }
 interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
   ekonomikKilit: boolean;
@@ -224,11 +224,12 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           {satirlar.map((x, n) => <div key={n}>{x.aciklama} · {x.miktar} {x.birim} · {x.nitelik} · {x.bedel}{x.kod ? ` · ${x.kod}` : ''}</div>)}
           <button className="btn2 kucuk" onClick={() => void yap(async () => { const r = await istek<{ rapor: string | null; satirlar: string[] }>(`/dosya/${id}/rapor-onerileri`); if (!r.rapor) throw new Error('Önerisi olan teknik rapor bulunmamaktadır.'); setSatirlar([...satirlar, ...r.satirlar.map((x) => ({ ...satir, aciklama: x, kod: '' }))]); }, 'Teknik rapor önerileri satır olarak aktarıldı; kartela kodu, miktar ve birimi düzeltiniz.')}>Teknik Rapor Önerilerini Aktar</button>
           <label htmlFor="c-a">Açıklama</label><input id="c-a" value={satir.aciklama} onChange={(e) => setSatir({ ...satir, aciklama: e.target.value })} />
+          <label htmlFor="c-ol">Kabul Ölçütü</label><input id="c-ol" value={satir.olcut ?? ''} onChange={(e) => setSatir({ ...satir, olcut: e.target.value })} />
           <label htmlFor="c-k">Kartela Kodu (Varsa)</label><KartelaArama id="c-k" deger={satir.kod} sec={(k) => setSatir({ ...satir, kod: k })} />
           <div className="iki-tarih"><div><label htmlFor="c-n">İşin Niteliği</label><select id="c-n" value={satir.nitelik} onChange={(e) => setSatir({ ...satir, nitelik: e.target.value })}>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select></div><div><label htmlFor="c-b">Bedel Türü</label><select id="c-b" value={satir.bedel} onChange={(e) => setSatir({ ...satir, bedel: e.target.value })}>{BEDEL.map((x) => <option key={x}>{x}</option>)}</select></div></div>
           <div className="iki-tarih"><div><label htmlFor="c-m">Miktar</label><input id="c-m" inputMode="decimal" value={satir.miktar} onChange={(e) => setSatir({ ...satir, miktar: e.target.value })} /></div><div><label htmlFor="c-r">Birim</label><input id="c-r" value={satir.birim} onChange={(e) => setSatir({ ...satir, birim: e.target.value })} /></div></div>
-          <button className="btn2" disabled={!satir.aciklama.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '' }); }}>Satır Ekle</button>
-          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
+          <button className="btn2" disabled={!satir.aciklama.trim() || !satir.olcut?.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '', olcut: '' }); }}>Satır Ekle</button>
+          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
         </>}
       </Blok>
       <Blok baslik="Fiyat Teklifleri">

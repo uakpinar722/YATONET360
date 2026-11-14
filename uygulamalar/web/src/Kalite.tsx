@@ -10,6 +10,10 @@ export async function belgeYukle(f: File, bagTuru: string, bagKimligi: string): 
 }
 
 /** Kanıt seçimi: kullanıcı dosya seçer, sistem kimliği tutar; kullanıcıya kimlik gösterilmez. */
+/** YG-136: kontrol noktası adları tek biçimde: Bekletme (H), Tanıklık (W), Belge İnceleme (R). */
+const NOKTA_KODU: Record<string, string> = { Bekletme: 'H', Tanıklık: 'W', 'Belge İnceleme': 'R' };
+export const noktaAdi = (t: string) => NOKTA_KODU[t] ? `${t} (${NOKTA_KODU[t]})` : t;
+
 export function BelgeSec({ ad, bagTuru, bagKimligi, deger, sec }: { ad: string; bagTuru: string; bagKimligi: string; deger: string; sec: (x: string) => void }) {
   const [h, setH] = useState('');
   const kimlik = `b-${ad.replace(/\s/g, '')}-${bagKimligi.slice(0, 6)}`;
@@ -112,12 +116,12 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
       </Blok>
       <Blok baslik="Kontrol Noktaları">
         {v.kontrolNoktalari.length === 0 && <div className="not">Kontrol noktası bulunmamaktadır.</div>}
-        {v.kontrolNoktalari.map((k) => { const a = kpk[k.kimlik] ?? ''; return <div className="soru" key={k.kimlik}><span>{k.kontrol_noktasi_no} · {k.nokta_turu} · {k.kontrol_ozelligi} · {k.serbest_birakma_zamani ? 'Serbest Bırakıldı' : k.sonuc ?? 'Bekliyor'}</span>{!k.serbest_birakma_zamani && <>
+        {v.kontrolNoktalari.map((k) => { const a = kpk[k.kimlik] ?? ''; return <div className="soru" key={k.kimlik}><span>{k.kontrol_noktasi_no} · {noktaAdi(k.nokta_turu)} · {k.kontrol_ozelligi} · {k.serbest_birakma_zamani ? 'Serbest Bırakıldı' : k.sonuc ?? 'Bekliyor'}</span>{!k.serbest_birakma_zamani && <>
           <BelgeSec ad="Kontrol Kanıtı" bagTuru="Dosya" bagKimligi={id} deger={a} sec={(x) => setKpk({ ...kpk, [k.kimlik]: x })} />
           <div className="dugmeler">{['Uygun', 'Düzeltme gerekli', 'Reddedildi'].map((s) => <button key={s} className="btn2 kucuk" disabled={!a} onClick={() => void yap(() => istek(`/kontrol-noktasi/${k.kimlik}/sonuc`, { sonuc: s, kanit: a }))}>{s}</button>)}</div></>}</div>; })}
         {teknik && ie.length > 0 && <>
           <label htmlFor="kp-e">İş Emri</label><select id="kp-e" value={kp.isEmri} onChange={(e) => setKp({ ...kp, isEmri: e.target.value })}><option value="">Seçiniz</option>{ie.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.is_emri_no}</option>)}</select>
-          <label htmlFor="kp-t">Nokta Türü</label><select id="kp-t" value={kp.tur} onChange={(e) => setKp({ ...kp, tur: e.target.value })}>{['Bekletme', 'Tanıklık', 'Belge İnceleme', 'Gözetim', 'Uygulayıcı Öz Kontrolü', 'Bağımsız Doğrulama'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="kp-t">Nokta Türü</label><select id="kp-t" value={kp.tur} onChange={(e) => setKp({ ...kp, tur: e.target.value })}>{['Bekletme', 'Tanıklık', 'Belge İnceleme', 'Gözetim', 'Uygulayıcı Öz Kontrolü', 'Bağımsız Doğrulama'].map((x) => <option key={x} value={x}>{noktaAdi(x)}</option>)}</select>
           <label htmlFor="kp-o">Kontrol Özelliği</label><input id="kp-o" value={kp.ozellik} onChange={(e) => setKp({ ...kp, ozellik: e.target.value })} />
           <label htmlFor="kp-k">Kabul Ölçütü (Ölçülebilir)</label><input id="kp-k" value={kp.olcut} onChange={(e) => setKp({ ...kp, olcut: e.target.value })} />
           <label htmlFor="kp-z">Planlanan Zaman</label><input id="kp-z" type="datetime-local" value={kp.zaman} onChange={(e) => setKp({ ...kp, zaman: e.target.value })} />
@@ -140,6 +144,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
         {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '', dis: '' }; return (
           <div className="soru" key={x.kimlik}>
             <span>{x.test_no} · {x.test_grubu} · Ölçüt: {x.kabul_olcutu} · {x.durum}{x.sonuc ? ` · ${x.sonuc}` : ''}</span>
+            {x.sonuc && <a className="btn2 kucuk" href={`/api/test/${x.kimlik}/pdf`} target="_blank" rel="noreferrer">Test Kaydı PDF (Sigorta İsterse)</a>}
             {x.durum === 'Planlandı' && <>
               <label htmlFor={`ts-${x.kimlik}`}>Sonuç</label><select id={`ts-${x.kimlik}`} value={a.sonuc} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, sonuc: e.target.value } })}>{SONUC.map((s) => <option key={s}>{s}</option>)}</select>
               <label htmlFor={`td-${x.kimlik}`}>Dış Rapor Sonucu (varsa)</label><select id={`td-${x.kimlik}`} value={a.dis} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, dis: e.target.value, sonuc: ({ Uygun: 'Başarılı', 'Uygun Değil': 'Başarısız', Belirlenemedi: 'Geçersiz' } as Record<string, string>)[e.target.value] ?? a.sonuc } })}><option value="">Yok</option><option>Uygun</option><option>Uygun Değil</option><option>Belirlenemedi</option></select>
