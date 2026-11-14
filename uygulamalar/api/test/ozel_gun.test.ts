@@ -9,7 +9,7 @@ afterAll(async () => { await o.kapat(); });
 
 describe('Özel Günler (YG-1633)', () => {
   it('rıza vermeyen görünmez ve doğum günü giremez; rıza verenin doğum günü ve yıl dönümü görünür; yaş yok', async () => {
-    const bugun = new Date(); const g = bugun.toISOString().slice(5, 10);
+    const bugun = new Date(); const g = bugun.toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }).slice(5, 10); // yerel tarih
     for (const k of [o.K.ds, o.K.opm]) await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1, (current_date - interval '2 years')::date, $1) ON CONFLICT (kullanici_ref) DO UPDATE SET ise_giris_tarihi = EXCLUDED.ise_giris_tarihi`, [k]);
     const ds = await o.gir('ds');
     expect((await o.ist('POST', '/api/ozel-gunler/dogum-gunu', ds, { gun: g })).statusCode).toBe(409);

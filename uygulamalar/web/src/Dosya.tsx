@@ -37,13 +37,13 @@ const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => 
 
 export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: string | null; acildi: () => void }) {
   const ihbarci = ben.izinler.includes('ihbar.kaydet'); const tumu = ben.izinler.includes('dosya.tum');
-  const [ihbarlar, setIhbarlar] = useState<IhbarSatir[]>([]); const [dosyalar, setDosyalar] = useState<DosyaSatir[]>([]);
+  const [ara, setAra] = useState(''); const [ihbarlar, setIhbarlar] = useState<IhbarSatir[]>([]); const [dosyalar, setDosyalar] = useState<DosyaSatir[]>([]);
   const [kapsam, setKapsam] = useState(tumu ? 'tum' : 'benim'); const [form, setForm] = useState(false); const [ihbarId, setIhbarId] = useState<string | null>(null); const [dosyaId, setDosyaId] = useState<string | null>(acikDosya); const [hata, setHata] = useState('');
   const yukle = () => {
-    void istek<DosyaSatir[]>(`/dosya?kapsam=${kapsam}`).then(setDosyalar).catch((e) => setHata(e.message));
+    void istek<DosyaSatir[]>(`/dosya?kapsam=${kapsam}${ara.trim() ? `&ara=${encodeURIComponent(ara.trim())}` : ''}`).then(setDosyalar).catch((e) => setHata(e.message));
     if (ihbarci) void istek<IhbarSatir[]>('/ihbar').then(setIhbarlar).catch((e) => setHata(e.message));
   };
-  useEffect(yukle, [kapsam]);
+  useEffect(yukle, [kapsam, ara]);
   useEffect(() => { if (acikDosya) { setDosyaId(acikDosya); setIhbarId(null); acildi(); } }, [acikDosya]);
   if (dosyaId) return <DosyaEkrani id={dosyaId} roller={ben.roller.map((r) => r.rol_adi)} geri={() => { setDosyaId(null); yukle(); }} />;
   if (ihbarId) return <IhbarEkrani id={ihbarId} geri={(d) => { setIhbarId(null); yukle(); if (d) setDosyaId(d); }} />;
@@ -63,6 +63,7 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
       </>}
       <div className="bolum">{kapsam === 'tum' ? 'Tüm Dosyalar' : 'Dosyalarım'}</div>
       {tumu && <div className="dugmeler"><button className={kapsam === 'tum' ? 'btn2 kucuk secili' : 'btn2 kucuk'} onClick={() => setKapsam('tum')}>Tümü</button><button className={kapsam === 'benim' ? 'btn2 kucuk secili' : 'btn2 kucuk'} onClick={() => setKapsam('benim')}>Dosyalarım</button></div>}
+      <label htmlFor="dl-ara">Dosya Ara (Dosya No veya Yat Adı)</label><input id="dl-ara" value={ara} onChange={(e) => setAra(e.target.value)} />
       {dosyalar.length === 0 ? <div className="ozet bos">Dosya bulunmamaktadır.</div> : (
         <div className="tablo"><table className="kartli"><thead><tr><th>Dosya No</th><th>Yat</th><th>Öncelik</th><th>Durum</th><th>Dosya Sorumlusu</th><th /></tr></thead>
           <tbody>{dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Dosya No">{d.dosya_no}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Öncelik"><Oncelik o={d.oncelik} /></td><td data-ad="Durum">{d.statu}{d.asama ? ` · ${d.asama}` : ''}{d.beklemede ? ` · Beklemede: ${d.beklemede}` : ''}</td><td data-ad="Dosya Sorumlusu">{d.dosya_sorumlusu ?? '—'}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setDosyaId(d.kimlik)}>Aç</button></td></tr>)}</tbody>
@@ -408,6 +409,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
           <button className="btn2" onClick={() => void yap(() => istek(`/kesif/${acikKesif.kimlik}/tamamla`, { tarih: new Date().toISOString(), incelenen: inc, erisilemeyen: eris || undefined, hedefTarih: erisT || undefined, cikis, supheli: sup, kanitSayimi: sayim }))}>Keşfi Tamamla</button>
         </>}
       </Blok>
+      <BelgeListesi dosya={id} />
       <Blok baslik="Bulgular">
         {v.bulgular.filter((b) => b.teyit_bekliyor).map((b) => { const x = bTy[b.kimlik] ?? { tur: 'Beyan', ger: '' }; return <div className="uyari" key={`t-${b.kimlik}`}>Teyit Bekliyor: {b.bulgu_no} · {b.aciklama}
           <label htmlFor={`bt-t-${b.kimlik}`}>Ayrıştırılan Bilgi Türü</label><select id={`bt-t-${b.kimlik}`} value={x.tur} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, tur: e.target.value } })}>{['Beyan', 'İlk Gözlem', 'Doğrulanmış Olgu', 'Teknik Varsayım'].map((s) => <option key={s}>{s}</option>)}</select>
@@ -484,4 +486,12 @@ function Paylas({ belge, no }: { belge: string; no?: number }) {
   const [ac, setAc] = useState(false); const [f, setF] = useState({ alici: '', gun: 7 }); const [m, setM] = useState('');
   if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Paylaş</button>;
   return <span className="ozet"><label htmlFor={`p-a-${belge}`}>Alıcı E-Posta</label><input id={`p-a-${belge}`} value={f.alici} onChange={(e) => setF({ ...f, alici: e.target.value })} /><label htmlFor={`p-g-${belge}`}>Süre (Gün, En Çok 30)</label><input id={`p-g-${belge}`} type="number" min={1} max={30} value={f.gun} onChange={(e) => setF({ ...f, gun: Number(e.target.value) })} /><button className="btn2 kucuk" disabled={!f.alici.trim()} onClick={() => void istek<{ baglanti?: string }>(`/belge/${belge}/surum/${no}/paylas`, f).then((r) => setM(r.baglanti ? `Bağlantı: ${r.baglanti}` : 'Paylaşım sigorta teyidine gönderildi.')).catch((e) => setM(e.message))}>Bağlantı Oluştur</button>{m && <span className="not" role="status">{m}</span>}</span>;
+}
+
+/** YG-1439: istenecek belgeler sistemce listelenir; eksik zorunlu belge sarı görünür. */
+function BelgeListesi({ dosya }: { dosya: string }) {
+  const [l, setL] = useState<{ belge: string; grup: string; zorunlu: boolean; durum: string }[]>([]);
+  useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/belge-listesi`).then(setL).catch(() => setL([])); }, [dosya]);
+  if (!l.length) return null;
+  return <Blok baslik="İstenecek Belgeler">{l.map((x) => <div key={x.belge} className={x.durum === 'Eksik' ? 'uyari' : undefined}>{x.grup} · {x.belge} · {x.durum}</div>)}</Blok>;
 }

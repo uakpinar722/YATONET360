@@ -1254,3 +1254,15 @@ describe('geçici marka-model onayı (YG-093)', () => {
     expect(y).toMatchObject({ diger_onay_durumu: 'Onaylandı', model: 'M1' });
   });
 });
+
+describe('istenecek belge listesi (YG-1439)', () => {
+  it('genel liste oluşur, ruhsat yüklenince Alındı olur', async () => {
+    const d = await o.dosyaAc(); const c = await o.gir('opm');
+    const r0 = await o.ist('GET', `/api/dosya/${d.kimlik}/belge-listesi`, c); expect(r0.statusCode, r0.body).toBe(200); const l = r0.json() as { belge: string; durum: string }[];
+    expect(l.find((x) => x.belge.startsWith('Ruhsat'))?.durum).toBe('Eksik');
+    expect(l.some((x) => /Poliçe|Transit/.test(x.belge))).toBe(false);
+    await o.sup.query(`UPDATE belge SET ad = 'Ruhsat' WHERE kimlik = $1`, [await o.belge(d.kimlik, 'opm')]);
+    const l2 = (await o.ist('GET', `/api/dosya/${d.kimlik}/belge-listesi`, c)).json() as { belge: string; durum: string }[];
+    expect(l2.find((x) => x.belge.startsWith('Ruhsat'))?.durum).toBe('Alındı');
+  });
+});

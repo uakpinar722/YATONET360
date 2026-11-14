@@ -92,7 +92,38 @@ acilisKancasi(async (c, dosya, web, yapan) => {
   await beyanIste(c, dosya, web, yapan);
 });
 
+/**
+ * YG-1439: istenecek belge listesi sistemce oluşur. Genel: ruhsat/tonilato veya tescil belgesi; gerçek kişide kimlik, şirkette imza sirküleri ve vergi levhası; varsa olay fotoğrafları.
+ * Yata özel: klaslıysa klas sertifikası; ihbarı yat sahibi dışında biri yaptıysa vekâletname veya Yetkili Temsilci Beyanı; lehtar varsa lehtar muvafakati.
+ * Poliçe, ekspertiz raporu, ticari kullanım belgesi ve Transit Log istenmez (gönderilirse girilir). Sigortalı dosyada belge yerine yalnız hasar dosya no istenir.
+ */
+export async function belgeListesi(db: Pool | PoolClient, dosya: string) {
+  const d = (await db.query(`SELECT d.musteri_turu, coalesce((SELECT k.sigorta_hasar_dosya_no FROM dosya_sigorta_kaydi k WHERE k.dosya_ref = d.kimlik AND k.sigorta_hasar_dosya_no IS NOT NULL LIMIT 1), (SELECT t.sigorta_hasar_dosya_no_beyan FROM talep t WHERE t.dosya_ref = d.kimlik LIMIT 1)) sigorta_hasar_dosya_no, y.klas_durumu, y.lehtar_adi, y.lehtar_ref, y.lehtar_muvafakati_ref, s.kisi_turu,
+      (SELECT t.talep_sahibi_turu FROM talep t WHERE t.dosya_ref = d.kimlik ORDER BY t.olusturma_zamani LIMIT 1) ihbar_eden
+    FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN taraf s ON s.kimlik = y.yat_sahibi_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
+  if (!d) return [];
+  const yuklu = (await db.query(`SELECT lower(coalesce(belge_turu, '') || ' ' || ad) a FROM belge WHERE bag_turu = 'Dosya' AND bag_kimligi::text = $1`, [dosya])).rows.map((r) => r.a as string);
+  const var_ = (...k: string[]) => yuklu.some((a) => k.some((x) => a.includes(x)));
+  const tuzel = /tüzel|şirket/i.test(d.kisi_turu ?? '');
+  const l: { belge: string; grup: 'Genel' | 'Yata Özel'; zorunlu: boolean; durum: string }[] = [];
+  const ekle = (belge: string, grup: 'Genel' | 'Yata Özel', zorunlu: boolean, var__: boolean) => l.push({ belge, grup, zorunlu, durum: var__ ? 'Alındı' : zorunlu ? 'Eksik' : 'Varsa' });
+  ekle('Ruhsat / Tonilato veya Tescil Belgesi', 'Genel', true, var_('ruhsat', 'tonilato', 'tescil'));
+  if (tuzel) { ekle('İmza Sirküleri', 'Genel', true, var_('imza sirk')); ekle('Vergi Levhası', 'Genel', true, var_('vergi levha')); }
+  else ekle('Kimlik', 'Genel', true, var_('kimlik', 'pasaport'));
+  ekle('Olay Fotoğrafları', 'Genel', false, var_('fotoğraf', 'foto'));
+  if (d.klas_durumu === 'Evet') ekle('Klas Sertifikası', 'Yata Özel', true, var_('klas'));
+  if (d.ihbar_eden && !['Yat Sahibi', 'Sigorta Şirketi'].includes(d.ihbar_eden)) ekle('Vekâletname veya Yetkili Temsilci Beyanı', 'Yata Özel', true, var_('vekâlet', 'vekalet', 'yetkili temsilci'));
+  if (d.lehtar_adi || d.lehtar_ref) l.push({ belge: 'Lehtar Muvafakati', grup: 'Yata Özel', zorunlu: true, durum: d.lehtar_muvafakati_ref ? 'Alındı' : 'Eksik' });
+  if (d.musteri_turu === 'Sigorta Şirketi') l.push({ belge: 'Sigorta Hasar Dosya No', grup: 'Yata Özel', zorunlu: true, durum: d.sigorta_hasar_dosya_no ? 'Alındı' : 'Eksik' });
+  return l;
+}
+
 export function portalYollari(s: FastifyInstance, b: Baglam) {
+  s.get('/dosya/:id/belge-listesi', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-1439
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    return belgeListesi(b.db, id);
+  });
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const musteri = (g: string, y: FastifyReply) => (MUSTERI_GRUPLARI.includes(g) ? null : y.code(403).send({ hata: 'Bu sayfa yat sahibi ve yetkilisine açıktır.' }));
 

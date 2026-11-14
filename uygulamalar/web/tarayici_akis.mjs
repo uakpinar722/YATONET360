@@ -62,6 +62,7 @@ const dosyaAc = async (p, no) => {
   await p.goto(KOK); await p.reload();
   await p.getByRole('button', { name: 'Dosyalar', exact: true }).click();
   await p.getByRole('button', { name: /^Tümü|Tüm Dosyalar/ }).first().click({ timeout: 1500 }).catch(() => {});
+  await p.locator('#dl-ara').fill(no);
   const satir = p.locator('tr', { hasText: no });
   await satir.waitFor();
   await satir.getByRole('button').first().click();

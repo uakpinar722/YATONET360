@@ -8,7 +8,7 @@ afterAll(async () => { await o.kapat(); });
 
 describe('kapasite analizi (YG-749)', () => {
   it('personel yükü izinle azaltılmış kullanılabilir kapasiteye göre; firma doluluğu; yetkisiz göremez', async () => {
-    const bugun = new Date().toISOString().slice(0, 10);
+    const bugun = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }); // yerel tarih (UTC gece yarısı kayması olmasın)
     await o.sup.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, durum) VALUES ($1,'Yıllık',$2::date,$2::date + 6,7,'Onaylandı')`, [o.K.ds, bugun]);
     const rr = await o.ist('GET', '/api/kapasite', await o.gir('opm')); expect(rr.statusCode, rr.body).toBe(200); const v = rr.json();
     const ds = v.personel.find((p: { kimlik: string; rol: string }) => p.kimlik === o.K.ds && p.rol === 'Dosya Sorumlusu');

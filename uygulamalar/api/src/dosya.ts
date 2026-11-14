@@ -278,15 +278,15 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
-    const { kapsam, arsiv } = i.query as { kapsam?: string; arsiv?: string };
+    const { kapsam, arsiv, ara } = i.query as { kapsam?: string; arsiv?: string; ara?: string };
     const tum = kapsam === 'tum' && (await kullaniciIzinleri(b.db, o.kullanici)).includes('dosya.tum');
     return (await b.db.query(
       `SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.oncelik, d.konum, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu, d.ilerleme_yuzdesi,
               (SELECT neden FROM beklemede_isareti k WHERE k.dosya_ref = d.kimlik AND k.kaldirilma_zamani IS NULL ORDER BY k.olusturma_zamani DESC LIMIT 1) AS beklemede,
               (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) AS sonraki_son
          FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref
-        WHERE d.birlestirilen_ana_dosya_ref IS NULL AND (d.arsiv_zamani IS NOT NULL) = $3 AND ($1 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.bitis_zamani IS NULL))
-        ORDER BY d.statu = 'Kapalı', array_position(ARRAY['Kritik','Yüksek','Normal','Planlı'], d.oncelik), d.acilis_tarihi DESC LIMIT 300`, [tum, o.kullanici, arsiv === '1'])).rows;
+        WHERE d.birlestirilen_ana_dosya_ref IS NULL AND (d.arsiv_zamani IS NOT NULL) = $3 AND ($4::text IS NULL OR d.dosya_no ILIKE '%' || $4 || '%' OR y.yat_adi ILIKE '%' || $4 || '%') AND ($1 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.bitis_zamani IS NULL))
+        ORDER BY d.statu = 'Kapalı', array_position(ARRAY['Kritik','Yüksek','Normal','Planlı'], d.oncelik), sonraki_son NULLS LAST, d.acilis_tarihi ASC LIMIT 300` /* YG-039: öncelik, sözleşme süre taahhüdü (en yakın süre), geliş sırası; müşteri kayırılmaz */, [tum, o.kullanici, arsiv === '1', ara?.trim() || null])).rows;
   });
 
   // YG-092, YG-515: rolün bitmesi kimliği silmez; ilişki bitiş tarihi ve gerekçesiyle kapanır, bitmiş ilişkiye bildirim gitmez (aktif = false).
