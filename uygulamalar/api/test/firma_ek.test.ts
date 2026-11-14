@@ -51,7 +51,10 @@ describe('kurtarma ve kaptan (YG-337, YG-338)', () => {
     const c = (await o.ist('POST', `/api/firma/${f}/kaptan`, sc, { ad: 'K3', belge: 'B', belgeBitis: '2099-01-01', police: 'P', policeBitis: '2099-01-01' })).json().kimlik;
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kaptan-gorevlendirme`, ds, { kaptan: a })).json().hata).toContain('yeterlilik');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kaptan-gorevlendirme`, ds, { kaptan: b })).json().hata).toContain('poliçe');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kaptan-gorevlendirme`, ds, { kaptan: c })).json().hata).toContain('Lojistik'); // YG-097
+    await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama, yetkinlik_seviyesi, durum) VALUES ($1,'LOJISTIK-01','Ulusal','Y2','Aktif')`, [f]);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kaptan-gorevlendirme`, ds, { kaptan: c })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT brans, hizmet_rolu FROM kaptan_gorevlendirme WHERE kaptan_ref = $1`, [c])).rows[0]).toMatchObject({ brans: 'LOJISTIK-01', hizmet_rolu: 'Kaptan' });
   });
 });
 
@@ -137,5 +140,16 @@ describe('firma portalı ve kapanış (YG-411, YG-423, YG-867, YG-1660, YG-416)'
     const d = await dosya(); await dosyaKapanisIsleri(o.db, d.kimlik);
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Garanti İzleme' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
     await dosyaKapanisIsleri(o.db, d.kimlik); expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Garanti İzleme' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
+  });
+});
+
+describe('iadede geri dönülecek aşama (YG-153)', () => {
+  it('son makam önceki kademeye iade eder', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ($1,'İade Firma','Çözüm Ortağı','Onaylı','Aktif',$2) RETURNING kimlik`, [`SC-I${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/firma/${f}/kalici-aski-onerisi`, await o.gir('fym'), { gerekce: 'G' })).statusCode).toBe(200);
+    const k = await o.kart('Kalıcı Askı Önerisi', f);
+    await o.karar(k.kimlik, 'tm', 'Onaya Gönder', 'Görüş'); await o.karar(k.kimlik, 'opm', 'Onaya Gönder', 'Görüş');
+    expect((await o.ist('POST', `/api/is/${k.kimlik}/karar`, await o.gir('btd'), { karar: 'Gerekçeyle İade Et', gerekce: 'Operasyon görüşünü netleştiriniz', donulecekKademe: 1 })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum, kademe FROM is_karti WHERE kimlik = $1`, [k.kimlik])).rows[0]).toMatchObject({ durum: 'Bekliyor', kademe: 1 });
   });
 });

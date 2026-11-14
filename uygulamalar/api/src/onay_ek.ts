@@ -252,6 +252,8 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const no = (await b.db.query(`UPDATE dosya SET yurt_disi = true WHERE kimlik = $1 RETURNING dosya_no`, [id])).rows[0].dosya_no;
+    // YG-028: Türkiye dışındaki yat talebi kural dışıdır; istisna CEO onayına düşer, onaylanmadan teklif onaya gönderilmez.
+    if (await birKez(b.db, 'yurt_disi_istisna', id)) { await b.db.query(`UPDATE dosya SET yurt_disi_istisna = 'Bekliyor' WHERE kimlik = $1`, [id]); await kartAc(b.db, { tur: 'Yurt Dışı Talep İstisnası', baslik: `${no} · Türkiye Dışındaki Yat Talebi İstisnası`, ozet: 'Türkiye dışındaki yat talebinin kabulü CEO onayındadır.', oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Dosya', nesneKimligi: id }); }
     if (await birKez(b.db, 'yurt_disi', id)) await kartAc(b.db, { tur: 'Yurt Dışı İzin Kontrolü', kategori: 'islem', baslik: `${no} · Yurt Dışı İzin Kontrolü`, oncelik: 'Yüksek', sahipRol: await rolId(b.db, HUD), nesneTuru: 'Dosya', nesneKimligi: id });
     return { uyari: 'Yurt dışı yat: teklif Genel Müdür Yardımcısı onayına gider.' };
   });
@@ -350,3 +352,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 }
+
+kapanisKaydet('Yurt Dışı Talep İstisnası', async (c, k, karar) => {
+  if (karar === 'Onayla' || karar === 'Reddet') await c.query(`UPDATE dosya SET yurt_disi_istisna = $2 WHERE kimlik = $1::uuid`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi']);
+});

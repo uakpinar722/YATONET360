@@ -55,9 +55,10 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   // YG-1649: dış kullanıcı hesap kurtarmasında makam "Teyit Et" / "Gerekçeyle İade Et" kullanır.
   const teyit = k.tur === 'Hesap Kurtarma Teyidi';
   const [kod, setKod] = useState(''); const [kodIste, setKodIste] = useState(false); // YG-222
+  const [donus, setDonus] = useState(''); // YG-153
   const ver = async (karar: string, g?: string) => {
     setHata(''); setMesgul(true);
-    try { await istek(`/is/${k.kimlik}/karar`, { karar, gerekce: g, kod: kod || undefined }); yenile(); } catch (e) { setHata((e as Error).message); setKodIste(/doğrulama kodunu/.test((e as Error).message)); setMesgul(false); }
+    try { await istek(`/is/${k.kimlik}/karar`, { karar, gerekce: g, kod: kod || undefined, donulecekKademe: karar === 'Gerekçeyle İade Et' && donus !== '' ? Number(donus) : undefined }); yenile(); } catch (e) { setHata((e as Error).message); setKodIste(/doğrulama kodunu/.test((e as Error).message)); setMesgul(false); }
   };
   return (
     <div className="ozet kart-sol">
@@ -70,7 +71,8 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
         <div className="gerekce">
           <label htmlFor={`g${k.kimlik}`}>{acik === 'iade' ? 'İade Gerekçesi' : 'Red Gerekçesi'}</label>
           <textarea id={`g${k.kimlik}`} rows={2} value={gerekce} onChange={(e) => setGerekce(e.target.value)} placeholder="[Gerekçe]" />
-          {acik === 'iade' && <div className="not">Kayıt, yazdığınız gerekçeyle hazırlayana düzeltilmek üzere geri döner.</div>}
+          {acik === 'iade' && k.kademe > 0 && <><label htmlFor={`dk-${k.kimlik}`}>Geri Dönülecek Aşama</label><select id={`dk-${k.kimlik}`} value={donus} onChange={(e) => setDonus(e.target.value)}><option value="">Hazırlayan (düzeltme için)</option>{Array.from({ length: k.kademe }, (_, n) => <option key={n} value={n}>{`Kademe ${n + 1}`}</option>)}</select></>}
+          {acik === 'iade' && <div className="not">{donus === '' ? 'Kayıt, yazdığınız gerekçeyle hazırlayana düzeltilmek üzere geri döner.' : `Kayıt, gerekçenizle Kademe ${Number(donus) + 1} makamına geri döner.`}</div>}
           <div className="dugmeler">
             <button className="btn hayir" disabled={mesgul || !gerekce.trim()} onClick={() => void ver(acik === 'iade' ? 'Gerekçeyle İade Et' : 'Reddet', gerekce)}>{acik === 'iade' ? 'Gerekçeyle İade Et' : 'Reddet'}</button>
             <button className="btn2" onClick={() => { setAcik(null); setGerekce(''); }}>Vazgeç</button>

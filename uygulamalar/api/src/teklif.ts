@@ -357,7 +357,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     }
     return islem(async (c) => {
       const surum = (await c.query(`SELECT coalesce(max(surum), 0) + 1 n FROM kapsam_cetveli WHERE dosya_ref = $1`, [id])).rows[0].n;
-      const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric ?? null, g.varsayimlar ?? null])).rows[0];
+      // YG-139: cetvelde yazılmadıysa onaylı İlk Kapsamın hariçleri ve varsayımları teklifin Kapsam Dışı ve Varsayımlar bölümüne aktarılır.
+      const ik = (await c.query(`SELECT hariclar, varsayimlar FROM ilk_kapsam WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
+      const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric?.trim() || ik?.hariclar || null, g.varsayimlar?.trim() || ik?.varsayimlar || null])).rows[0];
       for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim()]);
       await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no} · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
@@ -525,6 +527,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Onaya teklifi hazırlayan gönderir.' });
     if (t.teklif_turu !== 'Acil Tedbir Fiyat Teklifi') { const re = await raporEngeli(b.db, t.dosya_ref); if (re) return y.code(409).send({ hata: re }); }
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Teklif taslak değildir.' });
+    { const ist = (await b.db.query(`SELECT yurt_disi_istisna FROM dosya WHERE kimlik = $1`, [t.dosya_ref])).rows[0]?.yurt_disi_istisna; // YG-028
+      if (ist === 'Bekliyor') return y.code(409).send({ hata: 'Türkiye dışındaki yat talebi CEO istisna onayı beklemektedir.' });
+      if (ist === 'Reddedildi') return y.code(409).send({ hata: 'Türkiye dışındaki yat talebi için CEO istisna onayı verilmemiştir.' }); }
     { const sb = await sigortaBildirimEngeli(b.db, t.dosya_ref); if (sb) return y.code(409).send({ hata: sb }); } // YG-454
     if ((await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND bant_disi LIMIT 1`, [t.kimlik])).rowCount && !t.bant_disi_onay_ref) return y.code(409).send({ hata: 'Bant dışı kalem için Ticari İşler Direktörünün gerekçeli onayı gereklidir.' });
     if ((await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND gecici_kayit`, [t.yat_ref])).rowCount) return y.code(409).send({ hata: 'Teklif için önce Geçici yat kaydını doğrulamanızı rica ederiz.' });

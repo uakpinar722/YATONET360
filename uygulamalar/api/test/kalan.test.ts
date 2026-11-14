@@ -1242,3 +1242,15 @@ describe('imzalı nüshalar (YG-589)', () => {
     expect((await o.sup.query(`SELECT kanal, iade_durumu FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [t])).rows[0]).toEqual({ kanal: 'Islak İmzalı Form', iade_durumu: 'Hesap Bekliyor' });
   });
 });
+
+describe('geçici marka-model onayı (YG-093)', () => {
+  it('Diğer girişi Teknik Müdür onayıyla listeye eklenir ve yat bağlanır', async () => {
+    const md = `Marka${Date.now()}`;
+    const d = await o.dosyaAc({ yat: { adi: `Y${md}`, markaDiger: md, modelDiger: 'M1', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
+    const k = (await o.sup.query(`SELECT kimlik FROM is_karti WHERE tur = 'Marka Model Onayı' AND ozet = $1`, [`${md} / M1`])).rows[0];
+    expect(k).toBeTruthy();
+    expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
+    const y = (await o.sup.query(`SELECT y.diger_onay_durumu, m.model FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE d.kimlik = $1`, [d.kimlik])).rows[0];
+    expect(y).toMatchObject({ diger_onay_durumu: 'Onaylandı', model: 'M1' });
+  });
+});

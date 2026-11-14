@@ -93,7 +93,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/is/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const { karar, gerekce, kod } = (i.body ?? {}) as { karar?: Karar; gerekce?: string; kod?: string };
+    const { karar, gerekce, kod, donulecekKademe } = (i.body ?? {}) as { karar?: Karar; gerekce?: string; kod?: string; donulecekKademe?: number };
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
     const g = (gerekce ?? '').trim();
     if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet' || karar === 'Kademe Atla') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
@@ -144,7 +144,11 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
         // YG-1034, YG-990: hazırlayan veya zincirde daha önce karar veren aynı kaydı onaylayamaz.
         const once = await c.query(`SELECT 1 FROM is_karti_adim a WHERE a.is_ref = $1 AND a.yapan_ref = $2 AND a.kimlik > (SELECT coalesce(max(g.kimlik), 0) FROM is_karti_adim g WHERE g.is_ref = $1 AND g.karar = 'Yeniden Gönder')`, [id, o.kullanici]);
         if (k.hazirlayan_ref === o.kullanici || once.rowCount) return dur(403, 'Kendi hazırladığınız veya daha önce karar verdiğiniz kaydı onaylayamazsınız.');
-        if (karar === 'Gerekçeyle İade Et') {
+        if (karar === 'Gerekçeyle İade Et' && Number.isInteger(donulecekKademe) && donulecekKademe! >= 0 && donulecekKademe! < k.kademe) {
+          // YG-153: iade önceki bir onay kademesine döner; o makam düzeltilecek hususu gerekçeyle görür.
+          yeni = { durum: 'Bekliyor', kademe: donulecekKademe!, kapanir: false };
+          hedef = await rolSahipleri(c, k.zincir[donulecekKademe!]); baslik = `Kademenize İade Edildi: ${k.baslik}`;
+        } else if (karar === 'Gerekçeyle İade Et') {
           yeni = { durum: 'İade Edildi', kademe: 0, kapanir: false };
           hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `İade Edildi: ${k.baslik}`;
         } else if (karar === 'Onaya Gönder') {

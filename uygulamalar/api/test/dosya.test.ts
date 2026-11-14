@@ -163,7 +163,7 @@ describe('ihbar kaydı (YG-006, YG-020, YG-033)', () => {
   it('önerinin altına inilemez, üstüne çıkılabilir', async () => {
     const c = await gir('ds');
     expect((await ist('POST', '/api/ihbar', c, ihbarGovde({ cevaplar: { [SORU_ILER]: 'Evet' }, oncelik: 'Normal' }))).statusCode).toBe(400);
-    expect((await ist('POST', '/api/ihbar', c, ihbarGovde({ oncelik: 'Yüksek' }))).json().oncelik).toBe('Yüksek');
+    expect((await ist('POST', '/api/ihbar', c, ihbarGovde({ oncelik: 'Yüksek', oncelikGerekcesi: 'Yat programı' }))).json().oncelik).toBe('Yüksek');
   });
   it('Kritik: Operasyon Yöneticisine teyit kartı, Operasyon Müdürüne acil bildirim, ilk yanıt 30 dakika', async () => {
     const t = await ihbar({ acil: true });
@@ -297,7 +297,7 @@ describe('dosya ekibi (YG-047, YG-048, YG-146, YG-1530)', () => {
     expect((await ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { boy: 12, govde: 'Ahşap', kaynak: 'Ruhsat' })).statusCode).toBe(200);
     expect(await kart('Teknik Ekip Ataması', d.kimlik)).toBeDefined();
     expect((await ata(d.kimlik, 'tu', 'Teknik Uzman', 'tm')).statusCode).toBe(200);
-    const y = await dosyaAc({ yat: { adi: 'Eksik Yüksek', markaDiger: 'X', modelDiger: 'Y', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, oncelik: 'Yüksek' });
+    const y = await dosyaAc({ yat: { adi: 'Eksik Yüksek', markaDiger: 'X', modelDiger: 'Y', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, oncelik: 'Yüksek', oncelikGerekcesi: 'G' });
     expect((await ata(y.kimlik, 'tu', 'Teknik Uzman', 'tm')).statusCode).toBe(200);
   });
   it('kapasite: %80 uyarı, %100 atama reddi; Saha Sorumlusu en fazla 3', async () => {
@@ -320,7 +320,7 @@ describe('öncelik (YG-036, YG-1595)', () => {
     expect((await ist('POST', `/api/dosya/${d.kimlik}/oncelik`, await gir('ds'), { oncelik: 'Yüksek' })).json().durum).toBe('Yükseltildi');
   });
   it('düşürme gerekçe ister, OY ve TY birlikte onaylar; karara kadar öncelik kalır', async () => {
-    const d = await hazir({ oncelik: 'Yüksek' }); const c = await gir('ds');
+    const d = await hazir({ oncelik: 'Yüksek', oncelikGerekcesi: 'G' }); const c = await gir('ds');
     expect((await ist('POST', `/api/dosya/${d.kimlik}/oncelik`, c, { oncelik: 'Normal' })).statusCode).toBe(400);
     expect((await ist('POST', `/api/dosya/${d.kimlik}/oncelik`, c, { oncelik: 'Normal', gerekce: 'Tehlike geçti' })).json().durum).toBe('Onaya Gönderildi');
     expect((await ist('POST', `/api/dosya/${d.kimlik}/oncelik`, c, { oncelik: 'Normal', gerekce: 'Tekrar' })).statusCode).toBe(409);
@@ -332,7 +332,7 @@ describe('öncelik (YG-036, YG-1595)', () => {
     expect((await sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].oncelik).toBe('Normal');
   });
   it('görüş ayrılığında sırayla üst kademeye gider; son kademede ret kapatır', async () => {
-    const d = await hazir({ oncelik: 'Yüksek' });
+    const d = await hazir({ oncelik: 'Yüksek', oncelikGerekcesi: 'G' });
     await ist('POST', `/api/dosya/${d.kimlik}/oncelik`, await gir('ds'), { oncelik: 'Planlı', gerekce: 'G' });
     const t = (await sup.query(`SELECT kimlik FROM oncelik_talebi WHERE dosya_ref = $1`, [d.kimlik])).rows[0];
     await karar((await kart('Öncelik Düşürme', t.kimlik)).kimlik, 'oy', 'Onaya Gönder');

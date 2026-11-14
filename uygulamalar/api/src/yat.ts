@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
+import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { sayac } from './sure.js';
 import { izinGerekli } from './yetki.js';
@@ -71,8 +72,26 @@ export async function yatBulVeyaAc(c: Db, g: YatGirdisi, kullanici: string): Pro
     [g.adi.trim(), g.tur ?? anaVeriTuru(mm?.tekne_turu ?? null), g.bayrak ?? null, g.kullanim ?? null, g.klas ?? null, g.klasKurulusu ?? null, g.turkiyeKalisBitis ?? null, g.sicil ?? null, g.govdeNo ?? null, g.imoNo ?? null,
       mm?.kimlik ?? null, g.markaDiger ?? null, g.modelDiger ?? null, mm ? null : 'Bekliyor', mm && (anaBoy !== null || anaGovde) ? 'Katalogdan – teyit bekliyor' : null, g.uretimYili ?? null, boy, govde, mm?.tahrik_turu ?? null,
       boy === null ? null : anaBoy !== null ? 'Ana veri (katalog)' : 'İhbar beyanı', govde === 'Bilinmiyor' ? null : anaGovde ? 'Ana veri (katalog)' : 'İhbar beyanı', kullanici]);
+  // YG-093: listede olmayan model geçici kayıttır; aynı marka-model için açık onay yoksa Teknik Müdüre onay kartı açılır.
+  const md = g.markaDiger?.trim(); const mo = g.modelDiger?.trim();
+  if (!mm && md && mo && !/^bilinmiyor$/i.test(md) && !/^bilinmiyor$/i.test(mo) && !(await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Marka Model Onayı' AND durum = 'Bekliyor' AND lower(ozet) = lower($1)`, [`${md} / ${mo}`])).rowCount) {
+    const { kartAc } = await import('./is_motoru.js');
+    const rol = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Teknik Müdür'`)).rows[0]?.kimlik as string | undefined;
+    if (rol) await kartAc(c, { tur: 'Marka Model Onayı', baslik: `Marka–Model Listesine Ekleme · ${md} ${mo}`, ozet: `${md} / ${mo}`, hazirlayan: kullanici, zincir: [rol], nesneTuru: 'Yat', nesneKimligi: rows[0].kimlik });
+  }
   return { kimlik: rows[0].kimlik, yeni: true };
 }
+
+kapanisKaydet('Marka Model Onayı', async (c, k, karar) => {
+  const [md, mo] = String(k.ozet ?? '').split(' / ').map((x) => x.trim());
+  if (!md || !mo) return;
+  if (karar === 'Reddet') { await c.query(`UPDATE yat SET diger_onay_durumu = 'Reddedildi' WHERE marka_model_ref IS NULL AND lower(marka_diger) = lower($1) AND lower(model_diger) = lower($2)`, [md, mo]); return; }
+  if (karar !== 'Onayla') return;
+  const mk = (await c.query(`SELECT marka_kodu FROM yat_marka_model WHERE lower(marka) = lower($1) LIMIT 1`, [md])).rows[0]?.marka_kodu
+    ?? `MRK-${String(Number((await c.query(`SELECT coalesce(max(substring(marka_kodu from 5)::int), 0) n FROM yat_marka_model WHERE marka_kodu ~ '^MRK-[0-9]+$'`)).rows[0].n) + 1).padStart(4, '0')}`;
+  const id = (await c.query(`INSERT INTO yat_marka_model (marka_kodu, marka, model, kaynak, durum) VALUES ($1,$2,$3,'Geçici kayıt onayı','Tamam') ON CONFLICT (lower(marka), lower(model)) DO UPDATE SET guncelleme_zamani = now() RETURNING kimlik`, [mk, md, mo])).rows[0].kimlik;
+  await c.query(`UPDATE yat SET marka_model_ref = $3, diger_onay_durumu = 'Onaylandı' WHERE marka_model_ref IS NULL AND lower(marka_diger) = lower($1) AND lower(model_diger) = lower($2)`, [md, mo, id]);
+});
 
 /** YG-094: teknik alan değişiminde kaynak tutulur; YG-090: tarihçe denetim izinde. */
 const DUZELTILEBILIR: Record<string, string> = {

@@ -193,11 +193,13 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const kaptan = ((i.body ?? {}) as { kaptan?: string }).kaptan;
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!kaptan || !UUID.test(kaptan)) return y.code(400).send({ hata: 'Kaptanı seçmenizi rica ederiz.' });
-    const k = (await b.db.query(`SELECT yeterlilik_bitis >= current_date AS b, police_bitis >= current_date AS p FROM kaptan_kaydi WHERE kimlik = $1`, [kaptan])).rows[0];
+    const k = (await b.db.query(`SELECT yeterlilik_bitis >= current_date AS b, police_bitis >= current_date AS p, kurulus_ref FROM kaptan_kaydi WHERE kimlik = $1`, [kaptan])).rows[0];
     if (!k) return yok(y);
     if (!k.b) return y.code(409).send({ hata: 'Kaptanın yeterlilik belgesinin süresi dolmuştur.' });
     if (!k.p) return y.code(409).send({ hata: 'Kaptanın mesleki sorumluluk poliçesinin süresi dolmuştur.' });
-    await b.db.query(`INSERT INTO kaptan_gorevlendirme (dosya_ref, kaptan_ref, yapan_ref) VALUES ($1,$2,$3)`, [id, kaptan, o.kullanici]);
+    // YG-097: kaptan hizmeti yalnız Lojistik branşında aktif yetkinliği olan firmadan alınır.
+    if (!(await b.db.query(`SELECT 1 FROM brans_yetkinligi WHERE kurulus_ref = $1 AND ana_brans = 'LOJISTIK-01' AND durum = 'Aktif'`, [k.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Kaptan hizmeti Lojistik branşında aktif yetkinliği olan firmadan alınır.' });
+    await b.db.query(`INSERT INTO kaptan_gorevlendirme (dosya_ref, kaptan_ref, yapan_ref, kurulus_ref) VALUES ($1,$2,$3,$4)`, [id, kaptan, o.kullanici, k.kurulus_ref]);
     return { tamam: true };
   });
 

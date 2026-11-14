@@ -77,7 +77,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
   const [s, setS] = useState<Secenek | null>(null); const [hata, setHata] = useState('');
   const [kanal, setKanal] = useState('Telefon'); const [ad, setAd] = useState(''); const [tur, setTur] = useState(''); const [turAcik, setTurAcik] = useState(''); const [tel, setTel] = useState(''); const [ep, setEp] = useState('');
   const [konum, setKonum] = useState(''); const [durum, setDurum] = useState(''); const [iKisi, setIKisi] = useState(''); const [ozet, setOzet] = useState(''); const [acil, setAcil] = useState(false); const [dil, setDil] = useState('Türkçe');
-  const [cevap, setCevap] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState('Normal'); const [oncelik, setOncelik] = useState('');
+  const [cevap, setCevap] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState('Normal'); const [oncelik, setOncelik] = useState(''); const [onG, setOnG] = useState('');
   const [yTur, setYTur] = useState(''); const [yAd, setYAd] = useState(''); const [marka, setMarka] = useState(''); const [markalar, setMarkalar] = useState<{ marka: string }[]>([]); const [modeller, setModeller] = useState<{ kimlik: string; model: string; boy_m: number | null; govde_malzemesi: string | null }[]>([]);
   const [modelId, setModelId] = useState(''); const [diger, setDiger] = useState(false); const [dMarka, setDMarka] = useState(''); const [dModel, setDModel] = useState(''); const [boy, setBoy] = useState(''); const [kalis, setKalis] = useState(''); const [klasK, setKlasK] = useState(''); const [govde, setGovde] = useState('Bilinmiyor'); const [bayrak, setBayrak] = useState('Türkiye'); const [kullanim, setKullanim] = useState('Özel'); const [klas, setKlas] = useState('Bilinmiyor'); const [yil, setYil] = useState(''); const [garanti, setGaranti] = useState('');
   const [sahipAd, setSahipAd] = useState(''); const [sahipTel, setSahipTel] = useState(''); const [sahipEp, setSahipEp] = useState(''); const [sigortaci, setSigortaci] = useState(''); const [hasarNo, setHasarNo] = useState('');
@@ -92,7 +92,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
     e.preventDefault(); setHata('');
     try {
       const r = await istek<{ kimlik: string; talepNo: string }>('/ihbar', {
-        kanal, sahibiAdi: ad, sahibiTuru: tur, sahibiTuruAciklama: turAcik, telefon: tel, eposta: ep || undefined, konum, yatDurumu: durum, ihtiyac: ozet, iletisimKisileri: iKisi || undefined, acil, cevaplar: cevap, oncelik: oncelik || undefined, dil, sigortaci: sigortaci || undefined, hasarNo: hasarNo || undefined,
+        kanal, sahibiAdi: ad, sahibiTuru: tur, sahibiTuruAciklama: turAcik, telefon: tel, eposta: ep || undefined, konum, yatDurumu: durum, ihtiyac: ozet, iletisimKisileri: iKisi || undefined, acil, cevaplar: cevap, oncelik: oncelik || undefined, oncelikGerekcesi: onG || undefined, dil, sigortaci: sigortaci || undefined, hasarNo: hasarNo || undefined,
         yatSahibi: sahipAd ? { ad: sahipAd, telefon: sahipTel || undefined, eposta: sahipEp || undefined } : undefined,
         yat: { adi: yAd, tur: yTur, markaModelId: modelId || undefined, markaDiger: diger ? dMarka : undefined, modelDiger: diger ? dModel : undefined, boy: boy ? Number(boy.replace(',', '.')) : undefined, govde, bayrak, kullanim, klas, uretimYili: yil ? Number(yil) : undefined, turkiyeKalisBitis: kalis || undefined, klasKurulusu: klasK || undefined },
       });
@@ -149,6 +149,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       <div className="not">Sistemin Önerdiği Öncelik: <Oncelik o={oneri} /></div>
       <label htmlFor="i-onc">Öncelik</label>
       <select id="i-onc" value={oncelik || oneri} onChange={(e) => setOncelik(e.target.value)}>{s.oncelikler.filter((o) => s.oncelikler.indexOf(o) <= s.oncelikler.indexOf(oneri)).map((o) => <option key={o}>{o}</option>)}</select>
+      {oncelik && oncelik !== oneri && <><label htmlFor="i-ong">Öncelik Yükseltme Gerekçesi</label><input id="i-ong" value={onG} onChange={(e) => setOnG(e.target.value)} placeholder="Güvenlik, hizmet kesintisi, yat programı, müşteri etkisi veya mali sonuç" /></>}
       <button className="btn">İhbarı Kaydet</button>
       <button type="button" className="lnk" onClick={() => bitti()}>Vazgeç</button>
     </form>

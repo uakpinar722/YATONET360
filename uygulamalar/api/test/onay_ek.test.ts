@@ -105,6 +105,8 @@ describe('kesin teslim, protokol, yurt dışı, 6502', () => {
   it('YG-1461: işaret Hukuk görevi açar; avans masraf + kalanın yarısı', async () => {
     const d = await dosya(); const r = await o.ist('POST', `/api/dosya/${d.kimlik}/yurt-disi`, await o.gir('ds'), {}); expect(r.json().uyari).toContain('Genel Müdür');
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Yurt Dışı İzin Kontrolü' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
+    { const ik = await o.kart('Yurt Dışı Talep İstisnası', d.kimlik); expect((await o.karar(ik.kimlik, 'ceo', 'Onayla')).statusCode).toBe(200); // YG-028
+      expect((await o.sup.query(`SELECT yurt_disi_istisna FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yurt_disi_istisna).toBe('Onaylandı'); }
     const t = await teklif(d, { muhatap: 'Yat Sahibi', kalem: [['Masraf', 200, 'Onaylandı'], ['İşçilik', 800, 'Onaylandı']] }); expect(await yurtDisiAvans(o.db, t, 1000, 50)).toBe(600);
   });
   it('YG-027: 6502 yalnız ticari olmayan gerçek kişi', () => {

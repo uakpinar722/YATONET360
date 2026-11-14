@@ -26,6 +26,6 @@ describe('silsile bilgisi (YG-1555)', () => {
   });
   it('yeni dosyada Normal öncelikte yalnız Yöneticilere, Yüksekte iki silsilenin tamamına bilgi', async () => {
     const n = await o.dosyaAc(); expect(await bilgi(n.dosyaNo)).toEqual([o.K.oy, o.K.ty].sort());
-    const y = await o.dosyaAc({ oncelik: 'Yüksek' }); expect(await bilgi(y.dosyaNo)).toEqual([o.K.oy, o.K.ty, o.K.omy, o.K.opm, o.K.tm, o.K.tod].sort());
+    const y = await o.dosyaAc({ oncelik: 'Yüksek', oncelikGerekcesi: 'G' }); expect(await bilgi(y.dosyaNo)).toEqual([o.K.oy, o.K.ty, o.K.omy, o.K.opm, o.K.tm, o.K.tod].sort());
   });
 });

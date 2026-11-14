@@ -45,7 +45,7 @@ interface IhbarGirdisi {
   bildirimZamani?: string; kanal?: string; sahibiAdi?: string; sahibiTuru?: string; sahibiTuruAciklama?: string; yetkiDurumu?: string; sifat?: string; telefon?: string; eposta?: string; yetkiBeyani?: string;
   yat?: YatGirdisi; yatSahibi?: { ad?: string; telefon?: string; eposta?: string; kisiTuru?: string };
   olayTarihi?: string; olayYeri?: string; konum?: string; yatDurumu?: string; ihtiyac?: string; acil?: boolean; cevaplar?: Record<string, string>; oncelik?: string; hedefTarih?: string;
-  sigortaci?: string; policeNo?: string; hasarNo?: string; ozgun?: string; dil?: string; varyant?: string; iletisimKisileri?: string;
+  sigortaci?: string; policeNo?: string; hasarNo?: string; ozgun?: string; dil?: string; varyant?: string; iletisimKisileri?: string; oncelikGerekcesi?: string;
 }
 
 /** Ortak kayıt: personel ihbar ekranı ve portal kısa formu aynı yoldan geçer (YG-011: her kanaldan tek kayıt). */
@@ -74,6 +74,9 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   if (!ONCELIK_SIRA.includes(oncelik)) return { hata: 'Öncelik geçersiz.' };
   // YG-036: yükseltme serbest; önerinin altına inmek ancak açılıştan sonra gerekçe ve iki onayla olur.
   if (ONCELIK_SIRA.indexOf(oncelik) < ONCELIK_SIRA.indexOf(onerilen)) return { hata: 'Öncelik düşürme, dosya açıldıktan sonra gerekçeyle talep edilir; sistemin önerdiği öncelik korunmuştur.' };
+  // YG-032: öncelik etki ve aciliyet sorularından gelir; önerilenin üstü ancak gerekçeyle seçilir (her işi acil işaretleme engellenir).
+  const yukseltme = ONCELIK_SIRA.indexOf(oncelik) > ONCELIK_SIRA.indexOf(onerilen);
+  if (yukseltme && !g.oncelikGerekcesi?.trim()) return { hata: `Sistemin önerdiği öncelik ${onerilen}; daha yüksek öncelik için gerekçe yazınız (güvenlik, hizmet kesintisi, yat programı, müşteri etkisi veya mali sonuç).` };
   const yat = await yatBulVeyaAc(c, g.yat ?? {}, kullanici);
   if ('hata' in yat) return yat;
   if (g.yatSahibi?.ad?.trim()) {
@@ -94,6 +97,7 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
     [no, bildirimZamani, simdi, varyant, g.kanal, kullanici, g.sahibiAdi.trim(), g.sahibiTuru, g.sahibiTuruAciklama ?? null, durum, g.sifat ?? null, g.telefon?.trim() || null, g.eposta?.trim() || null, g.yetkiBeyani ?? null, yat.kimlik, olay, g.olayYeri ?? null, g.konum.trim(), g.yatDurumu.trim(), g.ihtiyac.trim(), Boolean(g.acil), JSON.stringify(cevaplar), onerilen, oncelik, g.hedefTarih || null, g.sigortaci ?? null, g.policeNo ?? null, g.hasarNo ?? null, g.ozgun?.trim() || g.ihtiyac.trim(), statu, dil, baglam.ilkSorumlu]);
   const id = rows[0].kimlik as string;
   if (g.iletisimKisileri?.trim()) await c.query(`UPDATE talep SET iletisim_kisileri = $2 WHERE kimlik = $1`, [id, g.iletisimKisileri.trim()]); // YG-018
+  if (yukseltme) await c.query(`UPDATE talep SET oncelik_yukseltme_gerekcesi = $2 WHERE kimlik = $1`, [id, g.oncelikGerekcesi!.trim()]); // YG-032
   await sureBaslat(c, { tur: 'İlk Yanıt', oncelik, baslangic: bildirimZamani, talep: id });
   await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: baglam.ilkSorumlu, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
   // YG-026: Kritik öncelikte son onay Operasyon Yöneticisindedir.
