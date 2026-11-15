@@ -1,6 +1,6 @@
 import { GarantiYanit } from './GarantiYanit';
 import { KontrolListeleri } from './KontrolListeleri';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { SigortaListesi } from './SigortaListesi';
 import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
@@ -39,8 +39,10 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
   const ihbarci = ben.izinler.includes('ihbar.kaydet'); const tumu = ben.izinler.includes('dosya.tum');
   const [ara, setAra] = useState(''); const [ihbarlar, setIhbarlar] = useState<IhbarSatir[]>([]); const [dosyalar, setDosyalar] = useState<DosyaSatir[]>([]);
   const [kapsam, setKapsam] = useState(tumu ? 'tum' : 'benim'); const [form, setForm] = useState(false); const [ihbarId, setIhbarId] = useState<string | null>(null); const [dosyaId, setDosyaId] = useState<string | null>(acikDosya); const [hata, setHata] = useState('');
+  const sira = useRef(0); // geç dönen eski arama yanıtı yeni sonucu ezmez
   const yukle = () => {
-    void istek<DosyaSatir[]>(`/dosya?kapsam=${kapsam}${ara.trim() ? `&ara=${encodeURIComponent(ara.trim())}` : ''}`).then(setDosyalar).catch((e) => setHata(e.message));
+    const n = ++sira.current;
+    void istek<DosyaSatir[]>(`/dosya?kapsam=${kapsam}${ara.trim() ? `&ara=${encodeURIComponent(ara.trim())}` : ''}`).then((l) => { if (n === sira.current) setDosyalar(l); }).catch((e) => setHata(e.message));
     if (ihbarci) void istek<IhbarSatir[]>('/ihbar').then(setIhbarlar).catch((e) => setHata(e.message));
   };
   useEffect(yukle, [kapsam, ara]);

@@ -63,13 +63,47 @@ export function guvenlikYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1281, YG-1283: olay kaydı sürümlü güncellenir.
   const olay = async (id: string) => UUID.test(id) ? (await b.db.query(`SELECT * FROM olay_kaydi WHERE kimlik = $1`, [id])).rows[0] : undefined;
+  const ONEM = ['Düşük', 'Orta', 'Yüksek', 'Kritik'];
+  // YG-1285: müdahale, karar ve iletişim adımları zaman çizelgesine yazılır.
+  s.post('/olay/:id/adim', oturumlu, async (i, y) => {
+    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const g = (i.body ?? {}) as { tur?: string; metin?: string };
+    if (!v) return yok(y);
+    if (!(await rolVar(o.kullanici, BT))) return y.code(403).send({ hata: 'Olay adımını Bilgi İşlem veya Hukuk ve Uyum kaydeder.' });
+    if (v.durum !== 'Açık') return y.code(409).send({ hata: 'Olay kapalıdır.' });
+    if (!['Müdahale', 'Karar', 'İletişim'].includes(g.tur ?? '') || !g.metin?.trim()) return y.code(400).send({ hata: 'Adım türünü (Müdahale, Karar, İletişim) ve açıklamasını yazmanızı rica ederiz.' });
+    await b.db.query(`INSERT INTO olay_adimi (olay_ref, tur, metin, yapan_ref) VALUES ($1,$2,$3,$4)`, [v.kimlik, g.tur, g.metin.trim(), o.kullanici]);
+    return { tamam: true };
+  });
+  s.get('/olay/:id/zaman-cizelgesi', oturumlu, async (i, y) => {
+    const v = await olay((i.params as { id: string }).id);
+    if (!v || !(await rolVar(i.oturum!.kullanici, IZLEYEN))) return yok(y);
+    const l: { zaman: Date; tur: string; metin: string }[] = [{ zaman: v.olusturma_zamani, tur: 'Başlangıç', metin: v.ozet }];
+    if (v.yanit_zamani) l.push({ zaman: v.yanit_zamani, tur: 'Yanıt', metin: 'İlk yanıt verildi.' });
+    if (v.gecici_cozum_zamani) l.push({ zaman: v.gecici_cozum_zamani, tur: 'Geçici Çözüm', metin: 'Geçici çözüm uygulandı.' });
+    for (const r of (await b.db.query(`SELECT a.zaman, a.tur, a.metin || ' (' || k.ad_soyad || ')' metin FROM olay_adimi a JOIN kullanici_hesabi k ON k.kimlik = a.yapan_ref WHERE a.olay_ref = $1`, [v.kimlik])).rows) l.push(r);
+    for (const r of (await b.db.query(`SELECT zaman, surum FROM olay_surumu WHERE olay_ref = $1`, [v.kimlik])).rows) l.push({ zaman: r.zaman, tur: 'Etki Güncellemesi', metin: `Sürüm ${r.surum}` });
+    for (const r of (await b.db.query(`SELECT olusturma_zamani, ozet FROM olay_kaydi WHERE ana_olay_ref = $1`, [v.kimlik])).rows) l.push({ zaman: r.olusturma_zamani, tur: 'Bağlı Kayıt', metin: r.ozet });
+    if (v.kapanis_zamani) l.push({ zaman: v.kapanis_zamani, tur: 'Kapanış', metin: `${v.kapanis_ozeti ?? ''} · Kanıt: ${v.kapanis_kaniti ?? ''}` });
+    return l.sort((a, c) => new Date(a.zaman).getTime() - new Date(c.zaman).getTime());
+  });
+  // YG-1285: aynı kesintiden gelen kayıt ana olaya bağlanır; ana olay kapanınca bağlı kayıtlar da kapanır.
+  s.post('/olay/:id/bagla', oturumlu, async (i, y) => {
+    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const ana = await olay(((i.body ?? {}) as { anaOlay?: string }).anaOlay ?? '');
+    if (!v) return yok(y);
+    if (!(await rolVar(o.kullanici, BT))) return y.code(403).send({ hata: 'Bağlamayı Bilgi İşlem veya Hukuk ve Uyum yapar.' });
+    if (!ana || ana.kimlik === v.kimlik || ana.ana_olay_ref || ana.durum !== 'Açık' || v.durum !== 'Açık') return y.code(400).send({ hata: 'Bağlanacak ana olay açık ve kendisi başka bir olaya bağlı olmayan bir kayıt olmalıdır.' });
+    await b.db.query(`UPDATE olay_kaydi SET ana_olay_ref = $2 WHERE kimlik = $1 OR ana_olay_ref = $1`, [v.kimlik, ana.kimlik]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Olay Ana Olaya Bağlandı', nesneTuru: 'Olay', nesneKimligi: v.kimlik, yeni: { anaOlay: ana.kimlik }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/olay/:id/guncelle', oturumlu, async (i, y) => {
-    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const g = (i.body ?? {}) as { hizmet?: string; kullanici?: string; surec?: string; veri?: string; kisiselVeri?: boolean };
+    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const g = (i.body ?? {}) as { hizmet?: string; kullanici?: string; surec?: string; veri?: string; kisiselVeri?: boolean; belirti?: string; isSonucu?: string; onem?: string };
     if (!v) return yok(y);
     if (!(await rolVar(o.kullanici, BT))) return y.code(403).send({ hata: 'Olay kaydını Bilgi İşlem veya Hukuk ve Uyum günceller.' });
+    if (g.onem && !ONEM.includes(g.onem)) return y.code(400).send({ hata: 'Önem Düşük, Orta, Yüksek veya Kritik olmalıdır.' }); // YG-1285
     const n = v.surum + 1; let ihlal = v.veri_ihlali_ref as string | null;
     if (g.kisiselVeri && !ihlal) ihlal = (await (await import('./kvkk.js')).ihlalAc(b.db, { ozet: `${v.ozet} (olay kaydından)`, olayTuru: 'Teknik güvenlik olayı', farkEden: o.kullanici })).kimlik;
-    await b.db.query(`UPDATE olay_kaydi SET etki = $2, surum = $3, veri_ihlali_ref = $4 WHERE kimlik = $1`, [v.kimlik, JSON.stringify(g), n, ihlal]);
+    await b.db.query(`UPDATE olay_kaydi SET etki = $2, surum = $3, veri_ihlali_ref = $4, onem = coalesce($5, onem) WHERE kimlik = $1`, [v.kimlik, JSON.stringify(g), n, ihlal, g.onem ?? null]);
     await b.db.query(`INSERT INTO olay_surumu (olay_ref, surum, etki, guncelleyen_ref) VALUES ($1,$2,$3,$4)`, [v.kimlik, n, JSON.stringify(g), o.kullanici]);
     return { surum: n, ihlal };
   });
@@ -91,16 +125,19 @@ export function guvenlikYollari(s: FastifyInstance, b: Baglam) {
   const IZLEYEN = [...BT, 'CEO', 'Genel Müdür Yardımcısı', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'];
   s.get('/olaylar', oturumlu, async (i, y) => {
     if (!(await rolVar(i.oturum!.kullanici, IZLEYEN))) return yok(y);
-    return (await b.db.query(`SELECT o.kimlik, o.olay_turu, o.ozet, o.durum, o.surum, o.etki, o.olusturma_zamani, o.yanit_zamani, o.gecici_cozum_zamani, o.veri_ihlali_ref IS NOT NULL AS ihlal_bagli, a.ad_soyad AS acan, k.ad_soyad AS aciklama_yetkilisi
+    return (await b.db.query(`SELECT o.kimlik, o.olay_turu, o.ozet, o.durum, o.surum, o.etki, o.onem, o.ana_olay_ref, (SELECT count(*)::int FROM olay_kaydi b WHERE b.ana_olay_ref = o.kimlik) bagli_sayisi, o.olusturma_zamani, o.yanit_zamani, o.gecici_cozum_zamani, o.veri_ihlali_ref IS NOT NULL AS ihlal_bagli, a.ad_soyad AS acan, k.ad_soyad AS aciklama_yetkilisi
       FROM olay_kaydi o JOIN kullanici_hesabi a ON a.kimlik = o.acan_ref LEFT JOIN kullanici_hesabi k ON k.kimlik = o.aciklama_yetkilisi_ref
       WHERE o.olay_turu IN ('BT Kesintisi veya Veri İhlali', 'Kurumsal Kriz') ORDER BY o.durum, o.olusturma_zamani DESC LIMIT 100`)).rows;
   });
   s.post('/olay/:id/kapat', oturumlu, async (i, y) => {
-    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const g = (i.body ?? {}) as { ozet?: string };
+    const o = i.oturum!; const v = await olay((i.params as { id: string }).id); const g = (i.body ?? {}) as { ozet?: string; kanit?: string };
     if (!v) return yok(y);
     if (!(await rolVar(o.kullanici, BT))) return y.code(403).send({ hata: 'Olayı Bilgi İşlem veya Hukuk ve Uyum kapatır.' });
     if (!g.ozet?.trim()) return y.code(400).send({ hata: 'Kapanış özetini (kök neden ve alınan önlem) yazmanızı rica ederiz.' });
-    const r = await b.db.query(`UPDATE olay_kaydi SET durum = 'Kapalı', gecici_cozum_zamani = coalesce(gecici_cozum_zamani, now()) WHERE kimlik = $1 AND durum = 'Açık'`, [v.kimlik]);
+    if (!g.kanit?.trim()) return y.code(400).send({ hata: 'Kapanış kanıtını (hizmetin olağan çalıştığını gösteren kontrol) yazmanızı rica ederiz.' }); // YG-1285
+    if (v.ana_olay_ref) return y.code(409).send({ hata: 'Bu kayıt ana olaya bağlıdır; ana olay kapanınca kendiliğinden kapanır.' });
+    const r = await b.db.query(`UPDATE olay_kaydi SET durum = 'Kapalı', gecici_cozum_zamani = coalesce(gecici_cozum_zamani, now()), kapanis_ozeti = $2, kapanis_kaniti = $3, kapanis_zamani = now() WHERE kimlik = $1 AND durum = 'Açık'`, [v.kimlik, g.ozet.trim(), g.kanit.trim()]);
+    if (r.rowCount) await b.db.query(`UPDATE olay_kaydi SET durum = 'Kapalı', kapanis_ozeti = $2, kapanis_kaniti = $3, kapanis_zamani = now() WHERE ana_olay_ref = $1 AND durum = 'Açık'`, [v.kimlik, `Ana olayla kapandı: ${g.ozet.trim()}`, g.kanit.trim()]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Olay zaten kapalıdır.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Olay Kapatıldı', nesneTuru: 'Olay', nesneKimligi: v.kimlik, gerekce: g.ozet.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

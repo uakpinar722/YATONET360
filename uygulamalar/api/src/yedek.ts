@@ -8,12 +8,21 @@ import type { Pool } from 'pg';
 import { bildir, birKez } from './bildirim.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
+import { kapanisKaydet } from './kapanis.js';
+import { izYaz } from './denetim.js';
+import { sayac } from './sure.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
 
 export interface YedekAyari { veritabani: string; superParola: string; anahtar: string; klasor: string; ikinciKlasor?: string; depoKok?: string; port?: number }
 const anahtarAl = (a: string) => createHash('sha256').update(`${a}:yedek`).digest();
 const SY = 'Sistem Yöneticisi'; const BIM = 'Bilgi İşlem Müdürü';
+
+/** YG-1278: tam geri yükleme testi ve felaket tatbikatı sonucunun son kabulünü BT ve Firma Yönetimi Direktörü verir. */
+kapanisKaydet('Geri Yükleme Testi Sonucu', async (c, k, karar) => {
+  if (karar !== 'Onayla' && karar !== 'Reddet') return;
+  await c.query(`UPDATE geri_yukleme_testi SET kabul = $2, kabul_zamani = now() WHERE kimlik = $1 AND kabul = 'Onay Bekliyor'`, [k.nesne_kimligi, karar === 'Onayla' ? 'Kabul Edildi' : 'Reddedildi']);
+});
 
 function sifrele(veri: Buffer, a: string) { const iv = randomBytes(12); const c = createCipheriv('aes-256-gcm', anahtarAl(a), iv); const g = Buffer.concat([c.update(veri), c.final()]); return Buffer.concat([iv, c.getAuthTag(), g]); }
 function coz(veri: Buffer, a: string) { const d = createDecipheriv('aes-256-gcm', anahtarAl(a), veri.subarray(0, 12)); d.setAuthTag(veri.subarray(12, 28)); return Buffer.concat([d.update(veri.subarray(28)), d.final()]); }
@@ -118,14 +127,38 @@ export function yedekYollari(s: FastifyInstance, b: Baglam) {
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);
   s.get('/yedekler', oturumlu, async (i, y) => {
     if (!(await rolVar(i.oturum!.kullanici, [SY, BIM]))) return y.code(403).send({ hata: 'Yedek kayıtlarını Sistem Yöneticisi ve Bilgi İşlem Müdürü görür.' });
-    return { yedekler: (await b.db.query(`SELECT kimlik, tur, baslangic, bitis, boyut, tablo_sayisi, satir_sayisi, belge_sayisi, ikinci_konum, durum, hata FROM yedek_kaydi ORDER BY baslangic DESC LIMIT 60`)).rows, testler: (await b.db.query(`SELECT tur, kurtarma_dakika, veri_kaybi_dakika, sonuc, zaman FROM geri_yukleme_testi ORDER BY zaman DESC LIMIT 12`)).rows };
+    return { yedekler: (await b.db.query(`SELECT y.kimlik, y.tur, y.baslangic, y.bitis, y.boyut, y.tablo_sayisi, y.satir_sayisi, y.belge_sayisi, y.ikinci_konum, y.durum, y.hata, ol.olay_no FROM yedek_kaydi y LEFT JOIN olay_kaydi ol ON ol.kimlik = y.olay_ref ORDER BY y.baslangic DESC LIMIT 60`)).rows, testler: (await b.db.query(`SELECT tur, kurtarma_dakika, veri_kaybi_dakika, sonuc, kabul, zaman FROM geri_yukleme_testi ORDER BY zaman DESC LIMIT 12`)).rows };
+  });
+  // YG-1642: başarısız yedek işi 8 saat içinde OLY-YYYY-NNNN olay kaydına bağlanır; kart tamamlanır.
+  s.post('/yedek/:id/olay-bagla', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!(await rolVar(o.kullanici, [SY, BIM]))) return y.code(403).send({ hata: 'Olay kaydını Sistem Yöneticisi veya Bilgi İşlem Müdürü bağlar.' });
+    const k = /^[0-9a-f-]{36}$/i.test(id) ? (await b.db.query(`SELECT kimlik, tur, durum, hata, olay_ref, baslangic FROM yedek_kaydi WHERE kimlik = $1`, [id])).rows[0] : undefined;
+    if (!k) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    if (!['Başarısız', 'Eksik Set'].includes(k.durum)) return y.code(409).send({ hata: 'Yalnız başarısız veya eksik yedek işi olay kaydına bağlanır.' });
+    if (k.olay_ref) return y.code(409).send({ hata: 'Bu yedek işi olay kaydına bağlanmıştır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const yil = new Date().getFullYear(); const no = `OLY-${yil}-${String(await sayac(c, `veri_ihlali:${yil}`)).padStart(4, '0')}`;
+      const ol = (await c.query(`INSERT INTO olay_kaydi (olay_turu, ozet, acan_ref, olay_no, onem) VALUES ('BT Kesintisi veya Veri İhlali', $1, $2, $3, 'Yüksek') RETURNING kimlik`, [`Başarısız yedek işi (${k.tur}, ${new Date(k.baslangic).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })})${k.hata ? `: ${k.hata}` : ''}`.slice(0, 300), o.kullanici, no])).rows[0].kimlik;
+      await c.query(`UPDATE yedek_kaydi SET olay_ref = $2 WHERE kimlik = $1`, [k.kimlik, ol]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Başarısız Yedek İşi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [k.kimlik]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Başarısız Yedek Olaya Bağlandı', nesneTuru: 'Yedek', nesneKimligi: k.kimlik, yeni: { olay: no }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { olayNo: no, olay: ol };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   s.post('/geri-yukleme-testi', oturumlu, async (i, y) => { // YG-1279: hedeflerle karşılaştırma; kritik süreçler 24 saat kesinti, 4 saat veri kaybı.
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; yedek?: string; kurtarma?: number; kayip?: number; kayitTutarli?: boolean; belge?: boolean; yetki?: boolean; not?: string };
     if (!(await rolVar(o.kullanici, [SY]))) return y.code(403).send({ hata: 'Testi Sistem Yöneticisi kaydeder.' });
     if (!['Örnek Kayıt', 'Tam Sistem', 'Felaket Tatbikatı'].includes(g.tur ?? '') || !(Number(g.kurtarma) >= 0) || !(Number(g.kayip) >= 0)) return y.code(400).send({ hata: 'Tür, kurtarma süresi ve veri kaybı süresi zorunludur.' });
     const basarili = Boolean(g.kayitTutarli && g.belge && g.yetki) && Number(g.kurtarma) <= 24 * 60 && Number(g.kayip) <= 4 * 60;
-    await b.db.query(`INSERT INTO geri_yukleme_testi (tur, yedek_ref, kurtarma_dakika, veri_kaybi_dakika, kayit_sayisi_tutarli, belge_erisimi, yetki_tutarli, sonuc, not_metni, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [g.tur, g.yedek ?? null, g.kurtarma, g.kayip, Boolean(g.kayitTutarli), Boolean(g.belge), Boolean(g.yetki), basarili ? 'Başarılı' : 'Başarısız', g.not?.trim() || null, o.kullanici]);
+    const zincirli = g.tur !== 'Örnek Kayıt'; // YG-1278
+    const kayit = (await b.db.query(`INSERT INTO geri_yukleme_testi (tur, yedek_ref, kurtarma_dakika, veri_kaybi_dakika, kayit_sayisi_tutarli, belge_erisimi, yetki_tutarli, sonuc, not_metni, kaydeden_ref, kabul) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,${zincirli ? "'Onay Bekliyor'" : 'NULL'}) RETURNING kimlik`, [g.tur, g.yedek ?? null, g.kurtarma, g.kayip, Boolean(g.kayitTutarli), Boolean(g.belge), Boolean(g.yetki), basarili ? 'Başarılı' : 'Başarısız', g.not?.trim() || null, o.kullanici])).rows[0];
+    // YG-1644: aylık örnek geri yükleme testinin sonucu Bilgi İşlem Müdür Yardımcısına gider.
+    if (!zincirli) { const al = await rolSahipleri(b.db, await rolId(b.db, 'Bilgi İşlem Müdür Yardımcısı')); if (al.length) await bildir(b.db, { olay: `geri-yukleme-testi:${kayit.kimlik}`, kullanicilar: al, baslik: `Örnek Geri Yükleme Testi · ${basarili ? 'Başarılı' : 'Başarısız'}`, ozet: `Kurtarma ${g.kurtarma} dk · veri kaybı ${g.kayip} dk${g.not ? ` · ${g.not}` : ''}`.slice(0, 200), oncelik: basarili ? 'Normal' : 'Yüksek' }); }
+    if (zincirli) await kartAc(b.db, { tur: 'Geri Yükleme Testi Sonucu', baslik: `${g.tur} Testi · ${basarili ? 'Başarılı' : 'Başarısız'}`, ozet: `Kurtarma ${g.kurtarma} dk · veri kaybı ${g.kayip} dk${g.not ? ` · ${g.not}` : ''}`.slice(0, 200), oncelik: basarili ? 'Normal' : 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Bilgi İşlem Müdür Yardımcısı'), await rolId(b.db, BIM), await rolId(b.db, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')], nesneTuru: 'Geri Yükleme Testi', nesneKimligi: kayit.kimlik });
     return { sonuc: basarili ? 'Başarılı' : 'Başarısız' };
   });
 }

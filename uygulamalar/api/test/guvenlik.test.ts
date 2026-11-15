@@ -10,7 +10,7 @@ import { saglikIzle, yedekAl, yedekDongusu, yedekGeriYukle, yedekIsle } from '..
 import { kurVeritabani } from '../araclar/kurulum.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', sy: 'Sistem Yöneticisi', bim: 'Bilgi İşlem Müdürü', hud: 'Hukuk ve Uyum Direktörü', de: 'İç Denetim Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', sy: 'Sistem Yöneticisi', bim: 'Bilgi İşlem Müdürü', bimy: 'Bilgi İşlem Müdür Yardımcısı', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', hud: 'Hukuk ve Uyum Direktörü', de: 'İç Denetim Müdürü' };
 let o: Ortam; const e = ortamOku(); const K = 'ab'.repeat(32); const VT = 'yatonet360_test51'; const YD = 'yatonet360_test51y';
 const AY = () => ({ veritabani: VT, superParola: e.POSTGRES_SUPER_PAROLA!, anahtar: K, klasor: mkdtempSync(join(tmpdir(), 'yny-')) });
 
@@ -107,8 +107,8 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect((await o.ist('GET', '/api/olaylar', await o.gir('ds'))).statusCode).toBe(404); // YG-1281
     expect(((await o.ist('GET', '/api/olaylar', await o.gir('bim'))).json() as { kimlik: string; surum: number }[]).find((x) => x.kimlik === ol)!.surum).toBe(2);
     expect((await o.ist('POST', `${u}/kapat`, c, {})).statusCode).toBe(400);
-    expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Disk doldu; izleme eşiği düşürüldü' })).statusCode).toBe(200);
-    expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Tekrar' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Disk doldu; izleme eşiği düşürüldü', kanit: 'Disk doluluğu %40' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Tekrar', kanit: 'Tekrar' })).statusCode).toBe(409);
   });
   it('aynı işlem anahtarı ikinci kez işlenmez', async () => {
     const c = await o.gir('sy'); const H = { 'x-yatonet': '1', 'x-islem-anahtari': 'tek-1' }; const P = { tur: 'Örnek Kayıt', kurtarma: 1, kayip: 1, kayitTutarli: true, belge: true, yetki: true };
@@ -133,5 +133,46 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect((await o.ist('POST', '/api/profil/eposta-onay', c, { kod: '000000' })).statusCode).toBe(400);
     expect((await o.ist('POST', '/api/profil/eposta-onay', c, { kod })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.K.oy])).rows[0].e_posta).toBe(yeni);
+  });
+  it('tam geri yükleme testi sonucu BİMY, BİM ve Direktör onayıyla kabul edilir (YG-1278)', async () => {
+    const r = await o.ist('POST', '/api/geri-yukleme-testi', await o.gir('sy'), { tur: 'Tam Sistem', kurtarma: 120, kayip: 30, kayitTutarli: true, belge: true, yetki: true });
+    expect(r.statusCode, r.body).toBe(200);
+    const t = (await o.sup.query(`SELECT kimlik, kabul FROM geri_yukleme_testi WHERE tur = 'Tam Sistem' ORDER BY zaman DESC LIMIT 1`)).rows[0]; expect(t.kabul).toBe('Onay Bekliyor');
+    const k = await o.kart('Geri Yükleme Testi Sonucu', t.kimlik);
+    for (const [rol, kr] of [['bimy', 'Onaya Gönder'], ['bim', 'Onaya Gönder'], ['btd', 'Onayla']]) { const x = await o.karar(k.kimlik, rol!, kr!); expect(x.statusCode, x.body).toBe(200); }
+    expect((await o.sup.query(`SELECT kabul FROM geri_yukleme_testi WHERE kimlik = $1`, [t.kimlik])).rows[0].kabul).toBe('Kabul Edildi');
+  });
+  it('olay kaydı önem, adım, zaman çizelgesi, ana olay bağı ve kapanış kanıtı taşır (YG-1285)', async () => {
+    const oy = await o.gir('oy'); const c = await o.gir('sy');
+    const ana = (await o.ist('POST', '/api/olay-komutasi', oy, { tur: 'BT Kesintisi veya Veri İhlali', ozet: 'Portal erişilemiyor' })).json().kimlik;
+    const yan = (await o.ist('POST', '/api/olay-komutasi', oy, { tur: 'BT Kesintisi veya Veri İhlali', ozet: 'Kullanıcı: giriş yapılamıyor' })).json().kimlik;
+    expect((await o.ist('POST', `/api/olay/${ana}/guncelle`, c, { onem: 'Felaket' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/olay/${ana}/guncelle`, c, { onem: 'Yüksek', belirti: 'Zaman aşımı', isSonucu: 'Portal kullanılamıyor', hizmet: 'Portal' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/olay/${ana}/adim`, c, { tur: 'İletişim', metin: 'Kullanıcılara duyuru' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/olay/${yan}/bagla`, c, { anaOlay: ana })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/olay/${yan}/kapat`, c, { ozet: 'X', kanit: 'Y' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/olay/${ana}/kapat`, c, { ozet: 'Sertifika yenilendi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/olay/${ana}/kapat`, c, { ozet: 'Sertifika yenilendi', kanit: 'Giriş denemesi başarılı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM olay_kaydi WHERE kimlik = $1`, [yan])).rows[0].durum).toBe('Kapalı');
+    const z = (await o.ist('GET', `/api/olay/${ana}/zaman-cizelgesi`, c)).json().map((x: { tur: string }) => x.tur);
+    expect(z).toEqual(expect.arrayContaining(['Başlangıç', 'İletişim', 'Etki Güncellemesi', 'Bağlı Kayıt', 'Kapanış']));
+  });
+  it('başarısız yedek OLY olay kaydına bağlanır; örnek test sonucu BİMY ye gider (YG-1642, YG-1644)', async () => {
+    const yk = (await o.sup.query(`INSERT INTO yedek_kaydi (tur, durum, hata) VALUES ('Dört Saatlik', 'Başarısız', 'Disk dolu') RETURNING kimlik`)).rows[0].kimlik;
+    const sy = await o.gir('sy');
+    expect((await o.ist('POST', `/api/yedek/${yk}/olay-bagla`, await o.gir('ds'), {})).statusCode).toBe(403);
+    const r = await o.ist('POST', `/api/yedek/${yk}/olay-bagla`, sy, {}); expect(r.statusCode, r.body).toBe(200); expect(r.json().olayNo).toMatch(/^OLY-\d{4}-\d{4}$/);
+    expect((await o.ist('POST', `/api/yedek/${yk}/olay-bagla`, sy, {})).statusCode).toBe(409);
+    await o.ist('POST', '/api/geri-yukleme-testi', sy, { tur: 'Örnek Kayıt', kurtarma: 10, kayip: 0, kayitTutarli: true, belge: true, yetki: true });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Örnek Geri Yükleme Testi%'`, [o.K.bimy])).rows[0].n).toBeGreaterThan(0);
+  });
+  it('Direktör vekili Bilgi İşlem Müdürünün kendi işi GMY onayına gider (YG-1647)', async () => {
+    const { zinciriDuzelt } = await import('../src/makam.js'); const { rolId } = await import('../src/ihbar.js');
+    const btd = await rolId(o.db, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'); const gmy = await rolId(o.db, 'Genel Müdür Yardımcısı');
+    expect(await zinciriDuzelt(o.db, [btd], o.K.bim)).toEqual([btd]);
+    await o.sup.query(`INSERT INTO vekalet (kimlik, asil_ref, vekil_ref, rol_ref, vekalet_nedeni, kapsam, baslangic_tarihi, bitis_tarihi, atayan_ref) VALUES ('VKL-2026-8647',$1,$2,$3,'İzin','Açık işler',current_date,current_date + 3,$1)`, [o.K.btd, o.K.bim, btd]);
+    expect(await zinciriDuzelt(o.db, [btd], o.K.bim)).toEqual([gmy]);
+    expect(await zinciriDuzelt(o.db, [btd], o.K.sy)).toEqual([btd]);
+    await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı', kapanis_zamani = now() WHERE kimlik = 'VKL-2026-8647'`);
   });
 });

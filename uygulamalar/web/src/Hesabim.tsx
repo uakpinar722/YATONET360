@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek } from './api';
+import { GorevTanimim } from './Memnuniyet';
 
 /** Parola yenileme bağlantısından açılan ekran (YG-1156). Metinler G-2 parola adımıyla aynıdır. */
 export function ParolaYenile({ belirtec, bitti }: { belirtec: string; bitti: () => void }) {
@@ -126,6 +127,7 @@ export function Profilim() {
         <div className="not">{[...yeni].length >= 12 ? '✔' : '○'} En Az 12 Karakter</div>
         <button className="btn" disabled={!eski || [...yeni].length < 12}>Parolamı Değiştir</button>
       </form>
+      <GorevTanimim />{/* YG-1627: LGM personelinde Görev Tanımım */}
     </>
   );
 }

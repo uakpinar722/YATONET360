@@ -56,8 +56,10 @@ export async function zinciriDuzelt(db: Db, zincir: string[], hazirlayan?: strin
   const sonuc: string[] = [];
   for (let rol of zincir) {
     for (let i = 0; i < 6; i++) {
-      const s = await rolSahipleri(db, rol);
-      if (!(s.length === 1 && kisiler.includes(s[0]!))) break; // YG-828: tek sahibi görev ayrılığına takılan makam üste çıkar
+      // YG-1647: vekâlet veren asil makamda sayılmaz; kalan sahiplerin tamamı görev ayrılığına takılıyorsa (ör. vekil kendi hazırladığı iş) makam üste çıkar.
+      const yokta = (await db.query(`SELECT asil_ref FROM vekalet WHERE rol_ref = $1 AND durum = 'Aktif' AND NOT yalniz_hazirlik AND baslangic_tarihi <= current_date AND bitis_tarihi >= current_date`, [rol])).rows.map((r) => r.asil_ref as string);
+      const s = (await rolSahipleri(db, rol)).filter((k) => !yokta.includes(k));
+      if (!(s.length >= 1 && s.every((k) => kisiler.includes(k)))) break; // YG-828: tek sahibi görev ayrılığına takılan makam üste çıkar
       const ust = await onayMakami(db, rol);
       if (ust === rol) break;
       rol = ust;

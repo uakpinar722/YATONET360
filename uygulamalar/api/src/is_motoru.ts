@@ -58,7 +58,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
         WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.zincir[k.kademe + 1] = ANY($1)
           AND k.hazirlayan_ref IS DISTINCT FROM $2
           AND NOT EXISTS (SELECT 1 FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.yapan_ref = $2 AND a.kimlik > ${SON_GONDERIM})
-        ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [roller, kullanici, vekilRoller]);
+        ORDER BY CASE k.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 ELSE 2 END, k.son_zaman NULLS LAST, k.olusturma_zamani`, [roller, kullanici, vekilRoller]);
     const islem = await b.db.query(
       `SELECT ${SECIM} FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.kategori IN ('islem','gorev') AND (k.sahip_kullanici_ref = $1 OR k.sahip_rol_ref = ANY($2) OR k.ust_rol_ref = ANY($2)) ORDER BY k.son_zaman NULLS LAST, k.olusturma_zamani`, [kullanici, roller]);
     const iade = await b.db.query(`SELECT ${SECIM}, (SELECT gerekce FROM is_karti_adim a WHERE a.is_ref = k.kimlik ORDER BY a.kimlik DESC LIMIT 1) AS gerekce FROM is_karti k WHERE k.durum = 'İade Edildi' AND k.hazirlayan_ref = $1 ORDER BY k.olusturma_zamani DESC`, [kullanici]);

@@ -23,13 +23,15 @@ export function kalan(s: string, simdi = Date.now()): { yazi: string; sinif: str
   if (ms < 0) { const dk = Math.ceil(-ms / 60_000); return { yazi: `${Math.floor(dk / 60)} Saat ${dk % 60} Dakika Geçti`, sinif: 'kirmizi', yanip: 'yanip-gecti' }; }
   const yanip = ms <= 1_800_000 ? 'yanip-1' : ms <= 3_600_000 ? 'yanip-3' : ms <= 7_200_000 ? 'yanip-5' : undefined; // YG-1606
   if (yanip) return { ...kalanYazi(ms), yanip };
-  return kalanYazi(ms);
+  return kalanYazi(ms, new Date(s), simdi);
 }
-function kalanYazi(ms: number): { yazi: string; sinif: string } {
+/** YG-1605: 120 saatin üzerinde gün sayısı İstanbul takvim günü değişiminde (00:00) bir azalır. */
+const takvimGunu = (d: Date) => Date.parse(`${d.toLocaleDateString('sv-SE', { timeZone: TZ })}T00:00:00Z`) / 86_400_000;
+function kalanYazi(ms: number, bitis?: Date, simdi = Date.now()): { yazi: string; sinif: string } {
   const saat = ms / 3_600_000;
   if (saat < 1) return { yazi: `${Math.max(1, Math.ceil(ms / 60_000))} Dakika Kaldı`, sinif: 'kirmizi' };
   if (saat <= 120) return { yazi: `${Math.ceil(saat)} Saat Kaldı`, sinif: saat <= 24 ? 'kirmizi' : 'sari' };
-  return { yazi: `${Math.ceil(saat / 24)} Gün Kaldı`, sinif: 'gri' };
+  return { yazi: `${bitis ? takvimGunu(bitis) - takvimGunu(new Date(simdi)) : Math.ceil(saat / 24)} Gün Kaldı`, sinif: 'gri' };
 }
 
 const ONCELIK: Record<string, string> = { Kritik: 'kirmizi', 'Yüksek': 'sari', Normal: 'gri', 'Planlı': 'gri' };
@@ -171,6 +173,9 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
         </div>
       ))}
 
+      {(() => { const acil = [...veri.onay, ...veri.islem, ...veri.gorev].filter((k) => k.oncelik === 'Kritik'); return acil.length > 0 && <>{/* YG-1635: acil kartlar Süre Uyarılarının üstünde */}
+        <div className="bolum">Acil</div>
+        {acil.map((k) => <div key={`acil-${k.kimlik}`} className="hata kart-sol"><KartUst k={k} /></div>)}</>; })()}
       <div className="bolum">Süre Uyarıları</div>
       {veri.sureUyarilari.length === 0 ? <Bos m="Süresi yaklaşan işiniz bulunmamaktadır." /> : veri.sureUyarilari.map((k) => (
         <div key={k.kimlik} className="ozet kart-sol"><KartUst k={k} /></div>

@@ -60,12 +60,30 @@ function UyumGorevleri() {
   return <><div className="bolum">Uyum Görevleri</div><Mesaj />{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad} · Son: {x.son_tarih} · {x.durum}<br />Kanıt: {x.gerekli_kanit}</span><div className="tam">{x.durum === 'Açık' && <><BelgeSec ad="Uyum Kanıtı" bagTuru="Uyum Görevi" bagKimligi={x.kimlik} deger={b[x.kimlik] ?? ''} sec={(z: string) => setB({ ...b, [x.kimlik]: z })} /><button className="btn2 kucuk" disabled={!b[x.kimlik]} onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/kanit`, { belge: b[x.kimlik] }).then(yk), 'Kanıt yüklendi.')}>Kanıtı Kaydet</button></>}{x.durum === 'Kanıt Yüklendi' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/dogrula`, {}).then(yk), 'Görev kapatıldı.')}>Doğrula ve Kapat</button>}</div></div>)}</>;
 }
 
-/** YG-1276, YG-1642 */
+/** YG-1276, YG-1642, YG-1645: yedek kayıtları, başarısız yedeği olay kaydına bağlama ve geri yükleme testi kaydı. */
 function Yedekler() {
-  const [v, setV] = useState<{ yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null }[]; testler: { tur: string; sonuc: string; zaman: string }[] } | null>(null);
-  useEffect(() => { void istek<NonNullable<typeof v>>('/yedekler').then(setV).catch(() => {}); }, []);
+  type V = { yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null; olay_no: string | null }[]; testler: { tur: string; sonuc: string; kabul: string | null; zaman: string }[] };
+  const [v, setV] = useState<V | null>(null); const [m, setM] = useState('');
+  const [f, setF] = useState({ tur: 'Örnek Kayıt', kurtarma: '', kayip: '', kayitTutarli: false, belge: false, yetki: false, not: '' });
+  const yk = () => istek<V>('/yedekler').then(setV).catch(() => {});
+  useEffect(() => { void yk(); }, []);
   if (!v) return null;
-  return <><div className="bolum">Yedekler</div>{v.yedekler.length === 0 && <div className="ozet bos">Yedek kaydı bulunmamaktadır.</div>}{v.yedekler.slice(0, 20).map((x) => <div className={x.durum === 'Başarısız' || x.durum === 'Eksik Set' ? 'hata' : 'ozet'} key={x.kimlik}>{new Date(x.baslangic).toLocaleString('tr-TR')} · {x.tur} · {x.durum}{x.hata ? ` · ${x.hata}` : ''}</div>)}{v.testler.map((x, i) => <div className="ozet" key={i}>{x.tur} · {x.sonuc} · {new Date(x.zaman).toLocaleDateString('tr-TR')}</div>)}</>;
+  const is = (yol: string, g: object, t: (r: any) => string) => void istek(yol, g).then((r) => { setM(t(r)); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Yedekler</div>{m && <div className="not" role="status">{m}</div>}{v.yedekler.length === 0 && <div className="ozet bos">Yedek kaydı bulunmamaktadır.</div>}
+    {v.yedekler.slice(0, 20).map((x) => { const sorun = x.durum === 'Başarısız' || x.durum === 'Eksik Set'; return <div className={sorun ? 'hata' : 'ozet'} key={x.kimlik}>{new Date(x.baslangic).toLocaleString('tr-TR')} · {x.tur} · {x.durum}{x.hata ? ` · ${x.hata}` : ''}{x.olay_no ? ` · Olay: ${x.olay_no}` : ''}
+      {sorun && !x.olay_no && <> <button className="btn2 kucuk" onClick={() => is(`/yedek/${x.kimlik}/olay-bagla`, {}, (r) => `Olay kaydı açıldı: ${r.olayNo}`)}>Olay Kaydına Bağla</button></>}</div>; })}
+    <div className="bolum">Geri Yükleme Testleri</div>
+    {v.testler.map((x, i) => <div className="ozet" key={i}>{x.tur} · {x.sonuc}{x.kabul ? ` · ${x.kabul}` : ''} · {new Date(x.zaman).toLocaleDateString('tr-TR')}</div>)}
+    <div className="ozet">
+      <label htmlFor="gy-tur">Test Türü</label><select id="gy-tur" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Örnek Kayıt', 'Tam Sistem', 'Felaket Tatbikatı'].map((d) => <option key={d}>{d}</option>)}</select>
+      <label htmlFor="gy-k">Kurtarma Süresi (dakika)</label><input id="gy-k" inputMode="numeric" value={f.kurtarma} onChange={(e) => setF({ ...f, kurtarma: e.target.value })} />
+      <label htmlFor="gy-v">Veri Kaybı Süresi (dakika)</label><input id="gy-v" inputMode="numeric" value={f.kayip} onChange={(e) => setF({ ...f, kayip: e.target.value })} />
+      <label className="kutu"><input type="checkbox" checked={f.kayitTutarli} onChange={(e) => setF({ ...f, kayitTutarli: e.target.checked })} /><span>Kayıt Sayıları Tutarlı</span></label>
+      <label className="kutu"><input type="checkbox" checked={f.belge} onChange={(e) => setF({ ...f, belge: e.target.checked })} /><span>Belgelere Erişiliyor</span></label>
+      <label className="kutu"><input type="checkbox" checked={f.yetki} onChange={(e) => setF({ ...f, yetki: e.target.checked })} /><span>Yetkiler Tutarlı</span></label>
+      <label htmlFor="gy-n">Not</label><input id="gy-n" value={f.not} onChange={(e) => setF({ ...f, not: e.target.value })} />
+      <button className="btn2 kucuk" disabled={f.kurtarma === '' || f.kayip === ''} onClick={() => is('/geri-yukleme-testi', { ...f, kurtarma: Number(f.kurtarma), kayip: Number(f.kayip) }, (r) => `Test kaydedildi: ${r.sonuc}${f.tur === 'Örnek Kayıt' ? '' : ' · onay kartı açıldı'}`)}>Testi Kaydet</button>
+    </div></>;
 }
 
 export function KvkkEkrani() {
