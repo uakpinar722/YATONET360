@@ -26,7 +26,9 @@ describe('güvenlik alarmı (YG-1191–1194)', () => {
     expect((await o.ist('POST', `/api/guvenlik/alarm/${a.kimlik}/adim`, btm, { adim: 'Kapanış', not: 'Doğrulandı' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT kabul_zamani IS NOT NULL k, sinirlama_zamani IS NOT NULL s, kapanis_zamani IS NOT NULL z FROM guvenlik_alarmi WHERE kimlik = $1`, [a.kimlik])).rows[0]).toEqual({ k: true, s: true, z: true });
     const U = '/api/guvenlik/kural/YETKISIZ_ERISIM'; expect((await o.ist('POST', U, btm, { esik: 99 })).statusCode).toBe(400); expect((await o.ist('POST', U, btm, { istisnaBitis: '2020-01-01', gerekce: 'G' })).statusCode).toBe(400);
+    expect((await o.ist('POST', U, btm, { istisnaBitis: new Date(Date.now() + 31 * 86_400_000).toISOString(), gerekce: 'Uzun' })).statusCode).toBe(400); // YG-1182
     expect((await o.ist('POST', U, btm, { istisnaBitis: new Date(Date.now() + 86_400_000).toISOString(), gerekce: 'Bakım penceresi' })).statusCode).toBe(200);
+    expect((await o.ist('POST', U, btm, { istisnaBitis: new Date(Date.now() + 2 * 86_400_000).toISOString(), gerekce: 'Uzatım' })).statusCode).toBe(409);
     await iz('Yetkisiz Erişim Denemesi', 30, o.K.ds!, S); expect(await guvenlikTara(o.db, new Date())).toBe(0);
     expect((await o.ist('GET', '/api/guvenlik', btm)).json().kurallar.find((k: { kod: string }) => k.kod === 'YETKISIZ_ERISIM').istisna_gerekce).toBe('Bakım penceresi');
   });

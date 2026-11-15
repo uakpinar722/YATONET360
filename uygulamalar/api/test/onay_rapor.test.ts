@@ -96,13 +96,16 @@ describe('teknik rapor (YG-200, YG-280, YG-428, YG-1518)', () => {
 });
 describe('kart önerisi (YG-188)', () => {
   it('Teknik Uzman önerir, TİD onaylayınca kartelaya eklenir', async () => {
-    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const K = { ana: 'A', alt: 'B', tali: 'C', islem: 'Yeni işlem', birim: 'adet', maliyet: 10, gerekce: 'G' };
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const K = { ana: 'Acil', alt: 'Acil arıza ve hasar müdahalesi', tali: 'Çağrı sınıflandırması ve sevk', islem: 'Yeni işlem', birim: 'adet', maliyet: 10, gerekce: 'G' };
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, await o.gir('ds'), K)).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, await o.gir('tu'), { ...K, tali: 'Olmayan' })).statusCode).toBe(400); // YG-857
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, await o.gir('tu'), K);
     expect(r.statusCode, r.body).toBe(200);
     await o.karar((await o.kart('Kart Önerisi', r.json().kimlik)).kimlik, 'tid', 'Onayla');
     const v = (await o.sup.query(`SELECT kod, durum FROM kart_onerisi WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
     expect(v.durum).toBe('Eklendi');
     expect((await o.sup.query(`SELECT islem FROM kartela_kalemi WHERE kod = $1`, [v.kod])).rows[0].islem).toBe('Yeni işlem');
+    expect(v.kod).toMatch(/^ACIL-01\.01\.01-\d{2}$/); expect(v.kod).not.toBe('ACIL-01.01.01-01'); // YG-857
+    await expect(o.sup.query(`UPDATE kartela_kalemi SET kod = 'X-01' WHERE kod = $1`, [v.kod])).rejects.toThrow(/değiştirilemez/);
   });
 });

@@ -31,6 +31,8 @@ const SORGU: Record<string, string> = {
 
 /** Kural eşiği aşılınca alarm üretir; süreli istisnadaki kural çalışmaz, görünür kalır. Aynı pencerede aynı etken için tek alarm. */
 export async function guvenlikTara(db: Pool, simdi = new Date()): Promise<number> {
+  // YG-1182: süresi dolan istisna kendiliğinden kalkar; sürekli yetkiye dönüşmez, yeniden istisna yeni karar ister.
+  await db.query(`UPDATE guvenlik_kural SET istisna_bitis = NULL, istisna_gerekce = NULL, istisna_veren_ref = NULL WHERE istisna_bitis <= $1`, [simdi]);
   const kurallar = (await db.query(`SELECT * FROM guvenlik_kural WHERE istisna_bitis IS NULL OR istisna_bitis <= $1`, [simdi])).rows as Kural[];
   let n = 0;
   for (const k of kurallar) {
@@ -105,7 +107,13 @@ export function guvenlikIzlemeYollari(s: FastifyInstance, b: Baglam) {
     const k = (await b.db.query(`SELECT ad, esik FROM guvenlik_kural WHERE kod = $1`, [kod])).rows[0]; if (!k) return yok(y);
     const esik = g.esik === undefined ? null : Number(g.esik);
     if (!g.gerekce?.trim() || (esik === null && !g.istisnaBitis) || (esik !== null && !(esik >= 1)) || (g.istisnaBitis && !(new Date(g.istisnaBitis).getTime() > Date.now()))) return y.code(400).send({ hata: 'Gerekçe ile geçerli eşik veya gelecekte biten istisna zorunludur.' });
-    await b.db.query(`UPDATE guvenlik_kural SET esik = coalesce($2, esik), istisna_bitis = coalesce($3, istisna_bitis), istisna_gerekce = CASE WHEN $3::timestamptz IS NOT NULL THEN $4 ELSE istisna_gerekce END WHERE kod = $1`, [kod, esik, g.istisnaBitis ?? null, g.gerekce.trim()]);
+    // YG-1182: istisna en fazla 30 gün; yürürlükteki istisnayı veren kişi kendi istisnasını uzatamaz, uzatım başka yetkilinin yeni kararıdır.
+    if (g.istisnaBitis) {
+      if (new Date(g.istisnaBitis).getTime() - Date.now() > 30 * 86_400_000) return y.code(400).send({ hata: 'Güvenlik istisnası en fazla 30 gün verilir; uzatım yeni kararla yapılır.' });
+      const mev = (await b.db.query(`SELECT istisna_veren_ref FROM guvenlik_kural WHERE kod = $1 AND istisna_bitis > now()`, [kod])).rows[0];
+      if (mev?.istisna_veren_ref === o.kullanici) return y.code(409).send({ hata: 'Kendi verdiğiniz istisnayı uzatamazsınız; uzatım başka bir yetkilinin kararıyla yapılır.' });
+    }
+    await b.db.query(`UPDATE guvenlik_kural SET esik = coalesce($2, esik), istisna_bitis = coalesce($3, istisna_bitis), istisna_gerekce = CASE WHEN $3::timestamptz IS NOT NULL THEN $4 ELSE istisna_gerekce END, istisna_veren_ref = CASE WHEN $3::timestamptz IS NOT NULL THEN $5 ELSE istisna_veren_ref END WHERE kod = $1`, [kod, esik, g.istisnaBitis ?? null, g.gerekce.trim(), o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Alarm Kuralı Değişikliği', nesneTuru: 'Güvenlik Kuralı', nesneKimligi: kod, eski: { esik: k.esik }, yeni: { esik, istisnaBitis: g.istisnaBitis }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     await bildir(b.db, { olay: `guvenlik-kural:${kod}:${Date.now()}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, BTD)), baslik: `Alarm Kuralı Değişti: ${k.ad}`, ozet: g.gerekce.trim().slice(0, 200) });
     return { tamam: true };

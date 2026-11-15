@@ -566,12 +566,15 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     if (kod === 'fiyat_katsayisi') return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Değişiklik gerekçesini yazmanızı rica ederiz.' });
     if (g.deger !== null && g.deger !== undefined && !(Number(g.deger) >= 0)) return y.code(400).send({ hata: 'Değer geçersizdir.' });
-    const e = (await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0]; if (!e) return yok(y);
+    const e = (await b.db.query(`SELECT deger, aciklama FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0]; if (!e) return yok(y);
     const yeni = g.deger === null || g.deger === undefined ? null : Number(g.deger);
-    await b.db.query(`UPDATE sistem_parametresi SET deger = $2, gecerlilik = current_date WHERE kod = $1`, [kod, yeni]);
-    await b.db.query(`INSERT INTO parametre_gecmisi (kod, eski, yeni, gerekce, giren_ref) VALUES ($1,$2,$3,$4,$5)`, [kod, e.deger, yeni, g.gerekce.trim(), o.kullanici]);
-    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Parametre Değişikliği', nesneTuru: 'Parametre', nesneKimligi: kod, eski: { deger: e.deger }, yeni: { deger: yeni }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { tamam: true };
+    // YG-853: değişikliği Ticari İşler Direktörü önerir; Genel Müdür Yardımcısı uygun görüşle (Onaya Gönder) CEO'ya arz eder, CEO onaylayınca yürürlüğe girer.
+    if (!(await rolVar(o.kullanici, [TID]))) return y.code(403).send({ hata: 'Parametre değişikliğini Ticari İşler Direktörü önerir; Genel Müdür Yardımcısı ve CEO onay kartından karar verir.' });
+    if ((await b.db.query(`SELECT 1 FROM parametre_onerisi WHERE kod = $1 AND durum = 'Onayda'`, [kod])).rowCount) return y.code(409).send({ hata: 'Bu parametre için onayda bekleyen öneri vardır.' });
+    const on = (await b.db.query(`INSERT INTO parametre_onerisi (kod, eski, yeni, gerekce, oneren_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [kod, e.deger, yeni, g.gerekce.trim(), o.kullanici])).rows[0];
+    await kartAc(b.db, { tur: 'Parametre Değişikliği', baslik: `${e.aciklama ?? kod}: ${e.deger ?? 'Tanımsız'} → ${yeni ?? 'Tanımsız'}`, ozet: g.gerekce.trim(), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Genel Müdür Yardımcısı'), await rolId(b.db, 'CEO')], nesneTuru: 'Parametre Önerisi', nesneKimligi: on.kimlik });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Parametre Değişikliği Önerisi', nesneTuru: 'Parametre', nesneKimligi: kod, eski: { deger: e.deger }, yeni: { deger: yeni }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { durum: 'Onaya Gönderildi', oneri: on.kimlik };
   });
 
   // YG-1078: yasal ayıp ve rücu listesi yalnız Direktör ve üstü; Müdürler göremez.
@@ -605,3 +608,13 @@ export async function altYukleniciEngeli(db: Db, isEmri: string, adlar: string[]
   const eksik = adlar.map((a) => a.trim()).filter((a) => a && !onayli.includes(k(a)));
   return eksik.length ? `LGM'nin yazılı onayı olmayan alt yüklenici: ${eksik.join(', ')}. Önce Alt Yüklenici Talebi onaylanmalıdır.` : null;
 }
+
+kapanisKaydet('Parametre Değişikliği', async (c, k, karar, yapan) => { // YG-853
+  const o = (await c.query(`SELECT * FROM parametre_onerisi WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi])).rows[0];
+  if (!o) return;
+  if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') { await c.query(`UPDATE parametre_onerisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [o.kimlik]); return; }
+  if (karar !== 'Onayla') return;
+  await c.query(`UPDATE sistem_parametresi SET deger = $2, gecerlilik = current_date WHERE kod = $1`, [o.kod, o.yeni]);
+  await c.query(`INSERT INTO parametre_gecmisi (kod, eski, yeni, gerekce, giren_ref) VALUES ($1,$2,$3,$4,$5)`, [o.kod, o.eski, o.yeni, o.gerekce, yapan]);
+  await c.query(`UPDATE parametre_onerisi SET durum = 'Onaylandı' WHERE kimlik = $1`, [o.kimlik]);
+});

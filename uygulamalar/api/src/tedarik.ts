@@ -42,12 +42,27 @@ export async function tedarikSureIsle(db: Pool, simdi = new Date()): Promise<num
   for (const t of (await db.query(`SELECT kimlik, siparis_no FROM tedarik_siparisi s WHERE s.statu IN ('Verildi', 'Kısmi Teslim') AND s.teslim_tarihi + 7 < $1::date AND NOT EXISTS (SELECT 1 FROM is_karti k WHERE k.tur = 'Tedarik Gecikmesi' AND k.nesne_kimligi = s.kimlik::text)`, [simdi])).rows) {
     await kartAc(db, { tur: 'Tedarik Gecikmesi', kategori: 'islem', baslik: `${t.siparis_no} · Teslim 7 Gün Aştı`, oncelik: 'Yüksek', sahipRol: await rolId(db, 'Tedarik Yönetimi Müdürü'), nesneTuru: 'Sipariş', nesneKimligi: t.kimlik }); n++;
   }
+  // YG-869: sözleşmede süre yoksa varsayılan parametre: sipariş kabulü 48 saat, uygunsuzluğa ilk yanıt 48 saat, düzeltici plan 10 gün.
+  const par = async (kod: string, v: number) => Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0]?.deger ?? v);
+  const [kabulSaat, yanitSaat, planGun] = [await par('tedarik_siparis_kabul_saat', 48), await par('tedarik_uygunsuzluk_ilk_yanit_saat', 48), await par('tedarik_duzeltici_plan_gun', 10)];
+  const tdm = await rolId(db, 'Tedarik Yönetimi Müdürü');
+  const yoksa = (tur: string) => `NOT EXISTS (SELECT 1 FROM is_karti k WHERE k.tur = '${tur}' AND k.nesne_kimligi = x.kimlik::text)`;
+  for (const t of (await db.query(`SELECT x.kimlik, x.siparis_no, x.hazirlayan_ref FROM tedarik_siparisi x WHERE x.statu = 'Verildi' AND x.tedarikci_kabul IS NULL AND x.verilme_zamani + make_interval(hours => $2::int) < $1 AND ${yoksa('Tedarikçi Sipariş Kabulü Gecikti')}`, [simdi, kabulSaat])).rows) {
+    await kartAc(db, { tur: 'Tedarikçi Sipariş Kabulü Gecikti', kategori: 'gorev', baslik: `${t.siparis_no} · Tedarikçi ${kabulSaat} Saatte Kabul Etmedi`, ozet: 'Tedarikçiyle görüşünüz; gerekirse sipariş başka tedarikçiye yönlendirilir.', oncelik: 'Yüksek', sahipKullanici: t.hazirlayan_ref, nesneTuru: 'Sipariş', nesneKimligi: t.kimlik }); n++;
+  }
+  const tedarikci = `EXISTS (SELECT 1 FROM kurulus f WHERE f.kimlik = x.sorumlu_firma_ref AND f.kayit_rolu = 'Tedarikçi') AND x.statu NOT IN ('Kapalı', 'Geçersiz')`;
+  for (const u of (await db.query(`SELECT x.kimlik, x.uygunsuzluk_no FROM uygunsuzluk x WHERE ${tedarikci} AND x.firma_yaniti IS NULL AND x.olusturma_zamani + make_interval(hours => $2::int) < $1 AND ${yoksa('Tedarikçi Uygunsuzluk Yanıtı Gecikti')}`, [simdi, yanitSaat])).rows) {
+    await kartAc(db, { tur: 'Tedarikçi Uygunsuzluk Yanıtı Gecikti', kategori: 'gorev', baslik: `${u.uygunsuzluk_no} · Tedarikçi ${yanitSaat} Saatte Yanıt Vermedi`, oncelik: 'Yüksek', sahipRol: tdm, nesneTuru: 'Uygunsuzluk', nesneKimligi: u.kimlik }); n++;
+  }
+  for (const u of (await db.query(`SELECT x.kimlik, x.uygunsuzluk_no FROM uygunsuzluk x WHERE ${tedarikci} AND x.olusturma_zamani + make_interval(days => $2::int) < $1 AND NOT EXISTS (SELECT 1 FROM kok_neden_analizi a JOIN duzeltici_faaliyet f ON f.kok_neden_ref = a.kimlik WHERE a.uygunsuzluk_ref = x.kimlik) AND ${yoksa('Tedarikçi Düzeltici Plan Gecikti')}`, [simdi, planGun])).rows) {
+    await kartAc(db, { tur: 'Tedarikçi Düzeltici Plan Gecikti', kategori: 'gorev', baslik: `${u.uygunsuzluk_no} · Düzeltici Plan ${planGun} Günde Gelmedi`, oncelik: 'Yüksek', sahipRol: tdm, nesneTuru: 'Uygunsuzluk', nesneKimligi: u.kimlik }); n++;
+  }
   return n;
 }
 
 kapanisKaydet('Tedarik Siparişi', async (c, k, karar) => {
   if (karar === 'Onayla') {
-    const s = (await c.query(`UPDATE tedarik_siparisi s SET statu = 'Verildi' FROM kurulus k WHERE s.kimlik = $1 AND k.kimlik = s.kurulus_ref RETURNING s.siparis_no, s.dosya_ref, k.kurumsal_eposta`, [k.nesne_kimligi])).rows[0];
+    const s = (await c.query(`UPDATE tedarik_siparisi s SET statu = 'Verildi', verilme_zamani = now() FROM kurulus k WHERE s.kimlik = $1 AND k.kimlik = s.kurulus_ref RETURNING s.siparis_no, s.dosya_ref, k.kurumsal_eposta`, [k.nesne_kimligi])).rows[0];
     // YG-1514: onaylanan sipariş PDF'i (YATONET 360 Onay Kaydı kutusuyla) tedarikçinin kurumsal adresine ekli gider.
     if (s) await belgeUret(c, { tur: 'Tedarik Siparişi', nesne: k.nesne_kimligi!, dosya: s.dosya_ref, gonder: s.kurumsal_eposta ? { olay: `siparis-pdf:${k.nesne_kimligi}`, eposta: s.kurumsal_eposta, konu: `Tedarik Siparişi: ${s.siparis_no}`, metin: `Tedarik Siparişi: ${s.siparis_no}` } : undefined });
   }

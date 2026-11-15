@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', bim: 'Bilgi İşlem Müdürü', ss: 'Saha Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', bim: 'Bilgi İşlem Müdürü', ss: 'Saha Sorumlusu', ceo1: 'CEO' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -209,6 +209,10 @@ describe('firma adayları, tarama alanı, kapanış (YG-304, YG-916, YG-416)', (
     expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).not.toContain('Açık Tedarik Siparişi');
     await o.sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, statu) VALUES ($1,$2,$3,'T','Y',1,0,1,'2099-01-01','Y','K','G',$4,'Verildi')`, [`SP-${n}`, d.kimlik, f, o.K.ds]);
     expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).toContain('Açık Tedarik Siparişi');
+    // YG-869: 48 saatte kabul etmeyen tedarikçi için siparişi verene görev (bir kez)
+    await o.sup.query(`UPDATE tedarik_siparisi SET statu = 'Verildi', verilme_zamani = now() - interval '49 hours', hazirlayan_ref = $2 WHERE dosya_ref = $1`, [d.kimlik, o.K.ds]);
+    const { tedarikSureIsle } = await import('../src/tedarik.js'); await tedarikSureIsle(o.db); await tedarikSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti k JOIN tedarik_siparisi s ON s.kimlik::text = k.nesne_kimligi WHERE k.tur = 'Tedarikçi Sipariş Kabulü Gecikti' AND s.dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe(1);
   });
 });
 
@@ -485,7 +489,13 @@ describe('sağlayıcı matrisi, parametreler, dışa aktarım, kalıcı hata (YG
     const l = (await o.ist('GET', '/api/parametreler', c)).json() as { kod: string }[]; expect(l.some((x) => x.kod === 'kdv_orani')).toBe(true); expect(l.some((x) => x.kod === 'fiyat_katsayisi')).toBe(false);
     expect((await o.ist('POST', '/api/parametre/fiyat_katsayisi', c, { deger: 2, gerekce: 'x' })).statusCode).toBe(404);
     expect((await o.ist('POST', '/api/parametre/masraf_yemek_eur', c, { deger: 30 })).statusCode).toBe(400);
-    expect((await o.ist('POST', '/api/parametre/masraf_yemek_eur', c, { deger: 30, gerekce: 'Tarife' })).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/parametre/masraf_yemek_eur', await o.gir('gmy'), { deger: 30, gerekce: 'Tarife' })).statusCode).toBe(403); // YG-853
+    const pr = await o.ist('POST', '/api/parametre/masraf_yemek_eur', c, { deger: 30, gerekce: 'Tarife' }); expect(pr.json().durum).toBe('Onaya Gönderildi');
+    expect((await o.ist('POST', '/api/parametre/masraf_yemek_eur', c, { deger: 31, gerekce: 'X' })).statusCode).toBe(409);
+    expect((await o.sup.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'masraf_yemek_eur'`)).rows[0].deger).toBe('25');
+    const pk = await o.kart('Parametre Değişikliği', pr.json().oneri);
+    expect((await o.karar(pk.kimlik, 'gmy', 'Onaya Gönder', 'Uygun')).statusCode).toBe(200);
+    expect((await o.karar(pk.kimlik, 'ceo1', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT eski, yeni FROM parametre_gecmisi WHERE kod = 'masraf_yemek_eur'`)).rows.map((x) => [Number(x.eski), Number(x.yeni)])).toEqual([[25, 30]]);
     expect((await o.ist('GET', '/api/parametreler', await o.gir('ds'))).statusCode).toBe(404);
   });

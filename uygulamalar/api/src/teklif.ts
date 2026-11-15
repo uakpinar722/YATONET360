@@ -315,9 +315,23 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       await c.query(`INSERT INTO kartela_surumu (surum, durum, hazirlayan_ref) VALUES ($1,'Taslak',$2)`, [sur, o.kullanici]);
       await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm, resmi_onay_gerekebilir, iscilik_normu_saat, fire_orani, norm_kaynagi) SELECT kod, $1, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm, resmi_onay_gerekebilir, iscilik_normu_saat, fire_orani, norm_kaynagi FROM kartela_kalemi WHERE surum = $2`, [sur, kaynak]);
+      await kartelaOnerileriniIsle(c, sur); // YG-856
       return { surum: sur };
     });
   });
+  // YG-856: fiyat güncellemesini Tedarik veya Teknik birim önerir (mevcut maliyet gösterilmez, YG-1081); Ticari İşler Direktörü onaylar.
+  s.post('/kartela/fiyat-onerisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; maliyet?: number; tarih?: string; kaynak?: string; gerekce?: string };
+    if (!(await roller(o.kullanici)).some((r) => ['Tedarik Yönetimi Müdürü', 'Tedarik Müdür Yardımcısı', 'Tedarik Yöneticisi', 'Tedarik Sorumlusu', 'Teknik Müdür', 'Teknik Müdür Yardımcısı', 'Teknik Yönetici', 'Teknik Uzman'].includes(r))) return y.code(403).send({ hata: 'Kartela fiyat güncellemesini Tedarik veya Teknik birim önerir.' });
+    if (!g.kod || !(Number(g.maliyet) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.kaynak?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Kalem kodu, pozitif maliyet, maliyet tarihi, kaynak ve gerekçe zorunludur.' });
+    if (!(await b.db.query(`SELECT 1 FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [g.kod, await yururlukSurumu(b.db)])).rowCount) return y.code(404).send({ hata: 'Kalem yürürlükteki kartelada bulunamadı.' });
+    return islem(async (c) => {
+      const r = (await c.query(`INSERT INTO kartela_fiyat_onerisi (kod, maliyet_eur, maliyet_tarihi, kaynak, gerekce, oneren_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.kod, Number(g.maliyet), g.tarih, g.kaynak!.trim(), g.gerekce!.trim(), o.kullanici])).rows[0];
+      await kartAc(c, { tur: 'Kartela Fiyat Önerisi', baslik: `Kartela Fiyat Önerisi · ${g.kod}`, ozet: `${g.gerekce!.trim()} · Kaynak: ${g.kaynak!.trim()}`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Ticari İşler Direktörü')], nesneTuru: 'Kartela Fiyat Önerisi', nesneKimligi: r.kimlik });
+      return { kimlik: r.kimlik, durum: 'Onayda' };
+    });
+  });
+
   s.post('/kartela/taslak/maliyet', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; maliyet?: number; tarih?: string; kaynak?: string };
     if (!(await kartelaYetkili(o.kullanici))) return yok(y);
@@ -781,3 +795,21 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   });
 
 }
+
+/** YG-856: onaylanan kartela fiyat önerisi taslak sürüme yazılır; taslak yoksa bekler. */
+async function kartelaOnerileriniIsle(c: Db, sur: string) {
+  for (const o of (await c.query(`SELECT * FROM kartela_fiyat_onerisi WHERE durum = 'Taslak Bekliyor' ORDER BY olusturma_zamani`)).rows) {
+    await c.query(`UPDATE kartela_kalemi SET maliyet_eur = $3, maliyet_tarihi = $4, kaynak_norm = $5 WHERE kod = $1 AND surum = $2`, [o.kod, sur, o.maliyet_eur, o.maliyet_tarihi, o.kaynak]);
+    await c.query(`UPDATE kartela_fiyat_onerisi SET durum = 'Taslağa İşlendi', islenen_surum = $2 WHERE kimlik = $1`, [o.kimlik, sur]);
+  }
+}
+
+kapanisKaydet('Kartela Fiyat Önerisi', async (c, k, karar) => {
+  const o = (await c.query(`SELECT kimlik FROM kartela_fiyat_onerisi WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi])).rows[0];
+  if (!o) return;
+  if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') { await c.query(`UPDATE kartela_fiyat_onerisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [o.kimlik]); return; }
+  if (karar !== 'Onayla') return;
+  await c.query(`UPDATE kartela_fiyat_onerisi SET durum = 'Taslak Bekliyor' WHERE kimlik = $1`, [o.kimlik]);
+  const sur = (await c.query(`SELECT surum FROM kartela_surumu WHERE durum = 'Taslak' ORDER BY surum DESC LIMIT 1`)).rows[0]?.surum as string | undefined;
+  if (sur) await kartelaOnerileriniIsle(c, sur);
+});

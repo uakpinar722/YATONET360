@@ -246,6 +246,15 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     const r = await o.ist('POST', '/api/masraf', c, M);
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ odenecek: 25, kesilen: 25 });
     expect((await o.ist('POST', '/api/masraf', c, M)).statusCode).toBe(409);
+    // YG-922: yakıt girilmez; km Saha Sorumlusu dışında ön onay ister
+    expect((await o.ist('POST', '/api/masraf', c, { ...M, tur: 'Yakıt', belgeOzeti: 'F2' })).statusCode).toBe(400);
+    const K = { ...M, tur: 'Km', miktar: 100, tutarTl: 400, belgeOzeti: 'F3' };
+    expect((await o.ist('POST', '/api/masraf', c, K)).json().hata).toContain('özel araç');
+    expect((await o.ist('POST', '/api/ozel-arac-onayi', c, { tarih: '2020-01-01', guzergah: 'Bodrum', gerekce: 'Keşif' })).statusCode).toBe(409);
+    const oa = await o.ist('POST', '/api/ozel-arac-onayi', c, { tarih: bug, guzergah: 'Marmaris–Bodrum', gerekce: 'Keşif' }); expect(oa.statusCode, oa.body).toBe(200);
+    expect((await o.kart('Özel Araç Kullanımı', oa.json().kimlik)).durum).toBe('Bekliyor');
+    await o.sup.query(`UPDATE ozel_arac_onayi SET durum = 'Onaylandı' WHERE kimlik = $1`, [oa.json().kimlik]);
+    expect((await o.ist('POST', '/api/masraf', c, K)).statusCode).toBe(200);
   });
 });
 

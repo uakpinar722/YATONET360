@@ -391,6 +391,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect((await o.sup.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].is_emri_no).toBe(`${d.dosyaNo}-KN01`);
     const p = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, oy, { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10, ...x });
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('ds'), { tur: 'ON' })).statusCode).toBe(403);
+    expect((await p({ baslangic: '2026-12-10', bitis: '2026-12-01' })).json().hata).toContain('başlangıç tarihinden önce'); // YG-1253
     expect((await p({})).json().hata).toContain('Onaylanmış teklif');
     expect((await p({ tur: 'EK' })).json().hata).toContain('ana iş emrine');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('ty'), { tur: 'KN' })).statusCode).toBe(403);
@@ -456,7 +457,15 @@ describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
     const c = await o.gir('tid');
     const eski = (await o.ist('GET', '/api/kartela/maliyet', c)).json().surum as string;
     const etk = (await o.sup.query(`SELECT kod FROM kartela_kalemi WHERE surum = $1 LIMIT 1`, [eski])).rows[0].kod as string; await o.sup.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = true WHERE kod = $1`, [etk]);
+    { // YG-856: Tedarik/Teknik önerir, TİD onaylar; taslak yoksa bekler, taslak açılınca işlenir
+      const fo = '/api/kartela/fiyat-onerisi'; const mevcut = Number((await o.sup.query(`SELECT maliyet_eur FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [etk, eski])).rows[0].maliyet_eur); const P = { kod: etk, maliyet: mevcut, tarih: '2026-11-10', kaynak: 'Tedarikçi teklifi', gerekce: 'Fiyat artışı' };
+      expect((await o.ist('POST', fo, await o.gir('ts'), P)).statusCode).toBe(403);
+      expect((await o.ist('POST', fo, await o.gir('tu'), { ...P, kaynak: '' })).statusCode).toBe(400);
+      const fr = await o.ist('POST', fo, await o.gir('tu'), P); expect(fr.statusCode, fr.body).toBe(200);
+      expect((await o.karar((await o.kart('Kartela Fiyat Önerisi', fr.json().kimlik)).kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT durum FROM kartela_fiyat_onerisi WHERE kimlik = $1`, [fr.json().kimlik])).rows[0].durum).toBe('Taslak Bekliyor'); }
     const r = await o.ist('POST', '/api/kartela/taslak', c, {}); expect(r.statusCode, r.body).toBe(200); const sur = r.json().surum as string;
+    expect((await o.sup.query(`SELECT kaynak_norm FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [etk, sur])).rows[0].kaynak_norm).toBe('Tedarikçi teklifi'); // YG-856
     expect((await o.sup.query(`SELECT resmi_onay_gerekebilir e FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [etk, sur])).rows[0].e).toBe(true); await o.sup.query(`UPDATE kartela_kalemi SET resmi_onay_gerekebilir = false WHERE kod = $1`, [etk]); // YG-1441: etiket yeni sürüme taşınır
     expect((await o.ist('POST', '/api/kartela/taslak', c, {})).statusCode).toBe(409);
     const k = (await o.sup.query(`SELECT kod, maliyet_eur FROM kartela_kalemi WHERE surum = $1 AND maliyet_eur > 0 LIMIT 1`, [sur])).rows[0];

@@ -585,6 +585,20 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-920, YG-921: masraf; limit EUR, form TL; 30 gün sınırı; aşan ödenmez; belgesiz ve mükerrer kabul edilmez; 250 EUR üstü TİD.
+  // YG-922: Saha Sorumlusu dışındaki personel özel araç kullanımını yolculuktan önce birim amirinin onayına sunar.
+  s.post('/ozel-arac-onayi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { tarih?: string; guzergah?: string; gerekce?: string };
+    if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.guzergah?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Yolculuk tarihi, güzergâh ve gerekçe zorunludur.' });
+    if (g.tarih! < new Date().toISOString().slice(0, 10)) return y.code(409).send({ hata: 'Özel araç kullanımı yolculuktan önce onaya sunulur.' });
+    return islem(async (c) => {
+      const r = (await c.query(`INSERT INTO ozel_arac_onayi (personel_ref, tarih, guzergah, gerekce) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [o.kullanici, g.tarih, g.guzergah!.trim(), g.gerekce!.trim()])).rows[0];
+      const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
+      await kartAc(c, { tur: 'Özel Araç Kullanımı', baslik: `Özel Araç Kullanımı · ${g.tarih!.split('-').reverse().join('.')}`, ozet: `${g.guzergah!.trim()} · ${g.gerekce!.trim()}`, hazirlayan: o.kullanici, zincir: [await onayMakami(c, rl.kimlik)], nesneTuru: 'Özel Araç Onayı', nesneKimligi: r.kimlik });
+      return { kimlik: r.kimlik, durum: 'Onayda' };
+    });
+  });
+
   s.post('/masraf', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string; belgeTuru?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
@@ -592,6 +606,12 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!g.belgeOzeti?.trim()) return y.code(400).send({ hata: 'Masraf için belge numarasını yazmanızı rica ederiz.' });
     if (g.belgeTuru && !['Kağıt Fiş', 'e-Fatura', 'e-Arşiv'].includes(g.belgeTuru)) return y.code(400).send({ hata: 'Belge türü geçersizdir.' }); // YG-1622
     if ((Date.now() - new Date(g.tarih).getTime()) / 86_400_000 > 30) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
+    // YG-922: şirket aracı tahsis edilmez, yakıt masraf türü değildir; km bedeli Saha Sorumlusuna açıktır, diğer personelde özel araç kullanımı önceden onaylanmış olmalıdır.
+    if (/yakıt|akaryakıt/i.test(g.tur)) return y.code(400).send({ hata: 'Şirket aracı tahsis edilmediğinden yakıt masrafı girilmez; özel araçla yolculukta km bedeli kullanılır.' });
+    if (g.tur === 'Km') {
+      const ss = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Saha Sorumlusu'`, [o.kullanici])).rowCount;
+      if (!ss && !(await b.db.query(`SELECT 1 FROM ozel_arac_onayi WHERE personel_ref = $1 AND tarih = $2::date AND durum = 'Onaylandı'`, [o.kullanici, g.tarih])).rowCount) return y.code(409).send({ hata: 'Km bedeli için o günkü özel araç kullanımının önceden onaylanmış olması gerekir.' });
+    }
     const eur = R2(Number(g.tutarTl) / Number(g.kur));
     const lim = { km: await parametre(b.db, 'masraf_km_eur'), yemek: await parametre(b.db, 'masraf_yemek_eur'), konaklama: await parametre(b.db, 'masraf_konaklama_eur') };
     const od = masrafOdenecek(g.tur, eur, Number(g.miktar ?? 1), lim);
@@ -625,3 +645,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     };
   });
 }
+
+kapanisKaydet('Özel Araç Kullanımı', async (c, k, karar) => { // YG-922
+  if (karar === 'Onayla' || karar === 'Reddet') await c.query(`UPDATE ozel_arac_onayi SET durum = $2 WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi']);
+});

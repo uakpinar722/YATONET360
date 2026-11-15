@@ -41,7 +41,12 @@ kapanisKaydet('Kart Önerisi', async (c, k, karar) => {
   if (!o) return;
   if (karar === 'Reddet') { await c.query(`UPDATE kart_onerisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [o.kimlik]); return; }
   if (karar !== 'Onayla') return;
-  const kod = `KO-${String(await sayac(c, 'kart_onerisi')).padStart(5, '0')}`; const sur = await yururlukSurumu(c);
+  // YG-857: kod tali branş koduna bağlıdır (<tali kod>-NN); NN tüm sürümlerde ve önerilerde verilmiş en büyük numaranın bir fazlası, kod yeniden kullanılmaz.
+  const on = (await c.query(`SELECT regexp_replace(kod, '-[0-9]+$', '') onek FROM kartela_kalemi WHERE ana_brans = $1 AND alt_brans = $2 AND tali_brans = $3 ORDER BY kod LIMIT 1`, [o.ana_brans, o.alt_brans, o.tali_brans])).rows[0]?.onek as string | undefined;
+  let kod: string;
+  if (on) { const enb = Number((await c.query(`SELECT coalesce(max((regexp_match(kod, '-([0-9]+)$'))[1]::int), 0) n FROM (SELECT kod FROM kartela_kalemi WHERE kod LIKE $1 || '-%' UNION ALL SELECT kod FROM kart_onerisi WHERE kod LIKE $1 || '-%') x`, [on])).rows[0].n); kod = `${on}-${String(enb + 1).padStart(2, '0')}`; }
+  else kod = `KO-${String(await sayac(c, 'kart_onerisi')).padStart(5, '0')}`; // tali kodu bulunamayan eski öneriler için
+  const sur = await yururlukSurumu(c);
   await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,(now() AT TIME ZONE 'Europe/Istanbul')::date,'Kart önerisi')`, [kod, sur, o.ana_brans, o.alt_brans, o.tali_brans, o.islem, o.birim, o.maliyet_eur]);
   await c.query(`UPDATE kart_onerisi SET durum = 'Eklendi', kod = $2 WHERE kimlik = $1`, [o.kimlik, kod]);
   await bildir(c, { olay: `kart-oneri:${o.kimlik}`, kullanicilar: [o.hazirlayan_ref], baslik: `Kartela Kodu Hazır: ${kod}` });
@@ -150,6 +155,8 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2)`, [o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']])).rowCount) return y.code(403).send({ hata: 'Kart önerisini Teknik Uzman hazırlar.' });
     if (!g.ana?.trim() || !g.alt?.trim() || !g.tali?.trim() || !g.islem?.trim() || !g.birim?.trim() || !(Number(g.maliyet) > 0) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Branş, işlem, birim, pozitif maliyet ve gerekçeyi yazmanızı rica ederiz.' }); // YG-859
+    // YG-857: yeni kalem LGM-2026-013 listesindeki bir tali branşa bağlanır; kod o tali koddan üretilir.
+    if (!(await b.db.query(`SELECT 1 FROM kartela_kalemi WHERE ana_brans = $1 AND alt_brans = $2 AND tali_brans = $3 LIMIT 1`, [g.ana.trim(), g.alt.trim(), g.tali.trim()])).rowCount) return y.code(400).send({ hata: 'Ana, alt ve tali branşı kartelada tanımlı branş listesinden seçiniz; kalem kodu tali branş koduna bağlanır.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO kart_onerisi (dosya_ref, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, gerekce, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, g.ana!.trim(), g.alt!.trim(), g.tali!.trim(), g.islem!.trim(), g.birim!.trim(), g.maliyet, g.gerekce!.trim(), o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Kart Önerisi', baslik: `Kartela Önerisi · ${g.islem!.trim()}`, ozet: g.gerekce!.trim(), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Ticari İşler Direktörü')], nesneTuru: 'Kart Önerisi', nesneKimligi: r.kimlik });

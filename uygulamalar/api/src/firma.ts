@@ -212,6 +212,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.yer?.trim() || !g.kapsam?.trim()) return y.code(400).send({ hata: 'Uygulama yeri ve kapsam zorunludur.' });
     if (['ON', 'EK', 'GR'].includes(g.tur!) && !g.teknikSonuc?.trim()) return y.code(400).send({ hata: 'Beklenen teknik sonucu yazınız (işin bitiminde ulaşılacak durum).' }); // YG-320
     if (!g.firma || !UUID.test(g.firma)) return y.code(400).send({ hata: 'Firmayı seçiniz.' });
+    if (g.baslangic && g.bitis && new Date(g.bitis).getTime() < new Date(g.baslangic).getTime()) return y.code(400).send({ hata: 'Hedef bitiş tarihi başlangıç tarihinden önce olamaz.' }); // YG-1253
     // YG-311: aynı dosyada aynı türdeki işi reddeden firmaya iş, gerekçesi yazılmadan yeniden atanamaz; yeniden atama denetim izine geçer.
     const red = (await b.db.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1 AND kurulus_ref = $2 AND is_emri_turu = $3 AND firma_yaniti = 'Ret' LIMIT 1`, [id, g.firma, g.tur])).rows[0];
     if (red && !(g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi?.trim()) return y.code(409).send({ hata: `Firma ${red.is_emri_no} iş emrini reddetmiştir; aynı firmaya yeniden atama için gerekçe yazınız.`, yenidenAtama: true });
