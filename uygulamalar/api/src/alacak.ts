@@ -292,7 +292,7 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
     if (!(await rolVar(o.kullanici, ['Sicil Sorumlusu', 'Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı']))) return y.code(403).send({ hata: 'Sözleşme kaydını Sicil Sorumlusu veya Firma Yönetimi açar.' });
     const turler = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_SOZLESME_TURU'`)).rows.map((r) => r.deger as string);
     if (!turler.includes(g.tur ?? '') || !g.yururluk) return y.code(400).send({ hata: 'Sözleşme türü ve yürürlük tarihini girmenizi rica ederiz.' });
-    if (g.bitis && g.bitis < g.yururluk) return y.code(400).send({ hata: 'Bitiş tarihi yürürlükten önce olamaz.' });
+    if (g.bitis && g.bitis < g.yururluk) return y.code(400).send({ hata: 'Bitiş tarihini yürürlük tarihinden sonra seçmenizi rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1`, [id])).rowCount) return yok(y);
     await (await import('./uyum.js')).uyumOlay(b.db, 'sozlesme', 'Kuruluş', id); // YG-1546
     const r = await b.db.query(`INSERT INTO sozlesme_kaydi (kurulus_ref, sozlesme_turu, yururluk, bitis, kaydeden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, g.tur, g.yururluk, g.bitis || null, o.kullanici]);

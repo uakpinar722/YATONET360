@@ -124,6 +124,8 @@ describe('marka-model (YG-1527, YG-1529)', () => {
     expect((await sup.query(`SELECT count(*)::int n FROM yat_marka_model`)).rows[0].n).toBe(15384);
     const c = await gir('ds');
     expect((await ist('GET', '/api/yat/marka?q=3D', c)).json().some((m: any) => m.marka === '3D Tender')).toBe(true);
+    { const l = (await ist('GET', '/api/yat/marka?q=ma', c)).json() as { marka: string }[]; const i0 = l.findIndex((m) => !m.marka.toLowerCase().startsWith('ma')); // YG-1558: baştan eşleşenler önce
+      if (i0 >= 0) expect(l.slice(i0).every((m) => !m.marka.toLowerCase().startsWith('ma'))).toBe(true); }
     const m = (await ist('GET', `/api/yat/model?marka=${encodeURIComponent('3D Tender')}&q=DREAM%207`, c)).json()[0];
     expect(m.boy_m).toBe(7.47); expect(m.govde_malzemesi).toBe('Fiber');
     const t = await ihbar({ yat: { adi: 'Katalog Yat', markaModelId: m.kimlik, bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });

@@ -391,7 +391,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect((await o.sup.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].is_emri_no).toBe(`${d.dosyaNo}-KN01`);
     const p = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, oy, { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10, ...x });
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('ds'), { tur: 'ON' })).statusCode).toBe(403);
-    expect((await p({ baslangic: '2026-12-10', bitis: '2026-12-01' })).json().hata).toContain('başlangıç tarihinden önce'); // YG-1253
+    expect((await p({ baslangic: '2026-12-10', bitis: '2026-12-01' })).json().hata).toContain('başlangıç tarihinden sonra'); // YG-1253
     expect((await p({})).json().hata).toContain('Onaylanmış teklif');
     expect((await p({ tur: 'EK' })).json().hata).toContain('ana iş emrine');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('ty'), { tur: 'KN' })).statusCode).toBe(403);

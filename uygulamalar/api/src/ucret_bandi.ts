@@ -37,9 +37,9 @@ export function ucretBandiYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (!(await rolVar(o.kullanici, ['CEO', 'Ticari İşler Direktörü']))) return yok(y);
     const g = (i.body ?? {}) as { rol?: string; alt?: number; ust?: number };
     const alt = Number(g.alt); const ust = Number(g.ust);
-    if (!g.rol || !(alt > 0) || !(ust >= alt)) return y.code(400).send({ hata: 'Rol, alt ve üst sınırı giriniz; üst sınır alt sınırdan küçük olamaz.' });
+    if (!g.rol || !(alt > 0) || !(ust >= alt)) return y.code(400).send({ hata: 'Rol, alt ve üst sınırı giriniz; üst sınırı alt sınıra eşit veya büyük girmenizi rica ederiz.' });
     const a = await asgari(); if (a === null) return y.code(409).send({ hata: 'Önce İnsan Kaynakları Müdürünün güncel asgari ücreti girmesi gerekir.' });
-    if (alt < a) return y.code(400).send({ hata: 'Alt sınır asgari ücretin altında olamaz.' });
+    if (alt < a) return y.code(400).send({ hata: 'Alt sınırı asgari ücret veya üzerinde girmenizi rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM rol WHERE kimlik = $1 AND kullanici_gruplari = 'LGM İç Rolü'`, [g.rol])).rowCount) return y.code(400).send({ hata: 'Rol bulunamadı.' });
     const eski = (await b.db.query(`SELECT alt_tl, ust_tl FROM ucret_bandi WHERE rol_ref = $1`, [g.rol])).rows[0] ?? null;
     await b.db.query(`INSERT INTO ucret_bandi (rol_ref, alt_tl, ust_tl, giren_ref) VALUES ($1,$2,$3,$4) ON CONFLICT (rol_ref) DO UPDATE SET alt_tl = EXCLUDED.alt_tl, ust_tl = EXCLUDED.ust_tl, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.rol, alt, ust, o.kullanici]);
@@ -61,7 +61,7 @@ export function ucretBandiYollari(s: FastifyInstance, b: Baglam) {
     const g = (i.body ?? {}) as { aday?: string; rol?: string; brut?: number; gerekce?: string };
     const brut = Number(g.brut); const aday = (g.aday ?? '').trim();
     if (!aday || !g.rol || !(brut > 0)) return y.code(400).send({ hata: 'Aday, rol ve brüt ücreti giriniz.' });
-    const a = await asgari(); if (a !== null && brut < a) return y.code(400).send({ hata: 'Ücret asgari ücretin altında olamaz.' });
+    const a = await asgari(); if (a !== null && brut < a) return y.code(400).send({ hata: 'Ücreti asgari ücret veya üzerinde girmenizi rica ederiz.' });
     const bant = (await b.db.query(`SELECT alt_tl, ust_tl FROM ucret_bandi WHERE rol_ref = $1`, [g.rol])).rows[0];
     if (!bant) return y.code(409).send({ hata: 'Bu rol için ücret bandı tanımlanmamıştır; Ticari İşler Direktörüne başvurunuz.' });
     const disi = brut < Number(bant.alt_tl) || brut > Number(bant.ust_tl);

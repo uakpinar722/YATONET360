@@ -77,7 +77,7 @@ export function kurumsalYollari(s: FastifyInstance, b: Baglam) {
     if (!u.yetkili) return y.code(403).send({ hata: 'Kullanıcıyı kurum yetkiliniz ekler.' });
     if (!g.ad?.trim() || !g.eposta || !EPOSTA.test(g.eposta.trim()) || !ROLLER.includes(g.rol ?? '')) return y.code(400).send({ hata: 'Ad soyad, geçerli e-posta ve rolü girmenizi rica ederiz.' });
     if (g.rol === 'Onaylayan' && !(Number(g.sinir) >= 0)) return y.code(400).send({ hata: 'Onaylayan için onay sınırını girmenizi rica ederiz.' });
-    if (g.rol === 'Onaylayan' && Number(g.sinir) > Number(u.ek2_onay_siniri)) return y.code(400).send({ hata: 'Onay sınırı kurumunuzun Ek-2 sınırının üzerinde olamaz.' });
+    if (g.rol === 'Onaylayan' && Number(g.sinir) > Number(u.ek2_onay_siniri)) return y.code(400).send({ hata: 'Onay sınırını kurumunuzun Ek-2 sınırına eşit veya altında belirlemenizi rica ederiz.' });
     if (await adresVar(g.eposta.trim())) return y.code(409).send({ hata: 'Bu e-posta adresiyle kayıtlı hesap bulunmaktadır.' });
     const c = await b.db.connect();
     try {

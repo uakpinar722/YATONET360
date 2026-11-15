@@ -299,7 +299,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if (d.kademe === 'Fesih' ? !(await rolVar(o.kullanici, ['CEO'])) : !(await rolVar(o.kullanici, [IKM]))) return y.code(403).send({ hata: d.kademe === 'Fesih' ? 'Fesih kararını CEO verir.' : 'Kurul kararını İnsan Kaynakları Müdürü kaydeder.' });
     if (d.karar) return y.code(409).send({ hata: 'Karar kaydedilmiştir.' });
     if (!g.karar?.trim()) return y.code(400).send({ hata: 'Kararı yazmanızı rica ederiz.' });
-    if (!d.savunma && new Date(d.savunma_son) >= new Date(gunStr(new Date()))) return y.code(409).send({ hata: 'Savunma alınmadan veya süresi dolmadan karar kaydedilemez.' });
+    if (!d.savunma && new Date(d.savunma_son) >= new Date(gunStr(new Date()))) return y.code(409).send({ hata: 'Karar, savunma alındıktan veya savunma süresi dolduktan sonra kaydedilir.' });
     if (d.kademe === 'Ücret Kesme' && !(Number(g.gundelik) > 0 && Number(g.gundelik) <= 2)) return y.code(409).send({ hata: 'Ücret kesme bir ayda iki gündeliği aşamaz.' });
     if (d.hizli_yol) {
       const son = await isGunuSonu(b.db, new Date(d.ogrenme_tarihi), 6);

@@ -7,6 +7,13 @@ import type { Dil } from './metin.js';
 const KOK = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 // YG-701 resmî unvan. İletişim ve sicil bilgileri NUM-1 gereği şirket bilgileri (ŞB) kesinleşince parametreden gelir; YG-676 o zaman tamamlanır.
 const UNVAN = 'LİMİT GLOBAL MARINE Denizcilik Onarım ve Teknik Hizmetler Sanayi ve Ticaret Limited Şirketi';
+/** YG-1750: şirket bilgileri kesinleşene kadar alt bilgide yalnız resmî unvan; web, telefon ve sicil bilgileri sirket_bilgisi'nden girildiğinde eklenir. */
+let altBilgiEki = '';
+export async function sirketAltBilgisiYukle(db: import('pg').Pool | import('pg').PoolClient): Promise<string> {
+  const m = new Map((await db.query(`SELECT anahtar, deger FROM sirket_bilgisi WHERE anahtar IN ('web_adresi', 'genel_telefon', 'mersis_no', 'ticaret_sicil_no')`)).rows.map((r) => [r.anahtar as string, String(r.deger).trim()]));
+  altBilgiEki = [m.get('web_adresi'), m.get('genel_telefon'), m.get('mersis_no') ? `MERSİS: ${m.get('mersis_no')}` : '', m.get('ticaret_sicil_no') ? `Ticaret Sicil No: ${m.get('ticaret_sicil_no')}` : ''].filter(Boolean).join(' · ');
+  return altBilgiEki;
+}
 
 const ETIKET = {
   tr: { sayfa: 'Sayfa', belgeNo: 'Belge No', dosyaNo: 'Dosya No', tarih: 'Tarih', surum: 'Sürüm', icindekiler: 'İçindekiler', onay: 'YATONET 360 Onay Kaydı', onaylayan: 'Onaylayan', zaman: 'Tarih-Saat', kanal: 'Kanal', kod: 'Onay Kodu', ic: 'İÇ KAYIT · DIŞARIYA GÖNDERİLMEZ' },
@@ -51,7 +58,7 @@ function stil(t: BelgeTanim, kapak: boolean) {
   const e = ETIKET[t.dil];
   const ust = `${t.kod ? `${t.kod} — ` : ''}${t.ad}`;
   const sag = `${t.no} · ${t.surum}`;
-  const alt = `${UNVAN}${t.isaret ? `\n${t.isaret}` : ''}`;
+  const alt = `${UNVAN}${altBilgiEki ? ` · ${altBilgiEki}` : ''}${t.isaret ? `\n${t.isaret}` : ''}`;
   const altLogo = gorsel('uygulamalar/web/public/yatonet.png');
   return `
 @page { size: A4; margin: 21mm 16mm 25mm;

@@ -145,6 +145,13 @@ describe('teklif maddeleri (YG-709)', () => {
 });
 
 describe('gizlilik işareti (YG-610)', () => {
+  it('alt bilgiye şirket bilgileri yalnız girilmişse eklenir (YG-1750)', async () => {
+    const { sirketAltBilgisiYukle } = await import('../src/pdf.js');
+    expect(await sirketAltBilgisiYukle(o.db)).toBe('');
+    await o.sup.query(`INSERT INTO sirket_bilgisi VALUES ('mersis_no', '0123456789012345') ON CONFLICT (anahtar) DO UPDATE SET deger = EXCLUDED.deger`);
+    expect(await sirketAltBilgisiYukle(o.db)).toBe('MERSİS: 0123456789012345');
+    await o.sup.query(`DELETE FROM sirket_bilgisi WHERE anahtar = 'mersis_no'`); expect(await sirketAltBilgisiYukle(o.db)).toBe('');
+  });
   it('üretilen belgenin alt bilgisinde gizlilik sınıfı ve dosya numarası', () => {
     expect(gizlilikIsareti('Gizli', 'LGM-2026-11-0001', 'tr')).toBe('Gizlilik: Gizli · Dosya No: LGM-2026-11-0001');
     expect(gizlilikIsareti('Kritik', 'LGM-2026-11-0001', 'en')).toBe('Classification: Strictly Confidential · File No: LGM-2026-11-0001');

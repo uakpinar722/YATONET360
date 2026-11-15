@@ -76,8 +76,10 @@ export async function yatBulVeyaAc(c: Db, g: YatGirdisi, kullanici: string): Pro
   const md = g.markaDiger?.trim(); const mo = g.modelDiger?.trim();
   if (!mm && md && mo && !/^bilinmiyor$/i.test(md) && !/^bilinmiyor$/i.test(mo) && !(await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Marka Model Onayı' AND durum = 'Bekliyor' AND lower(ozet) = lower($1)`, [`${md} / ${mo}`])).rowCount) {
     const { kartAc } = await import('./is_motoru.js');
+    // YG-1528: Teknik Müdür teknik bilgiler için görüş verir (Onaya Gönder), BT ve Firma Yönetimi Direktörü ana veriye eklemeyi onaylar.
     const rol = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Teknik Müdür'`)).rows[0]?.kimlik as string | undefined;
-    if (rol) await kartAc(c, { tur: 'Marka Model Onayı', baslik: `Marka–Model Listesine Ekleme · ${md} ${mo}`, ozet: `${md} / ${mo}`, hazirlayan: kullanici, zincir: [rol], nesneTuru: 'Yat', nesneKimligi: rows[0].kimlik });
+    const btd = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'`)).rows[0]?.kimlik as string | undefined;
+    if (rol) await kartAc(c, { tur: 'Marka Model Onayı', baslik: `Marka–Model Listesine Ekleme · ${md} ${mo}`, ozet: `${md} / ${mo}`, hazirlayan: kullanici, zincir: btd ? [rol, btd] : [rol], nesneTuru: 'Yat', nesneKimligi: rows[0].kimlik });
   }
   return { kimlik: rows[0].kimlik, yeni: true };
 }
@@ -85,11 +87,11 @@ export async function yatBulVeyaAc(c: Db, g: YatGirdisi, kullanici: string): Pro
 kapanisKaydet('Marka Model Onayı', async (c, k, karar) => {
   const [md, mo] = String(k.ozet ?? '').split(' / ').map((x) => x.trim());
   if (!md || !mo) return;
-  if (karar === 'Reddet') { await c.query(`UPDATE yat SET diger_onay_durumu = 'Reddedildi' WHERE marka_model_ref IS NULL AND lower(marka_diger) = lower($1) AND lower(model_diger) = lower($2)`, [md, mo]); return; }
+  if (karar === 'Reddet') { await c.query(`UPDATE yat SET diger_onay_durumu = 'Onaylanmadı – serbest metin' WHERE marka_model_ref IS NULL AND lower(marka_diger) = lower($1) AND lower(model_diger) = lower($2)`, [md, mo]); return; } // YG-1528
   if (karar !== 'Onayla') return;
   const mk = (await c.query(`SELECT marka_kodu FROM yat_marka_model WHERE lower(marka) = lower($1) LIMIT 1`, [md])).rows[0]?.marka_kodu
     ?? `MRK-${String(Number((await c.query(`SELECT coalesce(max(substring(marka_kodu from 5)::int), 0) n FROM yat_marka_model WHERE marka_kodu ~ '^MRK-[0-9]+$'`)).rows[0].n) + 1).padStart(4, '0')}`;
-  const id = (await c.query(`INSERT INTO yat_marka_model (marka_kodu, marka, model, kaynak, durum) VALUES ($1,$2,$3,'Geçici kayıt onayı','Tamam') ON CONFLICT (lower(marka), lower(model)) DO UPDATE SET guncelleme_zamani = now() RETURNING kimlik`, [mk, md, mo])).rows[0].kimlik;
+  const id = (await c.query(`INSERT INTO yat_marka_model (marka_kodu, marka, model, kaynak, fotograf, teknik_veri, durum) VALUES ($1,$2,$3,'Geçici kayıt onayı','Yok','Yok','Fotoğraf ve teknik eksik') ON CONFLICT (lower(marka), lower(model)) DO UPDATE SET guncelleme_zamani = now() RETURNING kimlik`, [mk, md, mo])).rows[0].kimlik;
   await c.query(`UPDATE yat SET marka_model_ref = $3, diger_onay_durumu = 'Onaylandı' WHERE marka_model_ref IS NULL AND lower(marka_diger) = lower($1) AND lower(model_diger) = lower($2)`, [md, mo, id]);
 });
 
@@ -110,12 +112,12 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
   // YG-1527: yazdıkça daralan liste.
   s.get('/yat/marka', oturumlu, async (i) => {
     const a = q((i.query as { q?: string }).q);
-    return (await b.db.query(`SELECT marka, min(marka_kodu) AS kod, count(*)::int AS model_sayisi FROM yat_marka_model WHERE $1 = '' OR lower(marka) LIKE lower($1) || '%' OR lower(marka) LIKE '%' || lower($1) || '%' GROUP BY marka ORDER BY lower(marka) LIMIT 30`, [a])).rows;
+    return (await b.db.query(`SELECT marka, min(marka_kodu) AS kod, count(*)::int AS model_sayisi FROM yat_marka_model WHERE $1 = '' OR lower(marka) LIKE lower($1) || '%' OR lower(marka) LIKE '%' || lower($1) || '%' GROUP BY marka ORDER BY CASE WHEN lower(marka) LIKE lower($1) || '%' THEN 0 WHEN lower(marka) LIKE '% ' || lower($1) || '%' OR lower(marka) LIKE '%-' || lower($1) || '%' THEN 1 ELSE 2 END, lower(marka) LIMIT 30` /* YG-1558: baştan, kelime başı, içeren */, [a])).rows;
   });
   s.get('/yat/model', oturumlu, async (i) => {
     const { marka, q: a } = i.query as { marka?: string; q?: string };
     const lgm = i.oturum!.grup === 'LGM İç Rolü'; // YG-1532
-    return (await b.db.query(`SELECT kimlik, model, tekne_turu, boy_m, govde_malzemesi FROM yat_marka_model WHERE lower(marka) = lower($1) AND ($2 = '' OR lower(model) LIKE '%' || lower($2) || '%') ORDER BY lower(model) LIMIT 50`, [q(marka), q(a)])).rows.map((r) => (lgm ? { ...r, tur: anaVeriTuru(r.tekne_turu), tekne_turu: undefined, boy_m: r.boy_m === null ? null : Number(r.boy_m) } : { kimlik: r.kimlik, model: r.model }));
+    return (await b.db.query(`SELECT kimlik, model, tekne_turu, boy_m, govde_malzemesi FROM yat_marka_model WHERE lower(marka) = lower($1) AND ($2 = '' OR lower(model) LIKE '%' || lower($2) || '%') ORDER BY CASE WHEN lower(model) LIKE lower($2) || '%' THEN 0 WHEN lower(model) LIKE '% ' || lower($2) || '%' OR lower(model) LIKE '%-' || lower($2) || '%' THEN 1 ELSE 2 END, lower(model) LIMIT 50` /* YG-1558 */, [q(marka), q(a)])).rows.map((r) => (lgm ? { ...r, tur: anaVeriTuru(r.tekne_turu), tekne_turu: undefined, boy_m: r.boy_m === null ? null : Number(r.boy_m) } : { kimlik: r.kimlik, model: r.model }));
   });
   // YG-090: aynı adlı yat uyarısı için arama.
   s.get('/yat/ara', ihbarci, async (i) => {

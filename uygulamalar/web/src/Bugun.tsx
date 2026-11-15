@@ -163,7 +163,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
         </div>
       ))}
 
-      {veri.toplantilar.length > 0 && <div className="bolum">Yaklaşan Toplantılar</div>}
+      <div className="bolum">Yaklaşan Toplantılar</div>{veri.toplantilar.length === 0 && <Bos m="Yaklaşan toplantınız bulunmamaktadır." />}
       {veri.toplantilar.map((t) => (
         <div key={t.kimlik} className="ozet kart-sol">
           <div className="ust2"><b>{t.konu}</b><Rozet s="gri" c={new Date(t.baslangic).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} /></div>
@@ -184,8 +184,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       <div className="bolum">İşleminizi Bekleyenler</div>
       {veri.islem.length === 0 ? <Bos m="İşleminizi bekleyen kayıt bulunmamaktadır." /> : veri.islem.map((k) => <IslemKarti key={k.kimlik} k={k} yenile={yenile} />)}
 
+      <div className="bolum">İade Edilenler</div>{veri.iade.length === 0 && <Bos m="İade edilen kaydınız bulunmamaktadır." />}
       {veri.iade.length > 0 && (<>
-        <div className="bolum">İade Edilenler</div>
         {veri.iade.map((k) => (
           <div key={k.kimlik} className="ozet kart-sol">
             <KartUst k={k} sayac={false} />
@@ -195,12 +195,12 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
         ))}
       </>)}
 
+      {veri.zincirde !== undefined && <><div className="bolum">Silsilenizde Bekleyenler</div>{veri.zincirde.length === 0 && <Bos m="Silsilenizde bekleyen kayıt bulunmamaktadır." />}</>}
       {(veri.zincirde ?? []).length > 0 && (<>
-        <div className="bolum">Silsilenizde Bekleyenler</div>
         {(veri.zincirde ?? []).map((k) => <KademeAtla key={k.kimlik} k={k} yenile={yenile} />)}
       </>)}
+      <div className="bolum">Onaya Gönderilmiş İşlemlerim</div>{veri.gonderilmis.length === 0 && <Bos m="Onaya gönderilmiş işleminiz bulunmamaktadır." />}
       {veri.gonderilmis.length > 0 && (<>
-        <div className="bolum">Onaya Gönderilmiş İşlemlerim</div>
         {veri.gonderilmis.map((k) => (
           <div key={k.kimlik} className="ozet kart-sol">
             <div className="ust2"><b>{k.baslik}</b><Rozet s="gri" c={`Kademe ${k.kademe + 1} / ${k.kademe_sayisi}`} /></div>

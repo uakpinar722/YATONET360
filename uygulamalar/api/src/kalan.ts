@@ -432,7 +432,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const limit = g.limit === undefined ? 0 : Number(g.limit);
     if (!g.yatlar?.length || !g.islemler?.length || !g.bitis || !(limit >= 0)) return y.code(400).send({ hata: 'Yat, işlem türü ve bitiş tarihini girmenizi rica ederiz.' });
     if (!g.islemler.every((x) => /^ONY-\d{2}$/.test(x))) return y.code(400).send({ hata: 'İşlem türü geçersizdir.' });
-    if (g.bitis < new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Bitiş tarihi geçmişte olamaz.' });
+    if (g.bitis < new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Bitiş tarihini bugün veya sonrası olarak seçmenizi rica ederiz.' });
     const h = (await b.db.query(`SELECT ad_soyad, cep_telefonu, e_posta, tercih_dili FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
     await b.db.query(`UPDATE yat_yetkilisi_kaydi SET atama_taslak = $2 WHERE kullanici_ref = $1`, [id, JSON.stringify({ yatlar: g.yatlar, islemler: g.islemler, limit, bitis: g.bitis, odeme: Boolean(g.odeme) && limit > 0, bilgi: Boolean(g.bilgi) })]);
     const dil = dilKod(h.tercih_dili); const lt = tutar(limit, dil);

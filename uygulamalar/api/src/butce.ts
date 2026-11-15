@@ -127,7 +127,7 @@ export function butceYollari(s: FastifyInstance, b: Baglam) {
     if (!birimler.length) return yok(y);
     const d = (await b.db.query(`SELECT durum FROM butce_donemi WHERE yil = $1`, [yil])).rows[0];
     if (!d) return y.code(409).send({ hata: 'Bu yılın bütçe dönemi açılmamıştır.' });
-    if (d.durum === 'Onaylandı') return y.code(409).send({ hata: 'Bütçe onaylanmıştır; değişiklik yapılamaz.' });
+    if (d.durum === 'Onaylandı') return y.code(409).send({ hata: 'Bütçe onaylanmış olduğundan bu kayıt değişikliğe kapalıdır.' });
     const birim = g.birim && birimler.includes(g.birim) ? g.birim : birimler.length === 1 ? birimler[0] : null;
     if (!birim) return y.code(400).send({ hata: 'Birimi seçmenizi rica ederiz.' });
     if (!KATEGORILER.includes(g.kategori ?? '') || !g.aciklama?.trim() || !(Number(g.tutar) > 0) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Kategori, açıklama, tutar ve gerekçeyi girmenizi rica ederiz.' });

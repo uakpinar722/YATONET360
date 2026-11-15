@@ -110,7 +110,7 @@ describe('disiplin (YG-954)', () => {
     const iks = await o.gir('iks'); const ikm = await o.gir('ikm'); const p = await o.gir('tu');
     expect((await o.ist('POST', '/api/disiplin', iks, { personel: o.K.tu, olayTarihi: '2026-11-01', konu: 'K', kademe: 'Yazılı Uyarı', savunmaSon: gecmis(0) })).statusCode).toBe(409);
     const k = await o.ist('POST', '/api/disiplin', iks, { personel: o.K.tu, olayTarihi: '2026-11-01', konu: 'Geç kayıt', kademe: 'Ücret Kesme', savunmaSon: ileri(10) }); expect(k.statusCode, k.body).toBe(200); const id = k.json().kimlik;
-    expect((await o.ist('POST', `/api/disiplin/${id}/karar`, ikm, { karar: 'Kesinti', gundelik: 1 })).json().hata).toContain('Savunma');
+    expect((await o.ist('POST', `/api/disiplin/${id}/karar`, ikm, { karar: 'Kesinti', gundelik: 1 })).json().hata).toContain('savunma');
     expect((await o.ist('POST', `/api/disiplin/${id}/savunma`, await o.gir('oy'), { metin: 'X' })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/disiplin/${id}/savunma`, p, { metin: 'Gerekçem' })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/disiplin/${id}/karar`, iks, { karar: 'Kesinti', gundelik: 1 })).statusCode).toBe(403);

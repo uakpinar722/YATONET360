@@ -69,7 +69,7 @@ export function sozlesmeTakipYollari(s: FastifyInstance, b: Baglam) {
     const tarafSayi = [g.kurulus, g.taraf, g.tarafAdi?.trim()].filter(Boolean).length;
     if (tarafSayi !== 1 || (g.kurulus && !UUID.test(g.kurulus)) || (g.taraf && !UUID.test(g.taraf))) return y.code(400).send({ hata: 'Karşı tarafı tek olarak seçiniz.' });
     if (!g.yururluk || !/^\d{4}-\d{2}-\d{2}$/.test(g.yururluk)) return y.code(400).send({ hata: 'Yürürlük tarihi zorunludur.' });
-    if (g.bitis && g.bitis < g.yururluk) return y.code(400).send({ hata: 'Bitiş tarihi yürürlükten önce olamaz.' });
+    if (g.bitis && g.bitis < g.yururluk) return y.code(400).send({ hata: 'Bitiş tarihini yürürlük tarihinden sonra seçmenizi rica ederiz.' });
     if ((g.bitis || g.otomatikYenileme) && !(Number(g.fesihGun) > 0)) return y.code(400).send({ hata: 'Bitiş tarihli veya otomatik yenilemeli sözleşmede fesih bildirim süresi (gün) zorunludur.' });
     if (g.otomatikYenileme && !g.bitis) return y.code(400).send({ hata: 'Otomatik yenilemede bitiş tarihi zorunludur.' });
     if (!g.kanal?.trim() || !g.yetkililer?.trim()) return y.code(400).send({ hata: 'Kurumsal kanal ve karşı tarafın yetkili kişi listesi zorunludur.' });

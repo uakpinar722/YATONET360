@@ -88,7 +88,7 @@ export function entegrasyonEnvanterYollari(s: FastifyInstance, b: Baglam) {
     const g = (i.body ?? {}) as { donem?: string; kaynak?: string; beyanSayi?: number; beyanOzet?: string; semaSurumu?: string; icerik?: string };
     if (!dolu(g.donem) || !dolu(g.kaynak) || !Number.isInteger(g.beyanSayi) || !/^[0-9a-fA-F]{64}$/.test(g.beyanOzet ?? '') || !dolu(g.semaSurumu) || typeof g.icerik !== 'string') return y.code(400).send({ hata: 'Dönem, kaynak, kayıt sayısı, bütünlük değeri (SHA-256), şema sürümü ve dosya içeriği zorunludur.' });
     const e = (await b.db.query(`SELECT surum, durum FROM entegrasyon_tanimi WHERE kimlik = $1`, [id])).rows[0]; if (!e) return yok(y);
-    if (e.durum === 'Askıda' || e.durum === 'Kapalı') return y.code(409).send({ hata: 'Askıdaki veya kapalı bağlantıya aktarım yapılamaz.' });
+    if (e.durum === 'Askıda' || e.durum === 'Kapalı') return y.code(409).send({ hata: 'Bağlantı askıda veya kapalı olduğundan aktarım durduruldu; bağlantı yeniden açıldığında aktarım yapılabilir.' });
     const d = topluDogrula({ beyanSayi: g.beyanSayi!, beyanOzet: g.beyanOzet!, semaSurumu: g.semaSurumu!.trim(), beklenenSema: e.surum, icerik: g.icerik });
     const r = (await b.db.query(`INSERT INTO toplu_aktarim (entegrasyon_ref, donem, kaynak, beyan_sayi, gercek_sayi, beyan_ozet, gercek_ozet, sema_surumu, beklenen_sema, sonuc, kabul_sayisi, red_sayisi, red_raporu, karantina_nedeni, yukleyen_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`,
       [id, g.donem!.trim(), g.kaynak!.trim(), g.beyanSayi, d.sayi, g.beyanOzet!.toLowerCase(), d.ozet, g.semaSurumu!.trim(), e.surum, d.sonuc, d.kabul, d.red.length, JSON.stringify(d.red), d.neden, o.kullanici])).rows[0].kimlik;

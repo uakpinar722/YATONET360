@@ -127,7 +127,7 @@ export function destekYollari(s: FastifyInstance, b: Baglam) {
   s.post('/destek/:id/mesaj', oturumlu, async (i, y) => {
     const o = i.oturum!; const a = await talep((i.params as { id: string }).id, o.kullanici); const metin = ((i.body ?? {}) as { metin?: string }).metin?.trim();
     if (!a) return yok(y);
-    if (!metin) return y.code(400).send({ hata: 'Mesaj boş olamaz.' });
+    if (!metin) return y.code(400).send({ hata: 'Mesajınızı yazmanızı rica ederiz.' });
     if (a.t.durum === 'Kapalı') return y.code(409).send({ hata: 'Kapalı talep yeniden açılmaz; sorun sürüyorsa bu talebe bağlı yeni talep açınız.' }); // YG-1411
     await b.db.query(`INSERT INTO destek_mesaji (talep_ref, yazan_ref, metin) VALUES ($1,$2,$3)`, [a.t.kimlik, o.kullanici, metin]);
     if (a.yetki === 'cozen' && !a.t.yanit_zamani) await b.db.query(`UPDATE destek_talebi SET yanit_zamani = now(), durum = CASE WHEN durum = 'Açık' THEN 'Yanıtlandı' ELSE durum END WHERE kimlik = $1`, [a.t.kimlik]);

@@ -1270,9 +1270,11 @@ describe('geçici marka-model onayı (YG-093)', () => {
     const d = await o.dosyaAc({ yat: { adi: `Y${md}`, markaDiger: md, modelDiger: 'M1', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
     const k = (await o.sup.query(`SELECT kimlik FROM is_karti WHERE tur = 'Marka Model Onayı' AND ozet = $1`, [`${md} / M1`])).rows[0];
     expect(k).toBeTruthy();
-    expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.karar(k.kimlik, 'tm', 'Onaya Gönder', 'Teknik bilgiler uygun')).statusCode).toBe(200); // YG-1528: Teknik Müdür görüşü
+    expect((await o.karar(k.kimlik, 'btd', 'Onayla')).statusCode).toBe(200);
     const y = (await o.sup.query(`SELECT y.diger_onay_durumu, m.model FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE d.kimlik = $1`, [d.kimlik])).rows[0];
     expect(y).toMatchObject({ diger_onay_durumu: 'Onaylandı', model: 'M1' });
+    expect((await o.sup.query(`SELECT durum FROM yat_marka_model WHERE lower(marka) = lower($1)`, [md])).rows[0].durum).toBe('Fotoğraf ve teknik eksik'); // YG-1525
   });
 });
 

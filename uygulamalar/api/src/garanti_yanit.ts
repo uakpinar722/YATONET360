@@ -154,7 +154,7 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
     const { aciklama } = (i.body ?? {}) as { aciklama?: string };
     if (!(await hazirlayabilir(g, o.kullanici))) return y.code(403).send({ hata: `İtirazı Dosya Sorumlusu veya ${HAZIRLAYAN} kaydeder.` });
     if (!aciklama?.trim()) return y.code(400).send({ hata: 'İtiraz açıklamasını yazınız.' });
-    if (!g.yanit_zamani) return y.code(409).send({ hata: 'Yanıt verilmemiş kayda itiraz kaydedilemez.' });
+    if (!g.yanit_zamani) return y.code(409).send({ hata: 'İtiraz, yanıt yazısı gönderildikten sonra kaydedilir.' });
     if (g.itiraz_zamani) return y.code(409).send({ hata: 'Bu kayıtta itiraz zaten kaydedilmiştir.' });
     if (Date.now() - new Date(g.yanit_zamani).getTime() > 15 * 86_400_000) return y.code(409).send({ hata: 'İtiraz süresi (yanıttan sonra 15 gün) geçmiştir.' });
     const makam = await ustKademe(g); const son = new Date(Date.now() + 120 * 3_600_000);

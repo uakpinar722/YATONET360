@@ -163,6 +163,7 @@ export async function sunucuKur(b: Baglam) {
   await s.register(cookie);
   kritikAnahtari(b.anahtar); // DEP-1a
   await (await import('./ayarlar.js')).kuralYukle(b.db).catch(() => undefined); // YG-1712, YG-1713
+  await (await import('./pdf.js')).sirketAltBilgisiYukle(b.db).catch(() => undefined); // YG-1750
   s.addHook('onRequest', (_i, _y, done) => { istekBaglami.run({}, done); }); // YG-1183
   s.addHook('onSend', async (i, y) => { y.header('X-Iliski-Kimligi', i.id); });
   olcumKur(s); // YG-778

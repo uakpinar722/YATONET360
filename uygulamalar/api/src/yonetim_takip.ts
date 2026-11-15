@@ -115,7 +115,7 @@ export function yonetimTakipYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (!(await rolde(o.kullanici, SATIS))) return yok(y);
     const g = (i.body ?? {}) as { tarih?: string; kurum?: string; kurumTuru?: string; tur?: string; sonuc?: string; sonrakiAdim?: string };
     if (!/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.kurum?.trim() || !['Sigorta Şirketi', 'Broker / Acente', 'Kurumsal Müşteri', 'Marina / Tesis', 'Diğer'].includes(g.kurumTuru ?? '') || !['Yüz Yüze', 'Telefon', 'Video', 'E-posta'].includes(g.tur ?? '') || !g.sonuc?.trim()) return y.code(400).send({ hata: 'Tarih, kurum, kurum türü, görüşme türü ve sonuç zorunludur.' });
-    if (g.tarih! > new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Gelecek tarihli görüşme kaydedilemez.' });
+    if (g.tarih! > new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Görüşme, gerçekleştiği tarihle (bugün veya öncesi) kaydedilir.' });
     const r = (await b.db.query(`INSERT INTO satis_gorusmesi (tarih, kurum, kurum_turu, tur, sonuc, sonraki_adim, gorusen_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.tarih, g.kurum.trim(), g.kurumTuru, g.tur, g.sonuc.trim(), g.sonrakiAdim?.trim() || null, o.kullanici])).rows[0].kimlik;
     return { kimlik: r };
   });
