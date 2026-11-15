@@ -104,9 +104,9 @@ describe('fiyat kuralı (YG-185, YG-187, YG-1709)', () => {
 });
 
 describe('kartela ve cetvel (YG-195, YG-198, YG-1706)', () => {
-  it('kartela 1.510 kalem, 130 grup; arama fiyat vermez', async () => {
+  it('kartela 1.510 kalem, 131 grup (KS-131, YG-1704); arama fiyat vermez', async () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi`)).rows[0].n).toBe(1510);
-    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_birlikte_yazilmaz`)).rows[0].n).toBe(130);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_birlikte_yazilmaz`)).rows[0].n).toBe(131);
     const r = (await o.ist('GET', '/api/kartela/ara?q=KESIF-01.01', firmaC)).json();
     expect(r.length).toBeGreaterThan(0); expect(r[0].maliyet_eur).toBeUndefined();
   });
@@ -543,6 +543,14 @@ describe('sigorta onaylı kalem yat sahibine yazılmaz (YG-890)', () => {
     const ff = await firmaFiyat(d.kimlik, 51);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teklif`, await o.gir('ts'), { firmaTeklifi: ff, muhatap: 'Yat Sahibi' });
     expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Sigorta şirketinin onayladığı kalem');
+  });
+});
+
+describe('birlikte yazılmaz kuralları (YG-1704, YG-1705)', () => {
+  it('KS-31 ve KS-131 uyarısı döner', async () => {
+    const { kartelaUyarilari } = await import('../src/teklif.js');
+    expect((await kartelaUyarilari(o.db, ['YANGIN-01.01.02-04', 'YANGIN-01.01.03-01'])).map((u) => u.grup)).toContain('KS-31');
+    expect((await kartelaUyarilari(o.db, ['KESIF-01.03.03-01', 'HASAR-01.04.01-01'])).map((u) => u.grup)).toEqual(['KS-131']);
   });
 });
 

@@ -250,6 +250,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
               {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
               {ticari && t.statu === 'Taslak' && <TeklifMadde teklif={t.kimlik} />}
               {ticari && t.statu === 'Taslak' && <TeklifIndirim teklif={t.kimlik} yap={yap} />}
+              {ticari && t.statu === 'Taslak' && <KartelaUyari teklif={t.kimlik} />}
               {t.bant_disi && <span className="hata">{t.bant_onayli ? 'Bant Dışı · Onaylı' : '⚠ Bant Dışı · Ticari İşler Direktörü onayı bekleniyor'}</span>}
               {ticari && t.statu === 'Taslak' && t.bant_disi && !t.bant_onayli && <BantOnayi teklif={t.kimlik} yap={yap} />}
               {rollerim.includes('Dosya Sorumlusu') && t.statu === 'Karar' && <CaymaKaydi teklif={t.kimlik} yap={yap} />}
@@ -976,4 +977,11 @@ function BantAraligi({ teklif }: { teklif: string }) {
   useEffect(() => { void istek<{ kalemler: typeof l }>(`/teklif/${teklif}`).then((x) => setL(x.kalemler)).catch(() => setL([])); }, [teklif]);
   const s = (x: string) => Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return <>{l.filter((k) => k.bant_alt_eur !== null && k.bant_ust_eur !== null).map((k) => <div key={k.sira_no} className={k.bant_disi ? 'uyari' : undefined}>{k.aciklama} · Birim Satış: {s(k.birim_satis_fiyati_eur)} · Aralık: {s(k.bant_alt_eur!)} - {s(k.bant_ust_eur!)} EUR</div>)}</>;
+}
+
+/** YG-1705, YG-1704: birlikte yazılmayan kartela kalemleri taslak teklifte sarı uyarıyla gösterilir. */
+function KartelaUyari({ teklif }: { teklif: string }) {
+  const [l, setL] = useState<{ grup: string; not: string }[]>([]);
+  useEffect(() => { void istek<{ uyarilar?: { grup: string; not: string }[] }>(`/teklif/${teklif}`).then((x) => setL(x.uyarilar ?? [])).catch(() => setL([])); }, [teklif]);
+  return <>{l.map((u) => <div key={u.grup} className="uyari">⚠ Birlikte yazılmaz ({u.grup}): {u.not}</div>)}</>;
 }

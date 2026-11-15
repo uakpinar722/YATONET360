@@ -293,4 +293,9 @@ describe('fiş aslı (YG-1622)', () => {
     expect((await o.ist('POST', `/api/masraf/${k}/asil-teslim`, my, {})).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT asil_teslim_alan_ref r FROM personel_masraf_fisi WHERE kimlik = $1`, [k])).rows[0].r).toBe(o.K.my);
   });
+  it('yıllık izin hakkı kıdemden hesaplanır (YG-948)', async () => {
+    const { yillikIzinHakki } = await import('../src/ticari.js');
+    expect(yillikIzinHakki('2026-01-10', '2026-12-01')).toBe(0); expect(yillikIzinHakki('2025-01-10', '2026-01-10')).toBe(14);
+    expect(yillikIzinHakki('2020-01-10', '2026-01-10')).toBe(20); expect(yillikIzinHakki('2011-01-10', '2026-01-10')).toBe(26); expect(yillikIzinHakki('2021-01-10', '2026-01-10')).toBe(14);
+  });
 });

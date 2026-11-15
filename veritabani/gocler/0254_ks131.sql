@@ -1,0 +1,2 @@
+-- YG-1704: birlikte yazılmaz kuralı KS-131 (veri dosyasıyla aynı).
+INSERT INTO kartela_birlikte_yazilmaz SELECT 'KS-131', ARRAY['KESIF-01.03.03-01', 'HASAR-01.04.01-01'], 'hasar haritası ve fotoğraflı bulgu kaydı (KESIF-01.03.03-01) ile hasar fotoğraf, video ve ölçüm kaydı (HASAR-01.04.01-01) aynı ziyaret için birlikte yazılırsa çift sayım olur (YG-1704).' WHERE NOT EXISTS (SELECT 1 FROM kartela_birlikte_yazilmaz WHERE grup = 'KS-131');

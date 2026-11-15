@@ -498,6 +498,8 @@ describe('sağlayıcı matrisi, parametreler, dışa aktarım, kalıcı hata (YG
     expect((await o.karar(pk.kimlik, 'ceo1', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT eski, yeni FROM parametre_gecmisi WHERE kod = 'masraf_yemek_eur'`)).rows.map((x) => [Number(x.eski), Number(x.yeni)])).toEqual([[25, 30]]);
     expect((await o.ist('GET', '/api/parametreler', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/parametre/rapor_sure_saat_normal', c, { deger: 70, gerekce: 'X' })).statusCode).toBe(403); // YG-1039
+    expect((await o.ist('POST', '/api/parametre/rapor_sure_saat_normal', await o.gir('tod'), { deger: 70, gerekce: 'Sezon yoğunluğu' })).json().durum).toBe('Onaya Gönderildi');
   });
   it('yasal ayıp CSV yalnız Direktör ve üstüne', async () => {
     expect((await o.ist('GET', '/api/rapor/yasal-ayip.csv', await o.gir('mfm'))).statusCode).toBe(404);

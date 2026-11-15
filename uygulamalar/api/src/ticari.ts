@@ -253,6 +253,23 @@ export async function faturaTahsilatIsle(c: Db, g: { fatura: string; tutar: numb
   return { durum, kalan: R2(Number(f.toplam_eur) - yeni) };
 }
 
+/** YG-948: İş Kanunu m.53 kıdeme göre yıllık izin hakkı; bir yıl tamamlanmadan hak doğmaz. */
+export function yillikIzinHakki(iseGiris: string, tarih: string): number {
+  const g = new Date(`${iseGiris}T00:00:00Z`); const t = new Date(`${tarih}T00:00:00Z`);
+  let yil = t.getUTCFullYear() - g.getUTCFullYear(); if (t.getUTCMonth() < g.getUTCMonth() || (t.getUTCMonth() === g.getUTCMonth() && t.getUTCDate() < g.getUTCDate())) yil--;
+  return yil < 1 ? 0 : yil <= 5 ? 14 : yil < 15 ? 20 : 26;
+}
+/** Bakiye kaydı yoksa personel kartındaki işe giriş tarihinden hesaplanarak açılır; hak doğmamışsa null. */
+export async function izinBakiyesi(db: Pool | PoolClient, personel: string, yil: number, tarih: string): Promise<{ hak: number; kullanilan: number } | null> {
+  const bk = (await db.query(`SELECT hak, kullanilan FROM izin_bakiyesi WHERE personel_ref = $1 AND yil = $2`, [personel, yil])).rows[0];
+  if (bk) return { hak: Number(bk.hak), kullanilan: Number(bk.kullanilan) };
+  const k = (await db.query(`SELECT ise_giris_tarihi::text g FROM personel_karti WHERE kullanici_ref = $1`, [personel])).rows[0];
+  if (!k) return null;
+  const hak = yillikIzinHakki(k.g, tarih); if (!hak) return null;
+  await db.query(`INSERT INTO izin_bakiyesi (personel_ref, yil, hak) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [personel, yil, hak]);
+  return { hak, kullanilan: 0 };
+}
+
 export function ticariYollari(s: FastifyInstance, b: Baglam) {
   webAdresi = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -558,6 +575,13 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const r = await b.db.query(`UPDATE izin_talebi SET belge_ref = $2 WHERE kimlik = $1 AND personel_ref = $3`, [id, be, o.kullanici]);
     return r.rowCount ? { tamam: true } : yok(y);
   });
+  // YG-948: talep ekranında yıllık izin hakkı ve kalan bakiye önceden görünür.
+  s.get('/izin/bakiye', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
+    const bugun = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+    const bk = await izinBakiyesi(b.db, o.kullanici, Number(bugun.slice(0, 4)), bugun);
+    return bk ? { yil: Number(bugun.slice(0, 4)), hak: bk.hak, kullanilan: bk.kullanilan, kalan: bk.hak - bk.kullanilan } : { yil: Number(bugun.slice(0, 4)), hak: 0, kullanilan: 0, kalan: 0 };
+  });
   s.post('/izin', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; baslangic?: string; bitis?: string; vekil?: string; bolunmus?: boolean };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
@@ -567,8 +591,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (n === 0) return y.code(400).send({ hata: 'Seçilen tarihlerde çalışma günü yoktur.' });
     const yil = Number(g.baslangic.slice(0, 4));
     if (g.tur === 'Yıllık') {
-      const bk = (await b.db.query(`SELECT hak, kullanilan FROM izin_bakiyesi WHERE personel_ref = $1 AND yil = $2`, [o.kullanici, yil])).rows[0];
-      if (!bk) return y.code(409).send({ hata: 'İzin bakiyeniz tanımlı değildir; İnsan Kaynaklarına başvurunuz.' });
+      const bk = await izinBakiyesi(b.db, o.kullanici, yil, g.baslangic); // YG-948
+      if (!bk) return y.code(409).send({ hata: 'Yıllık izin hakkı bir yıllık kıdem tamamlanınca doğar; personel kartınızdaki işe giriş tarihini İnsan Kaynaklarıyla teyit etmenizi rica ederiz.' });
       if (bk.hak - bk.kullanilan < n) return y.code(409).send({ hata: `Bakiye yetersiz: kalan ${bk.hak - bk.kullanilan} gün.` });
       const be = await (await import('./ik.js')).izinBolumEngeli(b.db, o.kullanici, { baslangic: g.baslangic, bitis: g.bitis, gun: n, bolunmus: g.bolunmus }, bk.hak, bk.kullanilan); if (be) return y.code(409).send({ hata: be }); // YG-949
     }

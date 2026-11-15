@@ -169,6 +169,27 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
 
+  // YG-1053: dış taraf ayrılışı veya görev değişikliğini e-posta/telefon/yazıyla bildirdiyse Sicil Sorumlusu veya Müşteri ve Paydaş İlişkileri Müdürü kaydeder; hesap hemen kapanır, bildirim zamanı ve kanalı tutulur.
+  s.post('/dis-kullanici/:id/ayrilis-bildirimi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; kanal?: string; bildirimZamani?: string; aciklama?: string };
+    if (o.grup !== 'LGM İç Rolü' || !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi IN ('Sicil Sorumlusu', 'Müşteri ve Paydaş İlişkileri Müdürü')`, [o.kullanici])).rowCount) return yok(y);
+    const h = (await b.db.query(`SELECT ad_soyad, hesap_durumu, kullanici_grubu FROM kullanici_hesabi WHERE kimlik = $1`, [id])).rows[0];
+    if (!h || h.kullanici_grubu === 'LGM İç Rolü') return yok(y);
+    if (!['Ayrılış', 'Görev Değişikliği'].includes(g.tur ?? '') || !['E-posta', 'Telefon', 'Yazı'].includes(g.kanal ?? '') || !g.bildirimZamani || Number.isNaN(Date.parse(g.bildirimZamani))) return y.code(400).send({ hata: 'Bildirim türü, kanalı ve bildirim zamanı zorunludur.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`INSERT INTO dis_ayrilis_bildirimi (kullanici_ref, tur, kanal, bildirim_zamani, aciklama, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [id, g.tur, g.kanal, new Date(g.bildirimZamani), g.aciklama?.trim() || null, o.kullanici]);
+      if (h.hesap_durumu !== 'Kapalı') {
+        await c.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE kimlik = $1`, [id]);
+        await c.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Güvenlik sınırlaması' WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [id]);
+      }
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dış Kullanıcı Ayrılış Bildirimi', nesneTuru: 'Kullanıcı', nesneKimligi: id, yeni: { tur: g.tur, kanal: g.kanal, bildirim: g.bildirimZamani }, gerekce: g.aciklama, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { durum: 'Kapalı', gecikmeSaat: Math.max(0, Math.round((Date.now() - Date.parse(g.bildirimZamani)) / 3_600_000)) };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
   // YG-1004: kurum bildirdiğinde hesap hemen kapanır, oturumları biter; Sicil Sorumlusu 24 saat içinde kaydı gözden geçirir. Hesap yeni temsilciye devredilmez.
   s.post('/kurum/kullanici/:id/kapat', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const u = await kurumum(o.kullanici); const gerekce = ((i.body ?? {}) as { gerekce?: string }).gerekce?.trim();

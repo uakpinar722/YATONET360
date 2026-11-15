@@ -253,4 +253,12 @@ describe('firma tesisi ve -Tnn kodu (TSK-1, YG-010)', () => {
     expect((await o.ist('GET', `/api/firma/${fir}/tesis`, firC)).json()).toHaveLength(2);
     expect((await o.ist('GET', `/api/firma/${fir}/tesis`, tedC)).statusCode).toBe(404);
   });
+  it('dış tarafın e-posta ile bildirdiği ayrılışta hesap hemen kapanır (YG-1053)', async () => {
+    const uc = await disGir(`kf9${Date.now()}`, 'İş Birliği Firması', 'Firma Yetkilisi', fir);
+    const u = `/api/dis-kullanici/${uc.k}/ayrilis-bildirimi`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { tur: 'Ayrılış', kanal: 'E-posta', bildirimZamani: new Date().toISOString() })).statusCode).toBe(404);
+    const sc = await o.gir('sc'); expect((await o.ist('POST', u, sc, { tur: 'Ayrılış', kanal: 'Faks' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sc, { tur: 'Ayrılış', kanal: 'E-posta', bildirimZamani: new Date().toISOString(), aciklama: 'Firma yetkilisi bildirdi' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [uc.k])).rows[0].hesap_durumu).toBe('Kapalı');
+  });
 });

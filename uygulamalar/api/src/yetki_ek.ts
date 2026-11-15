@@ -144,12 +144,14 @@ export function yetkiEkYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1001: veri tabanına doğrudan müdahale bileti.
   s.post('/degisiklik-bileti', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { konu?: string; gerekce?: string; kisiselVeri?: boolean; veriSahibiRol?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { konu?: string; gerekce?: string; kisiselVeri?: boolean; veriSahibiRol?: string; mevcut?: string; beklenen?: string; talepSahibi?: string; etkilenen?: string; kabulOlcutu?: string };
     if (!(await rolVar(o.kullanici, ['Sistem Yöneticisi', BIM]))) return y.code(403).send({ hata: 'Bileti Sistem Yöneticisi açar.' });
     if (!g.konu?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Konu ve gerekçe zorunludur.' });
+    // YG-1131: sorun (konu) ile birlikte mevcut davranış, beklenen sonuç, talep sahibi, etkilenen kullanıcılar ve kabul ölçütü zorunludur.
+    if (!g.mevcut?.trim() || !g.beklenen?.trim() || !g.talepSahibi?.trim() || !g.etkilenen?.trim() || !g.kabulOlcutu?.trim()) return y.code(400).send({ hata: 'Mevcut davranış, beklenen sonuç, talep sahibi, etkilenen kullanıcılar ve kabul ölçütünü yazmanızı rica ederiz.' });
     if (g.kisiselVeri && !g.veriSahibiRol) return y.code(400).send({ hata: 'Kişisel veriye dokunan müdahalede veri sahibi rolü zorunludur.' });
     const yil = new Date().getFullYear(); const no = `DGS-${yil}-${String(await sayac(b.db, `dgs:${yil}`)).padStart(4, '0')}`;
-    const r = (await b.db.query(`INSERT INTO degisiklik_bileti (bilet_no, konu, gerekce, kisisel_veri, veri_sahibi_rol, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [no, g.konu.trim(), g.gerekce.trim(), Boolean(g.kisiselVeri), g.veriSahibiRol ?? null, o.kullanici])).rows[0];
+    const r = (await b.db.query(`INSERT INTO degisiklik_bileti (bilet_no, konu, gerekce, kisisel_veri, veri_sahibi_rol, hazirlayan_ref, mevcut_davranis, beklenen_sonuc, talep_sahibi, etkilenen_kullanicilar, kabul_olcutu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [no, g.konu.trim(), g.gerekce.trim(), Boolean(g.kisiselVeri), g.veriSahibiRol ?? null, o.kullanici, g.mevcut!.trim(), g.beklenen!.trim(), g.talepSahibi!.trim(), g.etkilenen!.trim(), g.kabulOlcutu!.trim()])).rows[0];
     const zincir = [await rolId(b.db, BIM)]; if (g.kisiselVeri) zincir.push(await rolId(b.db, g.veriSahibiRol!));
     await kartAc(b.db, { tur: 'Değişiklik Bileti', baslik: `${no} · ${g.konu.trim()}`, ozet: g.gerekce.trim(), oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir, nesneTuru: 'Değişiklik Bileti', nesneKimligi: r.kimlik });
     return { kimlik: r.kimlik, biletNo: no };

@@ -62,8 +62,9 @@ describe('Kritik erişim, bilet, hasar paylaşımı (YG-1160, YG-1001, YG-1171)'
   it('müdahale bileti: BİM onayı, kişisel veride veri sahibi, kanıtsız kapanmaz', async () => {
     const sy = await o.gir('sy');
     expect((await o.ist('POST', '/api/degisiklik-bileti', await o.gir('ds'), { konu: 'K', gerekce: 'G' })).statusCode).toBe(403);
-    expect((await o.ist('POST', '/api/degisiklik-bileti', sy, { konu: 'K', gerekce: 'G', kisiselVeri: true })).statusCode).toBe(400);
-    const r = await o.ist('POST', '/api/degisiklik-bileti', sy, { konu: 'K', gerekce: 'G', kisiselVeri: true, veriSahibiRol: 'İnsan Kaynakları Müdürü' }); expect(r.statusCode, r.body).toBe(200); expect(r.json().biletNo).toMatch(/^DGS-/);
+    expect((await o.ist('POST', '/api/degisiklik-bileti', sy, { konu: 'K', gerekce: 'G', kisiselVeri: true, mevcut: 'M', beklenen: 'B', talepSahibi: 'T', etkilenen: 'E', kabulOlcutu: 'Ö' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/degisiklik-bileti', sy, { konu: 'K', gerekce: 'G' })).json().hata).toContain('Mevcut davranış'); // YG-1131
+    const r = await o.ist('POST', '/api/degisiklik-bileti', sy, { konu: 'K', gerekce: 'G', kisiselVeri: true, veriSahibiRol: 'İnsan Kaynakları Müdürü', mevcut: 'M', beklenen: 'B', talepSahibi: 'İK', etkilenen: 'Personel', kabulOlcutu: 'Ö' }); expect(r.statusCode, r.body).toBe(200); expect(r.json().biletNo).toMatch(/^DGS-/);
     const k = await o.kart('Değişiklik Bileti', r.json().kimlik); expect(k.zincir).toHaveLength(2);
     await o.karar(k.kimlik, 'bim', 'Onaya Gönder'); await o.karar(k.kimlik, 'ikm', 'Onayla');
     const u = `/api/degisiklik-bileti/${r.json().kimlik}/kapat`; const d = await o.dosyaAc({}, {});

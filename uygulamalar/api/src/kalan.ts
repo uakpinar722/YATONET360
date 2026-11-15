@@ -622,7 +622,9 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-826: mali parametreler. Tanımsız değer işlemi bir üst onaya gönderir; fiyat katsayısı bu ekranda hiç görünmez (K-104).
-  const parametreci = (k: string) => rolVar(k, [TID, 'Genel Müdür Yardımcısı', 'CEO']);
+  const parametreci = (k: string) => rolVar(k, [TID, 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO']);
+  // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
+  const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_)/;
   s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod <> 'fiyat_katsayisi' ORDER BY kod`)).rows : yok(y));
   s.post('/parametre/:kod', oturumlu, async (i, y) => {
     const o = i.oturum!; const { kod } = i.params as { kod: string }; const g = (i.body ?? {}) as { deger?: number | null; gerekce?: string };
@@ -633,7 +635,8 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const e = (await b.db.query(`SELECT deger, aciklama FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0]; if (!e) return yok(y);
     const yeni = g.deger === null || g.deger === undefined ? null : Number(g.deger);
     // YG-853: değişikliği Ticari İşler Direktörü önerir; Genel Müdür Yardımcısı uygun görüşle (Onaya Gönder) CEO'ya arz eder, CEO onaylayınca yürürlüğe girer.
-    if (!(await rolVar(o.kullanici, [TID]))) return y.code(403).send({ hata: 'Parametre değişikliğini Ticari İşler Direktörü önerir; Genel Müdür Yardımcısı ve CEO onay kartından karar verir.' });
+    const oneren = HIZMET_PARAMETRESI.test(kod) ? 'Teknik ve Operasyon Direktörü' : TID;
+    if (!(await rolVar(o.kullanici, [oneren]))) return y.code(403).send({ hata: `Bu parametre değişikliğini ${oneren} önerir; Genel Müdür Yardımcısı ve CEO onay kartından karar verir.` });
     if ((await b.db.query(`SELECT 1 FROM parametre_onerisi WHERE kod = $1 AND durum = 'Onayda'`, [kod])).rowCount) return y.code(409).send({ hata: 'Bu parametre için onayda bekleyen öneri vardır.' });
     const on = (await b.db.query(`INSERT INTO parametre_onerisi (kod, eski, yeni, gerekce, oneren_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [kod, e.deger, yeni, g.gerekce.trim(), o.kullanici])).rows[0];
     await kartAc(b.db, { tur: 'Parametre Değişikliği', baslik: `${e.aciklama ?? kod}: ${e.deger ?? 'Tanımsız'} → ${yeni ?? 'Tanımsız'}`, ozet: g.gerekce.trim(), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Genel Müdür Yardımcısı'), await rolId(b.db, 'CEO')], nesneTuru: 'Parametre Önerisi', nesneKimligi: on.kimlik });

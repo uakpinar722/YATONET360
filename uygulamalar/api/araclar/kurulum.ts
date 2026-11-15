@@ -101,7 +101,7 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
     const kl = readFileSync(join(KOK, 'veri', 'kartela_2026_2.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
     await c.query(`INSERT INTO kartela_kalemi SELECT a, '2026.2', b, d, e, f, g, h FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::numeric[]) t(a, b, d, e, f, g, h)`, [kl.map((r) => r[0]), kl.map((r) => r[1]), kl.map((r) => r[2]), kl.map((r) => r[3]), kl.map((r) => r[4]), kl.map((r) => r[5]), kl.map((r) => Number(r[6]))]);
     const by = readFileSync(join(KOK, 'veri', 'kartela_birlikte_yazilmaz.tsv'), 'utf8').split('\n').slice(1).filter(Boolean).map((l) => l.split('\t'));
-    for (const r of by) await c.query(`INSERT INTO kartela_birlikte_yazilmaz VALUES ($1,$2,$3)`, [r[0], r[1]!.split(' ').filter(Boolean), r[2]]);
+    for (const r of by) await c.query(`INSERT INTO kartela_birlikte_yazilmaz VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [r[0], r[1]!.split(" ").filter(Boolean), r[2]]);
   }
   // KLS-1: ilk resmî / klas onayı etiket seti bir kez uygulanır; sonrasını Teknik Müdür yönetir.
   if (!(await c.query(`SELECT 1 FROM sema_gocu WHERE dosya = 'kls1_resmi_onay_etiketi'`)).rowCount) {
