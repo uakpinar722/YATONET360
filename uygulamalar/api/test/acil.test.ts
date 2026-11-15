@@ -245,6 +245,14 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect(r.json()).toEqual({ karar: 'Kısmi Onay', tutar: 150, onaylanmayan: 1 });
     expect((await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [2] })).statusCode).toBe(409);
   });
+  it('ek iş teklifinde 1. iş günü hatırlatma, 3. iş günü telefon görevi (YG-447)', async () => {
+    const { d, t } = await dosyaVeTeklif();
+    await o.sup.query(`UPDATE fiyat_teklifi SET teklif_turu = 'Ek Fiyat Teklifi', gonderim_zamani = now() - interval '10 days', sigorta_karar_son = now() + interval '5 days' WHERE kimlik = $1`, [t]);
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await sigortaSureIsle(o.db); await sigortaSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM sigorta_gonderim WHERE tur = 'BLD-72' AND nesne_kimligi = $1`, [t])).rows[0].n).toBe(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Sigorta Telefon Takibi' AND nesne_kimligi = $1`, [t])).rows[0].n).toBe(1);
+  });
   it('süre dolmadan 24 saat kala tek hatırlatma; dolunca kalemler karşılanacak sayılır, onay kaydı ayrı; çerçevesizde süre işlemez', async () => {
     const { d, t } = await dosyaVeTeklif();
     await o.sup.query(`UPDATE fiyat_teklifi SET sigorta_karar_son = now() + interval '10 hours' WHERE kimlik = $1`, [t]);

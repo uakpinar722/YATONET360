@@ -217,6 +217,27 @@ export async function sozlesmeHedefi(db: Db, dosya: string, tur: string): Promis
 export const KONUM_TURLERI = ['Bağlama Noktası', 'Tersane Bölgesi', 'Sanayi Sitesi', 'Organize Sanayi Bölgesi', 'Serbest Bölge', 'Diğer'];
 
 export function kalanYollari(s: FastifyInstance, b: Baglam) {
+  // YG-437: kurumsal müşteri tarafında LGM'yi görevlendiren kayıt "Müşteri Talimatı"dır (sigortada Sigorta Görevlendirmesi; İş Emri yalnız firmaya verilen belgedir). BLD-67 kurumsal onay e-postasına gider.
+  s.post('/dosya/:id/musteri-talimati', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; limit?: number; hedef?: string; metin?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    const d = (await b.db.query(`SELECT d.dosya_no, d.musteri_turu, d.yazisma_dili, d.dosya_sorumlusu_ref, h.e_posta ds_eposta, t.kurumsal_onay_epostasi, t.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN taraf t ON t.kimlik = y.yat_sahibi_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1`, [id])).rows[0];
+    if (d.musteri_turu !== 'Kurumsal Müşteri') return y.code(409).send({ hata: 'Müşteri Talimatı kurumsal müşteri dosyasında kaydedilir.' });
+    if (d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Müşteri Talimatını Dosya Sorumlusu kaydeder.' });
+    if (!['Portal', 'E-posta', 'Ek-2 Kanalı'].includes(g.kanal ?? '') || !(Number(g.limit) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(g.hedef ?? '') || !g.metin?.trim()) return y.code(400).send({ hata: 'Kanal, mali limit, hedef tarih ve talimat metni zorunludur.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const { altNumara } = await import('./sure.js'); const no = await altNumara(c, d.dosya_no, 'MT');
+      await c.query(`INSERT INTO musteri_talimati (talimat_no, dosya_ref, kanal, mali_limit_eur, hedef_tarih, talimat_metni, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [no, id, g.kanal, Number(g.limit), g.hedef, g.metin.trim(), o.kullanici]);
+      const alici = d.kurumsal_onay_epostasi ?? d.eposta;
+      if (alici) { const en = dilKod(d.yazisma_dili) === 'en'; const tarih = g.hedef!.split('-').reverse().join('.'); const tut = tutar(Number(g.limit));
+        await yatTarafinaYaz(c, { olay: `bld67:${no}`, kod: 'BLD-67', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} ${en ? 'Instruction Received' : 'Talimatınız Alındı'}`, eposta: alici, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, tutar: tut, amount: tut, tarih, date: tarih, 'rol / iletişim': `Dosya Sorumlusu · ${d.ds_eposta ?? ''}`, 'role / contact': `File Manager · ${d.ds_eposta ?? ''}` } }); }
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Müşteri Talimatı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { no, limit: g.limit, hedef: g.hedef }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { talimatNo: no, bildirim: Boolean(alici) };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
   // YG-147: sözleşme taahhüt süreleri Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörünce girilir.
   s.get('/sozlesme-hedef-sureleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });

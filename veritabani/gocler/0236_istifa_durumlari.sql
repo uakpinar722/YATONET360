@@ -1,0 +1,6 @@
+-- YG-1365: istifa bildirimi (YG-976) durumları birleşik durum sözlüğünde.
+INSERT INTO durum_sozlugu (kayit_turu, durum, is_anlami, giris_kosulu, cikis_kosulu, yetkili_rol, izinli_gecisler, zorunlu_aciklama, sure_durur, otomatik_bildirim, musteri_adi) VALUES
+  ('istifa_bildirimi', 'Açık', 'Kayıt üzerinde çalışma sürüyor; kapanış koşulları henüz sağlanmadı.', 'Personel istifasını sistemden bildirince', 'İnsan Kaynakları imzalı dilekçeyle ayrılış kaydını açınca Ayrılışa Aktarıldı; personel vazgeçerse Geri Alındı', 'İnsan Kaynakları Sorumlusu', ARRAY['Ayrılışa Aktarıldı', 'Geri Alındı']::text[], false, false, 'İnsan Kaynakları Sorumlusuna İstifa Bildirimi görevi', NULL),
+  ('istifa_bildirimi', 'Ayrılışa Aktarıldı', 'İstifa bildirimi İstifa türündeki ayrılış kaydına bağlandı; süreç ayrılış kaydında izlenir.', 'İnsan Kaynakları İstifa türünde ayrılış kaydını açınca', 'Son durum', 'İnsan Kaynakları Sorumlusu', ARRAY[]::text[], false, false, NULL, NULL),
+  ('istifa_bildirimi', 'Geri Alındı', 'Uygulanmış işlem geri alındı; önceki durum geri getirildi.', 'Personel istifadan vazgeçtiğini bildirip İnsan Kaynakları kaydı kapatınca', 'Son durum', 'İnsan Kaynakları Sorumlusu', ARRAY[]::text[], true, false, NULL, NULL)
+ON CONFLICT DO NOTHING;

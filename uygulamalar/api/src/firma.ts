@@ -137,15 +137,29 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   s.post('/firma/:id/statu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string; pasifNedeni?: string; kanit?: string };
     if (!UUID.test(id)) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
+    // YG-357: Pasif yaptırım değildir; yalnız Aktif firmadan firma talebi veya hareketsizlikle geçilir, Pasif'ten Aktif'e dönülür.
+    // YG-359: yaptırım basamakları risk oranında atlanabilir; yaptırımdan daha hafif statüye yükseltme doğrulanmış iyileştirme kanıtı ister.
+    const mevcut = (await b.db.query(`SELECT ag_statusu FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.ag_statusu as string | null | undefined;
+    if (g.ag && g.ag !== mevcut) {
+      const SIRA = ['Aktif', 'Kısıtlı', 'Geçici Askıda', 'Askıda', 'Çıkarıldı'];
+      if (g.ag === 'Pasif') {
+        if (mevcut !== 'Aktif') return y.code(409).send({ hata: 'Pasif statüsüne yalnız Aktif firmadan geçilir; yaptırım statüsündeki firma Pasif yapılmaz.' });
+        if (!['Firma Talebi', 'Hareketsizlik'].includes(g.pasifNedeni ?? '')) return y.code(400).send({ hata: 'Pasif nedenini seçiniz: Firma Talebi veya Hareketsizlik.' });
+      } else if (mevcut && mevcut !== 'Pasif' && SIRA.indexOf(g.ag) >= 0 && SIRA.indexOf(mevcut) > 0 && SIRA.indexOf(g.ag) < SIRA.indexOf(mevcut)) {
+        if (mevcut === 'Çıkarıldı') return y.code(409).send({ hata: 'Ağdan çıkarılan firma yeniden aday kaydıyla başvurur.' });
+        if (!g.kanit || !UUID.test(g.kanit) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Kuruluş' AND bag_kimligi = $2`, [g.kanit, id])).rowCount) return y.code(409).send({ hata: 'Statü yükseltmesi için firmaya yüklenmiş ve doğrulanmış iyileştirme kanıtını seçiniz.' });
+      }
+    }
     // YG-1659, K-178: Koşullu Onaylı ve Reddedildi önerisinde Hukuk ve Uyum görüşü alınır; bağlayıcı değildir, kademe sayılmaz.
     if ((g.asama === 'Koşullu Onaylı' || g.asama === 'Reddedildi') && !(await b.db.query(`UPDATE firma_hukuk_gorusu SET durum = 'Kullanıldı' WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi' RETURNING kimlik`, [id, g.asama])).rowCount) return y.code(409).send({ hata: 'Hukuk ve Uyum görüşü bekleniyor.' });
     if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND r.rol_adi = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Kalıcı askı ve ağdan çıkarma Direktör kararıdır.' });
     if (g.asama === 'Onaylı' || g.asama === 'Koşullu Onaylı') await (await import('./uyum.js')).uyumOlay(b.db, 'firma_kabulu', 'Kuruluş', id); // YG-1546
     const r = await b.db.query(`UPDATE kurulus SET kayit_asamasi = coalesce($2, kayit_asamasi), ag_statusu = coalesce($3, ag_statusu), risk_derecesi = coalesce($4, risk_derecesi), kabul_karar_zamani = CASE WHEN $2::text IS NOT NULL THEN now() ELSE kabul_karar_zamani END, sonraki_gozden_gecirme_tarihi = CASE WHEN $2::text IS NOT NULL OR $4::text IS NOT NULL THEN NULL ELSE sonraki_gozden_gecirme_tarihi END, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING kimlik`, [id, g.asama ?? null, g.ag ?? null, g.risk ?? null]);
     if (!r.rowCount) return yok(y);
+    if (g.ag && g.ag !== mevcut) await b.db.query(`UPDATE kurulus SET pasif_nedeni = $2, son_iyilestirme_kaniti_ref = coalesce($3, son_iyilestirme_kaniti_ref) WHERE kimlik = $1`, [id, g.ag === 'Pasif' ? g.pasifNedeni : null, g.kanit && UUID.test(g.kanit) ? g.kanit : null]); // YG-357, YG-359
     if (g.ag === 'Geçici Askıda') await (await import('./firma_ek.js')).askiIsKararlariAc(b.db, id); // YG-1660: her açık iş için ayrı karar
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Statü Kararı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: g, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

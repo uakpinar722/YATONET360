@@ -151,15 +151,17 @@ describe('test (YG-286, YG-396, YG-397)', () => {
 describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
   it('açık Majör koşullu kabulü, açık Minör tam kabulü durdurur; koşullu kabul 30 gün, bir uzatma, süre dolunca Beklemede', async () => {
     const d = await dosya(); const e = await isEmri(d, 'Tamamlandı'); const tu = await o.gir('tu'); const km = await o.gir('km'); const u = `/api/is-emri/${e}/kosullu-kabul`;
-    const P = { bitis: ileri(30), kalemler: [{ tanim: 'T', etki: 'E', hedef: ileri(10), bedel: 0 }] };
+    const P = { bitis: ileri(30), kalemler: [{ tanim: 'T', etki: 'E', hedef: ileri(10), bedel: 0, sorumlu: 'Firma' }], etkiler: { mali: 'Yok', garanti: 'Kalem garantisi düzeltmeden başlar', guvenlik: 'Yok', musteri: 'Kullanıma engel değil' } };
     const mj = (await ncr(d, { sinif: 'Majör', isEmri: e })).json().kimlik;
     expect((await o.ist('POST', u, tu, P)).json().hata).toContain('Majör');
     await o.sup.query(`UPDATE uygunsuzluk SET statu = 'Kapalı' WHERE kimlik = $1`, [mj]);
     await ncr(d, { sinif: 'Minör', isEmri: e });
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).json().hata).toContain('Minör');
     expect((await o.ist('POST', u, tu, { ...P, bitis: ileri(32) })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tu, { ...P, etkiler: { mali: 'Yok' } })).json().hata).toContain('güvenlik'); // YG-415
     const k = await o.ist('POST', u, tu, P);
     expect(k.statusCode, k.body).toBe(200);
+    expect((await o.kart('Koşullu Kabul Etki Onayı', k.json().kimlik)).durum).toBe('Bekliyor');
     expect((await o.ist('POST', `/api/kabul/${k.json().kimlik}/uzat`, tu)).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/kabul/${k.json().kimlik}/uzat`, km)).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/kabul/${k.json().kimlik}/uzat`, km)).statusCode).toBe(409);

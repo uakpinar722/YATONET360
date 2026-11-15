@@ -77,8 +77,13 @@ describe('saha kapıları (YG-409, YG-143, YG-142, YG-141)', () => {
   it('kapasite, yeni hasar görevi, tedbirli yat HUD onayı', async () => {
     const d = await dosya(); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/kaldirma-tasima`;
     expect((await o.ist('POST', u, ds, { tur: 'Kaldırma', ekipman: 'Travel', kapasite: 10, agirlik: 12 })).json().hata).toContain('kapasitesi');
-    expect((await o.ist('POST', u, ds, { tur: 'Kaldırma', ekipman: 'Travel', kapasite: 15, agirlik: 12, yeniHasar: true })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, ds, { tur: 'Kaldırma', ekipman: 'Travel', kapasite: 15, agirlik: 12, yeniHasar: true })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { tur: 'Kaldırma', ekipman: 'Travel', kapasite: 15, agirlik: 12, yeniHasar: true, hasarAciklama: 'Kayış izi' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Uygunsuzluk Kaydı Aç' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
+    expect((await o.ist('POST', u, ds, { tur: 'Kara Taşıması', ekipman: 'Römork', kapasite: 20, agirlik: 12 })).json().hata).toContain('güzergâh'); // YG-376
+    expect((await o.ist('POST', u, ds, { tur: 'Denize İndirme', ekipman: 'Travel', kapasite: 15, agirlik: 12 })).json().hata).toContain('su alma');
+    expect((await o.ist('POST', u, ds, { tur: 'Denize İndirme', ekipman: 'Travel', kapasite: 15, agirlik: 12, suAlma: 'Su Alma Var' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT oncelik FROM is_karti WHERE tur = 'Su Alma Tedbiri' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].oncelik).toBe('Kritik');
     await o.sup.query(`UPDATE yat SET takyidat = '{Haciz}' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
     expect(await takyidatTasimaEngeli(o.db, d.kimlik)).toContain('Hukuk');
     expect((await o.ist('POST', u, ds, { tur: 'Tesis Değişikliği', ekipman: 'Römork' })).statusCode).toBe(409);
@@ -158,5 +163,21 @@ describe('iadede geri dönülecek aşama (YG-153)', () => {
     await o.karar(k.kimlik, 'tm', 'Onaya Gönder', 'Görüş'); await o.karar(k.kimlik, 'opm', 'Onaya Gönder', 'Görüş');
     expect((await o.ist('POST', `/api/is/${k.kimlik}/karar`, await o.gir('btd'), { karar: 'Gerekçeyle İade Et', gerekce: 'Operasyon görüşünü netleştiriniz', donulecekKademe: 1 })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum, kademe FROM is_karti WHERE kimlik = $1`, [k.kimlik])).rows[0]).toMatchObject({ durum: 'Bekliyor', kademe: 1 });
+  });
+});
+
+describe('ağ statüsü geçişleri (YG-357, YG-359)', () => {
+  it('Pasif yalnız Aktif firmadan nedenle; yaptırımdan yükseltme kanıt ister; basamak atlanabilir', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı','Onaylı','Aktif',$3) RETURNING kimlik`, [`S-AG${Date.now()}`, `Ağ Firma ${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const c = await o.gir('fym'); const u = `/api/firma/${f}/statu`;
+    expect((await o.ist('POST', u, c, { ag: 'Pasif', gerekce: 'G' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { ag: 'Pasif', pasifNedeni: 'Firma Talebi', gerekce: 'Talep' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, c, { ag: 'Aktif', gerekce: 'Döndü' })).statusCode).toBe(200);
+    await o.sup.query(`UPDATE kurulus SET ag_statusu = 'Askıda' WHERE kimlik = $1`, [f]);
+    expect((await o.ist('POST', u, c, { ag: 'Pasif', pasifNedeni: 'Hareketsizlik', gerekce: 'G' })).statusCode).toBe(409);
+    expect((await o.ist('POST', u, c, { ag: 'Aktif', gerekce: 'İyileşti' })).json().hata).toContain('iyileştirme kanıtı');
+    const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, olusturan_ref) VALUES ('DÖF Kapanış', 'Diğer', 'Kurumsal', 'Kuruluş', $1, 'Sistem', $2) RETURNING kimlik`, [f, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', u, c, { ag: 'Aktif', kanit: bl, gerekce: 'İyileşti' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT ag_statusu, son_iyilestirme_kaniti_ref FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ ag_statusu: 'Aktif', son_iyilestirme_kaniti_ref: bl });
   });
 });

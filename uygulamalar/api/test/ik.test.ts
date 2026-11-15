@@ -134,7 +134,13 @@ describe('ayrılış (YG-975, YG-979, YG-933)', () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); await kart('ds2', { brut: 30000 });
     await o.sup.query(`UPDATE personel_karti SET ise_giris_tarihi = '2020-01-01' WHERE kullanici_ref = $1`, [o.K.ds2]);
     await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Yedek Sorumlu',$3)`, [d.kimlik, o.K.ds2, o.K.opm]);
+    { const pc = await o.gir('ds2'); // YG-976: personel istifasını kendisi bildirir
+      if (!(await o.sup.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1`, [o.K.ds2])).rowCount) await o.sup.query(`INSERT INTO personel_karti (kullanici_ref) VALUES ($1) ON CONFLICT DO NOTHING`, [o.K.ds2]);
+      const ib = await o.ist('POST', '/api/istifa-bildirimi', pc, { sonGun: ileri(50), aciklama: 'Kişisel' }); expect(ib.statusCode, ib.body).toBe(200);
+      expect((await o.ist('POST', '/api/istifa-bildirimi', pc, {})).statusCode).toBe(409);
+      expect((await o.kart('İstifa Bildirimi', ib.json().kimlik)).durum).toBe('Bekliyor'); }
     const r = await o.ist('POST', '/api/ayrilis', iks, { personel: o.K.ds2, tur: 'İstifa', bildirim: gecmis(5), son: ileri(50) }); expect(r.statusCode, r.body).toBe(200); const id = r.json().kimlik;
+    expect((await o.sup.query(`SELECT durum FROM istifa_bildirimi WHERE personel_ref = $1`, [o.K.ds2])).rows[0].durum).toBe('Ayrılışa Aktarıldı'); // YG-976
     expect((await o.sup.query(`SELECT personel_durumu FROM personel_karti WHERE kullanici_ref = $1`, [o.K.ds2])).rows[0].personel_durumu).toBe('Ayrılıyor');
     const v = (await o.ist('GET', `/api/ayrilis/${id}`, iks)).json(); expect(v.devir.some((x: { tur: string }) => x.tur === 'Dosya')).toBe(true); expect(v.devir.some((x: { tur: string }) => x.tur === 'Rol')).toBe(true); expect(v.uyari).toContain('tavanı');
     expect((await o.ist('POST', `/api/ayrilis/${id}/tazminat`, iks, {})).json().hata).toContain('Devir');

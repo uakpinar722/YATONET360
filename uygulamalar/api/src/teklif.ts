@@ -387,6 +387,12 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const satirlar = (await b.db.query(`SELECT s.*, f.kimlik AS firma_kalem, f.birim_fiyat_eur FROM kapsam_satiri s LEFT JOIN firma_fiyat_kalemi f ON f.satir_ref = s.kimlik AND f.teklif_ref = $2 WHERE s.cetvel_ref = $1 ORDER BY s.satir_kodu`, [cetvel.kimlik, g.firmaTeklifi])).rows;
     // YG-180: Yat Sahibi Talebi yalnız yat sahibine hitaben teklifte; sigortalı dosyada yat sahibine ayrı teklif açılabilir.
     if (muhatap !== 'Yat Sahibi' && satirlar.some((r) => r.isin_niteligi === 'Yat Sahibi Talebi')) return y.code(400).send({ hata: 'Yat Sahibi Talebi niteliği yalnız yat sahibine hitaben teklifte seçilir.' });
+    // YG-890: sigortanın onayladığı (veya süre dolumuyla karşılanacak sayılan) satır, aynı cetvelden yat sahibine veya kurumsal müşteriye açılan teklife yazılamaz.
+    if (muhatap !== 'Sigorta Şirketi') {
+      const sgOnayli = new Set((await b.db.query(`SELECT k.satir_ref FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 AND f.teklif_muhatabi = 'Sigorta Şirketi' AND f.statu NOT IN ('Yerine Geçti', 'İptal') AND k.onay_durumu = 'Onaylandı' AND k.satir_ref IS NOT NULL`, [id])).rows.map((r) => r.satir_ref as string));
+      const cakisan = satirlar.filter((r) => sgOnayli.has(r.kimlik));
+      if (cakisan.length) return y.code(409).send({ hata: `Sigorta şirketinin onayladığı kalem bu teklife yazılamaz: ${cakisan.map((r) => r.satir_kodu).join(', ')}. Yalnız onaylanmayan kalemlerle teklif açınız.`, cakisan: cakisan.map((r) => r.satir_kodu) });
+    }
     // YG-1427, K-178: tedarikçiye bağlı satırda geçerli en düşük tedarikçi fiyatı firma fiyatı gibi kartela kuralıyla teklife geçer.
     const tdf = new Map((await b.db.query(`SELECT DISTINCT ON (x.satir_ref) x.satir_ref, x.kimlik, x.birim_fiyat_eur FROM tedarikci_teklif_kalemi x JOIN tedarikci_teklif_talebi t ON t.kimlik = x.talep_ref WHERE t.dosya_ref = $1 AND x.satir_ref IS NOT NULL AND x.birim_fiyat_eur IS NOT NULL AND t.durum = 'Yanıtlandı' AND t.gecerlilik >= (now() AT TIME ZONE 'Europe/Istanbul')::date ORDER BY x.satir_ref, x.birim_fiyat_eur`, [id])).rows.map((r) => [r.satir_ref as string, r]));
     const tdb = new Set((await b.db.query(`SELECT x.satir_ref FROM tedarikci_teklif_kalemi x JOIN tedarikci_teklif_talebi t ON t.kimlik = x.talep_ref WHERE t.dosya_ref = $1 AND x.satir_ref IS NOT NULL AND t.durum = 'Yanıt Bekliyor' AND t.son_zaman > now()`, [id])).rows.map((r) => r.satir_ref as string));

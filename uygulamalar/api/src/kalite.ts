@@ -385,7 +385,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-287, YG-290: koşullu kabul en geç 30 gün; Kalite Müdürü bir kez 15 gün uzatır; çekince açık iş kalemine bağlanır.
   s.post('/is-emri/:id/kosullu-kabul', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { bitis?: string; kalemler?: { tanim?: string; etki?: string; hedef?: string; bedel?: number }[] };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { bitis?: string; kalemler?: { tanim?: string; etki?: string; hedef?: string; bedel?: number; sorumlu?: string }[]; etkiler?: { mali?: string; garanti?: string; guvenlik?: string; musteri?: string } };
     if (!UUID.test(id)) return yok(y);
     const e = (await b.db.query(`SELECT kimlik, dosya_ref, statu FROM is_emri WHERE kimlik = $1`, [id])).rows[0];
     if (!e || !(await erisim(e.dosya_ref, o.kullanici))) return yok(y);
@@ -396,9 +396,14 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const kl = g.kalemler ?? [];
     if (!kl.length || kl.some((x) => !x.tanim?.trim() || !x.etki?.trim() || !x.hedef || !(Number(x.bedel) >= 0) || x.bedel === undefined)) return y.code(400).send({ hata: 'Her açık iş tanım, etki, hedef tarih ve bedel taşır.' }); // YG-841
     if (!g.bitis || (new Date(`${g.bitis}T23:59:59+03:00`).getTime() - Date.now()) / 86_400_000 > 31) return y.code(400).send({ hata: 'Koşul bitişi en geç 30 gündür.' });
+    // YG-415: açık maddelerin mali, garanti, güvenlik ve müşteri etkisi ayrıca yazılır ("Yok" dahil) ve Teknik Müdür onayına gider.
+    const et = g.etkiler ?? {};
+    if (!et.mali?.trim() || !et.garanti?.trim() || !et.guvenlik?.trim() || !et.musteri?.trim()) return y.code(400).send({ hata: 'Açık işlerin mali, garanti, güvenlik ve müşteri etkisini yazınız (etki yoksa "Yok").' });
     return islem(async (c) => {
-      const r = (await c.query(`INSERT INTO kabul_kaydi (dosya_ref, is_emri_ref, kabul_turu, kosul_bitis, kaydeden_ref) VALUES ($1,$2,'Koşullu Kabul',$3,$4) RETURNING kimlik`, [e.dosya_ref, id, g.bitis, o.kullanici])).rows[0];
-      for (const x of kl) await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur) VALUES ($1,$2,$3,$4,$5,$6)`, [r.kimlik, id, x.tanim!.trim(), x.etki!.trim(), x.hedef, x.bedel]);
+      const r = (await c.query(`INSERT INTO kabul_kaydi (dosya_ref, is_emri_ref, kabul_turu, kosul_bitis, kaydeden_ref, etki_degerlendirmesi, etki_onayi) VALUES ($1,$2,'Koşullu Kabul',$3,$4,$5,'Bekliyor') RETURNING kimlik`, [e.dosya_ref, id, g.bitis, o.kullanici, JSON.stringify({ mali: et.mali!.trim(), garanti: et.garanti!.trim(), guvenlik: et.guvenlik!.trim(), musteri: et.musteri!.trim() })])).rows[0];
+      for (const x of kl) await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur, sorumlu) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [r.kimlik, id, x.tanim!.trim(), x.etki!.trim(), x.hedef, x.bedel, x.sorumlu?.trim() || 'Çözüm Ortağı (işi yapan firma)']);
+      const no = (await c.query(`SELECT is_emri_no FROM is_emri WHERE kimlik = $1`, [id])).rows[0].is_emri_no;
+      await kartAc(c, { tur: 'Koşullu Kabul Etki Onayı', baslik: `${no} · Koşullu Kabul Etki Onayı`, ozet: `Mali: ${et.mali!.trim()} · Garanti: ${et.garanti!.trim()} · Güvenlik: ${et.guvenlik!.trim()} · Müşteri: ${et.musteri!.trim()}`.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Müdür')], nesneTuru: 'Kabul', nesneKimligi: r.kimlik });
       // YG-289: onaylı plandaki açık veya koşullu gereklilik satırları koşul bitişine hedefli eksik iş olarak taşınır.
       for (const m of (await c.query(`SELECT g.km_no, g.gereklilik, g.durum FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı' AND g.durum IN ('Açık', 'Koşullu')`, [e.dosya_ref])).rows)
         await c.query(`INSERT INTO acik_is_kalemi (kabul_ref, is_emri_ref, tanim, etki, hedef_tarih, bedel_eur) VALUES ($1,$2,$3,$4,$5,0)`, [r.kimlik, id, `${m.km_no ?? 'KM'} · ${m.gereklilik}`, `Gereklilik ${m.durum.toLocaleLowerCase('tr-TR')}; doğrulama kanıtı bekleniyor`, g.bitis]);
@@ -432,6 +437,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const eng = await kabulEngeli(b.db, { kimlik: '00000000-0000-0000-0000-000000000000', dosya_ref: id }, 'Kabul');
     if (eng) return y.code(409).send({ hata: eng });
     if ((await b.db.query(`SELECT 1 FROM acik_is_kalemi p JOIN kabul_kaydi a ON a.kimlik = p.kabul_ref WHERE a.dosya_ref = $1 AND p.kapanis_zamani IS NULL LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık iş kalemi vardır.' });
+    if ((await b.db.query(`SELECT 1 FROM kabul_kaydi WHERE dosya_ref = $1 AND kabul_turu = 'Koşullu Kabul' AND etki_onayi IS NOT NULL AND etki_onayi <> 'Onaylandı' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Koşullu kabulün etki değerlendirmesi Teknik Müdür onayı bekliyor.' }); // YG-415
     const gr = (await b.db.query(`SELECT test_grubu, bool_or(sonuc = 'Başarılı') basari FROM test_kaydi WHERE dosya_ref = $1 AND durum = 'Tamamlandı' GROUP BY test_grubu`, [id])).rows;
     if (gr.length >= 2 && !gr.some((x) => x.test_grubu === 'Arayüz / Bütünleşik' && x.basari)) return y.code(409).send({ hata: 'Nihai kabul için Bütünleşik test bekleniyor.' });
     const r = (await b.db.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, garanti_baslangic, kaydeden_ref) VALUES ($1,'Nihai Kabul',(now() AT TIME ZONE 'Europe/Istanbul')::date,$2) RETURNING garanti_baslangic::text`, [id, o.kullanici])).rows[0];
@@ -485,3 +491,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     };
   });
 }
+
+kapanisKaydet('Koşullu Kabul Etki Onayı', async (c, k, karar) => { // YG-415
+  if (karar === 'Onayla' || karar === 'Reddet') await c.query(`UPDATE kabul_kaydi SET etki_onayi = $2 WHERE kimlik = $1::uuid`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi']);
+});

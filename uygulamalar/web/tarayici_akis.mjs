@@ -461,9 +461,9 @@ try {
   kontrol('Kalite Kontrolör uygunsuzluğu ekrandan açar', uy === 1);
   await dosyaAc(pT2, d2.dosyaNo);
   await pT2.locator('#kk-e').selectOption(ie2.kimlik); await pT2.locator('#kk-b').fill(new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10)); await pT2.locator('#kk-t').fill('Rötuş'); await pT2.locator('#kk-i').fill('Görsel'); await pT2.locator('#kk-h').fill(new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10));
-  await pT2.locator('#kk-bd').fill('0');
+  await pT2.locator('#kk-bd').fill('0'); for (const x of ['mali', 'garanti', 'guvenlik', 'musteri']) await pT2.locator(`#kk-${x}`).fill('Yok'); // YG-415
   await tikla(pT2, 'Koşullu Kabul Ver');
-  kontrol('Teknik Uzman koşullu kabulü ekrandan verir', (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].s === 'Koşullu Kabul');
+  await yokla('Teknik Uzman koşullu kabulü ekrandan verir', async () => (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].s === 'Koşullu Kabul');
   // Tedarik
   const ted = (await pSc.api('/firma', { unvan: `E2E Tedarikçi ${tek}`, rol: 'Tedarikçi' })).kimlik;
   await pFym.api(`/firma/${ted}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });

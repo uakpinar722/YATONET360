@@ -222,7 +222,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
 
 /** İP-7: geçici onarım, kaldırma ve taşıma, hiza, kaptan görevlendirme. */
 function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
-  const [g, setG] = useState({ islem: '', uygulama: '', kullanim: '', son: '', suAlma: false }); const [l, setL] = useState<{ kimlik: string; islem: string; son_gecerlilik: string; uzatma_sayisi: number; durum: string }[]>([]); const [uz, setUz] = useState(''); const [t, setT] = useState({ tur: 'Kaldırma', ekipman: '', kapasite: '', agirlik: '', yeniHasar: false }); const [hz, setHz] = useState(''); const [kp, setKp] = useState<{ kimlik: string; ad_soyad: string; ticari_unvan: string; gecerli: boolean }[]>([]); const [ks, setKs] = useState(''); const [hg, setHg] = useState('');
+  const [g, setG] = useState({ islem: '', uygulama: '', kullanim: '', son: '', suAlma: false }); const [l, setL] = useState<{ kimlik: string; islem: string; son_gecerlilik: string; uzatma_sayisi: number; durum: string }[]>([]); const [uz, setUz] = useState(''); const [t, setT] = useState({ tur: 'Kaldırma', ekipman: '', kapasite: '', agirlik: '', yeniHasar: false, guzergah: '', suAlma: '', hasarAciklama: '' }); const [hz, setHz] = useState(''); const [kp, setKp] = useState<{ kimlik: string; ad_soyad: string; ticari_unvan: string; gecerli: boolean }[]>([]); const [ks, setKs] = useState(''); const [hg, setHg] = useState('');
   const yk = () => istek<typeof l>(`/dosya/${id}/gecici-onarim`).then(setL);
   useEffect(() => { void yk().catch(() => {}); void istek<typeof kp>('/kaptanlar').then(setKp).catch(() => {}); }, [id]);
   return (<>
@@ -235,11 +235,14 @@ function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <button className="btn2 kucuk" disabled={!g.islem.trim() || !g.uygulama || !g.son || !g.kullanim.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/gecici-onarim`, g).then(yk), 'Geçici onarım kaydedildi.')}>Geçici Onarım Kaydet</button>
 
     <div className="bolum">Kaldırma ve Taşıma</div>
-    <label htmlFor="kt-t">İşlem</label><select id="kt-t" value={t.tur} onChange={(e) => setT({ ...t, tur: e.target.value })}>{['Kaldırma', 'Taşıma', 'Tesis Değişikliği'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="kt-t">İşlem</label><select id="kt-t" value={t.tur} onChange={(e) => setT({ ...t, tur: e.target.value })}>{['Kaldırma', 'Taşıma', 'Tesis Değişikliği', 'Kara Taşıması', 'Denize İndirme'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="kt-e">Ekipman</label><input id="kt-e" value={t.ekipman} onChange={(e) => setT({ ...t, ekipman: e.target.value })} />
     <div className="iki-tarih"><div><label htmlFor="kt-k">Kapasite (ton)</label><input id="kt-k" inputMode="decimal" value={t.kapasite} onChange={(e) => setT({ ...t, kapasite: e.target.value })} /></div><div><label htmlFor="kt-a">Yat Ağırlığı (ton)</label><input id="kt-a" inputMode="decimal" value={t.agirlik} onChange={(e) => setT({ ...t, agirlik: e.target.value })} /></div></div>
+    {t.tur === 'Kara Taşıması' && <><label htmlFor="kt-g">Güzergâh (Çıkış – Varış)</label><input id="kt-g" value={t.guzergah} onChange={(e) => setT({ ...t, guzergah: e.target.value })} /></>}
+    {t.tur === 'Denize İndirme' && <><label htmlFor="kt-s">Su Alma Kontrolü</label><select id="kt-s" value={t.suAlma} onChange={(e) => setT({ ...t, suAlma: e.target.value })}><option value="">Seçiniz</option><option>Su Alma Yok</option><option>Su Alma Var</option></select></>}
     <label className="kutu"><input type="checkbox" checked={t.yeniHasar} onChange={(e) => setT({ ...t, yeniHasar: e.target.checked })} /><span>Yeni Hasar Oluştu</span></label>
-    <button className="btn2 kucuk" disabled={!t.ekipman.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/kaldirma-tasima`, { tur: t.tur, ekipman: t.ekipman, kapasite: t.kapasite ? sayi(t.kapasite) : undefined, agirlik: t.agirlik ? sayi(t.agirlik) : undefined, yeniHasar: t.yeniHasar }), 'Kaydedildi.')}>Kaydı Gir</button>
+    {t.yeniHasar && <><label htmlFor="kt-ha">Yeni Hasarın Tanımı</label><input id="kt-ha" value={t.hasarAciklama} onChange={(e) => setT({ ...t, hasarAciklama: e.target.value })} /></>}
+    <button className="btn2 kucuk" disabled={!t.ekipman.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/kaldirma-tasima`, { tur: t.tur, ekipman: t.ekipman, kapasite: t.kapasite ? sayi(t.kapasite) : undefined, agirlik: t.agirlik ? sayi(t.agirlik) : undefined, yeniHasar: t.yeniHasar, guzergah: t.guzergah || undefined, suAlma: t.suAlma || undefined, hasarAciklama: t.hasarAciklama || undefined }), 'Kaydedildi.')}>Kaydı Gir</button>
     <label htmlFor="kt-h">Hukuk Onayı Gerekçesi</label><input id="kt-h" value={hg} onChange={(e) => setHg(e.target.value)} /><button className="btn2 kucuk" disabled={!hg.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/tasima-onayi`, { gerekce: hg }), 'Hukuk ve Uyum Direktörü onayına gönderildi.')}>Taşıma Onayı İste</button>
 
     <div className="bolum">Deniz Denemesi ve Kaptan</div>

@@ -526,6 +526,17 @@ describe('firma raporunda resmî / klas onayı sorusu (YG-1441)', () => {
   });
 });
 
+describe('sigorta onaylı kalem yat sahibine yazılmaz (YG-890)', () => {
+  it('aynı cetvelden yat sahibi teklifi onaylı satırla açılmaz', async () => {
+    const d = await hazir(); const t = await teklifAc(d, 51);
+    await o.sup.query(`UPDATE fiyat_teklifi SET teklif_muhatabi = 'Sigorta Şirketi', statu = 'Karar' WHERE kimlik = $1`, [t.kimlik]);
+    await o.sup.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = 'Onaylandı' WHERE teklif_ref = $1`, [t.kimlik]);
+    const ff = await firmaFiyat(d.kimlik, 51);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teklif`, await o.gir('ts'), { firmaTeklifi: ff, muhatap: 'Yat Sahibi' });
+    expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Sigorta şirketinin onayladığı kalem');
+  });
+});
+
 describe('teklif hedef süresi (YG-199)', () => {
   it('firma raporu ve firma fiyatı girilince başlar, öncelik saatine göre biter', async () => {
     const d = await hazir();

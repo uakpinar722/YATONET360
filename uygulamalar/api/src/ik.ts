@@ -344,6 +344,19 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if (a.tur === 'İstifa' && !a.dilekce_belge) return 'İmzalı istifa dilekçesi bekleniyor.';
     return null;
   };
+  // YG-976: personel istifasını kendisi bildirir; bildirim zamanı kayda geçer, İnsan Kaynaklarına görev düşer. Ayrılış kaydı İK'ca imzalı istifa dilekçesiyle açılır.
+  s.post('/istifa-bildirimi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { sonGun?: string; aciklama?: string };
+    if (!(await b.db.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1 AND coalesce(personel_durumu, '') NOT IN ('Ayrıldı', 'Ayrılıyor')`, [o.kullanici])).rowCount) return y.code(409).send({ hata: 'Aktif personel kaydınız bulunamadı veya ayrılış süreci başlamıştır.' });
+    if (g.sonGun && !/^\d{4}-\d{2}-\d{2}$/.test(g.sonGun)) return y.code(400).send({ hata: 'İstenen son iş gününü geçerli giriniz.' });
+    if ((await b.db.query(`SELECT 1 FROM istifa_bildirimi WHERE personel_ref = $1 AND durum = 'Açık'`, [o.kullanici])).rowCount) return y.code(409).send({ hata: 'Açık istifa bildiriminiz bulunmaktadır.' });
+    const r = (await b.db.query(`INSERT INTO istifa_bildirimi (personel_ref, istenen_son_gun, aciklama) VALUES ($1,$2,$3) RETURNING kimlik, bildirim_zamani`, [o.kullanici, g.sonGun || null, g.aciklama?.trim() || null])).rows[0];
+    const ad = (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0].ad_soyad;
+    await kartAc(b.db, { tur: 'İstifa Bildirimi', kategori: 'gorev', baslik: `İstifa Bildirimi · ${ad}`, ozet: `Bildirim: ${new Date(r.bildirim_zamani).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}${g.sonGun ? ` · İstenen son iş günü: ${g.sonGun.split('-').reverse().join('.')}` : ''}. İmzalı istifa dilekçesini alıp ayrılış kaydını açınız.`, oncelik: 'Yüksek', sahipRol: await rolId(b.db, IKS), nesneTuru: 'İstifa Bildirimi', nesneKimligi: r.kimlik });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İstifa Bildirimi', nesneTuru: 'Personel', nesneKimligi: o.kullanici, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik, durum: 'İnsan Kaynaklarına iletildi' };
+  });
+
   s.post('/ayrilis', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { personel?: string; tur?: string; bildirim?: string; son?: string; mutabakat?: boolean; dilekce?: string };
     if (!(await ikMi(o.kullanici))) return y.code(403).send({ hata: 'Ayrılışı İnsan Kaynakları girer.' });
@@ -355,6 +368,8 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     for (const r of (await b.db.query(`SELECT kimlik, baslik FROM is_karti WHERE sahip_kullanici_ref = $1 AND durum = 'Bekliyor'`, [g.personel])).rows) await b.db.query(`INSERT INTO ayrilis_devri (ayrilis_ref, tur, nesne, aciklama) VALUES ($1,'Görev',$2,$3)`, [a.kimlik, r.kimlik, r.baslik]);
     for (const r of (await b.db.query(`SELECT x.kimlik, x.rol_adi FROM rol_atamasi t JOIN rol x ON x.kimlik = t.rol_ref WHERE t.kullanici_ref = $1 AND t.atama_durumu = 'Aktif'`, [g.personel])).rows) await b.db.query(`INSERT INTO ayrilis_devri (ayrilis_ref, tur, nesne, aciklama) VALUES ($1,'Rol',$2,$3)`, [a.kimlik, r.kimlik, r.rol_adi]);
     await b.db.query(`UPDATE personel_karti SET personel_durumu = 'Ayrılıyor' WHERE kullanici_ref = $1`, [g.personel]);
+    if (g.tur === 'İstifa') { const ib = (await b.db.query(`UPDATE istifa_bildirimi SET durum = 'Ayrılışa Aktarıldı' WHERE personel_ref = $1 AND durum = 'Açık' RETURNING kimlik`, [g.personel])).rows[0]; // YG-976
+      if (ib) await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'İstifa Bildirimi' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [ib.kimlik]); }
     await bildir(b.db, { olay: `ayrilis-gizlilik:${a.kimlik}`, kullanicilar: [g.personel], baslik: 'Gizlilik Yükümlülüğü Hatırlatması', ozet: 'Okuduğunuzu onaylamanızı rica ederiz.' }); // YG-932
     const amir = await birimAmiri(b.db, g.personel);
     if (amir) await kartAc(b.db, { tur: 'Personel Devir Listesi', kategori: 'islem', baslik: 'Personel Devir Listesi', ozet: `Son iş günü: ${g.son}`, oncelik: 'Yüksek', sonZaman: new Date(g.son), sahipKullanici: amir, nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik });

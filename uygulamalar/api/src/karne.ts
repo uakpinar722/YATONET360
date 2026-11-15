@@ -21,6 +21,7 @@ export interface Girdi {
   butce: number | null; ekIs: number; fatura: number | null; onaysizEkIs: boolean;
   yanitUyum: number | null; raporZamaninda: number | null; oncedenBildirim: number | null;
   isg: number; prosedur: number; denetimMajoer: number; denetimMinoer: number; eksikBelge: number; emniyetOlayi: boolean; gecikenAcikIs?: number;
+  musteriSikayeti?: number; duzelticiFaaliyet?: number; acikDuzelticiFaaliyet?: number; // YG-349: olay kaydına yazılır, puan formülüne girmez
 }
 
 /** YG-789, Ek I §7.5: beş boyut kayıtlardan 0–100; ölçülemeyen boyut sıfır sayılmaz (YG-743), ağırlığı ölçülenlere dağılır. */
@@ -103,6 +104,10 @@ async function girdiTopla(db: Db, id: string, p: P): Promise<{ g: Girdi; e: Reco
     // YG-287: süresinde kapanmayan punch (açık iş) kalemi Minör uygunsuzluk ağırlığıyla kaliteden düşer.
     gecikenAcikIs: await say(`SELECT count(*) n FROM acik_is_kalemi WHERE is_emri_ref = $1 AND gecikti`, id),
     emniyetOlayi: (await say(`SELECT count(*) n FROM uygunsuzluk WHERE emniyet_isareti AND (is_emri_ref = $1 OR (dosya_ref = $2 AND sorumlu_firma_ref = $3))`, id, e.dosya_ref, e.kurulus_ref)) > 0,
+    // YG-349: garanti çağrısı dışındaki haklı müşteri şikâyeti ve firmanın uygunsuzluklarına bağlı düzeltici faaliyetler.
+    musteriSikayeti: await say(`SELECT count(*) n FROM garanti_sikayet WHERE dosya_ref = $1 AND kurulus_ref = $2 AND 'Şikâyet' = ANY(kayit_turu) AND sikayet_sonucu IN ('Haklı – Düzeltildi', 'Kısmen Haklı')`, e.dosya_ref, e.kurulus_ref),
+    duzelticiFaaliyet: await say(`SELECT count(*) n FROM duzeltici_faaliyet f JOIN kok_neden_analizi k ON k.kimlik = f.kok_neden_ref JOIN uygunsuzluk u ON u.kimlik = k.uygunsuzluk_ref WHERE u.is_emri_ref = $1 OR (u.dosya_ref = $2 AND u.sorumlu_firma_ref = $3)`, id, e.dosya_ref, e.kurulus_ref),
+    acikDuzelticiFaaliyet: await say(`SELECT count(*) n FROM duzeltici_faaliyet f JOIN kok_neden_analizi k ON k.kimlik = f.kok_neden_ref JOIN uygunsuzluk u ON u.kimlik = k.uygunsuzluk_ref WHERE (u.is_emri_ref = $1 OR (u.dosya_ref = $2 AND u.sorumlu_firma_ref = $3)) AND f.statu NOT IN ('Kapalı', 'Geçersiz')`, id, e.dosya_ref, e.kurulus_ref),
   };
   return { g, e };
 }

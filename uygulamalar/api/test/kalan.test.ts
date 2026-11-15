@@ -1312,4 +1312,14 @@ describe('istenecek belge listesi (YG-1439)', () => {
     expect((await o.sup.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [r.json().kimlik])).rows[0].sigortaci_adi).toBe('Allianz Sigorta A.Ş.');
     expect((await o.ist('POST', u, await o.gir('mpm'), { tsbKodu: '1004', ad: 'Eksper Bir', eposta: ep, dayanak: 'x' })).statusCode).toBe(409);
   });
+  it('kurumsal müşteride Müşteri Talimatı kaydı ve BLD-67 (YG-437)', async () => {
+    const d = await o.dosyaAc({}, {}); const ds = await o.gir('opm');
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.opm]);
+    const u = `/api/dosya/${d.kimlik}/musteri-talimati`; const P = { kanal: 'E-posta', limit: 5000, hedef: '2026-12-20', metin: 'Pervane onarımı' };
+    expect((await o.ist('POST', u, ds, P)).json().hata).toContain('kurumsal');
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Kurumsal Müşteri' WHERE kimlik = $1`, [d.kimlik]);
+    expect((await o.ist('POST', u, ds, { ...P, limit: 0 })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, ds, P); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().talimatNo).toBe(`${d.dosyaNo}-MT01`);
+  });
 });

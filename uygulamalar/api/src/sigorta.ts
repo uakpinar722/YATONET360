@@ -36,9 +36,17 @@ async function kararUygula(c: PoolClient, t: Record<string, any>, onaylananSira:
 export async function sigortaSureIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;
   const { rows } = await db.query(`SELECT f.*, d.dosya_no, d.statu AS d_statu, d.asama, d.dosya_sorumlusu_ref, s.cerceve_sozlesme_yok, s.sigortaci_adi, p.eposta FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE f.statu = 'Gönderildi' AND f.teklif_muhatabi = 'Sigorta Şirketi' AND f.sigorta_karar_son IS NOT NULL`);
+  const { isGunuSonu } = await import('./teklif.js'); const { kartAc } = await import('./is_motoru.js'); const { birKez } = await import('./bildirim.js');
   for (const t of rows) {
     const son = new Date(t.sigorta_karar_son);
-    if (!t.sigorta_hatirlatma && son.getTime() - simdi.getTime() <= 24 * 3_600_000 && son > simdi) {
+    // YG-447: ek iş teklifinde 1. iş günü sonunda hatırlatma (BLD-72, tek), 3. iş günü sonunda Dosya Sorumlusuna telefon takip görevi.
+    const ek = t.teklif_turu === 'Ek Fiyat Teklifi' && t.gonderim_zamani && son > simdi;
+    if (ek && t.dosya_sorumlusu_ref && simdi >= (await isGunuSonu(db, new Date(t.gonderim_zamani), 3)) && (await birKez(db, 'ek-is-telefon', t.kimlik))) {
+      await kartAc(db, { tur: 'Sigorta Telefon Takibi', kategori: 'gorev', baslik: `${t.dosya_no} · Ek İş Onayı İçin Sigortayı Telefonla Arayınız`, ozet: `${t.teklif_no} üç iş günüdür yanıt bekliyor; görüşme sonucunu dosyaya kaydediniz.`, oncelik: 'Yüksek', sahipKullanici: t.dosya_sorumlusu_ref, sonZaman: son, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
+      n++;
+    }
+    const ekHatirlat = ek && simdi >= (await isGunuSonu(db, new Date(t.gonderim_zamani), 1));
+    if (!t.sigorta_hatirlatma && son > simdi && (ekHatirlat || son.getTime() - simdi.getTime() <= 24 * 3_600_000)) {
       const m = await metinGetir(db, 'BLD-72', 'tr', { 'Dosya No': t.dosya_no, 'Fiyat Teklifi / Ek Fiyat Teklifi / Acil Tedbir Fiyat Teklifi': t.teklif_turu, Kurum: t.sigortaci_adi ?? '', 'son tarih saat': son.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }) });
       if (t.eposta) await sigortayaHazirla(db, { dosya: t.dosya_ref, tur: 'BLD-72', nesne: t.kimlik, alici: t.eposta, konu: `${t.dosya_no} Hatırlatma`, metin: m, acil: true, sonZaman: son }); // K-241
       else await sigortaAdresiBekleniyor(db, t.dosya_ref);
