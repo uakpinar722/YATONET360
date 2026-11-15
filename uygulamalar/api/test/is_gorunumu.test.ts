@@ -27,7 +27,7 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
   });
   it('konum planı izin, nöbet ve keşiften oluşur; izinde yalnız İzinli yazar; yetkisiz kişi başkasını görmez', async () => {
     const d = await o.dosyaAc();
-    const bugun = new Date(); const g = (n: number) => new Date(bugun.getTime() + n * 86_400_000).toISOString().slice(0, 10);
+    const bugun = new Date(); const g = (n: number) => new Date(bugun.getTime() + n * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }); // yerel gün (gece yarısı sonrası UTC kayması)
     await o.sup.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, durum) VALUES ($1,'Yıllık',$2,$2,1,'Onaylandı')`, [o.K.ds, g(2)]);
     await o.sup.query(`INSERT INTO kesif (dosya_ref, amac_kapsam, planlanan_baslangic, planlanan_bitis, sorumlu_ref, olusturan_ref) VALUES ($1,'Keşif',$2::date + time '10:00', $2::date + time '12:00',$3,$3)`, [d.kimlik, g(1), o.K.ds]);
     const p = (await konumPlani(o.db, [o.K.ds!], bugun))[0]!;

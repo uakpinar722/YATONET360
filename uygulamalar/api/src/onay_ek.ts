@@ -347,6 +347,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Tam Onay', karar_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
       await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = 'Onaylandı' WHERE teklif_ref = $1 AND NOT opsiyon`, [t.kimlik]);
+      await (await import('./teklif.js')).kurumsalSozlesmeKur(c, t.kimlik, `Ek-2 Kurumsal E-posta (${g.gonderen!.trim()})`, o.kullanici); // YG-208
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal E-posta Onayı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { gonderen: g.gonderen!.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { durum: 'Tam Onay' };
     });

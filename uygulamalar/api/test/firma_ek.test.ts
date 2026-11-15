@@ -179,5 +179,9 @@ describe('ağ statüsü geçişleri (YG-357, YG-359)', () => {
     const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, olusturan_ref) VALUES ('DÖF Kapanış', 'Diğer', 'Kurumsal', 'Kuruluş', $1, 'Sistem', $2) RETURNING kimlik`, [f, o.K.ds])).rows[0].kimlik;
     expect((await o.ist('POST', u, c, { ag: 'Aktif', kanit: bl, gerekce: 'İyileşti' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT ag_statusu, son_iyilestirme_kaniti_ref FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ ag_statusu: 'Aktif', son_iyilestirme_kaniti_ref: bl });
+    expect((await o.sup.query(`SELECT son_statu_karar_zamani > now() - interval '1 minute' t, sonraki_gozden_gecirme_tarihi FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ t: true, sonraki_gozden_gecirme_tarihi: null }); // YG-1816
+    await o.sup.query(`UPDATE kurulus SET kabul_karar_zamani = now() - interval '2 years' WHERE kimlik = $1`, [f]); // YG-357
+    const { sahaSureIsle } = await import('../src/saha_kayit.js'); await sahaSureIsle(o.db); await sahaSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Pasif Önerisi' AND nesne_kimligi = $1`, [f])).rows[0].n).toBe(1);
   });
 });

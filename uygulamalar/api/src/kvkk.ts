@@ -34,7 +34,7 @@ export async function ihlalAc(db: Db, g: { ozet: string; olayTuru: string; ogren
     await db.query(`UPDATE veri_ihlali SET karsi_taraf = $2 WHERE kimlik = $1`, [r.kimlik, g.karsiTaraf.trim()]);
     await kartAc(db, { tur: 'Karşı Tarafa İhlal Bildirimi', kategori: 'gorev', baslik: `${no} · ${g.karsiTaraf.trim()} · İlk Bildirim`, ozet: 'Sözleşme gereği öğrenmeden itibaren en geç 12 saat içinde ilk bildirim yapılması rica olunur.', oncelik: 'Kritik', sonZaman: new Date(ogrenme.getTime() + 12 * SAAT), sahipRol: await rolId(db, HUD), nesneTuru: 'Veri İhlali', nesneKimligi: r.kimlik });
   }
-  await bildir(db, { olay: `veri-ihlali:${r.kimlik}`, kullanicilar: [...await rolKisileri(db, BIM), ...await rolKisileri(db, HUD)], baslik: `⚠ Veri İhlali Şüphesi · ${no}`, ozet: 'FR-HUK-002 kaydı açıldı; telefonla da aranmanız bekleniyor.', oncelik: 'Kritik', sms: true, acil: true });
+  await bildir(db, { olay: `veri-ihlali:${r.kimlik}`, kullanicilar: [...new Set([...await rolKisileri(db, BIM), ...await rolKisileri(db, HUD), ...await rolKisileri(db, 'Genel Müdür Yardımcısı'), ...await rolKisileri(db, 'CEO')])], baslik: `⚠ Veri İhlali Şüphesi · ${no}`, ozet: 'FR-HUK-002 kaydı açıldı; telefonla da aranmanız bekleniyor.', oncelik: 'Kritik', sms: true, acil: true });
   return { kimlik: r.kimlik as string, olayNo: no };
 }
 
@@ -137,6 +137,7 @@ export async function kvkkIsle(db: Pool, simdi = new Date()): Promise<number> {
   }
   for (const k of (await db.query(`SELECT kimlik, basvuru_no, son_yanit_tarihi, hazirlayan_ref FROM ilgili_kisi_basvurusu WHERE durum <> 'Yanıtlandı' AND son_yanit_tarihi <= ($1::date + 7)`, [simdi.toISOString().slice(0, 10)])).rows) if (await birKez(db, 'basvuru_son', k.kimlik)) { await bildir(db, { olay: `basvuru-son:${k.kimlik}`, kullanicilar: [k.hazirlayan_ref, ...await rolKisileri(db, HUD)], baslik: `⚠ ${k.basvuru_no} · Yanıt Süresi Yaklaşıyor`, ozet: `Son yanıt: ${new Date(k.son_yanit_tarihi).toLocaleDateString('tr-TR')}`, oncelik: 'Yüksek' }); n++; }
   await db.query(`DELETE FROM bildirim WHERE zaman < $1`, [ayEkle(simdi, -24)]);
+  n += (await db.query(`DELETE FROM konum_kaydi WHERE zaman < $1`, [ayEkle(simdi, -12)])).rowCount ?? 0; // YG-1658, YG-500: acil konum 1 yıl saklanır
   // YG-608, YG-1222: belge türüne göre grup; birden çok gruba giriyorsa en uzun süre. Mali kayıt takvim yılı sonundan başlar.
   // YG-608: dosya dışı kayda bağlı belge de hesaplanır. İş emri ve talep belgesi bağlı dosyanın kapanışından; kuruluş belgesi ilişkinin bitişinden (ILS-5);
   // personel ve izin belgesi iş ilişkisinin bitişinden (OZL-10) başlar. Sözleşme, mali ve ticari türler kendi grubunu korur.

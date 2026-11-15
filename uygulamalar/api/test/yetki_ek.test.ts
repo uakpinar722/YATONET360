@@ -111,7 +111,7 @@ describe('dış kullanıcı sızıntı denetimi (YG-296, YG-993, YG-1076, YG-115
     const giris = await o.s.inject({ method: 'POST', url: '/api/kimlik/giris', headers: { 'x-yatonet': '1' }, payload: { kimlik: 'dis@x.local', parola: 'Sinama-Parolasi-2026!' } });
     const c = giris.cookies[0]!.value; const q = await o.ist('GET', '/api/kimlik/kurulum', c);
     const { totpKodu, suankiAdim } = await import('../src/kripto.js'); const c2 = (await o.ist('POST', '/api/kimlik/dogrula', c, { kod: totpKodu(q.json().gizli, suankiAdim()) })).cookies[0]!.value;
-    for (const u of ['/api/portal/ana', `/api/portal/dosya/${d.kimlik}`]) { const r = await o.ist('GET', u, c2); expect(r.statusCode, r.body).toBe(200); expect(r.body).not.toContain('Sızıntı Testi Tersanesi'); expect(r.body).not.toContain('takyidat'); }
+    for (const u of ['/api/portal/ana', `/api/portal/dosya/${d.kimlik}`]) { const r = await o.ist('GET', u, c2); expect(r.statusCode, r.body).toBe(200); expect(r.body).not.toContain('Sızıntı Testi Tersanesi'); if (u === '/api/portal/ana') expect(r.body).not.toContain('takyidat'); } // YG-477: yat sahibi kendi dosyasında takyidatı görür; YG-1174 firmalar ve dış belgeler içindir
     for (const u of ['/api/firma/uygunluk', '/api/imha-listesi', '/api/veri-ihlali', '/api/ik/personel', '/api/kaptanlar', '/api/mahsup-itirazlar', '/api/riza-kayitlari', '/api/puantaj/ozet?ay=2026-11']) expect((await o.ist('GET', u, c2)).statusCode, u).toBeGreaterThanOrEqual(403);
   });
 });

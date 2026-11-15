@@ -129,6 +129,9 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const son = new Date(Date.now() + TESLIM_GUN * 86_400_000); const gs = son.toISOString().slice(0, 10); const tr = gunAy(son);
     return islem(async (c) => {
       await c.query(`UPDATE dosya SET teslime_hazir_zamani = now(), teslim_son_tarihi = $2 WHERE kimlik = $1`, [id, gs]);
+      // YG-480: portal hesabı olan yat sahibi/temsilciye sistem içi bildirim de gider (e-posta/SMS BLD-12 ile).
+      const pk = (await c.query(`SELECT DISTINCT kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif AND kullanici_ref IS NOT NULL AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci')`, [id])).rows.map((r) => r.kullanici_ref as string);
+      if (pk.length && !d.vefat_isareti) await (await import('./bildirim.js')).bildir(c, { olay: `teslime-hazir:${id}`, kullanicilar: pk, baslik: `${d.yat_adi} Teslime Hazır`, ozet: `Son teslim tarihi: ${tr}` });
       if (t && !d.vefat_isareti) await yatTarafinaYaz(c, { olay: `bld12:${id}`, kod: 'BLD-12', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Teslime Hazır`, telefon: t.telefon, eposta: t.eposta, alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi, tarih: tr, date: tr, 'bağlantı': b.webAdresi, link: b.webAdresi } });
       return { sonTarih: gs };
     });

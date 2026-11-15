@@ -226,9 +226,48 @@ kapanisKaydet('Veri Düzeltme Talebi', async (c, k, karar, yapan) => { // YG-124
   await izYaz(c, { aktor: yapan, eylem: 'Veri Düzeltme', nesneTuru: 'Yat', nesneKimligi: t.nesne_ref, eski: { [t.alan]: eski }, yeni: { [t.alan]: t.dogru_deger }, gerekce: `Kaynak: ${t.kaynak}; etkilenen: ${t.etkilenen}`, sonuc: 'Başarılı' });
 });
 
+kapanisKaydet('İade Kaydı', async (c, k, karar) => { // YG-1499
+  const r = (await c.query(`SELECT i.*, d.dosya_no, d.yazisma_dili FROM iade_kaydi i JOIN dosya d ON d.kimlik = i.dosya_ref WHERE i.kimlik = $1::uuid AND i.durum = 'Onayda'`, [k.nesne_kimligi])).rows[0];
+  if (!r) return;
+  if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') { await c.query(`UPDATE iade_kaydi SET durum = 'Reddedildi' WHERE kimlik = $1`, [r.kimlik]); return; }
+  if (karar !== 'Onayla') return;
+  await c.query(`UPDATE iade_kaydi SET durum = 'Onaylandı' WHERE kimlik = $1`, [r.kimlik]);
+  const sahip = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci') ORDER BY taraf_rolu = 'Yat Sahibi' DESC LIMIT 1`, [r.dosya_ref])).rows[0];
+  if (!sahip) return;
+  const tt = tutar(Number(r.tutar)); const tr = String(r.iade_tarihi instanceof Date ? r.iade_tarihi.toISOString().slice(0, 10) : r.iade_tarihi).split('-').reverse().join('.');
+  await yatTarafinaYaz(c, { olay: `bld47:${r.kimlik}`, kod: 'BLD-47', dil: dilKod(r.yazisma_dili), konu: `${r.dosya_no} İade`, telefon: sahip.telefon, eposta: sahip.eposta,
+    alanlar: { 'Dosya No': r.dosya_no, 'File No': r.dosya_no, tutar: tt, amount: tt, 'para birimi': r.para_birimi, currency: r.para_birimi, tarih: tr, date: tr, 'ödeme aracı': r.odeme_araci, 'payment method': r.odeme_araci } });
+});
+
+/** YG-147: açık hedef sürede sözleşme taahhüdü aşılınca Dosya Sorumlusu ve Müşteri ve Paydaş İlişkileri Müdürüne bir kez uyarı gider. */
+export async function sozlesmeSureIsle(db: Pool, simdi = new Date()): Promise<number> {
+  let n = 0;
+  const { rows } = await db.query(`SELECT s.kimlik, s.tur, s.baslangic, s.dosya_ref, d.dosya_no, d.dosya_sorumlusu_ref FROM dosya_sure s JOIN dosya d ON d.kimlik = s.dosya_ref WHERE s.tamamlanma IS NULL AND s.tur IN ('İlk Yanıt', 'Keşif', 'Teklif') AND d.musteri_turu <> 'Bireysel Müşteri'`);
+  for (const s of rows) {
+    const h = await sozlesmeHedefi(db, s.dosya_ref, s.tur); const saat = h && h !== 'Tanımsız' ? Number(h.split(' ')[0]!.replace('.', '').replace(',', '.')) : null;
+    if (!saat || new Date(s.baslangic).getTime() + saat * 3_600_000 > simdi.getTime()) continue;
+    if (!(await birKez(db, 'sozlesme-sure-asimi', s.kimlik))) continue;
+    const kisiler = [...new Set([...(s.dosya_sorumlusu_ref ? [s.dosya_sorumlusu_ref] : []), ...await rolSahipleri(db, await rolId(db, 'Müşteri ve Paydaş İlişkileri Müdürü'))])];
+    await bildir(db, { olay: `sozlesme-sure:${s.kimlik}`, kullanicilar: kisiler, baslik: `⚠ ${s.dosya_no} · ${s.tur} Sözleşme Taahhüdü Aşıldı`, ozet: `Sözleşmedeki süre: ${h}.`, oncelik: 'Yüksek' }, simdi);
+    n++;
+  }
+  return n;
+}
+
 export const KONUM_TURLERI = ['Bağlama Noktası', 'Tersane Bölgesi', 'Sanayi Sitesi', 'Organize Sanayi Bölgesi', 'Serbest Bölge', 'Diğer'];
 
 export function kalanYollari(s: FastifyInstance, b: Baglam) {
+  // YG-1499: iade (avans iadesi, fazla ödeme, itiraz sonucu) Ticari Sorumluca hazırlanır, Ticari İşler Direktörü onaylar; onayla BLD-47 yat sahibine gider.
+  s.post('/dosya/:id/iade', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; tutar?: number; paraBirimi?: string; tarih?: string; odemeAraci?: string; aciklama?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!(await rolSahipleri(b.db, await rolId(b.db, TIC))).includes(o.kullanici)) return y.code(403).send({ hata: 'İade kaydını Ticari Sorumlu hazırlar.' });
+    if (!['Avans İadesi', 'Fazla Ödeme', 'İtiraz Sonucu İade'].includes(g.neden ?? '') || !(Number(g.tutar) > 0) || !['EUR', 'TL'].includes(g.paraBirimi ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.odemeAraci?.trim()) return y.code(400).send({ hata: 'İade nedeni, tutar, para birimi, iade tarihi ve ödeme aracı zorunludur.' });
+    const r = (await b.db.query(`INSERT INTO iade_kaydi (dosya_ref, neden, tutar, para_birimi, iade_tarihi, odeme_araci, aciklama, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [id, g.neden, Number(g.tutar), g.paraBirimi, g.tarih, g.odemeAraci!.trim(), g.aciklama?.trim() || null, o.kullanici])).rows[0];
+    const no = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0].dosya_no;
+    await kartAc(b.db, { tur: 'İade Kaydı', baslik: `${no} · ${g.neden} · ${tutar(Number(g.tutar))} ${g.paraBirimi}`, ozet: `${g.odemeAraci!.trim()} · ${g.tarih!.split('-').reverse().join('.')}`, hazirlayan: o.kullanici, zincir: [await rolId(b.db, TID)], nesneTuru: 'İade Kaydı', nesneKimligi: r.kimlik });
+    return { kimlik: r.kimlik, durum: 'Onayda' };
+  });
   // YG-1246: hatalı alan, doğru değer, doğru değerin kaynağı ve etkilenen dosya/işlemler yazılarak düzeltme istenir; Operasyon Müdürü onaylar; önceki değer denetim izinde korunur.
   s.post('/veri-duzeltme-talebi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { nesneTuru?: string; nesne?: string; alan?: string; dogruDeger?: string; kaynak?: string; etkilenen?: string };

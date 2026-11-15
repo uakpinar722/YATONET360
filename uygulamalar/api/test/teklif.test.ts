@@ -546,6 +546,17 @@ describe('sigorta onaylı kalem yat sahibine yazılmaz (YG-890)', () => {
   });
 });
 
+describe('kurumsal sözleşme kaydı (YG-208)', () => {
+  it('onaylı kurumsal tekliften sözleşme kaydı bir kez açılır', async () => {
+    const d = await hazir(); const t = await teklifAc(d, 51);
+    await o.sup.query(`UPDATE fiyat_teklifi SET teklif_muhatabi = 'Kurumsal Müşteri' WHERE kimlik = $1`, [t.kimlik]);
+    const { kurumsalSozlesmeKur } = await import('../src/teklif.js');
+    await kurumsalSozlesmeKur(o.db, t.kimlik, 'YATONET 360 Onayı', o.K.ts!); await kurumsalSozlesmeKur(o.db, t.kimlik, 'YATONET 360 Onayı', o.K.ts!);
+    const s = (await o.sup.query(`SELECT sozlesme_turu, durum, kurumsal_kanal FROM sozlesme_kaydi WHERE teklif_ref = $1`, [t.kimlik])).rows;
+    expect(s).toEqual([{ sozlesme_turu: 'Yat Onarım', durum: 'Yürürlükte', kurumsal_kanal: 'YATONET 360 Onayı' }]);
+  });
+});
+
 describe('teklif hedef süresi (YG-199)', () => {
   it('firma raporu ve firma fiyatı girilince başlar, öncelik saatine göre biter', async () => {
     const d = await hazir();

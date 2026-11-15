@@ -1350,4 +1350,31 @@ describe('istenecek belge listesi (YG-1439)', () => {
     await kuralYukle(o.db); expect(KURAL.smsKodGecerlilikDk).toBe(7);
     await o.sup.query(`UPDATE sistem_parametresi SET deger = 5 WHERE kod = 'kimlik_sms_kod_gecerlilik_dk'`); await kuralYukle(o.db); expect(KURAL.smsKodGecerlilikDk).toBe(5);
   });
+  it('iade kaydı Ticari Sorumlu hazırlar, TİD onaylar, BLD-47 gider (YG-1499)', async () => {
+    const d = await o.dosyaAc({}, {}); const u = `/api/dosya/${d.kimlik}/iade`; const P = { neden: 'Fazla Ödeme', tutar: 150, paraBirimi: 'EUR', tarih: '2026-11-16', odemeAraci: 'Banka havalesi' };
+    expect((await o.ist('POST', u, await o.gir('opm'), P)).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('ts'), { ...P, odemeAraci: '' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, await o.gir('ts'), P); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.karar((await o.kart('İade Kaydı', r.json().kimlik)).kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM iade_kaydi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Onaylandı');
+    expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld47:${r.json().kimlik}%`])).rows[0].metin).toContain('150,00 EUR tutarındaki iade');
+  });
+  it('sözleşme taahhüt süresi sigortaya göre; yoksa Tanımsız; bireyselde gösterilmez; aşımda uyarı (YG-147)', async () => {
+    const sg = `Süre Sigorta ${Date.now()}`; const u = '/api/sozlesme-hedef-suresi';
+    expect((await o.ist('POST', u, await o.gir('ds'), { sigortaci: sg, tur: 'Keşif', oncelik: 'Normal', saat: 48 })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('mpm'), { tur: 'Keşif', oncelik: 'Normal', saat: 48 })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, await o.gir('mpm'), { sigortaci: sg, tur: 'Keşif', oncelik: 'Normal', saat: 48 })).statusCode).toBe(200);
+    const { sozlesmeHedefi, sozlesmeSureIsle } = await import('../src/kalan.js');
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Sigorta Şirketi', oncelik = 'Normal' WHERE kimlik = $1`, [d.kimlik]);
+    await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi) VALUES ($1,$2)`, [d.kimlik, sg]);
+    expect(await sozlesmeHedefi(o.db, d.kimlik, 'Keşif')).toBe('48 saat');
+    expect(await sozlesmeHedefi(o.db, d.kimlik, 'Teklif')).toBe('Tanımsız');
+    await o.sup.query(`INSERT INTO dosya_sure (dosya_ref, tur, baslangic, bitis) VALUES ($1,'Keşif',now() - interval '50 hours',now() + interval '22 hours') ON CONFLICT DO NOTHING`, [d.kimlik]);
+    await o.sup.query(`UPDATE dosya_sure SET baslangic = now() - interval '50 hours', tamamlanma = NULL WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik]);
+    await sozlesmeSureIsle(o.db); await sozlesmeSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(DISTINCT olay_anahtari)::int n FROM bildirim WHERE olay_anahtari LIKE 'sozlesme-sure:%' AND baslik LIKE $1`, [`%${d.dosyaNo}%`])).rows[0].n).toBe(1);
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Bireysel Müşteri' WHERE kimlik = $1`, [d.kimlik]);
+    expect(await sozlesmeHedefi(o.db, d.kimlik, 'Keşif')).toBeNull();
+  });
 });

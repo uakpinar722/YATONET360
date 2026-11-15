@@ -261,6 +261,8 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     if (!s2) return yok(y);
     // K-241: sigorta adresine bağlantı ancak son gönderenin ikili teyidinden sonra üretilir.
     const sg = await sigortaAdresi(b.db, alici);
+    // YG-451: sigorta hasar dosya numarası girilmeden sigortaya belge veya rapor paylaşılmaz; önce numara girilir.
+    if (sg && !(await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [sg.dosya])).rowCount) return y.code(409).send({ hata: 'Sigorta hasar dosya numarasını girdikten sonra paylaşım yapılır; numarayı dosya ayrıntısından girmenizi rica ederiz.' });
     if (sg) return { gonderim: await sigortayaHazirla(b.db, { dosya: sg.dosya, tur: 'Belge Paylaşımı', nesne: `${s2.kimlik}:${alici.toLowerCase()}`, alici: null, konu: `${a.e.ad} · ${alici}`, sorumlu: o.kullanici, veri: { surum: s2.kimlik, belge: id, alici, izin, gun } }), durum: 'Teyit Bekliyor' };
     { const he = await (await import('./yetki_ek.js')).hasarPaylasimEngeli(b.db, a.e.bag_turu, a.e.bag_kimligi, alici); if (he) return y.code(409).send({ hata: he }); }
     const belirtec = rastgeleBelirtec();

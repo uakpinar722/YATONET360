@@ -190,12 +190,20 @@ async function vazgecmeGorevi(c: Db, f: { dosya_ref: string; dosya_no: string })
   if (ds) await kartAc(c, { tur: 'Dosya Kapanışı', kategori: 'islem', baslik: `${f.dosya_no} · Müşteri Vazgeçti`, ozet: 'Yat sahibi teklifi reddetti; dosyayı Müşteri Vazgeçti nedeniyle kapatınız.', sahipKullanici: ds, nesneTuru: 'Dosya', nesneKimligi: f.dosya_ref });
 }
 
+/** YG-208: kurumsal müşteri teklifi onaylanınca sözleşme kaydı onaylı tekliften kurulur; ayrı ıslak/e-imza aranmaz (yalnız özel hükümde). */
+export async function kurumsalSozlesmeKur(c: Db, teklif: string, kanal: string, kaydeden: string): Promise<void> {
+  const f = (await c.query(`SELECT f.kimlik, f.teklif_muhatabi, y.yat_sahibi_ref FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE f.kimlik = $1`, [teklif])).rows[0];
+  if (!f || f.teklif_muhatabi !== 'Kurumsal Müşteri' || !f.yat_sahibi_ref) return;
+  await c.query(`INSERT INTO sozlesme_kaydi (taraf_ref, sozlesme_turu, sozlesme_sahibi_rolu, yururluk, durum, kurumsal_kanal, teklif_ref, kaydeden_ref) VALUES ($1,'Yat Onarım','Operasyon Müdürü',(now() AT TIME ZONE 'Europe/Istanbul')::date,'Yürürlükte',$2,$3,$4) ON CONFLICT (teklif_ref) WHERE teklif_ref IS NOT NULL DO NOTHING`, [f.yat_sahibi_ref, kanal, teklif, kaydeden]);
+}
+
 onaySonucKaydet('ONY-23', async (c, t, karar, k) => {
   if (!t.nesne_kimligi) return;
   const ft = (await c.query(`SELECT f.*, d.statu AS d_statu, d.asama, d.dosya_no, d.musteri_turu, d.yazisma_dili FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [t.nesne_kimligi])).rows[0];
   if (karar !== 'Onaylandı') { await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Ret', karar_zamani = $2 WHERE kimlik = $1`, [ft.kimlik, k.zaman]); await vazgecmeGorevi(c, ft); return; }
   await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Tam Onay', karar_zamani = $2 WHERE kimlik = $1`, [ft.kimlik, k.zaman]);
   await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = 'Onaylandı' WHERE teklif_ref = $1 AND NOT opsiyon`, [ft.kimlik]);
+  await kurumsalSozlesmeKur(c, ft.kimlik, 'YATONET 360 Onayı', ft.hazirlayan_ref); // YG-208
   if (ft.d_statu === 'Aktif' && ft.asama !== 'Uygulama') await statuYaz(c, { kimlik: ft.dosya_ref, statu: 'Aktif', asama: ft.asama }, { statu: 'Aktif', asama: 'Uygulama' }, 'Fiyat teklifi yat sahibince onaylandı', t.alici_kullanici_ref, 'Operasyon Yöneticisi');
   const gun = await parametre(c, 'cayma_gun');
   const bitis = new Date(k.zaman.getTime() + gun * 86_400_000);

@@ -14,7 +14,7 @@ describe('veri ihlali (YG-529, YG-1201–1204)', () => {
     const r = await o.ist('POST', '/api/veri-ihlali', await o.gir('ds'), { ozet: 'Yanlış alıcı', olayTuru: 'Yanlış alıcıya e-posta' }); expect(r.statusCode, r.body).toBe(200); expect(r.json().olayNo).toMatch(/^OLY-\d{4}-\d{4}$/);
     expect((await o.ist('POST', '/api/veri-ihlali', await o.gir('ds'), { ozet: '' })).statusCode).toBe(400);
     expect((await o.kart('Veri İhlali Şüphesi', r.json().kimlik)).oncelik).toBe('Kritik');
-    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = ANY($2::text[])`, [`veri-ihlali:${r.json().kimlik}`, [o.K.bim, o.K.hud]])).rowCount).toBe(2);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = ANY($2::text[])`, [`veri-ihlali:${r.json().kimlik}`, [o.K.bim, o.K.hud, o.K.gmy]])).rowCount).toBe(3); // YG-529: GMY de alır
     expect((await o.ist('GET', '/api/veri-ihlali', await o.gir('ds'))).statusCode).toBe(403);
     expect((await o.ist('GET', '/api/veri-ihlali', await o.gir('bim'))).statusCode).toBe(200);
   });
@@ -141,5 +141,12 @@ describe('saklama süresi tanımsız gruplar (YG-1227)', () => {
     const l = await imhaListesiUret(o.db, new Date(Date.UTC(2031, 0, 15)));
     expect(l).toBeTruthy();
     if (dt) expect((await o.sup.query(`SELECT grup_kod FROM imha_kalemi WHERE liste_ref = $1 AND nesne_kimligi = $2`, [l, dt])).rows[0]?.grup_kod).toBe('DST-5');
+  });
+  it('acil konum kaydı 1 yıldan eskiyse silinir (YG-1658)', async () => {
+    const tal = (await o.sup.query(`SELECT kimlik FROM talep LIMIT 1`)).rows[0]?.kimlik ?? (await o.dosyaAc()).talep?.kimlik;
+    if (!tal) return;
+    await o.sup.query(`INSERT INTO konum_kaydi (talep_ref, kaynak, metin, zaman) VALUES ($1,'Kayıtlı Konum','Eski',now() - interval '13 months'), ($1,'Kayıtlı Konum','Yeni',now())`, [tal]);
+    await kvkkIsle(o.db);
+    expect((await o.sup.query(`SELECT metin FROM konum_kaydi WHERE talep_ref = $1 AND metin IN ('Eski', 'Yeni')`, [tal])).rows.map((r) => r.metin)).toEqual(['Yeni']);
   });
 });

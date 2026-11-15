@@ -57,11 +57,18 @@ export async function sahaSureIsle(db: Pool, simdi = new Date()): Promise<number
     n++;
   }
   // Yeniden değerlendirme tarihi: Koşullu Onaylı 3 ay, diğer onaylı ve aktif firma 12 ay; kabul kararından başlar.
-  await db.query(`UPDATE kurulus SET sonraki_gozden_gecirme_tarihi = (coalesce(kabul_karar_zamani, olusturma_zamani) + CASE WHEN kayit_asamasi = 'Koşullu Onaylı' THEN interval '3 months' ELSE interval '12 months' END)::date WHERE sonraki_gozden_gecirme_tarihi IS NULL AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`);
+  await db.query(`UPDATE kurulus SET sonraki_gozden_gecirme_tarihi = (coalesce(son_statu_karar_zamani, kabul_karar_zamani, olusturma_zamani) + CASE WHEN kayit_asamasi = 'Koşullu Onaylı' THEN interval '3 months' ELSE interval '12 months' END)::date WHERE sonraki_gozden_gecirme_tarihi IS NULL AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`);
   const vade = (await db.query(`SELECT kimlik, ticari_unvan, sonraki_gozden_gecirme_tarihi::text t FROM kurulus WHERE sonraki_gozden_gecirme_tarihi <= $1::date AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`, [simdi])).rows;
   for (const f of vade) {
     if (!(await birKez(db, 'Firma Yeniden Değerlendirme', `${f.kimlik}:${f.t}`))) continue;
     await kartAc(db, { tur: 'Firma Yeniden Değerlendirme', kategori: 'gorev', baslik: `${f.ticari_unvan} · Yeniden Değerlendirme`, ozet: 'Karneyi inceleyip statü kararını vermenizi rica ederiz.', sahipRol: await rolId(db, 'Firma Yönetimi Müdürü'), nesneTuru: 'Kuruluş', nesneKimligi: f.kimlik });
+    n++;
+  }
+  // YG-357: 12 aydır iş emri almamış ve en az 12 aydır onaylı Aktif Çözüm Ortağı için Pasif önerisi görevi (yılda bir); Pasif yaptırım değildir.
+  for (const f of (await db.query(`SELECT k.kimlik, k.ticari_unvan FROM kurulus k WHERE k.kayit_rolu = 'Çözüm Ortağı' AND k.ag_statusu = 'Aktif' AND coalesce(k.kabul_karar_zamani, k.olusturma_zamani) < $1::timestamptz - interval '12 months'
+      AND NOT EXISTS (SELECT 1 FROM is_emri e WHERE e.kurulus_ref = k.kimlik AND e.olusturma_zamani > $1::timestamptz - interval '12 months')`, [simdi])).rows) {
+    if (!(await birKez(db, 'Pasif Önerisi', `${f.kimlik}:${simdi.getFullYear()}`))) continue;
+    await kartAc(db, { tur: 'Pasif Önerisi', kategori: 'gorev', baslik: `${f.ticari_unvan} · 12 Aydır İş Almadı`, ozet: 'Firma hareketsizlik nedeniyle Pasif statüsüne alınabilir; karar gerekçeyle verilir.', sahipRol: await rolId(db, 'Firma Yönetimi Müdürü'), nesneTuru: 'Kuruluş', nesneKimligi: f.kimlik });
     n++;
   }
   const ceyrek = `${simdi.getFullYear()}-Q${Math.floor(simdi.getMonth() / 3) + 1}`;
