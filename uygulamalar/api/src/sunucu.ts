@@ -162,6 +162,7 @@ export async function sunucuKur(b: Baglam) {
   const s = Fastify({ logger: process.env.VITEST ? false : { level: 'info', serializers: { req: (r) => ({ method: r.method, url: r.url.split('?')[0] }) } }, genReqId: () => randomUUID(), bodyLimit: 64 * 1024 });
   await s.register(cookie);
   kritikAnahtari(b.anahtar); // DEP-1a
+  await (await import('./ayarlar.js')).kuralYukle(b.db).catch(() => undefined); // YG-1712, YG-1713
   s.addHook('onRequest', (_i, _y, done) => { istekBaglami.run({}, done); }); // YG-1183
   s.addHook('onSend', async (i, y) => { y.header('X-Iliski-Kimligi', i.id); });
   olcumKur(s); // YG-778

@@ -214,9 +214,34 @@ export async function sozlesmeHedefi(db: Db, dosya: string, tur: string): Promis
   return r ? `${Number(r.saat).toLocaleString('tr-TR')} saat` : 'Tanımsız';
 }
 
+kapanisKaydet('Veri Düzeltme Talebi', async (c, k, karar, yapan) => { // YG-1246
+  const t = (await c.query(`SELECT * FROM veri_duzeltme_talebi WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi])).rows[0];
+  if (!t) return;
+  if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') { await c.query(`UPDATE veri_duzeltme_talebi SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]); return; }
+  if (karar !== 'Onayla') return;
+  const { DUZELTILEBILIR } = await import('./yat.js'); const kol = DUZELTILEBILIR[t.alan]; if (!kol) return;
+  const eski = (await c.query(`SELECT ${kol}::text v FROM yat WHERE kimlik = $1`, [t.nesne_ref])).rows[0]?.v ?? null;
+  await c.query(`UPDATE yat SET ${kol} = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [t.nesne_ref, t.dogru_deger]);
+  await c.query(`UPDATE veri_duzeltme_talebi SET durum = 'Onaylandı' WHERE kimlik = $1`, [t.kimlik]);
+  await izYaz(c, { aktor: yapan, eylem: 'Veri Düzeltme', nesneTuru: 'Yat', nesneKimligi: t.nesne_ref, eski: { [t.alan]: eski }, yeni: { [t.alan]: t.dogru_deger }, gerekce: `Kaynak: ${t.kaynak}; etkilenen: ${t.etkilenen}`, sonuc: 'Başarılı' });
+});
+
 export const KONUM_TURLERI = ['Bağlama Noktası', 'Tersane Bölgesi', 'Sanayi Sitesi', 'Organize Sanayi Bölgesi', 'Serbest Bölge', 'Diğer'];
 
 export function kalanYollari(s: FastifyInstance, b: Baglam) {
+  // YG-1246: hatalı alan, doğru değer, doğru değerin kaynağı ve etkilenen dosya/işlemler yazılarak düzeltme istenir; Operasyon Müdürü onaylar; önceki değer denetim izinde korunur.
+  s.post('/veri-duzeltme-talebi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { nesneTuru?: string; nesne?: string; alan?: string; dogruDeger?: string; kaynak?: string; etkilenen?: string };
+    if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Veri düzeltme talebini LGM personeli açar.' });
+    const { DUZELTILEBILIR } = await import('./yat.js');
+    if (g.nesneTuru !== 'Yat' || !g.nesne || !UUID.test(g.nesne) || !DUZELTILEBILIR[g.alan ?? '']) return y.code(400).send({ hata: 'Kayıt ve düzeltilecek alanı seçiniz.' });
+    if (!String(g.dogruDeger ?? '').trim() || !g.kaynak?.trim() || !g.etkilenen?.trim()) return y.code(400).send({ hata: 'Doğru değer, doğru değerin kaynağı ve etkilenen dosya veya işlemler zorunludur.' });
+    const kol = DUZELTILEBILIR[g.alan!]!;
+    const m = (await b.db.query(`SELECT yat_adi, ${kol}::text v FROM yat WHERE kimlik = $1`, [g.nesne])).rows[0]; if (!m) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const r = (await b.db.query(`INSERT INTO veri_duzeltme_talebi (nesne_turu, nesne_ref, alan, mevcut_deger, dogru_deger, kaynak, etkilenen, talep_eden_ref) VALUES ('Yat',$1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.nesne, g.alan, m.v, String(g.dogruDeger).trim(), g.kaynak.trim(), g.etkilenen.trim(), o.kullanici])).rows[0];
+    await kartAc(b.db, { tur: 'Veri Düzeltme Talebi', baslik: `${m.yat_adi} · ${g.alan}: ${m.v ?? '—'} → ${String(g.dogruDeger).trim()}`, ozet: `Kaynak: ${g.kaynak.trim()} · Etkilenen: ${g.etkilenen.trim()}`.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Operasyon Müdürü')], nesneTuru: 'Veri Düzeltme Talebi', nesneKimligi: r.kimlik });
+    return { kimlik: r.kimlik, durum: 'Onayda' };
+  });
   // YG-437: kurumsal müşteri tarafında LGM'yi görevlendiren kayıt "Müşteri Talimatı"dır (sigortada Sigorta Görevlendirmesi; İş Emri yalnız firmaya verilen belgedir). BLD-67 kurumsal onay e-postasına gider.
   s.post('/dosya/:id/musteri-talimati', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; limit?: number; hedef?: string; metin?: string };
@@ -617,4 +642,5 @@ kapanisKaydet('Parametre Değişikliği', async (c, k, karar, yapan) => { // YG-
   await c.query(`UPDATE sistem_parametresi SET deger = $2, gecerlilik = current_date WHERE kod = $1`, [o.kod, o.yeni]);
   await c.query(`INSERT INTO parametre_gecmisi (kod, eski, yeni, gerekce, giren_ref) VALUES ($1,$2,$3,$4,$5)`, [o.kod, o.eski, o.yeni, o.gerekce, yapan]);
   await c.query(`UPDATE parametre_onerisi SET durum = 'Onaylandı' WHERE kimlik = $1`, [o.kimlik]);
+  if (String(o.kod).startsWith('kimlik_')) await (await import('./ayarlar.js')).kuralYukle(c); // YG-1712: kimlik süreleri hemen geçerli olur
 });

@@ -287,12 +287,12 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
   };
   it('e-posta da portal kullanıcısı da yoksa teklif hazırlanmaz; Dosya Sorumlusu adresi girer; teyit ekranı ekleri ve önizlemeyi gösterir', async () => {
     const d = await hazir({ sigortaci: 'Adressiz Sigorta', hasarNo: 'H9', yetkiDurumu: 'Doğrulandı' }, { musteriTuru: 'Sigorta Şirketi' }, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
-    const t = await teklifAc(d, 100); await onayla(t.kimlik);
-    const u = `/api/teklif/${t.kimlik}/gonder`;
-    const r = await o.ist('POST', u, await o.gir('ts')); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('e-posta adresi bekleniyor');
+    { const ff = await firmaFiyat(d.kimlik, 100); const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teklif`, await o.gir('ts'), { firmaTeklifi: ff }); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('e-posta adresi bekleniyor'); } // YG-1729: hazırlamada engel
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ty'), { eposta: 'x@y.local' })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ds'), { eposta: 'gecersiz' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/sigorta-eposta`, await o.gir('ds'), { eposta: 'hasar@adressiz.local' })).statusCode).toBe(200);
+    const t = await teklifAc(d, 100); await onayla(t.kimlik);
+    const u = `/api/teklif/${t.kimlik}/gonder`;
     const gn = await o.ist('POST', u, await o.gir('ts')); expect(gn.json().durum, gn.body).toBe('Teyit Bekliyor');
     const id = gn.json().gonderim as string;
     expect((await o.sup.query(`SELECT alici FROM sigorta_gonderim WHERE kimlik = $1`, [id])).rows[0].alici).toBe('hasar@adressiz.local');

@@ -94,7 +94,7 @@ kapanisKaydet('Marka Model Onayı', async (c, k, karar) => {
 });
 
 /** YG-094: teknik alan değişiminde kaynak tutulur; YG-090: tarihçe denetim izinde. */
-const DUZELTILEBILIR: Record<string, string> = {
+export const DUZELTILEBILIR: Record<string, string> = {
   yat_adi: 'yat_adi', tur: 'tur', bayrak: 'bayrak', kullanim_amaci: 'kullanim_amaci', klas_durumu: 'klas_durumu', klas_kurulusu: 'klas_kurulusu', tabi_kod: 'tabi_kod', sicil_bilgisi: 'sicil_bilgisi', govde_no: 'govde_no', imo_no: 'imo_no',
   mmsi: 'mmsi', motor_adedi: 'motor_adedi', motor_marka_model: 'motor_marka_model', motor_gucu_hp: 'motor_gucu_hp', // YG-091
   uretim_yili: 'uretim_yili', tam_boy_m: 'tam_boy_m', genislik_m: 'genislik_m', derinlik_m: 'derinlik_m', tonaj: 'tonaj', govde_tipi: 'govde_tipi', govde_malzemesi: 'govde_malzemesi', tahrik_turu: 'tahrik_turu', turkiye_kalis_bitis: 'turkiye_kalis_bitis', kislama_yeri: 'kislama_yeri', yabanci_yat_belgesi: 'yabanci_yat_belgesi', yabanci_yat_belge_no: 'yabanci_yat_belge_no', yabanci_yat_belge_gecerlilik: 'yabanci_yat_belge_gecerlilik', gecici_ithalat_bitis: 'gecici_ithalat_bitis', cagri_isareti: 'cagri_isareti',

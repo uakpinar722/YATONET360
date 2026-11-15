@@ -33,6 +33,16 @@ export const KURAL = {
   parolaSifirlamaDk: 60, // YG-1713
   adresDenemeSiniri: 30, // YG-1157, YG-1713
   adresDenemePenceresiDk: 10, // YG-1157, YG-1713
-} as const;
+};
+
+/** YG-1712, YG-1713: SMS, kod aşaması, parola yenileme ve adres deneme değerleri sistem parametresinden yüklenir; parametre yoksa yukarıdaki varsayılan geçerlidir. */
+const KURAL_PARAMETRE: Record<string, keyof typeof KURAL> = {
+  kimlik_sms_kod_gecerlilik_dk: 'smsKodGecerlilikDk', kimlik_sms_yeniden_gonderim_sn: 'smsYenidenGonderimSn', kimlik_kod_asamasi_dk: 'kodAsamasiDk',
+  kimlik_parola_sifirlama_dk: 'parolaSifirlamaDk', kimlik_adres_deneme_siniri: 'adresDenemeSiniri', kimlik_adres_deneme_penceresi_dk: 'adresDenemePenceresiDk',
+};
+export async function kuralYukle(db: import('pg').Pool | import('pg').PoolClient): Promise<void> {
+  const { rows } = await db.query(`SELECT kod, deger FROM sistem_parametresi WHERE kod = ANY($1)`, [Object.keys(KURAL_PARAMETRE)]);
+  for (const r of rows) { const n = Number(r.deger); if (Number.isFinite(n) && n > 0) KURAL[KURAL_PARAMETRE[r.kod]!] = n; }
+}
 
 export const COOKIE_ADI = 'yatonet_oturum';

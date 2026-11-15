@@ -39,7 +39,7 @@ export async function guvenlikTara(db: Pool, simdi = new Date()): Promise<number
     const bulgular = (await db.query(SORGU[k.kod]!, [simdi, k.pencere_dk, k.esik])).rows as Bulgu[];
     const dilim = Math.floor(simdi.getTime() / (k.pencere_dk * 60_000));
     for (const b of bulgular) {
-      const no = `GA-${simdi.getUTCFullYear()}-${String(await sayac(db, 'guvenlik_alarmi')).padStart(5, '0')}`; const onem = onemHesapla(k.onem, b.ayricalikli);
+      const yil = simdi.getUTCFullYear(); const no = `OLY-${yil}-${String(await sayac(db, `veri_ihlali:${yil}`)).padStart(4, '0')}`; const onem = onemHesapla(k.onem, b.ayricalikli); // YG-1643: BT olay kaydı OLY-YYYY-NNNN (veri ihlaliyle ortak yıllık sıra)
       const r = await db.query(`INSERT INTO guvenlik_alarmi (alarm_no, kural_kod, onem, etkilenen, olay_sayisi, beklenen_eylem, anahtar) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (anahtar) DO NOTHING RETURNING kimlik`, [no, k.kod, onem, b.etken, b.n, k.beklenen_eylem, `${k.kod}:${b.etken}:${dilim}`]);
       if (!r.rowCount) continue;
       await kartAc(db, { tur: 'Güvenlik Alarmı', kategori: 'gorev', baslik: `${no} · ${k.ad}`, ozet: k.beklenen_eylem, oncelik: onem === 'Kritik' ? 'Kritik' : onem === 'Yüksek' ? 'Yüksek' : 'Normal', sahipRol: await rolId(db, BTM), nesneTuru: 'Güvenlik Alarmı', nesneKimligi: r.rows[0].kimlik });

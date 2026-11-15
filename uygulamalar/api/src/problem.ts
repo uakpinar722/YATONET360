@@ -70,7 +70,7 @@ export function problemYollari(s: FastifyInstance, b: Baglam) {
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
-      const no = `BLG-${new Date().getFullYear()}-${String(await sayac(c, 'sistem_bulgusu')).padStart(4, '0')}`;
+      const yil = new Date().getFullYear(); const no = `PRB-${yil}-${String(await sayac(c, `sistem_bulgusu:${yil}`)).padStart(4, '0')}`; // YG-1643: problem kaydı PRB-YYYY-NNNN, yıllık sıra
       const r = (await c.query(`INSERT INTO sistem_bulgusu (bulgu_no, kosul, olcut, kanit, neden_risk, kapsam, kok_neden, sorumlu_ref, hedef_tarih, acan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [no, ...Z, g.sorumlu, g.hedef, o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Sistem Bulgusu', kategori: 'gorev', baslik: `${no} · Denetim Bulgusu`, sahipKullanici: g.sorumlu, sonZaman: new Date(g.hedef!), nesneTuru: 'Bulgu', nesneKimligi: r.kimlik });
       await c.query('COMMIT');

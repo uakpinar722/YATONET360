@@ -241,7 +241,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       if (cay) return y.code(409).send({ hata: cay });
       { const fe = await (await import('./sigorta_fark.js')).odemeFarkiEngeli(b.db, g.teklif!); if (fe) return y.code(409).send({ hata: fe }); } // YG-891
       // YG-324: yalnız onaylanan paketler seçilir.
-      kalemler = (await b.db.query(`SELECT kimlik, aciklama, miktar, birim, satir_ref FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' AND ($2::int[] IS NULL OR sira_no = ANY($2)) ORDER BY sira_no`, [g.teklif, g.siralar ?? null])).rows;
+      kalemler = (await b.db.query(`SELECT kimlik, aciklama, miktar, birim, satir_ref FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' AND bedel_turu <> 'Masraf' AND ($2::int[] IS NULL OR sira_no = ANY($2)) ORDER BY sira_no` /* YG-1770: tesis bedeli (Masraf) iş emrine girmez */, [g.teklif, g.siralar ?? null])).rows;
       if (!kalemler.length) return y.code(409).send({ hata: 'Seçilebilecek onaylı kalem yoktur.' });
       if (g.bedel === undefined) return y.code(400).send({ hata: 'Mali limit boş olan iş emri yayımlanmaz.' }); // YG-323
     }

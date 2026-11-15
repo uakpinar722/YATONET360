@@ -1332,4 +1332,20 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const r = await o.ist('POST', u, ds, P); expect(r.statusCode, r.body).toBe(200);
     expect(r.json().talimatNo).toBe(`${d.dosyaNo}-MT01`);
   });
+  it('veri düzeltme talebi kaynak ve etkilenenle; onayda önceki değer izde kalır (YG-1246)', async () => {
+    const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const u = '/api/veri-duzeltme-talebi'; const c = await o.gir('ds');
+    expect((await o.ist('POST', u, c, { nesneTuru: 'Yat', nesne: yat, alan: 'kislama_yeri', dogruDeger: 'Göcek' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { nesneTuru: 'Yat', nesne: yat, alan: 'kislama_yeri', dogruDeger: 'Göcek Marina', kaynak: 'Marina sözleşmesi', etkilenen: d.dosyaNo }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.karar((await o.kart('Veri Düzeltme Talebi', r.json().kimlik)).kimlik, 'opm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT kislama_yeri FROM yat WHERE kimlik = $1`, [yat])).rows[0].kislama_yeri).toBe('Göcek Marina');
+    expect((await o.sup.query(`SELECT 1 FROM denetim_izi WHERE eylem = 'Veri Düzeltme' AND nesne_kimligi = $1`, [yat])).rowCount).toBe(1);
+  });
+  it('kimlik doğrulama süreleri sistem parametresinden yüklenir (YG-1712, YG-1713)', async () => {
+    const { KURAL, kuralYukle } = await import('../src/ayarlar.js');
+    expect((await o.sup.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'kimlik_sms_kod_gecerlilik_dk'`)).rows[0].deger).toBe('5');
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = 7 WHERE kod = 'kimlik_sms_kod_gecerlilik_dk'`);
+    await kuralYukle(o.db); expect(KURAL.smsKodGecerlilikDk).toBe(7);
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = 5 WHERE kod = 'kimlik_sms_kod_gecerlilik_dk'`); await kuralYukle(o.db); expect(KURAL.smsKodGecerlilikDk).toBe(5);
+  });
 });

@@ -58,6 +58,10 @@ describe('süre uyarıları (YG-531–533)', () => {
     const c = (await o.sup.query(`INSERT INTO olcum_cihazi (ad, seri_no, kalibrasyon_tarihi, aralik_ay, kaydeden_ref) VALUES ('C','SN-1','2020-01-01',12,$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
     expect((await o.ist('POST', '/api/bt-varligi', await o.gir('ds'), { ad: 'L', tur: 'Lisans', bitis: ileri(10) })).statusCode).toBe(403);
     const v = (await o.ist('POST', '/api/bt-varligi', await o.gir('sy'), { ad: 'Lisans A', tur: 'Lisans', bitis: ileri(10) })).json().kimlik;
+    expect((await o.ist('POST', '/api/bt-varligi', await o.gir('sy'), { ad: 'SSL', tur: 'Sertifika', bitis: ileri(90) })).json().hata).toContain('sahibi'); // YG-1197
+    expect((await o.ist('POST', '/api/bt-varligi', await o.gir('sy'), { ad: 'SMS API Anahtarı', tur: 'Gizli Değer', sahipRol: 'Bilgi İşlem Müdürü' })).statusCode).toBe(400);
+    const gd = await o.ist('POST', '/api/bt-varligi', await o.gir('sy'), { ad: 'SMS API Anahtarı', tur: 'Gizli Değer', sahipRol: 'Bilgi İşlem Müdürü', sonYenileme: '2026-11-01', rotasyonGun: 90 });
+    expect(gd.statusCode, gd.body).toBe(200); expect(gd.json().bitis).toBe('2027-01-30');
     await sureUyariIsle(o.db);
     const var0 = async (a: string) => (await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1`, [a])).rowCount;
     expect(await var0(`sozlesme_bitis:${s}:45`)).toBeGreaterThan(0); expect(await var0(`sozlesme_fesih:${s}:15`)).toBeGreaterThan(0); expect(await var0(`sicil_belge:${b}:30`)).toBeGreaterThan(0); expect(await var0(`bt_varligi:${v}:30`)).toBeGreaterThan(0);

@@ -560,7 +560,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (garanti && g.karar === 'İyi Niyet') {
       if (!(Number(g.maliyet) > 0)) return y.code(400).send({ hata: 'İyi niyet tutarını yazmanızı rica ederiz.' });
       if (k.iyi_niyet_orani !== null || await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'İyi Niyet Kararı' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'Reddedildi', 'İptal') LIMIT 1`, [id]).then((r) => r.rowCount)) return y.code(409).send({ hata: 'Bu kayıt için iyi niyet onayı bekleniyor.' });
-      const fatura = Number((await b.db.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM musteri_faturasi WHERE dosya_ref = $1 AND durum <> 'Reddedildi'`, [k.dosya_ref])).rows[0].t);
+      const fatura = Number((await b.db.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM musteri_faturasi WHERE dosya_ref = $1 AND durum IN ('Faturalandı', 'Kısmi Tahsil', 'Tahsil Edildi')`, [k.dosya_ref] /* YG-1731: yalnız düzenlenmiş fatura; proforma ve iç onaydaki kayıt sayılmaz */)).rows[0].t);
       const oran = fatura > 0 ? Math.round((Number(g.maliyet) / fatura) * 10000) / 100 : null;
       const tamOran = fatura > 0 ? Number(g.maliyet) / fatura : Infinity;
       const makam = tamOran <= 0.05 && Number(g.maliyet) <= 10000 ? 'Genel Müdür Yardımcısı' : 'CEO';

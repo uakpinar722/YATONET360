@@ -401,6 +401,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const satirlar = (await b.db.query(`SELECT s.*, f.kimlik AS firma_kalem, f.birim_fiyat_eur FROM kapsam_satiri s LEFT JOIN firma_fiyat_kalemi f ON f.satir_ref = s.kimlik AND f.teklif_ref = $2 WHERE s.cetvel_ref = $1 ORDER BY s.satir_kodu`, [cetvel.kimlik, g.firmaTeklifi])).rows;
     // YG-180: Yat Sahibi Talebi yalnız yat sahibine hitaben teklifte; sigortalı dosyada yat sahibine ayrı teklif açılabilir.
     if (muhatap !== 'Yat Sahibi' && satirlar.some((r) => r.isin_niteligi === 'Yat Sahibi Talebi')) return y.code(400).send({ hata: 'Yat Sahibi Talebi niteliği yalnız yat sahibine hitaben teklifte seçilir.' });
+    // YG-1729: sigorta şirketinin e-posta adresi de portal kullanıcısı da yoksa sigortaya teklif hazırlanmaz.
+    if (muhatap === 'Sigorta Şirketi') { const sg = (await b.db.query(`SELECT s.sigortaci_adi, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [id])).rows[0];
+      if (!sg?.eposta && !(await b.db.query(`SELECT 1 FROM sigorta_kullanici WHERE lower(sigortaci_adi) = lower($1) LIMIT 1`, [sg?.sigortaci_adi ?? ''])).rowCount) return y.code(409).send({ hata: 'Sigorta şirketinin e-posta adresi bekleniyor; Dosya Sorumlusu dosya ayrıntısından girdikten sonra teklif hazırlanır.' }); }
     // YG-890: sigortanın onayladığı (veya süre dolumuyla karşılanacak sayılan) satır, aynı cetvelden yat sahibine veya kurumsal müşteriye açılan teklife yazılamaz.
     if (muhatap !== 'Sigorta Şirketi') {
       const sgOnayli = new Set((await b.db.query(`SELECT k.satir_ref FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 AND f.teklif_muhatabi = 'Sigorta Şirketi' AND f.statu NOT IN ('Yerine Geçti', 'İptal') AND k.onay_durumu = 'Onaylandı' AND k.satir_ref IS NOT NULL`, [id])).rows.map((r) => r.satir_ref as string));
@@ -596,7 +599,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.teklif_muhatabi === 'Sigorta Şirketi') return islem(async (c) => {
       const sg = (await c.query(`SELECT s.sigorta_hasar_dosya_no, s.sigortaci_adi, p.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi p ON p.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [t.dosya_ref])).rows[0];
       // YG-443: sigorta şirketi portal kullanmak zorunda değildir; e-posta da portal kullanıcısı da yoksa teklif kimseye ulaşmaz.
-      if (!sg?.eposta && !(await c.query(`SELECT 1 FROM sigorta_kullanici WHERE sigortaci_adi = $1 LIMIT 1`, [sg?.sigortaci_adi ?? ''])).rowCount) throw Object.assign(new Error('Sigorta şirketinin e-posta adresi bekleniyor; dosya ayrıntısından girilmesini rica ederiz.'), { statusCode: 409 });
+      if (!sg?.eposta && !(await c.query(`SELECT 1 FROM sigorta_kullanici WHERE lower(sigortaci_adi) = lower($1) LIMIT 1`, [sg?.sigortaci_adi ?? ''])).rowCount) throw Object.assign(new Error('Sigorta şirketinin e-posta adresi bekleniyor; dosya ayrıntısından girilmesini rica ederiz.'), { statusCode: 409 });
       const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
       const gonderim = await sigortayaHazirla(c, { dosya: t.dosya_ref, tur: 'Fiyat Teklifi', nesne: t.kimlik, alici: sg?.eposta ?? null, konu: `${t.dosya_no} Teklif`, metin: await bld71(c, t, sg, son), acil: true, sorumlu: o.kullanici });
       return { durum: 'Teyit Bekliyor', gonderim };

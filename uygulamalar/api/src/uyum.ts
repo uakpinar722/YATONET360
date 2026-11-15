@@ -144,9 +144,19 @@ export function uyumYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'Kapalı' };
   });
   s.post('/bt-varligi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; tur?: string; bitis?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; tur?: string; bitis?: string; sahipRol?: string; sonYenileme?: string; rotasyonGun?: number };
     if (!(await rolleri(o.kullanici)).some((r) => ['Sistem Yöneticisi', 'Bilgi İşlem Müdürü'].includes(r))) return y.code(403).send({ hata: 'BT varlığını Sistem Yöneticisi girer.' });
-    if (!g.ad?.trim() || !g.bitis || !['Donanım', 'Lisans', 'Alan Adı', 'Sertifika', 'Diğer'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'Ad, tür ve bitiş tarihi zorunludur.' });
-    return (await b.db.query(`INSERT INTO bt_varligi (ad, tur, bitis, kaydeden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.ad.trim(), g.tur, g.bitis, o.kullanici])).rows[0];
+    if (!g.ad?.trim() || !['Donanım', 'Lisans', 'Alan Adı', 'Sertifika', 'Gizli Değer', 'Diğer'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'Ad ve tür zorunludur.' });
+    // YG-1197: sertifika ve gizli değerin sahibi bilinir (rol); gizli değerin bitişi son yenileme + rotasyon süresidir. Değerin kendisi sistemde tutulmaz.
+    let bitis = g.bitis;
+    if (g.tur === 'Sertifika' || g.tur === 'Gizli Değer') {
+      if (!g.sahipRol?.trim() || !(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1`, [g.sahipRol.trim()])).rowCount) return y.code(400).send({ hata: 'Sertifika ve gizli değerin sahibi olan rolü seçiniz; sahibi bilinmeyen kayıt kullanılmaz.' });
+    }
+    if (g.tur === 'Gizli Değer') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(g.sonYenileme ?? '') || !(Number.isInteger(Number(g.rotasyonGun)) && Number(g.rotasyonGun) > 0)) return y.code(400).send({ hata: 'Gizli değerde son yenileme tarihi ve rotasyon süresi (gün) zorunludur.' });
+      const d = new Date(`${g.sonYenileme}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + Number(g.rotasyonGun)); bitis = d.toISOString().slice(0, 10);
+    }
+    if (!bitis) return y.code(400).send({ hata: 'Bitiş tarihi zorunludur.' });
+    return (await b.db.query(`INSERT INTO bt_varligi (ad, tur, bitis, kaydeden_ref, sahip_rol, son_yenileme, rotasyon_gun) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik, bitis::text`, [g.ad.trim(), g.tur, bitis, o.kullanici, g.sahipRol?.trim() || null, g.sonYenileme || null, g.rotasyonGun ? Number(g.rotasyonGun) : null])).rows[0];
   });
 }
