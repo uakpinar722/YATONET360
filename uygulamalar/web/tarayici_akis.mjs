@@ -121,6 +121,7 @@ try {
     await p.getByLabel('Firma', { exact: true }).selectOption(firma);
     await p.getByLabel('Uygulama Yeri', { exact: true }).fill('Marmaris'); await p.getByLabel('Kapsam', { exact: true }).fill(kapsam);
     if (bedel) await p.getByLabel('Firma Bedeli (EUR)', { exact: true }).fill(bedel);
+    if (tur !== 'KN') await p.getByLabel('Beklenen Teknik Sonuç', { exact: true }).fill('Hasarlı bölge onarılmış, test edilmiş');
     if (teklif) await p.getByLabel('Onaylı Teklif', { exact: true }).selectOption({ index: 1 });
     await tikla(p, 'İş Emri Oluştur');
   };

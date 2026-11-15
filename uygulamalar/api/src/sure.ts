@@ -29,6 +29,7 @@ export const SURE_BASLANGIC: Record<string, string> = {
   'Randevu İletişimi': 'Teknik Uzmanın atanması',
   Keşif: 'Keşif iş emrinin Çözüm Ortağına gönderilmesi; firmasız keşifte keşif planı (KSF-1)',
   'Sahaya Ulaşma': 'Acil eskalasyon',
+  Teklif: 'Firma Teknik Raporu ve Firma Fiyat Teklifinin portala girilmesi',
 };
 
 /** YG-042: saha merkezine 150 km'den uzak noktada en az 4 saat; 250 km'den sonra başlayan her 100 km için ayrıca 1,5 saat. */
@@ -77,6 +78,12 @@ export async function sureKur(db: Db, g: { tur: string; oncelik: string; baslang
   const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db), await tatilGunleri(db, true));
   const u = await db.query(`UPDATE dosya_sure SET baslangic = $3, bitis = $4, kaydirma_notu = $5 WHERE dosya_ref = $1 AND tur = $2 AND tamamlanma IS NULL`, [g.dosya, g.tur, g.baslangic, bitis, not]);
   if (!u.rowCount) await sureBaslat(db, g);
+}
+
+/** YG-199: Firma Teknik Raporu ve Firma Fiyat Teklifinin ikisi de girilince teklif sayacı başlar; Kritikte süre tanımı yoktur. */
+export async function teklifSayaciBaslat(db: Db, dosya: string): Promise<void> {
+  const d = (await db.query(`SELECT oncelik, EXISTS (SELECT 1 FROM firma_teknik_raporu WHERE dosya_ref = $1) r, EXISTS (SELECT 1 FROM firma_fiyat_teklifi WHERE dosya_ref = $1) f FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  if (d?.r && d.f) await sureBaslat(db, { tur: 'Teklif', oncelik: d.oncelik, baslangic: new Date(), dosya });
 }
 
 export async function sureBitir(db: Db, g: { tur: string; dosya?: string; talep?: string }, zaman = new Date()): Promise<void> {

@@ -9,7 +9,7 @@ import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { kapanisKapisi } from './saha.js';
-import { altNumara, sayac } from './sure.js';
+import { altNumara, sayac, teklifSayaciBaslat } from './sure.js';
 import { yururlukSurumu } from './teklif.js';
 import { UUID } from './yat.js';
 
@@ -82,6 +82,7 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, malzeme_ihtiyaci, tahmini_sure_gun, firma_degerlendirmesi, giren_ref, resmi_onay_gerekir) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [no, e.dosya_ref, e.kimlik, e.kurulus_ref, g.tarih, g.bulgular!.trim(), g.oneriler!.trim(), g.malzeme?.trim() ?? null, g.sure, g.degerlendirme!.trim(), o.kullanici, typeof g.resmiOnay === 'boolean' ? g.resmiOnay : null]);
       const tu = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
       await bildir(c, { olay: `firma-rapor:${e.kimlik}`, kullanicilar: tu, baslik: `${e.dosya_no} · Firma Teknik Raporu Geldi` });
+      await teklifSayaciBaslat(c, e.dosya_ref); // YG-199
       return { raporNo: no };
     });
   });

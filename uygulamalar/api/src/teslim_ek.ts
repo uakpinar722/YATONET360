@@ -238,6 +238,21 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'İletildi' };
   });
 
+  // YG-108: yat sahibi portaldan iptal veya devir talebi iletir; talep Dosya Sorumlusuna görev olarak düşer, İptal/Devir tutanağı iç akışla (Operasyon Müdürü onayı) hazırlanır.
+  s.post('/portal/dosya/:id/iptal-devir-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; gerekce?: string; devralan?: string };
+    if (!UUID.test(id) || !(await musteriMi(id, o.kullanici))) return yok(y);
+    if (!['İptal', 'Devir'].includes(g.tur ?? '')) return y.code(400).send({ hata: 'Talep türünü seçiniz.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Talebinizin gerekçesini kısaca yazmanızı rica ederiz.' });
+    if (g.tur === 'Devir' && !g.devralan?.trim()) return y.code(400).send({ hata: 'Dosyanın devredileceği tarafı yazmanızı rica ederiz.' });
+    const d = await dosya(id);
+    if (!d.dosya_sorumlusu_ref || d.statu === 'Kapalı') return y.code(409).send({ hata: 'Bu dosya için talep alınamamaktadır.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Müşteri İptal/Devir Talebi' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id])).rowCount) return y.code(409).send({ hata: 'Bu dosya için iletilmiş bir talebiniz bulunmaktadır.' });
+    await kartAc(b.db, { tur: 'Müşteri İptal/Devir Talebi', kategori: 'gorev', baslik: `${d.dosya_no} · Portaldan ${g.tur} Talebi`, ozet: `${g.gerekce.trim()}${g.devralan?.trim() ? ` · Devralan: ${g.devralan.trim()}` : ''}`.slice(0, 400), oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Portal ${g.tur} Talebi`, nesneTuru: 'Dosya', nesneKimligi: id, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
+    return { durum: 'İletildi' };
+  });
+
   // YG-458: ilerleme fotoğrafını Dosya Sorumlusu veya dosyadaki teknik ekip onaylayıp portala açar; fotoğraf dosyaya ya da dosyanın iş emrine bağlı olmalıdır.
   const FOTO = /\.(jpe?g|png|webp|heic)$/i;
   const fotoYetkili = async (dosyaRef: string, k: string) => Boolean((await b.db.query(`SELECT 1 FROM dosya d WHERE d.kimlik = $1 AND d.dosya_sorumlusu_ref = $2 UNION SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = $1 AND a.kullanici_ref = $2 AND a.bitis_zamani IS NULL AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Saha Sorumlusu') LIMIT 1`, [dosyaRef, k])).rowCount);

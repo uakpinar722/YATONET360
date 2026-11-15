@@ -216,6 +216,8 @@ describe('proses kayıtları (YG-1455, YG-408, YG-282, PRS-1)', () => {
     expect((await o.ist('POST', us, tu, { tur: S.tur, sicaklikMin: 15, sicaklikMax: 30, nemMax: 75, dayanak: 'Reçine TDS' })).statusCode).toBe(200);
     expect((await o.ist('POST', up, fC, { ...S, recine: undefined })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/firma-portal/is-emri/${e}/proses`, f2C, S)).statusCode).toBe(404);
+    for (const [tur, m] of [['KN', 'Keşif'], ['AC', 'Acil']]) { await o.sup.query(`UPDATE is_emri SET is_emri_turu = $2 WHERE kimlik = $1`, [e, tur]); expect((await o.ist('POST', up, fC, S)).json().hata).toContain(m); } // YG-317
+    await o.sup.query(`UPDATE is_emri SET is_emri_turu = 'ON' WHERE kimlik = $1`, [e]);
     const a = await o.ist('POST', up, fC, S); expect(a.statusCode, a.body).toBe(200); expect(a.json()).toMatchObject({ seansNo: 1, sinirDisi: [] }); expect(a.json().kayitNo).toBe(`${d.dosyaNo}-FR-ONR-005-01`);
     expect((await o.ist('POST', us, tu, { tur: S.tur, sicaklikMin: 10, dayanak: 'y' })).statusCode).toBe(409);
     const ks = await o.ist('POST', `/api/proses-seansi/${a.json().kimlik}/sonuc`, await o.gir('ds'), { sonuc: 'Uygun' }); expect(ks.statusCode).toBe(403);

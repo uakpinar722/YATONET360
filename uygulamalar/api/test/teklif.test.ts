@@ -146,6 +146,7 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
   it('bant dışı kalem TİD onayı olmadan onaya gönderilemez', async () => {
     const d = await hazir(); const t = await teklifAc(d, 100); const c = await o.gir('ts');
     expect(t.bantDisi).toBe(1);
+    expect((await o.ist('GET', `/api/teklif/${t.kimlik}`, c)).json().kalemler[0]).toMatchObject({ bant_alt_eur: '56.36', bant_ust_eur: '76.25' }); // YG-233
     // YG-234: firma teklifindeki maliyet aralık dışı olduğu için LGM listesinde işaretlidir; aralık içindeki teklif işaretsizdir.
     const fl = (await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, c)).json().firma;
     expect(fl[0].aralik_disi).toBe(1);
@@ -240,7 +241,7 @@ describe('bireysel onay ve cayma (YG-152, YG-466, YG-468)', () => {
     expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [g.d.kimlik])).rows[0].asama).toBe('Uygulama');
     const c = (await o.sup.query(`SELECT erken_ifa_onayi, cayma_bitis, sozlesme_zamani FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [g.t.kimlik])).rows[0];
     expect(c.erken_ifa_onayi).toBe(false); expect((+c.cayma_bitis - +c.sozlesme_zamani) / 86_400_000).toBe(14);
-    const ie = (x: object = {}) => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${g.d.kimlik}/is-emri`, k, { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: g.t.kimlik, bedel: 510, ...x }));
+    const ie = (x: object = {}) => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${g.d.kimlik}/is-emri`, k, { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: g.t.kimlik, bedel: 510, ...x }));
     const eng = await ie();
     expect(eng.statusCode).toBe(409); expect(eng.json().hata).toContain('yasal bekleme');
     expect(await caymaEngeli(o.db, g.d.kimlik, new Date(Date.now() + 15 * 86_400_000))).toBeNull();
@@ -332,7 +333,7 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect(r.json().onaylananTutar).toBe(130);
     expect((await o.sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows.map((x) => x.onay_durumu)).toEqual(['Onaylandı', 'Onaylanmadı']);
     expect(await o.kart('Fiyat Teklifi Hazırla', t.kimlik)).toBeDefined();
-    const ie = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 });
+    const ie = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 });
     expect(ie.statusCode, ie.body).toBe(200);
     expect((await o.sup.query(`SELECT aciklama FROM is_emri_kalemi WHERE is_emri_ref = $1`, [ie.json().kimlik])).rows.map((x) => x.aciklama)).toEqual(['A']);
     const so = (await o.sup.query(`SELECT u.kimlik, s.kimlik AS s FROM belge_uretim u JOIN sigorta_onayi s ON s.kimlik = u.nesne::uuid WHERE u.tur = 'Sigorta Onay Belgesi' AND s.teklif_ref = $1`, [t.kimlik])).rows; expect(so.length).toBe(1); // YG-1569
@@ -350,6 +351,8 @@ describe('tesis bedeli Masraf kalemi (MSR-1, KRT-10)', () => {
     expect((await o.ist('POST', u, await o.gir('ds'), { aciklama: 'Travel lift', tutar: 500, belge })).statusCode).toBe(403);
     expect((await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500 })).statusCode).toBe(400);
     expect((await o.ist('POST', u, c, { aciklama: 'Travel lift', tutar: 500, belge })).json().hata).toMatch(/niteliğini/); // YG-179
+    expect((await o.ist('POST', u, c, { aciklama: 'Uzman yolculuğu', nitelik: 'Onarım', tutar: 120, belge, seyahat: { km: 620, arac: 'Karayolu' } })).json().hata).toContain('Uçak (Ekonomi)'); // YG-237
+    expect((await o.ist('POST', u, c, { aciklama: 'Uzman yolculuğu', nitelik: 'Onarım', tutar: 80, belge, seyahat: { km: 300, arac: 'Uçak (Ekonomi)' } })).json().hata).toContain('Karayolu');
     const r = await o.ist('POST', u, c, { aciklama: 'Travel lift', nitelik: 'Bakım', tutar: 500, belge });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().araToplam).toBe(Number(once) + 500);
     const k = (await o.sup.query(`SELECT bedel_turu, birim_satis_fiyati_eur, tutar_eur, kartela_kodu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = $2`, [t.kimlik, r.json().sira])).rows[0];
@@ -365,7 +368,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const gn = (await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).json().gonderim;
     await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 1 }); await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 2 });
     await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' });
-    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'Marmaris', kapsam: 'Onarım', teklif: t.kimlik, bedel, tehlikeliAtik: true });
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'Marmaris', kapsam: 'Onarım', teklif: t.kimlik, bedel, tehlikeliAtik: true });
     expect(r.statusCode, r.body).toBe(200);
     const k = await o.kart('İş Emri', r.json().kimlik);
     if (k.zincir.length > 1) await o.karar(k.kimlik, 'opm', 'Onaya Gönder');
@@ -378,7 +381,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const s = (await o.sup.query(`INSERT INTO sapma_kaydi (is_emri_ref, dosya_ref, tur, aciklama, karar, giren_ref, zarf_genisledi, bulgu_ref) VALUES ($1,$2,'Kapsam','Z','Değişiklik Talebi',$3,true,$4) RETURNING kimlik`, [e.kimlik, d.kimlik, o.K.tu, bg])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, ozet, sahip_kullanici_ref, nesne_turu, nesne_kimligi) VALUES ('Ek İş İş Emri Gerekli','gorev','b','o',$1,'Sapma',$2)`, [o.K.oy, s]);
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, await o.gir('ds'))).json().zarfSapmalari).toHaveLength(1);
-    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'EK', ana: e.kimlik, firma, yer: 'M', kapsam: 'Ek', teklif: t.kimlik, bedel: 10, sapma: s }); expect(r.statusCode, r.body).toBe(200);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'EK', teknikSonuc: 'S', ana: e.kimlik, firma, yer: 'M', kapsam: 'Ek', teklif: t.kimlik, bedel: 10, sapma: s }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT ek_is_emri_ref r FROM sapma_kaydi WHERE kimlik = $1`, [s])).rows[0].r).toBe(r.json().kimlik);
     expect((await o.kart('Ek İş İş Emri Gerekli', s)).durum).toBe('Tamamlandı');
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, await o.gir('ds'))).json().zarfSapmalari).toHaveLength(0);
@@ -386,7 +389,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
   it('numara ve tür; yetki; onaysız teklif, firma uygunsuzluğu ve mali limit boş iş emri reddedilir', async () => {
     const d = await hazir(); const t = await teklifAc(d); const oy = await o.gir('oy');
     expect((await o.sup.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1`, [d.kimlik])).rows[0].is_emri_no).toBe(`${d.dosyaNo}-KN01`);
-    const p = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, oy, { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10, ...x });
+    const p = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, oy, { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10, ...x });
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('ds'), { tur: 'ON' })).statusCode).toBe(403);
     expect((await p({})).json().hata).toContain('Onaylanmış teklif');
     expect((await p({ tur: 'EK' })).json().hata).toContain('ana iş emrine');
@@ -406,6 +409,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const { d, e } = await onarim();
     const j = (await o.ist('GET', `/api/firma-portal/is-emri/${e.kimlik}`, firmaC)).json();
     expect(j.statu).toBe('Kabul Bekliyor'); expect(Number(j.bedel)).toBe(510); expect(j.kalemler).toHaveLength(1);
+    expect(j.kalemler[0].kabul_olcutu).toBe('Ölçüt'); expect(j.teknikSonuc).toBe('S'); expect(j.sorumluRol).toBeTruthy(); // YG-320 expect(Array.isArray(j.guvenlik)).toBe(true); // YG-311
     const metin = JSON.stringify(j);
     expect(metin).not.toContain('Sahip'); expect(metin).not.toContain('SG'); expect(metin).not.toMatch(/(?<![0-9a-f])795(?![0-9a-f])/); expect(metin).not.toMatch(/(?<![0-9a-f])663(?![0-9a-f])/); // tutar; rastgele kimlik içindeki rakamlar sayılmaz
     // Kabul kodsuz olmaz; yanıt başlangıcı açar.
@@ -522,6 +526,19 @@ describe('firma raporunda resmî / klas onayı sorusu (YG-1441)', () => {
   });
 });
 
+describe('teklif hedef süresi (YG-199)', () => {
+  it('firma raporu ve firma fiyatı girilince başlar, öncelik saatine göre biter', async () => {
+    const d = await hazir();
+    const e = (await o.sup.query(`SELECT kimlik FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu = 'KN' LIMIT 1`, [d.kimlik])).rows[0].kimlik;
+    await o.sup.query(`DELETE FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e]); await o.sup.query(`DELETE FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Teklif'`, [d.kimlik]);
+    await firmaFiyat(d.kimlik, 51);
+    expect((await o.sup.query(`SELECT 1 FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Teklif'`, [d.kimlik])).rowCount).toBe(0);
+    const r = await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, { tarih: '2026-11-05', bulgular: 'b', oneriler: 'o', sure: 3, degerlendirme: 'f', resmiOnay: false }); expect(r.statusCode, r.body).toBe(200);
+    const s = (await o.sup.query(`SELECT baslangic_olayi FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Teklif'`, [d.kimlik])).rows[0];
+    expect(s.baslangic_olayi).toContain('Firma Fiyat Teklifi');
+  });
+});
+
 describe('Ticari Sorumlu ataması (YG-1600)', () => {
   it('keşif iş emriyle görev açılır', async () => {
     const d = await hazir(); expect((await o.kart('Ticari Sorumlu Ataması', d.kimlik)).durum).toBe('Bekliyor');
@@ -564,7 +581,7 @@ describe('Onarım Yöntem Raporu (YG-1454, YNT-1)', () => {
     const eski = (await o.sup.query(`SELECT ana_brans FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [kod.k, kod.s])).rows[0].ana_brans;
     await o.sup.query(`UPDATE kartela_kalemi SET ana_brans = 'Kompozit, cam elyafı ve karbon' WHERE kod = $1 AND surum = $2`, [kod.k, kod.s]);
     try {
-      const on = () => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, k, { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 }));
+      const on = () => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, k, { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 }));
       expect((await on()).json().hata).toContain('Onarım Yöntem Raporu');
       const u = `/api/dosya/${d.kimlik}/yontem-raporu`; const R = { kapsam: 'K', malzeme: 'Reçine', sira: '1', muadil: ['Pompa Contası'], sinirlar: [{ tur: 'Kompozit Laminasyon ve Kür', sicaklikMin: 15, nemMax: 75 }] };
       expect((await o.ist('POST', u, await o.gir('ds'), R)).statusCode).toBe(403);
@@ -629,7 +646,7 @@ describe('sigorta ödeme farkı (YG-891, SGF-1)', () => {
     const fark = bir * 2 + 10; const r = await o.ist('POST', u, ds, { tutar: top - fark }); expect(r.statusCode, r.body).toBe(200); expect(r.json().fark).toBeCloseTo(fark, 2);
     expect((await o.ist('POST', u, ds, { tutar: 1 })).statusCode).toBe(409);
     expect((await o.kart('Sigorta Ödeme Farkı', t.kimlik)).durum).toBe('Bekliyor');
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10 })).json().hata).toContain('fark kararı');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 10 })).json().hata).toContain('fark kararı');
     const f = `/api/teklif/${t.kimlik}/odeme-farki`;
     expect((await o.ist('POST', f, ds, { neden: 'Diğer', kapsamdan: [1], ayri: [1] })).statusCode).toBe(400);
     expect((await o.ist('POST', f, ds, { neden: 'Diğer', kapsamdan: [1, 2, 3] })).json().hata).toContain('aşmaktadır');

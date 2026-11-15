@@ -98,6 +98,11 @@ describe('vefat, ön kayıt, izin belgesi (YG-1521, YG-344, YG-952)', () => {
     expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { mersis: '123' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { mersis: '1234567890123456', calisan: 12, bolgeler: ['Muğla'] })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT calisan_sayisi, hizmet_bolgeleri FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ calisan_sayisi: 12, hizmet_bolgeleri: ['Muğla'] });
+    expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { konumTuru: 'Plaj' })).statusCode).toBe(400); // YG-347
+    expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { konumTuru: 'Bağlama Noktası' })).json().hata).toContain('bağlama noktasını');
+    const bn = (await o.sup.query(`INSERT INTO baglama_noktasi (nokta_no, tur, ad) VALUES ((SELECT coalesce(max(nokta_no), 0) + 1 FROM baglama_noktasi), 'Marina', 'Deneme Marina') RETURNING kimlik`)).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/firma/${f}/on-kayit`, c, { konumTuru: 'Bağlama Noktası', baglamaNoktasi: bn })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT konum_turu, baglama_noktasi_ref FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ konum_turu: 'Bağlama Noktası', baglama_noktasi_ref: bn });
   });
 });
 
@@ -1172,6 +1177,9 @@ describe('bağlama noktası ve tesis önerisi (YG-113, YG-114, YG-115, YG-333)',
     const t = await tesisKur(`Teyit ${Math.random()}`, { kuralTeyit: '2025-01-01' }); const sc = await o.gir('sc'); const u = `/api/firma-tesis/${t}/bilgi`;
     expect((await o.ist('POST', u, await o.gir('ds'), { kural: 'Serbest' })).statusCode).toBe(404);
     expect((await o.ist('POST', u, sc, { kural: 'Kayıt Şartlı' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sc, { kural: 'Serbest', tesisTuru: 'Plaj' })).statusCode).toBe(400); // YG-112
+    expect((await o.ist('POST', u, sc, { kural: 'Serbest', tesisTuru: 'Çekek Sahası', kuralTeyit: '2025-01-01' })).statusCode).toBe(200);
+    expect((await o.ist('GET', u, sc)).json().tesis_turu).toBe('Çekek Sahası');
     expect((await o.ist('POST', u, sc, { kural: 'Ücretli' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, sc, { kural: 'X' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, sc, { kural: 'Serbest', kuralTeyit: '2025-01-01', enlem: 36.8, boylam: 28.2 })).statusCode).toBe(200);

@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
-const BOS = { kural: '', kayitSarti: '', ucret: '', servis: '', kuralTeyit: '', travelLift: '', vinc: '', azamiBoy: '', karaPark: '', kapasiteTeyit: '', izinTuru: '', izinNo: '', izinGecerlilik: '', enlem: '', boylam: '' };
+const BOS = { tesisTuru: '', kural: '', kayitSarti: '', ucret: '', servis: '', kuralTeyit: '', travelLift: '', vinc: '', azamiBoy: '', karaPark: '', kapasiteTeyit: '', izinTuru: '', izinNo: '', izinGecerlilik: '', enlem: '', boylam: '' };
 const yaz = (x: unknown) => (x === null || x === undefined ? '' : String(x));
 
 /** YG-113, YG-114: bağlama noktası kuralları, kapasite ve işletme izni. */
 export function TesisBilgi({ kimlik }: { kimlik: string }) {
   const [ac, setAc] = useState(false); const [f, setF] = useState(BOS); const [m, setM] = useState('');
-  useEffect(() => { if (ac) void istek<Record<string, unknown>>(`/firma-tesis/${kimlik}/bilgi`).then((r) => setF({ kural: yaz(r.dis_firma_kurali), kayitSarti: yaz(r.kayit_sarti), ucret: yaz(r.giris_ucreti_eur), servis: yaz(r.servis_kurulus_ref), kuralTeyit: yaz(r.kural_teyit_tarihi), travelLift: yaz(r.travel_lift_ton), vinc: yaz(r.vinc_ton), azamiBoy: yaz(r.azami_boy_m), karaPark: yaz(r.kara_park_kapasitesi), kapasiteTeyit: yaz(r.kapasite_teyit_tarihi), izinTuru: yaz(r.izin_turu), izinNo: yaz(r.izin_no), izinGecerlilik: yaz(r.izin_gecerlilik), enlem: yaz(r.enlem), boylam: yaz(r.boylam) })).catch((e) => setM(e.message)); }, [ac, kimlik]);
+  useEffect(() => { if (ac) void istek<Record<string, unknown>>(`/firma-tesis/${kimlik}/bilgi`).then((r) => setF({ tesisTuru: yaz(r.tesis_turu), kural: yaz(r.dis_firma_kurali), kayitSarti: yaz(r.kayit_sarti), ucret: yaz(r.giris_ucreti_eur), servis: yaz(r.servis_kurulus_ref), kuralTeyit: yaz(r.kural_teyit_tarihi), travelLift: yaz(r.travel_lift_ton), vinc: yaz(r.vinc_ton), azamiBoy: yaz(r.azami_boy_m), karaPark: yaz(r.kara_park_kapasitesi), kapasiteTeyit: yaz(r.kapasite_teyit_tarihi), izinTuru: yaz(r.izin_turu), izinNo: yaz(r.izin_no), izinGecerlilik: yaz(r.izin_gecerlilik), enlem: yaz(r.enlem), boylam: yaz(r.boylam) })).catch((e) => setM(e.message)); }, [ac, kimlik]);
   if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>Kapasite ve Kurallar</button>;
   const A = (k: keyof typeof BOS, et: string, tip = 'text') => <><label htmlFor={`tb-${k}-${kimlik}`}>{et}</label><input id={`tb-${k}-${kimlik}`} type={tip} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
   return <div className="tam">{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor={`tb-tt-${kimlik}`}>Tesis Türü</label><select id={`tb-tt-${kimlik}`} value={f.tesisTuru} onChange={(e) => setF({ ...f, tesisTuru: e.target.value })}><option value="">Seçiniz</option>{['Marina', 'Liman', 'Barınak', 'Çekek Sahası', 'Tersane', 'Bağlama Noktası'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor={`tb-k-${kimlik}`}>Dış Firma Kuralı</label><select id={`tb-k-${kimlik}`} value={f.kural} onChange={(e) => setF({ ...f, kural: e.target.value })}><option value="">Seçiniz</option>{['Serbest', 'Kayıt Şartlı', 'Ücretli', 'Kısıtlı', 'Yasak'].map((x) => <option key={x}>{x}</option>)}</select>
     {f.kural === 'Kayıt Şartlı' && A('kayitSarti', 'Kayıt Şartı')}{f.kural === 'Ücretli' && A('ucret', 'Giriş Ücreti (EUR)')}
     {A('kuralTeyit', 'Kural Teyit Tarihi', 'date')}{A('travelLift', 'Travel Lift (Ton)')}{A('vinc', 'Vinç (Ton)')}{A('azamiBoy', 'Azami Yat Boyu (m)')}{A('karaPark', 'Kara Park Kapasitesi')}{A('kapasiteTeyit', 'Kapasite Teyit Tarihi', 'date')}{A('izinTuru', 'İşletme İzni / Turizm Belgesi Türü')}{A('izinNo', 'Belge No')}{A('izinGecerlilik', 'Belge Geçerlilik Tarihi', 'date')}{A('enlem', 'Enlem')}{A('boylam', 'Boylam')}

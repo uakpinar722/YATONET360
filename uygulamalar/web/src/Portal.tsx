@@ -98,6 +98,17 @@ function GarantiTalebi({ id }: { id: string }) {
   return <div className="ozet">{m && <div className="not" role="status">{m}</div>}<label htmlFor="gt-b">Sorunu Kısaca Yazınız</label><input id="gt-b" value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2" disabled={!b.trim()} onClick={() => void istek(`/portal/dosya/${id}/garanti-talebi`, { belirti: b }).then(() => { setB(''); setM('Talebiniz Dosya Sorumlunuza iletildi.'); }).catch((x) => setM(x.message))}>Garanti Talebi Gönder</button></div>;
 }
 
+/** YG-108: portaldan iptal veya devir talebi; Dosya Sorumlusuna iletilir. */
+function IptalDevirTalebi({ id }: { id: string }) {
+  const [ac, setAc] = useState(false); const [f, setF] = useState({ tur: 'İptal', gerekce: '', devralan: '' }); const [m, setM] = useState('');
+  if (!ac) return <button className="lnk" onClick={() => setAc(true)}>İptal veya Devir Talebi</button>;
+  return <div className="ozet">{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="idt-t">Talep Türü</label><select id="idt-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}><option>İptal</option><option>Devir</option></select>
+    <label htmlFor="idt-g">Gerekçe</label><input id="idt-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    {f.tur === 'Devir' && <><label htmlFor="idt-d">Devralacak Taraf</label><input id="idt-d" value={f.devralan} onChange={(e) => setF({ ...f, devralan: e.target.value })} /></>}
+    <button className="btn2" disabled={!f.gerekce.trim()} onClick={() => void istek(`/portal/dosya/${id}/iptal-devir-talebi`, f).then(() => setM('Talebiniz Dosya Sorumlunuza iletildi.')).catch((x) => setM(x.message))}>Talebi Gönder</button></div>;
+}
+
 function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
   const [bilgi, setBilgi] = useState('');
   const [d, setD] = useState<(Kart & { tahmini_teslim_tarihi?: string | null; cayma?: boolean; belgeler: { kimlik: string; ad: string; surum_no: number }[]; fotograflar?: { kimlik: string; aciklama: string; onay_zamani: string }[]; faturalar: { kimlik: string; fatura_no: string; fatura_tarihi: string | null; toplam_eur: string; toplam_tl: string | null; durum: string }[]; teslim: { teslime_hazir_zamani: string | null; kalan_gun: number | null } | null; teklifler: { teklif_no: string; surum_no: number; teklif_turu: string; bildirilen_sure_gun?: number | null; statu: string; karar: string | null; genel_toplam_eur: string; kalemler: { sira_no: number; aciklama: string; miktar: string; birim: string; tutar_eur: string }[] }[] }) | null>(null); const [hata, setHata] = useState('');
@@ -118,6 +129,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       {(d.fotograflar?.length ?? 0) > 0 && <><div className="bolum">İlerleme Fotoğrafları</div><div className="ozet">{d.fotograflar!.map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a> · {new Date(f.onay_zamani).toLocaleDateString('tr-TR')}</div>)}</div></>}
       <div className="bolum">Garanti Talebi</div>
       <GarantiTalebi id={id} />
+      <IptalDevirTalebi id={id} />
       <div className="bolum">Belgelerim</div>
       <div className="ozet">{d.belgeler.length === 0 ? 'Belge bulunmamaktadır.' : d.belgeler.map((b) => <div key={b.kimlik}><a href={`/api/belge/${b.kimlik}/surum/${b.surum_no}/indir`}>{b.ad}</a></div>)}</div>
     </>

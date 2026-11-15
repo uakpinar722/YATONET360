@@ -15,7 +15,7 @@ import { rolSahipleri } from './makam.js';
 import { metinGetir, tutar } from './metin.js';
 import { kutuAyikla, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { muvafakatKilidi } from './portal.js';
-import { altNumara } from './sure.js';
+import { altNumara, sureBitir } from './sure.js';
 import { UUID } from './yat.js';
 import { sigortaBildirimEngeli, yurtDisiMi } from './onay_ek.js';
 import { bildir, disGonder } from './bildirim.js';
@@ -113,7 +113,7 @@ export async function firmaFiyatYansit(c: Db, firmaKalem: string): Promise<numbe
     if (f.statu !== 'Taslak') { await kartAc(c, { tur: 'Teklif Revizyonu', kategori: 'islem', baslik: `${f.teklif_no} · Yeni Teklif Sürümü Bekleniyor`, ozet: 'Firma fiyatı düzeltildi; müşteriye gönderilmiş teklifte düzeltme yeni sürümle yapılır.', oncelik: 'Yüksek', sahipKullanici: f.hazirlayan_ref, nesneTuru: 'Teklif', nesneKimligi: f.kimlik }); n++; continue; }
     for (const k of (await c.query(`SELECT x.kimlik, x.miktar, m.maliyet_eur FROM fiyat_teklifi_kalemi x LEFT JOIN kartela_kalemi m ON m.kod = x.kartela_kodu AND m.surum = x.kartela_surumu WHERE x.teklif_ref = $1 AND x.firma_kalem_ref = $2`, [f.kimlik, firmaKalem])).rows) {
       const h = kalemHesapla(fiyat, Number(k.miktar), kat, bant, k.maliyet_eur === null ? null : Number(k.maliyet_eur));
-      await c.query(`UPDATE fiyat_teklifi_kalemi SET birim_maliyet_eur = $2, birim_satis_fiyati_eur = $3, tutar_eur = $4, bant_disi = $5 WHERE kimlik = $1`, [k.kimlik, fiyat, h.birimSatis, h.tutar, h.bantDisi]);
+      await c.query(`UPDATE fiyat_teklifi_kalemi SET birim_maliyet_eur = $2, birim_satis_fiyati_eur = $3, tutar_eur = $4, bant_disi = $5, bant_alt_eur = $6, bant_ust_eur = $7 WHERE kimlik = $1`, [k.kimlik, fiyat, h.birimSatis, h.tutar, h.bantDisi, h.bant?.alt ?? null, h.bant?.ust ?? null]); // YG-233
     }
     const top = toplamlar((await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [f.kimlik])).rows, f.indirim_orani === null ? null : Number(f.indirim_orani), Number(f.kesif_mahsubu_eur ?? 0), Number(f.kdv_orani));
     await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [f.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
@@ -257,6 +257,7 @@ gonderimIsleyici('Fiyat Teklifi', async (c, r) => {
   if (t.statu !== 'Onaylı') throw Object.assign(new Error('Teklif gönderilebilir durumda değildir.'), { statusCode: 409 });
   const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
   const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), sigorta_karar_son = $3, gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, await parametre(c, 'teklif_gecerlilik_gun'), son])).rows[0].b;
+  await sureBitir(c, { tur: 'Teklif', dosya: t.dosya_ref }); // YG-199
   const sg = (await c.query(`SELECT sigorta_hasar_dosya_no FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
   const sahip = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
   if (sahip) await yatTarafinaYaz(c, { olay: `bld37:${t.kimlik}`, kod: 'BLD-37', dil: dilKod(t.yazisma_dili), konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: { ...SIFIRLA_YAT(t), 'bağlantı': webAdresiTeklif, link: webAdresiTeklif } });
@@ -412,10 +413,12 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
         const kMaliyet = k && GMO_KALEMLERI.includes(r.kartela_kodu) ? await gmoMaliyet(c, id, Number(k.maliyet_eur)) : k ? Number(k.maliyet_eur) : null;
         const h = kalemHesapla(Number(r.birim_fiyat_eur), Number(r.miktar), kat, bant, kMaliyet);
         if (h.bantDisi) bantDisi++;
+        const bantAU = h.bant; // YG-233
         if (r.kartela_kodu) kodlar.push(r.kartela_kodu);
         hesap.push({ tutar_eur: h.tutar, opsiyon: false });
         await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, tedarikci_kalem_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
           [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi, r.tedarikci_kalem ?? null]);
+        if (bantAU) await c.query(`UPDATE fiyat_teklifi_kalemi SET bant_alt_eur = $2, bant_ust_eur = $3 WHERE teklif_ref = $1 AND sira_no = $4`, [t.kimlik, bantAU.alt, bantAU.ust, n]);
       }
       const top = toplamlar(hesap, null, 0, kdvO);
       await c.query(`UPDATE fiyat_teklifi SET ara_toplam_eur = $2, kdv_tutari_eur = $3, genel_toplam_eur = $4, onay_limit_tutari_eur = $5 WHERE kimlik = $1`, [t.kimlik, top.ara, top.kdv, top.genel, top.matrah]);
@@ -486,7 +489,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
 
   // MSR-1, YG-182, YG-183, YG-331: tesisin kendi tarifesiyle fiyatladığı bedel kartelada yoktur; teklife belgesiyle, gerçek tutarıyla Masraf kalemi olarak yazılır. Fiyat kuralı uygulanmaz.
   s.post('/teklif/:id/masraf-kalemi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { aciklama?: string; nitelik?: string; tutar?: number; belge?: string };
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { aciklama?: string; nitelik?: string; tutar?: number; belge?: string; seyahat?: { km?: number; arac?: string } };
     if (!t) return yok(y);
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Masraf kalemini teklifi hazırlayan ekler.' });
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Masraf kalemi taslak teklife eklenir.' });
@@ -494,14 +497,23 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!g.aciklama?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Açıklama ve tutarı yazmanızı rica ederiz.' });
     // YG-1418: geçerli garantide yan masraf yat sahibine yazılmaz.
     if ((await b.db.query(`SELECT 1 FROM garanti_sikayet WHERE dosya_ref = $1 AND karar = 'Garanti' LIMIT 1`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Geçerli garantide bu masraf yat sahibine yazılmaz; firma hakedişinden mahsup edilir.' });
-    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Tesis teklifi veya tarife belgesini eklemenizi rica ederiz.' });
+    // YG-237: seyahat gerçek tutarla Masraf olur; tek yön 500 km üzeri uçak (ekonomi), 500 km ve altı karayolu.
+    let seyahatEki = '';
+    if (g.seyahat) {
+      const km = Number(g.seyahat.km);
+      if (!(km > 0)) return y.code(400).send({ hata: 'Seyahat mesafesini (km) yazınız.' });
+      const kural = km > 500 ? 'Uçak (Ekonomi)' : 'Karayolu';
+      if (g.seyahat.arac !== kural) return y.code(400).send({ hata: `${km.toLocaleString('tr-TR')} km yolculukta ulaşım ${kural} ile yapılır.` });
+      seyahatEki = ` (Seyahat: ${kural}, ${km.toLocaleString('tr-TR')} km)`;
+    }
+    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: g.seyahat ? 'Bilet veya yol gideri belgesini eklemenizi rica ederiz.' : 'Tesis teklifi veya tarife belgesini eklemenizi rica ederiz.' });
     // YG-179, YG-1770: işin niteliği listeden zorunlu (varsayılan yazılmaz); belge bu dosyaya yüklenmiş olmalıdır.
     if (!NITELIK.includes(g.nitelik ?? '')) return y.code(400).send({ hata: `İşin niteliğini seçiniz: ${NITELIK.join(', ')}.` });
     if (!(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [g.belge, t.dosya_ref])).rowCount) return y.code(400).send({ hata: 'Belge bu dosyaya yüklenmiş olmalıdır.' });
     return islem(async (c) => {
       const tutarE = R2(Number(g.tutar));
       const sira = (await c.query(`SELECT coalesce(max(sira_no), 0) + 1 n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows[0].n;
-      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi) VALUES ($1,$2,$3,$4,'Masraf',1,'adet',$5,$5,$5,false)`, [t.kimlik, sira, g.aciklama!.trim(), g.nitelik, tutarE]);
+      await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi) VALUES ($1,$2,$3,$4,'Masraf',1,'adet',$5,$5,$5,false)`, [t.kimlik, sira, g.aciklama!.trim() + seyahatEki, g.nitelik, tutarE]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklife Masraf Eklendi', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { aciklama: g.aciklama, tutar: tutarE, belge: g.belge }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       const kl = (await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
       const top = toplamlar(kl, t.indirim_orani === null ? null : Number(t.indirim_orani), Number(t.kesif_mahsubu_eur), Number(t.kdv_orani));
@@ -573,6 +585,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM yeniden_degerlendirme WHERE dosya_ref = $1 AND durum = 'Gönderildi' LIMIT 1`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigorta şirketinin yeniden değerlendirme yanıtı bekleniyor.' });
     return islem(async (c) => {
       const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, gun])).rows[0].b;
+      await sureBitir(c, { tur: 'Teklif', dosya: t.dosya_ref }); // YG-199
       const sahip = (await c.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
       const alan = { ...SIFIRLA_YAT(t), 'bağlantı': b.webAdresi, link: b.webAdresi };
       if (!sahip) throw Object.assign(new Error('Yat sahibinin iletişim bilgisi kayıtlı değildir.'), { statusCode: 409 });
@@ -737,6 +750,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const yeni = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, surum_no, onceki_surum_ref, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, revizyon_nedeni, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, bildirilen_sure_gun) SELECT teklif_no, surum_no + 1, kimlik, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, $2, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, ara_toplam_eur * (1 + kdv_orani / 100), ara_toplam_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, bildirilen_sure_gun FROM fiyat_teklifi WHERE kimlik = $1 RETURNING kimlik, surum_no`, [t.kimlik, neden.trim()])).rows[0];
       await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon, tedarikci_kalem_ref) SELECT $2, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, opsiyon, tedarikci_kalem_ref FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik, yeni.kimlik]);
+      await c.query(`UPDATE fiyat_teklifi_kalemi n SET bant_alt_eur = e.bant_alt_eur, bant_ust_eur = e.bant_ust_eur FROM fiyat_teklifi_kalemi e WHERE n.teklif_ref = $1 AND e.teklif_ref = $2 AND e.sira_no = n.sira_no`, [yeni.kimlik, t.kimlik]); // YG-233
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Yerine Geçti', guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
       await c.query(`INSERT INTO teklif_maddesi (teklif_ref, madde, tur, giren_ref) SELECT $1, madde, tur, giren_ref FROM teklif_maddesi WHERE teklif_ref = $2`, [yeni.kimlik, t.kimlik]); // YG-709
       await (await import('./resmi_onay.js')).resmiOnayKontrol(c, yeni.kimlik); // YG-1441

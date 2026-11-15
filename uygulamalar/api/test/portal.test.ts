@@ -184,6 +184,20 @@ describe('onay ekranı (YG-466, YG-476, YG-1433)', () => {
   });
 });
 
+describe('portaldan iptal/devir talebi (YG-108)', () => {
+  it('yalnız kendi dosyasında; gerekçe zorunlu; Dosya Sorumlusuna görev düşer; ikinci talep alınmaz', async () => {
+    const tel = '+905550100108'; const d = await dosyaAc({ sahipTel: tel }); const a = await kaydol(tel); const b = await kaydol('+905550100109');
+    await sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = (SELECT kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE r.rol_adi = 'Dosya Sorumlusu' LIMIT 1) WHERE kimlik = $1 AND dosya_sorumlusu_ref IS NULL`, [d.kimlik]);
+    const u = `/api/portal/dosya/${d.kimlik}/iptal-devir-talebi`;
+    expect((await ist('POST', u, b.c, { tur: 'İptal', gerekce: 'G' })).statusCode).toBe(404);
+    expect((await ist('POST', u, a.c, { tur: 'İptal' })).statusCode).toBe(400);
+    expect((await ist('POST', u, a.c, { tur: 'Devir', gerekce: 'Satış' })).json().hata).toContain('devredileceği');
+    expect((await ist('POST', u, a.c, { tur: 'Devir', gerekce: 'Yat satıldı', devralan: 'Yeni Sahip' })).statusCode).toBe(200);
+    expect((await sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Müşteri İptal/Devir Talebi' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
+    expect((await ist('POST', u, a.c, { tur: 'İptal', gerekce: 'G' })).statusCode).toBe(409);
+  });
+});
+
 describe('portal görünürlüğü (YG-459, YG-1565)', () => {
   it('kayıt olan yat sahibi numarasıyla eşleşen dosyayı görür; başkasınınkini görmez; firma ve iç bilgi yoktur', async () => {
     const tel = '+905550100010'; const d = await dosyaAc({ sahipTel: tel });

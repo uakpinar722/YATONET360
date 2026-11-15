@@ -55,6 +55,9 @@ export function prosesYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; zaman?: string; sicaklik?: unknown; nem?: unknown; recine?: unknown; sertlestirici?: unknown; katlar?: string; vakum?: unknown; vakumSure?: unknown; malzeme?: string; sorumlu?: string; not?: string };
     const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); if (!e) return yok(y);
     if (e.statu !== 'Aktif') return y.code(409).send({ hata: 'Proses kaydı aktif iş emrine girilir.' });
+    // YG-317: iş emri türü başka türdeki işe izin vermez. Keşifte yalnız inceleme, ölçüm, fotoğraf ve izinli söküm-montaj; acil iş emrinde kalıcı onarım yapılmaz.
+    if (e.is_emri_turu === 'KN') return y.code(409).send({ hata: 'Keşif iş emriyle onarım yapılmaz; yalnız inceleme, ölçüm, fotoğraf ve iş emrinde izin verilen söküm-montaj yapılır. Onarım için onarım iş emri beklenir.' });
+    if (e.is_emri_turu === 'AC') return y.code(409).send({ hata: 'Acil iş emriyle kalıcı onarım yapılmaz; yalnız geçici tedbir uygulanır. Kalıcı onarım için onarım iş emri beklenir.' });
     const kod = PROSES[g.tur ?? '']; const sic = sayi(g.sicaklik); const nem = sayi(g.nem);
     if (!kod || !g.zaman || Number.isNaN(Date.parse(g.zaman)) || sic === null || Number.isNaN(sic) || nem === null || Number.isNaN(nem) || nem < 0 || nem > 100 || !g.sorumlu?.trim()) return y.code(400).send({ hata: 'Proses türü, seans zamanı, sıcaklık, nem ve sorumlu rolü girmenizi rica ederiz.' });
     const kompozit = kod === 'FR-ONR-005'; const rc = sayi(g.recine); const st = sayi(g.sertlestirici); const vk = sayi(g.vakum); const vs = sayi(g.vakumSure);

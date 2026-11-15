@@ -204,6 +204,8 @@ export async function kapanisAsamalari(db: Db, dosya: string, simdi = new Date()
   ];
 }
 
+export const KONUM_TURLERI = ['Bağlama Noktası', 'Tersane Bölgesi', 'Sanayi Sitesi', 'Organize Sanayi Bölgesi', 'Serbest Bölge', 'Diğer'];
+
 export function kalanYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/kapanis-asamalari', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-073
     const { id } = i.params as { id: string };
@@ -538,9 +540,13 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-344: FR-SCL-001 ön kayıt alanları.
   s.post('/firma/:id/on-kayit', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { mersis?: string; mahalle?: string; konumTuru?: string; yetkili?: string; taliBranslar?: string[]; bolgeler?: string[]; calisan?: number; referanslar?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { mersis?: string; mahalle?: string; konumTuru?: string; baglamaNoktasi?: string; yetkili?: string; taliBranslar?: string[]; bolgeler?: string[]; calisan?: number; referanslar?: string };
     if (!UUID.test(id) || !(await rolVar(o.kullanici, ['Sicil Sorumlusu', 'Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı']))) return yok(y);
     if (g.mersis && !/^\d{16}$/.test(g.mersis)) return y.code(400).send({ hata: 'MERSİS numarası 16 haneli olmalıdır.' });
+    // YG-347: bağlama noktasındaki firma o noktaya bağlanır; değilse konum türü listeden seçilir.
+    if (g.konumTuru && !KONUM_TURLERI.includes(g.konumTuru)) return y.code(400).send({ hata: `Konum türünü seçiniz: ${KONUM_TURLERI.join(', ')}.` });
+    if (g.konumTuru === 'Bağlama Noktası' && !(g.baglamaNoktasi && UUID.test(g.baglamaNoktasi) && (await b.db.query(`SELECT 1 FROM baglama_noktasi WHERE kimlik = $1`, [g.baglamaNoktasi])).rowCount)) return y.code(400).send({ hata: 'Firmanın bulunduğu bağlama noktasını seçiniz.' });
+    if (g.konumTuru) await b.db.query(`UPDATE kurulus SET baglama_noktasi_ref = $2 WHERE kimlik = $1`, [id, g.konumTuru === 'Bağlama Noktası' ? g.baglamaNoktasi : null]);
     await b.db.query(`UPDATE kurulus SET mersis_no = coalesce($2, mersis_no), mahalle = coalesce($3, mahalle), konum_turu = coalesce($4, konum_turu), yetkili_kisi = coalesce($5, yetkili_kisi), tali_branslar = coalesce($6, tali_branslar), hizmet_bolgeleri = coalesce($7, hizmet_bolgeleri), calisan_sayisi = coalesce($8, calisan_sayisi), referanslar = coalesce($9, referanslar) WHERE kimlik = $1`, [id, g.mersis ?? null, g.mahalle ?? null, g.konumTuru ?? null, g.yetkili ?? null, g.taliBranslar ?? null, g.bolgeler ?? null, g.calisan ?? null, g.referanslar ?? null]);
     return { tamam: true };
   });
