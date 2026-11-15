@@ -483,7 +483,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   );
 }
 
-interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null; yat: string; durum: string; renk: string; garanti: string | null; tahminiTeslim: string | null }
+interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null; yat: string; durum: string; renk: string; garanti: string | null; tahminiTeslim: string | null; ilerleme?: number; fotograflar?: { kimlik: string; aciklama: string }[]; raporlar?: { kimlik: string; rapor_no: string }[] }
 interface SigortaTeklif { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; genel_toplam_eur: string; sigorta_karar_son: string | null; dosya_no: string }
 interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | null; tahmini_teslim_tarihi: string | null; ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string }[] }
 
@@ -517,7 +517,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       {(v.ihbarlar ?? []).length > 0 && <><div className="bolum">İhbarlar</div>{v.ihbarlar!.map((x) => <div className="ozet" key={x.kimlik}><b>{x.talepNo} · {x.yat}</b><div>{x.hasarNo ? `Hasar Dosya No: ${x.hasarNo} · ` : ''}{x.durum}</div></div>)}</>}
       <div className="bolum">Dosyalar</div>
       {v.dosyalar.length === 0 && <div className="ozet bos">Dosya bulunmamaktadır.</div>}
-      {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>Garanti</th><th>Tahmini Teslim Tarihi</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="Garanti">{d.garanti ?? '—'}</td><td data-ad="Tahmini Teslim Tarihi">{d.tahminiTeslim ? d.tahminiTeslim.split('-').reverse().join('.') : '—'}</td></tr>)}</tbody></table></div>}
+      {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>İlerleme</th><th>Garanti</th><th>Tahmini Teslim Tarihi</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="İlerleme">%{d.ilerleme ?? 0}{(d.fotograflar ?? []).map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a></div>)}{(d.raporlar ?? []).map((x) => <div key={x.kimlik}><a href={`/api/sigorta/rapor/${x.kimlik}`}>Teknik Rapor {x.rapor_no}</a></div>)}</td><td data-ad="Garanti">{d.garanti ?? '—'}</td><td data-ad="Tahmini Teslim Tarihi">{d.tahminiTeslim ? d.tahminiTeslim.split('-').reverse().join('.') : '—'}</td></tr>)}</tbody></table></div>}
     </>
   );
 }

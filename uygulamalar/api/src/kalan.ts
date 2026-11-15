@@ -204,9 +204,34 @@ export async function kapanisAsamalari(db: Db, dosya: string, simdi = new Date()
   ];
 }
 
+/** YG-147: dosyanın bağlı olduğu sözleşmedeki taahhüt süresi; sözleşmede yoksa "Tanımsız"; bireysel yat sahibine süre taahhüt edilmez (null). */
+export async function sozlesmeHedefi(db: Db, dosya: string, tur: string): Promise<string | null> {
+  if (!['İlk Yanıt', 'Keşif', 'Teklif'].includes(tur)) return null;
+  const d = (await db.query(`SELECT d.musteri_turu, d.oncelik, (SELECT s.sigortaci_adi FROM dosya_sigorta_kaydi s WHERE s.dosya_ref = d.kimlik LIMIT 1) sigortaci,
+      (SELECT k.kimlik FROM kurumsal_kurum k JOIN yat y ON y.yat_sahibi_ref = k.taraf_ref WHERE y.kimlik = d.yat_ref LIMIT 1) kurum FROM dosya d WHERE d.kimlik = $1`, [dosya])).rows[0];
+  if (!d || d.musteri_turu === 'Bireysel Müşteri') return null;
+  const r = (await db.query(`SELECT saat FROM sozlesme_hedef_suresi WHERE tur = $1 AND oncelik = $2 AND ((sigortaci_adi IS NOT NULL AND lower(sigortaci_adi) = lower($3)) OR kurum_ref = $4) LIMIT 1`, [tur, d.oncelik, d.musteri_turu === 'Sigorta Şirketi' ? d.sigortaci ?? '' : '', d.musteri_turu === 'Kurumsal Müşteri' ? d.kurum : null])).rows[0];
+  return r ? `${Number(r.saat).toLocaleString('tr-TR')} saat` : 'Tanımsız';
+}
+
 export const KONUM_TURLERI = ['Bağlama Noktası', 'Tersane Bölgesi', 'Sanayi Sitesi', 'Organize Sanayi Bölgesi', 'Serbest Bölge', 'Diğer'];
 
 export function kalanYollari(s: FastifyInstance, b: Baglam) {
+  // YG-147: sözleşme taahhüt süreleri Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörünce girilir.
+  s.get('/sozlesme-hedef-sureleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    return (await b.db.query(`SELECT h.kimlik, h.sigortaci_adi, k.unvan kurum, h.tur, h.oncelik, h.saat FROM sozlesme_hedef_suresi h LEFT JOIN kurumsal_kurum k ON k.kimlik = h.kurum_ref ORDER BY coalesce(h.sigortaci_adi, k.unvan), h.tur, h.oncelik`)).rows;
+  });
+  s.post('/sozlesme-hedef-suresi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { sigortaci?: string; kurum?: string; tur?: string; oncelik?: string; saat?: number };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'))).includes(o.kullanici) && !(await rolSahipleri(b.db, await rolId(b.db, 'Ticari İşler Direktörü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Sözleşme sürelerini Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörü girer.' });
+    if (Boolean(g.sigortaci?.trim()) === Boolean(g.kurum)) return y.code(400).send({ hata: 'Sigorta şirketini veya kurumsal müşteriyi seçiniz.' });
+    if (g.kurum && !(UUID.test(g.kurum) && (await b.db.query(`SELECT 1 FROM kurumsal_kurum WHERE kimlik = $1`, [g.kurum])).rowCount)) return y.code(400).send({ hata: 'Kurumsal müşteri bulunamadı.' });
+    if (!['İlk Yanıt', 'Keşif', 'Teklif'].includes(g.tur ?? '') || !['Kritik', 'Yüksek', 'Normal', 'Planlı'].includes(g.oncelik ?? '') || !(Number(g.saat) > 0)) return y.code(400).send({ hata: 'Süre türü, öncelik ve saat zorunludur.' });
+    await b.db.query(`INSERT INTO sozlesme_hedef_suresi (sigortaci_adi, kurum_ref, tur, oncelik, saat, giren_ref) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (coalesce(lower(sigortaci_adi), kurum_ref::text), tur, oncelik) DO UPDATE SET saat = EXCLUDED.saat, giren_ref = EXCLUDED.giren_ref`, [g.sigortaci?.trim() || null, g.kurum || null, g.tur, g.oncelik, Number(g.saat), o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sözleşme Hedef Süresi', nesneTuru: 'Parametre', nesneKimligi: `${g.sigortaci ?? g.kurum}:${g.tur}:${g.oncelik}`, yeni: { saat: g.saat }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.get('/dosya/:id/kapanis-asamalari', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-073
     const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });

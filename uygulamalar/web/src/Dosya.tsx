@@ -10,7 +10,7 @@ import { TeklifTalebiBolumu, TesisIslemleri } from './Portallar';
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
 interface DosyaSatir { kimlik: string; dosya_no: string; statu: string; asama: string | null; oncelik: string; konum: string; yat_adi: string; dosya_sorumlusu: string | null; beklemede: string | null; sonraki_son: string | null }
-interface Sure { tur: string; baslangic: string; bitis: string; kaydirma_notu: string | null; tamamlanma: string | null; renk: 'yeşil' | 'sarı' | 'kırmızı' | null; baslangic_olayi?: string | null; sure_birimi?: string }
+interface Sure { tur: string; baslangic: string; bitis: string; kaydirma_notu: string | null; tamamlanma: string | null; renk: 'yeşil' | 'sarı' | 'kırmızı' | null; baslangic_olayi?: string | null; sure_birimi?: string; sozlesme?: string | null }
 interface Ekip { kimlik: string; rol: string; ad_soyad: string; kullanici: string }
 interface Bekleme { kimlik: string; neden: string; hedef_tarih: string; sayac_durur: boolean; uzatma_sayisi: number; olusturma_zamani: string; kaldirilma_zamani: string | null; sorumlu: string }
 interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string; hedef_tarih: string; sahip: string; gecikmis: boolean; asama?: string | null; kabul_olcutu?: string | null; gerekli_belge?: string | null }
@@ -32,7 +32,7 @@ const BEKLEME = ['Bilgi', 'Uzman Görüşü', 'Eksper', 'Sigorta Onayı', 'Müş
 
 /** YG-034, YG-035: renk risk düzeyine göre. YG-1579: Kritik kırmızı, Yüksek sarı, Normal ve Planlı gri. */
 export const Oncelik = ({ o }: { o: string }) => <span className={`oncelik o-${o === 'Kritik' ? 'k' : o === 'Yüksek' ? 'y' : 'g'}`}>{o}</span>;
-const Sayac = ({ s }: { s: Sure }) => s.tamamlanma ? <>Tamamlandı · {saat(s.tamamlanma)}</> : <span className={`sure s-${s.renk === 'kırmızı' ? 'k' : s.renk === 'sarı' ? 's' : 'y'}`}>Son: {saat(s.bitis)}{s.kaydirma_notu ? ` · ${s.kaydirma_notu}` : ''}{s.baslangic_olayi ? ` · Başlangıç: ${saat(s.baslangic)} (${s.baslangic_olayi})` : ''}</span>;
+const Sayac = ({ s }: { s: Sure }) => s.tamamlanma ? <>Tamamlandı · {saat(s.tamamlanma)}</> : <span className={`sure s-${s.renk === 'kırmızı' ? 'k' : s.renk === 'sarı' ? 's' : 'y'}`}>Son: {saat(s.bitis)}{s.kaydirma_notu ? ` · ${s.kaydirma_notu}` : ''}{s.baslangic_olayi ? ` · Başlangıç: ${saat(s.baslangic)} (${s.baslangic_olayi})` : ''}{s.sozlesme ? ` · Sözleşme Taahhüdü: ${s.sozlesme}` : ''}</span>;
 const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => <><div className="bolum">{baslik}</div><div className="ozet">{children}</div></>;
 
 export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: string | null; acildi: () => void }) {

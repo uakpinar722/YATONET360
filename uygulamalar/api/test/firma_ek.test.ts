@@ -20,6 +20,13 @@ describe('görevlendirme kontrolü (YG-304, YG-306, YG-307, YG-332)', () => {
     await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, bolge, yetkinlik_seviyesi) VALUES ($1,'MAKINE-01','B','Y2')`, [f]);
     expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 5000 })).sonuc).toBe('Koşullu Kabul');
     const r = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 20000 }); expect(r.sonuc).toBe('Ret'); expect(r.engeller[0]).toContain('Y3');
+    { const sc = await o.gir('fym'); // YG-309
+      expect((await o.ist('POST', `/api/firma/${f}/kapasite`, sc, { brans: 'MAKINE-01', sinif: 'G9', adet: 1 })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/firma/${f}/kapasite`, sc, { brans: 'MAKINE-01', sinif: 'G2', adet: 1 })).statusCode).toBe(200);
+      await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref, ana_brans, gorev_sinifi) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4,'MAKINE-01','G2')`, [`K-${Date.now()}`, d.kimlik, f, o.K.ds]);
+      expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 5000 })).uyarilar.join(' ')).toContain('G2 kapasitesi doludur');
+      expect((await o.ist('GET', `/api/firma/${f}/kapasite`, sc)).json()[0]).toMatchObject({ ana_brans: 'MAKINE-01', gorev_sinifi: 'G2', es_zamanli_is: 1, aktif: 1 });
+      await o.sup.query(`DELETE FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = 'MAKINE-01'`, [f]); }
     await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis) VALUES ($1,'Mesleki Sorumluluk Sigortası','2099-01-01')`, [f]);
     await o.sup.query(`INSERT INTO firma_personeli (kurulus_ref, ad_soyad, gorev, giren_ref) VALUES ($1,'Usta','Usta',$2)`, [f, o.K.ds]); // YG-304: personelsiz firma uyarı alır
     expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 })).sonuc).toBe('Kabul');

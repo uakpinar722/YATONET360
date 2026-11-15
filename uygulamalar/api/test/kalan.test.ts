@@ -1211,6 +1211,9 @@ describe('ana veri aktarımı (ANV-1, YG-367)', () => {
     expect(f).toMatchObject({ kayit_asamasi: 'Aday', ag_statusu: 'Pasif', web: null }); expect(f.sicil_no).toMatch(/^LGM-SC-/);
     const sc = await o.gir('sc'); const adlar = (r: { json: () => { ticari_unvan: string }[] }) => r.json().map((z) => z.ticari_unvan);
     expect(adlar(await o.ist('GET', '/api/firma/sicil', sc))).not.toContain(ad('Aday Bir')); expect(adlar(await o.ist('GET', '/api/firma/sicil?aday=1', sc))).toContain(ad('Aday Bir'));
+    { const un = `Arşiv Firma ${Date.now()}`; await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı','Onaylı','Çıkarıldı',$3)`, [`S-AR${Date.now()}`, un, o.K.ds]); // YG-356
+      const ar = (await o.ist('GET', '/api/firma/sicil?arsiv=1', sc)).json() as { ticari_unvan: string; ag_statusu: string | null; kayit_asamasi: string }[];
+      expect(ar.map((x) => x.ticari_unvan)).toContain(un); expect(ar.every((x) => ['Çıkarıldı', 'Pasif'].includes(String(x.ag_statusu)) || x.kayit_asamasi === 'Reddedildi')).toBe(true); }
     expect(adlar(await o.ist('GET', '/api/firma/uygunluk', await o.gir('ds')))).not.toContain(ad('Aday Bir'));
     const u = '/api/ana-veri/mukerrer'; expect((await o.ist('GET', u, await o.gir('ds'))).statusCode).toBe(404);
     const v = (await o.ist('GET', u, sc)).json(); const a = v.firmalar.find((z: { ad: string }) => z.ad === ad('Aday Bir')); const b = v.firmalar.find((z: { ad: string }) => z.ad === ad('Aday İki'));
@@ -1300,5 +1303,13 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const l1 = (await o.ist('GET', `/api/dosya/${d.kimlik}/kapanis-asamalari`, c)).json() as { asama: string; durum: string }[];
     expect(l1.find((x) => x.asama === 'Mali Kapanış')?.durum).toBe('Tamamlandı');
     expect(l1.find((x) => x.asama === 'Garanti Takibi')?.durum).toBe('Sürüyor');
+  });
+  it('sigorta şirketinin yetkilendirdiği kişiye portal hesabı açılır (YG-453)', async () => {
+    const u = '/api/sigorta-kullanici'; const ep = `eksper${Date.now()}@deneme.yatonet.local`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { tsbKodu: '1004', ad: 'E', eposta: ep, dayanak: 'Y' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, await o.gir('mpm'), { tsbKodu: '1004', ad: 'Eksper Bir', eposta: ep })).json().hata).toContain('yetkilendirme yazısı');
+    const r = await o.ist('POST', u, await o.gir('mpm'), { tsbKodu: '1004', ad: 'Eksper Bir', eposta: ep, dayanak: '10.11.2026 / 123' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [r.json().kimlik])).rows[0].sigortaci_adi).toBe('Allianz Sigorta A.Ş.');
+    expect((await o.ist('POST', u, await o.gir('mpm'), { tsbKodu: '1004', ad: 'Eksper Bir', eposta: ep, dayanak: 'x' })).statusCode).toBe(409);
   });
 });

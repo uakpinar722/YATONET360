@@ -58,7 +58,8 @@ describe('onay zinciri (YG-1637)', () => {
     expect((await bugun(CEO)).onay.map((x: any) => x.kimlik)).not.toContain(id);
     expect((await bugun(DEN)).onay.find((x: any) => x.kimlik === id).sonraki_rol).toBe('CEO');
     expect((await karar(DEN, id, 'Onayla')).statusCode).toBe(400);
-    expect((await karar(DEN, id, 'Onaya Gönder')).json()).toEqual({ durum: 'Bekliyor', kademe: 1 });
+    expect((await karar(DEN, id, 'Onaya Gönder', 'Bütçe uygun')).json()).toEqual({ durum: 'Bekliyor', kademe: 1 });
+    expect((await bugun(CEO)).onay.find((x: any) => x.kimlik === id).arz_notlari).toBe('Kademe 1: Bütçe uygun'); // YG-166
     expect((await bugun(DEN)).onay.map((x: any) => x.kimlik)).not.toContain(id);
     expect((await karar(CEO, id, 'Onaya Gönder')).statusCode).toBe(400);
     expect((await karar(CEO, id, 'Onayla')).json().durum).toBe('Onaylandı');

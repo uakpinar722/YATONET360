@@ -315,6 +315,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const gecmis = (await b.db.query(`SELECT g.onceki_statu, g.onceki_asama, g.yeni_statu, g.yeni_asama, g.gerekce, g.sonraki_sorumlu_rol, g.olusturma_zamani, h.ad_soyad AS yapan FROM dosya_statu_gecmisi g LEFT JOIN kullanici_hesabi h ON h.kimlik = g.olusturan_ref WHERE g.dosya_ref = $1 ORDER BY g.kimlik`, [id])).rows;
     const bekleme = (await b.db.query(`SELECT k.kimlik, k.neden, k.hedef_tarih::text, k.sayac_durur, k.uzatma_sayisi, k.olusturma_zamani, k.kaldirilma_zamani, k.gun45_karari, h.ad_soyad AS sorumlu FROM beklemede_isareti k JOIN kullanici_hesabi h ON h.kimlik = k.sorumlu_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani DESC`, [id])).rows;
     const sureler = (await b.db.query(`SELECT s.tur, s.baslangic, s.bitis + make_interval(secs => ${DURAK_SN}) AS bitis, s.kaydirma_notu, s.tamamlanma, s.baslangic_olayi, s.sure_birimi FROM dosya_sure s WHERE s.dosya_ref = $1 OR s.talep_ref = $2 ORDER BY s.bitis`, [id, d.talep_ref])).rows.map((r) => ({ ...r, renk: r.tamamlanma ? null : sureRengi(new Date(r.baslangic), new Date(r.bitis)) }));
+    { const { sozlesmeHedefi } = await import('./kalan.js'); for (const s of sureler as Record<string, unknown>[]) s.sozlesme = await sozlesmeHedefi(b.db, id, String(s.tur)); } // YG-147
     const konular = (await b.db.query(`SELECT k.kimlik, k.konu_no, k.baslik, k.statu, k.hedef_tarih::text, k.asama, k.kabul_olcutu, k.gerekli_belge, h.ad_soyad AS sahip, (k.statu NOT IN ('Kapalı','Geçersiz') AND k.hedef_tarih < current_date) AS gecikmis FROM acik_konu k JOIN kullanici_hesabi h ON h.kimlik = k.sahip_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani`, [id])).rows;
     const iliskiler = (await b.db.query(`SELECT i.tur, i.gerekce, CASE WHEN i.kaynak_ref = $1 THEN h.dosya_no ELSE k.dosya_no END AS dosya_no FROM dosya_iliskisi i JOIN dosya k ON k.kimlik = i.kaynak_ref JOIN dosya h ON h.kimlik = i.hedef_ref WHERE i.kaynak_ref = $1 OR i.hedef_ref = $1`, [id])).rows;
     const izinler = await kullaniciIzinleri(b.db, o.kullanici);
@@ -452,7 +453,15 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const sonraki = ASAMALAR[ASAMALAR.indexOf(d.asama) + 1];
     if (!g.asama || g.asama !== sonraki) return y.code(400).send({ hata: `Sıradaki aşama ${sonraki ?? 'yok'}.` });
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Açıklama zorunludur.' });
-    for (const k of KAPILAR.get(g.asama) ?? []) { const h = await k(b.db, d); if (h) return y.code(409).send({ hata: h }); }
+    for (const k of KAPILAR.get(g.asama) ?? []) {
+      const h = await k(b.db, d); if (!h) continue;
+      // YG-158: kapıdaki eksik kayıt Dosya Sorumlusuna görev olarak döner; aynı eksik için ikinci açık görev açılmaz.
+      const sahip = d.dosya_sorumlusu_ref ?? o.kullanici;
+      if (!(await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND ozet = $2 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id, h])).rowCount)
+        await kartAc(b.db, { tur: 'Aşama Kapısı Eksiği', kategori: 'gorev', baslik: `${d.dosya_no} · ${g.asama} Aşamasına Geçiş İçin Eksik`, ozet: h, oncelik: d.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: sahip, nesneTuru: 'Dosya', nesneKimligi: id });
+      return y.code(409).send({ hata: h });
+    }
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id]); // YG-158
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

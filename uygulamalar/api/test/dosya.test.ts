@@ -364,9 +364,12 @@ describe('aşama kapıları (YG-065, YG-1468)', () => {
     expect((await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Onay', gerekce: 'x' })).statusCode).toBe(400);
     const r = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teklif', gerekce: 'x' });
     expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('tahrik');
+    await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teklif', gerekce: 'x' }); // YG-158: aynı eksik ikinci görev açmaz
+    expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.kimlik])).rows[0].n).toBe(1);
     await ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { tahrik: 'Çift dizel' });
     await sup.query(`INSERT INTO kesif (dosya_ref, amac_kapsam, planlanan_baslangic, planlanan_bitis, sorumlu_ref, durum, olusturan_ref) VALUES ($1,'Sınama',now(),now() + interval '1 hour',$2,'Tamamlandı',$2)`, [d.kimlik, K.tu]);
     expect((await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teklif', gerekce: 'Keşif bitti' })).statusCode).toBe(200);
+    expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [d.kimlik])).rows[0].n).toBe(0);
   });
 });
 

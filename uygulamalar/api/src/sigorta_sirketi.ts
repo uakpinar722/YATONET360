@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool } from 'pg';
-import { birKez } from './bildirim.js';
+import { birKez, disGonder } from './bildirim.js';
+import { davetOlustur } from './ilk_giris.js';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
@@ -23,6 +24,28 @@ export function sigortaSirketiYollari(s: FastifyInstance, b: Baglam) {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     return (await b.db.query(`SELECT tsb_kodu, kisa_ad, tam_unvan, dayanak, mersis_teyit_tarihi, durum FROM sigorta_sirketi ORDER BY durum, tam_unvan`)).rows;
   });
+  // YG-453: sigorta şirketinin yazılı olarak yetkilendirdiği kişiye (yetkili veya eksper) sigorta portalı hesabı açılır; kişi yalnız o şirketin dosyalarını görür.
+  s.post('/sigorta-kullanici', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { tsbKodu?: string; ad?: string; eposta?: string; telefon?: string; dayanak?: string };
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2`, [o.kullanici, MPM])).rowCount) return yok(y);
+    const sg = (await b.db.query(`SELECT tam_unvan FROM sigorta_sirketi WHERE tsb_kodu = $1 AND durum = 'Aktif'`, [g.tsbKodu ?? ''])).rows[0];
+    if (!sg) return y.code(400).send({ hata: 'Sigorta şirketini listeden seçiniz.' });
+    const eposta = g.eposta?.trim();
+    if (!g.ad?.trim() || !eposta || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(eposta)) return y.code(400).send({ hata: 'Ad soyad ve geçerli e-posta zorunludur.' });
+    if (!g.dayanak?.trim()) return y.code(400).send({ hata: 'Sigorta şirketinin yetkilendirme yazısının tarih ve sayısını yazınız.' });
+    if ((await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta COLLATE "C") = lower($1::text COLLATE "C") LIMIT 1`, [eposta])).rowCount) return y.code(409).send({ hata: 'Bu e-posta adresiyle kayıtlı hesap bulunmaktadır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const { kimlik, belirtec } = await davetOlustur(c, { adSoyad: g.ad.trim(), eposta, telefon: g.telefon?.trim() || undefined, grup: 'Sigorta Şirketi / Eksper', rol: 'Sigorta Şirketi Kullanıcısı', olusturan: o.kullanici });
+      await c.query(`INSERT INTO sigorta_kullanici VALUES ($1,$2)`, [kimlik, sg.tam_unvan]);
+      await disGonder(c, { olay: `sigorta-davet:${kimlik}`, eposta, konu: 'YATONET 360 Hesabınız', metin: `LİMİT GLOBAL MARINE: ${sg.tam_unvan} adına YATONET 360 hesabınız açılmıştır. İlk girişinizi 7 gün içinde aşağıdaki bağlantıdan yapmanızı rica ederiz. ${b.webAdresi}/#davet=${belirtec}`, acil: true });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Portalı Hesabı Açıldı', nesneTuru: 'Kullanıcı', nesneKimligi: kimlik, yeni: { sigorta: sg.tam_unvan, eposta }, gerekce: g.dayanak.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { kimlik };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
   // Kayıt açılışında ve yıllık güncellemede MERSİS unvanıyla teyit edilir.
   s.post('/sigorta-sirketi', oturumlu, async (i, y) => {
     const o = i.oturum!;

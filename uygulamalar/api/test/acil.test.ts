@@ -217,6 +217,8 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     const a = (await o.ist('GET', '/api/sigorta/ana', sigortaC)).json();
     const k = a.dosyalar.find((x: any) => x.dosyaNo === d.dosyaNo);
     expect(k.hasarNo).toMatch(/^H-/); expect(a.bekleyen.some((x: any) => x.kimlik === t)).toBe(true);
+    expect(k.ilerleme).toBe(0); expect(k.fotograflar).toEqual([]); expect(k.raporlar).toEqual([]); // YG-460, YG-440
+    expect((await o.ist('GET', `/api/sigorta/rapor/${d.kimlik}`, sigortaC)).statusCode).toBe(404);
     expect((await o.ist('GET', '/api/sigorta/ana', baskaSigortaC)).json().dosyalar.find((x: any) => x.dosyaNo === d.dosyaNo)).toBeUndefined();
     expect((await o.ist('GET', `/api/sigorta/teklif/${t}`, baskaSigortaC)).statusCode).toBe(404);
     const j = (await o.ist('GET', `/api/sigorta/teklif/${t}`, sigortaC)).json();

@@ -281,7 +281,9 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
     const f = (await b.db.query(`SELECT f.dosya_ref, s.dosya_adi, s.depo_anahtari FROM portal_ilerleme_fotografi f JOIN belge_surum s ON s.kimlik = f.surum_ref JOIN belge e ON e.kimlik = s.belge_ref WHERE f.kimlik = $1 AND f.kaldirma_zamani IS NULL AND e.imha_zamani IS NULL`, [id])).rows[0];
-    if (!f || !(await musteriMi(f.dosya_ref, o.kullanici))) return yok(y);
+    // YG-460: dosyanın sigorta şirketinin kullanıcısı veya dosyadaki eksper de görür.
+    const sigortaGorur = async () => Boolean((await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi s JOIN sigorta_kullanici u ON lower(u.sigortaci_adi) = lower(s.sigortaci_adi) WHERE s.dosya_ref = $1 AND u.kullanici_ref = $2 UNION SELECT 1 FROM dosya_tarafi e WHERE e.dosya_ref = $1 AND e.taraf_rolu = 'Eksper' AND e.kullanici_ref = $2 AND e.aktif`, [f?.dosya_ref, o.kullanici])).rowCount);
+    if (!f || !((await musteriMi(f.dosya_ref, o.kullanici)) || (await sigortaGorur()))) return yok(y);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İndirildi', nesneTuru: 'İlerleme Fotoğrafı', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
     const uz = (f.dosya_adi as string).match(FOTO)![1]!.toLowerCase();
     return y.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; filename="ilerleme-${id.slice(0, 8)}.${uz}"`).header('x-content-type-options', 'nosniff').send((b.depo ?? new Depo()).bagla(f.depo_anahtari));

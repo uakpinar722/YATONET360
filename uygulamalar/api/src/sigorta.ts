@@ -11,6 +11,7 @@ import { rolSahipleri } from './makam.js';
 import { metinGetir } from './metin.js';
 import { musteriDurumu } from './portal.js';
 import { UUID } from './yat.js';
+import { Depo } from './depo.js';
 
 /** YG-1564: sigorta ve eksper Muvafakat, Yasal Bekleme ve Ödeme Bekleniyor durumlarını Beklemede görür. */
 const GIZLI_DURUM = ['Muvafakat Bekleniyor', 'Yasal Bekleme Süresinde', 'Ödeme Bekleniyor'];
@@ -74,13 +75,26 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/sigorta/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const sir = await sirketim(o.kullanici);
     if (!sir && !o.grup.startsWith('Sigorta')) return y.code(403).send({ hata: 'Bu sayfa sigorta kullanıcılarına açıktır.' });
-    const { rows } = await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.tahmini_teslim_tarihi::text, y.yat_adi, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE ${dosyaKosul} ORDER BY d.acilis_tarihi DESC LIMIT 200`, [sir ?? '', o.kullanici]);
+    const { rows } = await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.tahmini_teslim_tarihi::text, d.ilerleme_yuzdesi, y.yat_adi, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE ${dosyaKosul} ORDER BY d.acilis_tarihi DESC LIMIT 200`, [sir ?? '', o.kullanici]);
     const grn = await (await import('./garanti_sigorta.js')).garantiDurumlari(b.db, rows.map((r) => r.kimlik as string)); // YG-1421
-    const dosyalar = []; for (const r of rows) { const m = await durum(r); dosyalar.push({ kimlik: r.kimlik, dosyaNo: r.dosya_no, hasarNo: r.sigorta_hasar_dosya_no, yat: r.yat_adi, durum: m.ad, renk: m.renk, garanti: grn.get(r.kimlik) ?? null, tahminiTeslim: r.tahmini_teslim_tarihi ?? null }); }
+    const dosyalar = []; for (const r of rows) { const m = await durum(r); dosyalar.push({ kimlik: r.kimlik, dosyaNo: r.dosya_no, hasarNo: r.sigorta_hasar_dosya_no, yat: r.yat_adi, durum: m.ad, renk: m.renk, garanti: grn.get(r.kimlik) ?? null, tahminiTeslim: r.tahmini_teslim_tarihi ?? null,
+      // YG-460: onarım ilerlemesi ve Dosya Sorumlusunca portala açılmış ilerleme fotoğrafları (yat sahibiyle aynı yayım).
+      raporlar: (await b.db.query(`SELECT u.kimlik, t.rapor_no, t.rapor_turu, u.olusturma_zamani FROM belge_uretim u JOIN teknik_rapor t ON t.kimlik::text = u.nesne WHERE u.dosya_ref = $1 AND u.tur = 'Teknik Rapor' AND u.durum = 'Üretildi' AND t.durum = 'Onaylı' ORDER BY u.olusturma_zamani`, [r.kimlik])).rows, // YG-440
+      ilerleme: Number(r.ilerleme_yuzdesi ?? 0), fotograflar: (await b.db.query(`SELECT kimlik, aciklama, onay_zamani FROM portal_ilerleme_fotografi WHERE dosya_ref = $1 AND kaldirma_zamani IS NULL ORDER BY onay_zamani`, [r.kimlik])).rows }); }
     const bekleyen = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.ara_toplam_eur, f.genel_toplam_eur, f.sigorta_karar_son, d.dosya_no FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE f.statu = 'Gönderildi' AND f.teklif_muhatabi = 'Sigorta Şirketi' AND ${dosyaKosul} ORDER BY f.sigorta_karar_son NULLS LAST`, [sir ?? '', o.kullanici])).rows;
     // YG-017: sigorta şirketi adına beyan edilen ihbar dosya açılmadan da görünür; yalnız talep no, yat, hasar no ve "İhbar Alındı".
     const ihbarlar = sir ? (await b.db.query(`SELECT t.kimlik, t.talep_no, t.kayda_gecis_zamani, t.sigorta_hasar_dosya_no_beyan, y.yat_adi FROM talep t JOIN yat y ON y.kimlik = t.yat_ref WHERE t.dosya_ref IS NULL AND lower(t.sigortaci_beyan) = lower($1) AND t.statu NOT IN ('Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY t.kayda_gecis_zamani DESC LIMIT 200`, [sir])).rows.map((t) => ({ kimlik: t.kimlik, talepNo: t.talep_no, yat: t.yat_adi, hasarNo: t.sigorta_hasar_dosya_no_beyan, durum: 'İhbar Alındı', zaman: t.kayda_gecis_zamani })) : [];
     return { dosyalar, bekleyen, ihbarlar };
+  });
+
+  // YG-440: onaylı teknik rapor PDF'i yalnız dosyası görünen sigorta kullanıcısına ve eksperine; indirme denetim izine yazılır.
+  s.get('/sigorta/rapor/:id', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const sir = await sirketim(o.kullanici);
+    if (!UUID.test(id)) return yok(y);
+    const r = (await b.db.query(`SELECT u.kimlik, t.rapor_no, v.depo_anahtari FROM belge_uretim u JOIN teknik_rapor t ON t.kimlik::text = u.nesne JOIN belge_surum v ON v.kimlik = u.surum_ref JOIN dosya d ON d.kimlik = u.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE u.kimlik = $3 AND u.tur = 'Teknik Rapor' AND u.durum = 'Üretildi' AND t.durum = 'Onaylı' AND ${dosyaKosul}`, [sir ?? '', o.kullanici, id])).rows[0];
+    if (!r) return yok(y);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İndirildi', nesneTuru: 'Teknik Rapor', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Sigorta Portalı' });
+    return y.header('content-type', 'application/pdf').header('content-disposition', `attachment; filename="${r.rapor_no}.pdf"`).header('x-content-type-options', 'nosniff').send((b.depo ?? new Depo()).bagla(r.depo_anahtari));
   });
 
   s.get('/sigorta/teklif/:id', oturumlu, async (i, y) => {

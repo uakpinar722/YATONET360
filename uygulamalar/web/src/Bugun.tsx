@@ -7,7 +7,7 @@ import { OzelGunler } from './OzelGunler';
 
 export interface Kart {
   kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null;
-  kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null; vekaleten?: boolean;
+  kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null; vekaleten?: boolean; arz_notlari?: string | null;
 }
 export interface BugunVeri {
   zincirde?: (Kart & { makam?: string })[]; onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
@@ -65,6 +65,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
       <KartUst k={k} />
       {k.vekaleten && <div><Rozet s="gri" c="Vekâleten" /></div>}
       <div className="not">Kademe {k.kademe + 1} / {k.kademe_sayisi}{k.hazirlayan_adi ? ` · Hazırlayan: ${k.hazirlayan_adi}` : ''}</div>
+      {k.arz_notlari && <div className="not">Önceki Kademe Notları: {k.arz_notlari}</div>}
       {hata && <div className="hata" role="alert">{hata}</div>}
       {kodIste && <><label htmlFor={`kd-${k.kimlik}`}>Doğrulama Kodu</label><input id={`kd-${k.kimlik}`} inputMode="numeric" autoComplete="one-time-code" value={kod} onChange={(e) => setKod(e.target.value)} /></>}
       {acik ? (
@@ -81,8 +82,9 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
       ) : (
         <>
           {!son && <div className="not">Gönderilecek: <b className="koyu">{k.sonraki_rol}</b></div>}
+          {!son && <><label htmlFor={`an-${k.kimlik}`}>Not (İsteğe Bağlı)</label><input id={`an-${k.kimlik}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} /></>}
           <div className="dugmeler">
-            {son ? <button className="btn evet" disabled={mesgul} onClick={() => void ver('Onayla')}>{teyit ? 'Teyit Et' : 'Onayla'}</button> : <button className="btn" disabled={mesgul} onClick={() => void ver('Onaya Gönder')}>Onaya Gönder</button>}
+            {son ? <button className="btn evet" disabled={mesgul} onClick={() => void ver('Onayla')}>{teyit ? 'Teyit Et' : 'Onayla'}</button> : <button className="btn" disabled={mesgul} onClick={() => void ver('Onaya Gönder', gerekce.trim() || undefined)}>Onaya Gönder</button>}
             {son && !teyit && <button className="btn hayir" onClick={() => setAcik('ret')}>Reddet</button>}
             <button className="btn2" onClick={() => setAcik('iade')}>Gerekçeyle İade Et</button>
           </div>

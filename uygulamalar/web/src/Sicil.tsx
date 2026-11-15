@@ -12,8 +12,8 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
   const [l, setL] = useState<Firma[]>([]); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   const [yeni, setYeni] = useState({ unvan: '', rol: 'Çözüm Ortağı' }); const [secili, setSecili] = useState('');
   const [belge, setBelge] = useState({ tur: '', bitis: '', limit: '', gozetim: false }); const [iban, setIban] = useState(''); const [gerekce, setGerekce] = useState(''); const [oneri, setOneri] = useState('Koşullu Onaylı');
-  const [aday, setAday] = useState(false);
-  const yukle = (a = aday) => istek<Firma[]>(`/firma/sicil${a ? '?aday=1' : ''}`).then(setL);
+  const [aday, setAday] = useState(false); const [arsiv, setArsiv] = useState(false);
+  const yukle = (a = aday, r = arsiv) => istek<Firma[]>(`/firma/sicil${r ? '?arsiv=1' : a ? '?aday=1' : ''}`).then(setL);
   useEffect(() => { void yukle().catch((x) => setHata((x as Error).message)); }, []);
   const yap = async (f: () => Promise<unknown>, t: string) => { setHata(''); setNot(''); try { await f(); setNot(t); await yukle(); } catch (x) { setHata((x as Error).message); } };
   const onay = ben.izinler.includes('firma.onay');
@@ -23,6 +23,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
       {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
       <AnaVeriMukerrer />
       <label><input type="checkbox" checked={aday} onChange={(e) => { setAday(e.target.checked); void yukle(e.target.checked); }} /> Aday Havuzunu Göster</label>
+      <label><input type="checkbox" checked={arsiv} onChange={(e) => { setArsiv(e.target.checked); void yukle(aday, e.target.checked); }} /> Arşivi Göster (Çıkarılan, Pasif ve Reddedilen Kayıtlar)</label>
       <div className="bolum">Yeni Kayıt</div>
       <div className="ozet">
         <label htmlFor="fs-u">Ticari Unvan</label><input id="fs-u" value={yeni.unvan} onChange={(e) => setYeni({ ...yeni, unvan: e.target.value })} />

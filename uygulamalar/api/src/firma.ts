@@ -102,7 +102,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   const firmam = async (k: string) => (await b.db.query(`SELECT kurulus_ref FROM kurulus_kullanici WHERE kullanici_ref = $1 LIMIT 1`, [k])).rows[0]?.kurulus_ref as string | undefined;
 
   // YG-009, YG-345: sicil no LGM-SC-NNNNN; başvuruda verilir, ayrı numara yok. Vergi no mükerrerlik anahtarı.
-  s.get('/firma/sicil', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i) => (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE $1 OR kayit_asamasi <> 'Aday' ORDER BY ticari_unvan LIMIT 1000`, [(i.query as { aday?: string }).aday === '1'])).rows); // ANV-1: aday havuzu ayrı gösterilir
+  s.get('/firma/sicil', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i) => (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE CASE WHEN $2 THEN (ag_statusu IN ('Çıkarıldı', 'Pasif') OR kayit_asamasi = 'Reddedildi') ELSE ($1 OR kayit_asamasi <> 'Aday') END ORDER BY ticari_unvan LIMIT 1000`, [(i.query as { aday?: string }).aday === '1', (i.query as { arsiv?: string }).arsiv === '1'])).rows); // ANV-1: aday havuzu ayrı gösterilir; YG-356: Arşiv, kapanmış kayıtların görünümüdür
   s.post('/firma', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { unvan?: string; vergiNo?: string; rol?: string; eposta?: string; telefon?: string; il?: string; ilce?: string };
     if (!g.unvan?.trim()) return y.code(400).send({ hata: 'Ticari unvan zorunludur.' });
@@ -248,7 +248,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
         [no, g.tur, g.ana ?? null, id, g.teklif ?? null, g.firma, g.yer!.trim(), g.kapsam!.trim(), g.bedel ?? null, g.baslangic ?? null, g.bitis ?? null, Boolean(g.tehlikeliAtik), o.kullanici])).rows[0];
       // YG-320: beklenen teknik sonuç ve yöntem kayda geçer; LGM sorumlu rolü sahada Saha Sorumlusu, yoksa Teknik Uzmandır.
       { const ss = (await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [id])).rowCount;
-        await c.query(`UPDATE is_emri SET teknik_sonuc = $2, yontem = $3, sorumlu_rol = $4 WHERE kimlik = $1`, [e.kimlik, g.teknikSonuc?.trim() || null, g.yontem?.trim() || null, ss ? 'Saha Sorumlusu' : 'Teknik Uzman']); }
+        await c.query(`UPDATE is_emri SET teknik_sonuc = $2, yontem = $3, sorumlu_rol = $4, ana_brans = $5, gorev_sinifi = $6 WHERE kimlik = $1`, [e.kimlik, g.teknikSonuc?.trim() || null, g.yontem?.trim() || null, ss ? 'Saha Sorumlusu' : 'Teknik Uzman', g.brans ?? null, gk.sinif]); } // YG-309
       // YG-321: onaylı teklifin kapsam cetvelindeki hariç ve varsayımlar iş emrine kopyalanır; bağımlılıklar ekrandan yazılır.
       { const cv = g.teklif && UUID.test(g.teklif) ? (await c.query(`SELECT k.dahil_haric, k.varsayimlar FROM fiyat_teklifi f JOIN kapsam_cetveli k ON k.kimlik = f.cetvel_ref WHERE f.kimlik = $1`, [g.teklif])).rows[0] : null;
         // YG-139: keşif iş emrinde onaylı İlk Kapsamın varlık/sistem, faaliyet, kabul ölçütü, hariçleri ve varsayımları firma portalına iş emriyle gider.
