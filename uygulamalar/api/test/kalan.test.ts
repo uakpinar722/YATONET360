@@ -4,7 +4,7 @@ import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', bim: 'Bilgi İşlem Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', bim: 'Bilgi İşlem Müdürü', ss: 'Saha Sorumlusu' };
 let o: Ortam; let n = 0;
 beforeAll(async () => { o = await ortamKur('yatonet360_test54', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -508,7 +508,7 @@ describe('garanti çekek mahsubu (YG-1418)', () => {
     const bl = await o.belge(d.kimlik, 'ds');
     await o.sup.query(`INSERT INTO tesis_faturasi (kurulus_ref, talep_ref, fatura_no, tarih, kalem, tutar_eur, belge_ref, giren_ref) VALUES ($1,$2,'TF-1',current_date,'Çekek',400,$3,$4)`, [te, tt, bl, o.K.ds]);
     const gs = (await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, olusturan_ref) VALUES ($1,$2,'{Garanti bildirimi}','Telefon',now(),'Normal',$3) RETURNING kimlik`, [`GS-${++n}`, d.kimlik, o.K.ds])).rows[0].kimlik;
-    const r = await o.ist('POST', `/api/garanti-sikayet/${gs}/karar`, await o.gir('ty'), { karar: 'Garanti', gerekce: 'Garanti kapsamında' }); expect(r.statusCode, r.body).toBe(200);
+    const r = await o.ist('POST', `/api/garanti-sikayet/${gs}/karar`, await o.gir('ty'), { karar: 'Garanti', gerekce: 'Garanti kapsamında', nedenArastirmasi: 'Conta yorgunluğu' }); expect(r.statusCode, r.body).toBe(200);
     const m = (await o.sup.query(`SELECT kimlik, kurulus_ref, tutar_eur, statu FROM hakedis_mahsubu WHERE dosya_ref = $1`, [d.kimlik])).rows;
     expect(m).toHaveLength(1); expect(m[0]).toMatchObject({ kurulus_ref: f, statu: 'Onayda' }); expect(Number(m[0].tutar_eur)).toBe(400);
     expect((await o.kart('Hakediş Mahsubu', m[0].kimlik)).durum).toBe('Bekliyor');
@@ -1264,5 +1264,33 @@ describe('istenecek belge listesi (YG-1439)', () => {
     await o.sup.query(`UPDATE belge SET ad = 'Ruhsat' WHERE kimlik = $1`, [await o.belge(d.kimlik, 'opm')]);
     const l2 = (await o.ist('GET', `/api/dosya/${d.kimlik}/belge-listesi`, c)).json() as { belge: string; durum: string }[];
     expect(l2.find((x) => x.belge.startsWith('Ruhsat'))?.durum).toBe('Alındı');
+  });
+  it('Saha Sorumlusu talebi Teknik Müdürde; ret T&O Direktörüne taşınır; geri çekme onayla ve devir notuyla (YG-051, YG-052)', async () => {
+    const d = await o.dosyaAc({}, {}); const ds = await o.gir('opm');
+    const T = (g: Record<string, unknown>) => o.ist('POST', `/api/dosya/${d.kimlik}/saha-sorumlusu-talebi`, ds, g);
+    expect((await T({})).statusCode).toBe(400);
+    { const r = await T({ gerekce: 'Yerinde koordinasyon gerekli' }); expect(r.statusCode, r.body).toBe(200); }
+    expect((await T({ gerekce: 'X' })).statusCode).toBe(409);
+    expect((await o.karar((await o.kart('Saha Sorumlusu Talebi', d.kimlik)).kimlik, 'tm', 'Reddet', 'Uygun personel yok')).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/saha-sorumlusu-talebi/direktor`, ds, { gerekce: 'Operasyon ısrarlı' })).statusCode).toBe(200);
+    expect((await o.karar((await o.kart('Saha Sorumlusu Anlaşmazlığı', d.kimlik)).kimlik, 'tod', 'Onayla')).statusCode).toBe(200);
+    expect((await o.kart('Saha Sorumlusu Ataması', d.kimlik)).durum).not.toBe('Tamamlandı');
+    expect((await o.ata(d.kimlik, 'ss', 'Saha Sorumlusu', 'tm')).statusCode).toBe(200);
+    expect((await o.kart('Saha Sorumlusu Ataması', d.kimlik)).durum).toBe('Tamamlandı');
+    expect((await T({ tur: 'Geri Çekme', gerekce: '' })).json().hata).toContain('Devir notu');
+    expect((await T({ tur: 'Geri Çekme', gerekce: 'Açık işler Teknik Uzmana devredildi' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [d.kimlik])).rowCount).toBe(1);
+    expect((await o.karar((await o.kart('Saha Sorumlusu Talebi', d.kimlik)).kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT devir_notu FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu'`, [d.kimlik])).rows[0].devir_notu).toBe('Açık işler Teknik Uzmana devredildi');
+  });
+  it('kapanış aşamaları ayrı koşullarla; dosya kapanışı garanti takibini kapatmaz (YG-073)', async () => {
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('opm');
+    const l0 = (await o.ist('GET', `/api/dosya/${d.kimlik}/kapanis-asamalari`, c)).json() as { asama: string; durum: string; kosul: string }[];
+    expect(l0.map((x) => x.asama)).toEqual(['Teslim', 'Teknik Kapanış', 'Mali Kapanış', 'Kurumsal Dosya Kapanışı', 'Garanti Takibi']);
+    expect(l0.find((x) => x.asama === 'Garanti Takibi')?.durum).toBe('Başlamadı');
+    await o.sup.query(`UPDATE dosya SET teslim_tarihi = current_date - 30, statu = 'Kapalı', kapanma_nedeni = 'Tamamlandı', kapanis_zamani = now() WHERE kimlik = $1`, [d.kimlik]);
+    const l1 = (await o.ist('GET', `/api/dosya/${d.kimlik}/kapanis-asamalari`, c)).json() as { asama: string; durum: string }[];
+    expect(l1.find((x) => x.asama === 'Mali Kapanış')?.durum).toBe('Tamamlandı');
+    expect(l1.find((x) => x.asama === 'Garanti Takibi')?.durum).toBe('Sürüyor');
   });
 });

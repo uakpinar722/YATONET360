@@ -169,7 +169,80 @@ belgeBagiKaydet('İzin', async (db, k, id) => {
   return (await db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi IN ('İnsan Kaynakları Müdürü', 'İnsan Kaynakları Sorumlusu') LIMIT 1`, [k])).rowCount ? 'tamam' : 'yetkisiz';
 });
 
+/** YG-051, YG-052: Saha Sorumlusu talebinin ve geri çekmenin kararı. Atama onaylanınca Teknik Müdüre atama işi düşer; geri çekme onaylanınca atama devir notuyla biter. */
+async function sahaTalepKarari(c: Db, dosya: string, makam: string, karar: string) {
+  const t = (await c.query(`SELECT kimlik, tur, gerekce FROM saha_sorumlusu_talebi WHERE dosya_ref = $1 AND durum IN ('Bekliyor', 'Direktörde') ORDER BY olusturma_zamani DESC LIMIT 1`, [dosya])).rows[0];
+  if (!t || (karar !== 'Onayla' && karar !== 'Reddet')) return;
+  await c.query(`UPDATE saha_sorumlusu_talebi SET durum = $2, karar_makami = $3 WHERE kimlik = $1`, [t.kimlik, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi', makam]);
+  if (karar !== 'Onayla') return;
+  if (t.tur === 'Atama') { const no = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [dosya])).rows[0].dosya_no; await kartAc(c, { tur: 'Saha Sorumlusu Ataması', kategori: 'islem', baslik: `${no} · Saha Sorumlusunu Ata (Talep Onaylandı)`, ozet: t.gerekce, sahipRol: await rolId(c, 'Teknik Müdür'), nesneTuru: 'Dosya', nesneKimligi: dosya }); }
+  else await c.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now(), devir_notu = $2 WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [dosya, t.gerekce]);
+}
+kapanisKaydet('Saha Sorumlusu Talebi', async (c, k, karar) => sahaTalepKarari(c, k.nesne_kimligi!, 'Teknik Müdür', karar));
+kapanisKaydet('Saha Sorumlusu Anlaşmazlığı', async (c, k, karar) => sahaTalepKarari(c, k.nesne_kimligi!, 'Teknik ve Operasyon Direktörü', karar));
+
+/**
+ * YG-073: beş kapanış aşaması ayrı koşulla izlenir. Teslim: teslim tutanağı; Teknik: onaylı kapanış kontrolü (Teknik Kapalı);
+ * Mali: tahsilat ve firma ödemesi tamamlanıp Kapalı (YG-067); Kurumsal: arşiv devri; Garanti: teslimden 12 ay ve açık garanti kaydı yok. Dosya kapanışı garanti takibini kapatmaz.
+ */
+export async function kapanisAsamalari(db: Db, dosya: string, simdi = new Date()) {
+  const d = (await db.query(`SELECT statu, teslim_tarihi::text, kapanis_zamani, arsiv_zamani FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  if (!d) return null;
+  const teslim = (await db.query(`SELECT teslim_zamani FROM teslim_kaydi WHERE dosya_ref = $1 AND durum = 'Teslim Edildi' ORDER BY teslim_zamani LIMIT 1`, [dosya])).rows[0];
+  const teknik = (await db.query(`SELECT kapanis_zamani FROM kapanis_kontrolu WHERE dosya_ref = $1 AND cikis_statusu = 'Teknik Kapalı' AND durum = 'Onaylandı' ORDER BY kapanis_zamani LIMIT 1`, [dosya])).rows[0];
+  const tahsil = (await db.query(`SELECT 1 FROM musteri_faturasi WHERE dosya_ref = $1 AND durum NOT IN ('Tahsil Edildi', 'Reddedildi') LIMIT 1`, [dosya])).rowCount;
+  const odeme = (await db.query(`SELECT 1 FROM hakedis WHERE dosya_ref = $1 AND statu NOT IN ('Ödendi', 'Reddedildi') LIMIT 1`, [dosya])).rowCount;
+  const garantiAcik = (await db.query(`SELECT 1 FROM garanti_sikayet WHERE dosya_ref = $1 AND statu <> 'Kapalı' LIMIT 1`, [dosya])).rowCount;
+  const gBitis = d.teslim_tarihi ? new Date(`${d.teslim_tarihi}T00:00:00Z`) : null; if (gBitis) gBitis.setUTCFullYear(gBitis.getUTCFullYear() + 1);
+  const mali = d.statu === 'Kapalı' && d.kapanis_zamani;
+  return [
+    { asama: 'Teslim', durum: teslim ? 'Tamamlandı' : 'Bekliyor', zaman: teslim?.teslim_zamani ?? null, kosul: 'Yat Teslim Tutanağının onaylanması' },
+    { asama: 'Teknik Kapanış', durum: teknik ? 'Tamamlandı' : 'Bekliyor', zaman: teknik?.kapanis_zamani ?? null, kosul: 'Kapanış kontrolünün onaylanması (Teknik Kapalı)' },
+    { asama: 'Mali Kapanış', durum: mali ? 'Tamamlandı' : 'Bekliyor', zaman: mali ? d.kapanis_zamani : null, kosul: mali ? 'Tahsilat ve firma ödemesi tamamlandı' : [tahsil ? 'Tahsilat Bekliyor' : null, odeme ? 'Firma Ödemesi Bekliyor' : null].filter(Boolean).join(', ') || 'Kapanış kontrolü (Kapalı) bekleniyor' },
+    { asama: 'Kurumsal Dosya Kapanışı', durum: d.arsiv_zamani ? 'Tamamlandı' : 'Bekliyor', zaman: d.arsiv_zamani ?? null, kosul: 'Arşiv devri' },
+    { asama: 'Garanti Takibi', durum: !gBitis ? 'Başlamadı' : garantiAcik || gBitis > simdi ? 'Sürüyor' : 'Tamamlandı', zaman: gBitis ? gBitis.toISOString().slice(0, 10) : null, kosul: garantiAcik ? 'Açık garanti kaydı var' : 'Teslimden itibaren 12 ay' },
+  ];
+}
+
 export function kalanYollari(s: FastifyInstance, b: Baglam) {
+  s.get('/dosya/:id/kapanis-asamalari', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-073
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    return kapanisAsamalari(b.db, id);
+  });
+  // YG-051, YG-052: Operasyon tarafı Saha Sorumlusu ister veya iş bitmeden geri çekilmesini ister; karar Teknik Müdürde. Kritik öncelikte atama zaten zorunludur (YG-050).
+  s.post('/dosya/:id/saha-sorumlusu-talebi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; gerekce?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    const tur = g.tur === 'Geri Çekme' ? 'Geri Çekme' : 'Atama';
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: tur === 'Atama' ? 'Talep gerekçesini yazınız.' : 'Devir notunu yazınız; devir kaydı tamamlanmadan Saha Sorumlusu geri çekilmez.' });
+    const ekipte = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Yönetici')`, [id, o.kullanici])).rowCount;
+    if (!ekipte && !(await rolSahipleri(b.db, await rolId(b.db, 'Operasyon Müdürü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Talebi dosya ekibi veya Operasyon Müdürü açar.' });
+    const d = (await b.db.query(`SELECT dosya_no, oncelik, statu FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    if (d.statu === 'Kapalı') return y.code(409).send({ hata: 'Kapalı dosyada talep açılmaz.' });
+    const saha = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [id])).rowCount;
+    if (tur === 'Atama' && d.oncelik === 'Kritik') return y.code(409).send({ hata: 'Kritik öncelikte Saha Sorumlusu zaten zorunludur; Teknik Müdür doğrudan atar.' });
+    if (tur === 'Atama' && saha) return y.code(409).send({ hata: 'Dosyada Saha Sorumlusu atanmıştır.' });
+    if (tur === 'Geri Çekme' && !saha) return y.code(409).send({ hata: 'Dosyada Saha Sorumlusu yoktur.' });
+    if ((await b.db.query(`SELECT 1 FROM saha_sorumlusu_talebi WHERE dosya_ref = $1 AND durum IN ('Bekliyor', 'Direktörde')`, [id])).rowCount) return y.code(409).send({ hata: 'Dosyada karar bekleyen Saha Sorumlusu talebi vardır.' });
+    await b.db.query(`INSERT INTO saha_sorumlusu_talebi (dosya_ref, tur, gerekce, talep_eden_ref) VALUES ($1,$2,$3,$4)`, [id, tur, g.gerekce.trim(), o.kullanici]);
+    await kartAc(b.db, { tur: 'Saha Sorumlusu Talebi', baslik: `${d.dosya_no} · Saha Sorumlusu ${tur === 'Atama' ? 'Talebi' : 'Geri Çekme Talebi'}`, ozet: g.gerekce.trim(), oncelik: d.oncelik, hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Teknik Müdür')], nesneTuru: 'Dosya', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Saha Sorumlusu ${tur} Talebi`, nesneTuru: 'Dosya', nesneKimligi: id, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  // YG-051: Teknik Müdür reddederse (uygun personel yok veya anlaşmazlık) Operasyon tarafı kararı T&O Direktörüne taşır.
+  s.post('/dosya/:id/saha-sorumlusu-talebi/direktor', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerekce?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Anlaşmazlık gerekçesini yazınız.' });
+    const t = (await b.db.query(`SELECT kimlik, tur FROM saha_sorumlusu_talebi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 1`, [id])).rows[0];
+    if (!t || (await b.db.query(`SELECT durum FROM saha_sorumlusu_talebi WHERE kimlik = $1`, [t.kimlik])).rows[0].durum !== 'Reddedildi') return y.code(409).send({ hata: 'Direktöre yalnız Teknik Müdürün reddettiği talep taşınır.' });
+    const no = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0].dosya_no;
+    await b.db.query(`UPDATE saha_sorumlusu_talebi SET durum = 'Direktörde' WHERE kimlik = $1`, [t.kimlik]);
+    await kartAc(b.db, { tur: 'Saha Sorumlusu Anlaşmazlığı', baslik: `${no} · Saha Sorumlusu Anlaşmazlığı`, ozet: g.gerekce.trim(), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Teknik ve Operasyon Direktörü')], nesneTuru: 'Dosya', nesneKimligi: id });
+    return { tamam: true };
+  });
+
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);

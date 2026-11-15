@@ -90,7 +90,7 @@ describe('yeniden değerlendirme (YG-204, K-241)', () => {
 describe('iyi niyet kararı (YG-175)', () => {
   const kayit = async (d: string) => (await o.ist('POST', `/api/dosya/${d}/garanti-sikayet`, await o.gir('ds'), { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Normal', belirti: 'B' })).json().kimlik as string;
   const fatura = async (d: { kimlik: string; dosyaNo: string }, tutar: number) => { const t = await teklif(d, 'Tam Onay'); await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, hazirlayan_ref) VALUES ($1,$2,$3,'Sigorta Şirketi',$4,0,$4,'Faturalandı',$5)`, [`${d.dosyaNo}-OT01`, d.kimlik, t, tutar, o.K.ts]); };
-  const K = async (id: string, x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir('ty'), { gerekce: 'Jest', karar: 'İyi Niyet', ...x });
+  const K = async (id: string, x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir('ty'), { gerekce: 'Jest', karar: 'İyi Niyet', nedenArastirmasi: 'N', ...x });
   const makam = async (id: string) => (await o.sup.query(`SELECT r.rol_adi FROM is_karti k JOIN rol r ON r.kimlik = k.zincir[1] WHERE k.tur = 'İyi Niyet Kararı' AND k.nesne_kimligi = $1`, [id])).rows[0]?.rol_adi;
   it('tutar zorunlu; %5 dahil GMY onayına gider, onaylanana kadar karar yazılmaz; onayda karar kesinleşir', async () => {
     const d = await dosya(); await fatura(d, 1000); const id = await kayit(d.kimlik);
@@ -109,7 +109,7 @@ describe('iyi niyet kararı (YG-175)', () => {
     const kart = await o.kart('İyi Niyet Kararı', id); const rk = await o.ist('POST', `/api/is/${kart.kimlik}/karar`, await ceoGir(), { karar: 'Reddet', gerekce: 'Uygun değil' }); expect(rk.statusCode, rk.body).toBe(200);
     expect((await o.sup.query(`SELECT karar, statu, iyi_niyet_orani FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0]).toMatchObject({ karar: null, statu: 'Açık', iyi_niyet_orani: null });
     const d2 = await dosya(); const id2 = await kayit(d2.kimlik); await K(id2, { maliyet: 1 }); expect(await makam(id2)).toBe('CEO');
-    const d3 = await dosya(); await fatura(d3, 1000000); const id3 = await kayit(d3.kimlik); const r3 = await o.ist('POST', `/api/garanti-sikayet/${id3}/karar`, await o.gir('tm'), { gerekce: 'Jest', karar: 'İyi Niyet', maliyet: 10000.01 }); expect(r3.statusCode, r3.body).toBe(200); expect(await makam(id3)).toBe('CEO');
+    const d3 = await dosya(); await fatura(d3, 1000000); const id3 = await kayit(d3.kimlik); const r3 = await o.ist('POST', `/api/garanti-sikayet/${id3}/karar`, await o.gir('tm'), { gerekce: 'Jest', karar: 'İyi Niyet', nedenArastirmasi: 'N', maliyet: 10000.01 }); expect(r3.statusCode, r3.body).toBe(200); expect(await makam(id3)).toBe('CEO');
   });
 });
 

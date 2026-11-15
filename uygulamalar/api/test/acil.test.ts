@@ -227,6 +227,13 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     for (const u of ['/api/sigorta/ana', `/api/sigorta/teklif/${t}`]) { const b = (await o.ist('GET', u, sigortaC)).body; expect(b).not.toContain(fu); expect(b).not.toContain('-ON09'); }
     expect((await o.ist('GET', '/api/sigorta/ana', await o.gir('ds'))).statusCode).toBe(403);
   });
+  it('sigorta adına ihbar dosya açılmadan portalda görünür; başka sigortaya görünmez (YG-017)', async () => {
+    const r = await o.ist('POST', '/api/ihbar', await o.gir('ds'), { kanal: 'Telefon', sahibiAdi: 'Sigorta', sahibiTuru: 'Sigorta Şirketi', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', sigortaci: 'Deneme Sigorta', hasarNo: 'H-017', yat: { adi: `Yat İhbar ${Date.now()}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `sahip017${Date.now()}@deneme.yatonet.local` }, cevaplar: {} });
+    expect(r.statusCode).toBe(200); const no = r.json().talepNo;
+    const k = (await o.ist('GET', '/api/sigorta/ana', sigortaC)).json().ihbarlar.find((x: any) => x.talepNo === no);
+    expect(k).toMatchObject({ hasarNo: 'H-017', durum: 'İhbar Alındı' });
+    expect((await o.ist('GET', '/api/sigorta/ana', baskaSigortaC)).json().ihbarlar.find((x: any) => x.talepNo === no)).toBeUndefined();
+  });
   it('seçilen kalemler onaylanır, seçilmeyen onaylanmaz; sürüm uyuşmazlığı reddedilir; ikinci karar olmaz', async () => {
     const { t } = await dosyaVeTeklif();
     expect((await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [] })).statusCode).toBe(400);

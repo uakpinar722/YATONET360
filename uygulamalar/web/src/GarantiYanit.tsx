@@ -14,6 +14,7 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
   const tarih = (x: string | null) => (x ? new Date(x).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' }) : '---');
   const islemler = f.islemler.split('\n').map((s) => s.split('|').map((x) => x.trim())).filter((x) => x[0]).map(([islem, tarih, durum]) => ({ islem, tarih, durum }));
   return <div className="tam">
+    <GarantiGecmis id={id} />
     {v.yazilar.map((x) => <div key={x.kimlik}>{x.yazi_no} · {x.varyant} · {x.durum}</div>)}
     {v.itiraz.zaman && <div className="not">İtiraz: {tarih(v.itiraz.zaman)} · İnceleyen: {v.itiraz.makam} · Son: {tarih(v.itiraz.son)}{v.itiraz.sonuc ? ` · Sonuç: ${v.itiraz.sonuc}` : ''}</div>}
     {v.takipSon && <div className="not">Takip Kontrolü: {tarih(v.takipSon)}</div>}
@@ -30,5 +31,26 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
       <label htmlFor={`gy-is-${id}`}>İtiraz Sonucu</label><select id={`gy-is-${id}`} value={ik.sonuc} onChange={(e) => setIk({ ...ik, sonuc: e.target.value })}><option value="">Seçiniz</option>{['Kabul', 'Kısmen Kabul', 'Ret'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor={`gy-ig-${id}`}>İtiraz Gerekçesi</label><input id={`gy-ig-${id}`} value={ik.gerekce} onChange={(e) => setIk({ ...ik, gerekce: e.target.value })} />
       <button className="btn2 kucuk" disabled={!ik.sonuc || !ik.gerekce.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/itiraz-karar`, ik), 'İtiraz kararı kaydedildi.').then(yukle)}>İtiraz Kararını Kaydet</button></>}
+  </div>;
+}
+
+interface Gecmis { dosya: { dosya_no: string; teslim_tarihi: string | null } | undefined; oncekiDosyalar: { kimlik: string; dosya_no: string; statu: string }[]; firmalar: { is_emri_no: string; is_emri_turu: string; statu: string; firma: string | null }[]; parcalar: { siparis_no: string; urun_tanimi: string; uretici_parca_no: string; tedarikci: string | null; lot: string | null }[]; testler: { test_no: string; test_grubu: string; durum: string; sonuc: string | null }[]; teslim: { durum: string; teslim_alan: string | null; karar: string | null }[]; belgeler: { kimlik: string; ad: string }[]; oncekiKayitlar: { kayit_no: string; statu: string; karar: string | null }[] }
+
+/** YG-084: önceki dosya, parça, firma, test ve teslim kanıtları. */
+function GarantiGecmis({ id }: { id: string }) {
+  const [v, setV] = useState<Gecmis | null>(null); const [ac, setAc] = useState(false);
+  useEffect(() => { if (ac && !v) void istek<Gecmis>(`/garanti-sikayet/${id}/gecmis`).then(setV).catch(() => setV(null)); }, [ac, id, v]);
+  if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Önceki Kanıtları Göster</button>;
+  if (!v) return null;
+  const s = (b: string, l: string[]) => l.length > 0 && <div><b>{b}</b>{l.map((x) => <div key={x}>{x}</div>)}</div>;
+  return <div className="not">
+    {s('Dosya', v.dosya ? [`${v.dosya.dosya_no}${v.dosya.teslim_tarihi ? ` · Teslim: ${v.dosya.teslim_tarihi.split('-').reverse().join('.')}` : ''}`] : [])}
+    {s('Aynı Yatın Önceki Dosyaları', v.oncekiDosyalar.map((x) => `${x.dosya_no} · ${x.statu}`))}
+    {s('Firmalar ve İş Emirleri', v.firmalar.map((x) => `${x.is_emri_no} · ${x.is_emri_turu} · ${x.firma ?? '—'} · ${x.statu}`))}
+    {s('Parçalar', v.parcalar.map((x) => `${x.siparis_no} · ${x.urun_tanimi} · ${x.uretici_parca_no} · ${x.tedarikci ?? '—'}${x.lot ? ` · Lot: ${x.lot}` : ''}`))}
+    {s('Testler', v.testler.map((x) => `${x.test_no} · ${x.test_grubu} · ${x.sonuc ?? x.durum}`))}
+    {s('Teslim', v.teslim.map((x) => `${x.durum}${x.karar ? ` · ${x.karar}` : ''}${x.teslim_alan ? ` · ${x.teslim_alan}` : ''}`))}
+    {s('Belgeler', v.belgeler.map((x) => x.ad))}
+    {s('Önceki Garanti ve Şikâyet Kayıtları', v.oncekiKayitlar.map((x) => `${x.kayit_no} · ${x.statu}${x.karar ? ` · ${x.karar}` : ''}`))}
   </div>;
 }

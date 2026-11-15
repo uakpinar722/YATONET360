@@ -539,7 +539,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   // YG-1416, YG-1420: kapsam kararı Teknik Yönetici; kök neden olmadan kapanmaz. Düzeltme maliyeti 5.000,00 EUR üstünde Teknik Müdür onayına gider. YG-1425: şikâyet sonucu listesi.
   s.post('/garanti-sikayet/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { karar?: string; sikayetSonucu?: string; gerekce?: string; maliyet?: number; kokNeden?: boolean; kapat?: boolean };
+    const g = (i.body ?? {}) as { karar?: string; sikayetSonucu?: string; gerekce?: string; maliyet?: number; kokNeden?: boolean; kapat?: boolean; nedenArastirmasi?: string };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT * FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
@@ -552,6 +552,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });
       if ((g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Düzeltme maliyeti 5.000,00 EUR üstünde karar Teknik Müdür onayındadır.' });
       if (g.kapat && !g.kokNeden) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
+      // YG-083: arızanın nedeni araştırılıp yazılmadan kapsam kararı verilmez.
+      if (!g.nedenArastirmasi?.trim() && !k.neden_arastirmasi) return y.code(409).send({ hata: 'Neden araştırması tamamlanmadan garanti kararı verilmez; bulunan nedeni yazınız.' });
+      if (g.nedenArastirmasi?.trim()) await b.db.query(`UPDATE garanti_sikayet SET neden_arastirmasi = $2 WHERE kimlik = $1`, [id, g.nedenArastirmasi.trim()]);
     }
     // YG-175: iyi niyet fatura tutarının %5'ine kadar GMY, üzeri CEO; karar onaylanınca yazılır. Fatura yoksa oran hesaplanamaz, CEO'ya gider.
     if (garanti && g.karar === 'İyi Niyet') {

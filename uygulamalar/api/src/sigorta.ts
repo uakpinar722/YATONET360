@@ -78,7 +78,9 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
     const grn = await (await import('./garanti_sigorta.js')).garantiDurumlari(b.db, rows.map((r) => r.kimlik as string)); // YG-1421
     const dosyalar = []; for (const r of rows) { const m = await durum(r); dosyalar.push({ kimlik: r.kimlik, dosyaNo: r.dosya_no, hasarNo: r.sigorta_hasar_dosya_no, yat: r.yat_adi, durum: m.ad, renk: m.renk, garanti: grn.get(r.kimlik) ?? null, tahminiTeslim: r.tahmini_teslim_tarihi ?? null }); }
     const bekleyen = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.ara_toplam_eur, f.genel_toplam_eur, f.sigorta_karar_son, d.dosya_no FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE f.statu = 'Gönderildi' AND f.teklif_muhatabi = 'Sigorta Şirketi' AND ${dosyaKosul} ORDER BY f.sigorta_karar_son NULLS LAST`, [sir ?? '', o.kullanici])).rows;
-    return { dosyalar, bekleyen };
+    // YG-017: sigorta şirketi adına beyan edilen ihbar dosya açılmadan da görünür; yalnız talep no, yat, hasar no ve "İhbar Alındı".
+    const ihbarlar = sir ? (await b.db.query(`SELECT t.kimlik, t.talep_no, t.kayda_gecis_zamani, t.sigorta_hasar_dosya_no_beyan, y.yat_adi FROM talep t JOIN yat y ON y.kimlik = t.yat_ref WHERE t.dosya_ref IS NULL AND lower(t.sigortaci_beyan) = lower($1) AND t.statu NOT IN ('Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY t.kayda_gecis_zamani DESC LIMIT 200`, [sir])).rows.map((t) => ({ kimlik: t.kimlik, talepNo: t.talep_no, yat: t.yat_adi, hasarNo: t.sigorta_hasar_dosya_no_beyan, durum: 'İhbar Alındı', zaman: t.kayda_gecis_zamani })) : [];
+    return { dosyalar, bekleyen, ihbarlar };
   });
 
   s.get('/sigorta/teklif/:id', oturumlu, async (i, y) => {

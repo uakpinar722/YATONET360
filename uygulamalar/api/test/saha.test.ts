@@ -36,6 +36,7 @@ describe('keşif (YG-049, YG-056, YG-111)', () => {
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-01'`, [d.kimlik])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT tamamlanma FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Randevu İletişimi'`, [d.kimlik])).rows[0].tamamlanma).not.toBeNull();
     expect((await o.sup.query(`SELECT 1 FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rowCount).toBe(1);
+    expect((await o.sup.query(`SELECT baslangic_olayi, sure_birimi FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rows[0]).toMatchObject({ baslangic_olayi: expect.stringContaining('KSF-1'), sure_birimi: 'Saat' }); // YG-045
     const s = await hazir({ sigortaci: 'SG' }, { musteriTuru: 'Sigorta Şirketi' });
     expect((await kesifAc(s.kimlik)).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-01'`, [s.kimlik])).rowCount).toBe(0);
@@ -200,7 +201,7 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
   });
   it('açık konu ve Beklemede kapanışı engeller', async () => {
     const d = await hazir(); const c = await o.gir('ds');
-    await o.ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', sahip: o.K.ds, hedefTarih: '2026-12-01' });
+    await o.ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', sahip: o.K.ds, hedefTarih: '2026-12-01', kabulOlcutu: 'Ö' });
     const e = await o.ist('POST', `/api/dosya/${d.kimlik}/kapanis`, c, { cikis: 'Teknik Kapalı', yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, yazismaBeyani: true });
     expect(e.json().eksikler).toContain('Açık Görev');
   });
@@ -276,8 +277,9 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
   it('kapsam kararı Teknik Yönetici; 5.000 EUR üstü Teknik Müdür; kök neden olmadan kapanmaz', async () => {
     const d = await hazir(); const c = await o.gir('ds');
     const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Yüksek', belirti: 'B' })).json().kimlik;
-    const K = async (k: string, x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir(k), { gerekce: 'G', karar: 'Garanti', ...x });
+    const K = async (k: string, x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir(k), { gerekce: 'G', karar: 'Garanti', nedenArastirmasi: 'N', ...x });
     expect((await K('ds', {})).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir('ty'), { gerekce: 'G', karar: 'Garanti' })).json().hata).toContain('Neden araştırması'); // YG-083
     expect((await K('ty', { maliyet: 5000.01 })).statusCode).toBe(403);
     expect((await K('ty', { maliyet: 5000, kapat: true })).statusCode).toBe(409);
     expect((await K('ty', { maliyet: 5000, kapat: true, kokNeden: true })).statusCode).toBe(200);

@@ -296,7 +296,7 @@ try {
   await pDs.getByLabel('Belirti', { exact: true }).fill('Titreşim'); await tikla(pDs, 'Kaydı Aç'); await pDs.waitForTimeout(500);
   await dosyaAc(sayfalar.ty, d.dosyaNo);
   await sayfalar.ty.getByLabel('Kapsam Kararı', { exact: true }).first().selectOption('İyi Niyet');
-  await sayfalar.ty.getByLabel('Karar Gerekçesi', { exact: true }).first().fill('Müşteri memnuniyeti'); await sayfalar.ty.getByLabel('İyi Niyet Tutarı (EUR)', { exact: true }).first().fill('10');
+  await sayfalar.ty.getByLabel('Neden Araştırması (Bulunan Neden)', { exact: true }).first().fill('Montaj titreşimi'); await sayfalar.ty.getByLabel('Karar Gerekçesi', { exact: true }).first().fill('Müşteri memnuniyeti'); await sayfalar.ty.getByLabel('İyi Niyet Tutarı (EUR)', { exact: true }).first().fill('10');
   await tikla(sayfalar.ty, 'Kararı Kaydet');
   await yokla('iyi niyet kararı onaya gider, karar yazılmaz', async () => (await sup.query(`SELECT g.karar, (SELECT count(*)::int FROM is_karti k WHERE k.tur = 'İyi Niyet Kararı' AND k.nesne_kimligi = g.kimlik::text) n FROM garanti_sikayet g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani DESC LIMIT 1`, [d.kimlik])).rows.every((r) => r.karar === null && r.n === 1));
 

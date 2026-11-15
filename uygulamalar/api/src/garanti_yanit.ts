@@ -99,6 +99,22 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
   /** İtirazı ilk kararı vermeyen üst kademe inceler: ilk karar Teknik Müdürden değilse Teknik Müdür, değilse Genel Müdür Yardımcısı. */
   const ustKademe = async (g: Record<string, any>) => (g.karar_veren_ref && (await rolVar(g.karar_veren_ref, ['Teknik Müdür'])) ? 'Genel Müdür Yardımcısı' : 'Teknik Müdür');
 
+  // YG-084: geri dönüşte önceki dosya, parça (tedarik ve giriş kabulü), firma (iş emri), test, teslim ve belge kanıtları tek görünümde; aynı yatın önceki dosyaları da listelenir.
+  s.get('/garanti-sikayet/:id/gecmis', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
+    const q = async (sql: string, p: unknown[] = [g.dosya_ref]) => (await b.db.query(sql, p)).rows;
+    return {
+      dosya: (await q(`SELECT d.dosya_no, d.teslim_tarihi::text, d.statu, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`))[0],
+      oncekiDosyalar: await q(`SELECT x.kimlik, x.dosya_no, x.statu, x.teslim_tarihi::text FROM dosya x WHERE x.yat_ref = (SELECT yat_ref FROM dosya WHERE kimlik = $1) AND x.kimlik <> $1 ORDER BY x.acilis_tarihi DESC LIMIT 50`),
+      firmalar: await q(`SELECT e.is_emri_no, e.is_emri_turu, e.statu, k.ticari_unvan firma FROM is_emri e LEFT JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.statu <> 'Taslak' ORDER BY e.olusturma_zamani`),
+      parcalar: await q(`SELECT s.siparis_no, m.urun_tanimi, m.uretici_parca_no, m.miktar, m.birim, k.ticari_unvan tedarikci, (SELECT string_agg(DISTINCT a.lot_no, ', ') FROM malzeme_giris_kabulu a WHERE a.siparis_ref = s.kimlik AND a.satir_no = m.satir_no) lot FROM tedarik_siparisi s JOIN tedarik_siparisi_kalemi m ON m.siparis_ref = s.kimlik LEFT JOIN kurulus k ON k.kimlik = s.kurulus_ref WHERE s.dosya_ref = $1 ORDER BY s.siparis_no, m.satir_no`),
+      testler: await q(`SELECT test_no, test_grubu, durum, sonuc FROM test_kaydi WHERE dosya_ref = $1 ORDER BY test_no`),
+      teslim: await q(`SELECT durum, teslim_alan, teslim_zamani, karar, cekince FROM teslim_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
+      belgeler: await q(`SELECT e.kimlik, e.ad, e.belge_turu FROM belge e WHERE e.bag_turu = 'Dosya' AND e.bag_kimligi = $1::text ORDER BY e.olusturma_zamani`),
+      oncekiKayitlar: await q(`SELECT kayit_no, kayit_turu, statu, karar, bildirim_zamani FROM garanti_sikayet WHERE dosya_ref = $1 AND kimlik <> $2 ORDER BY bildirim_zamani`, [g.dosya_ref, g.kimlik]),
+    };
+  });
+
   s.get('/garanti-sikayet/:id/yanit', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
     const yazilar = (await b.db.query(`SELECT kimlik, yazi_no, varyant, durum, olusturma_zamani FROM garanti_sikayet_yazisi WHERE kayit_ref = $1 ORDER BY olusturma_zamani`, [g.kimlik])).rows;

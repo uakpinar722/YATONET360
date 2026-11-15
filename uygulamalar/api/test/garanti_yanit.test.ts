@@ -13,6 +13,7 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     await o.ekipKur(d.kimlik);
     const g = (await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, sikayet_konusu, sikayet_sonucu, karar_veren_ref, statu, yanit_son, olusturan_ref) VALUES ($1,$2,'{Şikâyet}','WhatsApp','2026-11-25','Normal','Gelcoat renk farkı','Haklı – Düzeltildi',$3,'Karar','2026-12-09',$3) RETURNING kimlik`, [`${d.dosyaNo}-SK01`, d.kimlik, o.K.ty])).rows[0].kimlik;
     const ds = await o.gir('ds');
+    { const gc = (await o.ist('GET', `/api/garanti-sikayet/${g}/gecmis`, ds)).json(); expect(gc.dosya.dosya_no).toBe(d.dosyaNo); for (const k of ['oncekiDosyalar', 'firmalar', 'parcalar', 'testler', 'teslim', 'belgeler', 'oncekiKayitlar']) expect(Array.isArray(gc[k])).toBe(true); } // YG-084
     expect((await o.ist('GET', `/api/garanti-sikayet/${g}/yanit`, await o.gir('mpy'))).json().hazirlar).toBe(true);
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, await o.gir('tu'), { varyant: 'Şikâyet Yanıtı', inceleme: 'X' })).statusCode).not.toBe(200);
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, ds, { varyant: 'Şikâyet Yanıtı', inceleme: 'X' })).json().hata).toMatch(/Düzeltmenin tamamlandığı/);

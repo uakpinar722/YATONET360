@@ -19,6 +19,18 @@ export const SURE_SAAT: Record<string, Partial<Record<string, number>>> = {
   Teklif: { Yüksek: 48, Normal: 72, Planlı: 120 },
 };
 
+/**
+ * YG-045: her hedef sürenin başlangıç olayı tanımlıdır; başlangıç olayın kayda geçtiği andır, kişinin bildirimi görmesi başlangıcı değiştirmez.
+ * Bu süreler saatle izlenir (birim "Saat"); son anı mesai dışına düşerse çalışma gününe kayar (YG-1607). Gün bazlı süreler kendi kayıtlarında takvim günü veya çalışma günü olarak tutulur.
+ */
+export const SURE_BASLANGIC: Record<string, string> = {
+  'İlk Yanıt': 'İhbarın alınması',
+  'Teknik Uzman Ataması': 'Dosyanın açılması',
+  'Randevu İletişimi': 'Teknik Uzmanın atanması',
+  Keşif: 'Keşif iş emrinin Çözüm Ortağına gönderilmesi; firmasız keşifte keşif planı (KSF-1)',
+  'Sahaya Ulaşma': 'Acil eskalasyon',
+};
+
 /** YG-042: saha merkezine 150 km'den uzak noktada en az 4 saat; 250 km'den sonra başlayan her 100 km için ayrıca 1,5 saat. */
 export function mesafeEki(km: number | null | undefined): number {
   if (!km || km <= 150) return 0;
@@ -54,7 +66,7 @@ export async function sureBaslat(db: Db, g: { tur: string; oncelik: string; basl
   if (saat === undefined) return;
   const ham = new Date(g.baslangic.getTime() + (saat + (g.tur === 'Keşif' || g.tur === 'Sahaya Ulaşma' ? mesafeEki(g.km) : 0)) * 3_600_000);
   const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db), await tatilGunleri(db, true));
-  await db.query(`INSERT INTO dosya_sure (dosya_ref, talep_ref, tur, baslangic, bitis, kaydirma_notu) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING`, [g.dosya ?? null, g.talep ?? null, g.tur, g.baslangic, bitis, not]);
+  await db.query(`INSERT INTO dosya_sure (dosya_ref, talep_ref, tur, baslangic, bitis, kaydirma_notu, baslangic_olayi) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING`, [g.dosya ?? null, g.talep ?? null, g.tur, g.baslangic, bitis, not, SURE_BASLANGIC[g.tur] ?? null]);
 }
 
 /** KSF-1: açık süreyi verilen başlangıçtan yeniden kurar; yoksa açar. */

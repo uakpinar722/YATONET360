@@ -483,7 +483,7 @@ interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | nu
 
 /** YG-1568, YG-1571 A4 Sigorta Şirketi: teklif kalemleri seçimli onaylanır; ret düğmesi yoktur; firma adı görünmez. */
 export function SigortaAna({ ben }: { ben: Ben }) {
-  const [v, setV] = useState<{ dosyalar: SigortaDosya[]; bekleyen: SigortaTeklif[] } | null>(null); const [t, setT] = useState<TeklifAyrinti | null>(null); const [sec, setSec] = useState<number[]>([]);
+  const [v, setV] = useState<{ dosyalar: SigortaDosya[]; bekleyen: SigortaTeklif[]; ihbarlar?: { kimlik: string; talepNo: string; yat: string; hasarNo: string | null; durum: string }[] } | null>(null); const [t, setT] = useState<TeklifAyrinti | null>(null); const [sec, setSec] = useState<number[]>([]);
   const yukle = () => istek<NonNullable<typeof v>>('/sigorta/ana').then(setV);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setV({ dosyalar: [], bekleyen: [] })); }, []);
@@ -508,6 +508,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       <div className="bolum">İşleminizi Bekleyenler</div>
       {v.bekleyen.length === 0 && <div className="ozet bos">Bekleyen işlem bulunmamaktadır.</div>}
       {v.bekleyen.map((b) => <div className="ozet" key={b.kimlik}><b>{b.teklif_turu} · {b.dosya_no}</b><div>{eur(b.genel_toplam_eur)}{b.sigorta_karar_son ? ` · Son: ${saat(b.sigorta_karar_son)}` : ''}</div><button className="btn" onClick={() => void istek<TeklifAyrinti>(`/sigorta/teklif/${b.kimlik}`).then((x) => { setT(x); setSec([]); })}>İncele</button></div>)}
+      {(v.ihbarlar ?? []).length > 0 && <><div className="bolum">İhbarlar</div>{v.ihbarlar!.map((x) => <div className="ozet" key={x.kimlik}><b>{x.talepNo} · {x.yat}</b><div>{x.hasarNo ? `Hasar Dosya No: ${x.hasarNo} · ` : ''}{x.durum}</div></div>)}</>}
       <div className="bolum">Dosyalar</div>
       {v.dosyalar.length === 0 && <div className="ozet bos">Dosya bulunmamaktadır.</div>}
       {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>Garanti</th><th>Tahmini Teslim Tarihi</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="Garanti">{d.garanti ?? '—'}</td><td data-ad="Tahmini Teslim Tarihi">{d.tahminiTeslim ? d.tahminiTeslim.split('-').reverse().join('.') : '—'}</td></tr>)}</tbody></table></div>}

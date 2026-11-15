@@ -439,8 +439,9 @@ describe('süre aşımı ve açık konu (YG-040, YG-059)', () => {
   });
   it('sahipsiz konu açılmaz; kanıt olmadan doğrulamaya geçmez; sahibi kendi konusunu kapatamaz', async () => {
     const d = await dosyaAc(); await ekipKur(d.kimlik); const c = await gir('ds');
-    expect((await ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', hedefTarih: '2026-12-01' })).statusCode).toBe(400);
-    const r = await ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', sahip: K.ds, hedefTarih: '2026-12-01' });
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', hedefTarih: '2026-12-01', kabulOlcutu: 'Ö' })).statusCode).toBe(400);
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', sahip: K.ds, hedefTarih: '2026-12-01' })).json().hata).toContain('Kabul ölçütü'); // YG-057
+    const r = await ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'K', sahip: K.ds, hedefTarih: '2026-12-01', kabulOlcutu: 'Ö' });
     expect(r.json().konu_no).toBe(`${d.dosyaNo}-AK01`);
     const id = r.json().kimlik;
     expect((await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'Kapalı' })).statusCode).toBe(409);
@@ -488,5 +489,8 @@ describe('yat belgeleri ve kışlama (YG-098)', () => {
     const r = await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { kislama_yeri: 'Göcek Marina', yabanci_yat_belgesi: 'Seyir İzin Belgesi (Transit Log)', yabanci_yat_belge_no: 'TL-1', gecici_ithalat_bitis: '2027-05-01' }, gerekce: 'Ruhsattan', kaynak: 'Ruhsat' });
     expect(r.statusCode, r.body).toBe(200);
     expect((await sup.query(`SELECT kislama_yeri, gecici_ithalat_bitis::text g FROM yat WHERE kimlik = $1`, [yat])).rows[0]).toEqual({ kislama_yeri: 'Göcek Marina', g: '2027-05-01' });
+    expect((await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { mmsi: '27112' }, gerekce: 'G' })).statusCode).toBe(400); // YG-091
+    expect((await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { mmsi: '271123456', motor_adedi: 2, motor_marka_model: 'Volvo Penta D6', motor_gucu_hp: 440 }, gerekce: 'Ruhsattan', kaynak: 'Ruhsat' })).statusCode).toBe(200);
+    expect((await sup.query(`SELECT mmsi, motor_adedi FROM yat WHERE kimlik = $1`, [yat])).rows[0]).toEqual({ mmsi: '271123456', motor_adedi: 2 });
   });
 });
