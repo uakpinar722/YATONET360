@@ -99,6 +99,9 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   if (g.iletisimKisileri?.trim()) await c.query(`UPDATE talep SET iletisim_kisileri = $2 WHERE kimlik = $1`, [id, g.iletisimKisileri.trim()]); // YG-018
   if (yukseltme) await c.query(`UPDATE talep SET oncelik_yukseltme_gerekcesi = $2 WHERE kimlik = $1`, [id, g.oncelikGerekcesi!.trim()]); // YG-032
   await sureBaslat(c, { tur: 'İlk Yanıt', oncelik, baslangic: bildirimZamani, talep: id });
+  // YG-1558: liste dışı girilen sigorta şirketi ana veri güncelleme görevi açar.
+  if (g.sigortaci?.trim() && !(await c.query(`SELECT 1 FROM sigorta_sirketi WHERE lower(tam_unvan) = lower($1) OR lower(kisa_ad) = lower($1)`, [g.sigortaci.trim()])).rowCount)
+    await kartAc(c, { tur: 'Ana Veri Güncelleme', kategori: 'gorev', baslik: `${no} · Liste Dışı Sigorta Şirketi`, ozet: `"${g.sigortaci.trim()}" sigorta şirketi listesinde yoktur; ana veriye eklenmesi veya listedeki kayıtla eşleştirilmesi rica olunur.`.slice(0, 200), sahipRol: await rolId(c, 'Sicil Sorumlusu'), sonZaman: new Date(Date.now() + 3 * 86_400_000), nesneTuru: 'Talep', nesneKimligi: id });
   await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: baglam.ilkSorumlu, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
   // YG-026: Kritik öncelikte son onay Operasyon Yöneticisindedir.
   if (oncelik === 'Kritik') {

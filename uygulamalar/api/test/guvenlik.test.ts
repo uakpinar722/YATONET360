@@ -175,4 +175,13 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect(await zinciriDuzelt(o.db, [btd], o.K.sy)).toEqual([btd]);
     await o.sup.query(`UPDATE vekalet SET durum = 'Kapalı', kapanis_zamani = now() WHERE kimlik = 'VKL-2026-8647'`);
   });
+  it('sürüm notu Duyuru da yayımlanır; acil değişiklik Direktörün sonradan onayına gider (YG-1413)', async () => {
+    const sy = await o.gir('sy'); const no = `9.${Date.now() % 100000}`;
+    expect((await o.ist('POST', '/api/surum-notu', await o.gir('ds'), { surum: no, notlar: 'X' })).statusCode).toBe(403);
+    const r = await o.ist('POST', '/api/surum-notu', sy, { surum: no, notlar: 'Giriş ekranı hızlandırıldı', acil: true }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', '/api/surum-notu', sy, { surum: no, notlar: 'Y' })).statusCode).toBe(409);
+    expect((await o.sup.query(`SELECT durum, kapsam FROM duyuru WHERE kimlik = $1`, [r.json().duyuru])).rows[0]).toEqual({ durum: 'Yayında', kapsam: 'Tümü' });
+    const k = await o.kart('Acil Platform Değişikliği', r.json().kimlik); expect((await o.karar(k.kimlik, 'btd', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT sonradan_onay FROM yazilim_surumu WHERE kimlik = $1`, [r.json().kimlik])).rows[0].sonradan_onay).toBe('Onaylandı');
+  });
 });

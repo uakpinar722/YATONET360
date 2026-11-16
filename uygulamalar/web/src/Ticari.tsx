@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
-import { BelgeSec } from './Kalite';
+import { BelgeSec, belgeYukle } from './Kalite';
 import { KartelaResmiEtiket } from './ResmiOnay';
 import { TicariAtamaBekleyenler } from './TicariAtama';
 import { TopluOdeme } from './TopluOdeme';
@@ -221,6 +221,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   return (
     <>
       <Mesaj />
+      {ticari && <TicariOzet id={id} />}
       <Blok baslik="Kapsam ve Metraj Cetveli">
         {v.cetveller.map((c) => <div key={c.kimlik}>Rev.{c.surum} · {c.satir} satır · {c.durum}</div>)}
         {tu && <>
@@ -984,4 +985,40 @@ function KartelaUyari({ teklif }: { teklif: string }) {
   const [l, setL] = useState<{ grup: string; not: string }[]>([]);
   useEffect(() => { void istek<{ uyarilar?: { grup: string; not: string }[] }>(`/teklif/${teklif}`).then((x) => setL(x.uyarilar ?? [])).catch(() => setL([])); }, [teklif]);
   return <>{l.map((u) => <div key={u.grup} className="uyari">⚠ Birlikte yazılmaz ({u.grup}): {u.not}</div>)}</>;
+}
+
+/** YG-1024: Ticari Sorumlunun dosya özeti (teklif, iş emri, hakediş, fatura, teknik rapor). */
+function TicariOzet({ id }: { id: string }) {
+  type R = Record<string, string | number | null>;
+  const [v, setV] = useState<{ teklifler: R[]; isEmirleri: R[]; hakedisler: R[]; faturalar: R[]; teknikRaporlar: R[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/dosya/${id}/ticari-ozet`).then(setV).catch(() => setV(null)); }, [id]);
+  if (!v) return null;
+  const e = (x: unknown) => (x == null ? '—' : eur(Number(x)));
+  return <details className="ozet"><summary>Dosya Ticari Özeti</summary>
+    <div className="bolum">Teklifler</div>{v.teklifler.length ? v.teklifler.map((x, n) => <div key={n}>{x.teklif_no} · Rev.{x.surum_no} · {x.teklif_turu} · {x.statu} · {e(x.genel_toplam_eur)}</div>) : <div className="not">Kayıt bulunmamaktadır.</div>}
+    <div className="bolum">İş Emirleri</div>{v.isEmirleri.length ? v.isEmirleri.map((x, n) => <div key={n}>{x.is_emri_no} · {x.is_emri_turu} · {x.statu}</div>) : <div className="not">Kayıt bulunmamaktadır.</div>}
+    <div className="bolum">Hakedişler</div>{v.hakedisler.length ? v.hakedisler.map((x, n) => <div key={n}>{x.hakedis_no} · {x.statu} · Brüt {e(x.bu_donem_brut)} · Kesinti {e(x.kesinti)} · Net {e(x.net)}</div>) : <div className="not">Kayıt bulunmamaktadır.</div>}
+    <div className="bolum">Proforma ve Faturalar</div>{v.faturalar.length ? v.faturalar.map((x, n) => <div key={n}>{x.proforma_no}{x.fatura_no ? ` · Fatura ${x.fatura_no}` : ''} · {x.durum} · {x.muhatap} · {e(x.toplam_eur)}</div>) : <div className="not">Kayıt bulunmamaktadır.</div>}
+    <div className="bolum">Teknik Raporlar</div>{v.teknikRaporlar.length ? v.teknikRaporlar.map((x, n) => <div key={n}>{x.rapor_no} · {x.rapor_turu} · Sürüm {x.surum} · {x.durum}</div>) : <div className="not">Kayıt bulunmamaktadır.</div>}
+  </details>;
+}
+
+/** YG-1025: Muhasebe Hizmeti ana ekranı: proforma görüntüleme ve fatura no, tarih, kur ve PDF girişi. */
+export function MuhasebeAna() {
+  type P = { kimlik: string; proforma_no: string; dosya_no: string; muhatap: string; kdv_haric_eur: string; kdv_eur: string; toplam_eur: string; durum: string; fatura_no: string | null; fatura_tarihi: string | null };
+  const [l, setL] = useState<P[]>([]); const [m, setM] = useState(''); const [f, setF] = useState<Record<string, { no: string; tarih: string; kur: string; kurTarihi: string; pdf: string }>>({});
+  const yk = () => istek<P[]>('/muhasebe/proformalar').then(setL).catch((e) => setM(e.message));
+  useEffect(() => { void yk(); }, []);
+  const al = (id: string) => f[id] ?? { no: '', tarih: '', kur: '', kurTarihi: '', pdf: '' };
+  const yaz = (id: string, k: string, v: string) => setF({ ...f, [id]: { ...al(id), [k]: v } });
+  return <><h1>Proformalar</h1>{m && <div className="not" role="status">{m}</div>}{l.length === 0 && <div className="ozet bos">Muhasebeye iletilen proforma bulunmamaktadır.</div>}
+    {l.map((x) => { const v = al(x.kimlik); return <div className="ozet" key={x.kimlik}>
+      <div><b>{x.proforma_no}</b> · {x.dosya_no} · {x.muhatap} · KDV Hariç {eur(Number(x.kdv_haric_eur))} · KDV {eur(Number(x.kdv_eur))} · Toplam {eur(Number(x.toplam_eur))} · {x.durum}{x.fatura_no ? ` · Fatura ${x.fatura_no}` : ''}</div>
+      {x.durum === 'Muhasebeye İletildi' && <>
+        <div className="iki-tarih"><div><label htmlFor={`mh-n-${x.kimlik}`}>Fatura No</label><input id={`mh-n-${x.kimlik}`} value={v.no} onChange={(e) => yaz(x.kimlik, 'no', e.target.value)} /></div><div><label htmlFor={`mh-t-${x.kimlik}`}>Fatura Tarihi</label><input id={`mh-t-${x.kimlik}`} type="date" value={v.tarih} onChange={(e) => yaz(x.kimlik, 'tarih', e.target.value)} /></div></div>
+        <div className="iki-tarih"><div><label htmlFor={`mh-k-${x.kimlik}`}>TCMB Satış Kuru</label><input id={`mh-k-${x.kimlik}`} inputMode="decimal" value={v.kur} onChange={(e) => yaz(x.kimlik, 'kur', e.target.value)} /></div><div><label htmlFor={`mh-kt-${x.kimlik}`}>Kur Tarihi</label><input id={`mh-kt-${x.kimlik}`} type="date" value={v.kurTarihi} onChange={(e) => yaz(x.kimlik, 'kurTarihi', e.target.value)} /></div></div>
+        <label htmlFor={`mh-p-${x.kimlik}`}>Fatura PDF</label><input id={`mh-p-${x.kimlik}`} type="file" accept=".pdf" onChange={(e) => { const d = e.target.files?.[0]; if (d) void belgeYukle(d, 'Müşteri Faturası', x.kimlik).then((b) => yaz(x.kimlik, 'pdf', b)).catch((h) => setM(h.message)); }} />
+        <button className="btn2 kucuk" disabled={!v.no.trim() || !v.tarih || !v.kur || !v.kurTarihi || !v.pdf} onClick={() => void istek(`/fatura/${x.kimlik}/bilgi`, { no: v.no, tarih: v.tarih, kur: Number(v.kur.replace(',', '.')), kurTarihi: v.kurTarihi, pdf: v.pdf }).then(() => { setM('Fatura bilgisi kaydedildi.'); return yk(); }).catch((h) => setM(h.message))}>Fatura Bilgisini Kaydet</button>
+      </>}
+    </div>; })}</>;
 }

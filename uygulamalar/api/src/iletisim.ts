@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { izYaz } from './denetim.js';
 import { kapanisKaydet } from './kapanis.js';
+import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayMakami, rolSahipleri } from './makam.js';
@@ -20,6 +21,28 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
 
   // YG-560, YG-561: LGM içi duyuruyu Müdür ve üstü doğrudan yayımlar; dış kapsamda bir üst kademe onaylar; CEO onaysızdır.
+  // YG-1413, YG-1141: güncelleme sürüm kaydıyla birlikte sürüm notu olarak Duyuru'da yayımlanır (tüm kullanıcılar); acil platform değişikliği sonradan BT ve Firma Yönetimi Direktörü onayına sunulur.
+  s.post('/surum-notu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { surum?: string; notlar?: string; acil?: boolean; bilet?: string };
+    const roller = await kullaniciRolleri(b.db, o.kullanici);
+    if (o.grup !== 'LGM İç Rolü' || !roller.some((r) => ['Sistem Yöneticisi', 'Bilgi İşlem Müdürü'].includes(r.rol_adi))) return y.code(403).send({ hata: 'Sürüm notunu Sistem Yöneticisi veya Bilgi İşlem Müdürü yayımlar.' });
+    if (!g.surum?.trim() || !g.notlar?.trim()) return y.code(400).send({ hata: 'Sürüm numarası ve sürüm notu zorunludur.' });
+    if (g.bilet && !/^[0-9a-f-]{36}$/i.test(g.bilet)) return y.code(400).send({ hata: 'Değişiklik bileti geçersizdir.' });
+    if ((await b.db.query(`SELECT 1 FROM yazilim_surumu WHERE surum = $1`, [g.surum.trim()])).rowCount) return y.code(409).send({ hata: 'Bu sürüm numarası kayıtlıdır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const d = (await c.query(`INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, durum) VALUES ($1,$2,false,'Tümü',$3,'Yayında') RETURNING kimlik`, [`Sürüm ${g.surum.trim()}`, g.notlar.trim(), o.kullanici])).rows[0].kimlik;
+      const r = (await c.query(`INSERT INTO yazilim_surumu (surum, notlar, acil, degisiklik_bileti_ref, duyuru_ref, sonradan_onay, yayimlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.surum.trim(), g.notlar.trim(), Boolean(g.acil), g.bilet ?? null, d, g.acil ? 'Onay Bekliyor' : null, o.kullanici])).rows[0].kimlik;
+      if (g.acil) await kartAc(c, { tur: 'Acil Platform Değişikliği', baslik: `Sürüm ${g.surum.trim()} · Acil Değişiklik (Sonradan Onay)`, ozet: g.notlar.trim().slice(0, 200), oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(c, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')], nesneTuru: 'Yazılım Sürümü', nesneKimligi: r });
+      await c.query('COMMIT');
+      return { kimlik: r, duyuru: d };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  s.get('/surumler', oturumlu, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
+    return (await b.db.query(`SELECT surum, notlar, acil, sonradan_onay, zaman FROM yazilim_surumu ORDER BY zaman DESC LIMIT 50`)).rows;
+  });
   s.post('/duyuru', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
@@ -118,3 +141,9 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
 }
+
+/** YG-1413: acil platform değişikliğinin sonradan onayı. */
+kapanisKaydet('Acil Platform Değişikliği', async (c, k, karar) => {
+  if (karar !== 'Onayla' && karar !== 'Reddet') return;
+  await c.query(`UPDATE yazilim_surumu SET sonradan_onay = $2 WHERE kimlik = $1`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi']);
+});

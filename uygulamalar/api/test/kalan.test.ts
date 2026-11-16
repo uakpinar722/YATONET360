@@ -1379,4 +1379,24 @@ describe('istenecek belge listesi (YG-1439)', () => {
     await o.sup.query(`UPDATE dosya SET musteri_turu = 'Bireysel Müşteri' WHERE kimlik = $1`, [d.kimlik]);
     expect(await sozlesmeHedefi(o.db, d.kimlik, 'Keşif')).toBeNull();
   });
+  it('toplantı kararı dosyaya ve göreve bağlanır, dosyada görünür (YG-1408)', async () => {
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('ds');
+    const kod = (await o.ist('GET', '/api/toplanti/secenek', c)).json().turler[0].kod;
+    const r = await o.ist('POST', '/api/toplanti', c, { kod, konu: 'Kapsam', baslangic: new Date(Date.now() + 86_400_000).toISOString(), katilimcilar: [{ kullanici: o.K.oy }], dosya: d.kimlik });
+    expect(r.statusCode, r.body).toBe(200);
+    const k = await o.ist('POST', `/api/toplanti/${r.json().kimlik}/karar`, c, { metin: 'Parça siparişi verilecek', sorumlu: o.K.oy, hedef: '2099-01-01' }); expect(k.statusCode, k.body).toBe(200);
+    const lr = await o.ist('GET', `/api/dosya/${d.kimlik}/toplanti-kararlari`, await o.gir('opm')); expect(lr.statusCode, lr.body).toBe(200); const l = lr.json(); expect(l.length, JSON.stringify(k.json())).toBe(1); expect(l[0].metin).toBe('Parça siparişi verilecek'); expect(l[0].gorev_durumu).toBe('Bekliyor');
+  });
+  it('liste dışı sigorta şirketi ana veri görevi açar (YG-1558)', async () => {
+    const c = await o.gir('ds');
+    const r = await o.ist('POST', '/api/ihbar', c, { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', yat: { adi: `LD${Date.now()}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `ld${Date.now()}@deneme.yatonet.local` }, cevaplar: {}, sigortaci: 'Listede Olmayan Sigorta AŞ' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Ana Veri Güncelleme' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].n).toBe(1);
+  });
+  it('Ticari Sorumlu dosyanın ticari özetini görür (YG-1024)', async () => {
+    const d = await o.dosyaAc({}, {});
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/ticari-ozet`, await o.gir('tu'))).statusCode).toBe(404);
+    const r = await o.ist('GET', `/api/dosya/${d.kimlik}/ticari-ozet`, await o.gir('ts')); expect(r.statusCode, r.body).toBe(200);
+    expect(Object.keys(r.json())).toEqual(['teklifler', 'isEmirleri', 'hakedisler', 'faturalar', 'teknikRaporlar']);
+  });
 });

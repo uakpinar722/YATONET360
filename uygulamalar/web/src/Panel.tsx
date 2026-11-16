@@ -7,7 +7,7 @@ import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
 import { YatSahibiAna } from './Portal';
 import { DenetimArama, IhlalBildir, KvkkEkrani } from './Kvkk';
-import { FirmaAna, IdariIslemler, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
+import { FirmaAna, IdariIslemler, MuhasebeAna, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
 import { KarneParametreleri, FirmaSicil } from './Sicil';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
 import { BrokerAna, YetkiBelgeleri } from './Broker';
@@ -74,7 +74,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   ];
   const b = veri?.okunmamisBildirim ?? 0;
   const icerik: Record<Sayfa, ReactNode> = {
-    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Broker') ? <><BrokerAna /><SigortaAna ben={ben} /></> : ben.grup.startsWith('Sigorta') ? <><SigortaAna ben={ben} /><DosyaHaritasi /></> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
+    ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <FirmaAna ben={ben} /> : ben.grup.startsWith('Broker') ? <><BrokerAna /><SigortaAna ben={ben} /></> : ben.grup.startsWith('Sigorta') ? <><SigortaAna ben={ben} /><DosyaHaritasi /></> : ben.grup.startsWith('Tesis Yetkilisi') ? <TesisAna ben={ben} /> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : ben.roller.some((r) => r.rol_adi === 'Muhasebe Hizmeti') ? <><MuhasebeAna /><Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} /></> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
     profil: <Profilim />,
     erisim: <ErisimTalebi />,

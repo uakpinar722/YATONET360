@@ -143,7 +143,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       <label htmlFor="i-durum">Yatın Mevcut Durumu</label><input id="i-durum" value={durum} onChange={(e) => setDurum(e.target.value)} />
       <label htmlFor="i-ik">İletişim Kişileri (Ad, Rol, Telefon)</label><textarea id="i-ik" rows={2} value={iKisi} onChange={(e) => setIKisi(e.target.value)} />
       <label htmlFor="i-ozet">Olay Özeti</label><textarea id="i-ozet" rows={3} value={ozet} onChange={(e) => setOzet(e.target.value)} />
-      <div className="iki-tarih"><div><label htmlFor="i-sg">Sigorta Şirketi</label><input id="i-sg" list="sigorta-listesi" value={sigortaci} onChange={(e) => setSigortaci(e.target.value)} /><SigortaListesi /></div><div><label htmlFor="i-hn">Sigorta Hasar Dosya No</label><input id="i-hn" value={hasarNo} onChange={(e) => setHasarNo(e.target.value)} /></div></div>
+      <div className="iki-tarih"><div><label htmlFor="i-sg">Sigorta Şirketi</label><input id="i-sg" list="sigorta-listesi" value={sigortaci} onChange={(e) => setSigortaci(e.target.value)} /><SigortaListesi ara={sigortaci} /></div><div><label htmlFor="i-hn">Sigorta Hasar Dosya No</label><input id="i-hn" value={hasarNo} onChange={(e) => setHasarNo(e.target.value)} /></div></div>
       <div className="bolum">Öncelik Soruları</div>
       {s.sorular.map((q) => (
         <div key={q} className="soru"><span>{q}</span><div className="dugmeler">{['Hayır', 'Bilinmiyor', 'Evet'].map((c) => <button key={c} type="button" className={`cevap ${cevap[q] === c ? `c-${c === 'Evet' ? 'k' : c === 'Bilinmiyor' ? 's' : 'y'}` : ''}`} aria-pressed={cevap[q] === c} onClick={() => setCevap((o) => ({ ...o, [q]: c }))}>{c}</button>)}</div></div>
@@ -423,6 +423,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       <BelgeListesi dosya={id} />
       <SahaTalebi dosya={id} />
       <KapanisAsamalari dosya={id} />
+      <ToplantiKararlari dosya={id} />
       <Blok baslik="Bulgular">
         {v.bulgular.filter((b) => b.teyit_bekliyor).map((b) => { const x = bTy[b.kimlik] ?? { tur: 'Beyan', ger: '' }; return <div className="uyari" key={`t-${b.kimlik}`}>Teyit Bekliyor: {b.bulgu_no} · {b.aciklama}
           <label htmlFor={`bt-t-${b.kimlik}`}>Ayrıştırılan Bilgi Türü</label><select id={`bt-t-${b.kimlik}`} value={x.tur} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, tur: e.target.value } })}>{['Beyan', 'İlk Gözlem', 'Doğrulanmış Olgu', 'Teknik Varsayım'].map((s) => <option key={s}>{s}</option>)}</select>
@@ -530,4 +531,12 @@ function KapanisAsamalari({ dosya }: { dosya: string }) {
   useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/kapanis-asamalari`).then(setL).catch(() => setL([])); }, [dosya]);
   if (!l.length) return null;
   return <Blok baslik="Kapanış Aşamaları">{l.map((x) => <div key={x.asama}>{x.asama} · {x.durum} · {x.kosul}</div>)}</Blok>;
+}
+
+/** YG-1408: dosyaya bağlı toplantı kararları ve görev durumu. */
+function ToplantiKararlari({ dosya }: { dosya: string }) {
+  const [l, setL] = useState<{ metin: string; hedef: string; sorumlu: string; tpl_kod: string; konu: string; gorev_durumu: string | null }[]>([]);
+  useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/toplanti-kararlari`).then(setL).catch(() => setL([])); }, [dosya]);
+  if (!l.length) return null;
+  return <><div className="bolum">Toplantı Kararları</div>{l.map((k, n) => <div className="ozet" key={n}>{k.tpl_kod} · {k.konu} · {k.metin} · Sorumlu: {k.sorumlu} · Hedef: {k.hedef.split('-').reverse().join('.')}{k.gorev_durumu ? ` · ${k.gorev_durumu}` : ''}</div>)}</>;
 }

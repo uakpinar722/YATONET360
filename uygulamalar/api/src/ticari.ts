@@ -24,6 +24,7 @@ import { sigortayaHazirla } from './sigorta_gonderim.js';
 import { yurtDisiAvans, yurtDisiMi } from './onay_ek.js';
 import { disGonder } from './bildirim.js';
 import { metinGetir } from './metin.js';
+import { belgeBagiKaydet } from './belge.js';
 
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
@@ -270,6 +271,17 @@ export async function izinBakiyesi(db: Pool | PoolClient, personel: string, yil:
   return { hak, kullanilan: 0 };
 }
 
+const MUHASEBE = 'Muhasebe Hizmeti';
+const muhasebeHizmetiMi = async (db: Pool | PoolClient, k: string) => Boolean((await db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2`, [k, MUHASEBE])).rowCount);
+const MUHASEBE_GORUR = ['Muhasebeye İletildi', 'Faturalandı', 'Kısmi Tahsil', 'Tahsil Edildi'];
+/** YG-1025: fatura PDF'i proforma kaydına bağlanır; Muhasebe Hizmeti ve Ticari Sorumlu yükler. */
+belgeBagiKaydet('Müşteri Faturası', async (db, k, id) => {
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return 'yok';
+  const f = (await db.query(`SELECT dosya_ref, durum FROM musteri_faturasi WHERE kimlik = $1`, [id])).rows[0]; if (!f) return 'yok';
+  if (await muhasebeHizmetiMi(db, k)) return MUHASEBE_GORUR.includes(f.durum) ? 'tamam' : 'yetkisiz';
+  return (await dosyaErisimi(db, k, f.dosya_ref)) ? 'tamam' : 'yetkisiz';
+});
+
 export function ticariYollari(s: FastifyInstance, b: Baglam) {
   webAdresi = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -343,6 +355,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   const fatura = async (id: string, k: string) => {
     if (!UUID.test(id)) return undefined;
     const f = (await b.db.query(`SELECT m.*, d.dosya_no, d.musteri_turu, d.yazisma_dili, d.vefat_isareti FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.kimlik = $1`, [id])).rows[0];
+    if (f && MUHASEBE_GORUR.includes(f.durum) && await muhasebeHizmetiMi(b.db, k)) return f; // YG-1025
     return f && await dosyaErisimi(b.db, k, f.dosya_ref) ? f : undefined;
   };
   s.post('/fatura/:id/muhasebeye', oturumlu, async (i, y) => {
@@ -354,10 +367,18 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'Muhasebeye İletildi' };
   });
   // YG-875, YG-884, YG-900, K-193: fatura no, tarih ve kuru muhasebeden gelince Ticari Sorumlu girer; kur önceki iş günü TCMB satış; TL tutar nihai; vade sigortada 30 gün.
+  // YG-1025: Muhasebe Hizmeti muhasebeye iletilen proformaları ve faturalandırdıklarını görür (maliyet ve firma bilgisi yok).
+  s.get('/muhasebe/proformalar', oturumlu, async (i, y) => {
+    if (!(await muhasebeHizmetiMi(b.db, i.oturum!.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT m.kimlik, m.proforma_no, d.dosya_no, m.muhatap, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.durum, m.fatura_no, m.fatura_tarihi::text AS fatura_tarihi FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.durum = ANY($1) ORDER BY (m.durum = 'Muhasebeye İletildi') DESC, m.proforma_no DESC LIMIT 200`, [MUHASEBE_GORUR])).rows;
+  });
   s.post('/fatura/:id/bilgi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const f = await fatura((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { no?: string; tarih?: string; kur?: number; kurTarihi?: string };
+    const o = i.oturum!; const f = await fatura((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { no?: string; tarih?: string; kur?: number; kurTarihi?: string; pdf?: string };
     if (!f) return yok(y);
-    if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Fatura bilgisini Ticari Sorumlu girer.' });
+    const muhasebe = await muhasebeHizmetiMi(b.db, o.kullanici); // YG-1025
+    if (!muhasebe && !(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Fatura bilgisini Muhasebe Hizmeti veya Ticari Sorumlu girer.' });
+    if (muhasebe && !g.pdf) return y.code(400).send({ hata: 'Fatura PDF dosyasını yüklemenizi rica ederiz.' });
+    if (g.pdf && (!UUID.test(g.pdf) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Müşteri Faturası' AND bag_kimligi = $2::text`, [g.pdf, f.kimlik])).rowCount)) return y.code(400).send({ hata: 'Fatura PDF dosyası bu proformaya bağlı olmalıdır.' });
     if (f.durum !== 'Muhasebeye İletildi') return y.code(409).send({ hata: 'Proforma önce muhasebeye iletilmelidir.' });
     if (!g.no?.trim() || !g.tarih || !(Number(g.kur) > 0) || !g.kurTarihi) return y.code(400).send({ hata: 'Fatura no, tarih, kur ve kur tarihi zorunludur.' });
     if (g.kurTarihi >= g.tarih) return y.code(400).send({ hata: 'Kur, fatura tarihinden önceki iş gününün TCMB satış kurudur.' });
@@ -370,7 +391,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const tevTl = Number(f.kdv_eur) > 0 ? R2((kdvTl * Number(f.tevkifat_eur)) / Number(f.kdv_eur)) : 0;
     const tl = R2(matrahTl + kdvTl - tevTl);
     await (await import('./uyum.js')).uyumOlay(b.db, 'fatura', 'Fatura No', g.no.trim()); // YG-1546
-    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl]);
+    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8, fatura_pdf_ref = $9, fatura_giren_ref = $10 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl, g.pdf ?? null, o.kullanici]);
     // YG-421, K-193: firmaya Fatura Düzenleme Bildirimi (BLD-80).
     for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, coalesce((SELECT sum(h.bu_donem_brut) FROM hakedis h WHERE h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi'), e.firma_bedeli_eur) AS tutar FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [f.dosya_ref])).rows) {
       if (!(Number(e.tutar) > 0)) continue;

@@ -93,6 +93,12 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     const B = { no: 'ABC2026000000001', tarih: '2026-11-10', kur: 40.1234, kurTarihi: '2026-11-09' };
     expect((await o.ist('POST', `/api/fatura/${id}/bilgi`, await o.gir('ds'), B)).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/fatura/${id}/bilgi`, c, { ...B, kurTarihi: '2026-11-10' })).statusCode).toBe(400);
+    // YG-1025: Muhasebe Hizmeti proformayı görür; PDF olmadan fatura bilgisi giremez.
+    const mh = (await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Muhasebe Hizmeti' RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const dsc = await o.gir('ds');
+    expect(((await o.ist('GET', '/api/muhasebe/proformalar', dsc)).json() as { kimlik: string }[]).some((x) => x.kimlik === id)).toBe(true);
+    expect((await o.ist('POST', `/api/fatura/${id}/bilgi`, dsc, B)).json().hata).toContain('PDF');
+    await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kimlik = $1`, [mh]);
     const f = await o.ist('POST', `/api/fatura/${id}/bilgi`, c, B);
     expect(f.json()).toEqual({ toplamTl: 48148.08, vade: '2026-12-10' });
     const th = (x: object) => o.ist('POST', '/api/tahsilat', c, { fatura: id, tarih: '2026-11-20', kanal: 'Havale', ...x });

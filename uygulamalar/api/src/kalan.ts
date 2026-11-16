@@ -623,6 +623,20 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-826: mali parametreler. Tanımsız değer işlemi bir üst onaya gönderir; fiyat katsayısı bu ekranda hiç görünmez (K-104).
   const parametreci = (k: string) => rolVar(k, [TID, 'Teknik ve Operasyon Direktörü', 'Genel Müdür Yardımcısı', 'CEO']);
+  // YG-1024: Ticari Sorumlu (ve ticari yöneticiler) dosyanın teklif, iş emri, hakediş, fatura ve teknik rapor özetini tek yerde görür.
+  s.get('/dosya/:id/ticari-ozet', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!/^[0-9a-f-]{36}$/i.test(id) || !(await rolVar(o.kullanici, ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Müdürü', 'Muhasebe ve Finans Müdür Yardımcısı', TID]))) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    const q = async (sql: string) => (await b.db.query(sql, [id])).rows;
+    return {
+      teklifler: await q(`SELECT teklif_no, surum_no, teklif_turu, statu, genel_toplam_eur FROM fiyat_teklifi WHERE dosya_ref = $1 ORDER BY teklif_no, surum_no`),
+      isEmirleri: await q(`SELECT is_emri_no, is_emri_turu, statu FROM is_emri WHERE dosya_ref = $1 ORDER BY is_emri_no`),
+      hakedisler: await q(`SELECT hakedis_no, statu, bu_donem_brut, kesinti, net FROM hakedis WHERE dosya_ref = $1 ORDER BY hakedis_no`),
+      faturalar: await q(`SELECT proforma_no, fatura_no, fatura_tarihi::text AS fatura_tarihi, durum, muhatap, toplam_eur FROM musteri_faturasi WHERE dosya_ref = $1 ORDER BY proforma_no`),
+      teknikRaporlar: await q(`SELECT rapor_no, rapor_turu, surum, durum FROM teknik_rapor WHERE dosya_ref = $1 ORDER BY rapor_no, surum`),
+    };
+  });
+
   // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
   const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_)/;
   s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod <> 'fiyat_katsayisi' ORDER BY kod`)).rows : yok(y));
