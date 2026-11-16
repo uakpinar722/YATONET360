@@ -138,12 +138,15 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (alanlar!.mmsi && !/^[0-9]{9}$/.test(String(alanlar!.mmsi))) return y.code(400).send({ hata: 'MMSI 9 haneli rakam olmalıdır.' }); // YG-091 // Yat değeri ve mülkiyet burada değişmez (YG-116, YG-476).
     const eski = (await b.db.query(`SELECT ${ad.join(',')} FROM yat WHERE kimlik = $1`, [id])).rows[0];
     if (!eski) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    // YG-1245: eksik teknik bilgi kaynaksız doldurulmaz.
+    if (!kaynak && ['tam_boy_m', 'govde_malzemesi', 'tahrik_turu'].some((a) => ad.includes(a) && (eski[a] === null || eski[a] === 'Bilinmiyor') && alanlar![a] !== '' && alanlar![a] != null)) return y.code(400).send({ hata: 'Eksik bilgiyi tamamlarken bilgi kaynağını seçmenizi rica ederiz.' });
     const kume = ad.map((a, n) => `${a} = $${n + 2}`);
     const degerler: unknown[] = ad.map((a) => alanlar![a] === '' ? null : alanlar![a]);
     if (kaynak && ad.includes('tam_boy_m')) { degerler.push(kaynak); kume.push(`boy_kaynagi = $${degerler.length + 1}`); }
     if (kaynak && ad.includes('govde_malzemesi')) { degerler.push(kaynak); kume.push(`govde_kaynagi = $${degerler.length + 1}`); }
     await b.db.query(`UPDATE yat SET ${kume.join(', ')}, guncelleme_zamani = now() WHERE kimlik = $1`, [id, ...degerler]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yat Kaydı Düzeltildi', nesneTuru: 'Yat', nesneKimligi: id, eski, yeni: alanlar, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    if (!(await (await import('./dosya.js')).yatEksikleri(b.db, id)).length) await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]); // YG-1245
     return { tamam: true };
   });
 

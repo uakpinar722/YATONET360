@@ -104,9 +104,14 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
 type Kapi = (db: Db, d: { kimlik: string; yat_ref: string; oncelik: string }) => Promise<string | null>;
 const KAPILAR = new Map<string, Kapi[]>();
 export function kapiKaydet(asama: string, f: Kapi) { KAPILAR.set(asama, [...(KAPILAR.get(asama) ?? []), f]); }
+/** Teklif için gerekli yat bilgilerinden eksik olanlar. */
+export async function yatEksikleri(db: Db, yat: string): Promise<string[]> {
+  const y = (await db.query(`SELECT marka_model_ref, marka_diger, tam_boy_m, govde_malzemesi, tahrik_turu FROM yat WHERE kimlik = $1`, [yat])).rows[0];
+  if (!y) return [];
+  return [!(y.marka_model_ref || y.marka_diger) && 'marka', y.tam_boy_m === null && 'boy', (!y.govde_malzemesi || y.govde_malzemesi === 'Bilinmiyor') && 'gövde malzemesi', !y.tahrik_turu && 'tahrik'].filter(Boolean) as string[];
+}
 kapiKaydet('Teklif', async (db, d) => {
-  const y = (await db.query(`SELECT marka_model_ref, marka_diger, tam_boy_m, govde_malzemesi, tahrik_turu FROM yat WHERE kimlik = $1`, [d.yat_ref])).rows[0];
-  const eksik = [!(y.marka_model_ref || y.marka_diger) && 'marka', y.tam_boy_m === null && 'boy', (!y.govde_malzemesi || y.govde_malzemesi === 'Bilinmiyor') && 'gövde malzemesi', !y.tahrik_turu && 'tahrik'].filter(Boolean);
+  const eksik = await yatEksikleri(db, d.yat_ref);
   return eksik.length ? `Teklife geçmek için yat bilgisi eksik: ${eksik.join(', ')}.` : null;
 });
 
@@ -114,6 +119,13 @@ kapiKaydet('Teklif', async (db, d) => {
 type AcilisKancasi = (c: PoolClient, dosya: string, web: string, yapan: string) => Promise<void>;
 const ACILIS: AcilisKancasi[] = [];
 export function acilisKancasi(f: AcilisKancasi) { ACILIS.push(f); }
+// YG-1245: eksik yat bilgisi kaynaksız doldurulmaz; görünür kalır ve açılışı yapan Dosya Sorumlusuna görev olarak atanır.
+acilisKancasi(async (c, dosya, _web, yapan) => {
+  const d = (await c.query(`SELECT dosya_no, yat_ref FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]; if (!d) return;
+  const eksik = await yatEksikleri(c, d.yat_ref); if (!eksik.length) return;
+  if ((await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.yat_ref])).rowCount) return;
+  await kartAc(c, { tur: 'Eksik Yat Bilgisi', kategori: 'gorev', baslik: `${d.dosya_no} · Eksik Yat Bilgisi`, ozet: `Eksik: ${eksik.join(', ')}. Bilgiyi kaynağıyla (ruhsat, kaptan/yat sahibi beyanı, keşif) tamamlamanız rica olunur.`, sahipKullanici: yapan, sonZaman: new Date(Date.now() + 2 * 86_400_000), nesneTuru: 'Yat', nesneKimligi: d.yat_ref });
+});
 
 /** YG-036: görüş ayrılığında sırayla üst kademeye. Sahibi olmayan kademe atlanır. */
 const DUSURME_KADEMELERI = [['Operasyon Yöneticisi', 'Teknik Yönetici'], ['Operasyon Müdür Yardımcısı', 'Teknik Müdür Yardımcısı'], ['Operasyon Müdürü', 'Teknik Müdür'], ['Teknik ve Operasyon Direktörü']];

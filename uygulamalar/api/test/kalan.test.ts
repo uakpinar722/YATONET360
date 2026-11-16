@@ -1399,4 +1399,13 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const r = await o.ist('GET', `/api/dosya/${d.kimlik}/ticari-ozet`, await o.gir('ts')); expect(r.statusCode, r.body).toBe(200);
     expect(Object.keys(r.json())).toEqual(['teklifler', 'isEmirleri', 'hakedisler', 'faturalar', 'teknikRaporlar']);
   });
+  it('eksik yat bilgisi görev olur, kaynakla tamamlanınca kapanır (YG-1245)', async () => {
+    const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const k = (await o.sup.query(`SELECT durum, ozet FROM is_karti WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0];
+    expect(k.durum).toBe('Bekliyor'); expect(k.ozet).toContain('tahrik');
+    const c = await o.gir('opm'); const u = `/api/yat/${yat}/duzelt`;
+    expect((await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi', kaynak: 'Telefon (kaptan / yat sahibi)' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
+  });
 });
