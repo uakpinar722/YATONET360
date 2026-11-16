@@ -87,6 +87,8 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
     const t = await bul(b.db, (i.params as { belirtec: string }).belirtec);
     if (!t) return y.code(404).send({ hata: GECERSIZ });
     if (t.durum === 'Bekliyor' && new Date(t.son_gecerlilik) <= new Date()) await b.db.query(`UPDATE onay_talebi SET durum = 'Süresi Doldu' WHERE kimlik = $1`, [t.kimlik]);
+    // YG-467: ekranın (ön bilgilendirme formunun) ilk gösterildiği an kaydedilir.
+    else if (t.durum === 'Bekliyor') await b.db.query(`UPDATE onay_talebi SET gosterim_zamani = now() WHERE kimlik = $1 AND gosterim_zamani IS NULL`, [t.kimlik]);
     return { ...ekran(t), durum: t.durum === 'Bekliyor' && !gecerli(t) ? 'Süresi Doldu' : t.durum };
   });
 
@@ -130,6 +132,7 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
       if (!onk) return dur(404, GECERSIZ);
       const t = (await c.query(`SELECT t.*, d.dosya_no, d.vefat_isareti FROM onay_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1 FOR UPDATE OF t`, [onk.kimlik])).rows[0];
       if (!gecerli(t)) return dur(409, 'Bu onay artık açık değildir.');
+      if (t.ony_kod === 'ONY-23' && !t.gosterim_zamani) return dur(409, 'Ön bilgilendirme formu görüntülenmeden onay verilemez.'); // YG-467
       if (!t.kod_ozeti || new Date(t.kod_son) <= new Date()) return dur(400, 'Önce doğrulama kodu alınız.');
       if (t.kod_deneme >= AZAMI_DENEME) return dur(423, 'Çok fazla hatalı deneme; yeni kod alınız.');
       if (ozet(t.kimlik + String(g.kod ?? '')) !== t.kod_ozeti) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
-type S = { kimlik: string; sozlesme_turu: string; taraf: string | null; sozlesme_sahibi_rolu: string | null; yururluk: string; bitis: string | null; otomatik_yenileme: boolean; fesih_bildirim_son: string | null; durum: string; imzali: boolean; imza_turu: string | null; kurumsal_kanal: string | null; yenileme_karari: string | null; kendiliginden_yenilendi: boolean; ek_sayisi: number };
+type S = { kimlik: string; sozlesme_no: string | null; sozlesme_turu: string; taraf: string | null; sozlesme_sahibi_rolu: string | null; yururluk: string; bitis: string | null; otomatik_yenileme: boolean; fesih_bildirim_son: string | null; durum: string; imzali: boolean; imza_turu: string | null; kurumsal_kanal: string | null; yenileme_karari: string | null; kendiliginden_yenilendi: boolean; ek_sayisi: number };
 const t = (x: string | null) => (x ? x.slice(0, 10).split('-').reverse().join('.') : '---');
 const BOS = { tur: '', tarafAdi: '', sahipRol: '', yururluk: '', bitis: '', otomatikYenileme: false, yenilemeAy: '12', fesihGun: '', kanal: '', yetkililer: '' };
 /** YG-614: sözleşme takip; Sözleşme Sahibi türden önerilir, imzalı nüsha olmadan yürürlüğe girmez. */
@@ -14,7 +14,7 @@ export function SozlesmeTakip() {
   const is = (p: Promise<unknown>, s: string) => void p.then(() => { setM(s); setG({}); yk(); }).catch((e) => setM(e.message));
   const oneri = turler.find((x) => x.tur === f.tur)?.sahip;
   return <details><summary>Sözleşme Takibi · {v.kayitlar.filter((x) => x.durum === 'Yürürlükte').length} yürürlükte</summary>{m && <div className="not" role="status">{m}</div>}
-    {v.kayitlar.map((x) => <div className={x.durum === 'Yürürlükte' ? 'soru' : 'soru bos'} key={x.kimlik}><span>{x.sozlesme_turu} · {x.taraf ?? '---'} · Sahip: {x.sozlesme_sahibi_rolu ?? '---'} · {x.durum}<br />
+    {v.kayitlar.map((x) => <div className={x.durum === 'Yürürlükte' ? 'soru' : 'soru bos'} key={x.kimlik}><span>{x.sozlesme_no ? `${x.sozlesme_no} · ` : ''}{x.sozlesme_turu} · {x.taraf ?? '---'} · Sahip: {x.sozlesme_sahibi_rolu ?? '---'} · {x.durum}<br />
       <small>Yürürlük {t(x.yururluk)} · Bitiş {t(x.bitis)}{x.otomatik_yenileme ? ' · Otomatik yenileme' : ''} · Fesih bildirimi son gün {t(x.fesih_bildirim_son)} · {x.imzali ? `İmzalı (${x.imza_turu ?? '---'})` : 'İmzalı nüsha yok'} · Ek: {x.ek_sayisi}{x.yenileme_karari ? ` · Karar: ${x.yenileme_karari}` : ''}{x.kendiliginden_yenilendi ? ' · Karar olmadan yenilendi' : ''}</small></span>
       {x.durum === 'Yürürlükte' && <div className="tam"><label htmlFor={`st-k-${x.kimlik}`}>Karar</label><select id={`st-k-${x.kimlik}`} value={g[`k${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`k${x.kimlik}`]: e.target.value })}><option value="">Seçiniz</option>{['Yenileme', 'Fesih', 'Yeniden Görüşme'].map((k) => <option key={k}>{k}</option>)}</select>
         <label htmlFor={`st-g-${x.kimlik}`}>Gerekçe</label><input id={`st-g-${x.kimlik}`} value={g[`g${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`g${x.kimlik}`]: e.target.value })} />

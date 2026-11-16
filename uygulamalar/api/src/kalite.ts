@@ -298,7 +298,20 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!ks) return y.code(400).send({ hata: 'Kanıt bu dosyaya veya iş emrine yüklenmiş geçerli bir belge olmalıdır.' });
     await b.db.query(`UPDATE kontrol_noktasi SET kanit_surum_ref = $2, kullanilan_olcut = $3 WHERE kimlik = $1`, [id, ks.kimlik, k.kabul_olcutu]);
     await b.db.query(`UPDATE kontrol_noktasi SET dogrulayanlar = array_append(dogrulayanlar, $2) WHERE kimlik = $1 AND NOT ($2 = ANY(dogrulayanlar))`, [id, o.kullanici]);
-    if (g.sonuc !== 'Uygun' && g.sonuc !== 'Koşullu uygun') { await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4 WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null]); return { sonuc: g.sonuc, serbest: false, uygunsuzlukGerekli: true }; }
+    if (g.sonuc !== 'Uygun' && g.sonuc !== 'Koşullu uygun') {
+      await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4 WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null]);
+      // YG-383: olumsuz sonuçta uygunsuzluk kendiliğinden açılır (Reddedildi Majör; Düzeltme gerekli Minör, A sınıfında Majör); Kalite Kontrolör tasarrufta değerlendirir.
+      if (!k.uygunsuzluk_ref) await islem(async (c) => {
+        const e = (await c.query(`SELECT e.kurulus_ref, d.dosya_no, d.dosya_sorumlusu_ref FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kimlik = $1`, [k.is_emri_ref])).rows[0];
+        const sinif = g.sonuc === 'Reddedildi' || (k.kabul_sinifi ?? p?.kabul_sinifi) === 'A' ? 'Majör' : 'Minör';
+        const no = await altNumara(c, e.dosya_no, 'NCR');
+        const n = (await c.query(`INSERT INTO uygunsuzluk (uygunsuzluk_no, dosya_ref, is_emri_ref, tespit_kaynagi, yer_nitelik, dayanak_olcut, gercek_durum, kanit_belge_ref, sinif, hedef_zamani, sorumlu_firma_ref, acan_ref) VALUES ($1,$2,$3,'Ara kontrol',$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`,
+          [no, k.dosya_ref, k.is_emri_ref, `${k.kontrol_noktasi_no}${k.kalem ? ` · ${k.kalem}` : ''}`, k.kabul_olcutu, `Kontrol noktası sonucu: ${g.sonuc}`, g.kanit, sinif, ncrHedefi(sinif), e.kurulus_ref, o.kullanici])).rows[0];
+        await c.query(`UPDATE kontrol_noktasi SET uygunsuzluk_ref = $2 WHERE kimlik = $1`, [id, n.kimlik]);
+        await bildir(c, { olay: `ncr:${n.kimlik}`, kullanicilar: [e.dosya_sorumlusu_ref, ...await rolSahipleri(c, await rolId(c, KK))].filter(Boolean), baslik: `${no} · ${sinif} Uygunsuzluk`, oncelik: 'Normal' });
+        const fk = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((x) => x.kullanici_ref as string);
+        await bildir(c, { olay: `ncr-firma:${n.kimlik}`, kullanicilar: fk, baslik: `${no} · Uygunsuzluk Yanıtınız Bekleniyor`, oncelik: 'Normal' });
+      }); return { sonuc: g.sonuc, serbest: false, uygunsuzlukGerekli: true }; }
     const onay = [...new Set([...(k.onaylar as string[]), ...benimRol])];
     const tam = gereken.every((r) => onay.includes(r));
     await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4, onaylar = $5, serbest_birakma_zamani = CASE WHEN $6::boolean THEN now() END WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null, JSON.stringify(onay), tam]);

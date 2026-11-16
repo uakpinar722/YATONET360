@@ -52,7 +52,7 @@ export function sozlesmeTakipYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const r = await roller(o.kullanici); const tum = r.includes(HUD) || r.includes('CEO');
     if (!tum && !(await sahipRolleri()).some((x) => r.includes(x))) return yok(y);
-    const { rows } = await b.db.query(`SELECT s.kimlik, s.sozlesme_turu, coalesce(k.ticari_unvan, t.unvan_ad_soyad, s.taraf_adi) taraf, s.sozlesme_sahibi_rolu, s.yururluk::text, s.bitis::text, s.otomatik_yenileme, s.fesih_bildirim_son::text,
+    const { rows } = await b.db.query(`SELECT s.kimlik, s.sozlesme_no, s.sozlesme_turu, coalesce(k.ticari_unvan, t.unvan_ad_soyad, s.taraf_adi) taraf, s.sozlesme_sahibi_rolu, s.yururluk::text, s.bitis::text, s.otomatik_yenileme, s.fesih_bildirim_son::text,
         s.durum, s.imzali_nusha_ref IS NOT NULL imzali, s.imza_turu, s.kurumsal_kanal, s.yetkili_kisiler, s.yenileme_karari, s.kendiliginden_yenilendi, cardinality(s.ekler) ek_sayisi
       FROM sozlesme_kaydi s LEFT JOIN kurulus k ON k.kimlik = s.kurulus_ref LEFT JOIN taraf t ON t.kimlik = s.taraf_ref
       WHERE $1 OR s.sozlesme_sahibi_rolu = ANY($2::text[]) ORDER BY s.durum DESC, s.bitis NULLS LAST`, [tum, r]);

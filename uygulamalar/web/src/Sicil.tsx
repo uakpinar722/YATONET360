@@ -13,7 +13,7 @@ interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_
 /** YG-344, YG-354, YG-928: firma sicili; IBAN karantinada başlar, geri arama ve iki onayla geçerli olur. */
 export function FirmaSicil({ ben }: { ben: Ben }) {
   const [l, setL] = useState<Firma[]>([]); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
-  const [yeni, setYeni] = useState({ unvan: '', rol: 'Çözüm Ortağı' }); const [secili, setSecili] = useState('');
+  const [yeni, setYeni] = useState({ unvan: '', rol: 'Çözüm Ortağı', mersis: '', telefon: '' }); const [secili, setSecili] = useState('');
   const [belge, setBelge] = useState({ tur: '', bitis: '', limit: '', gozetim: false }); const [iban, setIban] = useState(''); const [gerekce, setGerekce] = useState(''); const [oneri, setOneri] = useState('Koşullu Onaylı');
   const [aday, setAday] = useState(false); const [arsiv, setArsiv] = useState(false);
   const yukle = (a = aday, r = arsiv) => istek<Firma[]>(`/firma/sicil${r ? '?arsiv=1' : a ? '?aday=1' : ''}`).then(setL);
@@ -31,7 +31,9 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
       <div className="ozet">
         <label htmlFor="fs-u">Ticari Unvan</label><input id="fs-u" value={yeni.unvan} onChange={(e) => setYeni({ ...yeni, unvan: e.target.value })} />
         <label htmlFor="fs-r">Kayıt Rolü</label><select id="fs-r" value={yeni.rol} onChange={(e) => setYeni({ ...yeni, rol: e.target.value })}>{['Çözüm Ortağı', 'Tedarikçi', 'Tesis'].map((x) => <option key={x}>{x}</option>)}</select>
-        <button className="btn2" onClick={() => void yap(() => istek('/firma', yeni), 'Kayıt açıldı.')}>Kayıt Aç</button>
+        <label htmlFor="fs-m">MERSİS No</label><input id="fs-m" inputMode="numeric" value={yeni.mersis} onChange={(e) => setYeni({ ...yeni, mersis: e.target.value })} />
+        <label htmlFor="fs-t">Kurumsal Telefon</label><input id="fs-t" type="tel" value={yeni.telefon} onChange={(e) => setYeni({ ...yeni, telefon: e.target.value })} />
+        <button className="btn2" onClick={() => void yap(async () => { const r = await istek<{ benzerKayit: number }>('/firma', { ...yeni, mersis: yeni.mersis || undefined, telefon: yeni.telefon || undefined }); if (r.benzerKayit) setTimeout(() => setNot(`Kayıt açıldı. Benzer ${r.benzerKayit} kayıt bulundu; mükerrer kararı bekliyor.`)); }, 'Kayıt açıldı.')}>Kayıt Aç</button>
       </div>
       <div className="bolum">Kayıtlar</div>
       {l.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}

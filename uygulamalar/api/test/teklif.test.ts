@@ -345,6 +345,13 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect(r.json().onaylananTutar).toBe(130);
     expect((await o.sup.query(`SELECT onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows.map((x) => x.onay_durumu)).toEqual(['Onaylandı', 'Onaylanmadı']);
     expect(await o.kart('Fiyat Teklifi Hazırla', t.kimlik)).toBeDefined();
+    { // YG-324: geçerlilikten sonra verilmiş onayla iş emri açılmaz
+      const eski = (await o.sup.query(`SELECT karar_zamani FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].karar_zamani;
+      await o.sup.query(`UPDATE fiyat_teklifi SET karar_zamani = gecerlilik_bitis_tarihi + interval '2 days' WHERE kimlik = $1`, [t.kimlik]);
+      const r0 = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 });
+      expect(r0.statusCode).toBe(409); expect(r0.json().hata).toContain('Süre Dolumu Kabulü');
+      await o.sup.query(`UPDATE fiyat_teklifi SET karar_zamani = $2 WHERE kimlik = $1`, [t.kimlik, eski]);
+    }
     const ie = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 });
     expect(ie.statusCode, ie.body).toBe(200);
     expect((await o.sup.query(`SELECT aciklama FROM is_emri_kalemi WHERE is_emri_ref = $1`, [ie.json().kimlik])).rows.map((x) => x.aciklama)).toEqual(['A']);

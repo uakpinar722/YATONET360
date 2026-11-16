@@ -208,7 +208,7 @@ onaySonucKaydet('ONY-23', async (c, t, karar, k) => {
   const gun = await parametre(c, 'cayma_gun');
   const bitis = new Date(k.zaman.getTime() + gun * 86_400_000);
   const erken = Object.entries(k.kutular).some(([ad, v]) => v && /Cayma süresi içinde/i.test(ad));
-  if (ft.musteri_turu === 'Bireysel Müşteri') await c.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis, erken_ifa_onayi) VALUES ($1,$2,$3,$3,$4,$5) ON CONFLICT (teklif_ref) DO NOTHING`, [ft.kimlik, ft.dosya_ref, k.zaman, bitis, erken]);
+  if (ft.musteri_turu === 'Bireysel Müşteri') await c.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis, erken_ifa_onayi) VALUES ($1,$2,$6,$3,$4,$5) ON CONFLICT (teklif_ref) DO NOTHING`, [ft.kimlik, ft.dosya_ref, k.zaman, bitis, erken, t.gosterim_zamani ?? k.zaman]); // YG-467: ön bilgilendirme anı = gösterim anı
 });
 
 // YG-205, BLD-41: sigortanın onaylamadığı kalemler için yat sahibi onayı.

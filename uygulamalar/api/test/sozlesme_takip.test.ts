@@ -17,6 +17,7 @@ describe('sözleşme takip (YG-614)', () => {
     expect((await o.ist('POST', '/api/sozlesme-takip', mp, { ...G, kanal: '' })).statusCode).toBe(400);
     const r = (await o.ist('POST', '/api/sozlesme-takip', mp, G)).json(); expect(r.sahipRol).toBe('Müşteri ve Paydaş İlişkileri Müdürü');
     expect((await o.sup.query(`SELECT fesih_bildirim_son::text f, durum FROM sozlesme_kaydi WHERE kimlik = $1`, [r.kimlik])).rows[0]).toEqual({ f: '2025-11-01', durum: 'Taslak' });
+    expect((await o.sup.query(`SELECT sozlesme_no FROM sozlesme_kaydi WHERE kimlik = $1`, [r.kimlik])).rows[0].sozlesme_no).toMatch(/^LGM-SZ-\d{4}-\d{4}$/); // YG-009
     const nusha = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('İmzalı','Sözleşme','Kuruluş',gen_random_uuid()::text,'Sistem',current_date,$1) RETURNING kimlik`, [o.K.mp])).rows[0].kimlik;
     expect((await o.ist('POST', `/api/sozlesme-takip/${r.kimlik}/yururluk`, mp, { belge: nusha })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/sozlesme-takip/${r.kimlik}/yururluk`, mp, { belge: nusha, imzaTuru: 'Güvenli Elektronik İmza' })).json().durum).toBe('Yürürlükte');

@@ -105,8 +105,9 @@ kapanisKaydet('İş Emri', async (c, k, karar) => {
 });
 
 /** YG-071, YG-378: ilerleme doğrulanmış miktar ÷ onaylı miktar; elle girilemez, iyimser yuvarlanmaz (aşağı). */
+// YG-071: bekletme noktası serbest bırakılmamış kalemin gerçekleşeni ilerlemeye sayılmaz.
 async function ilerlemeHesapla(c: Db, dosya: string) {
-  const r = (await c.query(`SELECT coalesce(sum(k.miktar), 0) m, coalesce(sum(least(k.gerceklesen_miktar, k.miktar)), 0) g FROM is_emri_kalemi k JOIN is_emri e ON e.kimlik = k.is_emri_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti') AND e.is_emri_turu <> 'KN'`, [dosya])).rows[0];
+  const r = (await c.query(`SELECT coalesce(sum(k.miktar), 0) m, coalesce(sum(least(k.gerceklesen_miktar, k.miktar)) FILTER (WHERE NOT EXISTS (SELECT 1 FROM kontrol_noktasi n WHERE n.is_emri_ref = e.kimlik AND n.nokta_turu = 'Bekletme' AND n.serbest_birakma_zamani IS NULL AND (n.kalem IS NULL OR n.kalem = k.satir_ref::text OR n.kalem = k.aciklama))), 0) g FROM is_emri_kalemi k JOIN is_emri e ON e.kimlik = k.is_emri_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti') AND e.is_emri_turu <> 'KN'`, [dosya])).rows[0];
   const y = Number(r.m) > 0 ? Math.floor((Number(r.g) / Number(r.m)) * 10000) / 100 : 0;
   await c.query(`UPDATE dosya SET ilerleme_yuzdesi = $2 WHERE kimlik = $1`, [dosya, y]);
   return y;
@@ -130,17 +131,24 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   // YG-009, YG-345: sicil no LGM-SC-NNNNN; başvuruda verilir, ayrı numara yok. Vergi no mükerrerlik anahtarı.
   s.get('/firma/sicil', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i) => (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE CASE WHEN $2 THEN (ag_statusu IN ('Çıkarıldı', 'Pasif') OR kayit_asamasi = 'Reddedildi') ELSE ($1 OR kayit_asamasi <> 'Aday') END ORDER BY ticari_unvan LIMIT 1000`, [(i.query as { aday?: string }).aday === '1', (i.query as { arsiv?: string }).arsiv === '1'])).rows); // ANV-1: aday havuzu ayrı gösterilir; YG-356: Arşiv, kapanmış kayıtların görünümüdür
   s.post('/firma', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { unvan?: string; vergiNo?: string; rol?: string; eposta?: string; telefon?: string; il?: string; ilce?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { unvan?: string; vergiNo?: string; mersis?: string; rol?: string; eposta?: string; telefon?: string; il?: string; ilce?: string };
     if (!g.unvan?.trim()) return y.code(400).send({ hata: 'Ticari unvan zorunludur.' });
+    const mersis = g.mersis?.replace(/\s/g, '') || null; const tel = g.telefon?.replace(/[\s()-]/g, '') || null;
+    if (mersis && !/^\d{16}$/.test(mersis)) return y.code(400).send({ hata: 'MERSİS numarası 16 haneli olmalıdır.' });
     if (!['Çözüm Ortağı', 'Tedarikçi', 'Tesis'].includes(g.rol ?? '')) return y.code(400).send({ hata: 'Kayıt rolünü seçiniz.' });
     if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarası geçersiz.' });
     return islem(async (c) => {
       if (g.vergiNo && (await c.query(`SELECT 1 FROM kurulus WHERE vergi_no = $1`, [g.vergiNo])).rowCount) throw Object.assign(new Error('Bu vergi numarasıyla kayıt vardır.'), { statusCode: 409 });
+      if (mersis && (await c.query(`SELECT 1 FROM kurulus WHERE mersis_no = $1`, [mersis])).rowCount) throw Object.assign(new Error('Bu MERSİS numarasıyla kayıt vardır.'), { statusCode: 409 }); // YG-345
       const no = `LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`;
       const r = (await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, vergi_no, kayit_rolu, kurumsal_eposta, kurumsal_telefon, il, ilce, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [no, g.unvan!.trim(), g.vergiNo ?? null, g.rol, g.eposta ?? null, g.telefon ?? null, g.il ?? null, g.ilce ?? null, o.kullanici])).rows[0];
+      if (mersis) await c.query(`UPDATE kurulus SET mersis_no = $2 WHERE kimlik = $1`, [r.kimlik, mersis]);
+      // YG-345: aynı telefon veya aynı (sadeleştirilmiş) unvan benzerlik sayılır; otomatik birleştirilmez, Sicil biriminin mükerrer kararına düşer.
+      const benzer = (await c.query(`SELECT kimlik FROM kurulus WHERE kimlik <> $1 AND (($2::text IS NOT NULL AND regexp_replace(kurumsal_telefon, '[\s()-]', '', 'g') = $2) OR regexp_replace(lower(ticari_unvan), '[^a-z0-9çğıöşü]', '', 'g') = regexp_replace(lower($3), '[^a-z0-9çğıöşü]', '', 'g'))`, [r.kimlik, tel, g.unvan!.trim()])).rows.map((x) => x.kimlik as string);
+      if (benzer.length) { const grup = (await c.query(`SELECT mukerrer_grubu FROM kurulus WHERE kimlik = ANY($1::uuid[]) AND mukerrer_grubu IS NOT NULL LIMIT 1`, [benzer])).rows[0]?.mukerrer_grubu ?? `Kayıt ${no}`; await c.query(`UPDATE kurulus SET mukerrer_grubu = $2, mukerrer_karari = 'Karar bekliyor' WHERE kimlik = ANY($1::uuid[]) AND coalesce(mukerrer_karari, '') <> 'Ayrı Kayıt'`, [[r.kimlik, ...benzer], grup]); }
       if (g.rol === 'Tesis') await (await import('./firma_tesis.js')).tesisEkle(c, r.kimlik, { ad: g.unvan!, il: g.il ?? null, ilce: g.ilce ?? null }, o.kullanici); // TSK-1: tek yerleşkeli tesis T01
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Kaydı', nesneTuru: 'Kuruluş', nesneKimligi: r.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-      return { kimlik: r.kimlik, sicilNo: no };
+      return { kimlik: r.kimlik, sicilNo: no, benzerKayit: benzer.length };
     });
   });
 
@@ -279,8 +287,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     let kalemler: { kimlik: string; aciklama: string; miktar: string; birim: string; satir_ref: string | null }[] = [];
     if (karar) {
       if (!g.teklif || !UUID.test(g.teklif)) return y.code(400).send({ hata: 'İş emri onaylı teklife dayanır; teklifi seçiniz.' }); // YG-319
-      const t = (await b.db.query(`SELECT statu, karar, gecerlilik_bitis_tarihi FROM fiyat_teklifi WHERE kimlik = $1 AND dosya_ref = $2`, [g.teklif, id])).rows[0];
+      const t = (await b.db.query(`SELECT statu, karar, gecerlilik_bitis_tarihi, (karar_zamani AT TIME ZONE 'Europe/Istanbul')::date > gecerlilik_bitis_tarihi gec FROM fiyat_teklifi WHERE kimlik = $1 AND dosya_ref = $2`, [g.teklif, id])).rows[0];
       if (!t || t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'İş emri için Onaylanmış teklif bekleniyor.' });
+      // YG-324, YG-322: geçerlilik bitişinden sonra verilen onay iş emrine dayanak olmaz; yalnız Süre Dolumu Kabulü ile açılır.
+      if (t.gec && t.karar !== 'Süre Dolumu Kabulü') return y.code(409).send({ hata: 'Onay teklifin geçerlilik süresi dolduktan sonra verilmiştir; iş emri için Süre Dolumu Kabulü gerekir.' });
       const cay = await caymaEngeli(b.db, id);
       if (cay) return y.code(409).send({ hata: cay });
       { const fe = await (await import('./sigorta_fark.js')).odemeFarkiEngeli(b.db, g.teklif!); if (fe) return y.code(409).send({ hata: fe }); } // YG-891

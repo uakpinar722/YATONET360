@@ -138,6 +138,12 @@ describe('düzeltme, yeniden başlatma, toplantı, eskalasyon (YG-380, YG-262, Y
     await sahaSureIsle(o.db); await sahaSureIsle(o.db);
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Firma Yeniden Değerlendirme' AND nesne_kimligi = $1`, [k])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Firma Yeniden Değerlendirme' AND nesne_kimligi = $1`, [a])).rowCount).toBe(0);
+    { // YG-535: 10 gün kala 14 günlük kademe hatırlatması bir kez
+      await o.sup.query(`UPDATE kurulus SET sonraki_gozden_gecirme_tarihi = current_date + 10 WHERE kimlik = $1`, [a]);
+      await sahaSureIsle(o.db); await sahaSureIsle(o.db);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik = 'Yeni Firma · Gözden Geçirme 14 Gün İçinde'`, [o.K.fym])).rows[0].n).toBeGreaterThanOrEqual(1);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM zamanlanmis_is WHERE ad = 'Firma Gözden Geçirme Hatırlatma' AND anahtar LIKE $1`, [`${a}:%`])).rows[0].n).toBe(1);
+    }
     await o.ist('POST', `/api/firma/${k}/statu`, await o.gir('fym'), { risk: 'Standart', gerekce: 'Değerlendirildi' });
     expect((await o.sup.query(`SELECT sonraki_gozden_gecirme_tarihi t FROM kurulus WHERE kimlik = $1`, [k])).rows[0].t).toBeNull();
   });

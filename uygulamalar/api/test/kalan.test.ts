@@ -4,6 +4,7 @@ import { araOdemeHesapla, caymaIsle, caymaSureIsle, kurtarmaTanim, teslimBakiyes
 import { teslimEngeli } from '../src/ticari.js';
 import { isGunuSonu } from '../src/teklif.js';
 import { ortamKur, type Ortam } from './yardimci.js';
+import { ozet as hashOzet } from '../src/kripto.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', mfm: 'Muhasebe ve Finans Müdürü', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu', iks: 'İnsan Kaynakları Sorumlusu', sy: 'Sistem Yöneticisi', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', ikm: 'İnsan Kaynakları Müdürü', gmy: 'Genel Müdür Yardımcısı', huu: 'Hukuk ve Uyum Uzmanı', tod: 'Teknik ve Operasyon Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', bim: 'Bilgi İşlem Müdürü', ss: 'Saha Sorumlusu', ceo1: 'CEO' };
 let o: Ortam; let n = 0;
@@ -156,6 +157,18 @@ describe('ön bilgilendirme PDF (YG-618, YG-619)', () => {
     const ot = (await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik, nesne_turu, nesne_kimligi) VALUES ($1,'ONY-23','k','m','d','a','+905550002222',$2,'Onaylandı',now(),'Fiyat Teklifi',$3) RETURNING kimlik`, [d.kimlik, `ob${n}`, t])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO yatonet_onay_kaydi (onay_talebi_ref, karar, metin_ozeti, kanal, onay_kodu, onay_zamani, onaylayan_ad) VALUES ($1,'Onaylandı',repeat('a',64),'SMS Kodu','OK-123456',now(),'Sahip')`, [ot]);
     expect((await onBilgiTanim(o.db, t, 'ABC')).t.onay).toMatchObject({ rol: 'Yat Sahibi', kanal: 'YATONET 360', kod: 'OK-123456' });
+  });
+});
+
+describe('ön bilgilendirme gösterim anı (YG-467)', () => {
+  it('ONY-23 gösterilmeden onaylanamaz; ilk görüntüleme anı kaydedilir', async () => {
+    const d = await o.dosyaAc(); const bel = `ony23-gosterim-${Date.now()}-abcdefgh`;
+    const ot = (await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-23','k','m','d','a','+905550002299',$2,'Bekliyor',now() + interval '1 day') RETURNING kimlik`, [d.kimlik, hashOzet(bel)])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod: '000000', kutular: {} })).statusCode).toBe(409);
+    expect((await o.ist('GET', `/api/onay/${bel}`)).statusCode).toBe(200);
+    const z1 = (await o.sup.query(`SELECT gosterim_zamani z FROM onay_talebi WHERE kimlik = $1`, [ot])).rows[0].z; expect(z1).not.toBeNull();
+    await o.ist('GET', `/api/onay/${bel}`);
+    expect((await o.sup.query(`SELECT gosterim_zamani z FROM onay_talebi WHERE kimlik = $1`, [ot])).rows[0].z).toEqual(z1);
   });
 });
 

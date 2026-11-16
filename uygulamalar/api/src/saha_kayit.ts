@@ -58,6 +58,13 @@ export async function sahaSureIsle(db: Pool, simdi = new Date()): Promise<number
   }
   // Yeniden değerlendirme tarihi: Koşullu Onaylı 3 ay, diğer onaylı ve aktif firma 12 ay; kabul kararından başlar.
   await db.query(`UPDATE kurulus SET sonraki_gozden_gecirme_tarihi = (coalesce(son_statu_karar_zamani, kabul_karar_zamani, olusturma_zamani) + CASE WHEN kayit_asamasi = 'Koşullu Onaylı' THEN interval '3 months' ELSE interval '12 months' END)::date WHERE sonraki_gozden_gecirme_tarihi IS NULL AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`);
+  // YG-535: vadeye 30, 14, 7 gün ve 1 gün (24 saat) kala Firma Yönetimi Müdürüne kademeli hatırlatma; her kademe bir kez.
+  for (const f of (await db.query(`SELECT kimlik, ticari_unvan, sonraki_gozden_gecirme_tarihi::text t, to_char(sonraki_gozden_gecirme_tarihi, 'DD.MM.YYYY') g, sonraki_gozden_gecirme_tarihi - ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date kalan FROM kurulus
+      WHERE sonraki_gozden_gecirme_tarihi - ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date BETWEEN 1 AND 30 AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`, [simdi])).rows) {
+    const kademe = [1, 7, 14, 30].find((x) => Number(f.kalan) <= x)!;
+    if (!(await birKez(db, 'Firma Gözden Geçirme Hatırlatma', `${f.kimlik}:${f.t}:${kademe}`))) continue;
+    await bildir(db, { olay: `firma-gg:${f.kimlik}:${f.t}:${kademe}`, kullanicilar: await rolSahipleri(db, await rolId(db, 'Firma Yönetimi Müdürü')), baslik: `${f.ticari_unvan} · Gözden Geçirme ${kademe === 1 ? 'Yarın' : `${kademe} Gün İçinde`}`, ozet: `Firmanın gözden geçirme tarihi ${f.g}.` }, simdi);
+  }
   const vade = (await db.query(`SELECT kimlik, ticari_unvan, sonraki_gozden_gecirme_tarihi::text t FROM kurulus WHERE sonraki_gozden_gecirme_tarihi <= $1::date AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu = 'Aktif'`, [simdi])).rows;
   for (const f of vade) {
     if (!(await birKez(db, 'Firma Yeniden Değerlendirme', `${f.kimlik}:${f.t}`))) continue;

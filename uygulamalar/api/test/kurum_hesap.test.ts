@@ -252,6 +252,17 @@ describe('firma personeli ve Görevli Ekip Kartı (YG-304, YG-424, YG-339)', () 
 
 describe('firma tesisi ve -Tnn kodu (TSK-1, YG-010)', () => {
   it('tesis kuruluşu T01 ile açılır; yeni şube sıradaki kodu alır; başka kurum göremez', async () => {
+    { // YG-345: MERSİS mükerrerlik anahtarı; telefon/unvan benzerliği mükerrer kararına düşer
+      const sc = await o.gir('sc'); const z = Date.now(); const m = String(z).padStart(16, '1').slice(-16);
+      expect((await o.ist('POST', '/api/firma', sc, { unvan: `Mavi ${z}`, rol: 'Tedarikçi', mersis: '123' })).statusCode).toBe(400);
+      const a1 = (await o.ist('POST', '/api/firma', sc, { unvan: `Mavi ${z} A.Ş.`, rol: 'Tedarikçi', mersis: m, telefon: `+90 555 ${String(z).slice(-7)}` })).json();
+      expect(a1.benzerKayit).toBe(0);
+      expect((await o.ist('POST', '/api/firma', sc, { unvan: `Başka ${z}`, rol: 'Tedarikçi', mersis: m })).statusCode).toBe(409);
+      const a2 = (await o.ist('POST', '/api/firma', sc, { unvan: `MAVİ ${z} A.Ş`, rol: 'Tedarikçi', telefon: `+90555${String(z).slice(-7)}` })).json();
+      expect(a2.benzerKayit).toBe(1);
+      const g = (await o.sup.query(`SELECT DISTINCT mukerrer_grubu g, mukerrer_karari k FROM kurulus WHERE kimlik = ANY($1::uuid[])`, [[a1.kimlik, a2.kimlik]])).rows;
+      expect(g).toHaveLength(1); expect(g[0].k).toBe('Karar bekliyor');
+    }
     const r = await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Deneme Marina', rol: 'Tesis' }); expect(r.statusCode, r.body).toBe(200);
     const { kimlik, sicilNo } = r.json();
     const l = (await o.ist('GET', `/api/firma/${kimlik}/tesis`, await o.gir('sc'))).json(); expect(l[0].tesis_kodu).toBe(`${sicilNo}-T01`);
