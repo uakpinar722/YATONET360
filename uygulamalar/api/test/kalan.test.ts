@@ -1,3 +1,4 @@
+import { COOKIE_ADI } from '../src/ayarlar.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { araOdemeHesapla, caymaIsle, caymaSureIsle, kurtarmaTanim, teslimBakiyesi } from '../src/kalan.js';
 import { teslimEngeli } from '../src/ticari.js';
@@ -1589,5 +1590,54 @@ describe('istenecek belge listesi (YG-1439)', () => {
     expect(await belgeSuresiIsle(o.db)).toBeGreaterThanOrEqual(1);
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Süresi Dolan Yat Belgesi' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
     await belgeSuresiIsle(o.db); expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Süresi Dolan Yat Belgesi' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
+  it('ihbar kaydına LGM personeli ilk fotoğraf ekler (YG-017)', async () => {
+    const t = (await o.sup.query(`SELECT kimlik FROM talep WHERE olusturan_ref IS DISTINCT FROM $1 ORDER BY kayda_gecis_zamani DESC LIMIT 1`, [o.K.opm])).rows[0];
+    if (!t) return;
+    const yukle = async (c: string, ad: string) => o.s.inject({ method: 'POST', url: `/api/belge/yukle?${new URLSearchParams({ ad, tur: 'Hasar Fotoğrafı', bagTuru: 'Talep', bagKimligi: t.kimlik, kaynak: 'WhatsApp', dosya: ad })}`, headers: { 'x-yatonet': '1', 'content-type': 'application/octet-stream' }, cookies: { [COOKIE_ADI]: c }, payload: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1]) });
+    const c = await o.gir('opm');
+    expect((await yukle(c, 'belge.pdf')).statusCode).toBe(400);
+    const r = await yukle(c, 'ilk.jpg'); expect([200, 201]).toContain(r.statusCode);
+  });
+  it('firma ana kayıt görünümü tüm ilişkileri döndürür (YG-346)', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu) VALUES ($1, 'Özet Deneme', 'Çözüm Ortağı') RETURNING kimlik`, [`OZ-${Date.now()}`])).rows[0].kimlik;
+    expect((await o.ist('GET', `/api/firma/${f}/ozet`, await o.gir('ds'))).statusCode).toBe(404);
+    const r = await o.ist('GET', `/api/firma/${f}/ozet`, await o.gir('sc')); expect(r.statusCode, r.body).toBe(200);
+    expect(Object.keys(r.json())).toEqual(['kimlik', 'sozlesmeler', 'branslar', 'belgeler', 'tesisler', 'kapasite', 'sayilar']);
+    expect(r.json().sayilar.toplam_is_emri).toBe(0);
+  });
+  it('sigorta kullanıcısı şirket kaydına bağlanır (YG-1758)', async () => {
+    const h = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE kullanici_grubu <> 'LGM İç Rolü' LIMIT 1`)).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO sigorta_kullanici (kullanici_ref, sigortaci_adi) VALUES ($1, 'Eski Ad Sigorta') ON CONFLICT (kullanici_ref) DO UPDATE SET sigortaci_adi = 'Eski Ad Sigorta', tsb_kodu = NULL`, [h]);
+    const c = await o.gir('mpm'); const u = `/api/sigorta-kullanici/${h}/bagla`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { tsbKodu: '1004' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, c, { tsbKodu: '0000' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { tsbKodu: '1004' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT tsb_kodu, sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [h])).rows[0]).toEqual({ tsb_kodu: '1004', sigortaci_adi: 'Allianz Sigorta A.Ş.' });
+  });
+  it('kesintide alternatif formla alınan ihbar form numarasıyla bir kez aktarılır (YG-278)', async () => {
+    const c = await o.gir('ds'); const no = `AF-${Date.now()}`;
+    const P = (x: Record<string, unknown>) => ({ kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', yat: { adi: `AF${Date.now()}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, cevaplar: {}, ...x });
+    expect((await o.ist('POST', '/api/ihbar', c, P({ alternatifFormNo: no }))).statusCode).toBe(400);
+    const z = new Date(Date.now() - 5 * 3_600_000).toISOString();
+    const r = await o.ist('POST', '/api/ihbar', c, P({ alternatifFormNo: no, bildirimZamani: z })); expect(r.statusCode, r.body).toBe(200);
+    const t2 = (await o.sup.query(`SELECT alternatif_form_no, bildirim_alinma_zamani FROM talep WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
+    expect(t2.alternatif_form_no).toBe(no); expect(new Date(t2.bildirim_alinma_zamani).toISOString()).toBe(z);
+    expect((await o.ist('POST', '/api/ihbar', c, P({ alternatifFormNo: no, bildirimZamani: z }))).statusCode).toBe(409);
+  });
+  it('mesai dışında dış kanaldan gelen ihbar nöbetçi Dosya Sorumlusuna (YG-240)', async () => {
+    const pazar = new Date('2026-11-22T10:00:00Z'); const donem = '2026-11';
+    await o.sup.query(`UPDATE nobet_cizelgesi SET durum = 'Yerine Geçti' WHERE donem = $1 AND durum = 'Yürürlükte'`, [donem]);
+    const cz = (await o.sup.query(`INSERT INTO nobet_cizelgesi (donem, durum, hazirlayan_ref) VALUES ($1, 'Yürürlükte', $2) RETURNING kimlik`, [donem, o.K.opm])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO nobet_vardiyasi (cizelge_ref, katman, kullanici_ref, baslangic, bitis) VALUES ($1, 'Dosya Sorumlusu', $2, '2026-11-21T12:00:00Z', '2026-11-23T06:00:00Z')`, [cz, o.K.ds]);
+    const { ihbarKaydet } = await import('../src/ihbar.js');
+    const c = await o.db.connect();
+    try {
+      const g = { kanal: 'Portal', sahibiAdi: 'Sahip', sahibiTuru: 'Yat Sahibi', telefon: '+905550003333', konum: 'Bodrum', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', yat: { adi: `NB${Date.now()}`, markaDiger: 'M', modelDiger: 'N' }, cevaplar: {} } as never;
+      const r = await ihbarKaydet(c, g, o.K.opm!, { ilkSorumlu: o.K.oy! }, pazar) as { kimlik: string };
+      expect((await o.sup.query(`SELECT sahip_kullanici_ref s FROM is_karti WHERE tur = 'İhbar Açılış Kontrolü' AND nesne_kimligi = $1`, [r.kimlik])).rows[0].s).toBe(o.K.ds);
+      const r2 = await ihbarKaydet(c, g, o.K.opm!, { ilkSorumlu: o.K.oy! }, new Date('2026-11-23T08:00:00Z')) as { kimlik: string };
+      expect((await o.sup.query(`SELECT sahip_kullanici_ref s FROM is_karti WHERE tur = 'İhbar Açılış Kontrolü' AND nesne_kimligi = $1`, [r2.kimlik])).rows[0].s).toBe(o.K.oy);
+    } finally { c.release(); }
   });
 });

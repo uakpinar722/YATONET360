@@ -84,6 +84,7 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
 /** YG-1467: on soruluk sıra; koşullu sorular kendiliğinden açılır. YG-034: Hayır yeşil, Bilinmiyor sarı, Evet kırmızı. */
 function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
   const [s, setS] = useState<Secenek | null>(null); const [hata, setHata] = useState('');
+  const [altForm, setAltForm] = useState(false); const [altNo, setAltNo] = useState(''); const [altZaman, setAltZaman] = useState(''); // YG-278
   const [kanal, setKanal] = useState('Telefon'); const [ad, setAd] = useState(''); const [tur, setTur] = useState(''); const [turAcik, setTurAcik] = useState(''); const [tel, setTel] = useState(''); const [ep, setEp] = useState('');
   const [konum, setKonum] = useState(''); const [durum, setDurum] = useState(''); const [iKisi, setIKisi] = useState(''); const [ozet, setOzet] = useState(''); const [acil, setAcil] = useState(false); const [dil, setDil] = useState('Türkçe');
   const [cevap, setCevap] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState('Normal'); const [oncelik, setOncelik] = useState(''); const [onG, setOnG] = useState('');
@@ -101,6 +102,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
     e.preventDefault(); setHata('');
     try {
       const r = await istek<{ kimlik: string; talepNo: string }>('/ihbar', {
+        ...(altForm ? { alternatifFormNo: altNo, bildirimZamani: altZaman ? new Date(altZaman).toISOString() : undefined } : {}),
         kanal, sahibiAdi: ad, sahibiTuru: tur, sahibiTuruAciklama: turAcik, telefon: tel, eposta: ep || undefined, konum, yatDurumu: durum, ihtiyac: ozet, iletisimKisileri: iKisi || undefined, acil, cevaplar: cevap, oncelik: oncelik || undefined, oncelikGerekcesi: onG || undefined, dil, sigortaci: sigortaci || undefined, hasarNo: hasarNo || undefined,
         yatSahibi: sahipAd ? { ad: sahipAd, telefon: sahipTel || undefined, eposta: sahipEp || undefined } : undefined,
         yat: { adi: yAd, tur: yTur, markaModelId: modelId || undefined, markaDiger: diger ? dMarka : undefined, modelDiger: diger ? dModel : undefined, boy: boy ? Number(boy.replace(',', '.')) : undefined, govde, bayrak, kullanim, klas, uretimYili: yil ? Number(yil) : undefined, turkiyeKalisBitis: kalis || undefined, klasKurulusu: klasK || undefined },
@@ -113,6 +115,9 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
     <form className="ozet" onSubmit={(e) => void gonder(e)}>
       <h1>Yeni İhbar</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
+      <label><input type="checkbox" checked={altForm} onChange={(e) => setAltForm(e.target.checked)} /> Sistem kesintisinde alternatif formla alındı</label>
+      {altForm && <><label htmlFor="i-af">Alternatif Form No</label><input id="i-af" value={altNo} onChange={(e) => setAltNo(e.target.value)} />
+        <label htmlFor="i-az">Formdaki Bildirim Zamanı</label><input id="i-az" type="datetime-local" value={altZaman} onChange={(e) => setAltZaman(e.target.value)} /></>}
       <div className="bolum">İhbar Eden</div>
       <label htmlFor="i-kanal">Bildirim Kanalı</label><select id="i-kanal" value={kanal} onChange={(e) => setKanal(e.target.value)}>{s.kanallar.map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="i-ad">Adı Soyadı</label><input id="i-ad" value={ad} onChange={(e) => setAd(e.target.value)} />
@@ -184,6 +189,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
       <button className="lnk" onClick={() => geri()}>← Dosyalar</button>
       <h1>{t.talep_no} · {t.yat_adi}</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
+      <IhbarFotograflari talep={id} />
       <div className="ozet">
         <div><Oncelik o={t.oncelik} /> · {t.statu} · Sistemin Önerdiği: {t.onerilen_oncelik}</div>
         <div>İhbar Eden: {t.talep_sahibi_adi} ({t.talep_sahibi_turu}) · {t.bildirim_kanali}</div>
@@ -553,4 +559,22 @@ function ToplantiKararlari({ dosya }: { dosya: string }) {
   useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/toplanti-kararlari`).then(setL).catch(() => setL([])); }, [dosya]);
   if (!l.length) return null;
   return <><div className="bolum">Toplantı Kararları</div>{l.map((k, n) => <div className="ozet" key={n}>{k.tpl_kod} · {k.konu} · {k.metin} · Sorumlu: {k.sorumlu} · Hedef: {k.hedef.split('-').reverse().join('.')}{k.gorev_durumu ? ` · ${k.gorev_durumu}` : ''}</div>)}</>;
+}
+
+/** YG-017: ihbar kaydında ilk fotoğraflar (kaynak kanalıyla, en çok 5); dosya açılınca dosyaya geçer. */
+function IhbarFotograflari({ talep }: { talep: string }) {
+  const [l, setL] = useState<{ kimlik: string; ad: string }[]>([]); const [kanal, setKanal] = useState('WhatsApp'); const [m, setM] = useState('');
+  const yk = () => istek<{ kimlik: string; ad: string }[]>(`/belge?bagTuru=Talep&bagKimligi=${talep}`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, [talep]);
+  const yukle = async (f: File) => {
+    setM('');
+    const q = new URLSearchParams({ ad: f.name, tur: 'Hasar Fotoğrafı', bagTuru: 'Talep', bagKimligi: talep, kaynak: kanal, dosya: f.name });
+    const r = await fetch(`/api/belge/yukle?${q}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Yatonet': '1' }, body: f, credentials: 'same-origin' });
+    if (!r.ok) { setM(((await r.json().catch(() => ({}))) as { hata?: string }).hata ?? 'Fotoğraf eklenemedi.'); return; }
+    await yk();
+  };
+  return <Blok baslik="İlk Fotoğraflar">{m && <div className="hata" role="alert">{m}</div>}
+    {l.length ? l.map((x) => <div key={x.kimlik}>{x.ad}</div>) : <div className="not">Fotoğraf eklenmemiştir.</div>}
+    {l.length < 5 && <><label htmlFor="if-k">Fotoğrafın Geldiği Kanal</label><select id="if-k" value={kanal} onChange={(e) => setKanal(e.target.value)}>{['WhatsApp', 'E-posta', 'Elden'].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="if-f">Fotoğraf Ekle (en çok 5)</label><input id="if-f" type="file" accept=".jpg,.jpeg,.png,.heic" onChange={(e) => { const f = e.target.files?.[0]; if (f) void yukle(f); e.target.value = ''; }} /></>}</Blok>;
 }

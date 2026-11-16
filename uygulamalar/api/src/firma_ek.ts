@@ -193,6 +193,29 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (Number(g.kapasite) > 0) await b.db.query(`UPDATE kurulus SET kapasite_is = $2 WHERE kimlik = $1`, [id, g.kapasite]);
     return { tamam: true };
   });
+  // YG-346: firma ana kayıt görünümü; tüm ilişkiler tek yerde (sicil rollerine).
+  s.get('/firma/:id/ozet', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(i.oturum!.kullanici, SICIL_ROLLER))) return yok(y);
+    const q = async (sql: string) => (await b.db.query(sql, [id])).rows;
+    const k = (await q(`SELECT sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, risk_derecesi, il, ilce, ilce_teyit_zamani IS NOT NULL ilce_teyitli, hizmet_kumesi, acil_hizmet_verir FROM kurulus WHERE kimlik = $1`))[0];
+    if (!k) return yok(y);
+    return {
+      kimlik: k,
+      sozlesmeler: await q(`SELECT sozlesme_turu, yururluk::text, bitis::text, durum FROM sozlesme_kaydi WHERE kurulus_ref = $1 ORDER BY olusturma_zamani DESC`),
+      branslar: await q(`SELECT ana_brans, kapsama, bolge, durum FROM brans_yetkinligi WHERE kurulus_ref = $1 ORDER BY ana_brans`),
+      belgeler: await q(`SELECT tur, gecerlilik_bitis::text gecerlilik_bitis, (gecerlilik_bitis < current_date) suresi_dolmus FROM sicil_belgesi WHERE kurulus_ref = $1 ORDER BY gecerlilik_bitis NULLS LAST`),
+      tesisler: await q(`SELECT tesis_kodu, ad, il, ilce, aktif FROM firma_tesisi WHERE kurulus_ref = $1 ORDER BY sira`),
+      kapasite: await q(`SELECT k.ana_brans, k.gorev_sinifi, t.ad tesis, k.es_zamanli_is FROM firma_kapasitesi k LEFT JOIN firma_tesisi t ON t.kimlik = k.tesis_ref WHERE k.kurulus_ref = $1 ORDER BY k.ana_brans`),
+      sayilar: (await q(`SELECT (SELECT count(*)::int FROM firma_ekipmani WHERE kurulus_ref = $1) ekipman,
+          (SELECT count(*)::int FROM firma_ekipmani WHERE kurulus_ref = $1 AND (bakim_bitis < current_date OR kalibrasyon_bitis < current_date)) ekipman_suresi_dolan,
+          (SELECT count(*)::int FROM kurulus_kullanici WHERE kurulus_ref = $1) kullanici,
+          (SELECT count(*)::int FROM firma_personeli WHERE kurulus_ref = $1 AND aktif) personel,
+          (SELECT count(*)::int FROM firma_personeli WHERE kurulus_ref = $1 AND aktif AND kritik) kritik_personel,
+          (SELECT count(*)::int FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')) acik_is_emri,
+          (SELECT count(*)::int FROM is_emri WHERE kurulus_ref = $1) toplam_is_emri`))[0],
+    };
+  });
   // YG-309: branş, görev sınıfı (boşsa tüm sınıflar) ve tesis (boşsa tüm yerler) bazında eş zamanlı iş kapasitesi.
   s.post('/firma/:id/kapasite', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { brans?: string; sinif?: string; tesis?: string; adet?: number };

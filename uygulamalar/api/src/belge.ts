@@ -121,7 +121,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     const red = (kod: number, hata: string) => { akis?.resume?.(); return y.code(kod).send({ hata }); };
     // YG-1440: yat sahibi belge yüklemez; belgeleri Dosya Sorumlusu girer, onarım kanıtını firma portalı yükler.
     // YG-1562: tek istisna, hasar bildirimine en fazla 5 fotoğraf.
-    const bildirimFoto = q.bagTuru === 'Talep' && o.grup !== 'LGM İç Rolü';
+    const bildirimFoto = q.bagTuru === 'Talep'; // YG-1562, YG-017: ihbara yalnız fotoğraf, en çok 5
     if (bildirimFoto) {
       if (!['jpg', 'jpeg', 'png', 'heic'].includes((q.dosya ?? '').split('.').pop()?.toLowerCase() ?? '')) return red(400, 'Yalnız fotoğraf eklenebilir.');
       if ((await b.db.query(`SELECT count(*)::int n FROM belge WHERE bag_turu = 'Talep' AND bag_kimligi = $1`, [q.bagKimligi])).rows[0].n >= 5) return red(409, 'En fazla 5 fotoğraf ekleyebilirsiniz.');

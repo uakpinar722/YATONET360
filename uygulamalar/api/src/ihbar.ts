@@ -102,7 +102,13 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   // YG-1558: liste dışı girilen sigorta şirketi ana veri güncelleme görevi açar.
   if (g.sigortaci?.trim() && !(await c.query(`SELECT 1 FROM sigorta_sirketi WHERE lower(tam_unvan) = lower($1) OR lower(kisa_ad) = lower($1)`, [g.sigortaci.trim()])).rowCount)
     await kartAc(c, { tur: 'Ana Veri Güncelleme', kategori: 'gorev', baslik: `${no} · Liste Dışı Sigorta Şirketi`, ozet: `"${g.sigortaci.trim()}" sigorta şirketi listesinde yoktur; ana veriye eklenmesi veya listedeki kayıtla eşleştirilmesi rica olunur.`.slice(0, 200), sahipRol: await rolId(c, 'Sicil Sorumlusu'), sonZaman: new Date(Date.now() + 3 * 86_400_000), nesneTuru: 'Talep', nesneKimligi: id });
-  await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: baglam.ilkSorumlu, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
+  // YG-240: mesai dışında dış kanaldan (portal, sigorta, telefonla başkası adına) gelen ihbar nöbet düzenine yönlenir; görevi nöbetçi Dosya Sorumlusu alır.
+  let acilisSahibi = baglam.ilkSorumlu;
+  if (baglam.ilkSorumlu !== kullanici) {
+    const { mesaiIcinde } = await import('./bildirim.js');
+    if (!mesaiIcinde(simdi)) { const n = await (await import('./acil.js')).nobetci(c, 'Dosya Sorumlusu', simdi); if (n) acilisSahibi = n; }
+  }
+  await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: acilisSahibi, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
   // YG-026: Kritik öncelikte son onay Operasyon Yöneticisindedir.
   if (oncelik === 'Kritik') {
     await kartAc(c, { tur: 'Kritik Öncelik Teyidi', baslik: `${no} · Kritik Öncelik Teyidi`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: 'Kritik', hazirlayan: kullanici, zincir: [await rolId(c, 'Operasyon Yöneticisi')], nesneTuru: 'Talep', nesneKimligi: id });
@@ -143,6 +149,12 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/ihbar', ihbarci, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as IhbarGirdisi;
+    // YG-278: kesintide alternatif formla alınan ihbar; form numarası ve formdaki gerçek bildirim zamanı zorunlu, aynı form iki kez aktarılmaz.
+    const alt = ((i.body as { alternatifFormNo?: string }).alternatifFormNo ?? '').trim();
+    if (alt) {
+      if (!g.bildirimZamani) return y.code(400).send({ hata: 'Alternatif formdaki bildirim zamanını giriniz.' });
+      if ((await b.db.query(`SELECT talep_no FROM talep WHERE lower(alternatif_form_no) = lower($1)`, [alt])).rowCount) return y.code(409).send({ hata: 'Bu alternatif form daha önce aktarılmıştır.' });
+    }
     // YG-1438: Dosya Sorumlusu bayrak, özel/ticari kullanım ve klas durumunu girer; yabancı bayrakta Türkiye'de kalış bitişi sorulur.
     if (!g.yat?.yatId && (!g.yat?.bayrak?.trim() || !['Özel', 'Ticari'].includes(g.yat?.kullanim ?? '') || !['Evet', 'Hayır', 'Bilinmiyor'].includes(g.yat?.klas ?? ''))) return y.code(400).send({ hata: 'Bayrak, kullanım (Özel/Ticari) ve klas durumunu (Evet/Hayır/Bilinmiyor) giriniz.' });
     if (g.yat?.klas === 'Evet' && !g.yat.klasKurulusu?.trim() && !g.yat?.yatId) return y.code(400).send({ hata: 'Klaslı yatta klas kuruluşunu yazınız.' });
@@ -152,6 +164,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
       await c.query('BEGIN');
       const r = await ihbarKaydet(c, g, o.kullanici, { ilkSorumlu: o.kullanici });
       if ('hata' in r) { await c.query('ROLLBACK'); return y.code(400).send({ hata: r.hata }); }
+      if (alt) await c.query(`UPDATE talep SET alternatif_form_no = $2 WHERE kimlik = $1`, [r.kimlik, alt]); // YG-278
       await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İhbar Kaydedildi', nesneTuru: 'Talep', nesneKimligi: r.kimlik, yeni: { no: r.talepNo, oncelik: r.oncelik }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

@@ -43,7 +43,10 @@ belgeBagiKaydet('Talep', async (db, k, id) => {
   if (!UUID.test(id)) return 'yok';
   const r = (await db.query(`SELECT olusturan_ref, olusturma_zamani FROM talep WHERE kimlik = $1`, [id])).rows[0];
   if (!r) return 'yok';
-  return r.olusturan_ref === k ? 'tamam' : 'yetkisiz';
+  if (r.olusturan_ref === k) return 'tamam';
+  // YG-017: ihbar kaydetme yetkisi olan LGM personeli ihbara ilk fotoğrafları ekler ve görür.
+  const { kullaniciIzinleri } = await import('./yetki.js');
+  return (await kullaniciIzinleri(db as Pool, k)).includes('ihbar.kaydet') ? 'tamam' : 'yetkisiz';
 });
 
 /** YG-103, YG-476: lehtar varsa muvafakat girilmeden teklif onayı açılmaz; kilit yalnız teklif onayını durdurur. */
