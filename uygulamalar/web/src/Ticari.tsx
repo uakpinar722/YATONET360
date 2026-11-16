@@ -40,7 +40,7 @@ import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
 import { VeriKalitesi } from './VeriKalitesi';
 import { SureklilikOrtam } from './SureklilikOrtam';
 import { KartelaArama } from './KartelaArama';
-import { IstifaBildirimi, IzinBakiyesi, OzelAracOnayi } from './PersonelTalepleri';
+import { HaberDuyurusu, IstifaBildirimi, IzinBakiyesi, OzelAracOnayi } from './PersonelTalepleri';
 import { IsletmeGideri } from './IsletmeGideri';
 import { IslemKatalogu } from './IslemKatalogu';
 import { TeklifMadde } from './TeklifMadde';
@@ -215,7 +215,8 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); void istek<{ yer: string; kapsam: string }>(`/dosya/${id}/kesif-talebi`).then((r) => setIe((x) => ({ ...x, yer: x.yer || r.yer, kapsam: x.kapsam || r.kapsam }))).catch(() => {}); }, [id]);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
-  const [ie, setIe] = useState({ ts: '', yo: '', bag: '', secim: '', tur: 'KN', firma: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '' }); const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
+  const [ie, setIe] = useState({ ts: '', yo: '', bag: '', secim: '', tur: 'KN', firma: '', tesis: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '' }); const [tesisler, setTesisler] = useState<{ kimlik: string; ad: string; il: string | null; ilce: string | null }[]>([]);
+  useEffect(() => { setTesisler([]); if (ie.firma) void istek<typeof tesisler>(`/firma/${ie.firma}/tesis`).then(setTesisler).catch(() => setTesisler([])); }, [ie.firma]); /* YG-309 */ const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
   const [envEksik, setEnvEksik] = useState(''); const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [gonderen, setGonderen] = useState(''); const [onayBelge, setOnayBelge] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
   if (!v) return null;
   const ticari = roller.includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
@@ -570,6 +571,7 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
   return (
     <>
       <h1>Nöbet ve Acil</h1><Mesaj />
+      <div className="not">Nöbet, çağrı üzerine hazır bekleme niteliğindedir; gece fiilen çalışılırsa ertesi günün çalışma düzenini (geç başlama veya serbest zaman) birim amiri belirler.</div>
       {cizelge && <NobetCizelge />}
       {n && <div className="ozet"><div>{n.mesaiIcinde ? 'Mesai İçi' : 'Mesai Dışı'}</div><div>Nöbetçi Dosya Sorumlusu: {n.dosyaSorumlusu ?? '—'}</div><div>Nöbetçi Teknik Uzman: {n.teknikUzman ?? '—'}</div><div>Yönetici Nöbetçisi: {n.yonetici ?? '—'}</div></div>}
       <NobetCagrilari />
@@ -905,6 +907,7 @@ export function IdariIslemler() {
       <YurtDisiFirmaTalebi />
       <YasalAyipRaporu />
       <IbanTeyit />
+      <HaberDuyurusu />
       <IstifaBildirimi />
       <Blok baslik="İzin Talebi">
         <IzinBakiyesi />

@@ -211,10 +211,11 @@ describe('firma personeli ve Görevli Ekip Kartı (YG-304, YG-424, YG-339)', () 
     expect(once.uyarilar.some((x) => x.includes('aktif personeli yoktur'))).toBe(true);
     const u = '/api/firma-portal/personel';
     expect((await o.ist('POST', u, firC, { ad: 'A' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, firC, { ad: 'KVKK Yok', gorev: 'Usta' })).statusCode).toBe(400);
     const uc = await disGir('kf3', 'İş Birliği Firması', 'Firma Yetkilisi', fir);
-    const p1 = (await o.ist('POST', u, firC, { ad: 'Usta Bir', gorev: 'Laminasyon Ustası', isgBitis: '2099-01-01', kullanici: uc.k })).json().kimlik;
-    await o.ist('POST', u, firC, { ad: 'Usta İki', gorev: 'Kaynakçı', belge: 'Kaynak Sertifikası', belgeBitis: '2020-01-01' });
-    expect((await o.ist('POST', u, tedC, { ad: 'X', gorev: 'Y', kullanici: uc.k })).statusCode).toBe(400);
+    const p1 = (await o.ist('POST', u, firC, { kvkk03: true, ad: 'Usta Bir', gorev: 'Laminasyon Ustası', isgBitis: '2099-01-01', kullanici: uc.k })).json().kimlik;
+    await o.ist('POST', u, firC, { kvkk03: true, ad: 'Usta İki', gorev: 'Kaynakçı', belge: 'Kaynak Sertifikası', belgeBitis: '2020-01-01' });
+    expect((await o.ist('POST', u, tedC, { kvkk03: true, ad: 'X', gorev: 'Y', kullanici: uc.k })).statusCode).toBe(400);
     const sonra = await gorevlendirmeKontrolu(o.db, { firma: fir, dosya: d.kimlik, brans: 'Yok' });
     expect(sonra.uyarilar.find((x) => x.includes('süresi geçmiş personel'))).toContain('Usta İki');
     expect((await o.ist('GET', `/api/firma/${fir}/personel`, await o.gir('fym'))).json()).toHaveLength(2);
@@ -226,12 +227,12 @@ describe('firma personeli ve Görevli Ekip Kartı (YG-304, YG-424, YG-339)', () 
     expect(dg.json()).toMatchObject({ ifade: 'LİMİT GLOBAL MARINE adına görevli', ad: 'Usta Bir', gorev: 'Laminasyon Ustası', dosyaNo: d.dosyaNo, gecerli: true });
     expect(dg.body).not.toContain('Kurum Firma');
     { // YG-340: kritik personelin yerine geçen kişi eşdeğer belgeyle; kişi onayı yok.
-      const kp = (await o.ist('POST', u, firC, { ad: 'Kritik Kaynakçı', gorev: 'Kaynakçı', belge: 'Kaynak Sertifikası', belgeBitis: '2099-01-01', kritik: true })).json().kimlik;
+      const kp = (await o.ist('POST', u, firC, { kvkk03: true, ad: 'Kritik Kaynakçı', gorev: 'Kaynakçı', belge: 'Kaynak Sertifikası', belgeBitis: '2099-01-01', kritik: true })).json().kimlik;
       const fk = firK;
       const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, olusturan_ref) VALUES ('Kritik Sertifika', 'Diğer', 'Kurumsal', 'Kuruluş', $1, 'Firma Portalı', $2) RETURNING kimlik`, [fir, fk])).rows[0].kimlik;
-      expect((await o.ist('POST', u, firC, { ad: 'Yeni', gorev: 'Kaynakçı', yerine: kp })).json().hata).toContain('yeterlilik belgesini');
-      expect((await o.ist('POST', u, firC, { ad: 'Yeni', gorev: 'Kaynakçı', yerine: kp, yeterlilikBelgesi: bl, belge: 'Boya Belgesi', belgeBitis: '2099-01-01' })).statusCode).toBe(409);
-      const yn = await o.ist('POST', u, firC, { ad: 'Yeni', gorev: 'Kaynakçı', yerine: kp, yeterlilikBelgesi: bl, belge: 'kaynak sertifikası', belgeBitis: '2099-01-01' }); expect(yn.statusCode, yn.body).toBe(200);
+      expect((await o.ist('POST', u, firC, { kvkk03: true, ad: 'Yeni', gorev: 'Kaynakçı', yerine: kp })).json().hata).toContain('yeterlilik belgesini');
+      expect((await o.ist('POST', u, firC, { kvkk03: true, ad: 'Yeni', gorev: 'Kaynakçı', yerine: kp, yeterlilikBelgesi: bl, belge: 'Boya Belgesi', belgeBitis: '2099-01-01' })).statusCode).toBe(409);
+      const yn = await o.ist('POST', u, firC, { kvkk03: true, ad: 'Yeni', gorev: 'Kaynakçı', yerine: kp, yeterlilikBelgesi: bl, belge: 'kaynak sertifikası', belgeBitis: '2099-01-01' }); expect(yn.statusCode, yn.body).toBe(200);
       expect((await o.sup.query(`SELECT kritik, esdegerlik_sonucu FROM firma_personeli WHERE kimlik = $1`, [yn.json().kimlik])).rows[0]).toEqual({ kritik: true, esdegerlik_sonucu: 'Eşdeğer (sistem doğruladı)' });
       await o.sup.query(`UPDATE firma_personeli SET aktif = false WHERE kimlik = ANY($1)`, [[kp, yn.json().kimlik]]); }
     expect((await o.ist('POST', `/api/firma-portal/personel/${p1}/ayrildi`, firC, {})).statusCode).toBe(200);

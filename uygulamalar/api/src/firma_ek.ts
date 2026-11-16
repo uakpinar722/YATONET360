@@ -30,7 +30,7 @@ export function gorevSinifi(g: { tutar?: number | null; cokBrans?: boolean; anaS
 /** YG-334: klas kuruluşuna bildirim, işe başlamadan 48 saat önce; tarih yoksa son zaman konmaz. */
 export const klasBildirimSonu = (baslangic?: string | null): Date | undefined => (baslangic ? new Date(new Date(baslangic).getTime() - 48 * 3_600_000) : undefined);
 
-export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: string; brans?: string | null; tutar?: number | null; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean }) {
+export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: string; brans?: string | null; tutar?: number | null; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean ; tesis?: string | null }) {
   const engeller: string[] = []; const uyarilar: string[] = []; const { sinif, asgari } = gorevSinifi(g);
   const f = (await db.query(`SELECT risk_derecesi, kapasite_is FROM kurulus WHERE kimlik = $1`, [g.firma])).rows[0];
   if (g.brans) {
@@ -56,6 +56,11 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
   if (g.brans) {
     const kp = (await db.query(`SELECT sum(es_zamanli_is)::int n FROM firma_kapasitesi WHERE kurulus_ref = $1 AND ana_brans = $2 AND (gorev_sinifi = $3 OR (gorev_sinifi IS NULL AND NOT EXISTS (SELECT 1 FROM firma_kapasitesi x WHERE x.kurulus_ref = $1 AND x.ana_brans = $2 AND x.gorev_sinifi = $3)))`, [g.firma, g.brans, sinif])).rows[0].n;
     if (kp) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans])).rows[0].n); if (ak >= kp) uyarilar.push(`Firmanın ${g.brans} branşındaki ${sinif} kapasitesi doludur (${ak}/${kp}).`); }
+    // Tesis seçildiyse o tesisin kendi kapasite satırı ayrıca denetlenir.
+    if (g.tesis) {
+      const tk = (await db.query(`SELECT sum(es_zamanli_is)::int n FROM firma_kapasitesi WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND (gorev_sinifi IS NULL OR gorev_sinifi = $4)`, [g.firma, g.brans, g.tesis, sinif])).rows[0].n;
+      if (tk) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans, g.tesis])).rows[0].n); if (ak >= tk) uyarilar.push(`Seçilen tesisteki ${g.brans} kapasitesi doludur (${ak}/${tk}).`); }
+    }
   }
   if (!(await db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%sigorta%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [g.firma])).rowCount) uyarilar.push('Firmanın sorumluluk sigortası kaydı yoktur.');
   return { sinif, asgari, sonuc: engeller.length ? 'Ret' as const : uyarilar.length ? 'Koşullu Kabul' as const : 'Kabul' as const, engeller, uyarilar };
@@ -172,8 +177,13 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
 
   // Sicil: yetkili servis, çıkar beyanı, kapasite, kaptan.
   s.post('/firma/:id/sicil-ek', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { marka?: string; cikarTaraf?: string; cikarNot?: string; kapasite?: number };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { marka?: string; cikarTaraf?: string; cikarNot?: string; kapasite?: number; ilceTeyitKaynagi?: string };
     if (!UUID.test(id) || !(await rolVar(o.kullanici, SICIL_ROLLER))) return yok(y);
+    // YG-1261: ilçe bilgisi kaynağıyla teyit edilir; teyit tarihi ve teyit eden tutulur.
+    if (g.ilceTeyitKaynagi?.trim()) {
+      const r = await b.db.query(`UPDATE kurulus SET ilce_teyit_zamani = now(), ilce_teyit_kaynagi = $2, ilce_teyit_eden_ref = $3 WHERE kimlik = $1 AND ilce IS NOT NULL RETURNING ilce`, [id, g.ilceTeyitKaynagi.trim(), o.kullanici]);
+      if (!r.rowCount) return y.code(409).send({ hata: 'Firmanın ilçe bilgisi girilmeden teyit yapılamaz.' });
+    }
     if (g.marka?.trim()) await b.db.query(`INSERT INTO yetkili_servis (kurulus_ref, marka) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [id, g.marka.trim()]);
     if (g.cikarTaraf?.trim()) {
       const t = (await b.db.query(`SELECT kimlik FROM taraf WHERE taraf_no = $1`, [g.cikarTaraf.trim()])).rows[0];
@@ -195,7 +205,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
   });
   s.get('/firma/:id/kapasite', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string }; if (i.oturum!.grup !== 'LGM İç Rolü' || !UUID.test(id)) return yok(y);
-    return (await b.db.query(`SELECT k.ana_brans, k.gorev_sinifi, t.tesis_kodu, t.ad tesis, k.es_zamanli_is, (SELECT count(*)::int FROM is_emri e WHERE e.kurulus_ref = k.kurulus_ref AND e.ana_brans = k.ana_brans AND (k.gorev_sinifi IS NULL OR e.gorev_sinifi = k.gorev_sinifi) AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')) aktif FROM firma_kapasitesi k LEFT JOIN firma_tesisi t ON t.kimlik = k.tesis_ref WHERE k.kurulus_ref = $1 ORDER BY k.ana_brans, k.gorev_sinifi NULLS FIRST`, [id])).rows;
+    return (await b.db.query(`SELECT k.ana_brans, k.gorev_sinifi, t.tesis_kodu, t.ad tesis, k.es_zamanli_is, (SELECT count(*)::int FROM is_emri e WHERE e.kurulus_ref = k.kurulus_ref AND e.ana_brans = k.ana_brans AND (k.tesis_ref IS NULL OR e.tesis_ref = k.tesis_ref) AND (k.gorev_sinifi IS NULL OR e.gorev_sinifi = k.gorev_sinifi) AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')) aktif FROM firma_kapasitesi k LEFT JOIN firma_tesisi t ON t.kimlik = k.tesis_ref WHERE k.kurulus_ref = $1 ORDER BY k.ana_brans, k.gorev_sinifi NULLS FIRST`, [id])).rows;
   });
 
   s.post('/firma/:id/kaptan', oturumlu, async (i, y) => {
@@ -322,6 +332,8 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     const g = (i.body ?? {}) as { ad?: string; gorev?: string; telefon?: string; isgBitis?: string; belge?: string; belgeBitis?: string; kullanici?: string; kritik?: boolean; yerine?: string; yeterlilikBelgesi?: string };
     const tarih = (x?: string) => !x || /^\d{4}-\d{2}-\d{2}$/.test(x);
     if (!g.ad?.trim() || !g.gorev?.trim() || !tarih(g.isgBitis) || !tarih(g.belgeBitis)) return y.code(400).send({ hata: 'Ad soyad ve görev zorunludur; tarihleri geçerli giriniz.' });
+    // KV-3: personele KVKK-03 aydınlatma metninin iletildiği firma tarafından beyan edilmeden kayıt alınmaz.
+    if ((i.body as { kvkk03?: boolean }).kvkk03 !== true) return y.code(400).send({ hata: 'Bu personele Çözüm Ortağı Aydınlatma Metninin (KVKK-03) iletildiğini işaretleyiniz.' });
     // Personelin portal hesabı varsa bağlanır; ayrılışta hesap da kapanır (YG-339).
     if (g.kullanici && !(await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kurulus_ref = $1 AND kullanici_ref = $2`, [f, g.kullanici])).rowCount) return y.code(400).send({ hata: 'Hesap firmanıza ait değildir.' });
     // YG-340: kritik personelin yerine geçen kişi için LGM kişi onayı istenmez; eşdeğer yeterlilik belgesi yüklenir, sistem aynı türde ve süresi geçerli belgeyi doğrular.
@@ -336,6 +348,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
       } else esdeger = { eski: eski.kimlik, sonuc: 'Kritik olmayan görev' };
     }
     const r = await b.db.query(`INSERT INTO firma_personeli (kurulus_ref, ad_soyad, gorev, telefon, isg_egitim_bitis, yetki_belgesi, yetki_belgesi_bitis, kullanici_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [f, g.ad.trim(), g.gorev.trim(), g.telefon?.trim() || null, g.isgBitis || null, g.belge?.trim() || null, g.belgeBitis || null, g.kullanici || null, o.kullanici]);
+    await b.db.query(`UPDATE firma_personeli SET kvkk03_iletim_zamani = now() WHERE kimlik = $1`, [r.rows[0].kimlik]); // KV-3
     await b.db.query(`UPDATE firma_personeli SET kritik = $2 WHERE kimlik = $1`, [r.rows[0].kimlik, Boolean(g.kritik) || Boolean(esdeger && esdeger.sonuc.startsWith('Eşdeğer'))]); // YG-340
     if (esdeger) {
       await b.db.query(`UPDATE firma_personeli SET yerine_gectigi_ref = $2, yeterlilik_belge_ref = $3, esdegerlik_sonucu = $4 WHERE kimlik = $1`, [r.rows[0].kimlik, esdeger.eski, g.yeterlilikBelgesi ?? null, esdeger.sonuc]);
@@ -482,6 +495,31 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (g.suAlma === 'Su Alma Var') { const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]; await kartAc(b.db, { tur: 'Su Alma Tedbiri', kategori: 'gorev', baslik: `${d.dosya_no} · Denize İndirmeden Sonra Su Alma`, ozet: 'Yat tekrar kaldırılmalı veya acil tedbir alınmalıdır.', oncelik: 'Kritik', sahipKullanici: d.dosya_sorumlusu_ref ?? o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id }); }
     if (g.yeniHasar) { const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (d.dosya_sorumlusu_ref) await kartAc(b.db, { tur: 'Uygunsuzluk Kaydı Aç', kategori: 'gorev', baslik: `${d.dosya_no} · Kaldırma ve Taşımada Yeni Hasar`, ozet: g.ekipman.trim(), oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id }); }
     return { kimlik: r.rows[0].kimlik };
+  });
+
+  // YG-376: FR-OPS-012 Kaldırma ve Taşıma Tutanağı; kaydeden kişi adıyla değil dosyadaki rolüyle yazılır.
+  s.get('/dosya/:id/kaldirma-tasima', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT kimlik, tur, ekipman, zaman, yeni_hasar, su_alma_kontrolu FROM kaldirma_tasima WHERE dosya_ref = $1 ORDER BY zaman DESC`, [id])).rows;
+  });
+  s.get('/kaldirma-tasima/:id/tutanak', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string }; if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT t.*, d.dosya_no, d.kimlik dosya, yt.yat_adi, (SELECT a.rol FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = t.kaydeden_ref ORDER BY a.bitis_zamani NULLS FIRST LIMIT 1) kaydeden_rol FROM kaldirma_tasima t JOIN dosya d ON d.kimlik = t.dosya_ref JOIN yat yt ON yt.kimlik = d.yat_ref WHERE t.kimlik = $1`, [id])).rows[0];
+    if (!k || !(await dosyaErisimi(b.db, i.oturum!.kullanici, k.dosya))) return yok(y);
+    const ton = (x: unknown) => (x === null || x === undefined ? null : `${Number(x).toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ton`);
+    const zaman = new Date(k.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+    const { belgeIcerik } = await import('./rapor_belge.js');
+    const no = `${k.dosya_no}-KT-${String(k.kimlik).slice(0, 4).toUpperCase()}`;
+    const tanim = { ad: 'Kaldırma ve Taşıma Tutanağı', kod: 'FR-OPS-012', no, dosyaNo: k.dosya_no, tarih: zaman.split(' ')[0]!, surum: 'Rev.1', dil: 'tr' as const, yat: k.yat_adi, icKayit: true, bolumler: [
+      { baslik: 'İşlem', tur: 'alanlar' as const, alanlar: [{ et: 'Dosya No', deger: k.dosya_no }, { et: 'Yat', deger: k.yat_adi }, { et: 'İşlem Türü', deger: k.tur }, { et: 'İşlem Zamanı', deger: zaman }, { et: 'Ekipman', deger: k.ekipman }, { et: 'Ekipman Kapasitesi', deger: ton(k.kapasite_ton) }, { et: 'Yat Ağırlığı', deger: ton(k.yat_agirlik_ton) }, { et: 'Kaydeden', deger: k.kaydeden_rol ?? 'LGM' }] },
+      ...(k.tur === 'Kara Taşıması' ? [{ baslik: 'Kara Taşıması', tur: 'alanlar' as const, alanlar: [{ et: 'Güzergâh', deger: k.guzergah, genis: true }] }] : []),
+      ...(k.tur === 'Denize İndirme' ? [{ baslik: 'Denize İndirme Sonrası Kontrol', tur: 'alanlar' as const, alanlar: [{ et: 'Su Alma Kontrolü', deger: k.su_alma_kontrolu }] }] : []),
+      { baslik: 'İşlem Sırasında Oluşan Yeni Hasar', tur: 'alanlar' as const, alanlar: [{ et: 'Yeni Hasar', deger: k.yeni_hasar ? 'Var' : 'Yok' }, ...(k.yeni_hasar ? [{ et: 'Hasar Tanımı', deger: k.yeni_hasar_aciklama, genis: true }] : [])] },
+    ] };
+    const x = await belgeIcerik(tanim, (i.query as { bicim?: string }).bicim === 'docx' ? 'docx' : 'pdf');
+    await izYaz(b.db, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Belge İndirildi', nesneTuru: 'Kaldırma ve Taşıma', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return y.header('content-type', x.tur).header('content-disposition', `attachment; filename="${no}.${x.uzanti}"`).send(x.veri);
   });
 
   // YG-867: onaylı parça ve muadil listesi ana veri.

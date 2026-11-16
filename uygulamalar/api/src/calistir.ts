@@ -93,7 +93,7 @@ const YEDEK = { veritabani: 'yatonet360', superParola: e.POSTGRES_SUPER_PAROLA!,
 setInterval(() => { saglikIzle(db, YEDEK.klasor).catch((h) => s.log.error(h.message)); yedekIsle(db, YEDEK).catch((h) => s.log.error(h.message)); }, 1_800_000);
 setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); butceDonemiIsle(db).catch((h) => s.log.error(h.message)); musaitlikHatirlat(db).catch((h) => s.log.error(h.message)); geciciIthalatHatirlat(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
-setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
+setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); void import('./dosya.js').then((m) => m.belgeSuresiIsle(db)).catch((h) => s.log.error(h.message)); }, 3_600_000); // YG-1440
 setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); sozlesmeSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000); // YG-147
 setInterval(() => { alacakIsle(db).catch((h) => s.log.error(h.message)); kaliteSureIsle(db).catch((h) => s.log.error(h.message)); tedarikSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { onaySureIsle(db).catch((h) => s.log.error(h.message)); gorevSureIsle(db).catch((h) => s.log.error(h.message)); belgeKuyruguIsle(baglam).catch((h) => s.log.error(h.message)); karantinaIsle(baglam).catch((h) => s.log.error(h.message)); }, 60_000);

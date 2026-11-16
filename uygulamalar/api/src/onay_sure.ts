@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
-import { bildir } from './bildirim.js';
+import { bildir, birKez } from './bildirim.js';
 import { onayMakami, rolSahipleri } from './makam.js';
 
 type Db = Pool | PoolClient;
@@ -53,26 +53,31 @@ export async function onaySureIsle(db: Pool, simdi = new Date()): Promise<number
   return n;
 }
 
-/** YG-1361: onay dışı görevde süre dolunca önce sorumluya, 24 saat sonra karar merciine (sorumlu rolün onay makamı) beklenen eylem ve hedef zamanla bildirim. */
+/** YG-1361: onay dışı görevde süre dolunca önce sorumluya, 24 saat sonra karar merciine (sorumlu rolün onay makamı) beklenen eylem ve hedef zamanla bildirim.
+ * Her adım bir kez işlenir (zamanlanmis_is); işlenmiş kartlar sorguya hiç girmez. */
 export async function gorevSureIsle(db: Pool, simdi = new Date()): Promise<number> {
-  const { rows } = await db.query(`SELECT k.kimlik, k.baslik, k.oncelik, k.son_zaman, k.sahip_kullanici_ref, k.sahip_rol_ref FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.kategori = 'gorev' AND k.son_zaman IS NOT NULL AND k.son_zaman < $1`, [simdi]);
+  const { rows } = await db.query(`SELECT k.kimlik, k.baslik, k.oncelik, k.son_zaman, k.sahip_kullanici_ref, k.sahip_rol_ref,
+      NOT EXISTS (SELECT 1 FROM zamanlanmis_is z WHERE z.ad = 'gorev-sure-u' AND z.anahtar = k.kimlik::text) u_bekliyor
+    FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.kategori = 'gorev' AND k.son_zaman IS NOT NULL AND k.son_zaman < $1
+      AND (NOT EXISTS (SELECT 1 FROM zamanlanmis_is z WHERE z.ad = 'gorev-sure-u' AND z.anahtar = k.kimlik::text)
+        OR (k.son_zaman < $1::timestamptz - interval '24 hours' AND NOT EXISTS (SELECT 1 FROM zamanlanmis_is z WHERE z.ad = 'gorev-sure-e' AND z.anahtar = k.kimlik::text)))
+    ORDER BY k.son_zaman LIMIT 200`, [simdi]);
   let n = 0;
   for (const k of rows) {
     const hedef = new Date(k.son_zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
     const sorumlu = k.sahip_kullanici_ref ? [k.sahip_kullanici_ref as string] : k.sahip_rol_ref ? await rolSahipleri(db, k.sahip_rol_ref) : [];
-    if (!sorumlu.length) continue;
-    const once = (await db.query(`SELECT count(*)::int n FROM bildirim WHERE olay_anahtari = $1`, [`gorev-sure:${k.kimlik}:u`])).rows[0].n;
-    await bildir(db, { olay: `gorev-sure:${k.kimlik}:u`, kullanicilar: sorumlu, baslik: `Görev Süresi Doldu: ${k.baslik}`, ozet: `Beklenen eylem: görevi tamamlayınız veya engeli bildiriniz · Hedef zaman: ${hedef}`, oncelik: k.oncelik, eposta: true }, simdi);
-    if (!once) n++;
-    if (simdi.getTime() - new Date(k.son_zaman).getTime() < 24 * 3_600_000) continue;
+    if (k.u_bekliyor && (await birKez(db, 'gorev-sure-u', k.kimlik))) {
+      if (sorumlu.length) { await bildir(db, { olay: `gorev-sure:${k.kimlik}:u`, kullanicilar: sorumlu, baslik: `Görev Süresi Doldu: ${k.baslik}`, ozet: `Beklenen eylem: görevi tamamlayınız veya engeli bildiriniz · Hedef zaman: ${hedef}`, oncelik: k.oncelik, eposta: true }, simdi); n++; }
+    }
+    if (simdi.getTime() - new Date(k.son_zaman).getTime() < 24 * 3_600_000 || !sorumlu.length) continue;
+    if (!(await birKez(db, 'gorev-sure-e', k.kimlik))) continue;
     const rol = (k.sahip_rol_ref as string | null) ?? (await db.query(`SELECT rol_ref FROM rol_atamasi WHERE kullanici_ref = $1 AND atama_durumu = 'Aktif' LIMIT 1`, [sorumlu[0]])).rows[0]?.rol_ref;
     if (!rol) continue;
     const mercii = (await rolSahipleri(db, await onayMakami(db, rol))).filter((x) => !sorumlu.includes(x));
     if (!mercii.length) continue;
     const ad = (await db.query(`SELECT string_agg(ad_soyad, ', ') a FROM kullanici_hesabi WHERE kimlik = ANY($1::text[])`, [sorumlu])).rows[0].a;
-    const ilk = (await db.query(`SELECT count(*)::int n FROM bildirim WHERE olay_anahtari = $1`, [`gorev-sure:${k.kimlik}:e`])).rows[0].n;
     await bildir(db, { olay: `gorev-sure:${k.kimlik}:e`, kullanicilar: mercii, baslik: `Geciken Görev: ${k.baslik}`, ozet: `Sorumlu: ${ad} · Hedef zaman: ${hedef} · Beklenen eylem: görevin tamamlanmasını sağlayınız veya yeniden atayınız`, oncelik: k.oncelik, eposta: true }, simdi);
-    if (!ilk) n++;
+    n++;
   }
   return n;
 }

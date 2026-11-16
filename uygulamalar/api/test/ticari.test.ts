@@ -319,4 +319,9 @@ describe('fiş aslı (YG-1622)', () => {
     const b2 = (await o.ist('POST', '/api/masraf', await o.gir('my'), { ...M, belgeOzeti: `Z2-${Math.random()}` })).json().kimlik as string;
     expect((await o.kart('Masraf Fişi', b2)).zincir).toEqual([await rid('Muhasebe ve Finans Müdür Yardımcısı'), await rid('Muhasebe ve Finans Müdürü')]);
   });
+  it('teklif performans verisi dönem bazında (YG-227)', async () => {
+    expect((await o.ist('GET', '/api/teklif-performans?donem=2026-11', await o.gir('ds'))).statusCode).toBe(404);
+    const r = await o.ist('GET', '/api/teklif-performans?donem=2026-11', await o.gir('tid')); expect(r.statusCode, r.body).toBe(200);
+    expect(Object.keys(r.json())).toEqual(['donem', 'ozet', 'durumlar', 'kararlar', 'muhataplar']); expect(r.json().donem).toBe('2026-11');
+  });
 });

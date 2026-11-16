@@ -64,6 +64,21 @@ export function raporBelgeYollari(s: FastifyInstance, b: Baglam) {
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);
   const donem = (q: unknown) => { const d = (q as { donem?: string }).donem; const n = new Date(); return d && /^\d{4}-(0[1-9]|1[0-2])$/.test(d) ? d : new Date(Date.UTC(n.getFullYear(), n.getMonth() - 1, 1)).toISOString().slice(0, 7); };
   const gonder = async (y: FastifyReply, tanim: BelgeTanim, q: unknown) => { const x = await belgeIcerik(tanim, (q as { bicim?: string }).bicim === 'docx' ? 'docx' : 'pdf'); return y.header('content-type', x.tur).header('content-disposition', `attachment; filename="${tanim.no}.${x.uzanti}"`).send(x.veri); };
+  // YG-227: Teklif Performans Verisi; dönemde oluşturulan teklifler üzerinden sayılar ve süreler.
+  s.get('/teklif-performans', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü']))) return yok(y);
+    const d = donem(i.query);
+    const q = async (sql: string) => (await b.db.query(sql, [d])).rows;
+    const kosul = `to_char(olusturma_zamani AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $1`;
+    const ozet = (await q(`SELECT count(*)::int olusturulan, count(*) FILTER (WHERE gonderim_zamani IS NOT NULL)::int gonderilen, count(*) FILTER (WHERE surum_no > 1)::int revizyon,
+      round(avg(extract(epoch FROM gonderim_zamani - olusturma_zamani) / 3600) FILTER (WHERE gonderim_zamani IS NOT NULL)::numeric, 1) hazirlik_saat,
+      round(avg(extract(epoch FROM karar_zamani - gonderim_zamani) / 3600) FILTER (WHERE karar_zamani IS NOT NULL AND gonderim_zamani IS NOT NULL)::numeric, 1) karar_saat,
+      coalesce(sum(genel_toplam_eur) FILTER (WHERE gonderim_zamani IS NOT NULL), 0) gonderilen_tutar FROM fiyat_teklifi WHERE ${kosul}`))[0];
+    return { donem: d, ozet,
+      durumlar: await q(`SELECT statu, count(*)::int n FROM fiyat_teklifi WHERE ${kosul} GROUP BY statu ORDER BY n DESC`),
+      kararlar: await q(`SELECT coalesce(karar, 'Karar Bekleniyor') karar, count(*)::int n FROM fiyat_teklifi WHERE ${kosul} AND gonderim_zamani IS NOT NULL GROUP BY 1 ORDER BY n DESC`),
+      muhataplar: await q(`SELECT teklif_muhatabi, count(*)::int n, coalesce(sum(genel_toplam_eur), 0) tutar FROM fiyat_teklifi WHERE ${kosul} AND gonderim_zamani IS NOT NULL GROUP BY 1 ORDER BY n DESC`) };
+  });
   s.get('/yonetim-raporu/belge', oturumlu, async (i, y) => ((await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Yöneticisi'])) ? gonder(y, await yonetimRaporuTanim(b.db, donem(i.query)), i.query) : yok(y)));
   s.get('/ceo-raporu/belge', oturumlu, async (i, y) => ((await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü'])) ? gonder(y, await ceoRaporuTanim(b.db, donem(i.query)), i.query) : yok(y)));
   s.get('/kurumsal-rapor/:id/belge', oturumlu, async (i, y) => {

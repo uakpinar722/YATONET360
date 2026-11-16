@@ -237,6 +237,7 @@ function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <button className="btn2 kucuk" disabled={!g.islem.trim() || !g.uygulama || !g.son || !g.kullanim.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/gecici-onarim`, g).then(yk), 'Geçici onarım kaydedildi.')}>Geçici Onarım Kaydet</button>
 
     <div className="bolum">Kaldırma ve Taşıma</div>
+    <KaldirmaTutanaklari dosya={id} />
     <label htmlFor="kt-t">İşlem</label><select id="kt-t" value={t.tur} onChange={(e) => setT({ ...t, tur: e.target.value })}>{['Kaldırma', 'Taşıma', 'Tesis Değişikliği', 'Kara Taşıması', 'Denize İndirme'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="kt-e">Ekipman</label><input id="kt-e" value={t.ekipman} onChange={(e) => setT({ ...t, ekipman: e.target.value })} />
     <div className="iki-tarih"><div><label htmlFor="kt-k">Kapasite (ton)</label><input id="kt-k" inputMode="decimal" value={t.kapasite} onChange={(e) => setT({ ...t, kapasite: e.target.value })} /></div><div><label htmlFor="kt-a">Yat Ağırlığı (ton)</label><input id="kt-a" inputMode="decimal" value={t.agirlik} onChange={(e) => setT({ ...t, agirlik: e.target.value })} /></div></div>
@@ -484,4 +485,12 @@ function OlayCizelgesi({ olay }: { olay: string }) {
   const [l, setL] = useState<{ zaman: string; tur: string; metin: string }[] | null>(null);
   if (!l) return <button className="btn2 kucuk" onClick={() => void istek<{ zaman: string; tur: string; metin: string }[]>(`/olay/${olay}/zaman-cizelgesi`).then(setL).catch(() => setL([]))}>Zaman Çizelgesi</button>;
   return <ul>{l.map((x, n) => <li key={n}>{new Date(x.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' })} · {x.tur} · {x.metin}</li>)}</ul>;
+}
+
+/** YG-376: dosyadaki kaldırma ve taşıma kayıtları; her biri için FR-OPS-012 tutanağı indirilir. */
+function KaldirmaTutanaklari({ dosya }: { dosya: string }) {
+  const [l, setL] = useState<{ kimlik: string; tur: string; ekipman: string; zaman: string; yeni_hasar: boolean }[]>([]);
+  useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/kaldirma-tasima`).then(setL).catch(() => setL([])); }, [dosya]);
+  if (!l.length) return null;
+  return <div className="ozet">{l.map((x) => <div key={x.kimlik}>{new Date(x.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} · {x.tur} · {x.ekipman}{x.yeni_hasar ? ' · Yeni hasar' : ''} · <a href={`/api/kaldirma-tasima/${x.kimlik}/tutanak`}>Tutanak (PDF)</a></div>)}</div>;
 }

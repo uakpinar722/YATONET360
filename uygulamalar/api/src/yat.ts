@@ -127,6 +127,33 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
       FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref LEFT JOIN taraf t ON t.kimlik = y.yat_sahibi_ref
       WHERE lower(y.yat_adi) LIKE '%' || lower($1) || '%' OR lower(y.govde_no) = lower($1) OR y.imo_no = $1 ORDER BY lower(y.yat_adi) LIMIT 20`, [a])).rows;
   });
+  // YG-091: yat satışında sahip devri. Yeni sahip kayıtlı taraf olmalıdır; önceki sahip geçmişte kalır. Açık dosyalar mevcut taraflarıyla sürer, Dosya Sorumlusuna gözden geçirme görevi düşer.
+  s.get('/yat/:id/sahip-gecmisi', yonetici, async (i, y) => {
+    const { id } = i.params as { id: string }; if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    return (await b.db.query(`SELECT g.devir_tarihi::text devir_tarihi, o.unvan_ad_soyad onceki, n.unvan_ad_soyad yeni, g.dayanak FROM yat_sahip_gecmisi g LEFT JOIN taraf o ON o.kimlik = g.onceki_sahip_ref JOIN taraf n ON n.kimlik = g.yeni_sahip_ref WHERE g.yat_ref = $1 ORDER BY g.devir_tarihi DESC, g.zaman DESC`, [id])).rows;
+  });
+  s.post('/yat/:id/sahip-devri', yonetici, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarafNo?: string; devirTarihi?: string; dayanak?: string };
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    if (!g.tarafNo?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.devirTarihi ?? '') || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Yeni sahibin taraf numarası, devir tarihi ve dayanak belge (satış sözleşmesi, ruhsat vb.) zorunludur.' });
+    if (g.devirTarihi! > new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Devir tarihi ileri bir tarih olamaz.' });
+    const yt = (await b.db.query(`SELECT yat_adi, yat_sahibi_ref FROM yat WHERE kimlik = $1`, [id])).rows[0]; if (!yt) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    const t = (await b.db.query(`SELECT kimlik, unvan_ad_soyad FROM taraf WHERE taraf_no = $1 AND durum = 'Aktif'`, [g.tarafNo.trim()])).rows[0];
+    if (!t) return y.code(400).send({ hata: 'Bu numarada aktif taraf kaydı bulunamadı.' });
+    if (t.kimlik === yt.yat_sahibi_ref) return y.code(409).send({ hata: 'Seçilen taraf zaten yatın sahibidir.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`INSERT INTO yat_sahip_gecmisi (yat_ref, onceki_sahip_ref, yeni_sahip_ref, devir_tarihi, dayanak, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [id, yt.yat_sahibi_ref, t.kimlik, g.devirTarihi, g.dayanak.trim(), o.kullanici]);
+      await c.query(`UPDATE yat SET yat_sahibi_ref = $2, yetkili_malik_ref = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [id, t.kimlik]);
+      const acik = (await c.query(`SELECT kimlik, dosya_no, dosya_sorumlusu_ref FROM dosya WHERE yat_ref = $1 AND statu NOT IN ('Kapalı', 'İptal')`, [id])).rows;
+      const { kartAc } = await import('./is_motoru.js');
+      for (const d of acik) if (d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Yat Sahibi Değişti', kategori: 'gorev', baslik: `${d.dosya_no} · Yat Sahibi Değişti`, ozet: `${yt.yat_adi} ${g.devirTarihi!.split('-').reverse().join('.')} tarihinde ${t.unvan_ad_soyad} adına devredildi. Dosyadaki taraf, onay ve ödeme sorumlusunu gözden geçiriniz.`, sahipKullanici: d.dosya_sorumlusu_ref, sonZaman: new Date(Date.now() + 2 * 86_400_000), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yat Sahip Devri', nesneTuru: 'Yat', nesneKimligi: id, eski: { yat_sahibi_ref: yt.yat_sahibi_ref }, yeni: { yat_sahibi_ref: t.kimlik, devir: g.devirTarihi }, gerekce: g.dayanak.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { acikDosya: acik.length };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
   s.post('/yat/:id/duzelt', yonetici, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const { alanlar, kaynak, gerekce } = (i.body ?? {}) as { alanlar?: Record<string, unknown>; kaynak?: string; gerekce?: string };

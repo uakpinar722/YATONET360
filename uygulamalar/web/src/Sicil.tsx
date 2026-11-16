@@ -135,7 +135,7 @@ export function NobetCizelge() {
 
 /** YG-923: imzalı nüsha ve birlikte imza olmadan sözleşme yürürlüğe girmez; YG-915 haciz ihbarı Hukuk ve Uyum Direktörünce girilir. */
 function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, m: string) => Promise<void> }) {
-  const [hz, setHz] = useState({ no: '', teblig: '', cevapSon: '' }); const [aS, setAS] = useState(''); const [se, setSe] = useState({ marka: '', kapasite: '', taraf: '' }); const [kq, setKq] = useState({ ad: '', belge: '', belgeBitis: '', police: '', policeBitis: '' }); const [ag, setAg] = useState('');
+  const [hz, setHz] = useState({ no: '', teblig: '', cevapSon: '' }); const [aS, setAS] = useState(''); const [se, setSe] = useState({ marka: '', kapasite: '', taraf: '', ilce: '' }); const [kq, setKq] = useState({ ad: '', belge: '', belgeBitis: '', police: '', policeBitis: '' }); const [ag, setAg] = useState('');
   const [l, setL] = useState<{ kimlik: string; sozlesme_turu: string; yururluk: string; bitis: string | null; durum: string }[]>([]); const [f, setF] = useState({ tur: 'İş Birliği Firması Çerçeve Sözleşmesi', yururluk: '', bitis: '' }); const [bl, setBl] = useState(''); const [imza, setImza] = useState(false);
   const yukle = () => istek<typeof l>(`/firma/${id}/sozlesme`).then(setL).catch(() => setL([]));
   useEffect(() => { void yukle(); }, [id]);
@@ -147,10 +147,11 @@ function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown
     {l.map((s) => <div className="soru" key={s.kimlik}><span>{s.sozlesme_turu} · {s.yururluk.split('-').reverse().join('.')} · {s.durum}</span>
       {s.durum === 'Taslak' && <div className="tam"><BelgeSec ad={`İmzalı Nüsha ${s.sozlesme_turu}`} bagTuru="Kuruluş" bagKimligi={id} deger={bl} sec={setBl} /><label><input type="checkbox" checked={imza} onChange={(e) => setImza(e.target.checked)} /> Birlikte imza tamamlandı</label><button className="btn2 kucuk" disabled={!bl || !imza} onClick={() => void yap(() => istek(`/sozlesme/${s.kimlik}/yururluk`, { belge: bl, birlikteImza: imza }).then(yukle), 'Sözleşme yürürlüğe girdi.')}>Yürürlüğe Al</button></div>}
     </div>)}
+    <label htmlFor="se-i">İlçe Teyit Kaynağı (Vergi Levhası, Ticaret Sicili, Saha Ziyareti vb.)</label><input id="se-i" value={se.ilce} onChange={(e) => setSe({ ...se, ilce: e.target.value })} />
     <label htmlFor="se-m">Yetkili Servis Markası</label><input id="se-m" value={se.marka} onChange={(e) => setSe({ ...se, marka: e.target.value })} />
     <label htmlFor="se-k">İş Kapasitesi</label><input id="se-k" inputMode="numeric" value={se.kapasite} onChange={(e) => setSe({ ...se, kapasite: e.target.value })} />
     <label htmlFor="se-t">Çıkar Çatışması: Taraf No</label><input id="se-t" value={se.taraf} onChange={(e) => setSe({ ...se, taraf: e.target.value })} />
-    <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/sicil-ek`, { marka: se.marka || undefined, kapasite: Number(se.kapasite) || undefined, cikarTaraf: se.taraf || undefined }), 'Sicil bilgisi kaydedildi.')}>Sicil Bilgisini Kaydet</button>
+    <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/sicil-ek`, { ilceTeyitKaynagi: se.ilce || undefined, marka: se.marka || undefined, kapasite: Number(se.kapasite) || undefined, cikarTaraf: se.taraf || undefined }), 'Sicil bilgisi kaydedildi.')}>Sicil Bilgisini Kaydet</button>
     <label htmlFor="kq-a">Kaptan Adı</label><input id="kq-a" value={kq.ad} onChange={(e) => setKq({ ...kq, ad: e.target.value })} />
     <label htmlFor="kq-b">Yeterlilik Belgesi</label><input id="kq-b" value={kq.belge} onChange={(e) => setKq({ ...kq, belge: e.target.value })} />
     <label htmlFor="kq-bb">Belge Geçerliliği</label><input id="kq-bb" type="date" value={kq.belgeBitis} onChange={(e) => setKq({ ...kq, belgeBitis: e.target.value })} />

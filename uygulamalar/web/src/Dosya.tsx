@@ -11,6 +11,7 @@ import { VeriDuzeltme } from './VeriDuzeltme';
 import { KonuIslem } from './KonuIslem';
 import { BelgeInceleme } from './BelgeInceleme';
 import { Malikler } from './Malikler';
+import { SahipDevri } from './SahipDevri';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
@@ -359,6 +360,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik} className="soru"><span>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '---'} · {t.eposta ?? '---'}{t.baslangic_zamani ? ` · Başlangıç: ${new Date(t.baslangic_zamani).toLocaleDateString('tr-TR')}` : ''}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</span>{d.rollerim.includes('Dosya Sorumlusu') && <div className="tam"><label htmlFor={`tb-${t.kimlik}`}>Sonlandırma Gerekçesi</label><input id={`tb-${t.kimlik}`} value={tBit[t.kimlik] ?? ''} onChange={(e) => setTBit({ ...tBit, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!tBit[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/dosya-tarafi/${t.kimlik}/bitir`, { gerekce: tBit[t.kimlik] }))}>İlişkiyi Sonlandır</button></div>}</div>)}</Blok>
       <BelgeInceleme dosya={id} />
       <Malikler dosya={id} />
+      {d.yat.kimlik && d.izinler.includes('yat.duzelt') && <SahipDevri yat={d.yat.kimlik} />}
       {d.yat.kimlik && <><VeriDuzeltme nesneTuru="Yat" nesne={d.yat.kimlik} baslik="Yat Kaydında Düzeltme Talebi" /><VeriDuzeltme nesneTuru="Taraf" yat={d.yat.kimlik} baslik="Yat Sahibi Kaydında Düzeltme Talebi" /></>}
       {d.musteri_turu === 'Kurumsal Müşteri' && d.rollerim.includes('Dosya Sorumlusu') && <MusteriTalimati dosya={id} />}
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>

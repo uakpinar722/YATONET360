@@ -197,7 +197,7 @@ interface KurumsalV { kurum: string; kurumId?: string; ek2Siniri: string; yetkil
 /** YG-304, YG-339: firma personeli; ayrılan personelin ekip kartları ve hesabı kapanır. */
 export function FirmaPersoneli() {
   const [l, setL] = useState<{ kimlik: string; ad_soyad: string; gorev: string; isg_egitim_bitis: string | null; yetki_belgesi: string | null; yetki_belgesi_bitis: string | null; aktif: boolean; kritik: boolean; esdegerlik_sonucu: string | null }[]>([]); const [f, setF] = useState({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); const [m, setM] = useState('');
-  const [kr, setKr] = useState(false); const [yer, setYer] = useState(''); const [yb, setYb] = useState(''); const [kurum, setKurum] = useState(''); // YG-340
+  const [kr, setKr] = useState(false); const [kv, setKv] = useState(false); const [yer, setYer] = useState(''); const [yb, setYb] = useState(''); const [kurum, setKurum] = useState(''); // YG-340
   const yk = () => istek<typeof l>('/firma-portal/personel').then(setL).catch(() => setL([]));
   useEffect(() => { void yk(); void istek<{ kurum: { kimlik: string } }>('/kurum/hesap').then((h) => setKurum(h.kurum.kimlik)).catch(() => setKurum('')); }, []);
   const eskiKritik = l.find((x) => x.kimlik === yer)?.kritik;
@@ -213,7 +213,8 @@ export function FirmaPersoneli() {
     <label><input type="checkbox" checked={kr} onChange={(e) => setKr(e.target.checked)} /> Kritik görevde (yerine geçecek kişide eşdeğer yeterlilik aranır)</label>
     <label htmlFor="fp-y">Yerine Geçtiği Personel</label><select id="fp-y" value={yer} onChange={(e) => setYer(e.target.value)}><option value="">Yok</option>{l.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}{x.kritik ? ' (Kritik)' : ''}</option>)}</select>
     {eskiKritik && kurum && <BelgeSec ad="Yeterlilik Belgesi" bagTuru="Kuruluş" bagKimligi={kurum} deger={yb} sec={setYb} />}
-    <button className="btn2" disabled={Boolean(eskiKritik) && !yb} onClick={() => void istek('/firma-portal/personel', { ...f, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined, kritik: kr, yerine: yer || undefined, yeterlilikBelgesi: yb || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setKr(false); setYer(''); setYb(''); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button></>;
+    <label><input type="checkbox" checked={kv} onChange={(e) => setKv(e.target.checked)} /> Bu personele Çözüm Ortağı Aydınlatma Metni (KVKK-03) iletilmiştir.</label>
+    <button className="btn2" disabled={(Boolean(eskiKritik) && !yb) || !kv} onClick={() => void istek('/firma-portal/personel', { ...f, kvkk03: kv, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined, kritik: kr, yerine: yer || undefined, yeterlilikBelgesi: yb || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setKr(false); setKv(false); setYer(''); setYb(''); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button></>;
 }
 
 /** YG-424: Görevli Ekip Kartı; firma unvanı yazılmaz, QR doğrulamaya gider. */

@@ -120,6 +120,19 @@ kapiKaydet('Teklif', async (db, d) => {
   return eksik.length ? `Teklife geçmek için yat bilgisi eksik: ${eksik.join(', ')}.` : null;
 });
 
+/** YG-1440: süresi dolan yat belgesi yeniden istenir; yatın açık dosyalarının Dosya Sorumlusuna bir kez görev düşer. */
+export async function belgeSuresiIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const bugun = new Date(simdi.getTime() + 3 * 3_600_000).toISOString().slice(0, 10);
+  const { rows } = await db.query(`SELECT b.kimlik, b.ad, b.bag_kimligi yat, b.gecerlilik_bitis::text bitis FROM belge b WHERE b.bag_turu = 'Yat' AND b.gecerlilik_bitis < $1::date AND b.yenileme_istendi IS NULL`, [bugun]);
+  let n = 0;
+  for (const b of rows) {
+    const dosyalar = (await db.query(`SELECT kimlik, dosya_no, dosya_sorumlusu_ref FROM dosya WHERE yat_ref::text = $1 AND statu NOT IN ('Kapalı', 'İptal') AND dosya_sorumlusu_ref IS NOT NULL`, [b.yat])).rows;
+    for (const d of dosyalar) { await kartAc(db, { tur: 'Süresi Dolan Yat Belgesi', kategori: 'gorev', baslik: `${d.dosya_no} · Süresi Dolan Belge: ${b.ad}`, ozet: `Geçerlilik bitişi ${b.bitis.split('-').reverse().join('.')}. Güncel belgeyi yat sahibinden veya yetkilisinden isteyerek yat kaydına yükleyiniz.`, sahipKullanici: d.dosya_sorumlusu_ref, sonZaman: new Date(simdi.getTime() + 3 * 86_400_000), nesneTuru: 'Dosya', nesneKimligi: d.kimlik }); n++; }
+    await db.query(`UPDATE belge SET yenileme_istendi = $2 WHERE kimlik = $1`, [b.kimlik, simdi]);
+  }
+  return n;
+}
+
 /** Dosya açılışında çalışan modül kancaları (yat sahibi beyanı, uygulama bağlantısı). */
 type AcilisKancasi = (c: PoolClient, dosya: string, web: string, yapan: string) => Promise<void>;
 const ACILIS: AcilisKancasi[] = [];
@@ -338,7 +351,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const izinler = await kullaniciIzinleri(b.db, o.kullanici);
     // YG-105: müşteri (yat sahibi) kaydındaki risk olayı ve vefat işareti dosya ekranında gösterilir.
     const risk = (await b.db.query(`SELECT r.risk_olayi FROM dosya_tarafi t JOIN taraf r ON r.kimlik = t.taraf_ref WHERE t.dosya_ref = $1 AND t.aktif AND t.taraf_rolu = 'Yat Sahibi' AND r.risk_olayi IS NOT NULL LIMIT 1`, [id])).rows[0]?.risk_olayi ?? (d.vefat_isareti ? 'Vefat' : null);
-    return { ...d, musteri_risk_olayi: risk, yat, talep, taraflar, sigorta, ekip, gecmis, bekleme, sureler, konular, iliskiler, yapilacaklar: await yapilacaklar(b.db, d), izinler: izinler.filter((x) => x.startsWith('dosya.')), rollerim: ekip.filter((e) => e.kullanici === o.kullanici).map((e) => e.rol), bireysel6502: d.musteri_turu === 'Bireysel Müşteri' && !/ticari/i.test(yat.kullanim_amaci ?? '') };
+    return { ...d, musteri_risk_olayi: risk, yat, talep, taraflar, sigorta, ekip, gecmis, bekleme, sureler, konular, iliskiler, yapilacaklar: await yapilacaklar(b.db, d), izinler: izinler.filter((x) => x.startsWith('dosya.') || x === 'yat.duzelt'), rollerim: ekip.filter((e) => e.kullanici === o.kullanici).map((e) => e.rol), bireysel6502: d.musteri_turu === 'Bireysel Müşteri' && !/ticari/i.test(yat.kullanim_amaci ?? '') };
   });
 
   // YG-047, YG-146, YG-1535: atama önerisi kapasiteye göre sıralanır; %100 kişi seçilemez.
@@ -671,16 +684,17 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/belge-inceleme', oturumlu, async (i, y) => {
     const d = await dosyaGetir((i.params as { id: string }).id, i.oturum!.kullanici); if (!d) return yok(y);
     const teknik = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[])`, [i.oturum!.kullanici, TEKNIK])).rowCount);
-    const belgeler = (await b.db.query(`SELECT b.kimlik, b.ad, b.belge_turu, b.bag_turu, b.inceleme_sonucu, b.inceleme_notu, b.inceleme_zamani FROM belge b WHERE (b.bag_turu = 'Dosya' AND b.bag_kimligi = $1::text) OR (b.bag_turu = 'Yat' AND b.bag_kimligi = $2::text) ORDER BY b.olusturma_zamani DESC LIMIT 100`, [d.kimlik, d.yat_ref])).rows;
+    const belgeler = (await b.db.query(`SELECT b.kimlik, b.ad, b.belge_turu, b.bag_turu, b.inceleme_sonucu, b.inceleme_notu, b.inceleme_zamani, b.gecerlilik_bitis::text gecerlilik_bitis FROM belge b WHERE (b.bag_turu = 'Dosya' AND b.bag_kimligi = $1::text) OR (b.bag_turu = 'Yat' AND b.bag_kimligi = $2::text) ORDER BY b.olusturma_zamani DESC LIMIT 100`, [d.kimlik, d.yat_ref])).rows;
     return { teknik, belgeler };
   });
   s.post('/dosya/:id/belge/:belge/inceleme', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id, belge } = i.params as { id: string; belge: string }; const g = (i.body ?? {}) as { sonuc?: string; not?: string };
+    const o = i.oturum!; const { id, belge } = i.params as { id: string; belge: string }; const g = (i.body ?? {}) as { sonuc?: string; not?: string; gecerlilikBitis?: string };
+    if (g.gecerlilikBitis && !/^\d{4}-\d{2}-\d{2}$/.test(g.gecerlilikBitis)) return y.code(400).send({ hata: 'Geçerlilik bitiş tarihini geçerli giriniz.' });
     const d = await dosyaGetir(id, o.kullanici); if (!d || !UUID.test(belge)) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[])`, [o.kullanici, TEKNIK])).rowCount) return y.code(403).send({ hata: 'Belge incelemesini teknik personel yapar.' });
     if (!['Uygun', 'Eksik'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Uygun veya Eksik seçiniz.' });
     if (g.sonuc === 'Eksik' && !g.not?.trim()) return y.code(400).send({ hata: 'Eksik olan hususu yazınız.' });
-    const r = await b.db.query(`UPDATE belge SET inceleme_sonucu = $3, inceleme_notu = $4, inceleyen_ref = $5, inceleme_zamani = now() WHERE kimlik = $1 AND ((bag_turu = 'Dosya' AND bag_kimligi = $2::text) OR (bag_turu = 'Yat' AND bag_kimligi = $6::text)) RETURNING ad`, [belge, d.kimlik, g.sonuc, g.not?.trim() || null, o.kullanici, d.yat_ref]);
+    const r = await b.db.query(`UPDATE belge SET inceleme_sonucu = $3, inceleme_notu = $4, inceleyen_ref = $5, inceleme_zamani = now(), gecerlilik_bitis = coalesce($7::date, gecerlilik_bitis), yenileme_istendi = CASE WHEN $7::date IS NOT NULL THEN NULL ELSE yenileme_istendi END WHERE kimlik = $1 AND ((bag_turu = 'Dosya' AND bag_kimligi = $2::text) OR (bag_turu = 'Yat' AND bag_kimligi = $6::text)) RETURNING ad`, [belge, d.kimlik, g.sonuc, g.not?.trim() || null, o.kullanici, d.yat_ref, g.gecerlilikBitis || null]);
     if (!r.rowCount) return yok(y);
     if (g.sonuc === 'Eksik' && d.dosya_sorumlusu_ref) await bildir(b.db, { olay: `belge-eksik:${belge}:${Date.now()}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Belge Eksik: ${r.rows[0].ad}`, ozet: g.not!.trim() });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İncelemesi', nesneTuru: 'Belge', nesneKimligi: belge, yeni: { sonuc: g.sonuc }, gerekce: g.not?.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

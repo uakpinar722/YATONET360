@@ -28,3 +28,13 @@ export function IstifaBildirimi() {
     <label htmlFor="is-a">Açıklama</label><input id="is-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
     <button className="btn hayir" onClick={() => void istek('/istifa-bildirimi', { sonGun: f.sonGun || undefined, aciklama: f.aciklama || undefined }).then(() => { setM('İstifa bildiriminiz İnsan Kaynaklarına iletildi.'); setF({ sonGun: '', aciklama: '' }); }).catch((e) => setM(e.message))}>İstifamı Bildir</button></details>;
 }
+
+/** YG-946: evlilik, doğum ve vefat haberi yalnız çalışanın kendi talebiyle LGM personeline duyurulur. */
+export function HaberDuyurusu() {
+  const [f, setF] = useState({ tur: 'Evlilik', aciklama: '' }); const [m, setM] = useState('');
+  return <details className="ozet"><summary>Haberimi Duyur</summary>{m && <div className="not" role="status">{m}</div>}
+    <div className="not">Haberiniz yalnız sizin talebinizle ve yalnız LGM personeline 7 gün süreyle duyurulur.</div>
+    <label htmlFor="hd-t">Haber Türü</label><select id="hd-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Evlilik', 'Doğum', 'Vefat'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="hd-a">Paylaşmak İstediğiniz Not</label><input id="hd-a" maxLength={500} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+    <button className="btn2" onClick={() => void istek('/haber-duyurusu', { tur: f.tur, aciklama: f.aciklama || undefined }).then(() => { setM('Haberiniz duyuruldu.'); setF({ tur: 'Evlilik', aciklama: '' }); }).catch((e) => setM(e.message))}>Duyur</button></details>;
+}

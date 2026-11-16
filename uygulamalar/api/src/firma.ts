@@ -233,7 +233,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     // YG-1548: dalış ve sıcak işte kanıt yoksa iş emri açılmaz; acil işler beklemez.
     { const u = await import('./uyum.js'); for (const ol of u.isEmriUyumOlaylari(g.kapsam!)) { const ue = await u.uyumEngeli(b.db, ol, 'Dosya', id, d.oncelik === 'Kritik'); if (ue) return y.code(409).send({ hata: ue }); } }
     // YG-306: görevlendirme kontrolü; Ret engeller, Koşullu Kabul uyarıyla geçer.
-    const gk = await gorevlendirmeKontrolu(b.db, { firma: g.firma, dosya: id, brans: g.brans ?? null, tutar: g.bedel ?? null, cokBrans: g.cokBrans, anaSistem: g.anaSistem, kritik: g.kritik });
+    // YG-309: işin yürütüleceği tesis firmaya ait olmalıdır.
+    const tesis = (g as { tesis?: string }).tesis || null;
+    if (tesis && !(UUID.test(tesis) && (await b.db.query(`SELECT 1 FROM firma_tesisi WHERE kimlik = $1 AND kurulus_ref = $2`, [tesis, g.firma])).rowCount)) return y.code(400).send({ hata: 'Tesis seçilen firmaya ait değildir.' });
+    const gk = await gorevlendirmeKontrolu(b.db, { firma: g.firma, dosya: id, brans: g.brans ?? null, tesis, tutar: g.bedel ?? null, cokBrans: g.cokBrans, anaSistem: g.anaSistem, kritik: g.kritik });
     // YG-305: aynı branşta uygun olmayan diğer aktif firmalar elenme nedeniyle kaydedilir; seçim gerekçesi karar sahibince yazılır.
     const elenen: { firma: string; neden: string }[] = [];
     for (const f of (await b.db.query(`SELECT kimlik, ticari_unvan FROM kurulus WHERE kayit_rolu = 'Çözüm Ortağı' AND ag_statusu = 'Aktif' AND kimlik <> $1 ORDER BY ticari_unvan LIMIT 25`, [g.firma])).rows) {
@@ -272,6 +275,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       const no = await altNumara(c, d.dosya_no, g.tur!);
       const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, ana_is_emri_ref, dosya_ref, teklif_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, baslangic_tarihi, hedef_bitis_tarihi, tehlikeli_atik, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
         [no, g.tur, g.ana ?? null, id, g.teklif ?? null, g.firma, g.yer!.trim(), g.kapsam!.trim(), g.bedel ?? null, g.baslangic ?? null, g.bitis ?? null, Boolean(g.tehlikeliAtik), o.kullanici])).rows[0];
+      if (tesis) await c.query(`UPDATE is_emri SET tesis_ref = $2 WHERE kimlik = $1`, [e.kimlik, tesis]); // YG-309
       // YG-320: beklenen teknik sonuç ve yöntem kayda geçer; LGM sorumlu rolü sahada Saha Sorumlusu, yoksa Teknik Uzmandır.
       { const ss = (await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [id])).rowCount;
         await c.query(`UPDATE is_emri SET teknik_sonuc = $2, yontem = $3, sorumlu_rol = $4, ana_brans = $5, gorev_sinifi = $6 WHERE kimlik = $1`, [e.kimlik, g.teknikSonuc?.trim() || null, g.yontem?.trim() || null, ss ? 'Saha Sorumlusu' : 'Teknik Uzman', g.brans ?? null, gk.sinif]); } // YG-309

@@ -1531,4 +1531,63 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/malikler`, c)).json() as { ad: string; yetkili: boolean }[];
     expect(l.filter((x) => x.yetkili).map((x) => x.ad)).toEqual(['Malik A']);
   });
+  it('evlilik, doğum ve vefat haberi yalnız çalışanın talebiyle LGM içinde duyurulur (YG-946)', async () => {
+    const c = await o.gir('ds'); const u = '/api/haber-duyurusu';
+    expect((await o.ist('POST', u, c, { tur: 'Nişan' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { tur: 'Doğum', aciklama: 'Kızımız dünyaya geldi.' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT kapsam, durum FROM duyuru WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ kapsam: 'LGM', durum: 'Yayında' });
+    expect((await o.ist('POST', u, c, { tur: 'Doğum' })).statusCode).toBe(409);
+  });
+  it('İç Denetim Müdürünün makamları (YG-1678)', async () => {
+    const rid = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
+    const idm = await rid('İç Denetim Müdürü');
+    const { karneMakami } = await import('../src/personel_karne.js'); const { denemeZinciri } = await import('../src/akademi.js'); const { onayMakami } = await import('../src/makam.js');
+    expect(await karneMakami(o.db, { ad: 'İç Denetim Müdürü', kimlik: idm })).toBe(await rid('CEO'));
+    expect(await denemeZinciri(o.db, idm)).toEqual([await rid('CEO')]);
+    expect(await onayMakami(o.db, idm)).toBe(await rid('Risk ve Kalite Direktörü'));
+  });
+  it('rızalı evlilik yıl dönümü özel günlerde görünür, rızasız görünmez (YG-946)', async () => {
+    const { ozelGunler } = await import('../src/ozel_gun.js'); const bugun = new Date();
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1, '2020-01-01', $1) ON CONFLICT DO NOTHING`, [o.K.ds]);
+    await o.sup.query(`INSERT INTO personel_ozel_gun (personel_ref, evlilik_tarihi, paylasim_rizasi) VALUES ($1, $2, true) ON CONFLICT (personel_ref) DO UPDATE SET evlilik_tarihi = $2, paylasim_rizasi = true`, [o.K.ds, `2015-${bugun.toISOString().slice(5, 10)}`]);
+    expect((await ozelGunler(o.db, bugun)).some((x) => x.tur === 'Evlilik Yıl Dönümü')).toBe(true);
+    await o.sup.query(`UPDATE personel_ozel_gun SET paylasim_rizasi = false, evlilik_tarihi = NULL WHERE personel_ref = $1`, [o.K.ds]);
+    expect((await ozelGunler(o.db, bugun)).some((x) => x.tur === 'Evlilik Yıl Dönümü')).toBe(false);
+  });
+  it('yat satışında sahip devri; önceki sahip geçmişte, açık dosyaya görev (YG-091)', async () => {
+    const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const eski = (await o.sup.query(`SELECT yat_sahibi_ref FROM yat WHERE kimlik = $1`, [yat])).rows[0].yat_sahibi_ref;
+    const yeni = (await o.sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, unvan_ad_soyad) VALUES ($1, 'Gerçek kişi', 'Yeni Malik') RETURNING taraf_no`, [`TRF-D${Date.now()}`])).rows[0].taraf_no;
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.opm]);
+    const c = await o.gir('opm'); const u = `/api/yat/${yat}/sahip-devri`;
+    expect((await o.ist('POST', u, c, { tarafNo: yeni, devirTarihi: '2026-11-01' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { tarafNo: yeni, devirTarihi: '2026-11-01', dayanak: 'Noter satış sözleşmesi' }); expect(r.statusCode, r.body).toBe(200); expect(r.json().acikDosya).toBeGreaterThanOrEqual(1);
+    expect((await o.sup.query(`SELECT onceki_sahip_ref FROM yat_sahip_gecmisi WHERE yat_ref = $1`, [yat])).rows[0].onceki_sahip_ref).toBe(eski);
+    expect((await o.kart('Yat Sahibi Değişti', d.kimlik)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', u, c, { tarafNo: yeni, devirTarihi: '2026-11-01', dayanak: 'x' })).statusCode).toBe(409);
+  });
+  it('firma ilçe teyidi kaynağıyla kaydedilir (YG-1261)', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, ilce) VALUES ($1, 'İlçe Deneme', 'Çözüm Ortağı', NULL) RETURNING kimlik`, [`IT-${Date.now()}`])).rows[0].kimlik;
+    const c = await o.gir('sc'); const u = `/api/firma/${f}/sicil-ek`;
+    expect((await o.ist('POST', u, c, { ilceTeyitKaynagi: 'Vergi levhası' })).statusCode).toBe(409);
+    await o.sup.query(`UPDATE kurulus SET ilce = 'Marmaris' WHERE kimlik = $1`, [f]);
+    expect((await o.ist('POST', u, c, { ilceTeyitKaynagi: 'Vergi levhası' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT ilce_teyit_kaynagi, ilce_teyit_eden_ref FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ ilce_teyit_kaynagi: 'Vergi levhası', ilce_teyit_eden_ref: o.K.sc });
+  });
+  it('kaldırma ve taşıma tutanağı FR-OPS-012 indirilir (YG-376)', async () => {
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('opm');
+    const k = (await o.sup.query(`INSERT INTO kaldirma_tasima (dosya_ref, tur, ekipman, kapasite_ton, yat_agirlik_ton, yeni_hasar, kaydeden_ref, guzergah) VALUES ($1, 'Kara Taşıması', 'Lowbed', 40, 12, false, $2, 'Marmaris → Bodrum') RETURNING kimlik`, [d.kimlik, o.K.opm])).rows[0].kimlik;
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/kaldirma-tasima`, c)).json().length).toBe(1);
+    const r = await o.ist('GET', `/api/kaldirma-tasima/${k}/tutanak?bicim=docx`, c); expect(r.statusCode).toBe(200); expect(r.headers['content-disposition']).toContain('-KT-');
+  });
+  it('süresi dolan yat belgesi yeniden istenir (YG-1440)', async () => {
+    const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const b = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, olusturan_ref, kaynak_kanali) VALUES ('Ruhsatname', 'Dosya Belgesi', 'Yat', $1, $2, 'Elden') RETURNING kimlik`, [yat, o.K.opm])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge/${b}/inceleme`, await o.gir('tm'), { sonuc: 'Uygun', gecerlilikBitis: '2026-01-31' })).statusCode).toBe(200);
+    const { belgeSuresiIsle } = await import('../src/dosya.js');
+    expect(await belgeSuresiIsle(o.db)).toBeGreaterThanOrEqual(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Süresi Dolan Yat Belgesi' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+    await belgeSuresiIsle(o.db); expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Süresi Dolan Yat Belgesi' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
 });
