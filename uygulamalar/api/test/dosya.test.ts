@@ -315,6 +315,7 @@ describe('dosya ekibi (YG-047, YG-048, YG-146, YG-1530)', () => {
     expect((await ata(b.kimlik, 'saha', 'Saha Sorumlusu', 'tm')).statusCode).toBe(200);
     const u = await ata(c.kimlik, 'saha', 'Saha Sorumlusu', 'tm');
     expect(u.json().uyari).toContain('%100');
+    expect((await sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'İş Yükü Uyarısı%'`, [K.opm])).rows[0].n).toBeGreaterThanOrEqual(1); // T-YG543-YUK
     expect((await ata(e.kimlik, 'saha', 'Saha Sorumlusu', 'tm')).statusCode).toBe(409);
     const o = (await ist('GET', `/api/dosya/${e.kimlik}/ekip-oneri?rol=${encodeURIComponent('Saha Sorumlusu')}`, await gir('tm'))).json();
     expect(o[0].oran).toBe(100);

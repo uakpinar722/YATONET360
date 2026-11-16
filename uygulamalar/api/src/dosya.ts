@@ -413,7 +413,14 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         const ek = g.rol === 'Saha Sorumlusu' ? 1 : Number(d.zorluk_katsayisi);
         const ood = (await c.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL LIMIT 1`)).rowCount; // YG-1489: dönemde kapasite kilidi uyarıya döner
         if (yuk + ek > sinir && !ood) return dur(409, 'Kişinin kapasitesi doludur; başka birini seçiniz.');
-        if ((yuk + ek) / sinir >= 0.8) uyari = `Kişinin kapasitesi %${Math.round(((yuk + ek) / sinir) * 100)} dolu.`;
+        if ((yuk + ek) / sinir >= 0.8) {
+          uyari = `Kişinin kapasitesi %${Math.round(((yuk + ek) / sinir) * 100)} dolu.`;
+          // YG-543: %80 eşiğine ulaşan kişi için Operasyon Müdürüne günde bir kez bildirim.
+          if (await birKez(c, 'kapasite-80', `${g.kullanici}:${new Date().toISOString().slice(0, 10)}`)) {
+            const ad = (await c.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [g.kullanici])).rows[0]?.ad_soyad ?? '';
+            await bildir(c, { olay: `kapasite-80:${g.kullanici}:${id}`, kullanicilar: await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü')), baslik: `İş Yükü Uyarısı: ${ad}`, ozet: `${g.rol} rolünde ${uyari}` });
+          }
+        }
       }
       // YG-248: nöbetteki kişi sahaya gitmez; vardiyası süren kişi Saha Sorumlusu atanamaz (firmayı uzaktan görevlendirir).
       if (g.rol === 'Saha Sorumlusu' && (await c.query(`SELECT 1 FROM nobet_vardiyasi v JOIN nobet_cizelgesi z ON z.kimlik = v.cizelge_ref WHERE z.durum = 'Yürürlükte' AND v.kullanici_ref = $1 AND now() BETWEEN v.baslangic AND v.bitis`, [g.kullanici])).rowCount) return dur(409, 'Kişi şu an nöbettedir; nöbetçi sahaya gitmez, işi firmaya uzaktan görevlendirir.');

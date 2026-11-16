@@ -2,12 +2,12 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { istek } from './api';
 
 interface Satir { kimlik: string; tpl_kod: string; tur: string; konu: string; baslangic: string; sure_dk: number; durum: string; oncelik: string }
-interface Tur { kod: string; ad: string; katilimcilar: string }
+interface Tur { kod: string; ad: string; katilimcilar: string; dosyaGerekli?: boolean }
 interface Kisi { kimlik: string; ad_soyad: string }
 interface Katilimci { kimlik: string; ad_soyad: string; katilim: string; vekil_durumu: string | null; vekil: string | null }
 interface Ayrinti extends Satir {
   gundem: string | null; tutanak: string | null; baskan: string; duzenleyen: string; siklik: string; baskanim: boolean; duzenleyenim: boolean;
-  katilimcilar: Katilimci[]; kararlar: { kimlik: string; metin: string; hedef: string; sorumlu: string }[];
+  katilimcilar: Katilimci[]; kararlar: { kimlik: string; metin: string; hedef: string; sorumlu: string; karar_turu: string; basari_olcutu: string | null; izleme_donemi: string | null }[];
 }
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
 const gun = (s: string) => s.split('-').reverse().join('.');
@@ -45,7 +45,7 @@ export function Toplantilar() {
 
 function PlanFormu({ sec, bitti }: { sec: { turler: Tur[]; kisiler: Kisi[] }; bitti: (id?: string) => void }) {
   const [kod, setKod] = useState(sec.turler[sec.turler.length - 1]?.kod ?? ''); const [konu, setKonu] = useState(''); const [gundem, setGundem] = useState('');
-  const [zaman, setZaman] = useState(''); const [sure, setSure] = useState(60); const [kritik, setKritik] = useState(false);
+  const [zaman, setZaman] = useState(''); const [sure, setSure] = useState(60); const [kritik, setKritik] = useState(false); const [dosyaNo, setDosyaNo] = useState('');
   const [secili, setSecili] = useState<Record<string, string>>({}); const [cakisan, setCakisan] = useState<string[]>([]); const [hata, setHata] = useState('');
   const tur = sec.turler.find((t) => t.kod === kod);
   const kisiler = Object.keys(secili);
@@ -56,7 +56,7 @@ function PlanFormu({ sec, bitti }: { sec: { turler: Tur[]; kisiler: Kisi[] }; bi
   const gonder = async (e: FormEvent) => {
     e.preventDefault(); setHata('');
     try {
-      const r = await istek<{ kimlik: string }>('/toplanti', { kod, konu, gundem, baslangic: new Date(zaman).toISOString(), sureDk: sure, kritik, katilimcilar: kisiler.map((k) => ({ kullanici: k, katilim: secili[k] })) });
+      const r = await istek<{ kimlik: string }>('/toplanti', { kod, konu, gundem, baslangic: new Date(zaman).toISOString(), sureDk: sure, kritik, dosyaNo: dosyaNo.trim() || undefined, katilimcilar: kisiler.map((k) => ({ kullanici: k, katilim: secili[k] })) });
       bitti(r.kimlik);
     } catch (x) { setHata((x as Error).message); }
   };
@@ -68,6 +68,8 @@ function PlanFormu({ sec, bitti }: { sec: { turler: Tur[]; kisiler: Kisi[] }; bi
       {tur && <div className="not">Katılımcılar: {tur.katilimcilar}. Rolü belli olan katılımcılar otomatik eklenir.</div>}
       <label htmlFor="t-o">Konu</label>
       <input id="t-o" value={konu} onChange={(e) => setKonu(e.target.value)} />
+      <label htmlFor="t-d">İlgili Dosya No{tur?.dosyaGerekli ? '' : ' (Varsa)'}</label>
+      <input id="t-d" value={dosyaNo} onChange={(e) => setDosyaNo(e.target.value)} />
       <label htmlFor="t-g">Gündem</label>
       <textarea id="t-g" rows={2} value={gundem} onChange={(e) => setGundem(e.target.value)} />
       <div className="iki-tarih">
@@ -91,7 +93,7 @@ function PlanFormu({ sec, bitti }: { sec: { turler: Tur[]; kisiler: Kisi[] }; bi
 
 function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; geri: () => void }) {
   const [t, setT] = useState<Ayrinti | null>(null); const [hata, setHata] = useState('');
-  const [metin, setMetin] = useState(''); const [sorumlu, setSorumlu] = useState(''); const [hedef, setHedef] = useState('');
+  const [metin, setMetin] = useState(''); const [sorumlu, setSorumlu] = useState(''); const [hedef, setHedef] = useState(''); const [kTur, setKTur] = useState('Diğer'); const [kOlcut, setKOlcut] = useState(''); const [kIzleme, setKIzleme] = useState('');
   const [tutanak, setTutanak] = useState(''); const [vekil, setVekil] = useState('');
   const yukle = () => istek<Ayrinti>(`/toplanti/${id}`).then((x) => { setT(x); setTutanak(x.tutanak ?? ''); }).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, [id]);
@@ -126,15 +128,20 @@ function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; g
       )}
       <div className="bolum">Kararlar</div>
       {t.kararlar.length === 0 && <div className="ozet bos">Karar bulunmamaktadır.</div>}
-      {t.kararlar.map((a) => <div key={a.kimlik} className="ozet"><b>{a.metin}</b><div className="not">{a.sorumlu} · Hedef: {gun(a.hedef)}</div></div>)}
+      {t.kararlar.map((a) => <div key={a.kimlik} className="ozet"><b>{a.metin}</b><div className="not">{a.karar_turu} · {a.sorumlu} · Hedef: {gun(a.hedef)}{a.basari_olcutu ? ` · Başarı Ölçütü: ${a.basari_olcutu}` : ''}{a.izleme_donemi ? ` · İzleme: ${a.izleme_donemi}` : ''}</div></div>)}
       {acik && yonetir && (
-        <form className="ozet" onSubmit={(e) => { e.preventDefault(); void yap(async () => { await istek(`/toplanti/${id}/karar`, { metin, sorumlu, hedef }); setMetin(''); setSorumlu(''); setHedef(''); }); }}>
+        <form className="ozet" onSubmit={(e) => { e.preventDefault(); void yap(async () => { await istek(`/toplanti/${id}/karar`, { metin, sorumlu, hedef, tur: kTur, olcut: kOlcut || undefined, izleme: kIzleme || undefined }); setMetin(''); setSorumlu(''); setHedef(''); setKOlcut(''); setKIzleme(''); }); }}>
           <label htmlFor="t-m">Karar</label>
           <textarea id="t-m" rows={2} value={metin} onChange={(e) => setMetin(e.target.value)} />
           <div className="iki-tarih">
             <div><label htmlFor="t-r">Sorumlu</label><select id="t-r" value={sorumlu} onChange={(e) => setSorumlu(e.target.value)}><option value="">Seçiniz</option>{t.katilimcilar.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select></div>
             <div><label htmlFor="t-h">Hedef Tarih</label><input id="t-h" type="date" value={hedef} onChange={(e) => setHedef(e.target.value)} /></div>
           </div>
+          <div className="iki-tarih">
+            <div><label htmlFor="t-kt">Karar Türü</label><select id="t-kt" value={kTur} onChange={(e) => setKTur(e.target.value)}>{['Diğer', 'Risk Kabulü', 'Kaynak Tahsisi', 'Öncelik', 'İyileştirme', 'Eğitim', 'Ek Denetim'].map((x) => <option key={x}>{x}</option>)}</select></div>
+            <div><label htmlFor="t-iz">İzleme Dönemi</label><select id="t-iz" value={kIzleme} onChange={(e) => setKIzleme(e.target.value)}><option value="">Seçiniz</option>{['Tek Sefer', 'Haftalık', 'Aylık', 'Üç Aylık', 'Altı Aylık', 'Yıllık'].map((x) => <option key={x}>{x}</option>)}</select></div>
+          </div>
+          <label htmlFor="t-bo">Başarı Ölçütü</label><input id="t-bo" value={kOlcut} onChange={(e) => setKOlcut(e.target.value)} />
           <button className="btn2" disabled={!metin.trim() || !sorumlu || !hedef}>Karar Ekle</button>
         </form>
       )}

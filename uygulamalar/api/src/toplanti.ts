@@ -17,6 +17,7 @@ const VEKIL_SON_DK = 60;
 const saatYaz = (d: Date | string) => new Date(d).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
 
 /** YG-579: katalogda başkan rolü olan toplantıda o rolün katılımcısı; yoksa en üst kademedeki LGM katılımcısı. Eşitlikte düzenleyen, sonra alfabetik ilk kişi. */
+const KARAR_TURU = ['Risk Kabulü', 'Kaynak Tahsisi', 'Öncelik', 'İyileştirme', 'Eğitim', 'Ek Denetim', 'Diğer']; const IZLEME = ['Haftalık', 'Aylık', 'Üç Aylık', 'Altı Aylık', 'Yıllık', 'Tek Sefer'];
 async function baskanBul(db: Db, rol: string | null, kisiler: string[], duzenleyen: string): Promise<string> {
   const { rows } = await db.query(
     `SELECT h.kimlik, h.ad_soyad, r.rol_adi, r.kademe FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik AND a.atama_durumu = 'Aktif' JOIN rol r ON r.kimlik = a.rol_ref WHERE h.kimlik = ANY($1) AND h.kullanici_grubu = 'LGM İç Rolü'`, [kisiler]);
@@ -80,7 +81,8 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   s.get('/toplanti/secenek', oturumlu, async (i, y) => {
     const o = i.oturum!; const e = lgmDegil(o.grup, y); if (e) return e;
     const kisiler = await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif' AND kimlik <> $1 ORDER BY ad_soyad`, [o.kullanici]);
-    return { turler: (await planlanabilir(o.kullanici)).map((c) => ({ kod: c.kod, ad: c.ad, katilimcilar: c.katilimcilar })), kisiler: kisiler.rows };
+    const dosyaTurleri = (await b.db.query(`SELECT 1 FROM dosya WHERE dosya_sorumlusu_ref = $1 AND statu NOT IN ('Kapalı') LIMIT 1`, [o.kullanici])).rowCount ? (await b.db.query(`SELECT kod, ad, katilimcilar FROM toplanti_katalogu WHERE dosyaya_bagli AND duzenleyen_rol = 'Dosya Sorumlusu' ORDER BY kod`)).rows.map((c) => ({ ...c, dosyaGerekli: true })) : [];
+    return { turler: [...(await planlanabilir(o.kullanici)).map((c) => ({ kod: c.kod, ad: c.ad, katilimcilar: c.katilimcilar })), ...dosyaTurleri], kisiler: kisiler.rows };
   });
 
   s.get('/toplanti', oturumlu, async (i, y) => {
@@ -103,8 +105,12 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   // YG-576, YG-579, YG-582, YG-583: katalogdaki roller otomatik eklenir, davet oluşturma anında gider (YG-581).
   s.post('/toplanti', oturumlu, async (i, y) => {
     const o = i.oturum!; const e = lgmDegil(o.grup, y); if (e) return e;
-    const g = (i.body ?? {}) as { kod?: string; konu?: string; gundem?: string; baslangic?: string; sureDk?: number; katilimcilar?: { kullanici: string; katilim?: string }[]; kritik?: boolean; baglanti?: string; dosya?: string };
-    const c = (await planlanabilir(o.kullanici)).find((x) => x.kod === g.kod);
+    const g = (i.body ?? {}) as { kod?: string; konu?: string; gundem?: string; baslangic?: string; sureDk?: number; katilimcilar?: { kullanici: string; katilim?: string }[]; kritik?: boolean; baglanti?: string; dosya?: string; dosyaNo?: string };
+    // YG-583: ilgili dosya dosya numarasıyla da seçilebilir.
+    if (!g.dosya && g.dosyaNo?.trim()) { g.dosya = (await b.db.query(`SELECT kimlik FROM dosya WHERE dosya_no = $1`, [g.dosyaNo.trim()])).rows[0]?.kimlik; if (!g.dosya) return y.code(400).send({ hata: 'Bu numarada dosya bulunamadı.' }); }
+    let c = (await planlanabilir(o.kullanici)).find((x) => x.kod === g.kod);
+    // YG-579: dosyaya bağlı toplantıyı o dosyanın Dosya Sorumlusu düzenler; başkan katılımcılar arasındaki en üst kademedir.
+    if (!c && g.dosya && UUID.test(g.dosya) && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [g.dosya, o.kullanici])).rowCount) c = (await b.db.query(`SELECT * FROM toplanti_katalogu WHERE kod = $1 AND dosyaya_bagli`, [g.kod])).rows[0];
     if (g.dosya && (!UUID.test(g.dosya) || !(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1`, [g.dosya])).rowCount)) return y.code(400).send({ hata: 'Bağlanacak dosya bulunamadı.' }); // YG-1408
     if (!c) return y.code(403).send({ hata: 'Bu toplantıyı planlama yetkiniz bulunmamaktadır.' });
     if (!g.konu?.trim()) return y.code(400).send({ hata: 'Konu zorunludur.' });
@@ -135,7 +141,8 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
       await d.query('BEGIN');
       const id = (await d.query(`INSERT INTO toplanti (tpl_kod, konu, gundem, baslangic, sure_dk, oncelik, duzenleyen_ref, baskan_ref, gorusme_baglantisi, dosya_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [c.kod, g.konu.trim(), gundem, bas, dk, oncelik, o.kullanici, baskan, g.baglanti?.trim() || null, g.dosya ?? null])).rows[0].kimlik as string;
       for (const [k, t] of liste) await d.query(`INSERT INTO toplanti_katilimci (toplanti_ref, kullanici_ref, katilim) VALUES ($1,$2,$3)`, [id, k, t]);
-      await bildir(d, { olay: `tpl-davet:${id}`, kullanicilar: kisiler.filter((k) => k !== o.kullanici), baslik: `Toplantı Daveti: ${g.konu.trim()}`, ozet: `${c.kod} ${c.ad} · ${saatYaz(bas)}`, oncelik, acil: true, eposta: true, sms: Boolean(g.kritik) });
+      // YG-582: davette kişinin katılım durumu (Zorunlu, İsteğe Bağlı, Yalnız Bilgi) yazılır.
+      for (const kt of new Set([...liste].filter(([k]) => k !== o.kullanici).map(([, t]) => t))) await bildir(d, { olay: `tpl-davet:${id}`, kullanicilar: [...liste].filter(([k, t]) => k !== o.kullanici && t === kt).map(([k]) => k), baslik: `Toplantı Daveti: ${g.konu.trim()}`, ozet: `${c.kod} ${c.ad} · ${saatYaz(bas)} · Katılımınız: ${kt}`, oncelik, acil: true, eposta: true, sms: Boolean(g.kritik) });
       await izYaz(d, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Toplantı Planlandı', nesneTuru: 'toplanti', nesneKimligi: id, yeni: { kod: c.kod }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await d.query('COMMIT');
       return { kimlik: id, cakisanlar: cakisma };
@@ -147,14 +154,16 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await katilimciMi(id, o.kullanici))) return yok(y);
     const t = (await b.db.query(`SELECT t.*, c.ad AS tur, c.siklik, b.ad_soyad AS baskan, d.ad_soyad AS duzenleyen FROM toplanti t JOIN toplanti_katalogu c ON c.kod = t.tpl_kod JOIN kullanici_hesabi b ON b.kimlik = t.baskan_ref JOIN kullanici_hesabi d ON d.kimlik = t.duzenleyen_ref WHERE t.kimlik = $1`, [id])).rows[0];
     const k = await b.db.query(`SELECT h.kimlik, h.ad_soyad, p.katilim, p.vekil_durumu, v.ad_soyad AS vekil FROM toplanti_katilimci p JOIN kullanici_hesabi h ON h.kimlik = p.kullanici_ref LEFT JOIN kullanici_hesabi v ON v.kimlik = p.vekil_ref WHERE p.toplanti_ref = $1 ORDER BY h.ad_soyad`, [id]);
-    const r = await b.db.query(`SELECT a.kimlik, a.metin, a.hedef_tarih::text AS hedef, h.ad_soyad AS sorumlu FROM toplanti_karar a JOIN kullanici_hesabi h ON h.kimlik = a.sorumlu_ref WHERE a.toplanti_ref = $1 ORDER BY a.zaman`, [id]);
+    const r = await b.db.query(`SELECT a.kimlik, a.metin, a.hedef_tarih::text AS hedef, a.karar_turu, a.basari_olcutu, a.izleme_donemi, h.ad_soyad AS sorumlu FROM toplanti_karar a JOIN kullanici_hesabi h ON h.kimlik = a.sorumlu_ref WHERE a.toplanti_ref = $1 ORDER BY a.zaman`, [id]);
     return { ...t, katilimcilar: k.rows, kararlar: r.rows, baskanim: t.baskan_ref === o.kullanici, duzenleyenim: t.duzenleyen_ref === o.kullanici };
   });
 
   // YG-576, YG-584: karar sorumlu ve tarihle işlenir, sorumlunun Bugün listesine görev düşer.
   s.post('/toplanti/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const { metin, sorumlu, hedef, dosya } = (i.body ?? {}) as { metin?: string; sorumlu?: string; hedef?: string; dosya?: string };
+    const { metin, sorumlu, hedef, dosya, tur, olcut, izleme } = (i.body ?? {}) as { metin?: string; sorumlu?: string; hedef?: string; dosya?: string; tur?: string; olcut?: string; izleme?: string };
+    if (tur && !KARAR_TURU.includes(tur)) return y.code(400).send({ hata: 'Karar türünü listeden seçiniz.' }); // YG-775
+    if (izleme && !IZLEME.includes(izleme)) return y.code(400).send({ hata: 'İzleme dönemini listeden seçiniz.' });
     if (!UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT konu, durum, baskan_ref, duzenleyen_ref, tpl_kod, dosya_ref FROM toplanti WHERE kimlik = $1`, [id])).rows[0];
     if (!t || (t.baskan_ref !== o.kullanici && t.duzenleyen_ref !== o.kullanici)) return yok(y);
@@ -167,7 +176,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     const d = await b.db.connect();
     try {
       await d.query('BEGIN');
-      const a = (await d.query(`INSERT INTO toplanti_karar (toplanti_ref, metin, sorumlu_ref, hedef_tarih, yazan_ref, dosya_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [id, metin.trim(), sorumlu, hedef, o.kullanici, kDosya])).rows[0].kimlik;
+      const a = (await d.query(`INSERT INTO toplanti_karar (toplanti_ref, metin, sorumlu_ref, hedef_tarih, yazan_ref, dosya_ref, karar_turu, basari_olcutu, izleme_donemi) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, metin.trim(), sorumlu, hedef, o.kullanici, kDosya, tur ?? 'Diğer', olcut?.trim() || null, izleme ?? null])).rows[0].kimlik;
       const dn = kDosya ? (await d.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [kDosya])).rows[0].dosya_no as string : null;
       const kart = await kartAc(d, { tur: 'Toplantı Kararı', kategori: 'gorev', baslik: `${dn ? `${dn} · ` : ''}Toplantı Kararı · ${t.konu}`, ozet: metin.trim(), hazirlayan: o.kullanici, sahipKullanici: sorumlu, sonZaman: new Date(`${hedef}T20:59:59Z`), nesneTuru: 'toplanti', nesneKimligi: id });
       await d.query(`UPDATE toplanti_karar SET is_karti_ref = $2 WHERE kimlik = $1`, [a, kart]);

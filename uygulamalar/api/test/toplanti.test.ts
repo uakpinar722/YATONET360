@@ -131,6 +131,7 @@ describe('davet ve hatırlatma (YG-581)', () => {
     const bas = ileri(30);
     const id = (await planla(d, { baslangic: bas, katilimcilar: [{ kullanici: K[BIM] }, { kullanici: K[CEO], katilim: 'Yalnız Bilgi' }] })).json().kimlik;
     const g = await sup.query(`SELECT kanal, kullanici_ref, plan_zamani FROM gonderim WHERE olay_anahtari = $1`, [`tpl-davet:${id}`]);
+    expect((await sup.query(`SELECT ozet FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [K[CEO], `tpl-davet:${id}`])).rows[0].ozet).toContain('Katılımınız: Yalnız Bilgi'); // T-YG582-KATILIM
     expect(g.rows.map((x) => x.kullanici_ref).sort()).toEqual([K[BIM], K[CEO]].sort());
     const t = new Date(bas).getTime(); const an = (dk: number) => new Date(t - dk * 60_000);
     const say = async (e: number) => (await sup.query(`SELECT count(*)::int n FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`tpl-hat:${id}:${e}`, K[BIM]])).rows[0].n;
@@ -174,6 +175,11 @@ describe('karar ve tutanak (YG-576, YG-584)', () => {
     expect((await yaz(d, { hedef: 'yarın' })).statusCode).toBe(400);
     const r = await yaz(d, {});
     expect(r.statusCode).toBe(200);
+    { // T-YG775-KARAR: karar türü, başarı ölçütü ve izleme dönemi
+      expect((await yaz(d, { tur: 'Uydurma' })).statusCode).toBe(400);
+      expect((await yaz(d, { tur: 'Risk Kabulü', olcut: 'Olay sayısı sıfır', izleme: 'Aylık' })).statusCode).toBe(200);
+      expect((await ist('GET', `/api/toplanti/${id}`, d)).json().kararlar.find((x: { karar_turu: string }) => x.karar_turu === 'Risk Kabulü')).toMatchObject({ basari_olcutu: 'Olay sayısı sıfır', izleme_donemi: 'Aylık' });
+    }
     const g = (await ist('GET', '/api/bugun', b)).json();
     expect(JSON.stringify(g)).toContain('Toplantı Kararı');
     // Düzenleyen Destek, başkan Bilgi İşlem Müdürü: kapanış başkanda.

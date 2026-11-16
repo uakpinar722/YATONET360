@@ -160,6 +160,17 @@ describe('ön bilgilendirme PDF (YG-618, YG-619)', () => {
   });
 });
 
+describe('dosyaya bağlı toplantı (T-YG579-DOSYA)', () => {
+  it('dosyaya bağlı toplantıyı o dosyanın Dosya Sorumlusu planlar; dosya no ile bağlanır', async () => {
+    const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const B = { kod: 'TPL-07', konu: 'Başlangıç', baslangic: new Date(Date.now() + 48 * 3_600_000).toISOString(), sureDk: 30, katilimcilar: [{ kullanici: o.K.opm }], dosyaNo: d.dosyaNo };
+    const r = await o.ist('POST', '/api/toplanti', await o.gir('ds'), B); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT dosya_ref FROM toplanti WHERE kimlik = $1`, [r.json().kimlik])).rows[0].dosya_ref).toBe(d.kimlik);
+    expect((await o.ist('POST', '/api/toplanti', await o.gir('opm'), B)).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/toplanti', await o.gir('ds'), { ...B, dosyaNo: 'YOK-0000' })).statusCode).toBe(400);
+  });
+});
+
 describe('talebin özgün kaydı (YG-002)', () => {
   it('özgün bildirim ve alınma anı değiştirilemez', async () => {
     const d = await o.dosyaAc(); const tr = (await o.sup.query(`SELECT talep_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].talep_ref;

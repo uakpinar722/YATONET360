@@ -132,7 +132,7 @@ try {
   const pOy = await al('oy', E); await dosyaAc(pOy, d.dosyaNo);
   await isEmriForm(pOy, 'KN', 'Keşif');
   const kn = `${d.dosyaNo}-KN01`;
-  kontrol('Operasyon Yöneticisi keşif iş emrini ekrandan açar', await pOy.getByText(kn).first().isVisible());
+  kontrol('Operasyon Yöneticisi keşif iş emrini ekrandan açar', await pOy.getByText(kn).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
   const pDsKn = await al('ds', E); await dosyaAc(pDsKn, d.dosyaNo); await tikla(pDsKn, 'Firmaya Gönder');
   let knS; for (let n = 0; n < 25 && knS !== 'Kabul Bekliyor'; n++) { knS = (await sup.query(`SELECT statu FROM is_emri WHERE is_emri_no = $1`, [kn])).rows[0]?.statu; if (knS !== 'Kabul Bekliyor') await pDsKn.waitForTimeout(200); }
   kontrol('Dosya Sorumlusu keşif iş emrini firmaya gönderir', knS === 'Kabul Bekliyor');
