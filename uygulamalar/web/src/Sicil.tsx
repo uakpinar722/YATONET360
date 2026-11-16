@@ -116,7 +116,7 @@ export function IbanTeyit() {
 
 /** YG-263: aylık nöbet çizelgesi; Operasyon Müdürü onaylar. Dönem başından en az 10 gün önce yayımlanır. */
 export function NobetCizelge() {
-  const [ad, setAd] = useState<{ kimlik: string; ad_soyad: string }[]>([]); const [donem, setDonem] = useState(''); const [v, setV] = useState({ katman: 'Dosya Sorumlusu', kullanici: '', baslangic: '', bitis: '' });
+  const [ad, setAd] = useState<{ kimlik: string; ad_soyad: string; katmanlar: string[] }[]>([]); const [donem, setDonem] = useState(''); const [v, setV] = useState({ katman: 'Dosya Sorumlusu', kullanici: '', baslangic: '', bitis: '' });
   const [l, setL] = useState<(typeof v)[]>([]); const [deg, setDeg] = useState(false); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   useEffect(() => { void istek<typeof ad>('/nobet/adaylar').then(setAd).catch((x) => setHata((x as Error).message)); }, []);
   return (
@@ -125,8 +125,8 @@ export function NobetCizelge() {
       <div className="ozet">
         {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
         <label htmlFor="nb-d">Dönem (YYYY-AA)</label><input id="nb-d" value={donem} onChange={(e) => setDonem(e.target.value)} />
-        <label htmlFor="nb-k">Katman</label><select id="nb-k" value={v.katman} onChange={(e) => setV({ ...v, katman: e.target.value })}>{['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'].map((x) => <option key={x}>{x}</option>)}</select>
-        <label htmlFor="nb-u">Kişi</label><select id="nb-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+        <label htmlFor="nb-k">Katman</label><select id="nb-k" value={v.katman} onChange={(e) => setV({ ...v, katman: e.target.value, kullanici: '' })}>{['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="nb-u">Kişi</label><select id="nb-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="nb-b">Başlangıç</label><input id="nb-b" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nb-s">Bitiş</label><input id="nb-s" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
         <button className="btn2" disabled={!v.kullanici || !v.baslangic || !v.bitis} onClick={() => setL([...l, v])}>Vardiya Ekle</button>
         {l.map((x, n) => <div key={n}>{x.katman} · {ad.find((a) => a.kimlik === x.kullanici)?.ad_soyad} · {x.baslangic.replace('T', ' ')} – {x.bitis.replace('T', ' ')}</div>)}

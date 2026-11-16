@@ -70,6 +70,7 @@ describe('erişim talebi uçtan uca', () => {
     expect(u.json().izinDogrulandi).toBe(true);
     const r = (await sup.query(`SELECT bitis_tarihi::text b, atayan_ref a, onaylayan_ref o, izin_dogrulandi d FROM rol_atamasi WHERE erisim_talebi_ref = $1`, [id])).rows[0];
     expect(r).toEqual({ b: gelecek, a: K[SIS], o: K[BIM], d: true });
+    expect((await sup.query(`SELECT ozet FROM bildirim WHERE baslik = $1 LIMIT 1`, [`Erişim Tanımlandı · ${id}`])).rows[0].ozet).toMatch(/Amaç: .+ · Kapsam: .+ · Bitiş: \d{2}\.\d{2}\.\d{4}\. .*Portal Kullanım Koşulları/); // YG-565
     expect((await ist('GET', '/api/ben', den)).statusCode).toBe(401); // açık oturum yetki değişiminde düşer
     const yeni = await s.inject({ method: 'POST', url: '/api/kimlik/giris', headers: H, payload: { kimlik: DEN, parola: PAROLA } });
     expect(yeni.statusCode).toBe(200);

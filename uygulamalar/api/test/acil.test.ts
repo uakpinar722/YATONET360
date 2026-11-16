@@ -68,6 +68,11 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     expect((await o.ist('POST', '/api/nobet/cizelge', await o.gir('ds'), { donem: '2099-01', vardiyalar: [v('ds', 'Dosya Sorumlusu')] })).statusCode).toBe(403);
     const buAy = new Date().toISOString().slice(0, 7);
     expect((await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, vardiyalar: [v('ds', 'Dosya Sorumlusu')] })).statusCode).toBe(409);
+    { // YG-241: katmana uymayan kişi alınmaz; adaylar katman bilgisiyle gelir
+      const r0 = await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, degisiklik: true, vardiyalar: [v('ds', 'Teknik Uzman')] }); expect(r0.statusCode).toBe(400);
+      const ad = (await o.ist('GET', '/api/nobet/adaylar', c)).json() as { kimlik: string; katmanlar: string[] }[];
+      expect(ad.find((x) => x.kimlik === o.K.tu)?.katmanlar).toContain('Teknik Uzman'); expect(ad.find((x) => x.kimlik === o.K.oy)?.katmanlar).toContain('Yönetici');
+    }
     const r = await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, degisiklik: true, vardiyalar: [v('ds', 'Dosya Sorumlusu'), v('tu', 'Teknik Uzman'), v('oy', 'Yönetici')] });
     expect(r.statusCode, r.body).toBe(200);
     expect(await nobetci(o.db, 'Dosya Sorumlusu')).toBeNull();

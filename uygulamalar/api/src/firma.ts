@@ -28,6 +28,7 @@ import { yatDegeriEngeli } from './yat_degeri.js';
 import { izinGerekli } from './yetki.js';
 import { rolSahipleri } from './makam.js';
 import { tutar } from './metin.js';
+import { raporSonZamani } from './rapor.js';
 
 type Db = Pool | PoolClient;
 const GRUP = 'İş Birliği Firması';
@@ -81,7 +82,10 @@ async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; d
   const son = new Date(simdi.getTime() + (YANIT_SAAT[d.oncelik] ?? 24) * 3_600_000);
   await c.query(`UPDATE is_emri SET statu = 'Kabul Bekliyor', yayim_zamani = $2, yanit_son = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, simdi, son]);
   const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
-  await bildir(c, { olay: `is-emri:${e.kimlik}`, kullanicilar: kisiler, baslik: `Yeni İş Emri: ${e.is_emri_no}`, oncelik: d.oncelik, eposta: true, sms: true }, simdi); // YG-328
+  // YG-1518: kabul son zamanı ve kabulden sonraki Teknik Rapor / Fiyat Teklifi süresi bildirimde yazılır.
+  const rs = Math.round(((await raporSonZamani(c, d.oncelik, simdi)).getTime() - simdi.getTime()) / 3_600_000);
+  const ozet = `Kabul son zamanı: ${son.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}. Teknik Rapor ve Fiyat Teklifi süresi: kabulden itibaren ${rs} saat.`;
+  await bildir(c, { olay: `is-emri:${e.kimlik}`, kullanicilar: kisiler, baslik: `Yeni İş Emri: ${e.is_emri_no}`, ozet, oncelik: d.oncelik, eposta: true, sms: true }, simdi); // YG-328
   // YG-665: iş emri PDF'i firmanın kurumsal adresine ekli gider; fiyat içermez.
   const ep = (await c.query(`SELECT kurumsal_eposta FROM kurulus WHERE kimlik = $1`, [e.kurulus_ref])).rows[0]?.kurumsal_eposta as string | null;
   await belgeUret(c, { tur: 'İş Emri', nesne: e.kimlik, dosya: e.dosya_ref, gonder: ep ? { olay: `is-emri-pdf:${e.kimlik}`, eposta: ep, konu: `Yeni İş Emri: ${e.is_emri_no}`, metin: `Yeni İş Emri: ${e.is_emri_no}`, acil: true } : undefined });

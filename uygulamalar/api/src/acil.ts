@@ -169,7 +169,10 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   const islem = async <T>(f: (c: PoolClient) => Promise<T>) => { const c = await b.db.connect(); try { await c.query('BEGIN'); const r = await f(c); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); } };
 
   // YG-244: çizelgeyi Operasyon Müdür Yardımcısı hazırlar, Operasyon Müdürü onaylar; en az 10 gün önce yayımlanır, ay başına tek yürürlükte.
-  s.get('/nobet/adaylar', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async () => (await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kullanici_grubu = 'LGM İç Rolü' ORDER BY ad_soyad LIMIT 500`)).rows);
+  // YG-241: adaylar katmanın rol sahipleridir; Yönetici katmanı Operasyon ve Teknik müdürlüklerinin müdür yardımcıları ve yöneticileridir.
+  const KATMAN_ROL: Record<string, string[]> = { 'Dosya Sorumlusu': ['Dosya Sorumlusu'], 'Teknik Uzman': ['Teknik Uzman'], 'Yönetici': ['Operasyon Müdür Yardımcısı', 'Teknik Müdür Yardımcısı', 'Operasyon Yöneticisi', 'Teknik Yönetici'] };
+  const katmanAdaylari = async () => (await b.db.query(`SELECT u.kimlik, u.ad_soyad, array_agg(DISTINCT k.katman) katmanlar FROM kullanici_hesabi u JOIN rol_atamasi a ON a.kullanici_ref = u.kimlik AND a.atama_durumu = 'Aktif' JOIN rol r ON r.kimlik = a.rol_ref JOIN jsonb_each($1::jsonb) k(katman, roller) ON r.rol_adi IN (SELECT jsonb_array_elements_text(k.roller)) WHERE u.kullanici_grubu = 'LGM İç Rolü' GROUP BY u.kimlik, u.ad_soyad ORDER BY u.ad_soyad`, [JSON.stringify(KATMAN_ROL)])).rows as { kimlik: string; ad_soyad: string; katmanlar: string[] }[];
+  s.get('/nobet/adaylar', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async () => katmanAdaylari());
   s.post('/nobet/cizelge', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[]; degisiklik?: boolean };
     if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });
@@ -179,6 +182,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     for (const v of g.vardiyalar) {
       if (!['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'].includes(v.katman ?? '') || !v.kullanici || !v.baslangic || !v.bitis || new Date(v.bitis) <= new Date(v.baslangic)) return y.code(400).send({ hata: 'Vardiya katman, kişi ve zaman içermelidir.' });
     }
+    { const ad = new Map((await katmanAdaylari()).map((x) => [x.kimlik, x.katmanlar])); const u = g.vardiyalar.find((v) => !ad.get(v.kullanici!)?.includes(v.katman!)); if (u) return y.code(400).send({ hata: `${u.katman} katmanına bu katmanın rolünü taşıyan personel yazılır.` }); }
     { const e3 = await (await import('./ik.js')).ek3Engeli(b.db, g.vardiyalar.map((v) => v.kullanici!), Number(g.donem!.slice(0, 4))); if (e3) return y.code(409).send({ hata: e3 }); } // Yönetmelik 4.1
     { const bos = await nobetKapsamaBosluklari(b.db, g.donem!, g.vardiyalar as { katman: string; baslangic: string; bitis: string }[]); if (bos.length) return y.code(409).send({ hata: `Nöbet saatleri kapsanmıyor: ${bos.slice(0, 3).join('; ')}${bos.length > 3 ? ` (+${bos.length - 3})` : ''}.`, bosluklar: bos }); } // YG-240
     return islem(async (c) => {

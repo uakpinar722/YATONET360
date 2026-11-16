@@ -18,7 +18,7 @@ import { muvafakatKilidi } from './portal.js';
 import { altNumara, sureBitir } from './sure.js';
 import { UUID } from './yat.js';
 import { sigortaBildirimEngeli, yurtDisiMi } from './onay_ek.js';
-import { bildir, disGonder } from './bildirim.js';
+import { bildir, birKez, disGonder } from './bildirim.js';
 
 type Db = Pool | PoolClient;
 /** İkili kayan nokta hatasından arınmış kuruş yuvarlaması: 56,355 → 56,36 (kartela bandıyla aynı). */
@@ -230,6 +230,15 @@ export async function caymaEngeli(db: Db, dosya: string, simdi = new Date()): Pr
 
 /** YG-151, YG-191: geçerliliği dolan gönderilmiş teklif Süresi Doldu olur; kendiliğinden yenilenmez. BLD-42: 45 gün yanıtsızda bireysel dosya kapanış görevi. */
 export async function teklifSureIsle(db: Pool, simdi = new Date()): Promise<number> {
+  // YG-1540: firma teklifinin bitişine 3 gün veya daha az kaldığında LGM teklifi onaylanmamışsa Ticari Sorumluya bir kez uyarı gider.
+  const bugun = `($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date`;
+  for (const f of (await db.query(`SELECT f.kimlik, f.teklif_no, to_char(f.gecerlilik, 'DD.MM.YYYY') bitis, d.dosya_no, d.ticari_sorumlu_ref FROM firma_fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref
+      WHERE f.durum IN ('Gönderildi', 'Seçildi') AND f.gecerlilik BETWEEN ${bugun} AND ${bugun} + 3 AND d.ticari_sorumlu_ref IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM fiyat_teklifi t WHERE t.dosya_ref = f.dosya_ref AND t.statu IN ('Onaylı', 'Gönderildi', 'Karar')) LIMIT 200`, [simdi])).rows) {
+    if (await birKez(db, 'firma-teklif-sure', f.kimlik)) await bildir(db, { olay: `firma-teklif-sure:${f.kimlik}`, kullanicilar: [f.ticari_sorumlu_ref], baslik: `Firma Teklifi Süresi Doluyor: ${f.teklif_no}`, ozet: `${f.dosya_no} · Firma teklifi ${f.bitis} tarihinde sona erer; LGM Fiyat Teklifi henüz onaylanmadı.` }, simdi);
+  }
+  // YG-1540: LGM teklifine seçilmemiş firma teklifi süresi geçince düşer; seçilen teklif iş emri / sipariş yayımlanıncaya kadar bağlayıcıdır.
+  await db.query(`UPDATE firma_fiyat_teklifi SET durum = 'Süresi Doldu' WHERE durum = 'Gönderildi' AND gecerlilik < ${bugun}`, [simdi]);
   // YG-212, BLD-51: yat sahibine geçerlilik dolmadan 24 saat önce tek hatırlatma. Sigortaya hatırlatma BLD-72 ile ayrıdır.
   const yak = (await db.query(`SELECT f.kimlik, f.teklif_turu, f.gecerlilik_bitis_tarihi::text b, d.dosya_no, d.yazisma_dili, t.telefon, t.eposta FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE f.statu = 'Gönderildi' AND NOT f.gecerlilik_hatirlatma AND f.teklif_muhatabi <> 'Sigorta Şirketi' AND NOT d.vefat_isareti AND f.gecerlilik_bitis_tarihi = ($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date`, [simdi])).rows;
   for (const h of yak) {

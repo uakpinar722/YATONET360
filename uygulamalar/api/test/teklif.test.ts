@@ -136,6 +136,18 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     const g = (await o.ist('GET', `/api/teklif/${r.json().kimlik}`, await o.gir('ds'))).json().kalemler[0];
     expect(g.birim_maliyet_eur).toBeUndefined();
   });
+  it('firma teklifi süresi dolmadan Ticari Sorumluya uyarı; seçilmeyen teklif süresi geçince düşer (YG-1540)', async () => {
+    const d = await hazir(); const ff = await firmaFiyat(d.kimlik, 51); const ff2 = await firmaFiyat(d.kimlik, 52);
+    await o.sup.query(`UPDATE dosya SET ticari_sorumlu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ts]);
+    await o.sup.query(`UPDATE firma_fiyat_teklifi SET gecerlilik = current_date + 2 WHERE kimlik = $1`, [ff]);
+    await o.sup.query(`UPDATE firma_fiyat_teklifi SET gecerlilik = current_date - 1 WHERE kimlik = $1`, [ff2]);
+    await teklifSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Firma Teklifi Süresi Doluyor%' AND ozet LIKE $2`, [o.K.ts, `${d.dosyaNo}%`])).rows[0].n).toBe(1);
+    await teklifSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Firma Teklifi Süresi Doluyor%' AND ozet LIKE $2`, [o.K.ts, `${d.dosyaNo}%`])).rows[0].n).toBe(1);
+    expect((await o.sup.query(`SELECT durum FROM firma_fiyat_teklifi WHERE kimlik = $1`, [ff2])).rows[0].durum).toBe('Süresi Doldu');
+    expect((await o.sup.query(`SELECT durum FROM firma_fiyat_teklifi WHERE kimlik = $1`, [ff])).rows[0].durum).toBe('Gönderildi');
+  });
   it('firma fiyatı eksik kalemde teklif açılmaz', async () => {
     const d = await hazir({}, {}, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'B', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
     const kap = (await o.ist('GET', `/api/firma-portal/dosya/${d.kimlik}/kapsam`, firmaC)).json();
@@ -598,6 +610,7 @@ describe('keşif talebi ve Firmaya Gönder (YG-1597, YG-042, KSF-1)', () => {
     expect((await o.ist('POST', u, await o.gir('oy'), {})).statusCode).toBe(403);
     const g = await o.ist('POST', u, await o.gir('ds'), {}); expect(g.statusCode, g.body).toBe(200);
     expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [r.kimlik])).rows[0].statu).toBe('Kabul Bekliyor');
+    expect((await o.sup.query(`SELECT ozet FROM bildirim WHERE olay_anahtari = $1 LIMIT 1`, [`is-emri:${r.kimlik}`])).rows[0].ozet).toMatch(/^Kabul son zamanı: .+ Teknik Rapor ve Fiyat Teklifi süresi: kabulden itibaren \d+ saat\.$/); // YG-1518
     expect((await o.kart('Firmaya Gönder', r.kimlik)).durum).toBe('Tamamlandı');
     const s = (await o.sup.query(`SELECT baslangic, bitis FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rows[0];
     expect(Date.now() - new Date(s.baslangic).getTime()).toBeLessThan(60_000); expect(new Date(s.bitis).getTime()).toBeGreaterThan(Date.now());

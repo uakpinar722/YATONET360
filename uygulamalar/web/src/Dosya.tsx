@@ -12,6 +12,7 @@ import { KonuIslem } from './KonuIslem';
 import { BelgeInceleme } from './BelgeInceleme';
 import { Malikler } from './Malikler';
 import { SahipDevri } from './SahipDevri';
+import { IsDurdur } from './IsDurdur';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
@@ -22,7 +23,7 @@ interface Bekleme { kimlik: string; neden: string; hedef_tarih: string; sayac_du
 interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string; hedef_tarih: string; sahip: string; gecikmis: boolean; asama?: string | null; kabul_olcutu?: string | null; gerekli_belge?: string | null; konu_turu?: string }
 interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string; yururluk?: string | null }[] }
 interface DosyaAyrinti extends DosyaSatir {
-  musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
+  musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; calisma_durduruldu?: boolean; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
   kapsam_6502?: boolean; yat: { yat_adi: string; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null; kimlik?: string; turkiye_kalis_bitis?: string | null; yabanci_yat_belgesi?: string | null; yabanci_yat_belge_no?: string | null; yabanci_yat_belge_gecerlilik?: string | null; gecici_ithalat_bitis?: string | null; kislama_yeri?: string | null; mmsi?: string | null; mulkiyet_turu?: string | null; takyidat?: string[]; lehtar_adi?: string | null; motor_adedi?: number | null; motor_marka_model?: string | null; motor_gucu_hp?: string | null; lehtar_var?: boolean; lehtar_muvafakati_ref?: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   musteri_risk_olayi?: string | null; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null; baslangic_zamani?: string | null }[];
@@ -365,6 +366,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
           : d.yat.kimlik && <button className="btn2 kucuk" onClick={() => setYd({ mmsi: d.yat.mmsi ?? '', motor_adedi: d.yat.motor_adedi == null ? '' : String(d.yat.motor_adedi), motor_marka_model: d.yat.motor_marka_model ?? '', motor_gucu_hp: d.yat.motor_gucu_hp ?? '', kislama_yeri: d.yat.kislama_yeri ?? '', yabanci_yat_belgesi: d.yat.yabanci_yat_belgesi ?? '', yabanci_yat_belge_no: d.yat.yabanci_yat_belge_no ?? '', yabanci_yat_belge_gecerlilik: d.yat.yabanci_yat_belge_gecerlilik ?? '', gecici_ithalat_bitis: d.yat.gecici_ithalat_bitis ?? '', turkiye_kalis_bitis: d.yat.turkiye_kalis_bitis ?? '', gerekce: '' })}>Yat Belgelerini Düzelt</button>}
       </Blok>
       <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik} className="soru"><span>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '---'} · {t.eposta ?? '---'}{t.baslangic_zamani ? ` · Başlangıç: ${new Date(t.baslangic_zamani).toLocaleDateString('tr-TR')}` : ''}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</span>{d.rollerim.includes('Dosya Sorumlusu') && <div className="tam"><label htmlFor={`tb-${t.kimlik}`}>Sonlandırma Gerekçesi</label><input id={`tb-${t.kimlik}`} value={tBit[t.kimlik] ?? ''} onChange={(e) => setTBit({ ...tBit, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!tBit[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/dosya-tarafi/${t.kimlik}/bitir`, { gerekce: tBit[t.kimlik] }))}>İlişkiyi Sonlandır</button></div>}</div>)}</Blok>
+      {!['Kapalı', 'Teknik Kapalı'].includes(d.statu) && <><div className="bolum">Çalışmayı Durdurma</div><IsDurdur dosya={id} durdu={!!d.calisma_durduruldu} baslatabilir={d.izinler.includes('dosya.ata.teknik')} /></>}
       <BelgeInceleme dosya={id} />
       <Malikler dosya={id} />
       {d.yat.kimlik && d.izinler.includes('yat.duzelt') && <SahipDevri yat={d.yat.kimlik} />}

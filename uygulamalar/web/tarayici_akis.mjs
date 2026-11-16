@@ -492,7 +492,7 @@ try {
   await pOp2.getByRole('button', { name: 'Vardiya Ekle' }).click(); await pOp2.getByRole('button', { name: 'Çizelgeyi Onaya Gönder' }).click();
   await pOp2.getByText('Nöbet saatleri kapsanmıyor').first().waitFor();
   kontrol('nöbet saatlerini kapsamayan çizelge alınmaz (YG-240)', true);
-  for (const [kat, kim] of [['Dosya Sorumlusu', kimlikler.ds], ['Teknik Uzman', kimlikler.ds], ['Yönetici', kimlikler.ds]]) { /* aday listesi 500 kişiyle sınırlı; tek kişi üç katmanda */
+  for (const [kat, kim] of [['Dosya Sorumlusu', kimlikler.ds], ['Teknik Uzman', kimlikler.tu], ['Yönetici', kimlikler.oy]]) { /* YG-241: adaylar katmanın rol sahipleri */
     await pOp2.locator('#nb-k').selectOption(kat); await pOp2.locator('#nb-u').selectOption(kim); await pOp2.locator('#nb-b').fill('2027-03-01T00:00'); await pOp2.locator('#nb-s').fill('2027-04-01T00:00');
     await pOp2.getByRole('button', { name: 'Vardiya Ekle' }).click();
   }

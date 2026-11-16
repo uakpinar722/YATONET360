@@ -118,7 +118,10 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Erişim Talebi Uygulama' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
       await c.query(`UPDATE erisim_talebi SET talep_asamasi = 'Bildirim', teknik_atama_zamani = now(), teknik_atayan = $2, kullanici_bildirim_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
       const rolAdi = (await c.query(`SELECT rol_adi FROM rol WHERE kimlik = $1`, [t.rol_ref])).rows[0].rol_adi;
-      for (const k of [t.kullanici_ref, t.talep_eden_ref]) await c.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet) VALUES ($1,$2,$3)`, [k, `Erişim Tanımlandı · ${id}`, rolAdi]);
+      // YG-565: erişimin amacı, kapsamı, bitiş tarihi ve paylaşım kuralı kullanıcıya bildirilir.
+      const et = (await c.query(`SELECT is_gerekcesi, kapsam, to_char(sure_sonu, 'DD.MM.YYYY') bitis FROM erisim_talebi WHERE kimlik = $1`, [id])).rows[0];
+      const ozet = `Rol: ${rolAdi} · Amaç: ${et.is_gerekcesi} · Kapsam: ${et.kapsam} · Bitiş: ${et.bitis}. Erişim bilgileriniz kişiseldir; paylaşım kuralları ve yasakları için Portal Kullanım Koşulları geçerlidir.`;
+      for (const k of [t.kullanici_ref, t.talep_eden_ref]) await c.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet) VALUES ($1,$2,$3)`, [k, `Erişim Tanımlandı · ${id}`, ozet]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Rol Atandı', nesneTuru: 'erisim_talebi', nesneKimligi: id, yeni: { kullanici: t.kullanici_ref, rol: t.rol_ref, bitis: t.sure_sonu }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
