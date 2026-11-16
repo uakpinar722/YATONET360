@@ -1,0 +1,588 @@
+No	Sinif	Kodlanabilir_Kisim	Engel_Aciklamasi	CEO_Sorusu	Buyukluk
+YG-002	KOD	Talep ilk durum listesine "Eksik" eklenir ve talep.ozgun_bildirim alanının güncellenmesini engelleyen veritabanı tetikleyicisi yazılır.	-	-	S
+YG-008	KOD	-ÇZnn ve -MTnn alt numaralarını ekle; garanti kaydında -GK yerine -GR kullan (uygunsuzlukta NCR V-55 ile kabul edildiğinden kalır).	-	-	S
+YG-009	KOD	Sözleşme kaydına sayaçtan LGM-SZ-YYYY-NNNN numarası üret.	-	-	S
+YG-029	KOD	Kimlik ve kapsam kanıtı eksikken açılış kabulünü engelle.	-	-	S
+YG-032	KOD	Öncelik sorularına yat programı ve mali sonuç ölçütleri değer listesinden eklenir ve öncelik önerisine dahil edilir.	-	-	S
+YG-034	KOD	Kısmen cevabına turuncu risk rengi ekle.	-	-	S
+YG-071	KOD	İlerleme hesabında kritik kontrolü geçmemiş faaliyeti tamamlanmış sayma.	-	-	S
+YG-078	KOD	Kapanış kapısına onaylı fiyat teklifinin varlık denetimini ekle.	-	-	S
+YG-086	KOD	kanuni_sorumluluk_bitis alanını yanıttan gizle (Direktör ve üstü hariç); teslim tarihini teslim kaydından al.	-	-	S
+YG-090	KOD	Sicil ve kurumsal referansı tekillik anahtarı yap; ihbar ekranına aynı adlı yat uyarısı ekle.	-	-	S
+YG-096	KOD	Bayrak, kullanım, klas kuruluşu ve tabi olunan kod alanları dosya açılışında zorunlu yapılır; klas/kod uyarısı dosya açılışında da verilir.	-	-	S
+YG-151	KOD	45 gün yanıtsız teklifi Müşteri Vazgeçti–Yanıt Alınamadı yap, yeniden açmaya 90 gün sınırı koy.	-	-	S
+YG-154	KOD	Karar listesine Sınırlı Yetki ve Koşullu Onay seçenekleri eklenir ve seçenekler LST_ONAY_KARARI sözlüğünden okunur; Beklemede işaret olarak kalır.	-	-	S
+YG-182	KOD	Kalem türünden bedel türüne otomatik eşleme ve genel gider/risk payı satırı yasağı ekle.	-	-	S
+YG-195	KOD	Değişiklik kaydı kapanmadan yeni kapsam sürümünün aktif yapılmasını engelle.	-	-	S
+YG-214	KOD	Muvafakatı eksik belge olarak göster, kilidi yalnız Dosya Sorumlusunun açmasını sağla.	-	-	S
+YG-220	KOD	Teklif onayına, sistem erişimi olmayan yat sahibi için ıslak imzalı belge (taranmış yükleme) kanalı eklenir; telefon onayı seçeneği olmaz.	-	-	S
+YG-245	KOD	Kurumsal nöbet cihazları BT varlığı olarak kaydedilir; devir listesine ekran kilidi ve şifreleme beyanı eklenir (fiziksel el değiştirme kod dışı).	-	-	S
+YG-247	KOD	Devir kontrol listesi için web arayüzü yaz.	-	-	S
+YG-250	KOD	Olağan ihbar yolunda mesai dışı acil dosyaya nöbetçi Teknik Uzmanı otomatik ata.	-	-	S
+YG-255	KOD	Acil bildirim içeriğine can/çevre riski, alınan tedbir, tahmini tutar, eşiğe kalan, olay yöneticisi ve sonraki adımı ekle.	-	-	S
+YG-262	KOD	İş durdurma ve yeniden başlatma için web arayüzü yaz.	-	-	S
+YG-267	KOD	Acil çağrıya hizmet türü ve erişim bilgisini ekle.	-	-	S
+YG-268	KOD	AC kabulünde nöbetçi teyit adımı ekle.	-	-	S
+YG-270	KOD	Nöbetçi için elle kabul giriş arayüzü yaz.	-	-	S
+YG-272	KOD	Acil uygunluğa Çerçeve Sözleşmesi onayı denetimini ekle ve elle kabul yolunda da uygula.	-	-	S
+YG-278	KOD	Numaralı alternatif kayıt formunun PDF şablonu ve numara bloğu üretimi yazılır.	-	-	S
+YG-303	KOD	Firma uygunluğunda bölge yetkisini denetle, dolu kapasiteyi engel yap.	-	-	S
+YG-322	KOD	Teklif onay geçerlilik bitişini ve bölge statüsünü iş emri yayımında denetle.	-	-	S
+YG-323	KOD	KN ve AC iş emirlerinde de limit zorunlu yap, limit sürümünü izle.	-	-	S
+YG-324	KOD	Süresi geçmiş onay üzerinden iş emri açılmasını engelle.	-	-	S
+YG-326	KOD	İş emri yanıt sonuna bitisKaydir uygula (acil hizmet veren firmada Kritik muaf), mesai dışı Kritik işi yalnız acil hizmet veren firmaya yönlendir.	-	-	S
+YG-341	KOD	Vergi borcu yoktur yazısı kontrolünü ve 2 yıllık yenileme izlemesini ekle.	-	-	S
+YG-345	KOD	MERSİS ve telefon mükerrerlik anahtarı ve benzerlik uyarısı ekle.	-	-	S
+YG-361	KOD	Statü ucunda doğrulanmadan Onaylı yapmayı ve açık emniyet uygunsuzluğunda Tercihli vermeyi engelle.	-	-	S
+YG-383	KOD	Kontrol noktası sonucu Uygun Değil ise uygunsuzluk kaydını otomatik aç.	-	-	S
+YG-421	KOD	BLD-80 Fatura Düzenleme Bildirimine TL tutar, kesintiler ve fatura açıklama metni eklenir.	-	-	S
+YG-431	KOD	Teklife esas alınan katalog iş emri ve servis raporunun başvurusu teklif kaydına eklenir.	-	-	S
+YG-466	KOD	Kalıcı saklayıcıyla iletimde saklayıcı türünü ayrı alanda kaydet.	-	-	S
+YG-467	KOD	Ön bilgilendirme formunun gösterildiği anı ayrı kaydet; kayıt yoksa onay düğmesini kapalı tut.	-	-	S
+YG-479	KOD	Yabancı malik için Türkiye tebligat adresi alanı ekle.	-	-	S
+YG-528	KOD	Uygunsuzluk bildirim alıcılarını Firma Yetkilisi, Teknik Uzman ve Dosya Sorumlusu (Kritik/Emniyette Kalite Müdürü ve Teknik Müdür) yapmak; e-posta ve Kritikte SMS eklemek.	-	-	S
+YG-529	KOD	Veri ihlali bildiriminde alıcılar için kayıtlı telefonla arama görevi ve arama sonucunu kaydetmeyi eklemek.	-	-	S
+YG-530	KOD	Fatura bilgisi kayda alındığında fatura kesildi bildirimi ve kurumsal tarafa durum e-postası eklemek.	-	-	S
+YG-535	KOD	Kuruluş gözden geçirme tarihinden 30, 14, 7 gün ve 24 saat önce hatırlatmaları eklemek.	-	-	S
+YG-540	KOD	Zamanlanmış işlemin kendiliğinden tamamlandı durumuna geçmesini engelleyen ortak denetimi eklemek.	-	-	S
+YG-543	KOD	Kişi iş yükü %80'e ulaştığında Operasyon Müdürüne otomatik bildirim göndermek.	-	-	S
+YG-556	KOD	Sigortaca ödenmeyecek acil tedbir kalemi için 5 iş günü süreli bildirim görevini onaylı acil sigorta metinleriyle (D-046) eklemek.	-	-	S
+YG-563	KOD	Özel gün kutlamalarını (ozel_gun.ts) ana sayfada göstermek ve duyuru modülünden yönetilir yapmak.	-	-	S
+YG-570	KOD	WhatsApp grup kararı aktarımı için Dosya Sorumlusuna ayrı aktarım akışı eklemek.	-	-	S
+YG-579	KOD	Dosyaya bağlı toplantıyı Dosya Sorumlusunun düzenleyebilmesini, başkanlığın en üst kademede kalmasıyla eklemek.	-	-	S
+YG-582	KOD	Davet bildirim metnine katılım durumunu (zorunlu, isteğe bağlı, yalnız bilgi) eklemek.	-	-	S
+YG-583	KOD	Olağanüstü toplantıya ilgili dosya seçimi eklemek.	-	-	S
+YG-586	KOD	FR-KLT-017 Sosyal Medya Yanıt Şablonunun onaylı TR/EN metinlerini (K-202) yükleyip yalnız sözcü yetkisine açmak.	-	-	S
+YG-587	KOD	Sosyal medya modülüne onaylı sözcü şablonunu (K-202) bağlamak ve 2 saat sayacının tek modülde görünmesini doğrulamak.	-	-	S
+YG-626	KOD	Çeviri kütüphanesinde hukuki metin işareti eklemek ve bu işaretli İngilizce sürümleri CEO onayına yönlendirmek.	-	-	S
+YG-657	KOD	İş emri numarasını K-165'e göre Dosya No-TürNN (ör. -ON01) biçiminde üretmek ve eksik son ek biçimlerini altNumara işlevine eklemek; uygunsuzlukta V-55 ile kabul edilen NCR korunur.	-	-	S
+YG-671	KOD	Belge etiketleri ve rol adlarına baş harf büyütme (ve küçük kalır) yardımcı işlevini uygulamak ve testle denetlemek.	-	-	S
+YG-732	KOD	teknik_rapor tablosuna yapay zekâ taslağı alanı eklemek ve giden belgede göstermemek.	-	-	S
+YG-772	KOD	Kapsama raporunu bölge × branş tablosu olarak kırmızı/sarı/yeşil hücre renkleriyle göstermek.	-	-	S
+YG-775	KOD	Toplantı kararına karar türü, başarı ölçütü ve izleme dönemi alanlarını eklemek.	-	-	S
+YG-783	KOD	Tahsilat süresi göstergesini (sigorta 30, diğerleri 15 gün) eklemek.	-	-	S
+YG-796	KOD	Kalite boyutu başlangıç puanını kalite planındaki kabul sınıfına (A=100, B=80, C=50, D=0) bağlamak.	-	-	S
+YG-801	KOD	Kapanıştan sonra açılan veya değişen uygunsuzlukta firma puanını kendiliğinden yeniden hesaplamak.	-	-	S
+YG-803	KOD	Dönem performans sonucunu sicilde risk statüsü önerisi olarak kaydedip Firma Yönetimi Müdürüne karar görevi açmak (statü kararı K-178 gereği insanda kalır).	-	-	S
+YG-839	KOD	Ödeme öncesi İSG belgesi kontrolünü ekle.	-	-	S
+YG-848	KOD	Kurtarma sağlayıcısına yapılan ödeme için mahsup kaydı türü eklenir.	-	-	S
+YG-854	KOD	Sigorta portalında geçerli kartela sürümünün görüntülenmesi ve indirilmesi eklenir.	-	-	S
+YG-885	KOD	Teknik kabulden 48 saatte proforma ve muhasebenin 48 saatte fatura kesmesi için süre izleme ekle.	-	-	S
+YG-900	KOD	Sigorta şirketi başına ödeme günü parametresi ve kurumsal sözleşme vadesi ekle.	-	-	S
+YG-904	KOD	Yurt dışı havalede teslimden 3 iş günü önce ödeme kuralı ve eksik kısım talebi ekle.	-	-	S
+YG-919	KOD	Şirket bütçesinde %10 sapmada TİD uyarısı ekle.	-	-	S
+YG-925	KOD	Ticari serbest bırakma kaydına Bekletmede işareti (girdi veya yetki bekleniyor) eklenir.	-	-	S
+YG-948	KOD	Personel kartına doğum tarihi alanı ekleyip 18 yaş altı/50 yaş üstü yıllık izin kuralını sistemce hesaplamak.	-	-	S
+YG-1005	KOD	Hesap açma talebinde kimlik, kurumsal ilişki, görev ve yönetici/sponsor alanlarını zorunlu ve doğrulanır yapmak.	-	-	S
+YG-1011	KOD	Nöbetçi, Süreç Sahibi, Veri Sahibi ve Sistem Sahibi rollerini katalog kayıtlarına (nöbet çizelgesine ve birim Müdürlerine bağlı) eklemek.	-	-	S
+YG-1015	KOD	Tedarikçi sicilinin sahibini Teknik ve Operasyon, Çözüm Ortağı sicilinin sahibini BT ve Firma Yönetimi olarak kayıt rolüne göre tanımlamak.	-	-	S
+YG-1016	KOD	Kademe sözlüğünü açık tablo olarak tanımlayıp Saha Sorumlusunu Uzmanla aynı kademeye koymak ve testle doğrulamak.	-	-	S
+YG-1017	KOD	Ayrı unvan-rol eşleşme tablosu eklemek.	-	-	S
+YG-1028	KOD	Süreç Sahibi, Veri Sahibi ve Sistem Sahibi rollerini tanımlayıp ilgili Müdürlere bağlamak.	-	-	S
+YG-1032	KOD	Saha bağlantısı işlerini Saha Sorumlusuna, yoksa Dosya Sorumlusuna, ağ ve kapasiteyi Firma Yönetimi Müdürlüğüne yönlendiren kuralı ve testini eklemek.	-	-	S
+YG-1088	KOD	Tedarikçi portalına uygunsuzluğa yanıt ve ayrı sertifika yükleme eklemek.	-	-	S
+YG-1141	KOD	Entegrasyon kaydı (V-432 envanterine bağlı) ve Test Senaryosu kaydı eklenir.	-	-	S
+YG-1257	KOD	kartela_kalemi.birim ve kapsam birimlerini tek birim listesine CHECK veya yabancı anahtarla bağlamak; uyumsuz eski değerler için göç yazmak.	-	-	S
+YG-1313	KOD	Kesintide manuel yoldan girilen kaydın platforma bağlanma gecikmesini izleyen kontrolü eklemek.	-	-	S
+YG-1319	KOD	İçe alınan fatura PDF'ini fatura no ve LGM dosya numarasıyla eşleyip saklamak.	-	-	S
+YG-1395	KOD	Kodda mevcut (ilk_giris.ts ve IlkGiris.tsx G2-7, V-417); yalnız doğrulayıp durumunu güncellemek.	-	-	S
+YG-1416	KOD	5.000 EUR üstünde garanti kararını Teknik Müdür onayına yönlendir.	-	-	S
+YG-1433	KOD	Islak imzalı taranmış belge yükleme seçeneğini Teslim Tutanağı ve diğer onay belgelerine genişlet.	-	-	S
+YG-1437	KOD	Kurumsal dosyada İhbar Alındı bildirimini Ek-2 yetkili kanalına sigorta notu olmadan göndermek.	-	-	S
+YG-1460	KOD	POS ve ödeme bağlantısını banka seçimine kadar kapalı tut, POS'ta tek çekim kuralı ekle.	-	-	S
+YG-1481	KOD	Mesai dışında olay bildirimlerinin yönetici nöbetçisine yönlendirilmesi ayrımı tamamlanır (fiziki devir kod dışı).	-	-	S
+YG-1497	KOD	İtiraz kaydı için arayüz yaz.	-	-	S
+YG-1501	KOD	Yanıtsız teklif kapanışında bireysel müşteriye katalogdaki onaylı BLD-42 metnini gönder.	-	-	S
+YG-1531	KOD	Gövde malzemesinden KL-TEK-002/003 ve ana branş eşlemesini ekle.	-	-	S
+YG-1552	KOD	Çerçeve sözleşmesi olmayan sigortacıda cerceve_sozlesme_yok alanını doldur, Müşteri ve Paydaş İlişkileri Müdürüne görev ve GMY bilgilendirmesi ekle.	-	-	S
+YG-1572	KOD	Ortak metni ve "Ödeme ve Onay Yetkisi: Yok" gösterimini gereksinimdeki onaylı metinle birebir yapmak.	-	-	S
+YG-1614	KOD	İK bakiye kontrol listesi ekranını KT-1 sırasıyla (önce birim amiri, sonra İnsan Kaynakları) yazmak; sıra kararlaştırılmış, satır KT-1 ile Pasif.	-	-	S
+YG-1637	KOD	Uygundur düğmesi, karne itirazında Kabul/Kısmi Kabul/Ret ve İzin Bakiyesi Yeterli · İK Kontrol Etti satırını eklemek.	-	-	S
+YG-1649	KOD	Sicilde 12 ay güncellenmeyen kaydı işaretlemek ve firma aktivasyon onayına 5 iş günü süre eklemek.	-	-	S
+YG-1657	KOD	112 uyarısını en üste taşı, tel:112 bağlantılı 112'yi Ara düğmesi ekle.	-	-	S
+YG-1703	KOD	kartela_birlikte_yazilmaz.tsv'ye STABILITE-01.05.01-01 ile 01.01.04-01 ve 01.01.05-01 çiftlerini ekle.	-	-	S
+YG-1744	KOD	Vekil seçiminde öncelik sırasını (aynı rol, aynı birim ve kademe, Müdür-Müdür Yardımcısı, onay makamı) zorlamak.	-	-	S
+YG-1755	KOD	Bugun.tsx kart süre rengini sabit eşik yerine sure.ts sureRengi (toplamın dörtte biri) ile hesaplamak.	-	-	S
+YG-1757	KOD	Dosya açılışında yat sahibi hesabı telefonla kendiliğinden oluşturulur.	-	-	S
+YG-1819	KOD	V-129 gereği kullanıcı başına onay sınırı kaldırılır, yalnız kurumun Ek-2 tek tutarı uygulanır.	-	-	S
+YG-1867	KOD	Teslime Hazır bildirimini Dosya Sorumlusuyla sınırla, barınma gideri tutarının elle girişini ekle.	-	-	S
+YG-001	KOD	Firma ekipmanını dosya ve iş emrine tekil kimlikle bağlayan ekipman kullanım kaydı (dosya_ref, is_emri_ref) eklenir.	-	-	M
+YG-004	KOD	V-364 gereği iş paketi iş emri olduğundan is_emri_kalemi satırına parça/ekipman/sistem başvurusu eklenir ve dosyadan kaleme, kalemden parçaya geri izleme sorgusu yazılır.	-	-	M
+YG-025	KOD	Talep ve dosyada boş bırakılan zorunlu alanlar için sorumlu ve hedef tarihli tamamlama görevi açan genel mekanizma yaz.	-	-	M
+YG-038	KOD	Ön değerlendirmeye kalite kontrol adımı ekle; olumsuzsa Onaylı işaretini kapat.	-	-	M
+YG-043	KOD	Teklif sayacını Firma Teknik Raporu ve Firma Fiyat Teklifi girişinde başlat; 48/72/120 ve 96/144/240 saat hedeflerini parametre tablosuna al.	-	-	M
+YG-045	KOD	LGM personeli için atama anında başlayan sayaç tüm görev türlerine genelleştirilir (keşifte Çözüm Ortağı başlangıcı KSF-1 kararıyla gönderim anı olarak kalır).	-	-	M
+YG-046	KOD	Süre durdurmayı yetkili rollerle sınırla; duraklama süresini performans görünümünde ayrı göster.	-	-	M
+YG-050	KOD	Yüksek riskli iş, çok firma, karaya alma, 5.000 EUR üstü iş ve Teknik Müdürlük talebinde Saha Sorumlusu atamasını zorunlu kapı yap.	-	-	M
+YG-053	KOD	Saha Sorumlusu atanmamış dosyada günlük saha düzeni görevi Firma Yetkilisine, gözetim bildirimi Dosya Sorumlusuna yönlendirilir; hakediş doğrulamasında Dosya Sorumlusu yedeği uygulanır.	-	-	M
+YG-054	KOD	Görev kaydına atayan, uygulayan, kontrol eden ve karar veren alanları eklenir; aynı kişinin uygulayıp kontrol etmesi veya karar vermesi genel motor kuralıyla engellenir.	-	-	M
+YG-055	KOD	Keşif planı Teknik Yönetici onayına bağlanır ve müşteri ekranında yalnız onaylanmış kapsamdan üretilen özet gösterilir.	-	-	M
+YG-056	KOD	Keşifte izinli işlemler listesi dışındaki söküm, numune, çalıştırma ve parça değişimi kayıtlarını engelle.	-	-	M
+YG-058	KOD	Görev kartı statülerini Açık-İşlemde-Doğrulamada-Kapalı-Geçersiz kümesine eşle, Beklemede ve Gecikmiş rozetlerini ekle.	-	-	M
+YG-059	KOD	Açık konu gecikmesinde silsile yükseltmesi üret; hedef tarih değişikliğine gerekçe ve amir onayı ekle.	-	-	M
+YG-061	KOD	Durum geçişinde tamamlanan ön koşulları ve belge bağlarını kaydet ve Durum Geçmişinde göster.	-	-	M
+YG-063	KOD	Her akış için gecikme davranışı (sayaç aşımında eskalasyon) ve sistem kesintisi davranışı (alternatif form, sonradan aktarım) tek tabloda tanımlanıp akışlara bağlanır.	-	-	M
+YG-065	KOD	Uygulama, Kontrol ve Teslim geçişlerine zorunlu kayıt kapısı ekle (acil ilk tedbir muaf).	-	-	M
+YG-067	KOD	Uygulama/Kontrol/Teslim aşama kapılarını ekle; engel mesajına eksik kaydı tamamla düğmesi koy.	-	-	M
+YG-068	KOD	Beklemede işaretini paket ve ticari serbest bırakma kayıtlarında da kullan.	-	-	M
+YG-080	KOD	Yeniden açma ekranı, ayrı çevrim kaydı ve kapat-aç ile süre iyileştirmesini önleyen kontrol ekle.	-	-	M
+YG-085	KOD	Tekrarlayan işaretinde kök neden incelemesi başlat; garanti kayıtlarını genel hizmet süresi sayaçlarına bağla.	-	-	M
+YG-094	KOD	Yat kaydında kanıtsız alanlara genel veri durumu etiketi ekle.	-	-	M
+YG-103	KOD	Leasingde kiracı taraf ve ayrı malik kaydı, malik-kullanan farkında belge kuralı ve muvafakat yükleme arayüzü ekle.	-	-	M
+YG-104	KOD	Takyidatlı yatta can/çevre/batma riskinde acil tedbir istisnası ve yediemin için Hukuk ve Uyum onayı denetimi ekle.	-	-	M
+YG-131	KOD	Sürümlü hasar haritası ve incelenmemiş bölge gösterimi için arayüz yaz.	-	-	M
+YG-133	KOD	Malzeme kullanılan onarım bölgelerinde malzeme veri föyü yüklemesi zorunlu yapılır ve geniş/yakın açılı fotoğraf kuralı keşif dışındaki hasar bölgelerine de uygulanır.	-	-	M
+YG-134	KOD	Numune devir kaydı ve ölçüm arayüzü ekle.	-	-	M
+YG-135	KOD	Kritik maddede kanıt zorunluluğu ve kontrol listesi arayüzü ekle.	-	-	M
+YG-138	KOD	Kapsam, onay ve ticari kayıtlara "Sigorta işi / Yat sahibi ek işi" kaynak ayrımı eklenir; yat sahibi ek işi ayrı kapsam ve ayrı onay kaydıyla yürür.	-	-	M
+YG-156	KOD	Kapsam cetveli ve belge değişiminde önceki onayı düşür ve yeniden onay iste.	-	-	M
+YG-158	KOD	Aşama kapısında bilginin kaynağının yetkili taraf (dosya tarafı veya Ek-2 yetkili listesi) olup olmadığı denetlenir; yetkisizse kapı geçilmez ve sorumluya görev döner.	-	-	M
+YG-160	KOD	Onay kayıtlarına tür alanı (Talimat, Teknik Onay, Bedel Kabulü, Değişiklik Onayı, Teslim Kabulü) eklenir ve mevcut onaylar bu türlere eşlenir.	-	-	M
+YG-164	KOD	Onay makamı kullanıcı niteliğine (kademe + birim + limit) çevrilir; parasal limit karar kaydı gereği yalnız TİD (5.000,00 EUR) ve GMY parametresiyle işler.	-	-	M
+YG-165	KOD	Son makam CEO iken Ticari İşler Direktörü ve GMY'yi ara kademe olarak zincire ekle.	-	-	M
+YG-168	KOD	Aynı kişinin taşıdığı kademeleri tek adım say, görev ayrılığı atlamasını işlem izinde Vekâleten olarak işaretle.	-	-	M
+YG-174	KOD	Ticari Sorumlunun gerekçeli indirim talebini ve orana göre GMY/CEO yönlendirmesini ekle.	-	-	M
+YG-190	KOD	Opsiyon kalemi oluşturmayı aç ve yayın öncesi aritmetik kontrol adımı ekle.	-	-	M
+YG-196	KOD	Kapsam satırına tür (Ana, Opsiyon, Koşullu, Alternatif), teknik pay ve "ölçülemeyen değer" işareti eklenir; toplamlar ayrı gösterilir, seçilmeyen kalemler iş emrine "Seçilmedi" olarak aktarılır.	-	-	M
+YG-211	KOD	Onay ekranı metinlerindeki Keşif Teklifi ile ayrı SMS kodlu keşif teklifi onayını ekle.	-	-	M
+YG-222	KOD	Onay kaydı belgenin sürümüne (belge kimliği ve özet değeri) bağlanır; müşteri onaylarında her zaman doğrulama kodu yeniden istenir.	-	-	M
+YG-223	KOD	Islak imza seçeneği değişiklik protokolünden genel onay altyapısına taşınır; mevzuat zorunlu imza işaretli belgelerde imza korunur.	-	-	M
+YG-224	KOD	Islak imza alternatifini iş emri kabulüne ekle ve tedarik siparişinde tek adım kod onayını doğrula.	-	-	M
+YG-227	KOD	Teklif Statü Geçişi ekranı ve Beklemede Eskalasyonu izleme ekranı yazılır.	-	-	M
+YG-241	KOD	Nöbet çizelgesinde haftalık dönüşüm denetimi ve teknik katmanda branşa göre uzman seçimi (uzman branş kaydından) eklenir.	-	-	M
+YG-242	KOD	Açılış kadrosu arasında haftalık dönüşümlü çizelge önerisi ve kadro dışı/ardışık atama denetimi yazılır.	-	-	M
+YG-244	KOD	Teknik çizelgenin yayımdan 15 gün önce iletilmesi kuralını ve günlük nöbet takvim ekranını ekle.	-	-	M
+YG-246	KOD	Nöbet devri arayüzü ve devirde e-posta/telefon ihbarlarının öncelik süresine göre dosyaya aktarım görevini ekle.	-	-	M
+YG-253	KOD	AC iş emrinde esas onarım, parça değişimi ve kapsam genişletmeyi engelleyen kapsam türü denetimi ekle.	-	-	M
+YG-254	KOD	Acil müdahale kaydına kapsam, gerekçe, yetkili kişi ve sonradan tamamlanacak kayıt alanlarını ve kapanış arayüzünü ekle.	-	-	M
+YG-264	KOD	Olay Yöneticisi devralma, nöbet devir kaydı ve süreklilik seviyesi ekranlarını yaz.	-	-	M
+YG-274	KOD	Sağlayıcının işlem-fotoğraf girişi, tanıklı erişim kaydı, resmî tutanak/itfaiye raporu görevi, devam/kapat kararı ve kapanış arayüzünü yaz.	-	-	M
+YG-282	KOD	FR-MLZ, FR-TIC, FR-UYG-006 ve FR-KLT-010 form kayıtlarına "Uygun Değil → uygunsuzluk bağı, Onaylı → onaylayan ve zaman" kısıtı eklenir.	-	-	M
+YG-300	KOD	Mevcut firma haritasına (V-412, firma_haritasi.ts) açık dosyalar ve yat konumları için operasyon katmanı ve katman seçimi eklenir.	-	-	M
+YG-310	KOD	Görevlendirme kontrolüne süre, öncelik, saha penceresi ve bağımlılık değerlendirmesi eklenir; hedef tarih gerçekçi değilse "Planlanan Gecikme" işareti gösterilir.	-	-	M
+YG-313	KOD	İş emrinde uygulayan, kontrol eden ve onaylayan aynı kişi olduğunda birim amirine ikinci göz/sonradan inceleme görevi kendiliğinden atanır.	-	-	M
+YG-329	KOD	Tanıklık noktası davetlisi kaydı ekle, kabul sınıfını iş paketi başına taşı.	-	-	M
+YG-330	KOD	Atık sorumlusu alanı ve branş/iş kalemine göre tehlikeli atık önerisi ekle.	-	-	M
+YG-342	KOD	Belge sürelerini izleyen zamanlanmış iş ve uyarı ile mevcut işlere etki değerlendirme görevi ekle.	-	-	M
+YG-348	KOD	Tesis kaydında yerleşim ve rol türüne göre alanlar açılıp zorunlu yapılır; hassas güvenlik konumu alan erişim kuralıyla genel kullanıcıdan gizlenir.	-	-	M
+YG-360	KOD	Statü değişikliğinde Sicil Sorumlusu hazırlar-FY Müdürü onaylar ayrımı, açık dosya planı ve CEO/GMY bilgi bildirimi ekle.	-	-	M
+YG-378	KOD	Finansal gerçekleşmeyi ayrı hesapla ve fiziksel ilerlemenin yanında göster.	-	-	M
+YG-381	KOD	Fotoğraf ve belgeye iş kalemi ve yat bölgesi bağı ekle.	-	-	M
+YG-384	KOD	V-364 gereği iş paketi iş emri olduğundan test, cihaz/kalibrasyon ve malzeme kayıtlarına iş emri bağı eklenir.	-	-	M
+YG-402	KOD	Kritik cihaz 6 aylık ara doğrulama, Karantina durumu, LGM cihazında TÜRKAK zorunluluğu ve firma cihaz belgesini engel yap.	-	-	M
+YG-420	KOD	Firmaya teklif sonucu (Seçilmedi dahil), iş emri kapanışı, durdurma/iptal, firma uyarısı ve fatura iade portal bildirimleri ile firmadan gecikme bildirimi formu yazılır.	-	-	M
+YG-427	KOD	Firma girişlerinden yat bilgisi, miktar, malzeme, süre ve fotoğrafı LGM belgelerine aktar.	-	-	M
+YG-438	KOD	Sigorta portalında salt okunur dosya ayrıntı ekranı ve fiyat kartelası görünümünü yazmak (kartela sigortaya menü olarak sunulur, karar kaydı).	-	-	M
+YG-439	KOD	Sigorta portalına yalnız kendi dosyalarıyla süzülen operasyon haritası (V-412 sade çizim) eklenir.	-	-	M
+YG-446	KOD	Görevlendirmede yetki sınırı alanı, talimat değişikliği kaydı, kullanıcı kapatma talebi ve e-posta onayı aktarımını eklemek.	-	-	M
+YG-455	KOD	Onay gelişinden 8 saatlik kayıt süresi sayacını ve portal onayında onaylanmayan kalemler için yat sahibi sürecinin kendiliğinden başlatılmasını yazmak.	-	-	M
+YG-460	KOD	Mevcut RP-RAP-001 şablonuyla ilerleme yüzdesi ve yayımlanmış fotoğraflardan ilerleme raporu PDF'i üretilir ve portallara konur.	-	-	M
+YG-461	KOD	Kurumsal portalda kurum dosyalarının hedef süre gerçekleşmelerinden SLA raporu yazılır.	-	-	M
+YG-462	KOD	Fotoğraf dışındaki kanıtlar (test raporu, ölçüm vb.) için yayım onayı eklenir (onay verebilecek roller V-313 kararıyla kalır).	-	-	M
+YG-476	KOD	Mülkiyet beyanı ekranına muvafakat yükleme-güncelleme ve fatura bilgileri bölümünü ekle.	-	-	M
+YG-506	KOD	Saha ekranları dar ekranda gözden geçirilip mobil öncelikli düzene getirilir.	-	-	M
+YG-509	KOD	Tüm bildirimleri ilgili görev, karar veya dosya kaydına bağlayan ortak alanı zorunlu yapmak.	-	-	M
+YG-510	KOD	Role göre tekrar sıklığı, sessiz saat ve birleştirme kuralı tanım tablosunu mevcut mesai kuralı varsayılanıyla eklemek.	-	-	M
+YG-511	KOD	Kuyruk gecikmesi gibi iş gecikmelerinde genel teknik uyarı ve aynı hatayı tek uyarıda toplayan gruplama kuralını eklemek.	-	-	M
+YG-512	KOD	Şablona serbest metinle teknik bulgu ve başka dosya bilgisi eklenmesini sınırlamak ve anlam değişikliğinde yeni sürüm zorunluluğu eklemek.	-	-	M
+YG-518	KOD	Taraf ana kaydı ve kullanıcı hesabı iletişim bilgilerini kaynak, doğrulama zamanı, amaç ve geçerlilikli geçmiş yapısına taşımak.	-	-	M
+YG-521	KOD	Mesai dışı hesabında resmî tatil takvimini (V-284) uygulamak, ertelenen iletileri birleştirmek ve Kritikte arama görevi açmak.	-	-	M
+YG-525	KOD	Operasyon Müdürlüğü talep kuyruğu, mesai dışında Nöbetçiye yönlendirme ve Kritikte arama görevi eklemek.	-	-	M
+YG-534	KOD	Gözden geçirme paketini derlemek ve periyodik iş kaydı oluşturma/düzenleme ekranını eklemek.	-	-	M
+YG-536	KOD	Görev türüne göre eşik tablosu (mevcut süre kurallarından doldurulmuş) ve eskalasyon kaydına beklenen eylem ve kapanış sonucu alanlarını eklemek.	-	-	M
+YG-537	KOD	Hedef süre, duraklama nedeni, uyarı, eskalasyon ve vekâleti tek kural kaydında birleştirmek.	-	-	M
+YG-539	KOD	Açık iş görünümüne bağımlılık, durma nedeni, eksik belge ve sonraki işlem bilgisini eklemek.	-	-	M
+YG-541	KOD	CEO'ya rutin konuların GMY üzerinden gelmesini ve limit içi işin kademede kapanmasını zincirlerde zorlamak.	-	-	M
+YG-553	KOD	Tanıklık davetini Randevu ve Davet şablonuyla sistem içi, SMS ve e-postayla göndermek; Kritikte 2 saat ve katılım yoksa 2 saat sonra kanıtla ilerleme kuralını eklemek.	-	-	M
+YG-560	KOD	Duyuruya rol, birim, bölge ve kullanıcı grubu hedeflemesi, yayın başlangıcı, ek ve TR/EN metin eklemek.	-	-	M
+YG-569	KOD	Talimatı özgün ileti, tarih ve gönderenle ayrı kaynak kaydı olarak aktaran manuel kayıt yolunu eklemek.	-	-	M
+YG-576	KOD	Toplantılara dosya bağı (dosya_ref) ekleyip dosyadan toplantı planlamayı ve kararların dosyaya bağlanmasını sağlamak.	-	-	M
+YG-584	KOD	Gündem üretimine ilgili dosyalar, açık uygunsuzluklar ve KPI kaynaklarını eklemek.	-	-	M
+YG-606	KOD	Belge bağına iş paketi (iş emri statü eşlemesi, V-364), üreten kurum ve paylaşım seviyesi alanlarını eklemek.	-	-	M
+YG-615	KOD	Sözleşme eki, teklif kabulü ve değişiklik kayıtlarını kapsadıkları iş emri/teklif ve sürüme bağlayan ilişki ve görünümü yazmak.	-	-	M
+YG-634	KOD	Değer listesine öneri (asistan) – CEO onayı – yayım akışı ve onay sonrası etkilenen şablonlara uyarlama görevi açılmasını yazmak.	-	-	M
+YG-640	KOD	FR-TIC-010'u fatura, tahsilat ve alacak takibini tek kayıt ve tek form (ekran ve A4) olarak birleştirmek; proforma bölümünü içine almak.	-	-	M
+YG-661	KOD	Katalog ve kartelada kalem ekleme, düzeltme ve kullanımdan kaldırma ekranını sürüm ve onay kaydıyla yazmak; geçmiş kayıtların sürüm bağını korumak.	-	-	M
+YG-662	KOD	Kartela dışı geçici kalem önerilerini katalog geliştirme kuyruğuna düşüren kayıt ve ekranı yazmak.	-	-	M
+YG-663	KOD	Kapsam satırına katalog kodu alanı ekleyip kartela koduyla birlikte eşleştirmek.	-	-	M
+YG-692	KOD	Matbu metinleri koddan matbu_M1_M10 tablosundan okumaya geçirmek; M6 ve M8'i belge grubuna göre yerleştirmek, M9'u duruma göre seçmek.	-	-	M
+YG-711	KOD	Teknik raporun yayımdan sonra yalnız yeni revizyonla (gerekçe ve talep eden kayıtlı) değiştirilmesini sağlayan kural ve revizyon geçmişi görünümünü yazmak.	-	-	M
+YG-733	KOD	Genel sözleşme [●] alanları ve SLA tabloları için sürümlü parametre alanı kaydı ve ekranını yazmak.	-	-	M
+YG-734	KOD	Tüm rapor ve dışa aktarımlara kaynak kayıt kimliği, dönem, filtre ve güncellenme zamanını ortak bileşenle eklemek.	-	-	M
+YG-736	KOD	Rapor ekranlarında varsayılan kapsam ve seçili filtreleri göstermek ve dışa aktarılan dosyaya aynı filtre ve üretim zamanını yazmak.	-	-	M
+YG-743	KOD	Genel göstergelere veri eksik/gecikmiş/yetersiz güven düzeyi işareti eklemek.	-	-	M
+YG-773	KOD	Kartela fiyatının eksper bedellerine göre konumunu aylık raporlayan zamanlanmış işi eklemek.	-	-	M
+YG-784	KOD	Teslim tarihini 7 gün geçen sipariş ve tedarikçi riski (karne eşiği altı, 3 ayda iki Majör) erken uyarılarını eklemek.	-	-	M
+YG-804	KOD	Gözden geçirme paketini türüne göre (karne, belge süreleri, uygunsuzluk, şikâyet, iş hacmi, önceki karar) derleyip göreve eklemek.	-	-	M
+YG-806	KOD	Yıllık periyodik iş takvimi yönetim ekranını ve katalogdaki işlerin (sezon planı, nöbet çizelgesi, imha vb.) sahip ve zamanlı kayıtlarını eklemek.	-	-	M
+YG-807	KOD	Uyum kuralını belge, iş emri adımı, eğitim ve sözleşme ekiyle yapısal bağlayan tabloyu ve gözden geçirilecekler listesini eklemek.	-	-	M
+YG-823	KOD	Sipariş öncesi bütçe yeterliliği kontrolü ekle.	-	-	M
+YG-838	KOD	Banka teminat mektubu istisnası alanını ve 12 ay sonunda güvence kesintisinin serbest bırakılmasını ekle (iç kayıt).	-	-	M
+YG-845	KOD	Teknik uzman ve kurtarma/çekme/dalış sağlayıcıları için kabul ve faturadan 60 günlük ödeme planı ekle.	-	-	M
+YG-850	KOD	Gelir, maliyet ve nakit hareketi için ayrı kayıt tabloları ve mevcut fatura/hakediş/ödeme kayıtlarından besleme yazılır.	-	-	M
+YG-851	KOD	Ödeme taahhüdü kaydı (taahhüt eden, tutar, tarih) ve kısmi ödemeden ayrı izlenen kalan yükümlülük kaydı eklenir.	-	-	M
+YG-866	KOD	Atık alım hizmeti türü seçilince koordinasyon görevi açılması ve hizmetin kartela kalemiyle faturaya yansıması yazılır.	-	-	M
+YG-889	KOD	Yat sahibi ek isteği için ana iş emrine bağlı ayrı iş emri ve ayrı proforma/fatura zinciri işareti yazılır.	-	-	M
+YG-895	KOD	Onay talebinin iletildiği andan başlayan günlük bekleme ve muhafaza kalemi, onay ekranında günlük not ve yat sahibine haftalık özet yazılır.	-	-	M
+YG-918	KOD	Masraf, maaş, vergi ve SGK ödemelerini kapsayan takvim, vade önerisi ve 72 saat/vade günü uyarısı ekle.	-	-	M
+YG-920	KOD	Fiş görselini zorunlu yap, kalan gün ve son teslim/onay/ödeme günlerini göster, taslak hatırlatması ve üst kademeye geçiş ekle.	-	-	M
+YG-926	KOD	Unvanla mükerrerlik kontrolü, il-ilçe-bölge eşleşme listesinden seçim ve pasif tarafla dosya açma engeli ekle.	-	-	M
+YG-986	KOD	Ayrılışta devir listesine yeni sorumlunun erişim doğrulaması ve devir kabulü adımı eklemek; kabul olmadan eski hesabı kapatmamak.	-	-	M
+YG-995	KOD	Dosya ve proje kapsamlı süreli ek yetki tanımı ile yetkisiz platform dışı kararda işlemi bekletme işareti eklemek.	-	-	M
+YG-996	KOD	Toplu dışa aktarmayı Yönetici ve üstü kademeye gerekçe zorunlu ve kayıtlı açmak; yetki matrisi için dönemsel gözden geçirme görevi eklemek.	-	-	M
+YG-998	KOD	Modül ve veri kümesi sahipliği kaydını (rol bazlı) tutmak ve görev değişiminde sahiplik, açık onay ve erişimleri yeni role devreden işlemi eklemek.	-	-	M
+YG-1000	KOD	Hizmet hesabı envanteri (sahip, amaç, veri, anahtar, kaynak adres, çalışma zamanı, kapanış yöntemi), etkileşimli giriş engeli ve kullanılmayan hesabı askıya alma işi eklemek.	-	-	M
+YG-1003	KOD	İç kullanıcı açmayı personel kartı (İK kaydı) zorunluluğuna bağlamak ve unvandan rol türetmeyi engellemek.	-	-	M
+YG-1007	KOD	Rol kataloğuna iş amacı, sahibi, izinler/kısıtlar, onaylayan ve gözden geçirme dönemi alanlarını ve sahipsiz role atama engelini eklemek.	-	-	M
+YG-1009	KOD	Kullanıcı/rol tanım akışını Sistem Yöneticisi hazırlar, birim Müdürü onaylar, Sistem Yöneticisi uygular sırasına çevirip iş içeriği değişikliğini engellemek.	-	-	M
+YG-1018	KOD	Dosyaya yalnız dört görev rolünün atanmasını kısıtlamak ve ekranda yalnız unvanı göstermek.	-	-	M
+YG-1020	KOD	Dosya Sorumlusunun talep, plan, firma seçimi, iş emri hazırlığı ve iletişim yetkilerini tek denetim işleviyle toplayıp testle doğrulamak.	-	-	M
+YG-1022	KOD	Saha Sorumlusuna işi durdurma yetkisi vermek ve tüm saha işlemlerine zaman ve konum izi yazmak.	-	-	M
+YG-1026	KOD	Tedarik siparişinden teslime ve kullanıma lot izlenebilirliğini tamamlamak.	-	-	M
+YG-1029	KOD	CEO Asistanına toplantı düzenleme ve salt okunur rapor, İSG Sorumlusuna eğitim planı ve risk değerlendirmesi izinlerini tamamlamak.	-	-	M
+YG-1042	KOD	Teknik uygulama sonrası grup üyeliği, alan hakkı, dışa aktarım ve yönetim izinlerini onay kaydıyla karşılaştıran doğrulamayı genişletmek.	-	-	M
+YG-1043	KOD	Akademideki rolün zorunlu eğitimi tamamlanmadan rol yetkisini ve onay limitini açmayan engeli eklemek.	-	-	M
+YG-1048	KOD	Rol kaldırma sonrası alt grup, önbellek ve oturum erişimini otomatik sınayan kontrolü ve incelemeden kaldırma akışını eklemek.	-	-	M
+YG-1054	KOD	Kapatılan hesabın onay bekleyen kararlarını ve belge sahipliğini yeni sorumluya devretmek; dış kullanıcı kapanışını kapsama almak.	-	-	M
+YG-1055	KOD	Ayrı Sözleşme Süre Uyarısı ve Erişim Kapatma ekranlarını mevcut verilerden kurmak.	-	-	M
+YG-1057	KOD	İzin talebi girişi, açık dosyada dosya bazlı vekil ve 10 gün ve üzeri izinde rol vekâleti zorunluluğu ile vekâlet tablosunu eklemek.	-	-	M
+YG-1066	KOD	CEO'ya giden eskalasyon ve bildirimlerde GMY'yi ara kademe olarak ekleyen genel kuralı parasal zincirler dışına yaymak.	-	-	M
+YG-1071	KOD	Dosya taraf rollerine talebi ileten, teknik muhatap, sözleşme imzalayan, kapsam onaylayan, mali taahhüt, ödeme yapan ve teslim alan rollerini dayanak ve sınırla eklemek.	-	-	M
+YG-1079	KOD	Sigorta, broker/acente ve diğer yetkili taraf portallarına teslim sonrası arıza bildirimi açma yolunu eklemek.	-	-	M
+YG-1084	KOD	Müdürlere müdürlük, direktörlere direktörlük, GMY ve CEO'ya tüm işleri gösteren iş listesi kapsam süzgecini eklemek.	-	-	M
+YG-1085	KOD	90 gün kullanılmayan dış hesabı askıya alma ve 180 günde kapatma işini (V-386) ve ayrıcalıklı hesaplara ayrı yönetim kimliğini eklemek.	-	-	M
+YG-1109	KOD	Değişiklik izi tetikleyicileri tüm iş tablolarına, görüntüleme izi kişisel veri içeren tüm uç noktalara yayılır.	-	-	M
+YG-1142	KOD	Bildirim, rapor ve arama hizmetlerinde her çağrıda kullanıcı, dosya, amaç ve veri sınıfı doğrulaması eklenir.	-	-	M
+YG-1146	KOD	İlişki kimliği istek bağlamıyla sorgu, arka plan işi ve dış çağrılara taşınır ve günlüklere yazılır.	-	-	M
+YG-1161	KOD	Dosya erişim düzeyi bilgi sınıflarına bağlanır ve dosya içindeki tüm kayıt türlerinde uygulanır.	-	-	M
+YG-1162	KOD	Ortak arama ve otomatik tamamlama uç noktalarında kaynak erişim süzgeci uygulanır.	-	-	M
+YG-1163	KOD	Maskeleme kuralları tüm kişisel veri alanlarına genişletilir; raporlarda toplulaştırılmış sonuç ve referans kullanımı uygulanır.	-	-	M
+YG-1170	KOD	Portala çıkan test raporu ve tutanak PDF'lerinde firma adı/logo/imza alanları çıkarılır; fotoğraf yayımlanırken firma işaretini kapatan maskeleme aracı eklenir.	-	-	M
+YG-1177	KOD	Diğer kayıt türlerinde bilgi sınıfı varsayılan Gizli atanır; sağlık, özel nitelikli veri veya isim bazlı erişimde Kritik atanır.	-	-	M
+YG-1193	KOD	Anahtar iptali, bağlantı sınırlama ve kayıt dondurma uygulayıcıları karar kaydına bağlanarak yazılır.	-	-	M
+YG-1224	KOD	Saklama planına iş amacı ve bilgi sınıfı alanları eklenir; süre tüm kayıt türlerine uygulanır.	-	-	M
+YG-1225	KOD	Güvenlik ve erişim loglarının 2 yıl dolunca zincir bütünlüğü korunarak (dönem özeti) otomatik silinmesi işi yazılır.	-	-	M
+YG-1239	KOD	Ana veri türleri için tanım, sahip rol, yetkili kaynak ve kalite kuralı tablosu ile kalite denetimi yazılır.	-	-	M
+YG-1241	KOD	Dosya tarafı, teklif ve faturada ana kayıt bağı zorunlu yapılır; ad/telefon/e-posta ana kayıttan okunur.	-	-	M
+YG-1243	KOD	Alan sözlüğüne kalite eşiği ve paylaşım grubu sütunlarını ekleyip paylaşım grubunu bilgi sınıfından, kalite eşiğini zorunluluk ve doğrulama kuralından varsayılan olarak türetmek.	-	-	M
+YG-1251	KOD	Kapanış tamlık kontrolünü taraf/yat bağı, belge sürümü, onay, tarih ve ölçümü birlikte değerlendiren ortak denetime çevirmek; ilgisiz ek dosyayı kanıt saymamak.	-	-	M
+YG-1267	KOD	Marka-model listesinin sonradan yeniden yüklenmesi ve MRK kodlarının yeni listeye göre güncellenmesi işlevini (eski kod eşlemesiyle) yazmak.	-	-	M
+YG-1279	KOD	Geri yükleme testine ilişki, bütünlük özeti, entegrasyon durumu ve örnek iş akışı doğrulamalarını eklemek; süreç sınıfına (Kritik/Önemli/Destek) göre hedef karşılaştırması ve süreç sahibi kabul adımı yazmak.	-	-	M
+YG-1288	KOD	Alan sözlüğü teknik adlarıyla ayrı kaynak-hedef eşleme tablosu kurmak; telefon ve unvan benzerliğiyle (vergi no varsa onunla) mükerrer aday işaretlemesi yazmak.	-	-	M
+YG-1303	KOD	Hizmet hesabı anahtarıyla entegrasyon kimlik doğrulaması, şifreli anahtar/sertifika deposu ve süre bitiş uyarısını eklemek.	-	-	M
+YG-1308	KOD	Entegrasyon hata kaydına kaynak/hedef, sürüm, etkilenen kayıtlar, veri dondurma ve yetkili yeniden deneme/manuel doğrulama kaydını eklemek.	-	-	M
+YG-1309	KOD	Genel gönderim kuyruğu ekranı, karantina kuyruğu, kök neden bağlantısı ve operatör düzeltme-yeniden çalıştırma kaydını eklemek.	-	-	M
+YG-1316	KOD	Zamanlanmış işlerde çakışma ve gecikme uyarısı ile atlanan işin etkilediği rapor ve görevleri görünür uyarıya çeviren izlemeyi eklemek.	-	-	M
+YG-1350	KOD	Sık işlemlerin adım sayısını tarayıcı testinde ölçen ve 3 adımı aşanları raporlayan denetim yazmak.	-	-	M
+YG-1354	KOD	Genel arka plan iş tablosu (kimlik, başlama-bitiş, deneme, sonuç, etkilenen kayıt) ve İşlem sürüyor bildirimini yazmak.	-	-	M
+YG-1360	KOD	Bir adım tamamlanınca yapılacaklar listesindeki sonraki formun kendiliğinden açılmasını yazmak.	-	-	M
+YG-1369	KOD	Çevrim dışı eşitleme çakışmaları için çözüm ekranı ve nihai kaydın süreç sahibince onaylanması adımını yazmak.	-	-	M
+YG-1371	KOD	/kartela/ara uç noktasını webde otomatik tamamlamayla kullanmak, isteğe bağlı branş kutularını ve işlem seçilince üst branşların dolmasını eklemek.	-	-	M
+YG-1375	KOD	Anlamsız karakter, geçici metin ve ilgisiz belge denetimini ortak doğrulayıcıya taşıyıp tüm zorunlu alanlara uygulamak.	-	-	M
+YG-1376	KOD	Koşullu zorunlu alanları ortak kural tanımından yöneten bileşen ve sunucu doğrulamasını yazmak.	-	-	M
+YG-1379	KOD	Kalan serbest metin seçim alanlarını (kartela kodu, yetkili vb.) sözlük/ana veriye bağlamak; Diğer seçiminde zorunlu açıklama açmak.	-	-	M
+YG-1380	KOD	Tüm tablolarda göç, eşleştirme ve iç sürüm alanlarını denetleyen test ve eksikleri ekleyen göçü yazmak.	-	-	M
+YG-1383	KOD	Ortak GG.AA.YYYY / GG.AA.YYYY SS:DD biçimlendirici yazıp tüm ekranlara uygulamak; damgaları saniyeli TSİ tutmak.	-	-	M
+YG-1386	KOD	Engel mesajlarına yapılacak işin düğmesini ekleyen ortak bileşen yazmak; kural metni gösteren yerleri sadeleştirmek.	-	-	M
+YG-1387	KOD	Her ekrana hukuki gerekçe ve ilgili belge bölümünü gösteren Neden? bağlantısını yazmak.	-	-	M
+YG-1389	KOD	Özet, risk bazlı kısa kontrol listesi ve engelleme mesajları içeren tek karar ekranı bileşenini yazmak.	-	-	M
+YG-1391	KOD	Ekran sabit metinlerini kütüphaneye taşımak; BT ve Firma Yönetimi Direktörü yönetimi ile hukuki İngilizce metin için CEO onay akışını yazmak.	-	-	M
+YG-1393	KOD	Ekran ve belgelerde terim denetimi (Yat Sahibi/Yetkilisi, Yacht Owner / Authorised Representative) yapan otomatik test yazmak.	-	-	M
+YG-1401	KOD	Ana rengi onaylı kurumsal kimlik setindeki laciverte (K-232) hizalamak, WCAG kontrast denetimi ve boş ekranda ilk adım yönlendirmesi eklemek; iki yazı tipi kimlik kararıyla onaylı.	-	-	M
+YG-1405	KOD	Otomatik WCAG 2.2 AA denetimi (kontrast, etiket, klavye) testlerini yazıp bulguları düzeltmek.	-	-	M
+YG-1406	KOD	Zimmet, tebliğ ve kontrol listeleri için YATONET 360 onayını ve sistem erişimi yokken ıslak imza istisnası akışını yazmak.	-	-	M
+YG-1408	KOD	Dış katılımcının portal hesabıyla toplantıya katılımını yazmak.	-	-	M
+YG-1420	KOD	Garanti olayına FR-UYG-004 formunu bağla, kısa ve ayrıntılı iki seviye aç.	-	-	M
+YG-1423	KOD	İtiraz kayıt türünü ve katalogdaki BLD-64 alındı varyantını ekle, ilgili kişi alanını doldur.	-	-	M
+YG-1424	KOD	Ara yanıt ve haftalık hatırlatma, 15 gün itiraz kabulü, üst kademe 120 saat sayacı ve bağımsız sörveyör kaydı ekle.	-	-	M
+YG-1442	KOD	Çizimlere TL-ONR-001 bilgi bloğu (ÇZnn no, revizyon tablosu, onay kodu), yata sicil limanı alanı ve eski sürüme geçersiz damgası eklemek.	-	-	M
+YG-1443	KOD	Şablon motoruna dipnot ve şekil altyazısı desteği eklemek ve M1–M10 matbu metinlerini belge türüne göre otomatik yerleştirmek.	-	-	M
+YG-1446	KOD	Kullanılmayan BLD metinlerini ilgili olaylara bağlamak ve 300 karakter/kısa bağlantı sınamasını eklemek.	-	-	M
+YG-1452	KOD	Yat silüeti ve açı oku, sunucu tarafında tarih-saat ve konum damgası, iş paketi kabul kapısı ekle.	-	-	M
+YG-1456	KOD	Elle kabulde firmaya bağlantı ve kodla teyit gönder, kabul saatini ayrı alan yap, arayüz ekle.	-	-	M
+YG-1463	KOD	Paylı yatta maliklerin SMS kodlu beyanla tek yetkili malik ataması ve onay-fatura muhatabının ona geçmesini ekle.	-	-	M
+YG-1465	KOD	Gönderimde sablon_metni.dogan_gorev sütununu okuyup ilgili role görev açan genel mekanizmayı yazmak.	-	-	M
+YG-1467	KOD	İhbar soru sırasını 10 soruya göre düzenle ve Dosya Sorumlusu ilk telefon kılavuzunu (geçmiş olsun, can güvenliği, yat güvenli mi) ekle.	-	-	M
+YG-1473	KOD	Firmanın ağa kabulde gireceği acil birim fiyat alanlarını ekle, ön değeri bunlardan hesapla ve kartela bandıyla denetle.	-	-	M
+YG-1477	KOD	Vefat işaretinde BLD-46'yı firmaya, temsilci atanınca BLD-84 devam bildirimini gönder, mirasçıya ilk mesaja KVKK-01 bağlantısı ekle, BLD-45'i otomatik gönder.	-	-	M
+YG-1478	KOD	Vekil listesinden izinli, raporlu ve görevlendirmedeki kişileri çıkarmak, öncelik sırasını zorlamak ve süre aşımında üst kademeye geçişi eklemek.	-	-	M
+YG-1484	KOD	Önemli şikâyetin Operasyon Müdürü izlemesini, şikâyet itirazının Strateji ve Kurumsal Gelişim Direktörüne gitmesini ve 120 saat itiraz yanıt süresini eklemek.	-	-	M
+YG-1486	KOD	Yurt dışı dosyada keşif atamasının yalnız LGM Teknik Uzmanına yapılması, randevu sayacının ulaşım planı tarihinden başlaması ve yerel firma onayının tek dosyaya bağlanması yazılır.	-	-	M
+YG-1496	KOD	Keşif öncesi BLD-19 metnini göndermek ve tam/kısmi onayda Dosya Sorumlusu ve Ticari Sorumlu görev akışını eklemek.	-	-	M
+YG-1507	KOD	Onay ekranını onay_ekran_metinleri.tsv'deki metinlerle başlık biçimi, belge bağlantı listesi ve 4 maddelik özet düzenine çevir.	-	-	M
+YG-1525	KOD	Eski Yat Markası/Yat Modeli tablolarındaki kayıtları yat_marka_model tablosuna aktaran ve eski tabloları eskidi – ana veriye taşındı olarak işaretleyen göçü yazmak.	-	-	M
+YG-1526	KOD	Marka-model yüklemesini tekrar çalıştırılabilir yapmak, Marka Kodunu tekil anahtar yapmak ve sayı karşılaştırmalı aktarım raporu üretmek.	-	-	M
+YG-1539	KOD	Yatın bulunduğu tesisin koordinatı (V-412) esas alınarak bölge dışı katmanlarda kuş uçuşu uzaklık sıralaması ve öncelik süresini aşan varışta sarı satır ile kapasite süzgeci eklenir.	-	-	M
+YG-1544	KOD	VERBİS eşik görevinde İK kayıtlarından önceki yıl ortalama çalışan sayısı ve girilen bilanço toplamını göstermek; 50 kişi ve 100 milyon TL eşiklerini parametre yapmak, aşımda VERBİS kaydı görevi açmak.	-	-	M
+YG-1548	KOD	Matriste engelleyici işaretli işe giriş bildirgesi kuralını işe başlama tarihini kesinleştirmeyi durduran engele çevir; engelleyici olmayanları uyarı olarak bırak.	-	-	M
+YG-1550	KOD	Uyum görevlerini yeşil/sarı/kırmızı pano olarak göster (sarı mevcut 3 gün hatırlatma eşiğiyle), görev ve kanıta bağlantı ver, GMY'ye görünürlük ve üç aylık rapora özet ekle.	-	-	M
+YG-1553	KOD	Mesai dışı portal ihbarını nöbetçiye yönlendir; kayıtsız numaradan Gelen Talep kaydı ve tek adımda Operasyona aktarma ekle.	-	-	M
+YG-1555	KOD	silsile.ts bilgi bildirimini tüm birim görev yönlendirmelerine bağla.	-	-	M
+YG-1558	KOD	Yer alanını tesis/marina sicilinden seçimli ve yazdıkça süzülen listeye çevirmek.	-	-	M
+YG-1559	KOD	Başlık harf kuralı, resmî kip ve Acil Durum kutusu kurallarını otomatik ekran denetimine ekleyip bulguları düzeltmek.	-	-	M
+YG-1560	KOD	Hesap Oluştur'daki Çözüm Ortağı Başvurusu, Kurumsal İletişim Talebi ve LGM Personeli seçeneklerini mevcut başvuru, kurum talebi ve davet akışlarına bağlamak.	-	-	M
+YG-1564	KOD	Yasal Bekleme, Ek Bulgu, Açık İş ve Onarıma Devam durumlarını besleyen alanları musteriDurumu'na geçir.	-	-	M
+YG-1565	KOD	Kartlara sonraki adım, eksik hızlı işlemler, alt menü ve Yardım-LGM Merkez düğmesini ekle.	-	-	M
+YG-1566	KOD	Yat Yetkilisi ekranında yetki kapsamı ve limit içindeki onayların listelenmesi, alt menü (Ana Sayfa, Belgelerim, Yeni Talep, Bildirimler, Yetkilerim) ve kırmızı acil kartta SMS kodlu "İzin Ver / İzin Verme" yazılır.	-	-	M
+YG-1567	KOD	Acil kartı, beyaz telefon simgeli Destek Hattı düğmesi, iki nokta hizası ve ifade tekliğini ortak bileşenlerle tüm ekranlara uygulamak.	-	-	M
+YG-1568	KOD	Portal onayından sonra onaylanmayan kalemler için yat sahibine teklif sürecini başlatmak ve kalem kartında nitelik göstermek.	-	-	M
+YG-1571	KOD	Sigorta portalına Görevlendirme formu ve Raporlar bölümünü (aylık mutabakat, İtiraz Et, fiyat kartelası) eklemek.	-	-	M
+YG-1574	KOD	Ek İş ve Garantiyi ana iş emri altında grupla, Fotoğraf Yükle, kırmızı acil kart ve İşleminizi Bekleyenler bölümünü ekle.	-	-	M
+YG-1576	KOD	Kural bildiren -maz/-mez kalıplarını tarayan test yazıp mesajları nazik kalıba çevirmek.	-	-	M
+YG-1577	KOD	Tedarikçi ekranına uygunsuzluk yanıtı ve yaklaşan sevkiyat listesi ekle.	-	-	M
+YG-1578	KOD	Metin yaslama denetimini web genişliğine ve tüm ekranlara genişletmek.	-	-	M
+YG-1591	KOD	Gönderilecek satırı, Gerekçeyle İade Et ve Reddet standardını ortak düğme bileşeniyle tüm ekranlara yaymak.	-	-	M
+YG-1596	KOD	Keşfi beklemeden Geçici/Acil Önlem nitelikli iş emri açma yolunu ekle.	-	-	M
+YG-1599	KOD	Toplantı kararı, cetvel onayı ve firma fiyatı tamamlanınca Ticari Sorumluya Fiyat Teklifi Hazırla görevini otomatik aç.	-	-	M
+YG-1601	KOD	Onay tamamlanınca Dosya Sorumlusuna Müşteriye Gönder görevi aç; ticari yazışmaların kopyasını dosyaya düşür.	-	-	M
+YG-1604	KOD	SURE_SAAT değerlerini parametre tablosuna taşı; değişiklik için T&O Direktörü önerisi, GMY görüşü, CEO onayı zinciri kur.	-	-	M
+YG-1607	KOD	5 gün saat/gün ayrımını ve gün sürelerinde son gün 12:00 kuralını sure.ts'de genelleştir.	-	-	M
+YG-1608	KOD	Ticari Sorumlu ana ekranında Süre Uyarıları, Yeni Görevler, Kontrol Bekleyenler ve Tahsilat bölümlerini ayrı ve eksiksiz kurmak.	-	-	M
+YG-1610	KOD	Atama Bekleyenler (Ticari Sorumlu seçimi), Ekip Süre Uyarıları ve masraf belge kontrolü (Uygundur) ekranlarını yazmak.	-	-	M
+YG-1628	KOD	İdari İşlemlerim girişine Akademi ve Karne, İdari Talep, Toplantılar ve Duyurular'ı toplamak; masraf kartına Son Teslim satırı eklemek.	-	-	M
+YG-1631	KOD	7 günlük konum şeridini atama, randevu, iş emri, izin ve nöbet kayıtlarından (K-157) beslemek ve amirin Ekip sayfasını yazmak.	-	-	M
+YG-1642	KOD	Erişim inceleme uygulaması (V-386) ve DGS bileti açma ekranını yazmak.	-	-	M
+YG-1645	KOD	Destek eskalasyon akışı, erişim inceleme paketi ve vekâlette DGS onayını yazmak.	-	-	M
+YG-1646	KOD	Kır-cam (acil) erişim, süreklilik planı ve değişiklik kayıtları ekranlarını yazmak.	-	-	M
+YG-1656	KOD	Acil Durum düğmesini A2, A3, A6, A7, A8 ana ekranlarına ve fotoğraf ekini ekle.	-	-	M
+YG-1666	KOD	Dosyaya bağlı mesaja dosya önceliğini ver, tehlike ifadelerinde Kritik alarm üret, öncelik düşürmeyi onaya bağla, dış kullanıcı mesajını Süre Uyarılarına düşür.	-	-	M
+YG-1686	KOD	İşi durdurma bildirimini Kalite Müdürüne de göndermek, A sınıfı serbest bırakma zincirini ve Kalite Uzmanının dosya yazışma/arama yetkisini eklemek.	-	-	M
+YG-1688	KOD	Üst kademeye düşen kalite kontrolünde bağımsızlık teyidi ve Vekâleten etiketi ile yıllık saha geri bildirimi akışını eklemek.	-	-	M
+YG-1690	KOD	Eksikliği Bildir düğmesi, İSG Sorumlusu ikiz görev yönlendirme kuralları ve ekip sayfasında İkiz Görev etiketini eklemek.	-	-	M
+YG-1692	KOD	Koşullu kabul süre uzatma talebi (bir kez 15 gün), vekâlet yönlendirmeleri ve iç denetim raporunun yalnız CEO'ya gitmesini eklemek.	-	-	M
+YG-1694	KOD	İdari talep akışı gösterimi, Kritik uygunsuzlukta Kararı Kaydet, onaylı İncelendi Olarak Kaydet metni ve konum planı gizlemeyi eklemek.	-	-	M
+YG-1695	KOD	Haftalık Resmî Gazete tarama görevini (V-390) ve Bugün sayfasında veri ihlali acil kartını eklemek.	-	-	M
+YG-1696	KOD	Sabit hukuki metin yönetim ekranı, uyum panosu göstergeleri ve veri ihlali acil kartını yazmak.	-	-	M
+YG-1783	KOD	Kalan kuru API hata ve yönlendirme metinlerini nazik kalıpla yeniden yazmak (BLD/ONY metinlerine dokunmadan).	-	-	M
+YG-005	KOD	Dosyada teknik ilerleme, müşteri onayı, satın alma, kalite, ödeme ve kapanış için ayrı durum boyutları (türetilmiş görünüm) ve hangi boyutun hangisini engellediğini tutan tek bir engelleme tablosu kurulur.	-	-	L
+YG-060	KOD	Kayıt türü, statü, iş anlamı, giriş/çıkış koşulu, yetkili rol, izinli geçişler, zorunlu açıklama, süre ve bildirimi tutan merkezi durum sözlüğü tablosu kurulur ve geçişler bu tablodan denetlenir.	-	-	L
+YG-064	KOD	Yapılacaklar listesine Ek II §10.7 zorunlu form setini ve duruma bağlı formları ekle; adım tamamlanınca sonraki formu aç.	-	-	L
+YG-132	KOD	Plan/profil çizim aracı, GA veya ölçekli siluet altlığı, bölge kodunun bulgu-metraj-teklife otomatik aktarımı ve firma işaretlemesinin aktarımını yaz.	-	-	L
+YG-281	KOD	İş paketi Hazır statüsü ön koşulunu ve kabul sınıfının asgari sınıfın (taşıyıcı yapı, emniyet, ana sistem için A) altına inmesini engelle.	-	-	L
+YG-645	KOD	FR-UYG-001 yasal bildirim bloğu, FR-TEK-001 numune emanet zinciri, FR-RAP-003 bilgi iadesi ve imha ile FR-OPS-008 kurtarma ek bölümleri alanlarını Ek II tanımına göre eklemek.	-	-	L
+YG-659	KOD	LGM-2026-013 belgesinden hizmet kataloğunu ayrı sürümlü nesne olarak yüklemek, kartelayı alt küme olarak bağlamak ve iş emri, teknik servis raporu ve keşfi kataloğa bağlamak.	-	-	L
+YG-664	KOD	Ana/alt/tali branş ve işlem sınıflandırmasını keşif, firma yetkinliği, gerçekleşme ve raporlama kayıtlarına ortak referans olarak bağlamak.	-	-	L
+YG-665	KOD	Hasar İhbar ve Ek II formlarını ortak kurumsal A4 şablonundan (pdfUret) üretmek.	-	-	L
+YG-667	KOD	Üretilen belgeler dışındaki formları kutu/tablo düzenli ortak şablona taşımak.	-	-	L
+YG-704	KOD	Yat plan/profil siluetleri üzerinde hasar bölgelerini taralı gösteren Hasar Konum Şeması çizimini (SVG) rapora eklemek.	-	-	L
+YG-847	KOD	Kurtarma, çekme ve dalış işinde LGM fiyat kaydı, LGM müşteri faturalaması ve sağlayıcının LGM'ye kestiği fatura kaydı yazılır; sağlayıcı tutarı yalnız LGM rollerine görünür.	-	-	L
+YG-936	KOD	Senaryoların işletildiği simülasyon modülü ve rol bazlı periyodik iş takvimi görünümü yazılır.	-	-	L
+YG-969	KOD	Günlük, haftalık, sezonluk ve olaya bağlı periyotlar, tamamlanınca kendiliğinden kapanma ve Rol Görev belgesinden rol bazlı şablon yüklemesi yazılır.	-	-	L
+YG-991	KOD	Yetki modeline konum boyutu ve ayrı hak türleri (görme, oluşturma, düzenleme, teknik kontrol, mali kontrol, onay, paylaşma, kapatma) eklemek.	-	-	L
+YG-994	KOD	Firma ve diğer dış kurum kullanıcılarına teklif hazırlayan, saha, kalite kontrol ve yönetici alt rolleri ile kurum yöneticisinin tanımlayabildiği işlem sınırları eklemek.	-	-	L
+YG-1073	KOD	Kimlik, sıfat, yetki dayanağı ve karar sınırı denetimini portal dışındaki tüm karar yollarına ortak işlevle yaymak.	-	-	L
+YG-1080	KOD	Ön muhasebe kayıtlarını (genel gider, banka/kasa, cari hareket, ödeme takvimi, bütçe kalemi) kurup erişimi CEO, GMY, Ticari İşler Direktörü ve Muhasebe ve Finans Müdürüyle sınırlamak.	-	-	L
+YG-1123	KOD	Göç betiklerine ön koşul, geri dönüş ve doğrulama sorguları eklenir; Alan Sözlüğü kapsamı modüller yazıldıkça tamamlanır.	-	-	L
+YG-1143	KOD	Modüllerin başka modül tablolarına doğrudan yazması sürümlü arayüz fonksiyonlarına taşınır (yeniden yapılandırma).	-	-	L
+YG-1176	KOD	Bilgi sınıfı tüm kayıt türlerine eklenir; sınıfa göre gösterim, indirme, paylaşım, günlükleme, şifreleme, yedek ve imha davranışını belirleyen kural tablosu yazılır.	-	-	L
+YG-1240	KOD	Ana veri değişiminde dosyaya o anki değerin kopyası saklanır ve etkilenen açık dosya/teklif için değerlendirme görevi açılır.	-	-	L
+YG-1244	KOD	Yat, taraf, firma, personel, ekipman, sözleşme ve belge için veri sahibi seçimli birleştirme ekranı, çelişen alan listesi, ilişki taşıma, eski kimlik yönlendirmesi ve geri alma işlevini yazmak.	-	-	L
+YG-1250	KOD	Kalite kuralı kataloğu tablosu kurup kuralları alan girişi, yükleme, durum geçişi ve toplu aktarımda ortak doğrulayıcıdan çalıştırmak; otomatik düzeltmeyi denetim izine yazmak.	-	-	L
+YG-1259	KOD	Firma/tesis listesi toplu alımında kayıtları Doğrulanmadı statüsüyle aday havuzuna almak, test kayıtlarını ayıklamak, kişisel veri erişimini kısıtlamak ve Ek I doğrulama akışına bağlamak.	-	-	L
+YG-1301	KOD	API sürümleme, ortak sayfalama, oran sınırı, makine okunur API sözleşmesi ve eski sürüm kapanış takvimi kaydını eklemek.	-	-	L
+YG-1338	KOD	Firma, bağlama noktası ve çekek ana veri dosyalarını (proje klasöründeki xlsx listeler) il ve telefon normalizasyonu, Aktarılmaz süzgeci ve otomatik birleştirmeme denetimiyle aktaran aracı yazmak.	-	-	L
+YG-1340	KOD	Webde yazdıkça öneren işlem araması ve isteğe bağlı branş kutularını yazmak; 4.890 işlemi LGM-2026-013 belgesinden yüklemek.	-	-	L
+YG-1347	KOD	Zimmet, idari talep (V-367, V-399) ve kapasite raporu modüllerini yazmak.	-	-	L
+YG-1349	KOD	Akademi ve Karne, Harita, Raporlar ve Yönetim, Yardım ekranlarını menüye ve uygulamaya eklemek.	-	-	L
+YG-1351	KOD	Ortak form bileşeninde zorunlu alan işareti ve tüm ekranlarda sıradaki işlem, sorumlu ve hedef süre şeridi eklemek.	-	-	L
+YG-1358	KOD	Kalan rapor ve kontrol ekranlarını önceki adım verileriyle önceden doldurmak ve elle doldurulan belge sayısını ölçmek.	-	-	L
+YG-1364	KOD	Kalan iç kayıtları dosya ekranında sekme olarak doldurulur hâle getirmek; A4'ü yalnız talep üzerine üretmek.	-	-	L
+YG-1366	KOD	Durum geçişi, Beklemede işareti, onay limitleri, sayaç ve eskalasyonları tek sunucu tarafı iş kuralları katmanında toplamak.	-	-	L
+YG-1370	KOD	Numaralı başlık şeritli kutu/tablo düzenini ortak bileşen yapıp tüm ekran ve belgelere uygulamak.	-	-	L
+YG-1382	KOD	Genel sürüm sayacı (iyimser kilit) ve çakışmada güncel kaydı yükle uyarısını yazmak.	-	-	L
+YG-1390	KOD	Giriş dışındaki ekran metinlerini çeviri kütüphanesine taşıyıp İngilizce sunmak (hukuki metinler CEO onayından geçer).	-	-	L
+YG-1407	KOD	Eksperin ayrı portal ekranı ile broker/acente/kaptan için ayrı rol ekranlarını yazmak.	-	-	L
+YG-1430	KOD	Tek Malzeme Giriş Kabulü kaydı, ara/nihai tek Hakediş ekranı ve FR-SCL tek başvuru sihirbazını yazmak.	-	-	L
+YG-1434	KOD	Kabul testi ve KK onayı kilidi, teslim eden sırası, tablette ekrana el imzası ve çevrimdışı kayıt ekle.	-	-	L
+YG-1449	KOD	Bilgi Paylaşım İzni, işlem türü/yat bazlı Yetki ve Onay Sınırı Kaydı, Ek-2'nin bu kayıttan üretimi ve limit aşımı uyarısını ekle.	-	-	L
+YG-1505	KOD	Katalogda onaylı metni olan BLD-68/69/70, 35P, 64, 67, 73, 78, 79, 82, 83 bildirimlerini ilgili olaylara bağla ve tesis bekleme gideri günlük satırını üret.	-	-	L
+YG-1570	KOD	Eksperin ayrı hesap ve ekranını, davet yanıtı, parça inceleme randevusu ve ekspertiz raporu yüklemesini yazmak.	-	-	L
+YG-1582	KOD	Müdahale Gerekenler, Gözetim Dosyaları ve notu, ekip kapasite görünümü (/25) ve dengeleme önerisi ekranlarını yazmak.	-	-	L
+YG-1583	KOD	Müdürlük Uyarıları, Kapanış Bekleyenler, Nihai Kapanış Özeti onay ekranı ve vekâlette Atama Bekleyen Dosyalar sayfasını yazmak.	-	-	L
+YG-1584	KOD	Önem sıralı atama kuyruğu, Olay Yöneticisi: Siz kartı, müdürlük göstergeleri ve nöbet çizelgesi onay ekranını yazmak.	-	-	L
+YG-1585	KOD	Teknik Uzman ana ekranına Yeni Görevler, Raporlarım, branş nöbeti çağrı kartı ve 7 günlük takvimi eklemek.	-	-	L
+YG-1586	KOD	Gözetim Dosyaları, Gözetim Uyarıları (Teknik Müdüre Bildir), toplantı başkanlığı ve haftalık gözetim notunu yazmak.	-	-	L
+YG-1587	KOD	Müdürlük Uyarıları, Teknik Rapor Kontrolü, nöbetçi Uzman ataması onayı (12:00), aylık örneklem ve vekâlette atama sayfasını yazmak.	-	-	L
+YG-1588	KOD	Atama kuyruğu, Karar Seviyesi: Siz kartı, onarım yöntem raporu ve muadil parça onayı ekranlarını yazmak.	-	-	L
+YG-1590	KOD	Malzeme talebi ve teklif karşılaştırma ekranları, Tedarik Uyarıları, rol ana ekranı ve banka hesabı değişikliğinde ödeme durdurma uyarısını yazmak.	-	-	L
+YG-1592	KOD	Talep Dağıtımı (8 saat/2 saat), beş sistem kontrollü sipariş onayı ve Ekip Uyarıları ekranlarını yazmak.	-	-	L
+YG-1594	KOD	Tedarik Panosu, şüpheli ürün kartı (Kullanımı Durdur ve Karantinaya Al), kaynak/risk görünümü ve aylık yönetim raporunu yazmak.	-	-	L
+YG-1613	KOD	Mali Erken Uyarılar panosu, Göstergeler, Tahsilat ve Kapanış ekranlarını yazmak.	-	-	L
+YG-1615	KOD	Bakiye kontrolü bekleyen izinler listesi, Akademi (V-378), sertifika takibi, karne kapanışı ve özel gün rıza ekranlarını yazmak.	-	-	L
+YG-1616	KOD	Akademi, rol yetkisinde eğitim şartı (V-420), personel karne itirazı kararı, yan haklar ve yıllık eğitim planı ekranlarını yazmak.	-	-	L
+YG-1648	KOD	Başvuru sihirbazı, aday havuzu, süresi dolmuş belge acil kartı, aylık veri kalitesi ve yıl dönümü paketini yazmak.	-	-	L
+YG-1650	KOD	Başvuru ön inceleme, görüş toplama, Ek I'e göre puanlama, karar önerisi, sahte belge acil kartı ve silsile ekranlarını yazmak.	-	-	L
+YG-1651	KOD	Ön incelemede Teknik Müdürlük ve İSG Sorumlusu görüş adımları, sayaçsız "Acil" rozetli Sahte Belge kartı, aylık kabul göstergeleri ve yıllık iyileştirme önerisinin "Onaya Gönder" akışı yazılır.	-	-	L
+YG-1654	KOD	Silsile kontrolü, dönem performans kartları, denetim planı ve askı acil kartını yazmak.	-	-	L
+YG-1655	KOD	Vekâlette kendi hazırladığı işin Direktöre yönlenmesi, "Dönem Kartlarını Kaydet" adımı ve denetim planı/yıllık program onayının Firma Yönetimi Müdüründe olması yazılır.	-	-	L
+YG-1659	KOD	Ağa kabul karar ekranı, kapasite raporu, karne gözden geçirme ve acil güvenlik acil kartını yazmak.	-	-	L
+YG-1662	KOD	İncelendi Olarak Kaydet, WhatsApp şablon listesi değişiklik onayı, ağ geliştirme önerisi ve itirazda Kabul/Kısmi Kabul/Ret seçeneklerini parametreli karar süresiyle eklemek.	-	-	L
+YG-1663	KOD	Dış taraflarla dosyaya bağlı Dosya Yazışması, LGM tarafında rol gösterimi ve atanmamış personele salt okunur izleme ekle.	-	-	L
+YG-1667	KOD	Kapasite istisnası, çerçevesiz sağlayıcı, risk rezervi (V-358) ve yönetim panosu ile acil kart bölümünü yazmak.	-	-	L
+YG-1670	KOD	İkiz Görev bandı, OSGB belge ve sağlık gözetimi kayıtları, İşi Durdur acil akışı ve aylık İSG göstergelerini yazmak.	-	-	L
+YG-1671	KOD	Atanmış denetimler, kanıt toplama/talebi, %10 dosya örneklemi, bulgu alanı, taslak rapor ve mali kontrol ekranlarını yazmak.	-	-	L
+YG-1672	KOD	İç denetim planı (V-390), %10 örneklem ataması, rapor inceleme (120 saat), bulgu takibi ve yetkisiz işlem acil kartını yazmak.	-	-	L
+YG-1685	KOD	Kontrol Noktalarım listesi, kritik uygunsuzluk acil kartı, garanti yeniden doğrulama ve takvim ekranını yazmak.	-	-	L
+YG-1687	KOD	Kontrolör atama kuyruğu ve 24 saat sayacı, kayıt disiplini raporları ve yedek kontrolörü yazmak.	-	-	L
+YG-1689	KOD	ITP uygunluğu, haftalık uygunsuzluk süre raporu, kalite verisi doğrulama ve ara doğrulama takvimini yazmak.	-	-	L
+YG-1691	KOD	Kalibrasyon envanteri ekranı, Ek II araç kataloğu görünümü (V-443), aylık kalite göstergeleri ve Ek II değişiklik talebini yazmak.	-	-	L
+YG-1693	KOD	Kapsamlı kök neden kararı, Ek II onayı, yönetim gözden geçirmesi ve olay izleme ekranlarını yazmak.	-	-	L
+YG-1699	KOD	Müdür Yardımcısı yokken Müdüre düşme, Yönlendir/Operasyona Aktar ayrımı, şikâyet vekâlet zincirleri ve Bilgi İşlem Destek ekranında kurum türüne göre yol seçimini eklemek.	-	-	L
+YG-1700	KOD	Gelen talep kuyruğu, yanıt yazısı (FR-KLT-016 şablonları, V-478), sosyal medya acil kartı, sigorta performans raporu ve kurumsal aktivasyon ekranını yazmak.	-	-	L
+YG-1701	KOD	Kurum hesap talebinde Kararı Kaydet ve otomatik davet, Kaliteye Yönlendir, aylık rapor süre uyarıları, Teknik Görüş Talebi kartı ve personel Sosyal Medya Bildirimi düğmesini eklemek.	-	-	L
+YG-1702	KOD	Şikâyet itirazı (120 saat), sigorta paneli başvurusu, denetim talebi, aylık performans raporu ve itibar riski acil kartını yazmak.	-	-	L
+YG-208	KOD+	Özel hüküm işaretli sözleşmede e-imzalı belge yükleme adımı ve bu adım tamamlanmadan sözleşmenin yürürlüğe girmemesi yazılır.	E-imzanın sistem içinde atılması veya doğrulanması e-imza sağlayıcısı gerektirir.	-	S
+YG-236	KOD+	Teklif anında kur alanı ve EUR/TL tutar hesabı eklenir (kur elle girilir).	Kurun TCMB'den kendiliğinden alınması dış servis bağlantısı ister.	-	S
+YG-279	KOD+	Nöbet katmanlarına BT nöbeti katmanı (BT ve Firma Yönetimi Direktörü, Bilgi İşlem Müdürü atanınca dönüşümlü) eklenir.	Barındırma sağlayıcısının 7/24 destek süreleri sunucu sağlayıcısı belli olunca matrise girilir.	-	S
+YG-457	KOD+	Acente için ayrı ana ekran yazılır.	Mobil uygulamanın derlenip cihazda denenmesi bekleniyor.	-	S
+YG-484	KOD+	İmzalı ret bağlantısı giden pazarlama iletilerine eklenir.	İYS servis bağlantısı bekleniyor.	-	S
+YG-500	KOD+	Web ve mobil arayüzde konum/kamera izni öncesi aydınlatma ekranı ve /mobil/izin çağrısı yazılır.	Mobil derleme bekleniyor.	-	S
+YG-502	KOD+	Görevlerin kişisel takvime aktarımı için takvim dosyası (.ics) indirme yazılır.	Mobil derleme bekleniyor.	-	S
+YG-546	KOD+	Fatura no yoksa Ticari Sorumluya görev açan koşulu ayırmak ve 15. gün ihtar görevini belge eki alanıyla kurmak.	Yazılı ihtar metni onaylı değil (METIN); KEP gönderimi dondu (DONDU).	-	S
+YG-549	KOD+	Teslime Hazır bildirimine portal kaydı eklemek.	7. günde KEP gönderimi KEP dondurulduğu için bekliyor (DONDU).	-	S
+YG-571	KOD+	WhatsApp metninden teknik bulgu ve kişisel veriyi ayıklayan süzgeci eklemek.	Onaylı şablon kütüphanesi ve WhatsApp Business sağlayıcı bağlantısı bekliyor (DIS).	-	S
+YG-825	KOD+	Başka para birimindeki tutar, girilen TCMB döviz satış kuruyla EUR'ya çevrilip limit karşılaştırmasına sokulur.	Kurun TCMB'den kendiliğinden alınması dış servis bağlantısı ister.	-	S
+YG-921	KOD+	Konaklamada aşan kısım için TİD istisna onayı ekle.	Kurun sistemce alınması TCMB kur servisine bağlı.	-	S
+YG-937	KOD+	Zorunlu eğitimler tamamlanmadan ilgili yetkinin açılmamasını sağlayan yetki kapısı yazılır.	Ders içerikleri İK tarafından girilecek.	-	S
+YG-955	KOD+	Masraf türlerine otopark, yakıt ve köprü/otoyol eklenir.	Fiş tarihindeki kurun TCMB'den kendiliğinden alınması dış servis bekler.	-	S
+YG-1121	KOD+	Yapılandırmanın sürümlü yönetimi (gizli değerler hariç ortam şablonu) yazılır.	Yetkili güvenli kasa sunucu/bulut sağlayıcısının hizmetini bekler.	-	S
+YG-1180	KOD+	Kritik dışındaki (Gizli) belgelerin de depoda şifrelenmesi yazılır.	Veritabanı disk şifrelemesi üretim sunucusunda yapılacak.	-	S
+YG-1214	KOD+	Portalda zorunlu dışı çerez olmadığını bildiren, Tümünü kabul et/Tümünü reddet düğmeleri eşit görünürlükte tercih paneli yazılır.	Web sitesi bu kodda değil, haricen hazırlanıyor.	-	S
+YG-1325	KOD+	Kur servisi kesintisinde elle kur girişi ve onayla devam akışını eklemek.	TCMB servisi bağlantısı bekliyor (DIS).	-	S
+YG-1523	KOD+	M8 cümlesini dışa giden iletilere ekle; numara boşken destek hattı kısmı basılmasın (V-82).	7/24 Destek Hattı numarası şirket bilgisi olarak bekleniyor (V-160, 16.11 şirket konuları).	-	S
+YG-082	KOD+	Garanti kaydına kaynak alanı (işçilik, firma tedariki, üretici, müşteri tedariki) ve iş emri (paket) kabul tarihinden başlangıç eklenir.	V-84 ve V-462 ile kabul edilmiş "her teslimde 12 ay işçilik garantisi" uygulaması, garantinin varsayılan olmayıp dosya bazında tanımlanmasını isteyen bu gereksinimle çelişiyor.	Garanti her teslimde 12 ay mı kalsın (V-84, V-462), yoksa dosya bazında açıkça tanımlandığında mı oluşsun? Öneri: dosyada "Garanti tanımlı mı, süre, kapsam" alanı açılsın, 12 ay işçilik yalnız önerilen değer olarak gelsin ve Dosya Sorumlusu onaylamadan garanti oluşmasın.	M
+YG-099	KOD+	Planlanan teslim kalış süresini aşınca Dosya Sorumlusuna iletişim görevi, standart hukuk maddeleri değişmemişse yabancı unsur hukuk kontrolünün otomatik geçmesi ve gümrük müşaviri görevlendirme talimatının iç görev olarak açılması yazılır.	Yat sahibine giden belge ve kalış süresi bilgilendirmesinin TR/EN onaylı metni ve gümrük müşavirine giden talimat metni yok.	-	M
+YG-108	KOD+	Talimat Kaydı gelen kutusu, elle girilen talimatların dosyaya bağlanmasıyla kurulur.	Talimatların WhatsApp/e-posta kanalından kendiliğinden düşmesi sağlayıcı bağlantısını bekler (YG-012).	-	M
+YG-177	KOD+	Sistem dışı alınan onayın 8 saat içinde dijital kayda aktarılması görevi ve onay anında girilen TCMB kuruyla EUR çevrimi yazılır.	Kurun TCMB'den kendiliğinden alınması dış servis bağlantısı ister.	-	M
+YG-266	KOD+	Sağlayıcı sıralamasını bölgeye ve müsaitliğe göre yap.	WhatsApp kanalı sağlayıcı entegrasyonu bekliyor.	-	M
+YG-286	KOD+	Test türüne göre ek zorunlu alan açan mekanizmayı yaz.	FR-KLT-005/006/007 için ek alan listesi form kataloğunda tanımlı değil; prosedürde yoksa alan listesi gerekir.	-	M
+YG-331	KOD+	Dış firma kuralı Yasak/Kısıtlı uyarısı ve izinsiz/bilinmeyen tesiste sıcak iş, boya, zımpara, gövde, antifouling uyarısı ekle.	İşletme izninin kamuya açık kayıtlardan doldurulması dış veri kaynağı/servis gerektiriyor.	-	M
+YG-419	KOD+	Eksik belge, ağa kabul kararı (Onaylı/Koşullu Onaylı/Reddedildi) ve geçici askı için tetikleyiciler ve portal bildirimi altyapısı yazılır.	Firmaya giden bildirimlerin onaylı katalog metinleri yok; askı/fesih KEP gönderimi KEP kararı dondurulduğu için bekler.	-	M
+YG-443	KOD+	Teslim onayının kurumsal e-postadan geldiğini elle kaydetme kanalını (teklif kararındaki gibi Ek-2 kontrollü) eklemek.	Gelen e-postaları otomatik dosyaya kaydeden akış e-posta sunucusu bağlantısı ister (DIS).	-	M
+YG-493	KOD+	Web saha ekranlarından mobil köprü çağrısı (konum, kuyruk), doğrudan kamera girişi ve imza kaydı yazılır.	Mobil uygulamanın derlenip cihazda denenmesi bekleniyor.	-	M
+YG-494	KOD+	Web ekranlarının kayıtları çevrimdışı kuyruğa göndermesi ve fotoğraf kuyruğu yazılır.	Cihazda deneme mobil derlemeyi bekler.	-	M
+YG-497	KOD+	15 dakika hareketsizlik kilidi ve PIN/biyometrik açma kodu yazılır.	Cihaz kaydı süresinde katalog çelişkisi var (YG-497: 90 gün, YG-1153: 30 gün); deneme mobil derlemeyi bekler.	Mobil cihaz kaydı ("Beni hatırla") 30 gün mü 90 gün mü geçerli olsun? Öneri: mevcut 30 gün kalsın, YG-497 buna göre düzeltilsin.	M
+YG-503	KOD+	Sunucu zamanıyla cihaz saati karşılaştırması, yerel sıra numarası ve senkronizasyon zamanı alanlarını ekle.	Çevrimdışı çekim mobil uygulama derlemesine bağlı.	-	M
+YG-507	KOD+	Cilt VIII bildirim matrisinin kodda olmayan olaylarını tamamlamak.	Mobil anlık bildirim (FCM/APNs) ve gerçek WhatsApp gönderimi bekliyor (DIS).	-	M
+YG-513	KOD+	Kritik teslim başarısızlığında görev ve eskalasyon üretmek; sistem içi bildirimde Okundu ve İşlem Yapıldı durumlarını yazmak.	Teslim Edildi ve dış kanal Okundu durumu sağlayıcı teslim raporunu bekliyor (DIS).	-	M
+YG-517	KOD+	Dosya taraflarında numara sahipliği ve güncellik doğrulamasını (iletisim_dogrulandi) devreye almak.	Gerçek SMS sağlayıcısı bekleniyor (DIS).	-	M
+YG-547	KOD+	FR-OPS-016 tek sayfa TR/EN belgesini üretmek ve portal bildirimiyle iletmek.	WhatsApp kanalı sağlayıcı bekliyor (DIS).	-	M
+YG-550	KOD+	Teslim alınmayan yat için 30. ve 90. gün görevleri, risk geçişi işareti ve tevdi/satış değerlendirme görevini eklemek.	30. ve 90. gün ihtar metinleri onaylı değil (METIN); ihtarın KEP'le gönderimi dondu (DONDU).	-	M
+YG-559	KOD+	Pazarlama/duyuru gönderim modülü ile kanal bazlı rıza denetimi ve izinsiz gönderim engelini eklemek.	Onay ve geri almaların İYS'ye bildirimi İYS bağlantısını bekliyor (DIS).	-	M
+YG-568	KOD+	Önceliğe göre aktarım süresi takibi (Kritik/Yüksek hemen, Normal/Planlı 24 saat) görevini eklemek.	E-posta ihbarlarının otomatik aktarımı e-posta bağlantısı bekliyor (DIS).	-	M
+YG-599	KOD+	Gözden geçirme türüne göre soru tablosu ve ekranda türe özgü listeyi yükleyen altyapıyı yazmak.	Türe özgü kontrol listesi soruları kaynakta yok (BILGI); içerik taslağı hazırlanıp onaya sunulabilir.	-	M
+YG-602	KOD+	Yüklenen belge için özgünden ayrı tutulan ön izleme kopyası üretimini yazmak.	Gerçek virüs tarayıcısı bağlantısı sunucu kararına bağlı (DIS).	-	M
+YG-760	KOD+	İç roller için giriş ekranına karne_gosterge kataloğundaki hedefli KPI'ları bağlamak.	9 portal kullanıcı tipi için KPI ve hedef değerleri tanımlı değil (KARAR).	9 portal kullanıcı tipinin giriş ekranında hangi KPI'lar hangi hedeflerle gösterilsin? Öneri: Portallarda hedef değer gösterilmesin, yalnız kendi dosya ve iş durum sayıları gösterilsin; hedef gerekiyorsa öneri yok, rakam sizden.	M
+YG-766	KOD+	RP-TIC-001 rapor PDF ekini tamamlamak (kur farkı faturası V-239 gereği düzenlenmediğinden satır uygulanmaz gösterilir).	Gerçek e-posta gönderimi sağlayıcı bekliyor (DIS).	-	M
+YG-856	KOD+	Kartelanın Excel/TSV dosyasından toplu güncellemesi (taslak sürüme, onaya bağlı) ve bölge katsayısı alanı/hesabı yazılır.	Bölge katsayılarının değerleri belli değil.	Hangi bölgeye hangi katsayı uygulansın? Öneri yok, rakam sizden (değer gelene kadar tüm bölgeler 1,00 ile çalışır).	M
+YG-875	KOD+	Kur kaynağı alanını ve kurun faturada elle değiştirilememesini ekle.	TCMB kurunun otomatik alınması ve piyasa kuru kutusu TCMB/piyasa veri servisi bekliyor.	-	M
+YG-884	KOD+	Fatura PDF'inin dosyaya işlenmesini ve 8 saatlik süre izlemesini ekle.	Muhasebe hizmetine gerçek aktarım dış entegrasyon bekliyor.	-	M
+YG-897	KOD+	BLD-29 ve sigorta portalına fatura bildirimi varyantları yazılır.	Ödeme bağlantısı POS/banka seçimini (dış servis) bekler; 15 günlük yazılı ihtarın KEP gönderimi KEP kararı dondurulduğu için bekler.	-	M
+YG-903	KOD+	Banka seçilene kadar kart seçeneğini gizle, tahsilat kaydına kart komisyonu alanı ekle.	Sanal POS ve ödeme bağlantısı entegrasyonu banka/ödeme kuruluşu seçimini bekliyor.	-	M
+YG-953	KOD+	Puantajın mobil/duyarlı ekrandan girilmesi yazılır.	Bordro dış aktarımı bordro programının biçimini bekler.	-	M
+YG-1044	KOD+	API anahtarları, dış portal ve acil erişim hesaplarını erişim incelemesi envanterine eklemek.	Veritabanı hesapları envanteri sunucu kurulumunu bekliyor (DIS).	-	M
+YG-1094	KOD+	Serbest metinde kişisel veri maskeleme ve çevirinin bir kişi tarafından kontrol edilip onaylandığı akışı yazmak.	Yapay zekâ çeviri hizmeti bağlantısı (DIS).	-	M
+YG-1118	KOD+	Ortam türü yapılandırması ve test/eğitim ortamında gerçek veri yüklemeyi engelleyen ve maskeleyen kopyalama aracı yazılır.	Ortamların fiilen ayrı sunucularda kurulması sunucu sağlayıcısını bekler.	-	M
+YG-1126	KOD+	GitHub deposunda otomatik derleme ve test hattı (CI) ve onaylı yayın kapısı kurulur.	Üretime yayın adımı üretim sunucusunu bekler.	-	M
+YG-1179	KOD+	Serbest metin alanlarına uzunluk sınırı ve kişisel veri deseni (TCKN, telefon, IBAN) uyarısı eklenir.	Envanter içeriği Hukuk tarafından girilecek.	-	M
+YG-1198	KOD+	Cihaz kayıp/ayrılış işaretinde sonraki bağlantıda yerel veri ve çevrimdışı kuyruğu temizleyen mobil komutu yazılır.	Cihazda deneme mobil derlemeyi bekler.	-	M
+YG-1277	KOD+	Yedek indirme, silme, saklama süresi değiştirme ve geri yükleme için ikinci yetkili onaylı (Sistem Yöneticisi talep, Bilgi İşlem Müdürü onay) ayrıcalıklı akış yazmak.	Yedek ortamının üretim kimliğinden ayrılması sunucu kurulumunda yapılacak (DIS).	-	M
+YG-1283	KOD+	Kesinti sonrası alınan ihbar ve kayıtların sistem açılınca dosyalara işlenmesi için geri giriş ekranı/akışı yazmak.	Gerçek SMS sağlayıcısı (DIS) ve BT nöbetçisinin kurumsal telefon numarası (BILGI) bekleniyor.	-	M
+YG-1302	KOD+	API'yi sürümlü yol önekine taşımak ve web, mobil ve portal istemcilerini buna uyarlamak.	Dış entegrasyon istemcileri sağlayıcı seçimini bekliyor (DIS).	-	M
+YG-1318	KOD+	Fatura PDF'ini elle içe alma ve proformayı dosya olarak dışa aktarma yolunu eklemek.	Muhasebe hizmetinin programıyla çift yönlü entegrasyon program bilgisi ve bağlantıyı bekliyor (DIS).	-	M
+YG-1324	KOD+	Teklif, fatura, masraf ve onay limiti kayıtlarına kur değeri ile kur tarih-saatini yazmak; günlük kur tablosu ve elle giriş yolunu hazırlamak.	TCMB günlük kur çekimi ve EUR/USD/GBP piyasa bilgi kuru servisi bağlantısı bekliyor (DIS).	-	M
+YG-1341	KOD+	Kullanıcı dostu ölçütleri (adım sayısı, mesaj dili, taşma) otomatik ekran denetimine eklemek.	Gerçek kullanıcı testi personel katılımı gerektirir.	-	M
+YG-1356	KOD+	Ana sayfaya özel günler kutusunu (V-431) eklemek.	Döviz kuru şeridi için kur kaynağı entegrasyonu (DIS).	-	M
+YG-1363	KOD+	Gözden geçirme türüne göre kontrol listesi yükleyen altyapıyı yazmak.	Türe özgü kontrol listesi soruları kaynakta yok (BILGI); içerik taslağı hazırlanıp onaya sunulabilir.	-	M
+YG-1367	KOD+	Parametre kataloğuna sahip ve onaylayan alanlarını ve taslak kayıt silme işini eklemek.	Arama/filtre/dışa aktarım eşik değerleri ve taslak kayıtların kaç gün sonra silineceği karar istiyor.	Arama-filtre-dışa aktarım eşikleri ve taslak kayıt silme süresi ne olsun? Öneri yok, rakam sizden.	M
+YG-1397	KOD+	Rol bazlı kılavuz ve ekran içi yardım metnini gösteren altyapıyı yazmak.	Rol kılavuzları içeriği (YG-628 seti) henüz yok (BILGI).	-	M
+YG-1439	KOD+	Eksik belgede dosyanın ilgili aşamalarını genel olarak durduran kapı yazılır.	Belge listesinin yat sahibine tek mesajla gönderimi için onaylı Belge Talebi metni gerekiyor.	-	M
+YG-1444	KOD+	Alıcı türüne göre kanal seçim kuralını ve sigorta için portal kanalını eklemek.	Yat sahibi ve tesise WhatsApp gönderimi sağlayıcı bekliyor (DIS).	-	M
+YG-1483	KOD+	Kritik öncelikte Teknik Uzman bölgede değilse firma ön keşfi görevi, yönlendirmeli fotoğraf isteği ve görüntülü değerlendirme sonucunun kaydı yazılır.	Görüntülü görüşmenin sistem içinden yapılması dış servis bekler; görüşme dış araçla yapılıp sonucu kaydedilebilir.	-	M
+YG-1487	KOD+	Keşif teklifi onaylanınca Keşif Ücreti Ödeme Talebinin kendiliğinden açılması ve sigorta Ek-1 tutarının sözleşme kaydından okunması yazılır.	Yat sahibine giden ayrı Keşif Teklifi belgesinin onaylı şablonu yok.	-	M
+YG-1603	KOD+	Kapsam Hazırlık Toplantısından gönderime adım sayacını yazmak.	Telefona anlık bildirim mobil derleme ve bildirim hizmeti ister (DIS).	-	M
+YG-1612	KOD+	Ödeme takvimi ve nakit ekranını yazmak.	Birim e-posta kutusu e-posta sunucusu bağlantısı ister (DIS).	-	M
+YG-1658	KOD+	Nöbetçi ekranında acil konum noktalarının sade çizim haritada (V-412 yöntemi) gösterilmesi yazılır.	Ekran kapalıyken arka plan konum gönderimi mobil uygulamanın derlenmesini ve mağaza dağıtımını bekler.	-	M
+YG-012	KOD+	E-posta/telefonla gelen ileti için elle gelen kutusu kaydı, önceliğe göre aktarım süresi kuralı (Kritik/Yüksek ilk yanıt süresi, Normal/Planlı 24 saat) ve aktarılmamış ileti uyarısı yazılır.	WhatsApp Business hattının ve kurumsal e-posta kutusunun gelen kutusuna kendiliğinden düşmesi için sağlayıcı bağlantısı gerekir.	-	L
+YG-106	KOD+	Müşteri Ana Kaydı ekranı (kimlik, MERSİS/vergi no, sözleşme no, hesaplanan açık alacak, yetki belgeleri, yat listesi, Yat Kullanım Takvimi sekmesi) ve FR-OPS-001'in bu kayıttan dolması yazılır.	KEP alanı KEP kararı dondurulduğu için eklenmez.	-	L
+YG-271	KOD+	Süzülmüş sağlayıcı listesi, komşu bölge-mobil-ulusal genişleme, bölgede yanıt yok gerekçesi ve çerçevesiz sağlayıcı için T&O Direktörü onayını ekle.	Yatın konumuna uzaklık sıralaması koordinat/harita servisi gerektiriyor.	-	L
+YG-516	KOD+	Dosyaya bağlı program içi mesajlaşmaya fotoğraf, video, ses ve konum eklemek.	E-posta, SMS ve WhatsApp kanallarından içerik alma sağlayıcı bağlantısını bekliyor (DIS).	-	L
+YG-548	KOD+	Dosya Durum Bildiriminin tetiklenmeyen varyantlarını ilgili durum geçişlerine bağlamak ve portal kaydı eklemek.	Gerçek WhatsApp gönderimi sağlayıcı bekliyor (DIS).	-	L
+YG-899	KOD+	Garanti Maliyet Kaydı ve Üretici Garanti Başvurusu ekranları yazılır.	KDV İade Dosyası ekranı muhasebeciye gönderilen KDV görüş yazısının cevabını bekler.	-	L
+YG-917	KOD+	Gelir-gider, banka ve kasa hareketi (elle/dosyayla), aylık mutabakat, tüm cari hesaplar ve KDV-tevkifat özeti ekranları yazılır.	Muhasebe programı entegrasyonu ve banka hareketlerinin kendiliğinden alınması dış servis bekler.	-	L
+YG-960	KOD+	Kayıtları sistemde bulunan rollerin kalan göstergeleri hesaplamaya eklenir.	Kaynak kaydı henüz yazılmamış modüllerin göstergeleri o modüller gelince ölçülür.	-	L
+YG-961	KOD+	Kayıtları sistemde bulunan rollerin kalan göstergeleri kendiliğinden hesaplanır hâle getirilir.	Kaynak kaydı henüz yazılmamış modüllerin göstergeleri o modüller gelince ölçülür.	-	L
+YG-1447	KOD+	İş programından otomatik satır, renk ve 48 saat uyarısı, DS Bekleyenler, hızlı yazışma girişi, takvime işleme ve sicil belge süre uyarısını ekle.	Firmaya sor hazır WhatsApp mesajı için onaylı metin yok.	-	L
+YG-1579	KOD+	Nöbet Devir Kaydı kartı, son 72 saatte tamamlananlar, Planlı İşler, gelen kutusu filtreleri ve 7 günlük takvimi eklemek.	Gerçek döviz kuru için kur kaynağı entegrasyonu (DIS).	-	L
+YG-1593	KOD+	Karantina ürünü için 10 günlük karar sayacı, altı sistem kontrolü ve müdürlük göstergelerini yazmak.	Geri çağırma taraması dış kaynak (üretici/resmî geri çağırma listesi) gerektiriyorsa DIS.	-	L
+YG-1598	KOD+	TPL-06'nın dosyaya bağlı planlanması, katılımcıların görev/izin/nöbet kayıtlarından ortak boşluk önerisi, sistemce dolan kontrol listesi, karar girişi ve aktarım hedefine göre görev açılması ve bilgi bildirimleri yazılır.	Görüntülü bağlantının sistemce oluşturulması dış servis bekler; bağlantı elle girilebilir.	-	L
+YG-1609	KOD+	Saha Sorumlusu için telefon öncelikli web ana ekranını (Sahalarım, 12 saatlik izin takibi, giriş kabulü, hakediş doğrulama) yazmak.	Mobil uygulama derlemesi ve mağaza (DIS).	-	L
+YG-1611	KOD+	Ödeme listesi ön kontrol, cari mutabakat ve ödeme takvimi ekranlarını yazmak.	Eşleşmeyen banka hareketi ve kur uyuşmazlığı uyarıları banka hareketi ve kur kaynağı entegrasyonu ister (DIS).	-	L
+YG-1641	KOD+	D1–D4 destek kuyruğu, üç aylık cihaz kontrolü ve istatistik ekranlarını yazmak; KVKK ve Uyum menüsünü Destek Sorumlusuna açmak.	Birim e-posta kutusu e-posta sunucusu bağlantısı ister (DIS).	-	L
+YG-1661	KOD+	Değişiklik ve sürüm kuyruğu, yedek tatbikat sonucu kabulü ve çeviri kütüphanesi ekranlarını yazmak.	Yapay zekâ araçları ekranı yapay zekâ hizmeti bağlantısı ister (DIS).	-	L
+YG-1664	KOD+	Program içi mesaja fotoğraf, video, ses, belge ve konum eki ile çalıştırılabilir dosya engeli ekle.	Dış kanallara iletim ve e-posta/WhatsApp yanıtlarının yazışmaya düşmesi e-posta ve WhatsApp sağlayıcı entegrasyonu bekliyor.	-	L
+YG-1668	KOD+	Risk rezervi talep zinciri, üç seçenekli kapasite istisnası, vekâlet görev ayrılığı yönlendirmeleri ve hizmet süresi tablosu düzenlemelerini eklemek.	operasyon@, teknik@, tedarik@ kutu özeti gerçek e-posta bağlantısını bekliyor (DIS).	-	L
+YG-1697	KOD+	Görüşü Gönder (Uygun/Koşullu/Uygun Değil), Yurt Dışı Uygunluk Kontrolü, Sabit Hukuki Metinler bölümü, haciz kararı seçenekleri ve vekâlet zincirlerini eklemek.	KEP Gelen Yazılar bölümü KEP dondurulduğu için bekliyor (DONDU).	-	L
+YG-1698	KOD+	CRM paydaş kayıtları, sigorta performans verisi ve hasar içerikli talep acil kartını yazmak.	Memnuniyet anketi soruları müşteriye giden onaylı metin olarak yok (METIN).	-	L
+YG-035	KARAR	-	YG-035 (yeşil-sarı-turuncu-kırmızı) ile kodda uygulanan YG-1579 (Kritik kırmızı, Yüksek sarı, Normal ve Planlı gri) çelişiyor.	Öncelik rozetinde hangi renk ölçeği geçerli olsun? Öneri: Kodda uygulanan YG-1579 ölçeği kalsın, YG-035 buna göre düzeltilsin.	S
+YG-176	KARAR	-	Ara kademesiz dönemin tanımı yok; GMY varken 5.000–10.000 EUR GMY'de kalıyor.	Ara kademe olmayan dönem nasıl belirlensin, bu dönemde GMY dolu olsa da 5.000 EUR üstü CEO'ya mı gitsin? Öneri: CEO'nun açıp kapattığı bir Ara Kademesiz Dönem parametresi olsun, açıkken 5.000 EUR üstü doğrudan CEO'ya gitsin.	S
+YG-302	KARAR	-	YG-302 iş emrini Dosya Sorumlusuna, YG-435 Operasyon Yöneticisine (garantide Teknik Yöneticiye) veriyor; çelişki.	İş emrini ve ek işi kim hazırlasın? Öneri: Kodda uygulanan YG-435 kalsın (Operasyon Yöneticisi, garantide Teknik Yönetici), YG-302 buna göre düzeltilsin.	S
+YG-655	KARAR	-	Gereksinim belge numarasının türe göre değişmemesini istiyor; YG-657 ve V-55 ise türe özgü son ekleri (TK, DG, TS, NCR vb.) öngörüyor; iki gereksinim çelişiyor.	Belgelerdeki türe özgü son ekler (TK, TR, OT, TS vb.) kalsın mı, yoksa tür kodu yalnız iş emri numarasında mı olsun? Öneri: son ekler kalsın (YG-657, V-55); YG-655 iş emri tür kodu (ON, KN, AC vb.) yalnız iş emri numarasında yer alır diye yorumlansın.	S
+YG-802	KARAR	-	Acil yanıt süresine uymamanın puana kesinti miktarı tanımlı değil.	Beyan edilen acil yanıt süresine uyulmadığında firma performans puanından ne kadar düşülsün? Öneri: Her uyumsuz yanıt mevcut karne parametresindeki Minör uygunsuzluk kesintisi kadar düşülsün (V-515 emsali, yeni katsayı eklenmeden).	S
+YG-870	KARAR	-	Her nihai kabulde garanti başlangıcı yazılması V-84/V-462 kararına dayanıyor; gereksinim varsayılan garantinin olmamasını istiyor (YG-082 ile aynı karar).	YG-082 ile aynı soru: garanti her teslimde 12 ay mı, yoksa dosya bazında açık kararla mı oluşsun? Öneri: dosya bazında tanım alanı, 12 ay yalnız önerilen değer.	S
+YG-1708	KARAR	-	Ortak birim listesi YG-1257 kararına bağlı (V-642).	Kartela, metraj ve Fiyat Teklifi için ortak ölçü birimi listesi (YG-1257) kesinleşsin mi? Öneri: kartela 2026.2 birimleri ile m² × kat, m² × katman, tekne ve nokta birimleri ortak liste olsun.	S
+YG-1415	KARAR	-	Sayaçlar 09–18 / Cmt 09–15 mesai takvimiyle değil, YG-1607 gereği 22:00–08:00 kaydırmasıyla hesaplanıyor; iki gereksinim çelişiyor.	Kritik dışı saatlik süreler yalnız mesai saatlerinde mi işlesin, yoksa takvim saatiyle işleyip son an 22:00–08:00 arasına düşerse ertesi çalışma günü 12:00'a mı kaysın (YG-1607, mevcut)? Öneri: mevcut YG-1607 kuralı kalsın, mesai tanımı bildirim ve gün bazlı sürelerde kullanılsın.	M
+YG-207	METIN	-	ONY-23 ön bilgilendirme metni CEO onayını bekliyor; kod hazır.	-	S
+YG-423	METIN	-	Rücu/Mahsup Bildirimi için onaylı metin yok; KEP gönderimi KEP kararı dondurulduğu için bekler. İtiraz süreleri kodda hazır.	-	S
+YG-472	METIN	-	Kaptana giden, yalnız yata erişim ve emniyet izni veren (bedel içermeyen) onaylı metin yok.	-	S
+YG-491	METIN	-	TR/EN kurulum rehberinin onaylı metni yok.	-	S
+YG-555	METIN	-	Müşteri İlerleme Özeti içeriği ve gönderim metni (YG-483) onaylı değil (V-440).	-	S
+YG-564	METIN	-	Geri yükleme sonrası dış kullanıcı duyurusu onaylı metin bekliyor (V-398).	-	S
+YG-787	METIN	-	Müşteriye giden ilerleme özeti YG-483 onaylı metni bekliyor (V-405).	-	S
+YG-843	METIN	-	Tahsilata bağlı ödeme kuralını iş emri belgesine (FR-OPS-008) yazacak onaylı cümle yok.	-	S
+YG-1471	METIN	-	Firmaya gidecek sorumluluk poliçesi tavsiye hatırlatmasının onaylı metni yok; görev ve liste hazır.	-	S
+YG-1561	METIN	-	Yat Yetkilisi kaydında yat sahibine giden bilgilendirmenin onaylı metni yok.	-	S
+YG-1569	METIN	-	Sigorta şirketine gidecek onaylı e-posta ileti metni yok; ayrıca e-posta sağlayıcısı bağlantısı gerekiyor.	-	S
+YG-1864	METIN	-	Yer değiştirme için ONY-09 onay metni yok (mevcut ONY-09 yalnız deniz denemesi).	-	S
+YG-277	BILGI	-	Sahil Güvenlik, liman başkanlığı ve il çevre müdürlüğü için mevzuattaki resmî bildirim sürelerinin listesi (Hukuk ve Uyum) bekleniyor.	-	S
+YG-676	BILGI	-	Alt bilgideki şirket iletişim bilgileri (ŞB) 16.11 şirket konularında kesinleşecek; gelince eklemek kısa iş.	-	S
+YG-722	BILGI	-	7/24 Destek Hattı numarası ve KVKK-01 bağlantı adresi şirket bilgileri (ŞB, web) bekliyor.	-	S
+YG-932	BILGI	-	Hatırlatmaya konacak diğer sözleşme yükümlülüklerinin metni (iş sözleşmesi maddeleri, İK) bekleniyor.	-	S
+YG-978	BILGI	-	Kod hazır; damga oranı ve kıdem tavanı parametrelerinin İK tarafından girilmesi bekleniyor.	-	S
+YG-1414	BILGI	-	KURTARMA-01.06 dalgıçlık satırları ve 63/351/1.297/5.018 kalemlik tam katalog veri dosyası bekleniyor.	-	S
+YG-442	BILGI	-	Kendi hasar portalını kullanan her sigorta şirketinin istediği paket biçimi bilgisi bekleniyor.	-	M
+YG-263	DIS	-	Arayan numaranın otomatik alınması santral bağlantısı gerektiriyor; santral yok, elle giriş kabul edildi (V-157).	-	S
+YG-367	DIS	-	Aktarım aracı hazır; kalıcı yükleme üretim sunucusu (sunucu sağlayıcısı, 16.11 şirket konuları) kurulunca yapılır.	-	S
+YG-464	DIS	-	Mobil uygulamanın derlenip cihazda denenmesi bekleniyor.	-	S
+YG-524	DIS	-	Gerçek gönderim ve ödeme sağlayıcıları bağlanınca test ortamı koruması yazılacak.	-	S
+YG-588	DIS	-	Görüntülü toplantı sağlayıcısı seçimi bekleniyor (V-27).	-	S
+YG-1006	DIS	-	Gerçek SMS operatörü bağlantısı bekleniyor (TOTP ve kayıtlı cihaz hazır).	-	S
+YG-1157	DIS	-	Olağan dışı konum tespiti için IP konum servisi veya veri kaynağı gerekiyor.	-	S
+YG-1171	DIS	-	WhatsApp belge gönderimi sağlayıcı bağlantısı kurulunca aynı kapı uygulanacak.	-	S
+YG-1190	DIS	-	Kod hazır; ayrıcalıklı yetkinin fiilen açılması üretim sunucusu altyapısını bekler.	-	S
+YG-1196	DIS	-	Disk şifrelemesi ve anahtar yönetimi üretim sunucusunda yapılacak.	-	S
+YG-1197	DIS	-	Ortak yönetici parolasının teknik engeli sunucu kurulumunu bekler.	-	S
+YG-1208	DIS	-	İYS servis bağlantısı bekleniyor.	-	S
+YG-1211	DIS	-	İYS'ye geri alma bildirimi için servis bağlantısı bekleniyor.	-	S
+YG-1232	DIS	-	Yönetilen yedeklerde imha, yedekleme sunucu kurulumunu bekler.	-	S
+YG-1274	DIS	-	Türkiye'de farklı konumda silinemez ikinci yedek kopyası sunucu sağlayıcısı kararına bağlı.	-	S
+YG-1459	DIS	-	Yat sahiplerine WhatsApp iletisi için sağlayıcı bağlantısı bekleniyor.	-	S
+YG-1489	DIS	-	İkinci kurumsal hat ve WhatsApp otomatik yanıtı için hat ve sağlayıcı bağlantısı bekleniyor.	-	S
+YG-487	DIS	-	Mobil uygulamanın derlenmesi, cihazda denenmesi ve mağaza hesapları bekleniyor.	-	M
+YG-498	DIS	-	Cihaza gerçek push gönderimi için bildirim servisi (FCM/APNs) ve mobil derleme bekleniyor.	-	M
+YG-508	DIS	-	FCM/APNs anlık bildirim hizmeti ve mobil derleme bekleniyor.	-	M
+YG-575	DIS	-	Kurumsal WhatsApp hattı (Meta resmî API) ve APK gönderimi bekleniyor.	-	M
+YG-1106	DIS	-	Yapay zekâ hizmeti bağlantısı gerekiyor; kural tabanlı aday tespiti zaten var.	-	M
+YG-1107	DIS	-	Yapay zekâ hizmeti bağlantısı gerekiyor; kural tabanlı eksik kontrolü zaten var.	-	M
+YG-1200	DIS	-	Uzaktan kilitleme ve silme için mobil cihaz yönetimi (MDM) hizmeti gerekiyor.	-	M
+YG-1270	DIS	-	Nesne depolama ve gerçek virüs tarayıcısı sunucu/hizmet sağlayıcı seçimine bağlı.	-	M
+YG-1273	DIS	-	Kurtarma hedefleri üretim altyapısında (sunucu sağlayıcısı) gerçeklenecek.	-	M
+YG-1294	DIS	-	Otomatik yaptırım listesi taraması için dış liste kaynağı/hizmeti gerekiyor.	-	M
+YG-1326	DIS	-	Gerçek e-posta sağlayıcısı ve gelen kutusu okuma bağlantısı bekleniyor.	-	M
+YG-1329	DIS	-	İYS bağlantısı bekleniyor.	-	M
+YG-1332	DIS	-	WhatsApp Business Platform gelen mesaj bağlantısı bekleniyor.	-	M
+YG-1492	DIS	-	Fazla çalışma ve harcırah ödemelerinin banka/bordro entegrasyonu bekleniyor.	-	M
+YG-1562	DIS	-	Mobil uygulamada hasar bildirimi mobil derleme ve mağaza yayınına bağlı; web formu tamam.	-	M
+YG-1307	DIS	-	Muhasebe, e-fatura ve banka hazır sistemlerinin seçimi ve bağlantısı bekleniyor.	-	L
+YG-1323	DIS	-	Banka ve POS sağlayıcısı seçimi ve entegrasyonu bekleniyor.	-	L
+YG-1330	DIS	-	WhatsApp Business Platform (Meta resmî API), kurumsal numara ve onaylı şablonlar bekleniyor.	-	L
