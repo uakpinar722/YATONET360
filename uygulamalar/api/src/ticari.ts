@@ -323,6 +323,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       if (!(tut > 0)) return y.code(409).send({ hata: 'Kalan bakiye bulunmamaktadır.' });
     } else if (!(tut > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
     return islem(async (c) => {
+      if ((await c.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND odeme_yat_sahibine_zamani IS NOT NULL`, [t.dosya_ref])).rowCount) t.teklif_muhatabi = 'Yat Sahibi'; // YG-892
       const r = (await c.query(`INSERT INTO odeme_talebi (dosya_ref, teklif_ref, tur, tutar_eur, muhatap, son_tarih, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [t.dosya_ref, t.kimlik, g.tur, tut, t.teklif_muhatabi, g.sonTarih, o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Ödeme Talebi', baslik: `${t.dosya_no} · ${g.tur} Ödeme Talebi`, ozet: `${tutar(tut)} EUR`, hazirlayan: o.kullanici, zincir: await parasalZincir(c, [MFM], await sonMakam(c, tut)), nesneTuru: 'Ödeme Talebi', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, tutar: tut };
@@ -345,6 +346,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const malzNet = hk > 0 ? R2(malz - (malz * indirim) / hk) : 0;
     const ks = await kdvBelirle(b.db, t.dosya_ref, t.teklif_muhatabi); const kh = kdvHesapla(matrah, malzNet, Number(t.kdv_orani), ks); const kdv = kh.kdv;
     return islem(async (c) => {
+      if ((await c.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND odeme_yat_sahibine_zamani IS NOT NULL`, [t.dosya_ref])).rowCount) t.teklif_muhatabi = 'Yat Sahibi'; // YG-892
       const no = await altNumara(c, t.dosya_no, 'OT');
       const r = (await c.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, kdv_durumu, kdv_orani, kdv_matrahi_eur, tevkifat_orani, tevkifat_eur, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`, [no, t.dosya_ref, t.kimlik, t.teklif_muhatabi, matrah, kdv, kh.toplam, ks.durum, t.kdv_orani, kh.taban, ks.tevkifat ? `${ks.tevkifat.pay}/${ks.tevkifat.payda}` : null, kh.tevkifat, o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Proforma', baslik: `${no} · Proforma Onayı`, ozet: `${tutar(matrah)} EUR (KDV hariç)`, hazirlayan: o.kullanici, zincir: await parasalZincir(c, [MFM], await sonMakam(c, matrah)), nesneTuru: 'Fatura', nesneKimligi: r.kimlik });
@@ -382,6 +384,20 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       ...l.map((x) => [x.fatura_no, x.fatura_tarihi.split('-').reverse().join('.'), x.dosya_no, x.muhatap, sayi(x.kdv_matrahi_eur), x.kdv_orani ?? '', sayi(x.kdv_eur), x.tevkifat_orani ?? '', sayi(x.tevkifat_eur), x.kur ?? '', sayi(x.toplam_tl), sayi(x.kdv_tl)].map(h).join(';'))];
     await izYaz(b.db, { aktor: k, oturum: i.oturum!.oturum, eylem: 'KDV İade Dökümü', nesneTuru: 'Rapor', nesneKimligi: `tevkifat:${q.ay}`, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return y.type('text/csv; charset=utf-8').header('Content-Disposition', `attachment; filename="kdv-tevkifat-${q.ay}.csv"`).send('\uFEFF' + satir.join('\r\n'));
+  });
+  // YG-892: sigorta şirketi ödemeyi yat sahibine yapacağını bildirince dosya ticari olarak sigortasız işlenir; sonraki proforma, ödeme talebi ve teklif yat sahibine düzenlenir.
+  s.post('/dosya/:id/odeme-yat-sahibine', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { dayanak?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[])`, [o.kullanici, ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', MFM, MFMY]])).rowCount) return y.code(403).send({ hata: 'Bu kaydı Ticari Sorumlu veya Muhasebe ve Finans Müdürlüğü girer.' });
+    if (!g.dayanak?.trim()) return y.code(400).send({ hata: 'Sigorta şirketinin bildiriminin tarih ve sayısını (veya e-posta kaydını) yazınız.' });
+    const d = (await b.db.query(`SELECT dosya_no, musteri_turu, dosya_niteligi, odeme_yat_sahibine_zamani, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    if (d.musteri_turu !== 'Sigorta Şirketi' && d.dosya_niteligi !== 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Bu kayıt sigorta bağlantılı dosyada yapılır.' });
+    if (d.odeme_yat_sahibine_zamani) return y.code(409).send({ hata: 'Bu bildirim dosyaya kaydedilmiştir.' });
+    await b.db.query(`UPDATE dosya SET odeme_yat_sahibine_zamani = now(), odeme_yat_sahibine_dayanak = $2 WHERE kimlik = $1`, [id, g.dayanak.trim()]);
+    if (d.dosya_sorumlusu_ref && d.dosya_sorumlusu_ref !== o.kullanici) await bildir(b.db, { olay: `odeme-yat-sahibine:${id}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Sigorta Ödemeyi Yat Sahibine Yapacak`, ozet: 'Teklif, proforma ve ödeme talepleri yat sahibine düzenlenir.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Ödemesi Yat Sahibine', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: g.dayanak.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
   s.get('/muhasebe/proformalar', oturumlu, async (i, y) => {
     if (!(await muhasebeHizmetiMi(b.db, i.oturum!.kullanici))) return yok(y);

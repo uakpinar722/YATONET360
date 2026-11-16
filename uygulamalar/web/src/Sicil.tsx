@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { BelgeSec } from './Kalite';
 import { VeriDuzeltme } from './VeriDuzeltme';
 import { FirmaOzet } from './FirmaOzet';
+import { FirmaBrans } from './FirmaBrans';
 import { istek, type Ben } from './api';
 
 interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kayit_asamasi: string; ag_statusu: string }
@@ -59,6 +60,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <FirmaTesis id={secili} yap={yap} />
           <FirmaEkipman id={secili} yap={yap} />
           <FirmaKapasite id={secili} yap={yap} />
+          <FirmaBrans id={secili} yap={yap} />
           <VeriDuzeltme nesneTuru="Kuruluş" nesne={secili} baslik="Firma Kaydında Düzeltme Talebi" />
         </div>
       </>}

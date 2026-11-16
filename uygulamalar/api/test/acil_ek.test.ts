@@ -189,3 +189,17 @@ describe('geçici ithalat hatırlatması (YG-557)', () => {
     expect(await geciciIthalatHatirlat(o.db)).toBe(0);
   });
 });
+
+describe('BT kesintisinde olay komutası ve kurtarma sırası (YG-1282)', () => {
+  it('komuta rolleri döner; kurtarma adımları sırayla işlenir', async () => {
+    const r = await o.ist('POST', '/api/olay-komutasi', await o.gir('ds'), { tur: 'BT Kesintisi veya Veri İhlali', ozet: 'Sunucu erişilemiyor' }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().komuta['Teknik Kurtarma Lideri']).toBe('Bilgi İşlem Müdürü'); expect(r.json().kurtarmaSirasi[0]).toBe('Kimlik');
+    const id = r.json().kimlik as string; const u = `/api/olay/${id}/kurtarma-adimi`; const bim = await o.gir('bim');
+    expect((await o.ist('POST', u, await o.gir('ds'), { hizmet: 'Kimlik', sonuc: 'Açıldı' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, bim, { hizmet: 'Veri', sonuc: 'Açıldı' })).json().hata).toContain('Kimlik');
+    expect((await o.ist('POST', u, bim, { hizmet: 'Kimlik', sonuc: 'Açıldı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, bim, { hizmet: 'Ağ', sonuc: 'Başarısız – Geri Dönüldü' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, bim, { hizmet: 'Ağ', sonuc: 'Başarısız – Geri Dönüldü', aciklama: 'Güvenlik duvarı kuralı geri alındı' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/olay/${id}/kurtarma`, bim)).json().siradaki).toBe('Ağ');
+  });
+});

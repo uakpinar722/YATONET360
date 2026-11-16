@@ -42,6 +42,20 @@ export function bld02Alanlari(yat: string, bas: Date, teslim: Date | string | nu
   return { Yat: yat, Yacht: yat, tarih, date: [f(bas), teslim ? f(teslim) : 'to be notified'], 'bağlantı': web, link: web };
 }
 
+/** YG-308, Cilt II §5.4: Y2 ≥3 yıl, ≥10 doğrulanmış iş, son 12 ayda ≤1 majör; Y3 ≥5 yıl, ≥25 iş, belgeli usta/mühendis, karne ≥70; Y4 ≥10 yıl, ≥50 iş, üretici yetkisi veya klas onayı ve mühendislik kapasitesi, karne ≥85. Ölçütün birini karşılamayan bir alt seviyeden kaydedilir. */
+export async function yetkinlikOnerisi(db: Db, firma: string, brans: string, g: { deneyim: number; belgeli: boolean; uretici: boolean; muhendislik: boolean }) {
+  const isSayisi = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND statu IN ('Tamamlandı', 'Kapalı')`, [firma, brans])).rows[0].n);
+  const majorSon12 = Number((await db.query(`SELECT count(*) n FROM uygunsuzluk u LEFT JOIN is_emri e ON e.kimlik = u.is_emri_ref WHERE coalesce(u.sorumlu_firma_ref, e.kurulus_ref) = $1 AND u.sinif IN ('Majör', 'Kritik') AND u.olusturma_zamani > now() - interval '12 months'`, [firma])).rows[0].n);
+  const kp = (await db.query(`SELECT donem_puani FROM performans_donem_puani WHERE kurulus_ref = $1 AND NOT coalesce(yetersiz_veri, false) ORDER BY donem_sonu DESC LIMIT 1`, [firma])).rows[0]?.donem_puani;
+  const karne = kp === undefined || kp === null ? null : Number(kp);
+  const dy = Number.isFinite(g.deneyim) ? g.deneyim : 0;
+  const y2 = dy >= 3 && isSayisi >= 10 && majorSon12 <= 1;
+  const y3 = y2 && dy >= 5 && isSayisi >= 25 && g.belgeli && karne !== null && karne >= 70;
+  const y4 = y3 && dy >= 10 && isSayisi >= 50 && g.uretici && g.muhendislik && karne !== null && karne >= 85;
+  const seviye = y4 ? 'Y4' : y3 ? 'Y3' : y2 ? 'Y2' : 'Y1';
+  const gerekce = `deneyim ${dy} yıl · doğrulanmış iş ${isSayisi} · son 12 ay majör ${majorSon12} · karne ${karne === null ? 'yok' : karne.toLocaleString('tr-TR')}`;
+  return { seviye, isSayisi, majorSon12, karne, deneyim: dy, gerekce };
+}
 /** firmaUygunlugu kurallarının toplu (tek sorgulu) karşılığı; mesajlar aynıdır. */
 function uygunlukEngeli(f: { kayit_asamasi: string; ag_statusu: string | null; dolan_belge: string | null; brans_var: boolean }): string | null {
   if (!['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return 'Firmanın kaydı onaylı değildir.';
@@ -180,11 +194,23 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`INSERT INTO kurulus_kullanici VALUES ($1,$2) ON CONFLICT DO NOTHING`, [id, kullanici]);
     return { tamam: true };
   });
+  // YG-308: Y seviyesi ölçütlerden önerilir; ölçütün üstünde seviye verilmez. Kısıt ve istisnalar ayrı tutulur.
+  s.get('/firma/:id/brans-oneri', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
+    const { id } = i.params as { id: string }; const q = i.query as Record<string, string | undefined>;
+    if (!UUID.test(id) || !q.brans?.trim()) return y.code(400).send({ hata: 'Branş zorunludur.' });
+    return yetkinlikOnerisi(b.db, id, q.brans.trim(), { deneyim: Number(q.deneyim ?? 0), belgeli: q.belgeli === '1', uretici: q.uretici === '1', muhendislik: q.muhendislik === '1' });
+  });
   s.post('/firma/:id/brans', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
-    const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { brans?: string; kapsama?: string; bolge?: string; seviye?: string };
+    const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { brans?: string; kapsama?: string; bolge?: string; seviye?: string; deneyim?: number; belgeli?: boolean; uretici?: boolean; muhendislik?: boolean; kisit?: string };
     if (!UUID.test(id) || !g.brans?.trim()) return y.code(400).send({ hata: 'Branş zorunludur.' });
-    await b.db.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama, bolge, yetkinlik_seviyesi) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, [id, g.brans.trim(), g.kapsama ?? 'Bölge', g.bolge ?? null, g.seviye ?? null]);
-    return { tamam: true };
+    if (g.seviye && !['Y1', 'Y2', 'Y3', 'Y4'].includes(g.seviye)) return y.code(400).send({ hata: 'Seviye Y1–Y4 olmalıdır.' });
+    const on = await yetkinlikOnerisi(b.db, id, g.brans.trim(), { deneyim: Number(g.deneyim ?? 0), belgeli: Boolean(g.belgeli), uretici: Boolean(g.uretici), muhendislik: Boolean(g.muhendislik) });
+    if (g.seviye && g.seviye > on.seviye) return y.code(409).send({ hata: `Ölçütler bu branşta en çok ${on.seviye} seviyesini karşılıyor (${on.gerekce}).` });
+    const seviye = g.seviye ?? on.seviye;
+    await b.db.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama, bolge, yetkinlik_seviyesi, deneyim_yili, belgeli_usta, uretici_klas_yetkisi, muhendislik_kapasitesi, kisit_istisna, onerilen_seviye, oneri_dayanak) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT (kurulus_ref, ana_brans, kapsama, bolge) DO UPDATE SET yetkinlik_seviyesi = EXCLUDED.yetkinlik_seviyesi, deneyim_yili = EXCLUDED.deneyim_yili, belgeli_usta = EXCLUDED.belgeli_usta, uretici_klas_yetkisi = EXCLUDED.uretici_klas_yetkisi, muhendislik_kapasitesi = EXCLUDED.muhendislik_kapasitesi, kisit_istisna = EXCLUDED.kisit_istisna, onerilen_seviye = EXCLUDED.onerilen_seviye, oneri_dayanak = EXCLUDED.oneri_dayanak`,
+      [id, g.brans.trim(), g.kapsama ?? 'Bölge', g.bolge ?? null, seviye, g.deneyim ?? null, Boolean(g.belgeli), Boolean(g.uretici), Boolean(g.muhendislik), g.kisit?.trim() || null, on.seviye, JSON.stringify(on)]);
+    return { tamam: true, seviye, oneri: on };
   });
   s.post('/firma/:id/belge', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; bitis?: string; policeLimit?: number; gozetim?: boolean };

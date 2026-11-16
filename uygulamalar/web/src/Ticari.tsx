@@ -1,6 +1,7 @@
 import { eur } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
 import { SigortaIhbar } from './SigortaIhbar';
+import { OdemeYatSahibine } from './OdemeYatSahibine';
 import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
@@ -226,6 +227,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
     <>
       <Mesaj />
       {ticari && <TicariOzet id={id} />}
+      {ticari && <OdemeYatSahibine id={id} />}
       <Blok baslik="Kapsam ve Metraj Cetveli">
         {v.cetveller.map((c) => <div key={c.kimlik}>Rev.{c.surum} · {c.satir} satır · {c.durum}</div>)}
         {tu && <>

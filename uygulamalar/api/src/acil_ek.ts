@@ -28,6 +28,9 @@ const KOMUTA: Record<string, { ilk: string | null; yonetici: string[]; bilgi: st
   'BT Kesintisi veya Veri İhlali': { ilk: 'Bilgi İşlem Destek Sorumlusu', yonetici: ['Bilgi İşlem Müdürü', 'Hukuk ve Uyum Direktörü'], bilgi: [GMY, 'CEO'] },
   'Kurumsal Kriz': { ilk: null, yonetici: [GMY], bilgi: ['CEO'] },
 };
+/** YG-1282, Cilt VIII §9.3: BT kesintisinde olay komuta rolleri ve kurtarma sırası (kritik iş sonucuna göre). */
+const BT_KOMUTA: [string, string][] = [['Teknik Kurtarma Lideri', 'Bilgi İşlem Müdürü'], ['Süreç Sahibi', OPM], ['Bilgi Güvenliği', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'], ['Kullanıcı İletişimi', 'Müşteri ve Paydaş İlişkileri Müdürü'], ['Yönetim', GMY]];
+export const KURTARMA_SIRASI = ['Kimlik', 'Ağ', 'Veri', 'Uygulama', 'Belge', 'Rapor', 'Entegrasyon'];
 const TEMAS = ['112 Arandı', 'Marina Teması', 'Operasyon Müdürü Arandı', 'Refakatli Giriş', 'Sahil Güvenlik', 'Liman Başkanlığı', 'İl Çevre Müdürlüğü'];
 const DALIS = ['Dalgıçlık', 'Birden Fazla'];
 const rolVarsa = async (db: Db, ad: string) => (await db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0]?.kimlik as string | undefined;
@@ -181,8 +184,38 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
       await bildir(c, { olay: `olay:${r.kimlik}:yon`, kullanicilar: yon, baslik: `Olay Yöneticisi: ${g.tur}`, ozet: g.ozet!.trim(), oncelik: 'Kritik', sms: true, acil: true });
       await bildir(c, { olay: `olay:${r.kimlik}:bil`, kullanicilar: bil, baslik: `Bilgi: ${g.tur}`, ozet: g.ozet!.trim(), oncelik: 'Yüksek' });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Olay Komutası', nesneTuru: 'Olay', nesneKimligi: r.kimlik, yeni: { tur: g.tur }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      if (g.tur === 'BT Kesintisi veya Veri İhlali') { // YG-1282
+        for (const [gorev, rol] of BT_KOMUTA) { const kisi = await sahipleri(c, rol); if (kisi.length) await bildir(c, { olay: `olay-komuta:${r.kimlik}:${gorev}`, kullanicilar: kisi, baslik: `${gorev}: ${g.tur}`, ozet: `${g.ozet!.trim()} · Kurtarma sırası: ${KURTARMA_SIRASI.join(' → ')}`, oncelik: 'Kritik', acil: true }); }
+        return { kimlik: r.kimlik, ilkMudahale: k.ilk ?? 'İlgili Direktör', olayYoneticisi: k.yonetici, bilgilendirilen: k.bilgi, komuta: Object.fromEntries([...BT_KOMUTA, ['Tedarikçi', 'Barındırma sağlayıcısı (sözleşmedeki irtibat)']]), kurtarmaSirasi: KURTARMA_SIRASI };
+      }
       return { kimlik: r.kimlik, ilkMudahale: k.ilk ?? 'İlgili Direktör', olayYoneticisi: k.yonetici, bilgilendirilen: k.bilgi };
     });
+  });
+
+  // YG-1282: kurtarma adımları sırayla işlenir; önceki hizmet açılmadan sonraki açılmaz, başarısız adımda geri dönüş kaydedilir. Adımı Teknik Kurtarma Lideri (Bilgi İşlem Müdürü) veya Sistem Yöneticisi girer.
+  s.get('/olay/:id/kurtarma', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string }; if (i.oturum!.grup !== LGM || !UUID.test(id)) return yok(y);
+    const adimlar = (await b.db.query(`SELECT sira, hizmet, sonuc, aciklama, zaman FROM olay_kurtarma_adimi WHERE olay_ref = $1 ORDER BY zaman`, [id])).rows;
+    const acilan = new Set(adimlar.filter((x) => x.sonuc === 'Açıldı').map((x) => x.hizmet as string));
+    return { sira: KURTARMA_SIRASI, adimlar, siradaki: KURTARMA_SIRASI.find((h) => !acilan.has(h)) ?? null };
+  });
+  s.post('/olay/:id/kurtarma-adimi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { hizmet?: string; sonuc?: string; aciklama?: string };
+    if (o.grup !== LGM || !UUID.test(id)) return yok(y);
+    const ol = (await b.db.query(`SELECT olay_turu FROM olay_kaydi WHERE kimlik = $1`, [id])).rows[0];
+    if (!ol || ol.olay_turu !== 'BT Kesintisi veya Veri İhlali') return yok(y);
+    const yetkili = [...await sahipleri(b.db, 'Bilgi İşlem Müdürü'), ...await sahipleri(b.db, 'Sistem Yöneticisi')];
+    if (!yetkili.includes(o.kullanici)) return y.code(403).send({ hata: 'Kurtarma adımını Teknik Kurtarma Lideri veya Sistem Yöneticisi girer.' });
+    const sira = KURTARMA_SIRASI.indexOf(g.hizmet ?? '');
+    if (sira < 0 || !['Açıldı', 'Başarısız – Geri Dönüldü'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Hizmet ve sonuç seçiniz.' });
+    if (g.sonuc !== 'Açıldı' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Başarısız adımda geri dönüş açıklaması zorunludur.' });
+    const acilan = new Set((await b.db.query(`SELECT hizmet FROM olay_kurtarma_adimi WHERE olay_ref = $1 AND sonuc = 'Açıldı'`, [id])).rows.map((x) => x.hizmet as string));
+    if (acilan.has(g.hizmet!)) return y.code(409).send({ hata: 'Bu hizmet açılmıştır.' });
+    const eksik = KURTARMA_SIRASI.slice(0, sira).find((h) => !acilan.has(h));
+    if (eksik) return y.code(409).send({ hata: `Kurtarma sırası gereği önce ${eksik} hizmeti açılmalıdır.` });
+    await b.db.query(`INSERT INTO olay_kurtarma_adimi (olay_ref, sira, hizmet, sonuc, aciklama, yapan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [id, sira + 1, g.hizmet, g.sonuc, g.aciklama?.trim() || null, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurtarma Adımı', nesneTuru: 'Olay', nesneKimligi: id, yeni: { hizmet: g.hizmet, sonuc: g.sonuc }, gerekce: g.aciklama?.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-1489, D-028: Operasyon Müdürü (gece yönetici nöbetçisi) önerir, GMY görüş, CEO ilan eder; ulaşılamazsa GMY.

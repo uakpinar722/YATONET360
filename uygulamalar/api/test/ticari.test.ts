@@ -324,4 +324,25 @@ describe('fiş aslı (YG-1622)', () => {
     const r = await o.ist('GET', '/api/teklif-performans?donem=2026-11', await o.gir('tid')); expect(r.statusCode, r.body).toBe(200);
     expect(Object.keys(r.json())).toEqual(['donem', 'ozet', 'durumlar', 'kararlar', 'muhataplar']); expect(r.json().donem).toBe('2026-11');
   });
+  it('sigorta ödemeyi yat sahibine yapacaksa dosya yat sahibine yönlenir (YG-892)', async () => {
+    const d = await dosya(); const u = `/api/dosya/${d.kimlik}/odeme-yat-sahibine`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { dayanak: 'x' })).statusCode).toBe(403);
+    const c = await o.gir('ts');
+    expect((await o.ist('POST', u, c, {})).statusCode).toBe(400);
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Bireysel Müşteri', dosya_niteligi = 'Doğrudan hizmet' WHERE kimlik = $1`, [d.kimlik]);
+    expect((await o.ist('POST', u, c, { dayanak: 'E-posta 16.11.2026' })).statusCode).toBe(409);
+    await o.sup.query(`UPDATE dosya SET musteri_turu = 'Sigorta Şirketi' WHERE kimlik = $1`, [d.kimlik]);
+    const r = await o.ist('POST', u, c, { dayanak: 'E-posta 16.11.2026' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT odeme_yat_sahibine_dayanak FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].odeme_yat_sahibine_dayanak).toBe('E-posta 16.11.2026');
+    expect((await o.ist('POST', u, c, { dayanak: 'tekrar' })).statusCode).toBe(409);
+  });
+  it('Y seviyesi ölçütlerden önerilir, üstü verilmez (YG-308)', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu) VALUES ($1, 'Y Deneme', 'Çözüm Ortağı') RETURNING kimlik`, [`YS-${Date.now()}`])).rows[0].kimlik;
+    const { yetkinlikOnerisi } = await import('../src/firma.js');
+    expect((await yetkinlikOnerisi(o.db, f, 'Kompozit', { deneyim: 12, belgeli: true, uretici: true, muhendislik: true })).seviye).toBe('Y1');
+    const c = await o.gir('fym'); const u = `/api/firma/${f}/brans`;
+    const r = await o.ist('POST', u, c, { brans: 'Kompozit', deneyim: 12, seviye: 'Y3' });
+    expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Y1');
+    const r2 = await o.ist('POST', u, c, { brans: 'Kompozit', deneyim: 12, kisit: 'Teak döşeme hariç' }); expect(r2.statusCode, r2.body).toBe(200); expect(r2.json().seviye).toBe('Y1');
+  });
 });

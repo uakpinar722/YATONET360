@@ -399,7 +399,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const kilit = await ekonomikKilitEngeli(b.db, id); if (kilit) return y.code(409).send({ hata: kilit });
     if (!(await roller(o.kullanici)).includes(TICARI)) return y.code(403).send({ hata: 'Müşteri teklifini Ticari Sorumlu hazırlar.' });
     if (d.statu !== 'Aktif') return y.code(409).send({ hata: 'Teklif yalnız Aktif dosyada hazırlanır.' });
-    const muhatap = g.muhatap ?? (d.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta Şirketi' : d.musteri_turu === 'Kurumsal Müşteri' ? 'Kurumsal Müşteri' : 'Yat Sahibi');
+    const muhatap = g.muhatap ?? (d.odeme_yat_sahibine_zamani ? 'Yat Sahibi' : d.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta Şirketi' : d.musteri_turu === 'Kurumsal Müşteri' ? 'Kurumsal Müşteri' : 'Yat Sahibi'); // YG-892
     if (!['Sigorta Şirketi', 'Yat Sahibi', 'Kurumsal Müşteri'].includes(muhatap)) return y.code(400).send({ hata: 'Muhatap geçersiz.' });
     const cetvel = (await b.db.query(`SELECT kimlik FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
     if (!cetvel) return y.code(409).send({ hata: 'Teklif için Onaylı kapsam cetveli bekleniyor.' });

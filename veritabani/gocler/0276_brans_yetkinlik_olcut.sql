@@ -1,0 +1,2 @@
+-- YG-308: Y seviyesi ölçütleri (Cilt II §5.4) ve kısıt/istisna kaydı.
+ALTER TABLE brans_yetkinligi ADD COLUMN deneyim_yili integer CHECK (deneyim_yili >= 0), ADD COLUMN belgeli_usta boolean NOT NULL DEFAULT false, ADD COLUMN uretici_klas_yetkisi boolean NOT NULL DEFAULT false, ADD COLUMN muhendislik_kapasitesi boolean NOT NULL DEFAULT false, ADD COLUMN kisit_istisna text, ADD COLUMN onerilen_seviye text, ADD COLUMN oneri_dayanak jsonb;
