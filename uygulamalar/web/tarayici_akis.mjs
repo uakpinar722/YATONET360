@@ -381,6 +381,8 @@ try {
   await tikla(pSc2, 'IBAN Ekle');
   await pSc2.getByLabel('Belge Türü', { exact: true }).fill('SGK Borcu Yoktur Yazısı'); await pSc2.getByLabel('Geçerlilik Bitişi', { exact: true }).fill('2099-01-01');
   await tikla(pSc2, 'Belge Kaydet');
+  await pSc2.getByLabel('Belge Türü', { exact: true }).fill('Vergi Borcu Yoktur Yazısı'); await pSc2.getByLabel('Geçerlilik Bitişi', { exact: true }).fill(''); // YG-341: bitiş boşsa 2 yıl
+  await tikla(pSc2, 'Belge Kaydet');
   await tasmaYok(pSc2, 'firma_sicili');
   const pMy = await al('mfy', E);
   await pMy.getByRole('button', { name: 'İdari İşlemlerim' }).click();

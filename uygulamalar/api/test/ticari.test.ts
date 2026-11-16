@@ -200,6 +200,9 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
     const ibk = await o.kart('Banka Hesabı Onayı', ib); await o.karar(ibk.kimlik, 'fmy', 'Onaya Gönder'); await o.karar(ibk.kimlik, 'fym', 'Onaya Gönder'); await o.karar(ibk.kimlik, 'mfm', 'Onayla');
     expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('SGK');
     await o.ist('POST', `/api/firma/${firma}/belge`, sc, { tur: 'SGK Borcu Yoktur Yazısı', bitis: '2099-01-01' });
+    expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('Vergi borcu'); // YG-341
+    await o.ist('POST', `/api/firma/${firma}/belge`, sc, { tur: 'Vergi Borcu Yoktur Yazısı' });
+    expect((await o.sup.query(`SELECT gecerlilik_bitis - current_date g FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur = 'Vergi Borcu Yoktur Yazısı'`, [firma])).rows[0].g).toBe(730);
     // YG-846: firma faturası Esas Müşteri Faturası ile aynı tarih ve kurda
     expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('tarih ve kuru');
     const fu = `/api/firma-portal/hakedis/${h}/fatura`; const fn = `F-${Math.random()}`;

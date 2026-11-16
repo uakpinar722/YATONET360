@@ -325,18 +325,19 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   const malikDosya = async (k: string, id: string) => (UUID.test(id) && await dosyaErisimi(b.db, k, id) ? (await b.db.query(`SELECT d.dosya_no, d.yat_ref FROM dosya d WHERE d.kimlik = $1`, [id])).rows[0] : undefined);
   s.get('/dosya/:id/malikler', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const d = await malikDosya(i.oturum!.kullanici, (i.params as { id: string }).id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
-    return (await b.db.query(`SELECT m.kimlik, m.ad, m.pay_orani, m.yetkili, t.taraf_no FROM yat_malik m LEFT JOIN taraf t ON t.kimlik = m.taraf_ref WHERE m.yat_ref = $1 ORDER BY m.yetkili DESC, m.ad`, [d.yat_ref])).rows;
+    return (await b.db.query(`SELECT m.kimlik, m.ad, m.pay_orani, m.yetkili, m.yurt_disi, m.tebligat_adresi_tr, t.taraf_no FROM yat_malik m LEFT JOIN taraf t ON t.kimlik = m.taraf_ref WHERE m.yat_ref = $1 ORDER BY m.yetkili DESC, m.ad`, [d.yat_ref])).rows;
   });
   s.post('/dosya/:id/malik', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; pay?: number; tarafNo?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; pay?: number; tarafNo?: string; yurtDisi?: boolean; tebligat?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Malik kaydını LGM personeli girer.' });
+    if (g.yurtDisi && !g.tebligat?.trim()) return y.code(400).send({ hata: 'Yurt dışında yerleşik veya yabancı malik için Türkiye tebligat adresi zorunludur.' }); // YG-479
     const d = await malikDosya(o.kullanici, id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
     if (!g.ad?.trim() || (g.pay !== undefined && !(Number(g.pay) > 0 && Number(g.pay) <= 100))) return y.code(400).send({ hata: 'Malik adı zorunludur; pay oranı 0–100 arasında olmalıdır.' });
     const toplam = Number((await b.db.query(`SELECT coalesce(sum(pay_orani), 0) s FROM yat_malik WHERE yat_ref = $1`, [d.yat_ref])).rows[0].s);
     if (g.pay !== undefined && toplam + Number(g.pay) > 100) return y.code(409).send({ hata: 'Malik payları toplamı %100\'ü aşamaz.' });
     const taraf = g.tarafNo?.trim() ? (await b.db.query(`SELECT kimlik FROM taraf WHERE taraf_no = $1`, [g.tarafNo.trim()])).rows[0]?.kimlik : null;
     if (g.tarafNo?.trim() && !taraf) return y.code(400).send({ hata: 'Bu numarada taraf kaydı bulunamadı.' });
-    const r = (await b.db.query(`INSERT INTO yat_malik (yat_ref, ad, taraf_ref, pay_orani, ekleyen_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [d.yat_ref, g.ad.trim(), taraf, g.pay ?? null, o.kullanici])).rows[0];
+    const r = (await b.db.query(`INSERT INTO yat_malik (yat_ref, ad, taraf_ref, pay_orani, ekleyen_ref, yurt_disi, tebligat_adresi_tr) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [d.yat_ref, g.ad.trim(), taraf, g.pay ?? null, o.kullanici, Boolean(g.yurtDisi), g.tebligat?.trim() || null])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yat Maliki Eklendi', nesneTuru: 'Yat', nesneKimligi: d.yat_ref, yeni: { ad: g.ad.trim(), pay: g.pay }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.kimlik };
   });

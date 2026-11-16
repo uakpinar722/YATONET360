@@ -50,7 +50,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
             <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/hukuk-gorusu`, { oneri }), 'Hukuk ve Uyum görüşü istendi.')}>Hukuk Görüşü İste</button>
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: oneri, gerekce }), 'Karar kaydedildi.')}>Öneriyi Karara Bağla</button>
           </>}
-          <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" list="fs-bl" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} /><datalist id="fs-bl"><option value="Sorumluluk Sigortası" /><option value="Gözetimdeki Yat Sigortası" /></datalist>
+          <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" list="fs-bl" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} /><datalist id="fs-bl"><option value="Sorumluluk Sigortası" /><option value="Gözetimdeki Yat Sigortası" /><option value="SGK Borcu Yoktur Yazısı" /><option value="Vergi Borcu Yoktur Yazısı" /></datalist>
           <AdayTemas id={secili} />
           <OnKayit id={secili} yap={yap} />
           <label htmlFor="fs-t">Geçerlilik Bitişi</label><input id="fs-t" type="date" value={belge.bitis} onChange={(e) => setBelge({ ...belge, bitis: e.target.value })} />

@@ -710,13 +710,14 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (q.length < 2) return { dosyalar: [] };
     const { rows } = await b.db.query(
       `SELECT d.kimlik, d.dosya_no, d.statu, d.oncelik, y.yat_adi, a.kimlik AS ana_kimlik, a.dosya_no AS ana_no, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya a ON a.kimlik = d.birlestirilen_ana_dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik
-        WHERE tr_norm(d.dosya_no) LIKE '%' || tr_norm($1) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($1) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($1) || '%' OR EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND tr_norm(t.kisi_adi_soyadi) LIKE '%' || tr_norm($1) || '%') ORDER BY d.acilis_tarihi DESC LIMIT 30`, [q]); // YG-1374: kişi adıyla da bulunur
+        WHERE tr_norm(d.dosya_no) LIKE '%' || tr_norm($1) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($1) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($1) || '%' OR EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND tr_norm(t.kisi_adi_soyadi) LIKE '%' || tr_norm($1) || '%') ORDER BY d.acilis_tarihi DESC LIMIT 30`, [q]); // PRM-1: erişim süzgecinden sonra arama_oneri_azami kadarı gösterilir; YG-1374: kişi adıyla da bulunur
     const izinli = [];
     for (const r of rows) if (await dosyaErisimi(b.db, o.kullanici, r.ana_kimlik ?? r.kimlik)) izinli.push(r);
     // YG-1374: firma sonuçları yalnız firma sicili yetkisi olana.
     const { kullaniciIzinleri } = await import('./yetki.js');
     const firmalar = (await kullaniciIzinleri(b.db, o.kullanici)).includes('firma.kayit') ? (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, ag_statusu FROM kurulus WHERE tr_norm(ticari_unvan) LIKE '%' || tr_norm($1) || '%' OR sicil_no ILIKE $1 || '%' ORDER BY ticari_unvan LIMIT 20`, [q])).rows : [];
-    return { dosyalar: izinli, firmalar };
+    const az = Number((await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'arama_oneri_azami'`)).rows[0]?.deger ?? 10); // PRM-1
+    return { dosyalar: izinli.slice(0, az), firmalar: firmalar.slice(0, az) };
   });
 
 }

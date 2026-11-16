@@ -230,6 +230,12 @@ export async function caymaEngeli(db: Db, dosya: string, simdi = new Date()): Pr
 
 /** YG-151, YG-191: geçerliliği dolan gönderilmiş teklif Süresi Doldu olur; kendiliğinden yenilenmez. BLD-42: 45 gün yanıtsızda bireysel dosya kapanış görevi. */
 export async function teklifSureIsle(db: Pool, simdi = new Date()): Promise<number> {
+  // YG-151: gönderimden 45 gün geçmiş, yanıt alınamamış (Gönderildi / Süresi Doldu) teklifin dosyası Müşteri Vazgeçti – Yanıt Alınamadı kapanışına gider; daha yeni teklif veya karar varsa gitmez.
+  for (const f of (await db.query(`SELECT f.kimlik, f.dosya_ref, d.dosya_no, d.dosya_sorumlusu_ref ds FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref
+      WHERE f.statu IN ('Gönderildi', 'Süresi Doldu') AND f.gonderim_zamani <= $1::timestamptz - interval '45 days' AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND d.dosya_sorumlusu_ref IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM fiyat_teklifi x WHERE x.dosya_ref = f.dosya_ref AND x.kimlik <> f.kimlik AND (x.olusturma_zamani > f.gonderim_zamani OR x.statu = 'Karar')) LIMIT 200`, [simdi])).rows) {
+    if (await birKez(db, 'teklif-yanitsiz-45', f.kimlik)) await kartAc(db, { tur: 'Dosya Kapanışı', kategori: 'islem', baslik: `${f.dosya_no} · Müşteri Vazgeçti – Yanıt Alınamadı`, ozet: 'Teklife 45 gündür yanıt alınamadı; dosyayı Müşteri Vazgeçti – Yanıt Alınamadı nedeniyle kapatınız. Dosya 90 gün içinde yeniden açılabilir.', sahipKullanici: f.ds, nesneTuru: 'Dosya', nesneKimligi: f.dosya_ref });
+  }
   // YG-1540: firma teklifinin bitişine 3 gün veya daha az kaldığında LGM teklifi onaylanmamışsa Ticari Sorumluya bir kez uyarı gider.
   const bugun = `($1::timestamptz AT TIME ZONE 'Europe/Istanbul')::date`;
   for (const f of (await db.query(`SELECT f.kimlik, f.teklif_no, to_char(f.gecerlilik, 'DD.MM.YYYY') bitis, d.dosya_no, d.ticari_sorumlu_ref FROM firma_fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref
@@ -311,7 +317,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT k.kod, k.ana_brans, k.tali_brans, k.islem, k.birim, coalesce(s.n, 0)::int sik FROM kartela_kalemi k
         LEFT JOIN (SELECT x.kartela_kodu, count(*) n FROM fiyat_teklifi_kalemi x JOIN fiyat_teklifi f ON f.kimlik = x.teklif_ref WHERE f.hazirlayan_ref = $3 AND x.kartela_kodu IS NOT NULL GROUP BY 1) s ON s.kartela_kodu = k.kod
       WHERE k.surum = $1 AND (k.kod ILIKE $2 || '%' OR EXISTS (SELECT 1 FROM unnest($4::text[]) t WHERE tr_norm(k.islem) LIKE '%' || tr_norm(t) || '%'))
-      ORDER BY coalesce(s.n, 0) DESC, k.kod LIMIT 30`, [sur, q, i.oturum!.kullanici, terimler])).rows;
+      ORDER BY coalesce(s.n, 0) DESC, k.kod LIMIT $5`, [sur, q, i.oturum!.kullanici, terimler, await parametre(b.db, 'arama_oneri_azami')])).rows; // PRM-1: öneri en çok 10
   });
 
   // YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO tarafından görülür ve taslak sürümde girilir.

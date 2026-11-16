@@ -160,6 +160,14 @@ describe('ön bilgilendirme PDF (YG-618, YG-619)', () => {
   });
 });
 
+describe('talebin özgün kaydı (YG-002)', () => {
+  it('özgün bildirim ve alınma anı değiştirilemez', async () => {
+    const d = await o.dosyaAc(); const tr = (await o.sup.query(`SELECT talep_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].talep_ref;
+    await expect(o.sup.query(`UPDATE talep SET ozgun_bildirim = 'değişti' WHERE kimlik = $1 AND ozgun_bildirim IS NOT NULL`, [tr]).then((r) => { if (!r.rowCount) throw new Error('özgün boş'); })).rejects.toThrow();
+    await expect(o.sup.query(`UPDATE talep SET bildirim_alinma_zamani = bildirim_alinma_zamani - interval '1 hour' WHERE kimlik = $1`, [tr])).rejects.toThrow('özgün');
+  });
+});
+
 describe('ön bilgilendirme gösterim anı (YG-467)', () => {
   it('ONY-23 gösterilmeden onaylanamaz; ilk görüntüleme anı kaydedilir', async () => {
     const d = await o.dosyaAc(); const bel = `ony23-gosterim-${Date.now()}-abcdefgh`;
@@ -1540,6 +1548,9 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const a = (await o.ist('POST', u, c, { ad: 'Malik A', pay: 60 })).json().kimlik as string;
     expect((await o.ist('POST', u, c, { ad: 'Malik B', pay: 50 })).statusCode).toBe(409);
     expect((await o.ist('POST', u, c, { ad: 'Malik B', pay: 40 })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, c, { ad: 'Foreign Owner', yurtDisi: true })).statusCode).toBe(400); // YG-479
+    expect((await o.ist('POST', u, c, { ad: 'Foreign Owner', yurtDisi: true, tebligat: 'Netsel Marina, Marmaris' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/malikler`, c)).json().find((x: { ad: string }) => x.ad === 'Foreign Owner')).toMatchObject({ yurt_disi: true, tebligat_adresi_tr: 'Netsel Marina, Marmaris' });
     expect((await o.ist('POST', `${u}/${a}/yetkili`, c, {})).statusCode).toBe(400);
     expect((await o.ist('POST', `${u}/${a}/yetkili`, c, { dayanak: 'Malikler beyanı 16.11.2026' })).statusCode).toBe(200);
     const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/malikler`, c)).json() as { ad: string; yetkili: boolean }[];

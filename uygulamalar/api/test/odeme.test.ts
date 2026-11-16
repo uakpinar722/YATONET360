@@ -29,7 +29,7 @@ beforeAll(async () => {
   o = await ortamKur('yatonet360_test36', KADRO);
   firma = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-OD','Ödeme Firma','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
   await o.sup.query(`INSERT INTO banka_hesabi (kurulus_ref, iban, durum, giren_ref) VALUES ($1,$2,'Geçerli',$3)`, [firma, IBAN, o.K.ds]);
-  await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis, kontrol_eden_ref) VALUES ($1,'SGK Borcu Yoktur Yazısı','2099-01-01',$2)`, [firma, o.K.ds]);
+  await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis, kontrol_eden_ref) VALUES ($1,'SGK Borcu Yoktur Yazısı','2099-01-01',$2), ($1,'Vergi Borcu Yoktur Yazısı','2099-01-01',$2)`, [firma, o.K.ds]);
 }, 120_000);
 afterAll(async () => { await o.kapat(); });
 

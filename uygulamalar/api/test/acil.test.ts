@@ -167,6 +167,11 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     const r = await cagri(); const c = await o.gir('ds');
     await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [r.kimlik, o.K.ds]);
     expect((await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: f2 })).statusCode).toBe(400);
+    { // YG-272: onaylı olmayan firmaya elle acil iş verilmez
+      const ad = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Aday Acil','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-AA${Date.now()}`, o.K.ds])).rows[0].kimlik;
+      const e0 = await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: ad, kanal: 'Telefon', kisi: 'Usta', talimat: 'Pompa', tahmini: 500 });
+      expect(e0.statusCode).toBe(409); expect(e0.json().hata).toContain('onaylı Çözüm Ortağı');
+    }
     const e = await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: f2, kanal: 'Telefon', kisi: 'Usta', talimat: 'Pompa', tahmini: 500 });
     expect(e.statusCode, e.body).toBe(200); expect(e.json().isEmriNo).toBe(`${r.dosyaNo}-AC01`);
     expect((await o.sup.query(`SELECT count(*)::int n FROM acil_gorev_cagrisi WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [r.kimlik])).rows[0].n).toBe(0);

@@ -228,7 +228,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; bitis?: string; policeLimit?: number; gozetim?: boolean };
     if (!UUID.test(id) || !g.tur?.trim()) return y.code(400).send({ hata: 'Belge türü zorunludur.' });
     if (g.policeLimit !== undefined && !(Number(g.policeLimit) > 0)) return y.code(400).send({ hata: 'Poliçe limiti geçersizdir.' }); // YG-1471
-    await b.db.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis, kontrol_eden_ref, police_limit_eur, gozetim_muhafaza) VALUES ($1,$2,$3,$4,$5,$6)`, [id, g.tur.trim(), g.bitis ?? null, o.kullanici, g.policeLimit ?? null, g.gozetim ?? null]);
+    // YG-341: SGK ve vergi borcu yoktur yazıları 2 yılda bir yenilenir; bitiş girilmezse alındığı günden 2 yıl sonrası yazılır.
+    const ikiYil = /SGK|vergi borcu/i.test(g.tur) && !g.bitis ? new Date(Date.now() + 730 * 86_400_000).toISOString().slice(0, 10) : null;
+    await b.db.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis, kontrol_eden_ref, police_limit_eur, gozetim_muhafaza) VALUES ($1,$2,$3,$4,$5,$6)`, [id, g.tur.trim(), g.bitis ?? ikiYil, o.kullanici, g.policeLimit ?? null, g.gozetim ?? null]);
     return { tamam: true };
   });
 

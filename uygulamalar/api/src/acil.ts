@@ -85,7 +85,8 @@ kapanisKaydet('Acil Tutar Onayı', async (c, k, karar) => {
 
 async function sirakiSaglayici(c: PoolClient, dosya: string): Promise<{ kimlik: string; ticari_unvan: string } | undefined> {
   // YG-266, YG-272: aktif, onaylı, acil hizmet verir; müsait olmayan atlanır; daha önce çağrılan atlanır.
-  return (await c.query(`SELECT u.kimlik, u.ticari_unvan FROM kurulus u WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.acil_hizmet_verir AND u.acil_musaitlik AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND NOT EXISTS (SELECT 1 FROM acil_gorev_cagrisi a WHERE a.dosya_ref = $1 AND a.kurulus_ref = u.kimlik) ORDER BY u.acil_arama_sirasi NULLS LAST, u.sicil_no LIMIT 1`, [dosya])).rows[0];
+  return (await c.query(`SELECT u.kimlik, u.ticari_unvan FROM kurulus u WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.acil_hizmet_verir AND u.acil_musaitlik AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND NOT EXISTS (SELECT 1 FROM acil_gorev_cagrisi a WHERE a.dosya_ref = $1 AND a.kurulus_ref = u.kimlik)
+    AND ($2::int <> 1 OR EXISTS (SELECT 1 FROM sozlesme_kaydi s WHERE s.kurulus_ref = u.kimlik AND s.durum = 'Yürürlükte' AND s.yururluk <= current_date AND (s.bitis IS NULL OR s.bitis >= current_date))) ORDER BY u.acil_arama_sirasi NULLS LAST, u.sicil_no LIMIT 1`, [dosya, await parametre(c, 'sozlesme_kapisi')])).rows[0]; // YG-272: Çerçeve Sözleşmesi yürürlükte
 }
 
 async function cagriGonder(c: PoolClient, dosya: string, simdi: Date): Promise<string | null> {
@@ -317,6 +318,9 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { dosya } = i.params as { dosya: string }; const g = (i.body ?? {}) as { firma?: string; kanal?: string; kisi?: string; talimat?: string; tahmini?: number };
     if (!UUID.test(dosya) || !(await dosyaErisimi(b.db, o.kullanici, dosya))) return yok(y);
     if (!g.firma || !g.kanal?.trim() || !g.kisi?.trim() || !g.talimat?.trim()) return y.code(400).send({ hata: 'Firma, kanal, kişi ve talimat zorunludur.' });
+    // YG-272: elle kabulde de firma sicilde aktif, onaylı Çözüm Ortağı ve Çerçeve Sözleşmesi yürürlükte olmalıdır.
+    if (!UUID.test(g.firma) || !(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND kayit_rolu = 'Çözüm Ortağı' AND ag_statusu = 'Aktif' AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [g.firma])).rowCount) return y.code(409).send({ hata: 'Acil iş yalnız sicilde aktif ve onaylı Çözüm Ortağına verilir.' });
+    { const se = await (await import('./alacak.js')).sozlesmeEngeli(b.db, g.firma); if (se) return y.code(409).send({ hata: se }); }
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no, konum, kisa_teknik_tanim FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
       await c.query(`UPDATE acil_gorev_cagrisi SET durum = 'İptal' WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [dosya]);

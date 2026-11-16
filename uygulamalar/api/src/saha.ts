@@ -398,6 +398,8 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!d) return yok(y);
     if (d.statu !== 'Kapalı') return y.code(409).send({ hata: 'Yalnız kapalı dosya yeniden açılır.' });
     if (d.kapanma_nedeni === 'Birleştirildi') return y.code(409).send({ hata: 'Birleştirilen dosyanın işlemlerini ana dosyadan yürütmenizi rica ederiz.' });
+    // YG-151: yanıt alınamadığı için kapanan dosya kapanıştan sonra 90 gün içinde yeniden açılabilir.
+    if (d.kapanma_nedeni === 'Müşteri Vazgeçti – Yanıt Alınamadı' && d.kapanis_zamani && Date.now() - new Date(d.kapanis_zamani).getTime() > 90 * 86_400_000) return y.code(409).send({ hata: 'Yanıt alınamadığı için kapanan dosya 90 gün içinde yeniden açılabilir; yeni ihbar açınız.' });
     if (!['Yeni Bilgi', 'Hata', 'Müşteri Bildirimi'].includes(g.tur ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe türü ve açıklama zorunludur.' });
     return islem(async (c) => {
       const t = (await c.query(`INSERT INTO dosya_yeniden_acma (dosya_ref, gerekce_turu, gerekce, onceki_nedeni, talep_eden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, g.tur, g.gerekce!.trim(), d.kapanma_nedeni, o.kullanici])).rows[0];
