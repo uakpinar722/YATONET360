@@ -1325,6 +1325,10 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const r = await o.ist('POST', u, await o.gir('mpm'), { tsbKodu: '1004', ad: 'Eksper Bir', eposta: ep, dayanak: '10.11.2026 / 123' }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [r.json().kimlik])).rows[0].sigortaci_adi).toBe('Allianz Sigorta A.Ş.');
     expect((await o.ist('POST', u, await o.gir('mpm'), { tsbKodu: '1004', ad: 'Eksper Bir', eposta: ep, dayanak: 'x' })).statusCode).toBe(409);
+    expect((await o.ist('GET', '/api/sigorta-kullanicilar', await o.gir('ds'))).statusCode).toBe(404);
+    const l = (await o.ist('GET', '/api/sigorta-kullanicilar', await o.gir('mpm'))).json() as { kimlik: string; hesap_durumu: string }[]; expect(l.some((x) => x.kimlik === r.json().kimlik)).toBe(true);
+    const k = await o.ist('POST', `/api/dis-kullanici/${r.json().kimlik}/ayrilis-bildirimi`, await o.gir('mpm'), { tur: 'Ayrılış', kanal: 'E-posta', bildirimZamani: new Date().toISOString() }); expect(k.statusCode, k.body).toBe(200);
+    expect((await o.sup.query(`SELECT hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].hesap_durumu).toBe('Kapalı');
   });
   it('kurumsal müşteride Müşteri Talimatı kaydı ve BLD-67 (YG-437)', async () => {
     const d = await o.dosyaAc({}, {}); const ds = await o.gir('opm');
@@ -1407,5 +1411,124 @@ describe('istenecek belge listesi (YG-1439)', () => {
     expect((await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi' })).statusCode).toBe(400);
     const r = await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi', kaynak: 'Telefon (kaptan / yat sahibi)' }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
+  });
+  it('periyodik iş tanımı Direktörce girilir ve listelenir (YG-1357)', async () => {
+    const ad = `Deneme Gözden Geçirme ${Date.now()}`; const P = { ad, sahipRol: 'Operasyon Müdürü', periyotAy: 6, sonrakiTarih: '2027-01-15' };
+    expect((await o.ist('POST', '/api/periyodik-is', await o.gir('ds'), P)).statusCode).toBe(403);
+    const c = await o.gir('btd'); expect((await o.ist('POST', '/api/periyodik-is', c, { ...P, periyotAy: 0 })).statusCode).toBe(400);
+    const r = await o.ist('POST', '/api/periyodik-is', c, P); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', '/api/periyodik-is', c, P)).statusCode).toBe(409);
+    const l = (await o.ist('GET', '/api/periyodik-isler', c)).json(); expect(l.tanimlar).toBe(true); expect(l.isler.some((x: { ad: string }) => x.ad === ad)).toBe(true);
+    expect((await o.ist('POST', `/api/periyodik-is/${r.json().kimlik}/durum`, c, { aktif: false, gerekce: 'Deneme' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT aktif FROM periyodik_is WHERE kimlik = $1`, [r.json().kimlik])).rows[0].aktif).toBe(false);
+  });
+  it('veri düzeltme talebi taraf ve firma kaydında da açılır (YG-1246 taraf)', async () => {
+    const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const sahip = (await o.sup.query(`SELECT yat_sahibi_ref FROM yat WHERE kimlik = $1`, [yat])).rows[0].yat_sahibi_ref;
+    const c = await o.gir('ds'); const u = '/api/veri-duzeltme-talebi'; const P = { nesneTuru: 'Taraf', yat, kaynak: 'Vergi levhası', etkilenen: d.kimlik };
+    expect((await o.ist('GET', '/api/veri-duzeltme-alanlari', c)).json().Kuruluş).toContain('Ticari Unvan');
+    expect((await o.ist('POST', u, c, { ...P, alan: 'Vergi No', dogruDeger: '123' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { ...P, alan: 'Telefon', dogruDeger: '+90 555 000 00 00' }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.sup.query(`SELECT kimlik FROM is_karti WHERE tur = 'Veri Düzeltme Talebi' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].kimlik;
+    expect((await o.karar(k, 'opm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT telefon FROM taraf WHERE kimlik = $1`, [sahip])).rows[0].telefon).toBe('+90 555 000 00 00');
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu) VALUES ($1, 'Düzeltme Deneme Firması', 'Çözüm Ortağı') RETURNING kimlik`, [`DZ-${Date.now()}`])).rows[0].kimlik;
+    const r2 = await o.ist('POST', u, c, { nesneTuru: 'Kuruluş', nesne: f, alan: 'Web Adresi', dogruDeger: 'https://ornek.local', kaynak: 'Firma beyanı', etkilenen: '-' }); expect(r2.statusCode, r2.body).toBe(200);
+    expect((await o.sup.query(`SELECT r.rol_adi FROM is_karti k JOIN rol r ON r.kimlik = k.zincir[1] WHERE k.tur = 'Veri Düzeltme Talebi' AND k.nesne_kimligi = $1`, [r2.json().kimlik])).rows[0].rol_adi).toBe('Firma Yönetimi Müdürü');
+  });
+  it('her alanın ekran gösterim durumu tanımlıdır, sistem alanları gösterilmez; banka hesabı veri sahibi MFM (YG-1173, YG-929)', async () => {
+    const { alanlar, gosterimDenetimi } = await import('../src/veri_sozlugu.js');
+    expect(gosterimDenetimi()).toEqual([]);
+    expect(gosterimDenetimi([{ ...alanlar()[0]!, teknik: 'kimlik', ekran: 'Gösterilir' }])).toHaveLength(1);
+    expect(alanlar().filter((a) => a.varlik === 'Banka Hesabı').every((a) => a.sahip === 'Muhasebe ve Finans Müdürü')).toBe(true);
+    const r = await o.ist('GET', `/api/veri-sozlugu?q=kimlik&ekran=${encodeURIComponent('Gösterilmez')}`, await o.gir('ds')); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().satirlar.every((a: { ekran: string }) => a.ekran.startsWith('Gösterilmez'))).toBe(true);
+  });
+  it('kartela araması fiyatsız alan döndürür (YG-433)', async () => {
+    const r = await o.ist('GET', '/api/kartela/ara?q=bo', await o.gir('ds')); expect(r.statusCode).toBe(200);
+    for (const x of r.json() as Record<string, unknown>[]) expect(Object.keys(x).some((k) => /fiyat|eur|maliyet/i.test(k))).toBe(false);
+  });
+  it('geciken görev önce sorumluya, 24 saat sonra karar merciine gider; acil işaretleme sınırlı (YG-1361)', async () => {
+    const { kartAc } = await import('../src/is_motoru.js'); const { gorevSureIsle } = await import('../src/onay_sure.js');
+    const son = new Date(Date.now() - 3_600_000);
+    const k = await kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: `Gecikme Deneme ${Date.now()}`, sahipKullanici: o.K.ds, sonZaman: son });
+    await gorevSureIsle(o.db, new Date());
+    expect((await o.sup.query(`SELECT kullanici_ref FROM bildirim WHERE olay_anahtari = $1`, [`gorev-sure:${k}:u`])).rows.map((r) => r.kullanici_ref)).toEqual([o.K.ds]);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE olay_anahtari = $1`, [`gorev-sure:${k}:e`])).rowCount).toBe(0);
+    await gorevSureIsle(o.db, new Date(Date.now() + 25 * 3_600_000));
+    expect((await o.sup.query(`SELECT kullanici_ref FROM bildirim WHERE olay_anahtari = $1`, [`gorev-sure:${k}:e`])).rows.map((r) => r.kullanici_ref)).toContain(o.K.opm);
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('opm'); const u = `/api/dosya/${d.kimlik}/konu`;
+    await o.sup.query(`UPDATE dosya SET oncelik = 'Normal' WHERE kimlik = $1`, [d.kimlik]);
+    const P = { baslik: 'Acil', sahip: o.K.opm, hedefTarih: '2027-01-10', kabulOlcutu: 'Tamam', oncelik: 'Kritik' };
+    expect((await o.ist('POST', u, c, P)).statusCode).toBe(400);
+    for (let n = 0; n < 3; n++) expect((await o.ist('POST', u, c, { ...P, baslik: `Acil ${n}`, oncelikGerekcesi: 'Su alıyor' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, c, { ...P, baslik: 'Acil 4', oncelikGerekcesi: 'Su alıyor' })).statusCode).toBe(409);
+    expect((await o.ist('POST', u, c, { ...P, baslik: 'Normal', oncelik: 'Normal' })).statusCode).toBe(200);
+  });
+  it('ortak arama kişi adıyla dosya bulur (YG-1374)', async () => {
+    const d = await o.dosyaAc({}, {}); const ad = `Aranan Kişi ${Date.now()}`;
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi) VALUES ($1, 'Kaptan', $2)`, [d.kimlik, ad]);
+    const r = await o.ist('GET', `/api/ara?q=${encodeURIComponent(ad)}`, await o.gir('opm')); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true); expect(Array.isArray(r.json().firmalar)).toBe(true);
+    expect((await o.ist('GET', '/api/sigorta/ara?q=LGM', await o.gir('opm'))).statusCode).toBe(404);
+    const p = await o.ist('GET', '/api/portal/ara?q=LGM', await o.gir('opm')); expect(p.statusCode).toBe(200); expect(p.json()).toEqual([]);
+  });
+  it('kapanmış açık konu gerekçeyle yeniden açılır (YG-153)', async () => {
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('opm');
+    const k = (await o.ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'Yeniden açma', sahip: o.K.opm, hedefTarih: '2027-01-10', kabulOlcutu: 'Tamam' })).json().kimlik as string;
+    await o.sup.query(`UPDATE acik_konu SET statu = 'Kapalı', kapanis_zamani = now(), kapanis_kaniti = 'Foto' WHERE kimlik = $1`, [k]);
+    const u = `/api/konu/${k}/durum`;
+    expect((await o.ist('POST', u, c, { statu: 'İşlemde' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { statu: 'Açık', gerekce: 'x' })).statusCode).toBe(409);
+    const r = await o.ist('POST', u, c, { statu: 'İşlemde', gerekce: 'Sızıntı tekrarladı' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT statu, kapanis_kaniti FROM acik_konu WHERE kimlik = $1`, [k])).rows[0]).toEqual({ statu: 'İşlemde', kapanis_kaniti: 'Foto' });
+    expect((await o.sup.query(`SELECT gerekce FROM denetim_izi WHERE eylem = 'Açık Konu Yeniden Açıldı' ORDER BY kimlik DESC LIMIT 1`)).rows[0].gerekce).toBe('Sızıntı tekrarladı');
+  });
+  it('yapılacaklar listesinde hedef süre ve dosya görev kartları (YG-1360)', async () => {
+    const d = await o.dosyaAc({}, {}); const { kartAc } = await import('../src/is_motoru.js');
+    await kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: 'Dosya Görevi Deneme', sahipKullanici: o.K.opm, sonZaman: new Date(Date.now() + 86_400_000), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    const v = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json();
+    const g = v.yapilacaklar.find((x: { is: string }) => x.is === 'Dosya Görevi Deneme'); expect(g).toBeTruthy(); expect(g.hedef).toBeTruthy();
+  });
+  it('periyodik gözden geçirme kontrol listesi ve karar seçenekleri (YG-1363)', async () => {
+    const c = await o.gir('btd'); const ad = `GG Deneme ${Date.now()}`;
+    const id = (await o.ist('POST', '/api/periyodik-is', c, { ad, sahipRol: 'Operasyon Müdürü', periyotAy: 6, sonrakiTarih: '2027-01-15' })).json().kimlik as string;
+    const K = (await o.ist('GET', '/api/periyodik-isler', c)).json().kontroller as string[]; const tam = Object.fromEntries(K.map((x) => [x, 'Evet']));
+    const u = `/api/periyodik-is/${id}/sonuc`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { karar: 'Sürdür', kontroller: tam, aciklama: 'x' })).statusCode).toBe(403);
+    const opm = await o.gir('opm');
+    expect((await o.ist('POST', u, opm, { karar: 'Sürdür', kontroller: {}, aciklama: 'x' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, opm, { karar: 'Değiştir', kontroller: tam, aciklama: 'x' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, opm, { karar: 'Değiştir', kontroller: tam, aciklama: 'Yılda bire', yeniPeriyotAy: 12 }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT periyot_ay, sonraki_tarih::text t FROM periyodik_is WHERE kimlik = $1`, [id])).rows[0]).toEqual({ periyot_ay: 12, t: '2028-01-15' });
+    expect((await o.ist('POST', u, opm, { karar: 'Askıya Al', kontroller: tam, aciklama: 'Gerek kalmadı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT aktif FROM periyodik_is WHERE kimlik = $1`, [id])).rows[0].aktif).toBe(false);
+  });
+  it('teknik personel belgeyi Uygun/Eksik işaretler (YG-1440)', async () => {
+    const d = await o.dosyaAc({}, {});
+    const b = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, olusturan_ref, kaynak_kanali) VALUES ('Ruhsat', 'Dosya Belgesi', 'Dosya', $1, $2, 'Elden') RETURNING kimlik`, [d.kimlik, o.K.opm])).rows[0].kimlik;
+    const u = `/api/dosya/${d.kimlik}/belge/${b}/inceleme`;
+    expect((await o.ist('POST', u, await o.gir('opm'), { sonuc: 'Uygun' })).statusCode).toBe(403);
+    const tu = await o.gir('tm');
+    expect((await o.ist('POST', u, tu, { sonuc: 'Eksik' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, tu, { sonuc: 'Eksik', not: 'Sayfa 2 yok' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT inceleme_sonucu FROM belge WHERE kimlik = $1`, [b])).rows[0].inceleme_sonucu).toBe('Eksik');
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/belge-inceleme`, tu)).json().teknik).toBe(true);
+  });
+  it('belge ve eğitim işi konu türüdür ve konu türü Planlı olur (YG-031)', async () => {
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('opm'); const u = `/api/dosya/${d.kimlik}/konu`; const P = { baslik: 'Eğitim', sahip: o.K.opm, hedefTarih: '2027-01-10', kabulOlcutu: 'Tamam' };
+    expect((await o.ist('POST', u, c, { ...P, konuTuru: 'Toplantı' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, { ...P, konuTuru: 'Eğitim', oncelik: 'Kritik' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT konu_turu, oncelik FROM acik_konu WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ konu_turu: 'Eğitim', oncelik: 'Planlı' });
+  });
+  it('çok malikli yatta malikler ve yetkili malik (YG-478)', async () => {
+    const d = await o.dosyaAc({}, {}); const c = await o.gir('opm'); const u = `/api/dosya/${d.kimlik}/malik`;
+    const a = (await o.ist('POST', u, c, { ad: 'Malik A', pay: 60 })).json().kimlik as string;
+    expect((await o.ist('POST', u, c, { ad: 'Malik B', pay: 50 })).statusCode).toBe(409);
+    expect((await o.ist('POST', u, c, { ad: 'Malik B', pay: 40 })).statusCode).toBe(200);
+    expect((await o.ist('POST', `${u}/${a}/yetkili`, c, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `${u}/${a}/yetkili`, c, { dayanak: 'Malikler beyanı 16.11.2026' })).statusCode).toBe(200);
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/malikler`, c)).json() as { ad: string; yetkili: boolean }[];
+    expect(l.filter((x) => x.yetkili).map((x) => x.ad)).toEqual(['Malik A']);
   });
 });

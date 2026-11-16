@@ -3,6 +3,7 @@ import { AnaVeriMukerrer } from './AnaVeri';
 import { TesisBilgi } from './BaglamaNoktasi';
 import { useEffect, useState } from 'react';
 import { BelgeSec } from './Kalite';
+import { VeriDuzeltme } from './VeriDuzeltme';
 import { istek, type Ben } from './api';
 
 interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kayit_asamasi: string; ag_statusu: string }
@@ -55,6 +56,8 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <FirmaSozlesme id={secili} yap={yap} />
           <FirmaTesis id={secili} yap={yap} />
           <FirmaEkipman id={secili} yap={yap} />
+          <FirmaKapasite id={secili} yap={yap} />
+          <VeriDuzeltme nesneTuru="Kuruluş" nesne={secili} baslik="Firma Kaydında Düzeltme Talebi" />
         </div>
       </>}
     </>
@@ -195,4 +198,19 @@ function FirmaEkipman({ id, yap }: { id: string; yap: (f: () => Promise<unknown>
   return <><div className="bolum">Ekipman</div><div className="ozet">{l.map((x) => <div key={x.kimlik}>{x.ad} · {x.seri_no}{x.bakim_bitis ? ` · Bakım: ${x.bakim_bitis.split('-').reverse().join('.')}` : ''}{x.kalibrasyon_bitis ? ` · Kalibrasyon: ${x.kalibrasyon_bitis.split('-').reverse().join('.')}` : ''} · {x.kullanilabilir ? 'Kullanılabilir' : '⚠ Süresi geçti, kullanılamaz'}</div>)}</div>
     {A('ad', 'Ekipman Adı')}{A('seri', 'Seri No')}{A('bakim', 'Bakım Son Tarihi', 'date')}{A('kalibrasyon', 'Kalibrasyon Son Tarihi', 'date')}
     <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/ekipman`, { ad: f.ad, seri: f.seri, bakim: f.bakim || undefined, kalibrasyon: f.kalibrasyon || undefined }).then(() => { setF({ ad: '', seri: '', bakim: '', kalibrasyon: '' }); return yk(); }), 'Ekipman kaydedildi.')}>Ekipman Kaydet</button></>;
+}
+
+/** YG-309: branş, görev sınıfı ve tesis bazında eş zamanlı iş kapasitesi (boş sınıf: tüm sınıflar; boş tesis: tüm yerler). */
+function FirmaKapasite({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [l, setL] = useState<{ ana_brans: string; gorev_sinifi: string | null; tesis: string | null; es_zamanli_is: number; aktif: number }[]>([]); const [ts, setTs] = useState<{ kimlik: string; ad: string }[]>([]);
+  const [f, setF] = useState({ brans: '', sinif: '', tesis: '', adet: '' });
+  const yk = () => istek<typeof l>(`/firma/${id}/kapasite`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); void istek<{ kimlik: string; ad: string }[]>(`/firma/${id}/tesis`).then(setTs).catch(() => setTs([])); }, [id]);
+  return <><div className="bolum">Eş Zamanlı İş Kapasitesi</div>
+    <div className="ozet">{l.length === 0 ? <div className="not">Kapasite girilmemiştir.</div> : l.map((x, n) => <div key={n}>{x.ana_brans} · {x.gorev_sinifi ?? 'Tüm sınıflar'} · {x.tesis ?? 'Tüm yerler'} · {x.aktif}/{x.es_zamanli_is} aktif iş{x.aktif >= x.es_zamanli_is ? ' · ⚠ Kapasite dolu' : ''}</div>)}</div>
+    <label htmlFor="fk-b">Ana Branş</label><input id="fk-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })} />
+    <label htmlFor="fk-s">Görev Sınıfı</label><select id="fk-s" value={f.sinif} onChange={(e) => setF({ ...f, sinif: e.target.value })}><option value="">Tüm sınıflar</option>{['G1', 'G2', 'G3', 'G4'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="fk-t">Tesis</label><select id="fk-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Tüm yerler</option>{ts.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad}</option>)}</select>
+    <label htmlFor="fk-a">Eş Zamanlı İş Sayısı</label><input id="fk-a" inputMode="numeric" value={f.adet} onChange={(e) => setF({ ...f, adet: e.target.value })} />
+    <button className="btn2" disabled={!f.brans.trim() || !(Number(f.adet) > 0)} onClick={() => void yap(() => istek(`/firma/${id}/kapasite`, { brans: f.brans, sinif: f.sinif || undefined, tesis: f.tesis || undefined, adet: Number(f.adet) }).then(() => { setF({ brans: '', sinif: '', tesis: '', adet: '' }); return yk(); }), 'Kapasite kaydedildi.')}>Kapasiteyi Kaydet</button></>;
 }

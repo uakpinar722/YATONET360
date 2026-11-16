@@ -220,6 +220,11 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   };
 
   // YG-1565: Onayınızı Bekleyenler, Dosyalarım. YG-459: firma, maliyet ve iç yazışma yoktur.
+  // YG-1374: yat sahibi, temsilci ve kurumsal kullanıcı yalnız kendi dosyalarında dosya no ve yat adıyla arar.
+  s.get('/portal/ara', oturumlu, async (i) => {
+    const q = String((i.query as { q?: string }).q ?? '').trim(); if (q.length < 2) return [];
+    return (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE (${benimDosyalarim}) AND (tr_norm(d.dosya_no) LIKE '%' || tr_norm($2) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($2) || '%') ORDER BY d.acilis_tarihi DESC LIMIT 30`, [i.oturum!.kullanici, q])).rows;
+  });
   s.get('/portal/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const red = musteri(o.grup, y); if (red) return red;
     const dosyalar = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.birlestirilen_ana_dosya_ref IS NULL AND (${benimDosyalarim}) ORDER BY d.statu = 'Kapalı', d.acilis_tarihi DESC`, [o.kullanici])).rows;

@@ -127,5 +127,7 @@ describe('adres bazlı sınır (YG-1157)', () => {
     const r = await ist('POST', '/api/kimlik/giris', undefined, { kimlik: CEO, parola: PAROLA });
     expect(r.statusCode).toBe(429);
     expect((await sup.query(`SELECT count(*)::int n FROM denetim_izi WHERE eylem = 'Adres Bazlı Deneme Sınırı'`)).rows[0].n).toBeGreaterThanOrEqual(1);
+    const ekip = (await sup.query(`SELECT count(DISTINCT a.kullanici_ref)::int n FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi IN ('Sistem Yöneticisi', 'Bilgi İşlem Müdürü')`)).rows[0].n;
+    expect((await sup.query(`SELECT count(*)::int n FROM bildirim WHERE olay_anahtari LIKE 'guvenlik-adres:%'`)).rows[0].n).toBe(ekip); // YG-1157
   });
 });

@@ -67,3 +67,18 @@ describe('sosyal medya izleme kaydı (YG-586)', () => {
     expect(await sosyalMedyaIsle(o.db, new Date('2027-01-11T10:00:00'))).toBe(1);
   });
 });
+
+describe('denetçi ataması ve sınırlı erişim (YG-1679)', () => {
+  it('Müdür atar; denetçi süre içinde salt okunur izleri görür; süre dolunca erişim kapanır', async () => {
+    const ide = await o.gir('ide'); const idm = await o.gir('idm');
+    const d = (await o.ist('POST', '/api/ic-denetim', idm, { surec: 'Satın Alma', kapsam: 'Sipariş onayları', cikarYok: true, sonOnIkiAyGorevYok: true })).json().kimlik as string;
+    expect((await o.ist('GET', `/api/ic-denetim/${d}/izler`, ide)).statusCode).toBe(403);
+    const bitis = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    expect((await o.ist('POST', `/api/ic-denetim/${d}/ata`, ide, { denetci: o.K.ide, bitis, amac: 'Sipariş onay kontrolü' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/ic-denetim/${d}/ata`, idm, { denetci: o.K.ide, bitis: '2030-01-01', amac: 'x' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/ic-denetim/${d}/ata`, idm, { denetci: o.K.ide, bitis, amac: 'Sipariş onay kontrolü' }); expect(r.statusCode, r.body).toBe(200);
+    const z = await o.ist('GET', `/api/ic-denetim/${d}/izler`, ide); expect(z.statusCode, z.body).toBe(200); expect(Array.isArray(z.json())).toBe(true);
+    await o.sup.query(`UPDATE ic_denetim SET erisim_bitis = current_date - 1 WHERE kimlik = $1`, [d]);
+    expect((await o.ist('GET', `/api/ic-denetim/${d}/izler`, ide)).statusCode).toBe(403);
+  });
+});

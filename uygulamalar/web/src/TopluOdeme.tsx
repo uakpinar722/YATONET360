@@ -1,10 +1,10 @@
+import { eur } from './bicim';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 type F = { kimlik: string; fatura_no: string | null; proforma_no: string; dosya_no: string; toplam_eur: string; tahsil_edilen_eur: string };
 type V = { sigortacilar: string[]; faturalar: F[]; odemeler: { kimlik: string; sigortaci_adi: string; toplam_eur: string; tarih: string; banka_referansi: string }[] };
 const sayi = (x: string) => Number(x.replace(/\./g, '').replace(',', '.'));
-const eur = (x: number) => `${x.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
 
 /** YG-902: sigortacının toplu ödemesi dağılım bildirimiyle faturalara dağıtılır. */
 export function TopluOdeme() {

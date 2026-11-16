@@ -1,10 +1,10 @@
+import { eur } from './bicim';
 import { ProsesLgm } from './Proses';
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { BelgeSec } from './Kalite';
 
 const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => <><div className="bolum">{baslik}</div><div className="ozet">{children}</div></>;
-const eur = (x: string | number | null) => (x === null ? '—' : `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`);
 const tarih = (s: string | null) => (s ? s.split('-').reverse().join('.') : '—');
 const sayi = (x: string) => Number(x.replace(/\./g, '').replace(',', '.'));
 function useYap(yenile: () => unknown) {
@@ -196,19 +196,24 @@ interface KurumsalV { kurum: string; kurumId?: string; ek2Siniri: string; yetkil
 /** YG-1563: kurumsal müşteri kendi kullanıcısını ekler; onay adımı yok; onay sınırı Ek-2 sınırını aşmaz. */
 /** YG-304, YG-339: firma personeli; ayrılan personelin ekip kartları ve hesabı kapanır. */
 export function FirmaPersoneli() {
-  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; gorev: string; isg_egitim_bitis: string | null; yetki_belgesi: string | null; yetki_belgesi_bitis: string | null; aktif: boolean }[]>([]); const [f, setF] = useState({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); const [m, setM] = useState('');
+  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; gorev: string; isg_egitim_bitis: string | null; yetki_belgesi: string | null; yetki_belgesi_bitis: string | null; aktif: boolean; kritik: boolean; esdegerlik_sonucu: string | null }[]>([]); const [f, setF] = useState({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); const [m, setM] = useState('');
+  const [kr, setKr] = useState(false); const [yer, setYer] = useState(''); const [yb, setYb] = useState(''); const [kurum, setKurum] = useState(''); // YG-340
   const yk = () => istek<typeof l>('/firma-portal/personel').then(setL).catch(() => setL([]));
-  useEffect(() => { void yk(); }, []);
+  useEffect(() => { void yk(); void istek<{ kurum: { kimlik: string } }>('/kurum/hesap').then((h) => setKurum(h.kurum.kimlik)).catch(() => setKurum('')); }, []);
+  const eskiKritik = l.find((x) => x.kimlik === yer)?.kritik;
   const tr = (x: string | null) => x ? x.split('-').reverse().join('.') : '-';
   return <><div className="bolum">Personelimiz</div>{m && <div className="not" role="status">{m}</div>}
-    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.ad_soyad} · {x.gorev} · İSG eğitimi: {tr(x.isg_egitim_bitis)}{x.yetki_belgesi ? ` · ${x.yetki_belgesi}: ${tr(x.yetki_belgesi_bitis)}` : ''}{x.aktif ? <button className="btn2 kucuk" onClick={() => void istek(`/firma-portal/personel/${x.kimlik}/ayrildi`, {}).then(() => { setM('Ayrılış kaydedildi; ekip kartları kapandı.'); return yk(); }).catch((e) => setM(e.message))}>Ayrıldı</button> : ' · Ayrıldı'}</div>)}</div>
+    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.ad_soyad} · {x.gorev}{x.kritik ? ' · Kritik' : ''}{x.esdegerlik_sonucu ? ` · ${x.esdegerlik_sonucu}` : ''} · İSG eğitimi: {tr(x.isg_egitim_bitis)}{x.yetki_belgesi ? ` · ${x.yetki_belgesi}: ${tr(x.yetki_belgesi_bitis)}` : ''}{x.aktif ? <button className="btn2 kucuk" onClick={() => void istek(`/firma-portal/personel/${x.kimlik}/ayrildi`, {}).then(() => { setM('Ayrılış kaydedildi; ekip kartları kapandı.'); return yk(); }).catch((e) => setM(e.message))}>Ayrıldı</button> : ' · Ayrıldı'}</div>)}</div>
     <label htmlFor="fp-a">Ad Soyad</label><input id="fp-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
     <label htmlFor="fp-g">Görevi</label><input id="fp-g" value={f.gorev} onChange={(e) => setF({ ...f, gorev: e.target.value })} />
     <label htmlFor="fp-t">Telefon</label><input id="fp-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
     <label htmlFor="fp-i">İSG Eğitimi Geçerlilik Bitişi</label><input id="fp-i" type="date" value={f.isgBitis} onChange={(e) => setF({ ...f, isgBitis: e.target.value })} />
     <label htmlFor="fp-b">Yetki Belgesi / Sertifika</label><input id="fp-b" value={f.belge} onChange={(e) => setF({ ...f, belge: e.target.value })} />
     <label htmlFor="fp-bb">Belge Geçerlilik Bitişi</label><input id="fp-bb" type="date" value={f.belgeBitis} onChange={(e) => setF({ ...f, belgeBitis: e.target.value })} />
-    <button className="btn2" onClick={() => void istek('/firma-portal/personel', { ...f, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button></>;
+    <label><input type="checkbox" checked={kr} onChange={(e) => setKr(e.target.checked)} /> Kritik görevde (yerine geçecek kişide eşdeğer yeterlilik aranır)</label>
+    <label htmlFor="fp-y">Yerine Geçtiği Personel</label><select id="fp-y" value={yer} onChange={(e) => setYer(e.target.value)}><option value="">Yok</option>{l.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}{x.kritik ? ' (Kritik)' : ''}</option>)}</select>
+    {eskiKritik && kurum && <BelgeSec ad="Yeterlilik Belgesi" bagTuru="Kuruluş" bagKimligi={kurum} deger={yb} sec={setYb} />}
+    <button className="btn2" disabled={Boolean(eskiKritik) && !yb} onClick={() => void istek('/firma-portal/personel', { ...f, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined, kritik: kr, yerine: yer || undefined, yeterlilikBelgesi: yb || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setKr(false); setYer(''); setYb(''); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button></>;
 }
 
 /** YG-424: Görevli Ekip Kartı; firma unvanı yazılmaz, QR doğrulamaya gider. */

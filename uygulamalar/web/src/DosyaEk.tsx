@@ -30,6 +30,7 @@ import { SigortaFark } from './SigortaFark';
 import { OnerilenTesisler } from './BaglamaNoktasi';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
+import { TeslimAlici } from './TeslimAlici';
 
 const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => <><div className="bolum">{baslik}</div><div className="ozet">{children}</div></>;
 function useYap(yenile: () => unknown) {
@@ -190,6 +191,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
     <label htmlFor="pf-a">Yat Sahibinin Göreceği Açıklama</label><input id="pf-a" value={pf.aciklama} onChange={(e) => setPf({ ...pf, aciklama: e.target.value })} />
     <button className="btn2 kucuk" disabled={!pf.belge || !pf.aciklama.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/ilerleme-fotografi`, pf), 'Fotoğraf yat sahibi portalına açıldı.').then(() => setPf({ belge: '', aciklama: '' }))}>Portala Aç</button>
+    <TeslimAlici dosya={id} />
     <div className="bolum">Teslim</div>
     <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/teslime-hazir`, {}), 'Hazır bildirimi gönderildi; 7 gün başladı.')}>Teslime Hazır Bildir</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/teslim-hatirlat`, {}), 'Tek hatırlatma gönderildi.')}>Tutanak Hatırlat</button><button className="btn2 kucuk" onClick={() => void yap(() => istek<Record<string, number>>(`/dosya/${id}/kapanis-hesabi`).then(setHs))}>Kapanış Hesabı</button></div>
     {hs && <div>Onaylı: {hs.onayliKdvHaric} · Faturalı: {hs.faturali} · Tahsil: {hs.tahsil} · Açık Alacak: {hs.acikAlacak} · Firma Hakedişi: {hs.firmaHakedis} · Ödenen: {hs.firmayaOdenen} · Firma Borcu: {hs.firmaBorcu} EUR</div>}

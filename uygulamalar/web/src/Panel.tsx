@@ -9,6 +9,11 @@ import { YatSahibiAna } from './Portal';
 import { DenetimArama, IhlalBildir, KvkkEkrani } from './Kvkk';
 import { FirmaAna, IdariIslemler, MuhasebeAna, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
 import { KarneParametreleri, FirmaSicil } from './Sicil';
+import { SozlesmeSureleri } from './SozlesmeSureleri';
+import { SigortaHesaplari } from './SigortaHesaplari';
+import { TevkifatListesi } from './Tevkifat';
+import { KartelaGoruntule } from './KartelaGoruntule';
+import { KendiArama } from './KendiArama';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
 import { BrokerAna, YetkiBelgeleri } from './Broker';
 import { DosyaHaritasi } from './IsGorunumu';
@@ -18,7 +23,7 @@ import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -64,8 +69,9 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     ...(ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı', 'Bilgi İşlem Müdürü', 'Sistem Yöneticisi', 'Genel Müdür Yardımcısı', 'CEO', 'Muhasebe ve Finans Müdürü', 'Ticari İşler Direktörü', 'Operasyon Müdürü', 'Teknik Müdür', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'].includes(r.rol_adi)) ? [{ s: 'kvkk' as Sayfa, ad: 'KVKK ve Uyum', ik: '⚖' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Müşteri ve Paydaş İlişkileri Müdürü') ? [{ s: 'ek2' as Sayfa, ad: 'Sigorta Ek-2', ik: '✉' }] : []),
     ...(ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) ? [{ s: 'tedodeme' as Sayfa, ad: 'Tedarikçi Ödemeleri', ik: '₺' }] : []),
+    ...(ben.roller.some((r) => ['Müşteri ve Paydaş İlişkileri Müdürü', 'Ticari İşler Direktörü'].includes(r.rol_adi)) ? [{ s: 'sozsure' as Sayfa, ad: 'Sözleşme Süreleri', ik: '⏱' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Teknik ve Operasyon Direktörü') ? [{ s: 'karnepar' as Sayfa, ad: 'Karne Parametreleri', ik: '⚙' }] : []),
-    ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'firmaisemri' as Sayfa, ad: 'İş Emirleri', ik: '▣' }, { s: 'gunluk' as Sayfa, ad: 'Günlük Kayıt', ik: '✎' }] : []),
+    ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'firmaisemri' as Sayfa, ad: 'İş Emirleri', ik: '▣' }, { s: 'gunluk' as Sayfa, ad: 'Günlük Kayıt', ik: '✎' }, { s: 'kartela' as Sayfa, ad: 'Fiyat Kartelası', ik: '▤' }] : []),
     ...(ben.grup === 'Tedarikçi' ? [{ s: 'tedsiparis' as Sayfa, ad: 'Siparişler', ik: '▣' }, { s: 'tedteklif' as Sayfa, ad: 'Teklifler', ik: '▤' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
     ...(ben.grup.startsWith('Broker') ? [{ s: 'yetkibelge' as Sayfa, ad: 'Yetki Belgeleri', ik: '▤' }] : []),
@@ -85,16 +91,18 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     duyuru: <DuyuruYayimla />,
     toplanti: <Toplantilar />,
     dosya: <Dosyalar ben={ben} acikDosya={acikDosya} acildi={() => setAcikDosya(null)} />,
-    ara: <AramaSonucu q={araQ} ac={(id) => { setAcikDosya(id); git('dosya'); }} />,
+    ara: lgm ? <AramaSonucu q={araQ} ac={(id) => { setAcikDosya(id); git('dosya'); }} /> : <KendiArama ben={ben} q={araQ} />,
     idari: <IdariIslemler />,
     kvkk: <KvkkEkrani />,
-    ek2: <SigortaEk2 />,
+    ek2: <><SigortaEk2 /><SigortaHesaplari /></>,
     firmaisemri: <FirmaAna ben={ben} bolum="isemri" />,
     karnepar: <KarneParametreleri />,
+    sozsure: <SozlesmeSureleri />,
+    kartela: <KartelaGoruntule />,
     gunluk: <GunlukSayfasi />,
     kullanicilarim: <Kullanicilarim />,
     yetkibelge: <YetkiBelgeleri />,
-    tedodeme: <TedarikciOdemeleri />,
+    tedodeme: <><TedarikciOdemeleri /><TevkifatListesi /></>,
     tedsiparis: <TedarikciAna ben={ben} bolum="siparis" />,
     tedteklif: <TedarikciAna ben={ben} bolum="teklif" />,
     kurum: <KurumHesap baslik={ben.grup === 'İş Birliği Firması' ? 'Firma' : 'Hesap'} />,
@@ -114,7 +122,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
         </div>
       </header>
       <div className="ara-satir">
-        <input aria-label="Ara" placeholder={lgm ? 'Ara: Dosya No, Hasar Dosya No, Yat, Firma, Kişi' : 'Ara: Dosya No, Yat Adı'} onKeyDown={(e) => { const q = e.currentTarget.value.trim(); if (e.key === 'Enter' && q.length >= 2 && lgm) { setAraQ(q); git('ara'); } }} />
+        <input aria-label="Ara" placeholder={lgm ? 'Ara: Dosya No, Hasar Dosya No, Yat, Firma, Kişi' : 'Ara: Dosya No, Yat Adı'} onKeyDown={(e) => { const q = e.currentTarget.value.trim(); if (e.key === 'Enter' && q.length >= 2) { setAraQ(q); git('ara'); } }} />
         <div className="ara-bag">
           <button className="ust-bag" onClick={() => git('mesaj')}>✉ Mesajlar <em className="sayi">{veri?.okunmamisMesaj ?? 0}</em></button>
           {lgm && <button className="ust-bag" onClick={() => git('idari')}>İdari İşlemlerim</button>}

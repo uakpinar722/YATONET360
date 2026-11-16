@@ -46,6 +46,12 @@ export function sigortaSirketiYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
 
+  // YG-453: Müşteri ve Paydaş İlişkileri Müdürü açtığı sigorta portalı hesaplarını görür; kapatma ayrılış bildirimiyle (/dis-kullanici/:id/ayrilis-bildirimi) yapılır.
+  s.get('/sigorta-kullanicilar', oturumlu, async (i, y) => {
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2`, [i.oturum!.kullanici, MPM])).rowCount) return yok(y);
+    return (await b.db.query(`SELECT h.kimlik, h.ad_soyad, h.e_posta, h.hesap_durumu, s.sigortaci_adi FROM sigorta_kullanici s JOIN kullanici_hesabi h ON h.kimlik = s.kullanici_ref ORDER BY s.sigortaci_adi, h.hesap_durumu, h.ad_soyad`)).rows;
+  });
+
   // Kayıt açılışında ve yıllık güncellemede MERSİS unvanıyla teyit edilir.
   s.post('/sigorta-sirketi', oturumlu, async (i, y) => {
     const o = i.oturum!;

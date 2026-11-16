@@ -1,9 +1,9 @@
+import { eur } from './bicim';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 type B = { temelCizgi: number; guncelButce: number; gerceklesen: number; acikTaahhut: number; bitisTahmini: number; bekleyenDegisiklik: number; rezervOrani: number; rezerv: number; rezervKullanilan: number; rezervKalan: number };
 type V = { butce: B | null; talepAcabilir: boolean; talepler: { kimlik: string; tur: string; tutar_eur: string | null; yeni_oran: string | null; durum: string }[] };
-const eur = (x: number) => `${x.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
 
 /** YG-862, YG-863: dosya iç bütçesi ve risk rezervi; tutarlar yalnız maliyet görebilen rollere görünür. */
 export function RiskRezervi({ dosya }: { dosya: string }) {

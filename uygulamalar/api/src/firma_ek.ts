@@ -315,7 +315,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
   // YG-304, YG-339: firma kendi personelini kaydeder; ayrılan personelin ekip kartları iptal olur, bağlı hesabı kapanır, geçmiş korunur.
   s.get('/firma-portal/personel', oturumlu, async (i, y) => {
     const f = await firmam(i.oturum!.kullanici); if (!f) return yok(y);
-    return (await b.db.query(`SELECT kimlik, ad_soyad, gorev, telefon, isg_egitim_bitis::text, yetki_belgesi, yetki_belgesi_bitis::text, aktif FROM firma_personeli WHERE kurulus_ref = $1 ORDER BY aktif DESC, ad_soyad`, [f])).rows;
+    return (await b.db.query(`SELECT kimlik, ad_soyad, gorev, telefon, isg_egitim_bitis::text, yetki_belgesi, yetki_belgesi_bitis::text, aktif, kritik, esdegerlik_sonucu FROM firma_personeli WHERE kurulus_ref = $1 ORDER BY aktif DESC, ad_soyad`, [f])).rows;
   });
   s.post('/firma-portal/personel', oturumlu, async (i, y) => {
     const o = i.oturum!; const f = await firmam(o.kullanici); if (!f) return yok(y);

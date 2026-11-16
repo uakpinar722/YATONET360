@@ -42,6 +42,14 @@ export function bld02Alanlari(yat: string, bas: Date, teslim: Date | string | nu
   return { Yat: yat, Yacht: yat, tarih, date: [f(bas), teslim ? f(teslim) : 'to be notified'], 'bağlantı': web, link: web };
 }
 
+/** firmaUygunlugu kurallarının toplu (tek sorgulu) karşılığı; mesajlar aynıdır. */
+function uygunlukEngeli(f: { kayit_asamasi: string; ag_statusu: string | null; dolan_belge: string | null; brans_var: boolean }): string | null {
+  if (!['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return 'Firmanın kaydı onaylı değildir.';
+  if (f.ag_statusu !== 'Aktif' && f.ag_statusu !== 'Kısıtlı') return `Firmanın ağ statüsü uygun değildir: ${f.ag_statusu}.`;
+  if (f.dolan_belge) return `Firmanın belgesinin süresi dolmuştur: ${f.dolan_belge}.`;
+  if (!f.brans_var) return 'Firma bu branşta yetkili değildir.';
+  return null;
+}
 export async function firmaUygunlugu(db: Db, firma: string, brans?: string | null): Promise<string | null> {
   const f = (await db.query(`SELECT kayit_asamasi, ag_statusu FROM kurulus WHERE kimlik = $1`, [firma])).rows[0];
   if (!f) return 'Firma bulunamadı.';
@@ -190,9 +198,12 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/firma/uygunluk', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     const { brans, rol } = i.query as { brans?: string; rol?: string };
-    const { rows } = await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, ag_statusu, risk_derecesi FROM kurulus WHERE kayit_rolu = $1 AND kayit_asamasi NOT IN ('Aday', 'Reddedildi') AND ag_statusu IS DISTINCT FROM 'Çıkarıldı' ORDER BY ticari_unvan`, [rol === 'Tedarikçi' ? rol : 'Çözüm Ortağı']);
-    const l = []; for (const f of rows) l.push({ ...f, engel: await firmaUygunlugu(b.db, f.kimlik, brans || null) });
-    return l;
+    // Tek sorgu: firmaUygunlugu ile aynı kurallar (kayıt aşaması, ağ statüsü, süresi dolan belge, branş yetkisi) toplu hesaplanır.
+    const { rows } = await b.db.query(`SELECT k.kimlik, k.sicil_no, k.ticari_unvan, k.ag_statusu, k.risk_derecesi, k.kayit_asamasi,
+        (SELECT s.tur FROM sicil_belgesi s WHERE s.kurulus_ref = k.kimlik AND s.gecerlilik_bitis < current_date ORDER BY s.tur LIMIT 1) dolan_belge,
+        ($2::text IS NULL OR EXISTS (SELECT 1 FROM brans_yetkinligi x WHERE x.kurulus_ref = k.kimlik AND x.ana_brans = $2 AND x.durum = 'Aktif')) brans_var
+      FROM kurulus k WHERE k.kayit_rolu = $1 AND k.kayit_asamasi NOT IN ('Aday', 'Reddedildi') AND k.ag_statusu IS DISTINCT FROM 'Çıkarıldı' ORDER BY k.ticari_unvan`, [rol === 'Tedarikçi' ? rol : 'Çözüm Ortağı', brans || null]);
+    return rows.map(({ kayit_asamasi, dolan_belge, brans_var, ...f }) => ({ ...f, engel: uygunlukEngeli({ kayit_asamasi, ag_statusu: f.ag_statusu, dolan_belge, brans_var }) }));
   });
 
   // YG-435: KN, ON, EK Operasyon Yöneticisi; GR Teknik Yönetici çıkarır. YG-322: mali ve kapsam doğrulanmadan yayımlanmaz.

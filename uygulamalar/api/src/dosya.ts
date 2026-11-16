@@ -86,7 +86,7 @@ async function boyGovdeEksik(db: Db, id: string): Promise<boolean> {
 
 /** YG-064: dosya ekranındaki yapılacaklar; sıradaki işlem, sorumlu ve eksik kayıtlar. Tamamlandıkça sonraki adım kendiliğinden açılır. */
 export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; asama: string | null; oncelik: string; dosya_niteligi: string }) {
-  const l: { is: string; sorumlu: string; engel?: boolean }[] = [];
+  const l: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null }[] = [];
   const ekip = new Set((await db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.rol as string));
   if (d.statu === 'Açılış Kontrolünde') {
     if (!ekip.has('Dosya Sorumlusu')) l.push({ is: 'Dosya Sorumlusunu Ata', sorumlu: 'Operasyon Müdürü', engel: true });
@@ -97,6 +97,11 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
   // YG-050: zorunlu durumda Saha Sorumlusu uyarısı.
   if (d.oncelik === 'Kritik' && !ekip.has('Saha Sorumlusu')) l.push({ is: 'Saha Sorumlusunu Ata (Kritik Öncelikte Zorunlu)', sorumlu: 'Teknik Müdür' });
   if (d.dosya_niteligi === 'Sigorta bağlantılı' && !(await db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [d.kimlik])).rowCount) l.push({ is: 'Sigorta Hasar Dosya Numarasını Gir (Teklif Gönderilmeden Önce)', sorumlu: 'Dosya Sorumlusu' });
+  // YG-1360: her yapılacak işin hedefi dosyanın en yakın açık süresidir; dosyaya bağlı bekleyen görev kartları sorumlu ve hedef zamanla eklenir.
+  const hedef = (await db.query(`SELECT min(bitis) b FROM dosya_sure WHERE dosya_ref = $1 AND tamamlanma IS NULL`, [d.kimlik])).rows[0]?.b ?? null;
+  for (const x of l) x.hedef ??= hedef ? new Date(hedef).toISOString() : null;
+  const kartlar = (await db.query(`SELECT k.baslik, k.son_zaman, coalesce(h.ad_soyad, r.rol_adi, '—') sorumlu FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.sahip_kullanici_ref LEFT JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE k.kategori = 'gorev' AND k.durum = 'Bekliyor' AND k.nesne_turu = 'Dosya' AND k.nesne_kimligi = $1 ORDER BY k.son_zaman NULLS LAST LIMIT 10`, [d.kimlik])).rows;
+  for (const k of kartlar) l.push({ is: k.baslik, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null });
   return l;
 }
 
@@ -328,7 +333,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const bekleme = (await b.db.query(`SELECT k.kimlik, k.neden, k.hedef_tarih::text, k.sayac_durur, k.uzatma_sayisi, k.olusturma_zamani, k.kaldirilma_zamani, k.gun45_karari, h.ad_soyad AS sorumlu FROM beklemede_isareti k JOIN kullanici_hesabi h ON h.kimlik = k.sorumlu_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani DESC`, [id])).rows;
     const sureler = (await b.db.query(`SELECT s.tur, s.baslangic, s.bitis + make_interval(secs => ${DURAK_SN}) AS bitis, s.kaydirma_notu, s.tamamlanma, s.baslangic_olayi, s.sure_birimi FROM dosya_sure s WHERE s.dosya_ref = $1 OR s.talep_ref = $2 ORDER BY s.bitis`, [id, d.talep_ref])).rows.map((r) => ({ ...r, renk: r.tamamlanma ? null : sureRengi(new Date(r.baslangic), new Date(r.bitis)) }));
     { const { sozlesmeHedefi } = await import('./kalan.js'); for (const s of sureler as Record<string, unknown>[]) s.sozlesme = await sozlesmeHedefi(b.db, id, String(s.tur)); } // YG-147
-    const konular = (await b.db.query(`SELECT k.kimlik, k.konu_no, k.baslik, k.statu, k.hedef_tarih::text, k.asama, k.kabul_olcutu, k.gerekli_belge, h.ad_soyad AS sahip, (k.statu NOT IN ('Kapalı','Geçersiz') AND k.hedef_tarih < current_date) AS gecikmis FROM acik_konu k JOIN kullanici_hesabi h ON h.kimlik = k.sahip_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani`, [id])).rows;
+    const konular = (await b.db.query(`SELECT k.kimlik, k.konu_no, k.baslik, k.statu, k.hedef_tarih::text, k.asama, k.kabul_olcutu, k.gerekli_belge, k.konu_turu, h.ad_soyad AS sahip, (k.statu NOT IN ('Kapalı','Geçersiz') AND k.hedef_tarih < current_date) AS gecikmis FROM acik_konu k JOIN kullanici_hesabi h ON h.kimlik = k.sahip_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani`, [id])).rows;
     const iliskiler = (await b.db.query(`SELECT i.tur, i.gerekce, CASE WHEN i.kaynak_ref = $1 THEN h.dosya_no ELSE k.dosya_no END AS dosya_no FROM dosya_iliskisi i JOIN dosya k ON k.kimlik = i.kaynak_ref JOIN dosya h ON h.kimlik = i.hedef_ref WHERE i.kaynak_ref = $1 OR i.hedef_ref = $1`, [id])).rows;
     const izinler = await kullaniciIzinleri(b.db, o.kullanici);
     // YG-105: müşteri (yat sahibi) kaydındaki risk olayı ve vefat işareti dosya ekranında gösterilir.
@@ -616,12 +621,23 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.kabulOlcutu?.trim()) return y.code(400).send({ hata: 'Kabul ölçütü zorunludur; görevin ne zaman tamamlanmış sayılacağını yazınız.' }); // YG-057
     if (!g.sahip || !(await dosyaErisimi(b.db, g.sahip, id))) return y.code(400).send({ hata: 'Açık konu için sahibi dosya ekibinden seçmenizi rica ederiz.' });
     if (!g.hedefTarih) return y.code(400).send({ hata: 'Hedef tarih zorunludur.' });
+    // YG-031: belge ve eğitim işleri konu türüdür ve Planlı sınıfındadır.
+    const konuTuru = (i.body as { konuTuru?: string }).konuTuru ?? 'İş';
+    if (!['İş', 'Belge', 'Eğitim'].includes(konuTuru)) return y.code(400).send({ hata: 'Konu türü İş, Belge veya Eğitim olmalıdır.' });
+    if (konuTuru !== 'İş') g.oncelik = 'Planlı';
+    // YG-1361: dosya önceliğinden yüksek öncelik gerekçe ister; aynı kişi bir dosyada en çok 3 açık konuyu dosyanın üstünde işaretleyebilir.
+    const SIRA: Record<string, number> = { Kritik: 3, Yüksek: 2, Normal: 1, Planlı: 0 };
+    const ust = g.oncelik && SIRA[g.oncelik] !== undefined && SIRA[g.oncelik]! > (SIRA[d.oncelik] ?? 1);
+    if (ust && !(i.body as { oncelikGerekcesi?: string }).oncelikGerekcesi?.trim()) return y.code(400).send({ hata: 'Dosya önceliğinden yüksek öncelik için gerekçe yazınız.' });
+    if (ust && konuTuru === 'İş' && (await b.db.query(`SELECT count(*)::int n FROM acik_konu WHERE dosya_ref = $1 AND olusturan_ref = $2 AND statu NOT IN ('Kapalı', 'Geçersiz') AND CASE oncelik WHEN 'Kritik' THEN 3 WHEN 'Yüksek' THEN 2 WHEN 'Normal' THEN 1 ELSE 0 END > $3`, [id, o.kullanici, SIRA[d.oncelik] ?? 1])).rows[0].n >= 3) return y.code(409).send({ hata: 'Bu dosyada dosya önceliğinin üstünde işaretlediğiniz 3 açık konu bulunmaktadır; yeni konuyu dosya önceliğiyle açınız.' });
+    if (ust) g.aciklama = [g.aciklama?.trim(), `Öncelik gerekçesi: ${(i.body as { oncelikGerekcesi: string }).oncelikGerekcesi.trim()}`].filter(Boolean).join(' · ');
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
 
       // YG-057: görev açıldığı dosya aşamasına bağlanır; öncelik verilmezse dosyanın önceliğidir.
       const r = (await c.query(`INSERT INTO acik_konu (konu_no, dosya_ref, baslik, aciklama, sahip_ref, hedef_tarih, olusturan_ref, asama, oncelik, kabul_olcutu, gerekli_belge) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik, konu_no`, [await altNumara(c, d.dosya_no, 'AK'), id, g.baslik.trim(), g.aciklama?.trim() || null, g.sahip, g.hedefTarih, o.kullanici, d.asama ?? null, ['Kritik', 'Yüksek', 'Normal', 'Planlı'].includes(g.oncelik ?? '') ? g.oncelik : d.oncelik, g.kabulOlcutu.trim(), g.gerekliBelge?.trim() || null])).rows[0];
+      await c.query(`UPDATE acik_konu SET konu_turu = $2 WHERE kimlik = $1`, [r.kimlik, konuTuru]); // YG-031
       await bildir(c, { olay: `konu:${r.kimlik}`, kullanicilar: [g.sahip].filter((x) => x !== o.kullanici), baslik: `Açık Konu: ${g.baslik.trim()}`, ozet: d.dosya_no, eposta: true });
       await c.query('COMMIT');
       return r;
@@ -629,16 +645,45 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   s.post('/konu/:id/durum', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { statu?: string; kanit?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { statu?: string; kanit?: string; gerekce?: string };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT * FROM acik_konu WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
-    const gecer: Record<string, string[]> = { 'Açık': ['İşlemde', 'Geçersiz'], 'İşlemde': ['Doğrulamada', 'Geçersiz'], 'Doğrulamada': ['Kapalı', 'İşlemde'] };
+    const gecer: Record<string, string[]> = { 'Açık': ['İşlemde', 'Geçersiz'], 'İşlemde': ['Doğrulamada', 'Geçersiz'], 'Doğrulamada': ['Kapalı', 'İşlemde'], 'Kapalı': ['İşlemde'] };
+    // YG-153: kapanmış konu ayrı geçişle ve gerekçeyle yeniden açılır; kapanış bilgisi silinmez, iz kaydında kalır.
+    if (k.statu === 'Kapalı' && g.statu === 'İşlemde') {
+      if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Yeniden açma gerekçesi zorunludur.' });
+      await b.db.query(`UPDATE acik_konu SET statu = 'İşlemde', kapanis_zamani = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [id]);
+      await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Açık Konu Yeniden Açıldı', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, eski: { statu: 'Kapalı', kanit: k.kapanis_kaniti, dogrulayan: k.dogrulayan_ref }, yeni: { statu: 'İşlemde' }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      if (k.sahip_ref !== o.kullanici) await bildir(b.db, { olay: `konu-yeniden:${id}:${Date.now()}`, kullanicilar: [k.sahip_ref], baslik: `Açık Konu Yeniden Açıldı: ${k.baslik}`, ozet: g.gerekce.trim() });
+      return { tamam: true };
+    }
     if (!gecer[k.statu]?.includes(g.statu ?? '')) return y.code(409).send({ hata: 'Bu geçiş mevcut durumda uygun değildir.' });
     if (g.statu === 'Doğrulamada' && !g.kanit?.trim()) return y.code(400).send({ hata: 'Kapanış kanıtı zorunludur.' });
     if (g.statu === 'Kapalı' && k.sahip_ref === o.kullanici) return y.code(403).send({ hata: 'Kapanış bağımsız yeniden kontrolle yapılır; konunun başka bir kişi tarafından kapatılmasını rica ederiz.' });
     await b.db.query(`UPDATE acik_konu SET statu = $2, kapanis_kaniti = coalesce($3, kapanis_kaniti), dogrulayan_ref = CASE WHEN $2 = 'Kapalı' THEN $4 ELSE dogrulayan_ref END, kapanis_zamani = CASE WHEN $2 = 'Kapalı' THEN now() END, guncelleme_zamani = now() WHERE kimlik = $1`, [id, g.statu, g.kanit?.trim() || null, o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Açık Konu Durumu', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, eski: { statu: k.statu }, yeni: { statu: g.statu }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
+  // YG-1440: teknik personel (Teknik Uzman, Sorumlu Teknik Uzman, Teknik Yönetici, Teknik Müdür) dosya ve yat belgelerini inceler, Uygun / Eksik işaretler; yüklemez.
+  const TEKNIK = ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Yönetici', 'Teknik Müdür'];
+  s.get('/dosya/:id/belge-inceleme', oturumlu, async (i, y) => {
+    const d = await dosyaGetir((i.params as { id: string }).id, i.oturum!.kullanici); if (!d) return yok(y);
+    const teknik = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[])`, [i.oturum!.kullanici, TEKNIK])).rowCount);
+    const belgeler = (await b.db.query(`SELECT b.kimlik, b.ad, b.belge_turu, b.bag_turu, b.inceleme_sonucu, b.inceleme_notu, b.inceleme_zamani FROM belge b WHERE (b.bag_turu = 'Dosya' AND b.bag_kimligi = $1::text) OR (b.bag_turu = 'Yat' AND b.bag_kimligi = $2::text) ORDER BY b.olusturma_zamani DESC LIMIT 100`, [d.kimlik, d.yat_ref])).rows;
+    return { teknik, belgeler };
+  });
+  s.post('/dosya/:id/belge/:belge/inceleme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id, belge } = i.params as { id: string; belge: string }; const g = (i.body ?? {}) as { sonuc?: string; not?: string };
+    const d = await dosyaGetir(id, o.kullanici); if (!d || !UUID.test(belge)) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[])`, [o.kullanici, TEKNIK])).rowCount) return y.code(403).send({ hata: 'Belge incelemesini teknik personel yapar.' });
+    if (!['Uygun', 'Eksik'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Uygun veya Eksik seçiniz.' });
+    if (g.sonuc === 'Eksik' && !g.not?.trim()) return y.code(400).send({ hata: 'Eksik olan hususu yazınız.' });
+    const r = await b.db.query(`UPDATE belge SET inceleme_sonucu = $3, inceleme_notu = $4, inceleyen_ref = $5, inceleme_zamani = now() WHERE kimlik = $1 AND ((bag_turu = 'Dosya' AND bag_kimligi = $2::text) OR (bag_turu = 'Yat' AND bag_kimligi = $6::text)) RETURNING ad`, [belge, d.kimlik, g.sonuc, g.not?.trim() || null, o.kullanici, d.yat_ref]);
+    if (!r.rowCount) return yok(y);
+    if (g.sonuc === 'Eksik' && d.dosya_sorumlusu_ref) await bildir(b.db, { olay: `belge-eksik:${belge}:${Date.now()}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Belge Eksik: ${r.rows[0].ad}`, ozet: g.not!.trim() });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İncelemesi', nesneTuru: 'Belge', nesneKimligi: belge, yeni: { sonuc: g.sonuc }, gerekce: g.not?.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
 
@@ -649,10 +694,13 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (q.length < 2) return { dosyalar: [] };
     const { rows } = await b.db.query(
       `SELECT d.kimlik, d.dosya_no, d.statu, d.oncelik, y.yat_adi, a.kimlik AS ana_kimlik, a.dosya_no AS ana_no, s.sigorta_hasar_dosya_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya a ON a.kimlik = d.birlestirilen_ana_dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik
-        WHERE tr_norm(d.dosya_no) LIKE '%' || tr_norm($1) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($1) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($1) || '%' ORDER BY d.acilis_tarihi DESC LIMIT 30`, [q]);
+        WHERE tr_norm(d.dosya_no) LIKE '%' || tr_norm($1) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($1) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($1) || '%' OR EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND tr_norm(t.kisi_adi_soyadi) LIKE '%' || tr_norm($1) || '%') ORDER BY d.acilis_tarihi DESC LIMIT 30`, [q]); // YG-1374: kişi adıyla da bulunur
     const izinli = [];
     for (const r of rows) if (await dosyaErisimi(b.db, o.kullanici, r.ana_kimlik ?? r.kimlik)) izinli.push(r);
-    return { dosyalar: izinli };
+    // YG-1374: firma sonuçları yalnız firma sicili yetkisi olana.
+    const { kullaniciIzinleri } = await import('./yetki.js');
+    const firmalar = (await kullaniciIzinleri(b.db, o.kullanici)).includes('firma.kayit') ? (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, ag_statusu FROM kurulus WHERE tr_norm(ticari_unvan) LIKE '%' || tr_norm($1) || '%' OR sicil_no ILIKE $1 || '%' ORDER BY ticari_unvan LIMIT 20`, [q])).rows : [];
+    return { dosyalar: izinli, firmalar };
   });
 
 }

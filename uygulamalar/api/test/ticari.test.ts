@@ -304,4 +304,19 @@ describe('fiş aslı (YG-1622)', () => {
     expect(yillikIzinHakki('2026-01-10', '2026-12-01')).toBe(0); expect(yillikIzinHakki('2025-01-10', '2026-01-10')).toBe(14);
     expect(yillikIzinHakki('2020-01-10', '2026-01-10')).toBe(20); expect(yillikIzinHakki('2011-01-10', '2026-01-10')).toBe(26); expect(yillikIzinHakki('2021-01-10', '2026-01-10')).toBe(14);
   });
+  it('tevkifatlı faturalar aylık listelenir ve KDV iade dökümü alınır (YG-882)', async () => {
+    const u = '/api/muhasebe/tevkifatli?ay=2026-10';
+    expect((await o.ist('GET', u, await o.gir('ds'))).statusCode).toBe(404);
+    const c = await o.gir('mfm'); expect((await o.ist('GET', '/api/muhasebe/tevkifatli?ay=10-2026', c)).statusCode).toBe(400);
+    const r = await o.ist('GET', u, c); expect(r.statusCode, r.body).toBe(200); expect(Array.isArray(r.json().faturalar)).toBe(true);
+    const csv = await o.ist('GET', `${u}&bicim=csv`, c); expect(csv.statusCode).toBe(200); expect(csv.headers['content-type']).toContain('text/csv'); expect(csv.body).toContain('Tevkifat (EUR)');
+  });
+  it('masraf karar sırası: ilk amir, belge kontrolü, son makam; Yöneticinin kendi fişini Müdür Yardımcısı kontrol eder (YG-1621)', async () => {
+    const rid = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
+    const M = { tur: 'Yemek', tarih: new Date(Date.now() - 86_400_000).toISOString().slice(0, 10), tutarTl: 100, kur: 40, miktar: 1 };
+    const a = (await o.ist('POST', '/api/masraf', await o.gir('ds'), { ...M, belgeOzeti: `Z1-${Math.random()}` })).json().kimlik as string;
+    expect((await o.kart('Masraf Fişi', a)).zincir).toEqual([await rid('Muhasebe ve Finans Yöneticisi'), await rid('Operasyon Müdürü')]);
+    const b2 = (await o.ist('POST', '/api/masraf', await o.gir('my'), { ...M, belgeOzeti: `Z2-${Math.random()}` })).json().kimlik as string;
+    expect((await o.kart('Masraf Fişi', b2)).zincir).toEqual([await rid('Muhasebe ve Finans Müdür Yardımcısı'), await rid('Muhasebe ve Finans Müdürü')]);
+  });
 });

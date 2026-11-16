@@ -373,6 +373,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const sur = await yururlukSurumu(b.db);
     for (const [n, x] of g.satirlar.entries()) {
       if (!x.aciklama?.trim() || !(Number(x.miktar) > 0) || !x.birim?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda açıklama, miktar ve birim zorunludur.` });
+      if (/ekip\s*[-·x×]?\s*saat/i.test(x.birim)) return y.code(400).send({ hata: `${n + 1}. satırda ekip-saat birimi kullanılmaz; ekibin bir saatini saat birimiyle yazınız.` }); // YG-1708
       if (!NITELIK.includes(x.nitelik ?? '')) return y.code(400).send({ hata: `${n + 1}. satırda işin niteliğini seçiniz.` });
       if (!x.olcut?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda kabul ölçütünü yazınız; ölçütsüz iş fiyatlanmaz ve atanmaz.` }); // YG-137
       if (!BEDEL.includes(x.bedel ?? '')) return y.code(400).send({ hata: `${n + 1}. satırda bedel türünü seçiniz.` });

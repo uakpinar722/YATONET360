@@ -58,8 +58,9 @@ export function etikDenetimYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/ic-denetim', oturumlu, async (i, y) => {
     const o = i.oturum!; const r = await roller(o.kullanici); const tum = r.includes(IDM) || r.includes(CEO); if (!tum && !r.includes(ID)) return yok(y);
-    const l = (await b.db.query(`SELECT d.kimlik, d.denetim_no, d.surec, d.kapsam, d.durum, d.vekaleten, (SELECT json_agg(json_build_object('sinif', x.sinif, 'tanim', x.tanim) ORDER BY x.zaman) FROM ic_denetim_bulgu x WHERE x.denetim_ref = d.kimlik) bulgular FROM ic_denetim d WHERE $1 OR d.denetci_ref = $2 ORDER BY d.durum = 'Sonuçlandı', d.olusturma_zamani DESC LIMIT 100`, [tum, o.kullanici])).rows;
-    return { acabilir: r.includes(ID) || r.includes(IDM), denetimler: l };
+    const l = (await b.db.query(`SELECT d.kimlik, d.denetim_no, d.surec, d.kapsam, d.durum, d.vekaleten, d.denetci_ref, d.erisim_bitis::text erisim_bitis, d.erisim_amaci, (SELECT json_agg(json_build_object('sinif', x.sinif, 'tanim', x.tanim) ORDER BY x.zaman) FROM ic_denetim_bulgu x WHERE x.denetim_ref = d.kimlik) bulgular FROM ic_denetim d WHERE $1 OR d.denetci_ref = $2 ORDER BY d.durum = 'Sonuçlandı', d.olusturma_zamani DESC LIMIT 100`, [tum, o.kullanici])).rows;
+    const denetciler = r.includes(IDM) ? (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = $1 ORDER BY h.ad_soyad`, [ID])).rows : [];
+    return { acabilir: r.includes(ID) || r.includes(IDM), atayabilir: r.includes(IDM), denetciler, ben: o.kullanici, denetimler: l };
   });
   // YG-1673: açılışta çıkar çatışması beyanı; son 12 ayda süreçte görev alan denetleyemez.
   s.post('/ic-denetim', oturumlu, async (i, y) => {
@@ -72,6 +73,28 @@ export function etikDenetimYollari(s: FastifyInstance, b: Baglam) {
     return { kimlik: t.kimlik, no };
   });
   const denetciMi = async (k: string, id: string) => (await b.db.query(`SELECT * FROM ic_denetim WHERE kimlik = $1 AND denetci_ref = $2 AND durum = 'Açık'`, [id, k])).rows[0];
+  // YG-1679: İç Denetim Müdürü denetçiyi atar; erişim atamayla kendiliğinden açılır, bitiş tarihine kadar ve denetim açıkken sürer, salt okunurdur.
+  s.post('/ic-denetim/:id/ata', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { denetci?: string; bitis?: string; amac?: string };
+    if (!UUID.test(id) || !(await roller(o.kullanici)).includes(IDM)) return yok(y);
+    const d = (await b.db.query(`SELECT denetim_no FROM ic_denetim WHERE kimlik = $1 AND durum = 'Açık'`, [id])).rows[0]; if (!d) return yok(y);
+    const bugun = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+    const enGec = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+    if (!g.denetci || !/^\d{4}-\d{2}-\d{2}$/.test(g.bitis ?? '') || g.bitis! < bugun || g.bitis! > enGec || !g.amac?.trim()) return y.code(400).send({ hata: 'Denetçi, erişim bitiş tarihi (en çok 90 gün) ve denetim amacı zorunludur.' });
+    if (!(await roller(g.denetci)).includes(ID)) return y.code(400).send({ hata: 'Seçilen kişi İç Denetçi değildir.' });
+    await b.db.query(`UPDATE ic_denetim SET denetci_ref = $2, erisim_bitis = $3, erisim_amaci = $4, atayan_ref = $5 WHERE kimlik = $1`, [id, g.denetci, g.bitis, g.amac.trim(), o.kullanici]);
+    await bildir(b.db, { olay: `ic-denetim-ata:${id}:${g.denetci}:${g.bitis}`, kullanicilar: [g.denetci], baslik: `${d.denetim_no} · Denetçi Olarak Atandınız`, ozet: `Amaç: ${g.amac.trim()} · Erişim bitişi: ${g.bitis!.split('-').reverse().join('.')}` });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Denetçi Ataması', nesneTuru: 'İç Denetim', nesneKimligi: id, yeni: { denetci: g.denetci, bitis: g.bitis, amac: g.amac.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  s.get('/ic-denetim/:id/izler', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const d = UUID.test(id) ? await denetciMi(o.kullanici, id) : null;
+    const bugun = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
+    if (!d || (d.erisim_bitis && new Date(d.erisim_bitis).toISOString().slice(0, 10) < bugun)) return y.code(403).send({ hata: 'Denetim erişiminiz bulunmamaktadır veya süresi dolmuştur.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Denetim Erişimi', nesneTuru: 'İç Denetim', nesneKimligi: id, gerekce: d.erisim_amaci ?? d.kapsam, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return (await b.db.query(`SELECT d.olay_zamani, d.eylem, d.nesne_turu, d.sonuc, d.gerekce, k.ad_soyad aktor FROM denetim_izi d LEFT JOIN kullanici_hesabi k ON k.kimlik = d.aktor_ref ORDER BY d.kimlik DESC LIMIT 200`)).rows;
+  });
   s.post('/ic-denetim/:id/bulgu', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sinif?: string; tanim?: string };
     if (!UUID.test(id) || !(await denetciMi(o.kullanici, id))) return yok(y);

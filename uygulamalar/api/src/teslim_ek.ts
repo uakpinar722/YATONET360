@@ -120,12 +120,31 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  // YG-415: teslim bildiriminden önce yetkili alıcı (aktif Yat Sahibi veya yetki kaydı olan Yetkili Temsilci) ayrı adımda doğrulanır.
+  s.get('/dosya/:id/teslim-alicilari', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT t.kimlik, t.taraf_rolu, t.kisi_adi_soyadi, EXISTS (SELECT 1 FROM yetki_kaydi k WHERE k.dosya_tarafi_ref = t.kimlik) yetki_kaydi, (SELECT json_build_object('yontem', d.yontem, 'zaman', d.zaman) FROM teslim_alici_dogrulama d WHERE d.dosya_tarafi_ref = t.kimlik ORDER BY d.zaman DESC LIMIT 1) dogrulama FROM dosya_tarafi t WHERE t.dosya_ref = $1 AND t.aktif AND t.taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci') ORDER BY t.taraf_rolu DESC, t.kisi_adi_soyadi`, [id])).rows;
+  });
+  s.post('/dosya/:id/teslim-alici-dogrula', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { alici?: string; yontem?: string; aciklama?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const t = UUID.test(g.alici ?? '') ? (await b.db.query(`SELECT kimlik, taraf_rolu, kisi_adi_soyadi, EXISTS (SELECT 1 FROM yetki_kaydi k WHERE k.dosya_tarafi_ref = dosya_tarafi.kimlik) yetkili FROM dosya_tarafi WHERE kimlik = $1 AND dosya_ref = $2 AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci')`, [g.alici, id])).rows[0] : undefined;
+    if (!t) return y.code(400).send({ hata: 'Teslim alacak kişiyi dosyadaki yat sahibi veya yetkili temsilciler arasından seçiniz.' });
+    if (!['Kimlik Belgesi', 'Yetki Belgesi', 'Portal Hesabı', 'Kayıtlı Telefonla Geri Arama'].includes(g.yontem ?? '')) return y.code(400).send({ hata: 'Doğrulama yöntemini seçiniz.' });
+    if (t.taraf_rolu === 'Yetkili Temsilci' && !t.yetkili) return y.code(409).send({ hata: 'Yetkili temsilcinin yetki kaydı doğrulanmadan teslim alıcısı olarak onaylanamaz.' });
+    await b.db.query(`INSERT INTO teslim_alici_dogrulama (dosya_ref, dosya_tarafi_ref, yontem, aciklama, dogrulayan_ref) VALUES ($1,$2,$3,$4,$5)`, [id, t.kimlik, g.yontem, g.aciklama?.trim() || null, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teslim Alıcısı Doğrulandı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { alici: t.kisi_adi_soyadi, rol: t.taraf_rolu, yontem: g.yontem }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   // YG-481: hazır bildirimi BLD-12; 7 takvim günü sayılır.
   s.post('/dosya/:id/teslime-hazir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = await dosya(id); const t = await sahip(id);
     if (d.teslime_hazir_zamani) return y.code(409).send({ hata: 'Hazır bildirimi yapılmıştır.' });
+    if (!(await b.db.query(`SELECT 1 FROM teslim_alici_dogrulama WHERE dosya_ref = $1`, [id])).rowCount) return y.code(409).send({ hata: 'Teslim bildiriminden önce yetkili alıcıyı doğrulayınız.' }); // YG-415
     const son = new Date(Date.now() + TESLIM_GUN * 86_400_000); const gs = son.toISOString().slice(0, 10); const tr = gunAy(son);
     return islem(async (c) => {
       await c.query(`UPDATE dosya SET teslime_hazir_zamani = now(), teslim_son_tarihi = $2 WHERE kimlik = $1`, [id, gs]);

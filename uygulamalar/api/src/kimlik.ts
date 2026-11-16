@@ -90,12 +90,19 @@ export function tamOturumGerekli(b: Baglam, adimSerbest = false) {
   };
 }
 
+/** YG-1157: deneme sınırı aşımı ve hesap bekletmesi güvenlik ekibine (Sistem Yöneticisi, Bilgi İşlem Müdürü) bildirilir; aynı olay bir kez bildirilir. */
+export async function guvenlikEkibineBildir(db: Pool, olay: string, baslik: string, ozet: string) {
+  const { bildir } = await import('./bildirim.js');
+  const kisiler = (await db.query(`SELECT DISTINCT a.kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi IN ('Sistem Yöneticisi', 'Bilgi İşlem Müdürü')`)).rows.map((r) => r.kullanici_ref as string);
+  if (kisiler.length) await bildir(db, { olay, kullanicilar: kisiler, baslik, ozet, oncelik: 'Yüksek' });
+}
 /** Hatalı deneme sayısını artırır; eşikte bekletir. Parola ve kod hataları aynı sayaçtadır (YG-1155). */
 async function hataIsle(b: Baglam, kullanici: string, eylem: string, i: FastifyRequest) {
   const { rows } = await b.db.query(`UPDATE kullanici_hesabi SET basarisiz_giris_sayisi = basarisiz_giris_sayisi + 1 WHERE kimlik = $1 RETURNING basarisiz_giris_sayisi`, [kullanici]);
   const dk = beklemeDakikasi(rows[0].basarisiz_giris_sayisi);
   if (dk) await b.db.query(`UPDATE kullanici_hesabi SET kilit_bitis_zamani = now() + make_interval(mins => $2) WHERE kimlik = $1`, [kullanici, dk]);
   await izYaz(b.db, { aktor: kullanici, eylem, sonuc: 'Başarısız', adres: i.ip, iliski: i.id, gerekce: dk ? `${dk} dakika bekletildi` : undefined });
+  if (dk) await guvenlikEkibineBildir(b.db, `guvenlik-kilit:${kullanici}:${rows[0].basarisiz_giris_sayisi}`, '⚠ Hesap Bekletildi', `${kullanici} hesabı ${rows[0].basarisiz_giris_sayisi} hatalı denemeden sonra ${dk} dakika bekletildi · Adres: ${i.ip}`);
 }
 
 function kalanMetni(bitis: Date) {
@@ -113,6 +120,7 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
       `SELECT count(*)::int n FROM denetim_izi WHERE kaynak_adres = $1 AND sonuc = 'Başarısız' AND eylem IN ('Giriş Denemesi', 'Doğrulama Kodu Denemesi') AND olay_zamani > now() - make_interval(mins => $2)`, [i.ip, KURAL.adresDenemePenceresiDk]);
     if (hiz.rows[0].n >= KURAL.adresDenemeSiniri) {
       await izYaz(b.db, { eylem: 'Adres Bazlı Deneme Sınırı', sonuc: 'Başarısız', adres: i.ip, iliski: i.id });
+      await guvenlikEkibineBildir(b.db, `guvenlik-adres:${i.ip}:${new Date().toISOString().slice(0, 13)}`, '⚠ Adres Bazlı Deneme Sınırı Aşıldı', `${i.ip} adresinden ${hiz.rows[0].n} başarısız deneme; girişler geçici olarak kesildi.`);
       return y.code(429).send({ hata: 'Çok fazla deneme yapıldı; birkaç dakika sonra yeniden deneyiniz.' });
     }
     const n = kimlikNormalle(kimlik);

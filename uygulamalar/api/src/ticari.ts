@@ -368,6 +368,21 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-875, YG-884, YG-900, K-193: fatura no, tarih ve kuru muhasebeden gelince Ticari Sorumlu girer; kur önceki iş günü TCMB satış; TL tutar nihai; vade sigortada 30 gün.
   // YG-1025: Muhasebe Hizmeti muhasebeye iletilen proformaları ve faturalandırdıklarını görür (maliyet ve firma bilgisi yok).
+  // YG-882: KDV tevkifatlı faturalar ayrı listelenir; aylık KDV iade dosyası için CSV dökümü alınır (Muhasebe Hizmeti, Muhasebe ve Finans Müdürü/Müdür Yardımcısı, Ticari Sorumlu).
+  s.get('/muhasebe/tevkifatli', oturumlu, async (i, y) => {
+    const k = i.oturum!.kullanici; const q = i.query as { ay?: string; bicim?: string };
+    const yetkili = (await muhasebeHizmetiMi(b.db, k)) || (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[])`, [k, [MFM, MFMY, 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)']])).rowCount;
+    if (!yetkili) return yok(y);
+    if (!/^\d{4}-\d{2}$/.test(q.ay ?? '')) return y.code(400).send({ hata: 'Ayı YYYY-AA biçiminde seçiniz.' });
+    const l = (await b.db.query(`SELECT m.fatura_no, m.fatura_tarihi::text fatura_tarihi, d.dosya_no, m.muhatap, m.kdv_matrahi_eur, m.kdv_orani, m.kdv_eur, m.tevkifat_orani, m.tevkifat_eur, m.kur, m.toplam_tl, m.kdv_tl FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.kdv_durumu = 'KDV tevkifatlı' AND m.fatura_no IS NOT NULL AND to_char(m.fatura_tarihi, 'YYYY-MM') = $1 ORDER BY m.fatura_tarihi, m.fatura_no`, [q.ay])).rows;
+    if (q.bicim !== 'csv') return { ay: q.ay, faturalar: l, toplamTevkifatEur: Math.round(l.reduce((s, x) => s + Number(x.tevkifat_eur), 0) * 100) / 100 };
+    const sayi = (v: unknown) => (v === null || v === undefined ? '' : Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    const h = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const satir = [['Fatura No', 'Fatura Tarihi', 'Dosya No', 'Muhatap', 'KDV Matrahı (EUR)', 'KDV Oranı', 'KDV (EUR)', 'Tevkifat Oranı', 'Tevkifat (EUR)', 'Kur', 'Toplam (TL)', 'KDV (TL)'].map(h).join(';'),
+      ...l.map((x) => [x.fatura_no, x.fatura_tarihi.split('-').reverse().join('.'), x.dosya_no, x.muhatap, sayi(x.kdv_matrahi_eur), x.kdv_orani ?? '', sayi(x.kdv_eur), x.tevkifat_orani ?? '', sayi(x.tevkifat_eur), x.kur ?? '', sayi(x.toplam_tl), sayi(x.kdv_tl)].map(h).join(';'))];
+    await izYaz(b.db, { aktor: k, oturum: i.oturum!.oturum, eylem: 'KDV İade Dökümü', nesneTuru: 'Rapor', nesneKimligi: `tevkifat:${q.ay}`, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return y.type('text/csv; charset=utf-8').header('Content-Disposition', `attachment; filename="kdv-tevkifat-${q.ay}.csv"`).send('\uFEFF' + satir.join('\r\n'));
+  });
   s.get('/muhasebe/proformalar', oturumlu, async (i, y) => {
     if (!(await muhasebeHizmetiMi(b.db, i.oturum!.kullanici))) return yok(y);
     return (await b.db.query(`SELECT m.kimlik, m.proforma_no, d.dosya_no, m.muhatap, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.durum, m.fatura_no, m.fatura_tarihi::text AS fatura_tarihi FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.durum = ANY($1) ORDER BY (m.durum = 'Muhasebeye İletildi') DESC, m.proforma_no DESC LIMIT 200`, [MUHASEBE_GORUR])).rows;
@@ -644,6 +659,15 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  /** YG-1621: ilk amir teyidi → belge kontrolü (Muhasebe ve Finans Yöneticisi; kendi fişinde Müdür Yardımcısı; ara kademede "Onaya Gönder" = Uygundur) → son karar makamı. İlk amir son makamsa belge kontrolü önce gelir ve amir bir kez karar verir. */
+  async function masrafZinciri(c: PoolClient, kullanici: string): Promise<string[]> {
+    const { ihtiyacZinciri } = await import('./idari_talep.js');
+    const z = await ihtiyacZinciri(c, kullanici); const son = z[z.length - 1]!; const ilk = z.length > 1 ? z[0]! : null;
+    const my = await rolId(c, 'Muhasebe ve Finans Yöneticisi');
+    const kontrol = (await rolSahipleri(c, my)).includes(kullanici) ? await rolId(c, MFMY) : my;
+    const sira = [ilk, (await rolSahipleri(c, kontrol)).length ? kontrol : null, son].filter((x): x is string => Boolean(x));
+    return [...new Set(sira)];
+  }
   s.post('/masraf', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string; belgeTuru?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
@@ -663,10 +687,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM personel_masraf_fisi WHERE personel_ref = $1 AND belge_ozeti = $2`, [o.kullanici, g.belgeOzeti.trim()])).rowCount) return y.code(409).send({ hata: 'Bu belge daha önce girilmiştir.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO personel_masraf_fisi (personel_ref, masraf_turu, fis_tarihi, tutar_tl, kur, tutar_eur, odenecek_eur, miktar, belge_ref, belge_ozeti, belge_turu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11, 'Kağıt Fiş')) RETURNING kimlik`, [o.kullanici, g.tur, g.tarih, g.tutarTl, g.kur, eur, od, g.miktar ?? 1, g.belge ?? null, g.belgeOzeti!.trim(), g.belgeTuru ?? null])).rows[0];
-      const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
-      const zincir = [await onayMakami(c, rl.kimlik)];
-      const my = await rolId(c, 'Muhasebe ve Finans Yöneticisi'); if ((await rolSahipleri(c, my)).length) zincir.push(my);
-      if (od > await parametre(c, 'masraf_tid_esik_eur')) zincir.push(await rolId(c, 'Ticari İşler Direktörü'));
+      const zincir = await masrafZinciri(c, o.kullanici);
+      if (od > await parametre(c, 'masraf_tid_esik_eur')) { const tid = await rolId(c, 'Ticari İşler Direktörü'); if (!zincir.includes(tid)) zincir.push(tid); }
       await kartAc(c, { tur: 'Masraf Fişi', baslik: `Masraf Fişi · ${g.tur}`, ozet: `${tutar(od)} EUR`, hazirlayan: o.kullanici, zincir, nesneTuru: 'Masraf', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, odenecek: od, kesilen: R2(eur - od) };
     });

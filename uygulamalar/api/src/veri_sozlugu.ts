@@ -9,7 +9,14 @@ const KOK = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const HUKUK = ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı'];
 type Alan = { modul: string; varlik: string; alan: string; teknik: string; aciklama: string; tip: string; bicim: string; zorunlu: string; liste: string; dogrulama: string; kaynak: string; sahip: string; sinif: string; kisisel: string; saklama: string; grup: string; ekran: string };
 let onbellek: Alan[] | null = null;
-const alanlar = () => (onbellek ??= JSON.parse(readFileSync(join(KOK, 'veri/sablon/alan_sozlugu.json'), 'utf-8')) as Alan[]);
+const oku = (f: string) => JSON.parse(readFileSync(join(KOK, 'veri/sablon', f), 'utf-8')) as Alan[];
+export const alanlar = () => (onbellek ??= [...oku('alan_sozlugu.json'), ...oku('alan_sozlugu_ek.json')]);
+/** YG-1173: her alanın ekran gösterim durumu alan tanımında tutulur; sistem alanları gösterilmez. */
+export const GOSTERIM = /^(Gösterilir|Gösterilmez|Yalnız |Yat sahibine )/;
+export const SISTEM_ALANLARI = ['kimlik', 'olusturma_zamani', 'guncelleme_zamani'];
+export function gosterimDenetimi(l = alanlar()): string[] {
+  return l.filter((a) => !GOSTERIM.test(a.ekran ?? '') || (SISTEM_ALANLARI.includes(a.teknik) && !a.ekran.startsWith('Gösterilmez'))).map((a) => `${a.varlik} · ${a.alan}`);
+}
 const kucuk = (s: string) => s.toLocaleLowerCase('tr-TR');
 
 /** YG-1243: ortak veri sözlüğü LGM-2026-014'ten okunur. YG-1179: kişisel veri envanteri varlık bazında; amaç ve hukuki sebep Hukuk tarafından girilir. */
@@ -22,7 +29,8 @@ export function veriSozluguYollari(s: FastifyInstance, b: Baglam) {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     const q = kucuk(String((i.query as { q?: string }).q ?? '').trim());
     if (q.length < 2) return y.code(400).send({ hata: 'En az iki harf yazınız.' });
-    const l = alanlar().filter((a) => kucuk(`${a.alan} ${a.teknik} ${a.varlik}`).includes(q));
+    const ekran = String((i.query as { ekran?: string }).ekran ?? '');
+    const l = alanlar().filter((a) => kucuk(`${a.alan} ${a.teknik} ${a.varlik}`).includes(q) && (!ekran || a.ekran.startsWith(ekran)));
     return { toplam: l.length, satirlar: l.slice(0, 100) };
   });
 

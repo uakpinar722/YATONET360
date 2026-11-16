@@ -217,6 +217,57 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // Ek II §1.8: vekil talebi katılımcının üst makamına gider; en geç toplantıdan 1 saat önce onaylanmalıdır.
+  // YG-1357: periyodik iş (gözden geçirme, yenileme vb.) tanımlarını Direktör, Genel Müdür Yardımcısı veya CEO girer; sahibi rol, periyodu ay olarak tutulur.
+  const tanimlayan = async (k: string) => (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.kademe IN ('Direktör', 'Genel Müdür Yardımcısı', 'CEO')`, [k])).rowCount;
+  s.get('/periyodik-isler', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = lgmDegil(o.grup, y); if (e) return e;
+    const isler = (await b.db.query(`SELECT p.kimlik, p.ad, r.rol_adi sahip_rol, p.periyot_ay, p.sonraki_tarih::text sonraki_tarih, p.aktif, EXISTS (SELECT 1 FROM rol_atamasi a WHERE a.rol_ref = p.sahip_rol_ref AND a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif') sahibim, (SELECT karar FROM periyodik_sonuc s WHERE s.periyodik_ref = p.kimlik ORDER BY s.zaman DESC LIMIT 1) son_karar FROM periyodik_is p JOIN rol r ON r.kimlik = p.sahip_rol_ref ORDER BY p.aktif DESC, p.sonraki_tarih`, [o.kullanici])).rows;
+    const tanimlar = Boolean(await tanimlayan(o.kullanici));
+    return { isler, tanimlar, kontroller: KONTROL, roller: tanimlar ? (await b.db.query(`SELECT rol_adi FROM rol WHERE rol_durumu = 'Aktif' AND kullanici_gruplari LIKE '%LGM%' ORDER BY rol_adi`)).rows.map((r) => r.rol_adi) : [] };
+  });
+  s.post('/periyodik-is', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; sahipRol?: string; periyotAy?: number; sonrakiTarih?: string };
+    if (!(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Periyodik iş tanımını Direktör, Genel Müdür Yardımcısı veya CEO girer.' });
+    const rol = (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1 AND rol_durumu = 'Aktif'`, [g.sahipRol ?? ''])).rows[0];
+    if (!g.ad?.trim() || !rol || !(Number.isInteger(Number(g.periyotAy)) && Number(g.periyotAy) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(g.sonrakiTarih ?? '')) return y.code(400).send({ hata: 'İş adı, sahibi rol, periyot (ay) ve ilk tarih zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM periyodik_is WHERE lower(ad) = lower($1)`, [g.ad.trim()])).rowCount) return y.code(409).send({ hata: 'Bu adla periyodik iş tanımlıdır.' });
+    const r = (await b.db.query(`INSERT INTO periyodik_is (ad, sahip_rol_ref, periyot_ay, sonraki_tarih) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.ad.trim(), rol.kimlik, Number(g.periyotAy), g.sonrakiTarih])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik İş Tanımı', nesneTuru: 'Periyodik İş', nesneKimligi: r.kimlik, yeni: g, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
+  // YG-1363: gözden geçirme kontrol listesiyle yürür ve sabit kararla kapanır; sonuç sahibi rol veya tanımlama yetkilisi tarafından girilir.
+  const KONTROL = ['Önceki dönem kararları uygulandı', 'Göstergeler hedefle karşılaştırıldı', 'Riskler ve uygunsuzluklar gözden geçirildi', 'Kaynak ve sorumluluklar yeterli'];
+  s.post('/periyodik-is/:id/sonuc', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; kontroller?: Record<string, string>; aciklama?: string; kosul?: string; yeniPeriyotAy?: number };
+    const p = UUID.test(id) ? (await b.db.query(`SELECT * FROM periyodik_is WHERE kimlik = $1 AND aktif`, [id])).rows[0] : undefined;
+    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!(await rolSahipleri(b.db, p.sahip_rol_ref)).includes(o.kullanici) && !(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Sonucu işin sahibi rol veya Direktör kademesi girer.' });
+    if (!['Sürdür', 'Koşullu Sürdür', 'Değiştir', 'Askıya Al'].includes(g.karar ?? '') || !g.aciklama?.trim()) return y.code(400).send({ hata: 'Karar ve açıklama zorunludur.' });
+    if (KONTROL.some((m) => !['Evet', 'Hayır', 'Uygulanamaz'].includes(g.kontroller?.[m] ?? ''))) return y.code(400).send({ hata: 'Kontrol listesindeki her maddeyi yanıtlayınız.' });
+    if (g.karar === 'Koşullu Sürdür' && !g.kosul?.trim()) return y.code(400).send({ hata: 'Koşulu yazınız.' });
+    if (g.karar === 'Değiştir' && !(Number.isInteger(Number(g.yeniPeriyotAy)) && Number(g.yeniPeriyotAy) > 0)) return y.code(400).send({ hata: 'Değişiklikte yeni periyodu (ay) giriniz.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`INSERT INTO periyodik_sonuc (periyodik_ref, donem_tarihi, karar, kontroller, aciklama, kosul, yeni_periyot_ay, karar_veren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, p.sonraki_tarih, g.karar, JSON.stringify(g.kontroller), g.aciklama.trim(), g.kosul?.trim() || null, g.karar === 'Değiştir' ? Number(g.yeniPeriyotAy) : null, o.kullanici]);
+      if (g.karar === 'Askıya Al') await c.query(`UPDATE periyodik_is SET aktif = false WHERE kimlik = $1`, [id]);
+      else await c.query(`UPDATE periyodik_is SET periyot_ay = coalesce($2, periyot_ay), sonraki_tarih = (sonraki_tarih + make_interval(months => coalesce($2, periyot_ay)))::date WHERE kimlik = $1`, [id, g.karar === 'Değiştir' ? Number(g.yeniPeriyotAy) : null]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Periyodik Gözden Geçirme' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik Gözden Geçirme Sonucu', nesneTuru: 'Periyodik İş', nesneKimligi: id, yeni: { karar: g.karar, kosul: g.kosul }, gerekce: g.aciklama.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+    return { tamam: true };
+  });
+  s.post('/periyodik-is/:id/durum', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { aktif?: boolean; gerekce?: string };
+    if (!(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Periyodik iş tanımını Direktör, Genel Müdür Yardımcısı veya CEO değiştirir.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
+    const r = await b.db.query(`UPDATE periyodik_is SET aktif = $2 WHERE kimlik::text = $1 RETURNING ad`, [id, Boolean(g.aktif)]);
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik İş Durumu', nesneTuru: 'Periyodik İş', nesneKimligi: id, yeni: { aktif: Boolean(g.aktif) }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   s.post('/toplanti/:id/vekil', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { vekil } = (i.body ?? {}) as { vekil?: string };
     if (!UUID.test(id)) return yok(y);

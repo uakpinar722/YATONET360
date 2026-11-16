@@ -80,6 +80,13 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   };
 
   // YG-438, YG-1571: yalnız taraf olunan dosyalar; hasar dosya no ve LGM no ayrı. Firma adı hiçbir yerde görünmez (YG-296).
+  // YG-1374: sigorta/eksper kullanıcısı yalnız kendi dosyalarında dosya no, hasar dosya no ve yat adıyla arar.
+  s.get('/sigorta/ara', oturumlu, async (i, y) => {
+    const o = i.oturum!; const sir = await sirketim(o.kullanici); const q = String((i.query as { q?: string }).q ?? '').trim();
+    if (!sir && !o.grup.startsWith('Sigorta')) return yok(y);
+    if (q.length < 2) return [];
+    return (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi, s.sigorta_hasar_dosya_no hasar_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE ${dosyaKosul} AND (tr_norm(d.dosya_no) LIKE '%' || tr_norm($3) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($3) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($3) || '%') ORDER BY d.acilis_tarihi DESC LIMIT 30`, [sir ?? '', o.kullanici, q])).rows;
+  });
   s.get('/sigorta/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const sir = await sirketim(o.kullanici);
     if (!sir && !o.grup.startsWith('Sigorta')) return y.code(403).send({ hata: 'Bu sayfa sigorta kullanıcılarına açıktır.' });
@@ -148,7 +155,7 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
       await c.query('BEGIN');
       const ilk = (await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü')))[0] ?? o.kullanici;
       const h = (await c.query(`SELECT ad_soyad, cep_telefonu, e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
-      const r = await ihbarKaydet(c, { kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: 'Sigorta Şirketi', yetkiDurumu: 'Doğrulandı', telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum, yatDurumu: 'Sigorta bildirimi', ihtiyac: g.ozet, yat: { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, sigortaci: sir, policeNo: g.policeNo, hasarNo: g.hasarNo.trim(), yatSahibi: g.sahipAd ? { ad: g.sahipAd, telefon: g.sahipTel } : undefined, cevaplar: {} }, o.kullanici, { ilkSorumlu: ilk });
+      const r = await ihbarKaydet(c, { kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: 'Sigorta Şirketi', yetkiDurumu: 'Doğrulandı', telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum, yatDurumu: 'Sigorta bildirimi', ihtiyac: [g.ozet.trim(), g.hizmet?.trim() && `İstenen hizmet: ${g.hizmet.trim()}`, g.yetkili?.trim() && `Dosya yetkilisi: ${g.yetkili.trim()}`].filter(Boolean).join(' · '), yat: { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, sigortaci: sir, policeNo: g.policeNo, hasarNo: g.hasarNo.trim(), yatSahibi: g.sahipAd ? { ad: g.sahipAd, telefon: g.sahipTel } : undefined, cevaplar: {} }, o.kullanici, { ilkSorumlu: ilk });
       if ('hata' in r) { await c.query('ROLLBACK'); return y.code(400).send({ hata: r.hata }); }
       await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
       await c.query('COMMIT');

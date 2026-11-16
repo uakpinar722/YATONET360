@@ -214,16 +214,26 @@ export async function sozlesmeHedefi(db: Db, dosya: string, tur: string): Promis
   return r ? `${Number(r.saat).toLocaleString('tr-TR')} saat` : 'Tanımsız';
 }
 
+/** YG-1246: düzeltme talebi açılabilen kayıtlar; tablo, görünen ad sütunu, alan → sütun ve onay makamı. */
+const DUZELTME: Record<string, { tablo: string; ad: string; onay: string; alanlar: Record<string, string>; bicim?: Record<string, RegExp> }> = {
+  Taraf: { tablo: 'taraf', ad: 'unvan_ad_soyad', onay: 'Operasyon Müdürü', alanlar: { 'Unvan / Ad Soyad': 'unvan_ad_soyad', 'Vergi Dairesi': 'vergi_dairesi', 'Vergi No': 'vergi_no', 'MERSİS No': 'mersis_no', Adres: 'adres', İl: 'il', Telefon: 'telefon', 'E-posta': 'eposta', 'KEP Adresi': 'kep_adresi' }, bicim: { vergi_no: /^[0-9]{10}$/ } },
+  Kuruluş: { tablo: 'kurulus', ad: 'ticari_unvan', onay: 'Firma Yönetimi Müdürü', alanlar: { 'Ticari Unvan': 'ticari_unvan', 'MERSİS No': 'mersis_no', Adres: 'adres', İl: 'il', İlçe: 'ilce', 'Kurumsal E-posta': 'kurumsal_eposta', 'Kurumsal Telefon': 'kurumsal_telefon', 'Web Adresi': 'web', 'Yetkili Kişi': 'yetkili_kisi' } },
+};
+async function duzeltmeTanimi(t: string) {
+  if (t !== 'Yat') return DUZELTME[t];
+  const { DUZELTILEBILIR } = await import('./yat.js');
+  return { tablo: 'yat', ad: 'yat_adi', onay: 'Operasyon Müdürü', alanlar: DUZELTILEBILIR, bicim: undefined as Record<string, RegExp> | undefined };
+}
 kapanisKaydet('Veri Düzeltme Talebi', async (c, k, karar, yapan) => { // YG-1246
   const t = (await c.query(`SELECT * FROM veri_duzeltme_talebi WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') { await c.query(`UPDATE veri_duzeltme_talebi SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]); return; }
   if (karar !== 'Onayla') return;
-  const { DUZELTILEBILIR } = await import('./yat.js'); const kol = DUZELTILEBILIR[t.alan]; if (!kol) return;
-  const eski = (await c.query(`SELECT ${kol}::text v FROM yat WHERE kimlik = $1`, [t.nesne_ref])).rows[0]?.v ?? null;
-  await c.query(`UPDATE yat SET ${kol} = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [t.nesne_ref, t.dogru_deger]);
+  const tn = await duzeltmeTanimi(t.nesne_turu); const kol = tn?.alanlar[t.alan]; if (!tn || !kol) return;
+  const eski = (await c.query(`SELECT ${kol}::text v FROM ${tn.tablo} WHERE kimlik = $1`, [t.nesne_ref])).rows[0]?.v ?? null;
+  await c.query(`UPDATE ${tn.tablo} SET ${kol} = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [t.nesne_ref, t.dogru_deger]);
   await c.query(`UPDATE veri_duzeltme_talebi SET durum = 'Onaylandı' WHERE kimlik = $1`, [t.kimlik]);
-  await izYaz(c, { aktor: yapan, eylem: 'Veri Düzeltme', nesneTuru: 'Yat', nesneKimligi: t.nesne_ref, eski: { [t.alan]: eski }, yeni: { [t.alan]: t.dogru_deger }, gerekce: `Kaynak: ${t.kaynak}; etkilenen: ${t.etkilenen}`, sonuc: 'Başarılı' });
+  await izYaz(c, { aktor: yapan, eylem: 'Veri Düzeltme', nesneTuru: t.nesne_turu, nesneKimligi: t.nesne_ref, eski: { [t.alan]: eski }, yeni: { [t.alan]: t.dogru_deger }, gerekce: `Kaynak: ${t.kaynak}; etkilenen: ${t.etkilenen}`, sonuc: 'Başarılı' });
 });
 
 kapanisKaydet('İade Kaydı', async (c, k, karar) => { // YG-1499
@@ -269,16 +279,25 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     return { kimlik: r.kimlik, durum: 'Onayda' };
   });
   // YG-1246: hatalı alan, doğru değer, doğru değerin kaynağı ve etkilenen dosya/işlemler yazılarak düzeltme istenir; Operasyon Müdürü onaylar; önceki değer denetim izinde korunur.
+  s.get('/veri-duzeltme-alanlari', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const sonuc: Record<string, string[]> = {};
+    for (const t of ['Yat', 'Taraf', 'Kuruluş']) sonuc[t] = Object.keys((await duzeltmeTanimi(t))!.alanlar);
+    return sonuc;
+  });
   s.post('/veri-duzeltme-talebi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { nesneTuru?: string; nesne?: string; alan?: string; dogruDeger?: string; kaynak?: string; etkilenen?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { nesneTuru?: string; nesne?: string; yat?: string; alan?: string; dogruDeger?: string; kaynak?: string; etkilenen?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Veri düzeltme talebini LGM personeli açar.' });
-    const { DUZELTILEBILIR } = await import('./yat.js');
-    if (g.nesneTuru !== 'Yat' || !g.nesne || !UUID.test(g.nesne) || !DUZELTILEBILIR[g.alan ?? '']) return y.code(400).send({ hata: 'Kayıt ve düzeltilecek alanı seçiniz.' });
+    const tn = await duzeltmeTanimi(g.nesneTuru ?? '');
+    // Taraf talebi yat üzerinden de açılabilir: yatın kayıtlı sahibi düzeltilir.
+    if (g.nesneTuru === 'Taraf' && !g.nesne && g.yat && UUID.test(g.yat)) g.nesne = (await b.db.query(`SELECT yat_sahibi_ref::text r FROM yat WHERE kimlik = $1`, [g.yat])).rows[0]?.r ?? undefined;
+    if (!tn || !g.nesne || !UUID.test(g.nesne) || !tn.alanlar[g.alan ?? '']) return y.code(400).send({ hata: 'Kayıt ve düzeltilecek alanı seçiniz.' });
     if (!String(g.dogruDeger ?? '').trim() || !g.kaynak?.trim() || !g.etkilenen?.trim()) return y.code(400).send({ hata: 'Doğru değer, doğru değerin kaynağı ve etkilenen dosya veya işlemler zorunludur.' });
-    const kol = DUZELTILEBILIR[g.alan!]!;
-    const m = (await b.db.query(`SELECT yat_adi, ${kol}::text v FROM yat WHERE kimlik = $1`, [g.nesne])).rows[0]; if (!m) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
-    const r = (await b.db.query(`INSERT INTO veri_duzeltme_talebi (nesne_turu, nesne_ref, alan, mevcut_deger, dogru_deger, kaynak, etkilenen, talep_eden_ref) VALUES ('Yat',$1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.nesne, g.alan, m.v, String(g.dogruDeger).trim(), g.kaynak.trim(), g.etkilenen.trim(), o.kullanici])).rows[0];
-    await kartAc(b.db, { tur: 'Veri Düzeltme Talebi', baslik: `${m.yat_adi} · ${g.alan}: ${m.v ?? '—'} → ${String(g.dogruDeger).trim()}`, ozet: `Kaynak: ${g.kaynak.trim()} · Etkilenen: ${g.etkilenen.trim()}`.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Operasyon Müdürü')], nesneTuru: 'Veri Düzeltme Talebi', nesneKimligi: r.kimlik });
+    const kol = tn.alanlar[g.alan!]!;
+    if (tn.bicim?.[kol] && !tn.bicim[kol]!.test(String(g.dogruDeger).trim())) return y.code(400).send({ hata: `${g.alan} biçimi geçersizdir.` });
+    const m = (await b.db.query(`SELECT ${tn.ad} ad, ${kol}::text v FROM ${tn.tablo} WHERE kimlik = $1`, [g.nesne])).rows[0]; if (!m) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const r = (await b.db.query(`INSERT INTO veri_duzeltme_talebi (nesne_turu, nesne_ref, alan, mevcut_deger, dogru_deger, kaynak, etkilenen, talep_eden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [g.nesneTuru, g.nesne, g.alan, m.v, String(g.dogruDeger).trim(), g.kaynak.trim(), g.etkilenen.trim(), o.kullanici])).rows[0];
+    await kartAc(b.db, { tur: 'Veri Düzeltme Talebi', baslik: `${m.ad} · ${g.alan}: ${m.v ?? '—'} → ${String(g.dogruDeger).trim()}`, ozet: `Kaynak: ${g.kaynak.trim()} · Etkilenen: ${g.etkilenen.trim()}`.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(b.db, tn.onay)], nesneTuru: 'Veri Düzeltme Talebi', nesneKimligi: r.kimlik });
     return { kimlik: r.kimlik, durum: 'Onayda' };
   });
   // YG-437: kurumsal müşteri tarafında LGM'yi görevlendiren kayıt "Müşteri Talimatı"dır (sigortada Sigorta Görevlendirmesi; İş Emri yalnız firmaya verilen belgedir). BLD-67 kurumsal onay e-postasına gider.
@@ -301,6 +320,43 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       return { talimatNo: no, bildirim: Boolean(alici) };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  // YG-478, YG-091: çok malikli yat; malikler pay oranıyla kaydedilir, onay ve fatura muhatabı olarak tek yetkili malik seçilir.
+  const malikDosya = async (k: string, id: string) => (UUID.test(id) && await dosyaErisimi(b.db, k, id) ? (await b.db.query(`SELECT d.dosya_no, d.yat_ref FROM dosya d WHERE d.kimlik = $1`, [id])).rows[0] : undefined);
+  s.get('/dosya/:id/malikler', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const d = await malikDosya(i.oturum!.kullanici, (i.params as { id: string }).id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    return (await b.db.query(`SELECT m.kimlik, m.ad, m.pay_orani, m.yetkili, t.taraf_no FROM yat_malik m LEFT JOIN taraf t ON t.kimlik = m.taraf_ref WHERE m.yat_ref = $1 ORDER BY m.yetkili DESC, m.ad`, [d.yat_ref])).rows;
+  });
+  s.post('/dosya/:id/malik', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; pay?: number; tarafNo?: string };
+    if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Malik kaydını LGM personeli girer.' });
+    const d = await malikDosya(o.kullanici, id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!g.ad?.trim() || (g.pay !== undefined && !(Number(g.pay) > 0 && Number(g.pay) <= 100))) return y.code(400).send({ hata: 'Malik adı zorunludur; pay oranı 0–100 arasında olmalıdır.' });
+    const toplam = Number((await b.db.query(`SELECT coalesce(sum(pay_orani), 0) s FROM yat_malik WHERE yat_ref = $1`, [d.yat_ref])).rows[0].s);
+    if (g.pay !== undefined && toplam + Number(g.pay) > 100) return y.code(409).send({ hata: 'Malik payları toplamı %100\'ü aşamaz.' });
+    const taraf = g.tarafNo?.trim() ? (await b.db.query(`SELECT kimlik FROM taraf WHERE taraf_no = $1`, [g.tarafNo.trim()])).rows[0]?.kimlik : null;
+    if (g.tarafNo?.trim() && !taraf) return y.code(400).send({ hata: 'Bu numarada taraf kaydı bulunamadı.' });
+    const r = (await b.db.query(`INSERT INTO yat_malik (yat_ref, ad, taraf_ref, pay_orani, ekleyen_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [d.yat_ref, g.ad.trim(), taraf, g.pay ?? null, o.kullanici])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yat Maliki Eklendi', nesneTuru: 'Yat', nesneKimligi: d.yat_ref, yeni: { ad: g.ad.trim(), pay: g.pay }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
+  s.post('/dosya/:id/malik/:malik/yetkili', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const { id, malik } = i.params as { id: string; malik: string }; const g = (i.body ?? {}) as { dayanak?: string };
+    if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Yetkili maliki LGM personeli kaydeder.' });
+    const d = await malikDosya(o.kullanici, id); if (!d || !UUID.test(malik)) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!g.dayanak?.trim()) return y.code(400).send({ hata: 'Maliklerin yetkili malik belirlediği belge veya beyanı yazınız.' });
+    const m = (await b.db.query(`SELECT kimlik, ad, taraf_ref FROM yat_malik WHERE kimlik = $1 AND yat_ref = $2`, [malik, d.yat_ref])).rows[0]; if (!m) return y.code(404).send({ hata: 'Malik bulunamadı.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE yat_malik SET yetkili = false WHERE yat_ref = $1 AND yetkili`, [d.yat_ref]);
+      await c.query(`UPDATE yat_malik SET yetkili = true WHERE kimlik = $1`, [malik]);
+      if (m.taraf_ref) await c.query(`UPDATE yat SET yetkili_malik_ref = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [d.yat_ref, m.taraf_ref]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND durum = 'Bekliyor' AND baslik LIKE '%Yetkili Malik Atanacak'`, [id]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yetkili Malik Belirlendi', nesneTuru: 'Yat', nesneKimligi: d.yat_ref, yeni: { malik: m.ad }, gerekce: g.dayanak.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+    return { tamam: true };
   });
   // YG-147: sözleşme taahhüt süreleri Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörünce girilir.
   s.get('/sozlesme-hedef-sureleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {

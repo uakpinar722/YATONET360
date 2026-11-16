@@ -1,9 +1,9 @@
+import { eur } from './bicim';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 type K = { sira_no: number; aciklama: string; tutar_eur: string };
 type T = { kimlik: string; teklif_no: string; sigorta_odenecek_eur: string | null; odeme_farki_eur: string | null; odeme_farki_durum: string | null; onayli: number; kalemler: K[] };
-const eur = (x: number | string) => `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
 
 /** YG-891, SGF-1: sigortanın bildirdiği ödeme tutarı ve fark kararı (iç ekran). */
 export function SigortaFark({ dosya }: { dosya: string }) {

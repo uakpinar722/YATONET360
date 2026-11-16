@@ -1,3 +1,6 @@
+import { eur } from './bicim';
+import { TevkifatListesi } from './Tevkifat';
+import { SigortaIhbar } from './SigortaIhbar';
 import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
 import { istek, type Ben } from './api';
@@ -37,6 +40,7 @@ import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
 import { VeriKalitesi } from './VeriKalitesi';
 import { SureklilikOrtam } from './SureklilikOrtam';
 import { KartelaArama } from './KartelaArama';
+import { IstifaBildirimi, IzinBakiyesi, OzelAracOnayi } from './PersonelTalepleri';
 import { IsletmeGideri } from './IsletmeGideri';
 import { IslemKatalogu } from './IslemKatalogu';
 import { TeklifMadde } from './TeklifMadde';
@@ -133,7 +137,6 @@ function SigortaTeklifIslem({ id, teklif, statu, karar, kanal, setKanal, yetkili
   );
 }
 
-const eur = (x: string | number | null | undefined) => (x === null || x === undefined ? '—' : `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`);
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
 const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => <><div className="bolum">{baslik}</div><div className="ozet">{children}</div></>;
 function useYap(yenile: () => unknown) {
@@ -513,6 +516,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
   return (
     <>
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
+      {ben.grup.startsWith('Sigorta') && <SigortaIhbar sonra={() => void yukle()} />}
       <div className="bolum">İşleminizi Bekleyenler</div>
       {v.bekleyen.length === 0 && <div className="ozet bos">Bekleyen işlem bulunmamaktadır.</div>}
       {v.bekleyen.map((b) => <div className="ozet" key={b.kimlik}><b>{b.teklif_turu} · {b.dosya_no}</b><div>{eur(b.genel_toplam_eur)}{b.sigorta_karar_son ? ` · Son: ${saat(b.sigorta_karar_son)}` : ''}</div><button className="btn" onClick={() => void istek<TeklifAyrinti>(`/sigorta/teklif/${b.kimlik}`).then((x) => { setT(x); setSec([]); })}>İncele</button></div>)}
@@ -901,7 +905,9 @@ export function IdariIslemler() {
       <YurtDisiFirmaTalebi />
       <YasalAyipRaporu />
       <IbanTeyit />
+      <IstifaBildirimi />
       <Blok baslik="İzin Talebi">
+        <IzinBakiyesi />
         <label className="kutu"><input type="checkbox" checked={bl} onChange={(e) => setBl(e.target.checked)} /><span>Bölünmüş İzin Talebi</span></label>
         <label htmlFor="iz-t">İzin Türü</label><select id="iz-t" value={iz.tur} onChange={(e) => setIz({ ...iz, tur: e.target.value })}>{['Yıllık', 'Mazeret', 'Ücretsiz', 'Rapor'].map((x) => <option key={x}>{x}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="iz-b">Başlangıç</label><input id="iz-b" type="date" value={iz.baslangic} onChange={(e) => setIz({ ...iz, baslangic: e.target.value })} /></div><div><label htmlFor="iz-s">Bitiş</label><input id="iz-s" type="date" value={iz.bitis} onChange={(e) => setIz({ ...iz, bitis: e.target.value })} /></div></div>
@@ -909,6 +915,7 @@ export function IdariIslemler() {
         <button className="btn2" onClick={() => void yap(() => istek<{ gun: number; kimlik: string }>('/izin', { ...iz, bolunmus: bl }).then((r) => (setIzId(r.kimlik), { uyari: `İzin talebiniz gönderildi: ${r.gun} gün.` })))}>İzin Talep Et</button>
       </Blok>
       {izId && <Blok baslik="İzin Belgesi"><BelgeSec ad="Rapor veya Belge" bagTuru="İzin" bagKimligi={izId} deger={izB} sec={(k) => { setIzB(k); void yap(() => istek(`/izin/${izId}/belge`, { belge: k }).then(() => ({ uyari: 'Belge izin talebinize eklendi.' }))); }} /></Blok>}
+      <OzelAracOnayi />
       <Blok baslik="Masraf Fişi">
         <label htmlFor="ms-t">Masraf Türü</label><select id="ms-t" value={m.tur} onChange={(e) => setM({ ...m, tur: e.target.value })}>{['Yemek', 'Konaklama', 'Km', 'Ulaşım', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
         <label htmlFor="ms-bt">Belge Türü</label><select id="ms-bt" value={m.belgeTuru} onChange={(e) => setM({ ...m, belgeTuru: e.target.value })}><option>Kağıt Fiş</option><option>e-Fatura</option><option>e-Arşiv</option></select>
@@ -1020,5 +1027,5 @@ export function MuhasebeAna() {
         <label htmlFor={`mh-p-${x.kimlik}`}>Fatura PDF</label><input id={`mh-p-${x.kimlik}`} type="file" accept=".pdf" onChange={(e) => { const d = e.target.files?.[0]; if (d) void belgeYukle(d, 'Müşteri Faturası', x.kimlik).then((b) => yaz(x.kimlik, 'pdf', b)).catch((h) => setM(h.message)); }} />
         <button className="btn2 kucuk" disabled={!v.no.trim() || !v.tarih || !v.kur || !v.kurTarihi || !v.pdf} onClick={() => void istek(`/fatura/${x.kimlik}/bilgi`, { no: v.no, tarih: v.tarih, kur: Number(v.kur.replace(',', '.')), kurTarihi: v.kurTarihi, pdf: v.pdf }).then(() => { setM('Fatura bilgisi kaydedildi.'); return yk(); }).catch((h) => setM(h.message))}>Fatura Bilgisini Kaydet</button>
       </>}
-    </div>; })}</>;
+    </div>; })}<TevkifatListesi /></>;
 }

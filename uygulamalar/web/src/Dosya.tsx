@@ -6,6 +6,11 @@ import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
 import { KaliteBolumu, RaporBolumu, SigortaEposta, SigortaGonderimBolumu, TedarikBolumu, YatDegeriBolumu } from './Kalite';
 import { TeklifTalebiBolumu, TesisIslemleri } from './Portallar';
+import { MusteriTalimati } from './MusteriTalimati';
+import { VeriDuzeltme } from './VeriDuzeltme';
+import { KonuIslem } from './KonuIslem';
+import { BelgeInceleme } from './BelgeInceleme';
+import { Malikler } from './Malikler';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
@@ -13,7 +18,7 @@ interface DosyaSatir { kimlik: string; dosya_no: string; statu: string; asama: s
 interface Sure { tur: string; baslangic: string; bitis: string; kaydirma_notu: string | null; tamamlanma: string | null; renk: 'yeşil' | 'sarı' | 'kırmızı' | null; baslangic_olayi?: string | null; sure_birimi?: string; sozlesme?: string | null }
 interface Ekip { kimlik: string; rol: string; ad_soyad: string; kullanici: string }
 interface Bekleme { kimlik: string; neden: string; hedef_tarih: string; sayac_durur: boolean; uzatma_sayisi: number; olusturma_zamani: string; kaldirilma_zamani: string | null; sorumlu: string }
-interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string; hedef_tarih: string; sahip: string; gecikmis: boolean; asama?: string | null; kabul_olcutu?: string | null; gerekli_belge?: string | null }
+interface Konu { kimlik: string; konu_no: string; baslik: string; statu: string; hedef_tarih: string; sahip: string; gecikmis: boolean; asama?: string | null; kabul_olcutu?: string | null; gerekli_belge?: string | null; konu_turu?: string }
 interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string; yururluk?: string | null }[] }
 interface DosyaAyrinti extends DosyaSatir {
   musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
@@ -21,7 +26,7 @@ interface DosyaAyrinti extends DosyaSatir {
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   musteri_risk_olayi?: string | null; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null; baslangic_zamani?: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
-  ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean }[];
+  ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null }[];
   gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null }[];
 }
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
@@ -223,7 +228,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
   const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bKanit, setBKanit] = useState('');
   const [oYeni, setOYeni] = useState(''); const [oGerekce, setOGerekce] = useState(''); const [aGerekce, setAGerekce] = useState('');
   const [gnsl, setGnsl] = useState(''); const [drn, setDrn] = useState('');
-  const [kBaslik, setKBaslik] = useState(''); const [kOlcut, setKOlcut] = useState(''); const [kBelge, setKBelge] = useState(''); const [kSahip, setKSahip] = useState(''); const [kTarih, setKTarih] = useState(''); const [boy, setBoy] = useState(''); const [govde, setGovde] = useState(''); const [tahrik, setTahrik] = useState(''); const [kaynak, setKaynak] = useState('Ruhsat');
+  const [kTur, setKTur] = useState('İş'); const [kBaslik, setKBaslik] = useState(''); const [kOlcut, setKOlcut] = useState(''); const [kBelge, setKBelge] = useState(''); const [kSahip, setKSahip] = useState(''); const [kTarih, setKTarih] = useState(''); const [boy, setBoy] = useState(''); const [govde, setGovde] = useState(''); const [tahrik, setTahrik] = useState(''); const [kaynak, setKaynak] = useState('Ruhsat');
   const yukle = () => Promise.all([istek<DosyaAyrinti>(`/dosya/${id}`).then(setD), istek<Belge[]>(`/belge?bagTuru=Dosya&bagKimligi=${id}`).then(setBelgeler).catch(() => setBelgeler([]))]).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, [id]);
   useEffect(() => { if (!rol) { setAdaylar([]); return; } void istek<typeof adaylar>(`/dosya/${id}/ekip-oneri?rol=${encodeURIComponent(rol)}`).then(setAdaylar).catch((e) => setHata(e.message)); }, [rol, id]);
@@ -256,7 +261,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         {d.sigorta && <div>Sigorta: {d.sigorta.sigortaci_adi ?? '—'} · Hasar Dosya No: {d.sigorta.sigorta_hasar_dosya_no ?? '—'}</div>}
         {d.sigorta && <SigortaEposta id={id} eposta={d.sigorta.eposta} ek3={d.sigorta.onay_yetkilisi_eposta} yenile={yukle} />}
       </div>
-      {d.yapilacaklar.length > 0 && <Blok baslik="Yapılacaklar">{d.yapilacaklar.map((y) => <div key={y.is} className={y.engel ? 'uyari' : ''}>{y.is} · {y.sorumlu}</div>)}</Blok>}
+      {d.yapilacaklar.length > 0 && <Blok baslik="Yapılacaklar">{d.yapilacaklar.map((y, n) => <div key={`${y.is}-${n}`} className={y.engel ? 'uyari' : ''}>{y.is} · {y.sorumlu}{y.hedef ? ` · Hedef: ${saat(y.hedef)}` : ''}</div>)}</Blok>}
       {d.sureler.length > 0 && <Blok baslik="Süreler">{d.sureler.map((s) => <div key={s.tur}>{s.tur}: <Sayac s={s} /></div>)}</Blok>}
       <Blok baslik="Yat">
         <div>{d.yat.tur ?? '—'} · {d.yat.marka ?? '—'} {d.yat.model ?? ''} · {d.yat.tam_boy_m ?? '—'} m · {d.yat.govde_malzemesi ?? '—'}{d.kapsam_6502 ? ' · 6502 Kapsamı' : ''} · Tahrik: {d.yat.tahrik_turu ?? '—'} · Bayrak: {d.yat.bayrak ?? '—'}</div>
@@ -315,12 +320,13 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       </Blok>}
       <Blok baslik="Açık Konular">
         {d.konular.length === 0 && <div className="not">Açık konu bulunmamaktadır.</div>}
-        {d.konular.map((k) => <div key={k.kimlik}>{k.konu_no} · {k.baslik} · {k.sahip} · {k.statu} · {gun(k.hedef_tarih)}{k.gecikmis ? ' · Gecikmiş' : ''}{k.asama ? ` · Aşama: ${k.asama}` : ''}{k.kabul_olcutu ? ` · Kabul Ölçütü: ${k.kabul_olcutu}` : ''}{k.gerekli_belge ? ` · Gerekli Belge: ${k.gerekli_belge}` : ''}</div>)}
+        {d.konular.map((k) => <div key={k.kimlik}>{k.konu_no} · {k.konu_turu && k.konu_turu !== 'İş' ? `${k.konu_turu} · ` : ''}{k.baslik} · {k.sahip} · {k.statu} · {gun(k.hedef_tarih)}{k.gecikmis ? ' · Gecikmiş' : ''}{k.asama ? ` · Aşama: ${k.asama}` : ''}{k.kabul_olcutu ? ` · Kabul Ölçütü: ${k.kabul_olcutu}` : ''}{k.gerekli_belge ? ` · Gerekli Belge: ${k.gerekli_belge}` : ''}<KonuIslem kimlik={k.kimlik} statu={k.statu} yenile={() => void yukle()} /></div>)}
+        <label htmlFor="n-tr">Konu Türü</label><select id="n-tr" value={kTur} onChange={(e) => setKTur(e.target.value)}>{['İş', 'Belge', 'Eğitim'].map((x) => <option key={x}>{x}</option>)}</select>
         <label htmlFor="n-b">Yeni Konu</label><input id="n-b" value={kBaslik} onChange={(e) => setKBaslik(e.target.value)} />
         <div className="iki-tarih"><div><label htmlFor="n-s">Sahibi</label><select id="n-s" value={kSahip} onChange={(e) => setKSahip(e.target.value)}><option value="">Seçiniz</option>{[...new Map(d.ekip.map((e) => [e.kullanici, e])).values()].map((e) => <option key={e.kullanici} value={e.kullanici}>{e.ad_soyad}</option>)}</select></div><div><label htmlFor="n-t">Hedef Tarih</label><input id="n-t" type="date" value={kTarih} onChange={(e) => setKTarih(e.target.value)} /></div></div>
         <label htmlFor="n-ko">Kabul Ölçütü</label><input id="n-ko" value={kOlcut} onChange={(e) => setKOlcut(e.target.value)} />
         <label htmlFor="n-gb">Gerekli Belge</label><input id="n-gb" value={kBelge} onChange={(e) => setKBelge(e.target.value)} />
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/konu`, { baslik: kBaslik, sahip: kSahip, hedefTarih: kTarih, kabulOlcutu: kOlcut, gerekliBelge: kBelge || undefined })).then(() => { setKBaslik(''); setKOlcut(''); setKBelge(''); })}>Konu Aç</button>
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/konu`, { baslik: kBaslik, sahip: kSahip, hedefTarih: kTarih, kabulOlcutu: kOlcut, gerekliBelge: kBelge || undefined, konuTuru: kTur })).then(() => { setKBaslik(''); setKOlcut(''); setKBelge(''); })}>Konu Aç</button>
       </Blok>
       <SahaBolumu id={id} d={d} belgeler={belgeler} yenile={() => void yukle()} />
       <YatDegeriBolumu id={id} />
@@ -351,6 +357,10 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
           : d.yat.kimlik && <button className="btn2 kucuk" onClick={() => setYd({ mmsi: d.yat.mmsi ?? '', motor_adedi: d.yat.motor_adedi == null ? '' : String(d.yat.motor_adedi), motor_marka_model: d.yat.motor_marka_model ?? '', motor_gucu_hp: d.yat.motor_gucu_hp ?? '', kislama_yeri: d.yat.kislama_yeri ?? '', yabanci_yat_belgesi: d.yat.yabanci_yat_belgesi ?? '', yabanci_yat_belge_no: d.yat.yabanci_yat_belge_no ?? '', yabanci_yat_belge_gecerlilik: d.yat.yabanci_yat_belge_gecerlilik ?? '', gecici_ithalat_bitis: d.yat.gecici_ithalat_bitis ?? '', turkiye_kalis_bitis: d.yat.turkiye_kalis_bitis ?? '', gerekce: '' })}>Yat Belgelerini Düzelt</button>}
       </Blok>
       <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik} className="soru"><span>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '---'} · {t.eposta ?? '---'}{t.baslangic_zamani ? ` · Başlangıç: ${new Date(t.baslangic_zamani).toLocaleDateString('tr-TR')}` : ''}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</span>{d.rollerim.includes('Dosya Sorumlusu') && <div className="tam"><label htmlFor={`tb-${t.kimlik}`}>Sonlandırma Gerekçesi</label><input id={`tb-${t.kimlik}`} value={tBit[t.kimlik] ?? ''} onChange={(e) => setTBit({ ...tBit, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!tBit[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/dosya-tarafi/${t.kimlik}/bitir`, { gerekce: tBit[t.kimlik] }))}>İlişkiyi Sonlandır</button></div>}</div>)}</Blok>
+      <BelgeInceleme dosya={id} />
+      <Malikler dosya={id} />
+      {d.yat.kimlik && <><VeriDuzeltme nesneTuru="Yat" nesne={d.yat.kimlik} baslik="Yat Kaydında Düzeltme Talebi" /><VeriDuzeltme nesneTuru="Taraf" yat={d.yat.kimlik} baslik="Yat Sahibi Kaydında Düzeltme Talebi" /></>}
+      {d.musteri_turu === 'Kurumsal Müşteri' && d.rollerim.includes('Dosya Sorumlusu') && <MusteriTalimati dosya={id} />}
       <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
     </>
   );
@@ -484,13 +494,15 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
 /** Üst arama: eski numara ana dosyaya yönlendirir (YG-024). */
 export function AramaSonucu({ q, ac }: { q: string; ac: (id: string) => void }) {
   const [r, setR] = useState<{ kimlik: string; dosya_no: string; yat_adi: string; statu: string; oncelik: string; ana_kimlik: string | null; ana_no: string | null }[] | null>(null); const [hata, setHata] = useState('');
-  useEffect(() => { setR(null); void istek<{ dosyalar: NonNullable<typeof r> }>(`/ara?q=${encodeURIComponent(q)}`).then((x) => setR(x.dosyalar)).catch((e) => setHata(e.message)); }, [q]);
+  const [fl, setFl] = useState<{ kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; ag_statusu: string }[]>([]);
+  useEffect(() => { setR(null); void istek<{ dosyalar: NonNullable<typeof r>; firmalar?: typeof fl }>(`/ara?q=${encodeURIComponent(q)}`).then((x) => { setR(x.dosyalar); setFl(x.firmalar ?? []); }).catch((e) => setHata(e.message)); }, [q]);
   return (
     <>
       <h1>Arama: {q}</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {r && r.length === 0 && <div className="ozet bos">Sonuç bulunamadı.</div>}
       {r && r.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Dosya No</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{r.map((d) => <tr key={d.kimlik}><td data-ad="Dosya No">{d.dosya_no}{d.ana_no ? ` → ${d.ana_no}` : ''}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Durum"><Oncelik o={d.oncelik} /> {d.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => ac(d.ana_kimlik ?? d.kimlik)}>Aç</button></td></tr>)}</tbody></table></div>}
+      {fl.length > 0 && <><div className="bolum">Firmalar</div><div className="ozet">{fl.map((x) => <div key={x.kimlik}>{x.sicil_no} · {x.ticari_unvan} · {x.kayit_rolu} · {x.ag_statusu}</div>)}</div></>}
     </>
   );
 }
