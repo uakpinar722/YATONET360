@@ -294,6 +294,14 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE is_karti SET nesne_turu = 'Dosya', nesne_kimligi = $2 WHERE nesne_kimligi = $1 AND tur = 'Kritik Öncelik Teyidi'`, [id, d.kimlik]);
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND tur = 'İhbar Açılış Kontrolü' AND durum = 'Bekliyor'`, [id]);
       await kartAc(c, { tur: 'Dosya Ekibi Ataması', baslik: `${d.dosya_no} · Dosya Sorumlusu ve Operasyon Yöneticisi Ata`, ozet: t.ihtiyac_tanimi.slice(0, 200), oncelik: t.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipRol: await rolId(c, 'Operasyon Müdürü'), kategori: 'islem', nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+      // YG-250: olağan ihbar yolundan mesai dışında açılan Kritik (acil) dosyaya nöbetçi Teknik Uzman atanır; Teknik Müdür ilk iş günü 12:00'ye kadar teyit eder.
+      if (t.oncelik === 'Kritik' && !(await import('./bildirim.js')).mesaiIcinde(new Date())) {
+        const ac = await import('./acil.js'); const nu = await ac.nobetci(c, 'Teknik Uzman', new Date());
+        if (nu) {
+          await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Teknik Uzman',$3)`, [d.kimlik, nu, o.kullanici]);
+          await kartAc(c, { tur: 'Nöbetçi Uzman Teyidi', kategori: 'islem', baslik: `${d.dosya_no} · Nöbetçi Uzman Teyidi`, ozet: 'Onaylayınız veya değiştiriniz.', sahipRol: await rolId(c, 'Teknik Müdür'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+        }
+      }
       const simdi = new Date();
       await sureBaslat(c, { tur: 'Teknik Uzman Ataması', oncelik: t.oncelik, baslangic: simdi, dosya: d.kimlik });
       if (t.oncelik === 'Kritik') await sureBaslat(c, { tur: 'Sahaya Ulaşma', oncelik: 'Kritik', baslangic: simdi, dosya: d.kimlik });

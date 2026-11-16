@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acilIsle, acilSinir, ilkIsGunu12, nobetci } from '../src/acil.js';
 import { aydinlatmaKodu } from '../src/adimlar.js';
 import { sigortaSureIsle } from '../src/sigorta.js';
@@ -79,6 +79,14 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     await o.karar((await o.kart('Nöbet Çizelgesi', r.json().kimlik)).kimlik, 'opm', 'Onayla');
     expect(await nobetci(o.db, 'Dosya Sorumlusu')).toBe(o.K.ds);
     expect(await nobetci(o.db, 'Teknik Uzman')).toBe(o.K.tu);
+    { // T-YG250-NOBET: olağan ihbar yolundan mesai dışında açılan Kritik dosyaya nöbetçi Teknik Uzman atanır
+      vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-15T20:00:00Z')); // Pazar 23.00
+      try {
+        const dk = await o.dosyaAc({ oncelik: 'Kritik', oncelikGerekcesi: 'Su alıyor' });
+        expect((await o.sup.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Uzman'`, [dk.kimlik])).rows.map((x) => x.kullanici_ref)).toEqual([o.K.tu]);
+        expect(await o.kart('Nöbetçi Uzman Teyidi', dk.kimlik)).toBeDefined();
+      } finally { vi.useRealTimers(); }
+    }
     const r2 = await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, degisiklik: true, vardiyalar: [v('ds', 'Dosya Sorumlusu'), v('tu', 'Teknik Uzman'), v('oy', 'Yönetici')] });
     await o.karar((await o.kart('Nöbet Çizelgesi', r2.json().kimlik)).kimlik, 'opm', 'Onayla');
     expect((await o.sup.query(`SELECT count(*)::int n FROM nobet_cizelgesi WHERE donem = $1 AND durum = 'Yürürlükte'`, [buAy])).rows[0].n).toBe(1);
@@ -107,7 +115,7 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect((await o.ist('POST', '/api/acil/cagri', await o.gir('ds'), { ...CAGRI, konum: '' })).statusCode).toBe(400);
     await cagri();
     const l = (await o.ist('GET', '/api/firma-portal/acil-cagrilar', firmaC)).json()[0];
-    expect(Object.keys(l).sort()).toEqual(['cagri_no', 'durum', 'kimlik', 'konum', 'olay_turu', 'son_zaman', 'tehlike', 'yat_tipi']);
+    expect(Object.keys(l).sort()).toEqual(['cagri_no', 'durum', 'erisim', 'erisim_konumu', 'hizmet_turu', 'kimlik', 'konum', 'olay_turu', 'son_zaman', 'tehlike', 'yat_tipi']); // YG-267: fiyat yok, hizmet türü ve erişim var
   });
   it('30 dakikada yanıt yoksa Yanıtsız, sıradakine; hepsi tükenince Kaynak Bulunamadı', async () => {
     const r = await cagri();

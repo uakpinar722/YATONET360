@@ -56,7 +56,8 @@ export async function yatBulVeyaAc(c: Db, g: YatGirdisi, kullanici: string): Pro
     return { kimlik: g.yatId, yeni: false };
   }
   if (!g.adi?.trim()) return { hata: 'Yat adı zorunludur.' };
-  const es = g.govdeNo || g.imoNo ? await c.query(`SELECT kimlik FROM yat WHERE lower(govde_no) = lower($1) OR imo_no = $2 LIMIT 1`, [g.govdeNo ?? null, g.imoNo ?? null]) : null;
+  // YG-090: gövde no, IMO veya sicil bilgisi aynıysa mevcut yat kaydı kullanılır (ad tekillik anahtarı değildir).
+  const es = g.govdeNo || g.imoNo || g.sicil?.trim() ? await c.query(`SELECT kimlik FROM yat WHERE lower(govde_no) = lower($1) OR imo_no = $2 OR ($3::text <> '' AND tr_norm(trim(sicil_bilgisi)) = tr_norm(trim($3))) LIMIT 1`, [g.govdeNo ?? null, g.imoNo ?? null, g.sicil?.trim() ?? '']) : null;
   if (es?.rows[0]) return { kimlik: es.rows[0].kimlik, yeni: false };
   let mm: { kimlik: string; boy_m: string | null; govde_malzemesi: string | null; tahrik_turu: string | null; tekne_turu: string | null } | undefined;
   if (g.markaModelId) {

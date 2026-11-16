@@ -246,7 +246,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   s.get('/firma-portal/acil-cagrilar', oturumlu, async (i, y) => {
     const f = await firmam(i.oturum!.kullanici);
     if (!f) return y.code(403).send({ hata: 'Bu sayfa Çözüm Ortağı kullanıcılarına açıktır.' });
-    return (await b.db.query(`SELECT a.kimlik, a.cagri_no, a.son_zaman, a.durum, d.konum, y.tur AS yat_tipi, m.olay_turu, m.tehlike FROM acil_gorev_cagrisi a JOIN dosya d ON d.kimlik = a.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref JOIN acil_mudahale m ON m.dosya_ref = d.kimlik WHERE a.kurulus_ref = $1 AND a.durum = 'Gönderildi' ORDER BY a.gonderim`, [f])).rows;
+    return (await b.db.query(`SELECT a.kimlik, a.cagri_no, a.son_zaman, a.durum, d.konum, y.tur AS yat_tipi, m.olay_turu, m.tehlike, d.hizmet_turu, t.yat_mevcut_durumu AS erisim, t.yat_mevcut_konumu AS erisim_konumu /* YG-267 */ FROM acil_gorev_cagrisi a JOIN dosya d ON d.kimlik = a.dosya_ref LEFT JOIN talep t ON t.kimlik = d.talep_ref JOIN yat y ON y.kimlik = d.yat_ref JOIN acil_mudahale m ON m.dosya_ref = d.kimlik WHERE a.kurulus_ref = $1 AND a.durum = 'Gönderildi' ORDER BY a.gonderim`, [f])).rows;
   });
 
   // YG-268, YG-269, YG-1473: Kabul ediyorum, yola çıkıyorum / Müsait değilim. Kabulle AC iş emri kendiliğinden açılır; tutar ön değeri girilir.

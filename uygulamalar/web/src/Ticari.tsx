@@ -348,7 +348,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
 
 interface IsEmri { kimlik: string; dosya: string; isEmriNo: string; anaIsEmriNo?: string | null; tur: string; statu: string; dosyaNo: string; oncelik: string; yat: string; yatTuru: string | null; yer: string; kapsam: string; bedel: string | null; yanitSon: string | null; yanit: string | null }
 interface FirmaAyrinti extends IsEmri { kalemler: { aciklama: string; miktar: string; birim: string; gerceklesen_miktar: string; kabul_olcutu?: string | null }[]; guvenlik?: string[]; bitis?: string | null }
-interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum: string; yat_tipi: string | null; olay_turu: string; tehlike: string }
+interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum: string; yat_tipi: string | null; olay_turu: string; tehlike: string; hizmet_turu: string | null; erisim: string | null; erisim_konumu: string | null }
 
 /** YG-371, YG-372, YG-373: izni firma tesisten alır ve belgesini yükler; LGM düzenlemez. Sıcak iş ve kapalı alanda gaz ölçümü istenir. */
 function CalismaIzni({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
@@ -480,7 +480,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       {bolum === 'ana' && <KurtarmaSonucFirma />}
       {bolum === 'ana' && <><div className="bolum">İşleminizi Bekleyenler</div>
       {ac.length === 0 && <div className="ozet bos">Acil çağrı bulunmamaktadır.</div>}
-      {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div><div>Yanıt Son: {saat(c.son_zaman)}</div>
+      {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.hizmet_turu ?? '—'} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div>{(c.erisim || c.erisim_konumu) && <div>Erişim: {[c.erisim, c.erisim_konumu].filter(Boolean).join(' · ')}</div>}<div>Yanıt Son: {saat(c.son_zaman)}</div>
         <label htmlFor={`c-${c.kimlik}`}>Tahmini Tutar (EUR)</label><input id={`c-${c.kimlik}`} inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} />
         <div className="dugmeler"><button className="btn" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Kabul', tahmini: Number(tahmini.replace(',', '.') || 0) }))}>Kabul Ediyorum, Yola Çıkıyorum</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Müsait Değil' }))}>Müsait Değilim</button></div></div>)}
       <FirmaUygunsuzluk yap={yap} /></>}

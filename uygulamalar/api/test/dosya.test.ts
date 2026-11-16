@@ -230,6 +230,13 @@ describe('mükerrerlik ve açılış kararı (YG-007, YG-023, YG-030, YG-100)', 
     expect((await sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`birlesti:${t.kimlik}`])).rows[0].metin).toContain(a.dosyaNo);
     expect((await ist('POST', `/api/ihbar/${t.kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Ö', musteriTuru: 'Bireysel Müşteri' })).statusCode).toBe(409);
   });
+  it('sicil bilgisi aynı yatta yeni yat kaydı açılmaz (T-YG090-SICIL)', async () => {
+    const s = `TCSICIL-${Date.now()}`;
+    const a = await dosyaAc({ yat: { adi: 'Sicil Yat A', markaDiger: 'M', modelDiger: 'M', boy: 10, govde: 'Fiber', sicil: s, bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
+    const t = await ihbar({ yat: { adi: 'Başka Ad', sicil: ` ${s.toLowerCase()} `, markaDiger: 'M', modelDiger: 'M', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
+    const y = (await sup.query(`SELECT (SELECT yat_ref FROM dosya WHERE kimlik = $1) a, (SELECT yat_ref FROM talep WHERE kimlik = $2) b`, [a.kimlik, t.kimlik])).rows[0];
+    expect(y.b).toBe(y.a);
+  });
   it('aynı yatta açık dosya aday olarak görünür; ayrı olay gerekçe ister', async () => {
     const a = await dosyaAc({ yat: { adi: 'Mükerrer Yat', markaDiger: 'M', modelDiger: 'M', boy: 10, govde: 'Fiber', govdeNo: 'GOV-1', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } });
     const t = await ihbar({ yat: { adi: 'Mükerrer Yat', govdeNo: 'GOV-1', markaDiger: 'M', modelDiger: 'M', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' } }); const c = await gir('ds');
