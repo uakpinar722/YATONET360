@@ -172,7 +172,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
 
 function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void }) {
   const [t, setT] = useState<any>(null); const [hata, setHata] = useState(''); const [dayanak, setDayanak] = useState(''); const [gerekce, setGerekce] = useState('');
-  const [gar, setGar] = useState({ var: '', marka: '', model: '', bitis: '' }); const [karar, setKarar] = useState('Kabul'); const [ozet, setOzet] = useState(''); const [musteri, setMusteri] = useState('Bireysel Müşteri'); const [kosul, setKosul] = useState(''); const [tarih, setTarih] = useState(''); const [acilGecici, setAcilGecici] = useState(false); const [eksik, setEksik] = useState('');
+  const [gar, setGar] = useState({ var: '', marka: '', model: '', bitis: '' }); const [karar, setKarar] = useState('Kabul'); const [ozet, setOzet] = useState(''); const [hizmet, setHizmet] = useState('Hasar onarımı'); const [musteri, setMusteri] = useState('Bireysel Müşteri'); const [kosul, setKosul] = useState(''); const [tarih, setTarih] = useState(''); const [acilGecici, setAcilGecici] = useState(false); const [eksik, setEksik] = useState('');
   const yukle = () => istek<any>(`/ihbar/${id}`).then(setT).catch((e) => setHata(e.message));
   useEffect(() => { void yukle(); }, [id]);
   const yap = async (f: () => Promise<any>) => { setHata(''); try { await f(); await yukle(); } catch (x) { setHata((x as Error).message); } };
@@ -180,7 +180,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
   const acilis = async () => {
     setHata('');
     try {
-      const r = await istek<{ kimlik?: string }>(`/ihbar/${id}/acilis`, { karar, ozet, musteriTuru: musteri, kosullar: kosul, yenidenTarih: tarih, gerekce, acilGecici, eksikGerekce: eksik, tamamlamaTarih: tarih, garantiliEkipman: gar.var === 'Evet' ? true : gar.var === 'Hayır' ? false : undefined, garantiMarka: gar.marka || undefined, garantiModel: gar.model || undefined, garantiBitis: gar.bitis || undefined });
+      const r = await istek<{ kimlik?: string }>(`/ihbar/${id}/acilis`, { karar, ozet, hizmetTuru: hizmet, musteriTuru: musteri, kosullar: kosul, yenidenTarih: tarih, gerekce, acilGecici, eksikGerekce: eksik, tamamlamaTarih: tarih, garantiliEkipman: gar.var === 'Evet' ? true : gar.var === 'Hayır' ? false : undefined, garantiMarka: gar.marka || undefined, garantiModel: gar.model || undefined, garantiBitis: gar.bitis || undefined });
       geri(r.kimlik);
     } catch (x) { setHata((x as Error).message); }
   };
@@ -217,7 +217,8 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
         <label htmlFor="a-g">Garanti Süresinde Ekipman Var mı?</label><select id="a-g" value={gar.var} onChange={(e) => setGar({ ...gar, var: e.target.value })}><option value="">Bilinmiyor</option><option>Evet</option><option>Hayır</option></select>
         {gar.var === 'Evet' && <><label htmlFor="a-gm">Ekipman Markası</label><input id="a-gm" value={gar.marka} onChange={(e) => setGar({ ...gar, marka: e.target.value })} /><label htmlFor="a-gmo">Ekipman Modeli</label><input id="a-gmo" value={gar.model} onChange={(e) => setGar({ ...gar, model: e.target.value })} /><label htmlFor="a-gb">Garanti Bitiş Tarihi</label><input id="a-gb" type="date" value={gar.bitis} onChange={(e) => setGar({ ...gar, bitis: e.target.value })} /></>}
         <label htmlFor="a-o">Açılış Özeti</label><textarea id="a-o" rows={2} value={ozet} onChange={(e) => setOzet(e.target.value)} />
-        {(karar === 'Kabul' || karar === 'Koşullu Açılış') && <><label htmlFor="a-m">Müşteri Türü</label><select id="a-m" value={musteri} onChange={(e) => setMusteri(e.target.value)}>{['Bireysel Müşteri', 'Kurumsal Müşteri', 'Sigorta Şirketi'].map((x) => <option key={x}>{x}</option>)}</select></>}
+        {(karar === 'Kabul' || karar === 'Koşullu Açılış') && <><label htmlFor="a-m">Müşteri Türü</label><select id="a-m" value={musteri} onChange={(e) => setMusteri(e.target.value)}>{['Bireysel Müşteri', 'Kurumsal Müşteri', 'Sigorta Şirketi'].map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="a-h">Hizmet Türü</label><select id="a-h" value={hizmet} onChange={(e) => setHizmet(e.target.value)}>{['Hasar onarımı', 'Teknik servis', 'Koruyucu müdahale', 'Yat atık alım hizmeti', 'Bakım / Planlı Hizmet'].map((x) => <option key={x}>{x}</option>)}</select></>}
         {karar === 'Koşullu Açılış' && <><label htmlFor="a-ko">İzinli ve Yasak İşler</label><textarea id="a-ko" rows={2} value={kosul} onChange={(e) => setKosul(e.target.value)} /></>}
         {(karar === 'Yönlendirme' || karar === 'Ret') && <><label htmlFor="a-g">Gerekçe</label><textarea id="a-g" rows={2} value={gerekce} onChange={(e) => setGerekce(e.target.value)} /></>}
         {t.oncelik === 'Kritik' && karar === 'Kabul' && <label className="kutu"><input type="checkbox" checked={acilGecici} onChange={(e) => setAcilGecici(e.target.checked)} /><span>Acil Geçici Açılış</span></label>}

@@ -1,7 +1,10 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statfsSync, writeFileSync } from 'node:fs';
+import { closeSync, copyFileSync, createReadStream, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, statSync, statfsSync, writeFileSync, writeSync } from 'node:fs';
+import { createInterface } from 'node:readline';
+import { once } from 'node:events';
+import type { Writable } from 'node:stream';
 import { join, relative } from 'node:path';
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { createGunzip, createGzip } from 'node:zlib';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import type { Pool } from 'pg';
@@ -25,7 +28,23 @@ kapanisKaydet('Geri Yükleme Testi Sonucu', async (c, k, karar) => {
 });
 
 function sifrele(veri: Buffer, a: string) { const iv = randomBytes(12); const c = createCipheriv('aes-256-gcm', anahtarAl(a), iv); const g = Buffer.concat([c.update(veri), c.final()]); return Buffer.concat([iv, c.getAuthTag(), g]); }
-function coz(veri: Buffer, a: string) { const d = createDecipheriv('aes-256-gcm', anahtarAl(a), veri.subarray(0, 12)); d.setAuthTag(veri.subarray(12, 28)); return Buffer.concat([d.update(veri.subarray(28)), d.final()]); }
+/** Yedek zarfı: iv (12) | GCM etiketi (16) | şifreli gzip. Yazım akış halindedir; etiket yazım bitince 12. bayta yerleştirilir. */
+async function akisYaz(yol: string, a: string, uret: (yaz: (s: string) => Promise<void>) => Promise<void>) {
+  const iv = randomBytes(12); const c = createCipheriv('aes-256-gcm', anahtarAl(a), iv); const gz = createGzip();
+  const out = createWriteStream(yol); out.write(Buffer.concat([iv, Buffer.alloc(16)]));
+  gz.pipe(c).pipe(out);
+  const yaz = async (s: string) => { if (!gz.write(s)) await once(gz, 'drain'); };
+  await uret(yaz);
+  gz.end(); await once(out, 'finish');
+  const fd = openSync(yol, 'r+'); try { writeSync(fd, c.getAuthTag(), 0, 16, 12); } finally { closeSync(fd); }
+}
+/** Akış halinde çözer ve satır satır okur. */
+function akisOku(dosya: string, a: string) {
+  const fd = openSync(dosya, 'r'); const bas = Buffer.alloc(28); try { readSync(fd, bas, 0, 28, 0); } finally { closeSync(fd); }
+  const d = createDecipheriv('aes-256-gcm', anahtarAl(a), bas.subarray(0, 12)); d.setAuthTag(bas.subarray(12, 28));
+  return createInterface({ input: createReadStream(dosya, { start: 28 }).pipe(d).pipe(createGunzip()), crlfDelay: Infinity });
+}
+const dosyaOzeti = async (yol: string) => { const h = createHash('sha256'); for await (const p of createReadStream(yol)) h.update(p as Buffer); return h.digest('hex'); };
 
 const superBaglan = async (v: string, p: string, port = 5432) => { const c = new pg.Client({ host: 'localhost', port, user: 'postgres', password: p, database: v }); await c.connect(); return c; };
 
@@ -38,13 +57,21 @@ export async function yedekAl(db: Pool, tur: 'Dört Saatlik' | 'Gece Tam', a: Ye
     mkdirSync(a.klasor, { recursive: true });
     await c.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
     const tablolar = (await c.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename`)).rows.map((r) => r.tablename as string);
-    const icerik: Record<string, unknown[]> = {}; let satir = 0;
-    for (const t of tablolar) { const r = (await c.query(`SELECT to_jsonb(x) j FROM ${pg.escapeIdentifier(t)} x`)).rows.map((z) => z.j); icerik[t] = r; satir += r.length; }
-    const siralar = (await c.query(`SELECT schemaname || '.' || sequencename s, last_value v FROM pg_sequences WHERE schemaname = 'public' AND last_value IS NOT NULL`)).rows;
+    let satir = 0;
+    const ad = `yedek-${simdi.toISOString().replace(/[:.]/g, '-')}.yny`; const yol = join(a.klasor, ad);
+    // Bellek taşmasını önlemek için her tablo imleçle 1.000 satırlık parçalar hâlinde okunur ve akış hâlinde yazılır (surum 2, satır başına bir JSON).
+    await akisYaz(yol, a.anahtar, async (yaz) => {
+      await yaz(JSON.stringify({ surum: 2, zaman: simdi.toISOString() }) + '\n');
+      for (const t of tablolar) {
+        await c!.query(`DECLARE yedek_imleci NO SCROLL CURSOR FOR SELECT to_jsonb(x) j FROM ${pg.escapeIdentifier(t)} x`);
+        for (;;) { const r = (await c!.query(`FETCH 1000 FROM yedek_imleci`)).rows; if (!r.length) break; satir += r.length; await yaz(JSON.stringify({ t, r: r.map((z) => z.j) }) + '\n'); }
+        await c!.query(`CLOSE yedek_imleci`);
+      }
+      const siralar = (await c!.query(`SELECT schemaname || '.' || sequencename s, last_value v FROM pg_sequences WHERE schemaname = 'public' AND last_value IS NOT NULL`)).rows;
+      await yaz(JSON.stringify({ siralar }) + '\n');
+    });
     await c.query('COMMIT');
-    const paket = sifrele(gzipSync(Buffer.from(JSON.stringify({ surum: 1, zaman: simdi.toISOString(), tablolar: icerik, siralar }))), a.anahtar);
-    const ad = `yedek-${simdi.toISOString().replace(/[:.]/g, '-')}.yny`; const yol = join(a.klasor, ad); writeFileSync(yol, paket);
-    const ozet = createHash('sha256').update(paket).digest('hex');
+    const ozet = await dosyaOzeti(yol); const paket = { length: statSync(yol).size };
     let belge = 0;
     if (a.depoKok && existsSync(a.depoKok)) {
       const hedef = join(a.klasor, 'belgeler'); const gez = (d: string) => { for (const e of readdirSync(d, { withFileTypes: true })) { const p = join(d, e.name); if (e.isDirectory()) { if (e.name !== 'gecici') gez(p); continue; } const h = join(hedef, relative(a.depoKok!, p)); belge++; if (!existsSync(h)) { mkdirSync(join(h, '..'), { recursive: true }); writeFileSync(h, sifrele(readFileSync(p), a.anahtar)); } } }; gez(a.depoKok);
@@ -65,19 +92,29 @@ export async function yedekAl(db: Pool, tur: 'Dört Saatlik' | 'Gece Tam', a: Ye
 
 /** YG-1279: boş veya test veritabanına geri yükler, kayıt sayılarını döner. Tetikleyici ve ilişki denetimi yükleme süresince kapalıdır. */
 export async function yedekGeriYukle(dosya: string, a: { hedefVeritabani: string; superParola: string; anahtar: string; port?: number }) {
-  const veri = JSON.parse(gunzipSync(coz(readFileSync(dosya), a.anahtar)).toString()) as { tablolar: Record<string, unknown[]>; siralar: { s: string; v: string }[] };
   const c = await superBaglan(a.hedefVeritabani, a.superParola, a.port); const sonuc: Record<string, number> = {};
   try {
     await c.query('BEGIN'); await c.query(`SET LOCAL session_replication_role = replica`);
     const var0 = (await c.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`)).rows.map((r) => r.tablename as string);
     await c.query(`TRUNCATE ${var0.map((t) => pg.escapeIdentifier(t)).join(', ')}`);
-    for (const [t, satirlar] of Object.entries(veri.tablolar)) {
-      // Hesaplanan (generated) sütunlar yazılmaz; hedef veritabanı yeniden hesaplar.
-      const s = (await c.query(`SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) l FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER'`, [t])).rows[0].l as string;
+    // Hesaplanan (generated) sütunlar yazılmaz; hedef veritabanı yeniden hesaplar.
+    const sutun = new Map<string, string>();
+    const yukle = async (t: string, satirlar: unknown[]) => {
+      if (!sutun.has(t)) sutun.set(t, (await c.query(`SELECT string_agg(quote_ident(column_name), ', ' ORDER BY ordinal_position) l FROM information_schema.columns WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER'`, [t])).rows[0].l);
+      const s = sutun.get(t)!;
       for (let i = 0; i < satirlar.length; i += 500) await c.query(`INSERT INTO ${pg.escapeIdentifier(t)} (${s}) OVERRIDING SYSTEM VALUE SELECT ${s} FROM jsonb_populate_recordset(null::${pg.escapeIdentifier(t)}, $1::jsonb)`, [JSON.stringify(satirlar.slice(i, i + 500))]);
-      sonuc[t] = satirlar.length;
+      sonuc[t] = (sonuc[t] ?? 0) + satirlar.length;
+    };
+    let siralar: { s: string; v: string }[] = [];
+    for await (const satir of akisOku(dosya, a.anahtar)) {
+      if (!satir.trim()) continue;
+      const x = JSON.parse(satir) as { tablolar?: Record<string, unknown[]>; siralar?: { s: string; v: string }[]; t?: string; r?: unknown[] };
+      if (x.tablolar) for (const [t, l] of Object.entries(x.tablolar)) await yukle(t, l); // surum 1: tek satır
+      if (x.t && x.r) await yukle(x.t, x.r);
+      if (x.siralar) siralar = x.siralar;
     }
-    for (const r of veri.siralar) await c.query(`SELECT setval($1, $2)`, [r.s, r.v]);
+    for (const [t, sayi] of Object.entries(sonuc)) if (sayi === 0) delete sonuc[t];
+    for (const r of siralar) await c.query(`SELECT setval($1, $2)`, [r.s, r.v]);
     await c.query('COMMIT');
     return sonuc;
   } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { await c.end(); }

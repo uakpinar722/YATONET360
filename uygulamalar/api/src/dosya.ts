@@ -262,6 +262,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       // YG-021, YG-029: yetki doğrulanmadan iş başlamaz. Koşullu açılış ve acil ilk tedbir (YG-065) bu sırayı beklemez.
       if (g.karar === 'Kabul' && t.ihbar_yetki_durumu !== 'Doğrulandı' && !acil) return dur(409, 'Yetki doğrulanmadan dosya kabul edilemez; yetkiyi doğrulayınız veya Koşullu Açılış seçiniz.');
       if (t.ihbar_yetki_durumu === 'Bilgi Amaçlı' && !acil) return dur(409, 'İhbar edenin işlem yetkisi yoktur; yat sahibi veya yetkilisine ulaşınız.');
+      // YG-866: hizmet türü değer listesinden (LST_HIZMET_TURU) seçilir.
+      if (g.hizmetTuru && !(await c.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_HIZMET_TURU' AND deger = $1`, [g.hizmetTuru])).rowCount) return dur(400, 'Hizmet türünü listeden seçiniz.');
       const musteri = g.musteriTuru ?? '';
       if (!['Sigorta Şirketi', 'Kurumsal Müşteri', 'Bireysel Müşteri'].includes(musteri)) return dur(400, 'Müşteri türünü seçiniz.');
       // YG-100: yabancı sigortacı muhatap olamaz; dosya bireysel kurallarla yürür.

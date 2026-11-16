@@ -10,7 +10,7 @@ import { onayMakami, rolSahipleri } from './makam.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
-const IK = ['İnsan Kaynakları Müdürü', 'İnsan Kaynakları Sorumlusu']; const TURLER = ['Zorunlu', 'Oryantasyon', 'Rol Müfredatı'];
+const IK = ['İnsan Kaynakları Müdürü', 'İnsan Kaynakları Sorumlusu']; const TURLER = ['Zorunlu', 'Oryantasyon', 'Rol Müfredatı', 'Saha Oryantasyonu'];
 const HAZIRLIK = 'Deneme Süresi Değerlendirmesi'; const KARAR = 'Deneme Süresi Kararı';
 
 /** YG-970: ilk amirden başlar; son karar personelde Direktör, müdürde GMY, direktörde CEO; hazırlayan son kararı vermez; İç Denetim Müdürü CEO'dadır. */
@@ -67,7 +67,7 @@ export function akademiYollari(s: FastifyInstance, b: Baglam) {
   s.get('/akademi', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const r = await roller(o.kullanici); const ik = r.some((x) => IK.includes(x));
-    const dersler = (await b.db.query(`SELECT d.kimlik, d.ad, d.tur, d.icerik, d.surum, d.degisiklik_notu, EXISTS (SELECT 1 FROM akademi_beyan x WHERE x.ders_ref = d.kimlik AND x.surum = d.surum AND x.personel_ref = $1) beyan FROM akademi_ders d WHERE d.aktif AND (cardinality(d.roller) = 0 OR d.roller && $2::text[]) ORDER BY beyan, d.tur, d.ad`, [o.kullanici, r])).rows;
+    const dersler = (await b.db.query(`SELECT d.kimlik, d.ad, d.tur, d.icerik, d.surum, d.degisiklik_notu, EXISTS (SELECT 1 FROM akademi_beyan x WHERE x.ders_ref = d.kimlik AND x.surum = d.surum AND x.personel_ref = $1) beyan FROM akademi_ders d WHERE d.aktif AND (cardinality(d.roller) = 0 OR d.roller && $2::text[]) AND (d.tur <> 'Saha Oryantasyonu' OR ${ik ? 'true' : 'false'}) ORDER BY beyan, d.tur, d.ad`, [o.kullanici, r])).rows;
     const izleme = ik ? (await b.db.query(`SELECT d.kimlik, d.ad, d.surum, (SELECT count(*)::int FROM akademi_beyan x WHERE x.ders_ref = d.kimlik AND x.surum = d.surum) beyan, (SELECT count(DISTINCT a.kullanici_ref)::int FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_sahibi_birim <> 'Dış Kullanıcı' AND (cardinality(d.roller) = 0 OR r.rol_adi = ANY(d.roller))) hedef FROM akademi_ders d WHERE d.aktif ORDER BY d.ad`)).rows : [];
     return { ik, dersler, izleme };
   });

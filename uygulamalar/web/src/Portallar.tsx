@@ -214,7 +214,7 @@ export function FirmaPersoneli() {
     <label htmlFor="fp-y">Yerine Geçtiği Personel</label><select id="fp-y" value={yer} onChange={(e) => setYer(e.target.value)}><option value="">Yok</option>{l.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}{x.kritik ? ' (Kritik)' : ''}</option>)}</select>
     {eskiKritik && kurum && <BelgeSec ad="Yeterlilik Belgesi" bagTuru="Kuruluş" bagKimligi={kurum} deger={yb} sec={setYb} />}
     <label><input type="checkbox" checked={kv} onChange={(e) => setKv(e.target.checked)} /> Bu personele Çözüm Ortağı Aydınlatma Metni (KVKK-03) iletilmiştir.</label>
-    <button className="btn2" disabled={(Boolean(eskiKritik) && !yb) || !kv} onClick={() => void istek('/firma-portal/personel', { ...f, kvkk03: kv, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined, kritik: kr, yerine: yer || undefined, yeterlilikBelgesi: yb || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setKr(false); setKv(false); setYer(''); setYb(''); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button></>;
+    <button className="btn2" disabled={(Boolean(eskiKritik) && !yb) || !kv} onClick={() => void istek('/firma-portal/personel', { ...f, kvkk03: kv, isgBitis: f.isgBitis || undefined, belgeBitis: f.belgeBitis || undefined, kritik: kr, yerine: yer || undefined, yeterlilikBelgesi: yb || undefined }).then(() => { setF({ ad: '', gorev: '', telefon: '', isgBitis: '', belge: '', belgeBitis: '' }); setKr(false); setKv(false); setYer(''); setYb(''); setM('Personel kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Personel Ekle</button><SahaOryantasyonu /></>;
 }
 
 /** YG-424: Görevli Ekip Kartı; firma unvanı yazılmaz, QR doğrulamaya gider. */
@@ -470,4 +470,18 @@ export function TeklifTalebiBolumu({ id, roller }: { id: string; roller: string[
       </>}
     </Blok>
   );
+}
+
+/** YG-938: Çözüm Ortağı saha oryantasyonu; firma yetkilisi dersin verildiği personeli işaretler. */
+export function SahaOryantasyonu() {
+  const [l, setL] = useState<{ kimlik: string; ad: string; icerik: string; surum: number; verilenler: string[] }[]>([]); const [p, setP] = useState<{ kimlik: string; ad_soyad: string; aktif: boolean }[]>([]);
+  const [sec, setSec] = useState<Record<string, string[]>>({}); const [m, setM] = useState('');
+  const yk = () => Promise.all([istek<typeof l>('/firma-portal/oryantasyon').then(setL), istek<typeof p>('/firma-portal/personel').then((x) => setP(x.filter((y) => y.aktif)))]).catch(() => undefined);
+  useEffect(() => { void yk(); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Saha Oryantasyonu</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((d) => <details className="ozet" key={d.kimlik}><summary>{d.ad} · Sürüm {d.surum} · {d.verilenler.length}/{p.length} personel</summary>
+      <div className="not" style={{ whiteSpace: 'pre-wrap' }}>{d.icerik}</div>
+      {p.filter((x) => !d.verilenler.includes(x.kimlik)).map((x) => <label key={x.kimlik}><input type="checkbox" checked={(sec[d.kimlik] ?? []).includes(x.kimlik)} onChange={(e) => setSec({ ...sec, [d.kimlik]: e.target.checked ? [...(sec[d.kimlik] ?? []), x.kimlik] : (sec[d.kimlik] ?? []).filter((z) => z !== x.kimlik) })} /> {x.ad_soyad}</label>)}
+      <button className="btn2 kucuk" disabled={!(sec[d.kimlik] ?? []).length} onClick={() => void istek(`/firma-portal/oryantasyon/${d.kimlik}`, { personel: sec[d.kimlik] }).then(() => { setM('Oryantasyon kaydedildi.'); setSec({ ...sec, [d.kimlik]: [] }); return yk(); }).catch((e) => setM(e.message))}>Oryantasyon Verildi</button></details>)}</>;
 }

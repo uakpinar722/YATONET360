@@ -220,6 +220,15 @@ describe('firma personeli ve Görevli Ekip Kartı (YG-304, YG-424, YG-339)', () 
     expect(sonra.uyarilar.find((x) => x.includes('süresi geçmiş personel'))).toContain('Usta İki');
     expect((await o.ist('GET', `/api/firma/${fir}/personel`, await o.gir('fym'))).json()).toHaveLength(2);
     expect((await o.ist('GET', u, tedC)).json()).toHaveLength(0);
+    { // YG-938: saha oryantasyonu
+      const ders = (await o.sup.query(`INSERT INTO akademi_ders (ad, tur, icerik, olusturan_ref) VALUES ('Saha Kuralları', 'Saha Oryantasyonu', 'Marina kuralları', $1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+      const k1 = await gorevlendirmeKontrolu(o.db, { firma: fir, dosya: d.kimlik, brans: 'Yok' }); expect(k1.uyarilar.some((x) => x.includes('oryantasyon'))).toBe(true);
+      const l = (await o.ist('GET', '/api/firma-portal/oryantasyon', firC)).json(); expect(l.find((x: { kimlik: string }) => x.kimlik === ders)).toBeTruthy();
+      const ps = (await o.ist('GET', u, firC)).json().filter((x: { aktif: boolean }) => x.aktif).map((x: { kimlik: string }) => x.kimlik);
+      expect((await o.ist('POST', `/api/firma-portal/oryantasyon/${ders}`, firC, { personel: ps })).statusCode).toBe(200);
+      const k2 = await gorevlendirmeKontrolu(o.db, { firma: fir, dosya: d.kimlik, brans: 'Yok' }); expect(k2.uyarilar.some((x) => x.includes('oryantasyon'))).toBe(false);
+      await o.sup.query(`UPDATE akademi_ders SET aktif = false WHERE kimlik = $1`, [ders]);
+    }
     const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON01`, d.kimlik, fir, o.K.ds])).rows[0].kimlik;
     const k = await o.ist('POST', `/api/firma-portal/is-emri/${e}/ekip-karti`, firC, { personel: [p1] }); expect(k.statusCode, k.body).toBe(200);
     const kod = k.json().kartlar[0].kod as string;

@@ -50,6 +50,9 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
   const pr = (await db.query(`SELECT ad_soyad, isg_egitim_bitis < current_date AS isg, yetki_belgesi_bitis < current_date AS belge FROM firma_personeli WHERE kurulus_ref = $1 AND aktif`, [g.firma])).rows;
   if (!pr.length) uyarilar.push('Firmanın kayıtlı aktif personeli yoktur.');
   const sureli = pr.filter((x) => x.isg || x.belge);
+  // YG-938: güncel saha oryantasyonunu almamış aktif personel uyarı olur.
+  const oryEksik = Number((await db.query(`SELECT count(*) n FROM firma_personeli p WHERE p.kurulus_ref = $1 AND p.aktif AND EXISTS (SELECT 1 FROM akademi_ders d WHERE d.aktif AND d.tur = 'Saha Oryantasyonu' AND NOT EXISTS (SELECT 1 FROM firma_oryantasyon o WHERE o.ders_ref = d.kimlik AND o.surum = d.surum AND o.personel_ref = p.kimlik))`, [g.firma])).rows[0].n);
+  if (oryEksik) uyarilar.push(`Saha oryantasyonunu almamış ${oryEksik} personel vardır.`);
   if (sureli.length) uyarilar.push(`İSG eğitimi veya yetki belgesi süresi geçmiş personel vardır: ${sureli.map((x) => x.ad_soyad).join(', ')}.`);
   if (f?.kapasite_is && Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma])).rows[0].n) >= f.kapasite_is) uyarilar.push('Firmanın beyan ettiği iş kapasitesi doludur.');
   // YG-309: branş ve görev sınıfı bazındaki kapasite; sınıfa özel satır yoksa branşın genel satırı (tüm sınıflar ve tesisler toplamı) esas alınır.
@@ -343,6 +346,26 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     const k = await kartAc(b.db, { tur: 'Kalıcı Askı Önerisi', baslik: `${f.ticari_unvan} · Kalıcı Askı Önerisi`, ozet: g, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, TM), await rolId(b.db, OPM), await rolId(b.db, BTD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
     await kartAc(b.db, { tur: 'Kalıcı Askı Hukuk Görüşü', baslik: `${f.ticari_unvan} · Hukuk ve Uyum Görüşü Bekleniyor`, ozet: `Kalıcı askı önerisi: ${g}`, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, HUD)], nesneTuru: 'Kuruluş', nesneKimligi: id });
     return { kimlik: k };
+  });
+
+  // YG-938: Çözüm Ortağı saha oryantasyonu; firma yetkilisi dersin hangi personeline verildiğini kaydeder.
+  s.get('/firma-portal/oryantasyon', oturumlu, async (i, y) => {
+    const f = await firmam(i.oturum!.kullanici); if (!f) return yok(y);
+    const dersler = (await b.db.query(`SELECT kimlik, ad, icerik, surum FROM akademi_ders WHERE aktif AND tur = 'Saha Oryantasyonu' ORDER BY ad`)).rows;
+    const verilen = (await b.db.query(`SELECT o.ders_ref, o.surum, o.personel_ref FROM firma_oryantasyon o JOIN firma_personeli p ON p.kimlik = o.personel_ref WHERE p.kurulus_ref = $1`, [f])).rows;
+    return dersler.map((d) => ({ ...d, verilenler: verilen.filter((v) => v.ders_ref === d.kimlik && v.surum === d.surum).map((v) => v.personel_ref) }));
+  });
+  s.post('/firma-portal/oryantasyon/:ders', oturumlu, async (i, y) => {
+    const o = i.oturum!; const f = await firmam(o.kullanici); const { ders } = i.params as { ders: string }; const g = (i.body ?? {}) as { personel?: string[] };
+    if (!f || !UUID.test(ders)) return yok(y);
+    const d = (await b.db.query(`SELECT surum FROM akademi_ders WHERE kimlik = $1 AND aktif AND tur = 'Saha Oryantasyonu'`, [ders])).rows[0]; if (!d) return yok(y);
+    const l = (g.personel ?? []).filter((x) => UUID.test(x));
+    if (!l.length) return y.code(400).send({ hata: 'Oryantasyonun verildiği personeli seçiniz.' });
+    const ok = (await b.db.query(`SELECT kimlik FROM firma_personeli WHERE kurulus_ref = $1 AND aktif AND kimlik = ANY($2::uuid[])`, [f, l])).rows.map((r) => r.kimlik as string);
+    if (ok.length !== l.length) return y.code(400).send({ hata: 'Personel firmanıza ait ve aktif olmalıdır.' });
+    for (const p of ok) await b.db.query(`INSERT INTO firma_oryantasyon (ders_ref, surum, personel_ref, beyan_eden_ref) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING`, [ders, d.surum, p, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Saha Oryantasyonu Verildi', nesneTuru: 'Kuruluş', nesneKimligi: f, yeni: { ders, surum: d.surum, personel: ok.length }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Firma Portalı' });
+    return { tamam: true };
   });
 
   // YG-304, YG-339: firma kendi personelini kaydeder; ayrılan personelin ekip kartları iptal olur, bağlı hesabı kapanır, geçmiş korunur.
