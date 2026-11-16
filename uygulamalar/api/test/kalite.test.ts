@@ -206,6 +206,13 @@ describe('kontrol noktası (YG-383, YG-389)', () => {
     expect((await o.ist('POST', su, tu, { sonuc: 'Uygun', kanit })).statusCode).toBe(403);
     expect((await o.ist('POST', su, await o.gir('ty'), { sonuc: 'Uygun', kanit })).json()).toMatchObject({ serbest: false, bekleyen: ['Kalite Müdürü'] });
     expect((await o.ist('POST', su, await o.gir('km'), { sonuc: 'Uygun', kanit })).json().serbest).toBe(true);
+    { // T-YG383-NCR: olumsuz sonuçta uygunsuzluk kendiliğinden açılır, ikinci olumsuz sonuçta yenisi açılmaz
+      const r2 = await o.ist('POST', u, tu, K); const su2 = `/api/kontrol-noktasi/${r2.json().kimlik}/sonuc`;
+      expect((await o.ist('POST', su2, await o.gir('ty'), { sonuc: 'Reddedildi', kanit })).statusCode).toBe(200);
+      expect((await o.ist('POST', su2, await o.gir('ty'), { sonuc: 'Düzeltme gerekli', kanit })).statusCode).toBe(200);
+      const n = (await o.sup.query(`SELECT u.sinif, u.tespit_kaynagi FROM kontrol_noktasi k JOIN uygunsuzluk u ON u.kimlik = k.uygunsuzluk_ref WHERE k.kimlik = $1`, [r2.json().kimlik])).rows;
+      expect(n).toEqual([{ sinif: 'Majör', tespit_kaynagi: 'Ara kontrol' }]);
+    }
   });
 });
 describe('tedarik (YG-823, YG-404, YG-1589)', () => {

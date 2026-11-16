@@ -152,7 +152,7 @@ try {
   await tasmaYok(pTu, 'dosya_ekrani');
   kontrol('Teknik Uzman plan ve cetveli ekrandan gönderir', true);
   await kartKarar(E, 'ty', `${d.dosyaNo} · Kalite Planı`, 'Onayla');
-  await kartKarar(E, 'ty', `${d.dosyaNo} · Kapsam ve Metraj`, 'Onayla');
+  await kartKarar(E, 'ty', `${d.dosyaNo}-MT01 · Kapsam ve Metraj`, 'Onayla');
   kontrol('Teknik Yönetici plan ve cetveli Bugün ekranından onaylar', true);
 
   // Firma fiyatı

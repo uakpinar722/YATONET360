@@ -59,6 +59,13 @@ kapanisKapisi(async (db, d) => {
   return (await db.query(`SELECT 1 FROM teknik_rapor WHERE dosya_ref = $1 AND durum = 'Onaylı' LIMIT 1`, [d.kimlik])).rowCount ? null : 'Teknik Rapor Bekliyor';
 });
 
+// YG-078: uygulamaya geçmiş (ON/EK iş emri yayımlanmış) hasar dosyası onaylı fiyat teklifi olmadan kapanmaz; işe başlamadan vazgeçilen dosyada aranmaz.
+kapanisKapisi(async (db, d) => {
+  const uyg = (await db.query(`SELECT 1 FROM is_emri e JOIN dosya f ON f.kimlik = e.dosya_ref WHERE e.dosya_ref = $1 AND f.hizmet_turu = 'Hasar onarımı' AND e.is_emri_turu IN ('ON', 'EK') AND e.statu NOT IN ('Taslak', 'İç Onayda', 'İptal') LIMIT 1`, [d.kimlik])).rowCount;
+  if (!uyg) return null;
+  return (await db.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu = 'Karar' AND karar <> 'Ret' LIMIT 1`, [d.kimlik])).rowCount ? null : 'Fiyat Teklifi Bekliyor';
+});
+
 export function raporYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });

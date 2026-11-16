@@ -67,7 +67,8 @@ kapanisKaydet('Dosya Kapanışı', async (c, k, karar, yapan) => {
     await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE p.surum_ref = s.kimlik AND p.iptal_zamani IS NULL AND e.bag_turu = 'Dosya' AND e.bag_kimligi = $1::text`, [t.dosya_ref]); // YG-416
   }
   // YG-086: kanuni sorumluluk bitişi teslim + 24 ay; elle değiştirilmez.
-  if (t.cikis_statusu === 'Teknik Kapalı') await c.query(`UPDATE dosya SET teslim_tarihi = current_date, kanuni_sorumluluk_bitis = current_date + interval '24 months' WHERE kimlik = $1`, [t.dosya_ref]);
+  // YG-086: teslim tarihi teslim kaydından (yoksa teknik kapanış günü); kanuni sorumluluk bitişi teslim + 24 ay, elle değişmez.
+  if (t.cikis_statusu === 'Teknik Kapalı') await c.query(`UPDATE dosya SET teslim_tarihi = x.t, kanuni_sorumluluk_bitis = x.t + interval '24 months' FROM (SELECT coalesce((SELECT max(teslim_zamani AT TIME ZONE 'Europe/Istanbul')::date FROM teslim_kaydi WHERE dosya_ref = $1 AND durum IN ('Teslim Edildi', 'Teslim Edildi - Onay Verilmedi')), current_date) t) x WHERE kimlik = $1`, [t.dosya_ref]);
   await statuYaz(c, { kimlik: t.dosya_ref, statu: t.statu, asama: t.asama }, { statu: t.cikis_statusu, asama: t.asama }, `Kapanış onayı${t.kapanma_nedeni ? `: ${t.kapanma_nedeni}` : ''}`, yapan);
 });
 

@@ -353,6 +353,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const izinler = await kullaniciIzinleri(b.db, o.kullanici);
     // YG-105: müşteri (yat sahibi) kaydındaki risk olayı ve vefat işareti dosya ekranında gösterilir.
     const risk = (await b.db.query(`SELECT r.risk_olayi FROM dosya_tarafi t JOIN taraf r ON r.kimlik = t.taraf_ref WHERE t.dosya_ref = $1 AND t.aktif AND t.taraf_rolu = 'Yat Sahibi' AND r.risk_olayi IS NOT NULL LIMIT 1`, [id])).rows[0]?.risk_olayi ?? (d.vefat_isareti ? 'Vefat' : null);
+    // YG-086: kanuni sorumluluk bitişi sistem alanıdır; yalnız Direktör ve üstü görür.
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (r.rol_adi LIKE '%Direktörü' OR r.rol_adi IN ('CEO', 'Genel Müdür Yardımcısı')) LIMIT 1`, [o.kullanici])).rowCount) delete (d as Record<string, unknown>).kanuni_sorumluluk_bitis;
     return { ...d, musteri_risk_olayi: risk, yat, talep, taraflar, sigorta, ekip, gecmis, bekleme, sureler, konular, iliskiler, yapilacaklar: await yapilacaklar(b.db, d), izinler: izinler.filter((x) => x.startsWith('dosya.') || x === 'yat.duzelt'), rollerim: ekip.filter((e) => e.kullanici === o.kullanici).map((e) => e.rol), bireysel6502: d.musteri_turu === 'Bireysel Müşteri' && !/ticari/i.test(yat.kullanim_amaci ?? '') };
   });
 

@@ -384,7 +384,11 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!d) return yok(y);
     const ekip = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount;
     if (!ekip) return y.code(403).send({ hata: 'Kapsam ve metraj cetvelini Teknik Uzman hazırlar.' });
+    // YG-195: onay bekleyen değişiklik kaydı sonuçlanmadan yeni kapsam sürümü onaya sunulamaz.
+    if ((await b.db.query(`SELECT 1 FROM degisiklik_protokolu WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Onay bekleyen değişiklik kaydı sonuçlanmadan yeni kapsam sürümü hazırlanamaz.' });
     if (!g.satirlar?.length) return y.code(400).send({ hata: 'En az bir satır giriniz.' });
+    // YG-182: genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.
+    if (g.satirlar.some((x) => /genel\s*gider|risk\s*pay/i.test(`${x.aciklama ?? ''} ${x.kod ?? ''}`))) return y.code(400).send({ hata: 'Genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.' });
     const sur = await yururlukSurumu(b.db);
     for (const [n, x] of g.satirlar.entries()) {
       if (!x.aciklama?.trim() || !(Number(x.miktar) > 0) || !x.birim?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda açıklama, miktar ve birim zorunludur.` });
@@ -401,7 +405,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric?.trim() || ik?.hariclar || null, g.varsayimlar?.trim() || ik?.varsayimlar || null])).rows[0];
       for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim()]);
-      await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no} · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
+      await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no}-MT01 · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
       return { kimlik: t.kimlik, surum };
     });
   });

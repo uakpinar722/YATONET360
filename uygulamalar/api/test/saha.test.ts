@@ -186,6 +186,7 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
     expect((await K({ cikis: 'Teknik Kapalı', testKabul: false, garanti: false, yetkiKapsam: false })).json().eksikler).toEqual(['Kapanış Bekliyor']);
     await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-KPN','Kapanış Firma','Çözüm Ortağı',$1) ON CONFLICT DO NOTHING`, [o.K.ds]);
     await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,'ON',$2,(SELECT kimlik FROM kurulus WHERE sicil_no = 'S-KPN'),'Y','K',100,'Tamamlandı',$3)`, [`${d.dosyaNo}-ON09`, d.kimlik, o.K.oy]);
+    await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, statu, karar, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,'Karar','Tam Onay',$3)`, [`${d.dosyaNo}-TK09`, d.kimlik, o.K.oy]); // YG-078: ON iş emri onaylı teklife dayanır
     const e = await K({ cikis: 'Teknik Kapalı', testKabul: false, garanti: false });
     expect(e.statusCode).toBe(409); expect(e.json().eksikler).toEqual(['Kabul Bekliyor', 'Garanti Bağı Eksik']);
     const r = await K({ cikis: 'Teknik Kapalı' });
@@ -193,6 +194,7 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
     await o.karar((await o.kart('Dosya Kapanışı', r.json().kimlik)).kimlik, 'opm', 'Onayla');
     const v = (await o.sup.query(`SELECT statu, kanuni_sorumluluk_bitis, teslim_tarihi FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0];
     expect(v.statu).toBe('Teknik Kapalı'); expect(v.kanuni_sorumluluk_bitis).not.toBeNull();
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('ds'))).json()).not.toHaveProperty('kanuni_sorumluluk_bitis'); // YG-086
     const eksik = await K({ cikis: 'Kapalı', neden: 'Tamamlandı' });
     expect(eksik.statusCode).toBe(409); expect(eksik.json().eksikler).toContain('Teknik Eksik');
     const r2 = await K({ cikis: 'Kapalı', neden: 'Müşteri Vazgeçti' });

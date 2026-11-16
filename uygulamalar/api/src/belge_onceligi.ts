@@ -15,7 +15,7 @@ export async function belgeOnceligi(db: Db, dosya: string) {
   const d = (await db.query(`SELECT musteri_turu, dosya_no FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]; if (!d) return null;
   const q = async (sql: string) => (await db.query(sql, [dosya])).rows.map((r) => String(r.x));
   const teklif = await q(`SELECT teklif_no || ' Rev.' || surum_no x FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu IN ('Onaylı', 'Gönderildi', 'Karar') ORDER BY teklif_no`);
-  const teknik = [...await q(`SELECT rapor_no x FROM teknik_rapor WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY rapor_no`), ...await q(`SELECT 'Kapsam ve Metraj Cetveli Rev.' || surum x FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı'`)];
+  const teknik = [...await q(`SELECT rapor_no x FROM teknik_rapor WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY rapor_no`), ...await q(`SELECT 'Kapsam ve Metraj Cetveli ' || coalesce(cetvel_no || ' ', '') || 'Rev.' || surum x FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı'`)];
   const isEmri = await q(`SELECT is_emri_no || ' Rev.' || surum x FROM is_emri WHERE dosya_ref = $1 ORDER BY is_emri_no`);
   const cerceve = d.musteri_turu !== 'Bireysel Müşteri';
   const musteri: Kalem[] = cerceve ? [

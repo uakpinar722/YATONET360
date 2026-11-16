@@ -148,6 +148,26 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     expect((await o.sup.query(`SELECT durum FROM firma_fiyat_teklifi WHERE kimlik = $1`, [ff2])).rows[0].durum).toBe('Süresi Doldu');
     expect((await o.sup.query(`SELECT durum FROM firma_fiyat_teklifi WHERE kimlik = $1`, [ff])).rows[0].durum).toBe('Gönderildi');
   });
+  it('onay bekleyen değişiklik kaydı varken yeni kapsam sürümü hazırlanamaz; cetvel -MT01 numaralı (T-YG195-CETVEL)', async () => {
+    const d = await hazir();
+    await o.sup.query(`INSERT INTO degisiklik_protokolu (degisiklik_no, dosya_ref, tur, mevcut, onerilen, kanal, durum, hazirlayan_ref) VALUES ($1,$2,'Değişiklik','M','Ö','YATONET 360','Onay Bekliyor',$3)`, [`${d.dosyaNo}-DG99`, d.kimlik, o.K.ds]);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('tu'), { satirlar: [{ aciklama: 'İnceleme', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 5, birim: 'saat', kartela: KARTELA, olcut: 'Ölçüt' }] });
+    expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('değişiklik kaydı');
+    await o.sup.query(`UPDATE degisiklik_protokolu SET durum = 'Onaylandı' WHERE dosya_ref = $1`, [d.kimlik]);
+    const gg = await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('tu'), { satirlar: [{ aciklama: 'Genel gider payı', nitelik: 'Onarım', bedel: 'Masraf', miktar: 1, birim: 'adet', kartela: KARTELA, olcut: 'Ölçüt' }] });
+    expect(gg.statusCode).toBe(400); expect(gg.json().hata).toContain('Genel gider'); // YG-182
+    await cetvel(d.kimlik);
+    expect((await o.sup.query(`SELECT DISTINCT cetvel_no FROM kapsam_cetveli WHERE dosya_ref = $1`, [d.kimlik])).rows).toEqual([{ cetvel_no: `${d.dosyaNo}-MT01` }]); // YG-008
+  });
+  it('45 gün yanıtsız teklifte Müşteri Vazgeçti – Yanıt Alınamadı kapanış görevi; 90 günden sonra yeniden açılmaz (T-YG151-YANITSIZ)', async () => {
+    const d = await hazir();
+    await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, statu, gonderim_zamani, gecerlilik_bitis_tarihi, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,'Süresi Doldu',now() - interval '46 days',current_date - 31,$3)`, [`${d.dosyaNo}-TK91`, d.kimlik, o.K.ts]);
+    await teklifSureIsle(o.db); await teklifSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Dosya Kapanışı' AND nesne_kimligi = $1 AND baslik LIKE '%Yanıt Alınamadı'`, [d.kimlik])).rows[0].n).toBe(1);
+    await o.sup.query(`UPDATE dosya SET statu = 'Kapalı', kapanma_nedeni = 'Müşteri Vazgeçti – Yanıt Alınamadı', kapanis_zamani = now() - interval '91 days' WHERE kimlik = $1`, [d.kimlik]);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/yeniden-ac`, await o.gir('ds'), { tur: 'Yeni Bilgi', gerekce: 'Müşteri döndü' });
+    expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('90 gün');
+  });
   it('firma fiyatı eksik kalemde teklif açılmaz', async () => {
     const d = await hazir({}, {}, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'B', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
     const kap = (await o.ist('GET', `/api/firma-portal/dosya/${d.kimlik}/kapsam`, firmaC)).json();
