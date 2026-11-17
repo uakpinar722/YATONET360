@@ -138,6 +138,35 @@ export async function kapsamaRaporIsle(db: Pool, simdi = new Date()): Promise<nu
   return 2;
 }
 
+/**
+ * YG-342: firma sicil belgeleri bitişine 30 gün kala firma kullanıcılarına ve Sicil Sorumlusuna bir kez hatırlatılır; süresi dolunca
+ * Sicil Sorumlusu ve Firma Yönetimi Müdürü bilgilendirilir, firmanın açık iş emri varsa Operasyon Müdürüne etki değerlendirmesi görevi açılır.
+ */
+export async function sicilBelgeSureIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const bugun = simdi.toISOString().slice(0, 10); let n = 0;
+  const fk = async (k: string) => (await db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [k])).rows.map((x) => x.kullanici_ref as string);
+  const sicil = await rolSahipleri(db, await rolId(db, 'Sicil Sorumlusu'));
+  for (const s of (await db.query(`SELECT s.kimlik, s.kurulus_ref, s.tur, s.gecerlilik_bitis::text bitis, k.ticari_unvan FROM sicil_belgesi s JOIN kurulus k ON k.kimlik = s.kurulus_ref WHERE s.gecerlilik_bitis BETWEEN $1::date AND $1::date + 30 AND k.ag_statusu IS DISTINCT FROM 'Çıkarıldı'`, [bugun])).rows) {
+    if (!(await birKez(db, 'sicil-belge-30', `${s.kimlik}:${s.bitis}`))) continue;
+    await bildir(db, { olay: `sicil-belge-30:${s.kimlik}:${s.bitis}`, kullanicilar: [...await fk(s.kurulus_ref), ...sicil], baslik: `${s.tur} · Geçerlilik Bitiyor`, ozet: `${s.ticari_unvan}: ${s.bitis.split('-').reverse().join('.')} tarihinde sona eriyor; yenilenmiş belgeyi yükleyiniz.` }, simdi); n++;
+  }
+  const fym = await rolSahipleri(db, await rolId(db, 'Firma Yönetimi Müdürü'));
+  for (const s of (await db.query(`SELECT s.kimlik, s.kurulus_ref, s.tur, s.gecerlilik_bitis::text bitis, k.ticari_unvan, (SELECT count(*)::int FROM is_emri e WHERE e.kurulus_ref = s.kurulus_ref AND e.statu IN ('Aktif', 'Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Durduruldu')) acik FROM sicil_belgesi s JOIN kurulus k ON k.kimlik = s.kurulus_ref
+      WHERE s.gecerlilik_bitis < $1::date AND s.gecerlilik_bitis >= $1::date - 30 AND k.ag_statusu IS DISTINCT FROM 'Çıkarıldı' AND NOT EXISTS (SELECT 1 FROM sicil_belgesi y WHERE y.kurulus_ref = s.kurulus_ref AND y.tur = s.tur AND y.gecerlilik_bitis >= $1::date)`, [bugun])).rows) {
+    if (!(await birKez(db, 'sicil-belge-doldu', `${s.kimlik}:${s.bitis}`))) continue;
+    await bildir(db, { olay: `sicil-belge-doldu:${s.kimlik}:${s.bitis}`, kullanicilar: [...await fk(s.kurulus_ref), ...sicil, ...fym], baslik: `${s.tur} · Süresi Doldu`, ozet: `${s.ticari_unvan}: yeni görevlendirme belge yenilenene kadar yapılmaz.`, oncelik: 'Yüksek' }, simdi);
+    if (s.acik > 0) await kartAc(db, { tur: 'Belge Süresi Etki Değerlendirmesi', kategori: 'gorev', baslik: `${s.ticari_unvan} · ${s.tur} Süresi Doldu`, ozet: `Firmanın ${s.acik} açık iş emri var; devam, durdurma veya devir kararını değerlendiriniz.`, sahipRol: await rolId(db, 'Operasyon Müdürü'), nesneTuru: 'Kuruluş', nesneKimligi: s.kurulus_ref });
+    n++;
+  }
+  // YG-420: iş emri durduruldu, iptal edildi veya kapandı bilgisi firmaya portal bildirimiyle gider (son 7 gün; her durum bir kez).
+  for (const e of (await db.query(`SELECT kimlik, is_emri_no, statu, kurulus_ref, durdurma_nedeni FROM is_emri WHERE statu IN ('Durduruldu', 'İptal', 'Kapalı') AND kurulus_ref IS NOT NULL AND coalesce(guncelleme_zamani, olusturma_zamani) > $1::timestamptz - interval '7 days'`, [simdi])).rows) {
+    if (!(await birKez(db, 'is-emri-durum-firma', `${e.kimlik}:${e.statu}`))) continue;
+    await bildir(db, { olay: `is-emri-durum:${e.kimlik}:${e.statu}`, kullanicilar: await fk(e.kurulus_ref), baslik: `${e.is_emri_no} · İş Emri ${e.statu === 'Kapalı' ? 'Kapandı' : e.statu === 'İptal' ? 'İptal Edildi' : 'Durduruldu'}`, ozet: e.statu === 'Durduruldu' && e.durdurma_nedeni ? String(e.durdurma_nedeni) : undefined, oncelik: e.statu === 'Durduruldu' ? 'Yüksek' : 'Normal' }, simdi);
+    n++;
+  }
+  return n;
+}
+
 /** YG-141: geçici onarım süresi ve kontrol hatırlatması; su alma riskinde ilk 3 gün her gün, sonra haftalık, diğerlerinde haftalık. */
 export async function geciciOnarimIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;

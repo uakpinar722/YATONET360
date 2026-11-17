@@ -1,3 +1,4 @@
+import { DURAK_SN } from './sure.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez, disGonder } from './bildirim.js';
@@ -23,7 +24,11 @@ export async function kurumsalRaporIcerik(db: Db, kurum: string, donem: string) 
   const filo = (await db.query(`SELECT y.yat_adi, d.dosya_no, d.statu, d.asama, to_char(d.olusturma_zamani AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY') acilis FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE y.yat_sahibi_ref = $1 AND d.olusturma_zamani < $2 ORDER BY y.yat_adi, d.dosya_no`, [taraf, kesim])).rows;
   const cari = (await db.query(`SELECT d.dosya_no, f.fatura_no, f.fatura_tarihi::text, f.vade::text, f.toplam_eur, coalesce((SELECT sum(t.tutar_eur) FROM tahsilat t WHERE t.fatura_ref = f.kimlik AND t.tarih < $2), 0) tahsil FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE y.yat_sahibi_ref = $1 AND f.fatura_no IS NOT NULL AND f.fatura_tarihi < $2 ORDER BY f.fatura_tarihi`, [taraf, kesim])).rows;
   const bakiye = Math.round(cari.reduce((a, x) => a + Number(x.toplam_eur) - Number(x.tahsil), 0) * 100) / 100;
-  return { donem, kesim, filo, cari, bakiye };
+  // YG-461: hizmet seviyesi (SLA): dönem içinde tamamlanan süre hedeflerinden zamanında (Beklemede duraklaması dahil) tamamlananlar.
+  const bas = `${donem}-01`;
+  const sla = (await db.query(`SELECT s.tur, count(*)::int toplam, count(*) FILTER (WHERE s.tamamlanma <= s.bitis + make_interval(secs => ${DURAK_SN}))::int zamaninda FROM dosya_sure s JOIN dosya d ON d.kimlik = s.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref
+      WHERE y.yat_sahibi_ref = $1 AND s.tamamlanma >= $2::date AND s.tamamlanma < $3::date GROUP BY s.tur ORDER BY s.tur`, [taraf, bas, kesim])).rows.map((r) => ({ ...r, oran: r.toplam ? Math.round((1000 * r.zamaninda) / r.toplam) / 10 : null }));
+  return { donem, kesim, filo, cari, bakiye, sla };
 }
 
 kapanisKaydet(TUR, async (c, k, karar, yapan) => {

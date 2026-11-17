@@ -501,6 +501,12 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       await (await import('./resmi_onay.js')).resmiOnayKontrol(c, t.kimlik); // YG-1441
       const genelT = await teklifKdvUygula(c, t.kimlik);
       await c.query(`UPDATE firma_fiyat_teklifi SET durum = 'Seçildi' WHERE kimlik = $1`, [g.firmaTeklifi]);
+      // YG-420: aynı dosyada gönderilmiş diğer firma teklifleri Seçilmedi olur; firmalar sonucu portaldan bildirimle öğrenir.
+      { const fk = async (k: string) => (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [k])).rows.map((x) => x.kullanici_ref as string);
+        const sec = (await c.query(`SELECT teklif_no, kurulus_ref FROM firma_fiyat_teklifi WHERE kimlik = $1`, [g.firmaTeklifi])).rows[0];
+        if (sec) await bildir(c, { olay: `firma-teklif-sonuc:${g.firmaTeklifi}`, kullanicilar: await fk(sec.kurulus_ref), baslik: `${sec.teklif_no} · Teklif Sonucu: Seçildi` });
+        for (const x of (await c.query(`UPDATE firma_fiyat_teklifi SET durum = 'Seçilmedi' WHERE dosya_ref = (SELECT dosya_ref FROM firma_fiyat_teklifi WHERE kimlik = $1) AND kimlik <> $1 AND durum = 'Gönderildi' RETURNING kimlik, teklif_no, kurulus_ref`, [g.firmaTeklifi])).rows)
+          await bildir(c, { olay: `firma-teklif-sonuc:${x.kimlik}`, kullanicilar: await fk(x.kurulus_ref), baslik: `${x.teklif_no} · Teklif Sonucu: Seçilmedi` }); }
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Fiyat Teklifi Hazırlandı', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { no, toplam: top.ara }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: t.kimlik, teklifNo: no, araToplam: top.ara, genelToplam: genelT, bantDisi, uyarilar: await kartelaUyarilari(c, kodlar) };
     });

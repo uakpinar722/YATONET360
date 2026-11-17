@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sicilBelgeSureIsle } from '../src/firma_ek.js';
 import { dosyaKapanisIsleri, geciciOnarimIsle, gorevSinifi, gorevlendirmeKontrolu, hizaEngeli, kurtarmaBelgeEngeli, muadilEngeli, takyidatTasimaEngeli } from '../src/firma_ek.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
@@ -188,3 +189,17 @@ describe('ağ statüsü geçişleri (YG-357, YG-359)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Pasif Önerisi' AND nesne_kimligi = $1`, [f])).rows[0].n).toBe(1);
   });
 });
+
+describe('firma belge süresi izleme (YG-342, YG-420)', () => {
+  it('30 gün kala ve süre dolunca bildirim; açık işte etki görevi; iş emri durumu firmaya (T-YG342-BELGE)', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Belge Firma','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-BS${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis, kontrol_eden_ref) VALUES ($1,'Faaliyet Belgesi', current_date + 10, $2), ($1,'İmza Sirküleri', current_date - 2, $2)`, [f, o.K.sc]);
+    const d = await dosya();
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K','Aktif',$4)`, [`${d.dosyaNo}-ON77`, d.kimlik, f, o.K.ds]);
+    expect(await sicilBelgeSureIsle(o.db)).toBeGreaterThanOrEqual(2);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE 'sicil-belge-%'`, [o.K.sc])).rows[0].n).toBeGreaterThanOrEqual(2);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Belge Süresi Etki Değerlendirmesi' AND nesne_kimligi = $1`, [f])).rows[0].n).toBe(1);
+    const n2 = await sicilBelgeSureIsle(o.db); expect(n2).toBe(0);
+  });
+});
+

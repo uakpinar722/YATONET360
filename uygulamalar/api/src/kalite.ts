@@ -36,10 +36,13 @@ export function ncrHedefi(sinif: string, simdi = new Date()): Date | null {
 export const SERBEST_ROLLERI: Record<string, string[]> = { A: ['Teknik Yönetici', KM], B: ['Teknik Uzman', KK], C: [KK], D: ['Teknik Uzman'] };
 
 /** YG-402: geçerlilik bitişi işlem tarihi + aralık; kabul kararı Hayır ise cihaz kullanılamaz. */
-export function cihazGecerli(c: { kalibrasyon_tarihi: Date | string; aralik_ay: number; kabul: boolean }, simdi = new Date()): boolean {
-  if (!c.kabul) return false;
+export function cihazGecerli(c: { kalibrasyon_tarihi: Date | string; aralik_ay: number; kabul: boolean; durum?: string; kritik?: boolean; ara_dogrulama_tarihi?: Date | string | null }, simdi = new Date()): boolean {
+  if (!c.kabul || c.durum === 'Karantina') return false;
   const b = new Date(c.kalibrasyon_tarihi); b.setMonth(b.getMonth() + c.aralik_ay);
-  return b >= simdi;
+  if (b < simdi) return false;
+  // YG-402: kritik cihazda son kalibrasyondan ya da son ara doğrulamadan itibaren 6 ayda bir ara doğrulama gerekir.
+  if (c.kritik) { const a = new Date(c.ara_dogrulama_tarihi ?? c.kalibrasyon_tarihi); a.setMonth(a.getMonth() + 6); if (a < simdi) return false; }
+  return true;
 }
 
 /** YG-373: kapalı alan ve sıcak işte oksijen %19,5–23,5; yanıcı gaz alt patlama sınırının %10'unun altında. */
@@ -341,10 +344,20 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     return y.type('application/pdf').header('Content-Disposition', `inline; filename="${encodeURIComponent(t.test_no)}.pdf"`).send(pdf);
   });
   s.post('/olcum-cihazi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; seri?: string; tarih?: string; aralik?: number; kabul?: boolean };
+    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; seri?: string; tarih?: string; aralik?: number; kabul?: boolean; kritik?: boolean; turkak?: boolean; kurulus?: string };
     if (!(await rolVar(o.kullanici, [...TEKNIK, KK, KM]))) return y.code(403).send({ hata: 'Bu işlem teknik ve kalite birimlerine aittir.' });
     if (!g.ad?.trim() || !g.seri?.trim() || !g.tarih) return y.code(400).send({ hata: 'Ad, seri no ve kalibrasyon tarihi zorunludur.' });
-    return { kimlik: (await b.db.query(`INSERT INTO olcum_cihazi (ad, seri_no, kalibrasyon_tarihi, aralik_ay, kabul, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.ad.trim(), g.seri.trim(), g.tarih, g.aralik ?? 12, g.kabul !== false, o.kullanici])).rows[0].kimlik };
+    if (g.turkak !== true) return y.code(400).send({ hata: 'LGM ölçüm cihazının kalibrasyonu TÜRKAK akreditasyonlu kuruluşça yapılmış olmalıdır.' }); // YG-402
+    // YG-402: kalibrasyon kabul kararı Hayır ise cihaz kendiliğinden Karantinadadır.
+    return { kimlik: (await b.db.query(`INSERT INTO olcum_cihazi (ad, seri_no, kalibrasyon_tarihi, aralik_ay, kabul, kaydeden_ref, kritik, turkak_akredite, kalibrasyon_kurulusu, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,$9) RETURNING kimlik`, [g.ad.trim(), g.seri.trim(), g.tarih, g.aralik ?? 12, g.kabul !== false, o.kullanici, Boolean(g.kritik), g.kurulus?.trim() || null, g.kabul === false ? 'Karantina' : 'Kullanımda'])).rows[0].kimlik };
+  });
+  // YG-402: kritik cihazın ara doğrulaması kaydedilir.
+  s.post('/olcum-cihazi/:id/ara-dogrulama', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!(await rolVar(o.kullanici, [...TEKNIK, KK, KM]))) return y.code(403).send({ hata: 'Bu işlem teknik ve kalite birimlerine aittir.' });
+    if (!UUID.test(id)) return yok(y);
+    const r = await b.db.query(`UPDATE olcum_cihazi SET ara_dogrulama_tarihi = current_date WHERE kimlik = $1 AND durum = 'Kullanımda' RETURNING kimlik`, [id]);
+    return r.rowCount ? { tamam: true } : yok(y);
   });
   // YG-286, YG-396, YG-397: ölçüt test açılırken kilitlenir; cihaz kalibrasyonu; yeniden test yeni numara; hazırlayan, kontrol eden ve karar veren ayrı.
   s.post('/dosya/:id/test', oturumlu, async (i, y) => {
@@ -358,7 +371,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!g.amac?.trim() || !g.yontem?.trim() || !g.olcut?.trim() || !g.durdurma?.trim()) return y.code(400).send({ hata: 'Amaç, yöntem, kabul ölçütü ve durdurma koşulu zorunludur.' });
     if (/^\s*(normal|iyi|uygun|çalışıyor)\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Kabul ölçütünü ölçülebilir biçimde yazmanızı rica ederiz.' });
     const cihaz = g.cihazlar ?? [];
-    for (const c of (await b.db.query(`SELECT ad, kalibrasyon_tarihi, aralik_ay, kabul FROM olcum_cihazi WHERE kimlik = ANY($1::uuid[])`, [cihaz])).rows) if (!cihazGecerli(c)) return y.code(409).send({ hata: `${c.ad} kalibrasyonu geçersizdir; testte geçerli bir cihaz seçmenizi rica ederiz.` });
+    for (const c of (await b.db.query(`SELECT ad, kalibrasyon_tarihi, aralik_ay, kabul, durum, kritik, ara_dogrulama_tarihi FROM olcum_cihazi WHERE kimlik = ANY($1::uuid[])`, [cihaz])).rows) if (!cihazGecerli(c)) return y.code(409).send({ hata: `${c.ad} kalibrasyonu geçersizdir; testte geçerli bir cihaz seçmenizi rica ederiz.` });
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       const no = await altNumara(c, d.dosya_no, 'TS');

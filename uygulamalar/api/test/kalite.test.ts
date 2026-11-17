@@ -112,7 +112,8 @@ describe('test (YG-286, YG-396, YG-397)', () => {
   it('öznel ölçüt yok, kalibrasyonsuz cihaz yok, üç ayrı kişi, yeniden test yeni numara; başarısızı başarılı yenileme kapıyı açar', async () => {
     const d = await dosya(); const tu = await o.gir('kk'); /* YG-1485: test kaydını Kalite Kontrolör girer */ const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const u = `/api/dosya/${d.kimlik}/test`;
     expect((await o.ist('POST', u, tu, { ...T, olcut: 'normal' })).statusCode).toBe(400);
-    const c = (await o.ist('POST', '/api/olcum-cihazi', await o.gir('tu'), { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01' })).json().kimlik;
+    expect((await o.ist('POST', '/api/olcum-cihazi', await o.gir('tu'), { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01' })).statusCode).toBe(400); // T-YG402-TURKAK
+    const c = (await o.ist('POST', '/api/olcum-cihazi', await o.gir('tu'), { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01', turkak: true })).json().kimlik;
     expect((await o.ist('POST', u, tu, { ...T, cihazlar: [c] })).json().hata).toContain('kalibrasyonu');
     const t = await o.ist('POST', u, tu, T);
     expect(t.statusCode, t.body).toBe(200); expect(t.json().testNo).toBe(`${d.dosyaNo}-TS01`);
