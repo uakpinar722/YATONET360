@@ -55,6 +55,8 @@ export async function parasalZincir(db: Db, ara: string[], son: string, gorus: s
   const dolu = async (r: string) => (await rolSahipleri(db, await rolId(db, r))).length > 0;
   const z: string[] = [];
   for (const r of [...ara, ...gorus]) if (r !== son && await dolu(r)) z.push(await rolId(db, r));
+  // YG-176 (KS-8): Ara Kademesiz Dönem açıkken GMY makamına düşen (5.000 EUR üstü) onay doğrudan CEO'ya gider.
+  if (son === 'Genel Müdür Yardımcısı' && Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'ara_kademesiz_donem'`)).rows[0]?.deger ?? 0) === 1) son = 'CEO';
   let i = sira.indexOf(son); let makam = son;
   while (i >= 0 && i < sira.length - 1 && !(await dolu(makam))) makam = sira[++i]!;
   z.push(await rolId(db, makam));

@@ -102,11 +102,11 @@ export async function dosyaKapanisIsleri(c: Db, dosya: string) {
   await c.query(`UPDATE acil_konum a SET aktif = false, durduran = 'Dosya Kapanışı', durma_zamani = now() FROM dosya d WHERE d.kimlik = $1 AND d.talep_ref = a.talep_ref AND a.aktif`, [dosya]);
   await c.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [dosya]);
   await c.query(`UPDATE tesis_talebi SET durum = 'Geri Çekildi' WHERE dosya_ref = $1 AND durum = 'Yanıt Bekliyor'`, [dosya]); // YG-416: tesiste bekleyen saha/çalışma izni talebi kapanır
-  const d = (await c.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  const d = (await c.query(`SELECT dosya_no, dosya_sorumlusu_ref, garanti_tanimli, garanti_suresi_ay FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
   // YG-416: karantinada veya kararı bekleyen malzeme dosyaya ayrılmış kalır; iade ya da teslim kaydı için görev açılır.
   const malzeme = (await c.query(`SELECT count(*)::int AS n FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE s.dosya_ref = $1 AND (m.kabul_karari IS NULL OR m.kabul_karari = 'Karantina')`, [dosya])).rows[0].n;
   if (malzeme && d?.dosya_sorumlusu_ref && await birKez(c, 'kapanis_malzeme', dosya)) await kartAc(c, { tur: 'Kapanış Malzeme Kontrolü', kategori: 'gorev', baslik: `${d.dosya_no} · Bekleyen Malzeme`, ozet: `${malzeme} malzeme kaydı karantinada veya karar bekliyor; iade ya da teslim kaydını tamamlayınız.`, oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
-  if (d?.dosya_sorumlusu_ref && await birKez(c, 'kapanis_yukumluluk', dosya)) await kartAc(c, { tur: 'Garanti İzleme', kategori: 'islem', baslik: `${d.dosya_no} · Garanti İzleme`, ozet: '12 aylık garanti süresince izlenir.', sonZaman: new Date(Date.now() + 365 * 86_400_000), sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
+  if (d?.dosya_sorumlusu_ref && d.garanti_tanimli === true && await birKez(c, 'kapanis_yukumluluk', dosya)) await kartAc(c, { tur: 'Garanti İzleme', kategori: 'islem', baslik: `${d.dosya_no} · Garanti İzleme`, ozet: `${d.garanti_suresi_ay} aylık garanti süresince izlenir.`, sonZaman: new Date(Date.now() + Number(d.garanti_suresi_ay) * 30.4375 * 86_400_000) /* KS-1 */, sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: dosya });
 }
 
 /** YG-1660: geçici askıda her açık iş emri için ayrı karar kaydı ve Dosya Sorumlusuna görev. Öneri: iş başlamadıysa Devir, durdurulmuşsa Güvenli Durdurma, sürüyorsa Ek Gözetim. */

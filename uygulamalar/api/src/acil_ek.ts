@@ -411,6 +411,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     const e = (await b.db.query(`SELECT dosya_ref, is_emri_turu FROM is_emri WHERE kimlik = $1 AND kurulus_ref = $2`, [id, f])).rows[0];
     if (!e) return yok(y);
     await b.db.query(`UPDATE acil_konum a SET aktif = false, durduran = 'Sahaya Varış', durma_zamani = now() FROM dosya d WHERE d.kimlik = $1 AND d.talep_ref = a.talep_ref AND a.aktif`, [e.dosya_ref]);
+    await b.db.query(`UPDATE is_emri SET acil_varis_zamani = now() WHERE kimlik = $1 AND acil_varis_zamani IS NULL`, [id]); // YG-802
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sahaya Varış', nesneTuru: 'İş Emri', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
     return { tamam: true };
   });

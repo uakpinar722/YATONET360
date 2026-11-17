@@ -292,6 +292,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const no = await altNumara(c, a.dosya_no, 'AC');
     const e = (await c.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, firma_yaniti, firma_kabul_eden_ref, firma_kabul_zamani, yayim_zamani, hazirlayan_ref) VALUES ($1,'AC',$2,$3,$4,$5,'Aktif','Kabul',$6,$7,$7,(SELECT talimat_veren_ref FROM acil_mudahale WHERE dosya_ref = $2)) RETURNING kimlik`,
       [no, a.dosya_ref, firma, a.konum, `Acil ilk tedbir: ${a.kisa_teknik_tanim}`, kim, simdi])).rows[0];
+    await c.query(`UPDATE is_emri SET acil_beyan_dk = (SELECT acil_yanit_dk FROM kurulus WHERE kimlik = $2) WHERE kimlik = $1`, [e.kimlik, firma]); // YG-802: kabul anındaki beyan
     await acilEkipBildirimi(c, a.dosya_ref, b.webAdresi); // D-046, BLD-54
     const t = await tutarIsle(c, a.dosya_ref, tahmini, simdi);
     return { isEmri: e.kimlik, isEmriNo: no, ...t };

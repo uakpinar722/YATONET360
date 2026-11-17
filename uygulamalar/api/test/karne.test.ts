@@ -16,6 +16,7 @@ describe('dosya puanı (Ek I §7.5)', () => {
   it('kabul, kesinti ve taban', () => {
     expect(dosyaPuani({ ...G, kabul: 'Koşullu Kabul', minoer: 0 }, P).kalite).toBe(70);
     expect(dosyaPuani({ ...G, kabul: 'Ret' }, P).kalite).toBe(0);
+    expect(dosyaPuani({ ...G, acilYanitIhlali: 1 }, P).kalite).toBe(dosyaPuani(G, P).kalite! - P.minoer!); // T-YG802-ACIL (KS-6)
     expect(dosyaPuani({ ...G, minoer: 0, ilkSeferdeKabul: false, majoer: 1, basarisizTest: 1, garanti: 1 }, P).kalite).toBe(45);
   });
   it('süre: tolerans içinde 100; teşhisi belirsizde +%5; Kritik %20', () => {

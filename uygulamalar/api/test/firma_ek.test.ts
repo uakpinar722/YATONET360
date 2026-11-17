@@ -149,7 +149,10 @@ describe('firma portalı ve kapanış (YG-411, YG-423, YG-867, YG-1660, YG-416)'
     expect((await o.kart('Firma Değiştir', bekl)).baslik).toContain('Devir');
   });
   it('kapanışta konum kapanır, garanti izleme açılır', async () => {
-    const d = await dosya(); await dosyaKapanisIsleri(o.db, d.kimlik);
+    const d = await dosya();
+    await dosyaKapanisIsleri(o.db, d.kimlik); expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Garanti İzleme' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(0); // KS-1: tanımsız garantide izleme yok
+    await o.sup.query(`UPDATE dosya SET garanti_tanimli = true, garanti_suresi_ay = 12, garanti_kapsami = 'İşçilik' WHERE kimlik = $1`, [d.kimlik]);
+    await dosyaKapanisIsleri(o.db, d.kimlik);
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Garanti İzleme' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
     await dosyaKapanisIsleri(o.db, d.kimlik); expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Garanti İzleme' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
   });

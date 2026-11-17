@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { kalemHesapla, kutuAyikla_test, toplamlar } from './teklif_yardim.js';
-import { caymaEngeli, teklifSureIsle } from '../src/teklif.js';
+import { caymaEngeli, parasalZincir, teklifSureIsle } from '../src/teklif.js';
 import { firmaUygunlugu } from '../src/firma.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
@@ -158,6 +158,15 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     expect(gg.statusCode).toBe(400); expect(gg.json().hata).toContain('Genel gider'); // YG-182
     await cetvel(d.kimlik);
     expect((await o.sup.query(`SELECT DISTINCT cetvel_no FROM kapsam_cetveli WHERE dosya_ref = $1`, [d.kimlik])).rows).toEqual([{ cetvel_no: `${d.dosyaNo}-MT01` }]); // YG-008
+  });
+  it('Ara Kademesiz Dönemde GMY makamı CEO olur; yalnız CEO açar (T-YG176-AKD)', async () => {
+    const rid = async (r: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [r])).rows[0].kimlik;
+    expect((await o.ist('POST', '/api/ara-kademesiz-donem', await o.gir('gmy'), { acik: true, gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/ara-kademesiz-donem', await o.gir('bceo'), { acik: true, gerekce: 'GMY izinde' })).json().acik).toBe(true);
+    expect((await parasalZincir(o.db, [], 'Genel Müdür Yardımcısı')).at(-1)).toBe(await rid('CEO'));
+    expect((await parasalZincir(o.db, [], 'Ticari İşler Direktörü')).at(-1)).toBe(await rid('Ticari İşler Direktörü'));
+    await o.ist('POST', '/api/ara-kademesiz-donem', await o.gir('bceo'), { acik: false, gerekce: 'Döndü' });
+    expect((await parasalZincir(o.db, [], 'Genel Müdür Yardımcısı')).at(-1)).toBe(await rid('Genel Müdür Yardımcısı'));
   });
   it('45 gün yanıtsız teklifte Müşteri Vazgeçti – Yanıt Alınamadı kapanış görevi; 90 günden sonra yeniden açılmaz (T-YG151-YANITSIZ)', async () => {
     const d = await hazir();

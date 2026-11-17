@@ -1346,7 +1346,7 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const l0 = (await o.ist('GET', `/api/dosya/${d.kimlik}/kapanis-asamalari`, c)).json() as { asama: string; durum: string; kosul: string }[];
     expect(l0.map((x) => x.asama)).toEqual(['Teslim', 'Teknik Kapanış', 'Mali Kapanış', 'Kurumsal Dosya Kapanışı', 'Garanti Takibi']);
     expect(l0.find((x) => x.asama === 'Garanti Takibi')?.durum).toBe('Başlamadı');
-    await o.sup.query(`UPDATE dosya SET teslim_tarihi = current_date - 30, statu = 'Kapalı', kapanma_nedeni = 'Tamamlandı', kapanis_zamani = now() WHERE kimlik = $1`, [d.kimlik]);
+    await o.sup.query(`UPDATE dosya SET garanti_tanimli = true, garanti_suresi_ay = 12, garanti_kapsami = 'İşçilik', teslim_tarihi = current_date - 30, statu = 'Kapalı', kapanma_nedeni = 'Tamamlandı', kapanis_zamani = now() WHERE kimlik = $1`, [d.kimlik]);
     const l1 = (await o.ist('GET', `/api/dosya/${d.kimlik}/kapanis-asamalari`, c)).json() as { asama: string; durum: string }[];
     expect(l1.find((x) => x.asama === 'Mali Kapanış')?.durum).toBe('Tamamlandı');
     expect(l1.find((x) => x.asama === 'Garanti Takibi')?.durum).toBe('Sürüyor');

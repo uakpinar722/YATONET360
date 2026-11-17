@@ -114,6 +114,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <label className="kutu"><input type="checkbox" checked={ku.acil} onChange={(e) => setKu({ ...ku, acil: e.target.checked })} /><span>Acil</span></label>
       <button className="btn2 kucuk" disabled={!ku.saglayici} onClick={() => void yap(() => istek(`/dosya/${id}/kurtarma`, ku), 'Kurtarma operasyonu açıldı; yat sahibi onayı gönderildi.')}>Operasyon Aç</button>
 
+      <GarantiKarari id={id} yap={yap} />
       <TeslimIslemleri id={id} yap={yap} />
       <SahaIslemleri id={id} yap={yap} />
 
@@ -151,6 +152,23 @@ function TeklifIslemleri({ id, teklifler, firma, ticari, yap }: { id: string; te
 }
 
 /** İP-5: yat sahibi onayları, teslime hazır, onaysız teslim, yat kabul, sökülen parça, kapanış hesabı. */
+/** YG-082, YG-870 (KS-1): garanti dosya bazında; varsayılan garanti yok, 12 ay önerilen değer; kararı Dosya Sorumlusu verir. */
+function GarantiKarari({ id, yap }: { id: string; yap: Yap }) {
+  const [v, setV] = useState<{ tanimli: boolean | null; sureAy: number | null; kapsam: string | null; onerilenAy: number; duzenleyebilir: boolean } | null>(null);
+  const [f, setF] = useState({ tanimli: '', sureAy: '12', kapsam: '' });
+  const yk = () => istek<NonNullable<typeof v>>(`/dosya/${id}/garanti`).then((x) => { setV(x); setF({ tanimli: x.tanimli === null ? '' : x.tanimli ? 'Evet' : 'Hayır', sureAy: String(x.sureAy ?? x.onerilenAy), kapsam: x.kapsam ?? '' }); }).catch(() => setV(null));
+  useEffect(() => { void yk(); }, [id]);
+  if (!v) return null;
+  return <><div className="bolum">Garanti</div>
+    <div className="not" data-t="garanti-durum">{v.tanimli === null ? 'Garanti kararı verilmedi; karar verilmeden garanti oluşmaz.' : v.tanimli ? `Garanti tanımlı · ${v.sureAy} ay · ${v.kapsam}` : 'Bu dosyada garanti tanımlanmadı.'}</div>
+    {v.duzenleyebilir && <>
+      <label htmlFor="gk-t">Garanti Tanımlı mı?</label><select id="gk-t" value={f.tanimli} onChange={(e) => setF({ ...f, tanimli: e.target.value })}><option value="">Seçiniz</option><option>Evet</option><option>Hayır</option></select>
+      {f.tanimli === 'Evet' && <><label htmlFor="gk-s">Garanti Süresi (Ay; Önerilen {v.onerilenAy})</label><input id="gk-s" inputMode="numeric" value={f.sureAy} onChange={(e) => setF({ ...f, sureAy: e.target.value })} />
+        <label htmlFor="gk-k">Garanti Kapsamı</label><textarea id="gk-k" value={f.kapsam} onChange={(e) => setF({ ...f, kapsam: e.target.value })} /></>}
+      <button className="btn2 kucuk" disabled={!f.tanimli || (f.tanimli === 'Evet' && !f.kapsam.trim())} onClick={() => void yap(() => istek(`/dosya/${id}/garanti`, { tanimli: f.tanimli === 'Evet', sureAy: Number(f.sureAy), kapsam: f.kapsam || undefined }).then(yk), 'Garanti kararı kaydedildi.')}>Garanti Kararını Kaydet</button></>}
+  </>;
+}
+
 function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null); const [pf, setPf] = useState({ belge: '', aciklama: '' });
   const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
@@ -321,12 +339,24 @@ export function SaglayiciMatrisi() {
 }
 
 /** YG-826: mali parametreler; boş değer işlemi bir üst onaya gönderir. Her değişiklik gerekçeyle kayda geçer. */
+/** YG-176 (KS-8): Ara Kademesiz Dönem; açıkken 5.000 EUR üstü onaylar doğrudan CEO'ya gider. Yalnız CEO değiştirir. */
+function AraKademesizDonem() {
+  const [v, setV] = useState<{ acik: boolean; ceo: boolean } | null>(null); const [g, setG] = useState(''); const [m, setM] = useState('');
+  useEffect(() => { void istek<NonNullable<typeof v>>('/ara-kademesiz-donem').then(setV).catch(() => setV(null)); }, []);
+  if (!v) return null;
+  return <div className="ozet" data-t="ara-kademesiz">
+    <div>Ara Kademesiz Dönem: <b>{v.acik ? 'Açık' : 'Kapalı'}</b>{v.acik ? ' · 5.000,00 EUR üstü onaylar doğrudan CEO’ya gider.' : ''}</div>{m && <div className="not" role="status">{m}</div>}
+    {v.ceo && <><label htmlFor="akd-g">Gerekçe</label><input id="akd-g" value={g} onChange={(e) => setG(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!g.trim()} onClick={() => void istek<{ acik: boolean }>('/ara-kademesiz-donem', { acik: !v.acik, gerekce: g }).then((r) => { setV({ ...v, acik: r.acik }); setG(''); setM(r.acik ? 'Ara Kademesiz Dönem açıldı.' : 'Ara Kademesiz Dönem kapatıldı.'); }).catch((e) => setM(e.message))}>{v.acik ? 'Dönemi Kapat' : 'Dönemi Aç'}</button></>}
+  </div>;
+}
+
 export function MaliParametreler() {
   const [l, setL] = useState<{ kod: string; deger: string | null; aciklama: string }[] | null>(null); const [d, setD] = useState<Record<string, string>>({}); const [g, setG] = useState(''); const [m, setM] = useState('');
   const yk = () => istek<NonNullable<typeof l>>('/parametreler').then(setL).catch(() => setL(null));
   useEffect(() => { void yk(); }, []);
   if (!l) return null;
-  return <><div className="bolum">Mali Parametreler</div>{m && <div className="not" role="status">{m}</div>}<label htmlFor="mp-g">Değişiklik Gerekçesi</label><input id="mp-g" value={g} onChange={(e) => setG(e.target.value)} /><div className="ozet">{l.map((x) => <div key={x.kod}>{x.aciklama}: {x.deger ?? '⚠ Tanımsız (işlem bir üst onaya gider)'} <input aria-label={`${x.aciklama} yeni değer`} value={d[x.kod] ?? ''} onChange={(e) => setD({ ...d, [x.kod]: e.target.value })} /> <button className="btn2 kucuk" disabled={!g.trim() || d[x.kod] === undefined} onClick={() => void istek(`/parametre/${x.kod}`, { deger: d[x.kod] === '' ? null : Number(String(d[x.kod]).replace(',', '.')), gerekce: g }).then(() => { setM('Öneri GMY görüşü ve CEO onayına gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>)}</div></>;
+  return <><div className="bolum">Mali Parametreler</div><AraKademesizDonem />{m && <div className="not" role="status">{m}</div>}<label htmlFor="mp-g">Değişiklik Gerekçesi</label><input id="mp-g" value={g} onChange={(e) => setG(e.target.value)} /><div className="ozet">{l.map((x) => <div key={x.kod}>{x.aciklama}: {x.deger ?? '⚠ Tanımsız (işlem bir üst onaya gider)'} <input aria-label={`${x.aciklama} yeni değer`} value={d[x.kod] ?? ''} onChange={(e) => setD({ ...d, [x.kod]: e.target.value })} /> <button className="btn2 kucuk" disabled={!g.trim() || d[x.kod] === undefined} onClick={() => void istek(`/parametre/${x.kod}`, { deger: d[x.kod] === '' ? null : Number(String(d[x.kod]).replace(',', '.')), gerekce: g }).then(() => { setM('Öneri GMY görüşü ve CEO onayına gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>)}</div></>;
 }
 
 /** YG-1472: resmî tatil ve arife takvimi (yıllık parametre). Arife yarım iş günü sayılır. */

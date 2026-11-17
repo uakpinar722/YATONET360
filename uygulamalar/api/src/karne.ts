@@ -20,14 +20,14 @@ export interface Girdi {
   planlananGun: number | null; firmaGecikmeGun: number; teshisiBelirsiz: boolean;
   butce: number | null; ekIs: number; fatura: number | null; onaysizEkIs: boolean;
   yanitUyum: number | null; raporZamaninda: number | null; oncedenBildirim: number | null;
-  isg: number; prosedur: number; denetimMajoer: number; denetimMinoer: number; eksikBelge: number; emniyetOlayi: boolean; gecikenAcikIs?: number;
+  isg: number; prosedur: number; denetimMajoer: number; denetimMinoer: number; eksikBelge: number; emniyetOlayi: boolean; gecikenAcikIs?: number; acilYanitIhlali?: number;
   musteriSikayeti?: number; duzelticiFaaliyet?: number; acikDuzelticiFaaliyet?: number; // YG-349: olay kaydına yazılır, puan formülüne girmez
 }
 
 /** YG-789, Ek I §7.5: beş boyut kayıtlardan 0–100; ölçülemeyen boyut sıfır sayılmaz (YG-743), ağırlığı ölçülenlere dağılır. */
 export function dosyaPuani(g: Girdi, p: P) {
   const bas = g.kabul === 'Kabul' ? p.kabul! : g.kabul === 'Koşullu Kabul' ? p.kosullu_kabul! : g.kabul === 'Ret' ? p.ret! : null;
-  const kalite = bas === null ? null : sinirla(bas - (g.ilkSeferdeKabul ? 0 : p.ilk_sefer!) - g.majoer * p.majoer! - (g.minoer + (g.gecikenAcikIs ?? 0)) * p.minoer! - g.basarisizTest * p.basarisiz_test! - g.garanti * p.garanti!);
+  const kalite = bas === null ? null : sinirla(bas - (g.ilkSeferdeKabul ? 0 : p.ilk_sefer!) - g.majoer * p.majoer! - (g.minoer + (g.gecikenAcikIs ?? 0) + (g.acilYanitIhlali ?? 0)) * p.minoer! - g.basarisizTest * p.basarisiz_test! - g.garanti * p.garanti!);
   let sure: number | null = null;
   if (g.planlananGun && g.planlananGun > 0) {
     const oran = (g.firmaGecikmeGun / g.planlananGun) * 100;
@@ -103,6 +103,8 @@ async function girdiTopla(db: Db, id: string, p: P): Promise<{ g: Girdi; e: Reco
     eksikBelge: await say(`SELECT count(*) n FROM sicil_belgesi WHERE kurulus_ref = $1 AND gecerlilik_bitis < $2::timestamptz`, e.kurulus_ref, kapanis),
     // YG-287: süresinde kapanmayan punch (açık iş) kalemi Minör uygunsuzluk ağırlığıyla kaliteden düşer.
     gecikenAcikIs: await say(`SELECT count(*) n FROM acik_is_kalemi WHERE is_emri_ref = $1 AND gecikti`, id),
+    // YG-802 (KS-6): beyan edilen acil yanıt süresi içinde sahaya varılmadıysa (varış kaydı yoksa da) Minör kesinti kadar düşer.
+    acilYanitIhlali: await say(`SELECT count(*) n FROM is_emri WHERE kimlik = $1 AND is_emri_turu = 'AC' AND acil_beyan_dk IS NOT NULL AND firma_kabul_zamani IS NOT NULL AND (acil_varis_zamani IS NULL OR acil_varis_zamani > firma_kabul_zamani + acil_beyan_dk * interval '1 minute')`, id),
     emniyetOlayi: (await say(`SELECT count(*) n FROM uygunsuzluk WHERE emniyet_isareti AND (is_emri_ref = $1 OR (dosya_ref = $2 AND sorumlu_firma_ref = $3))`, id, e.dosya_ref, e.kurulus_ref)) > 0,
     // YG-349: garanti çağrısı dışındaki haklı müşteri şikâyeti ve firmanın uygunsuzluklarına bağlı düzeltici faaliyetler.
     musteriSikayeti: await say(`SELECT count(*) n FROM garanti_sikayet WHERE dosya_ref = $1 AND kurulus_ref = $2 AND 'Şikâyet' = ANY(kayit_turu) AND sikayet_sonucu IN ('Haklı – Düzeltildi', 'Kısmen Haklı')`, e.dosya_ref, e.kurulus_ref),

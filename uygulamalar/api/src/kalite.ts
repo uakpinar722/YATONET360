@@ -1,3 +1,4 @@
+import { izYaz } from './denetim.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir } from './bildirim.js';
@@ -447,6 +448,24 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
   // YG-400, YG-401: birden çok sistem grubunda test varsa bütünleşik test olmadan nihai kabul yok; garanti Nihai Kabulle başlar.
+  // YG-082, YG-870 (KS-1): garanti dosyada Dosya Sorumlusunun açık kararıyla tanımlanır; 12 ay yalnız önerilen değerdir.
+  s.get('/dosya/:id/garanti', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!(await erisim(id, o.kullanici))) return yok(y);
+    const d = (await b.db.query(`SELECT garanti_tanimli, garanti_suresi_ay, garanti_kapsami, garanti_karar_zamani, dosya_sorumlusu_ref = $2 AS ds FROM dosya WHERE kimlik = $1`, [id, o.kullanici])).rows[0];
+    return { tanimli: d.garanti_tanimli, sureAy: d.garanti_suresi_ay, kapsam: d.garanti_kapsami, kararZamani: d.garanti_karar_zamani, onerilenAy: 12, duzenleyebilir: d.ds };
+  });
+  s.post('/dosya/:id/garanti', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tanimli?: boolean; sureAy?: number; kapsam?: string };
+    if (!(await erisim(id, o.kullanici))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Garanti kararını dosyanın Dosya Sorumlusu verir.' });
+    if (typeof g.tanimli !== 'boolean') return y.code(400).send({ hata: 'Garanti tanımlı olup olmadığını seçiniz.' });
+    if (g.tanimli && (!Number.isInteger(Number(g.sureAy)) || Number(g.sureAy) < 1 || Number(g.sureAy) > 120 || !g.kapsam?.trim())) return y.code(400).send({ hata: 'Garanti süresini (ay) ve kapsamını yazınız.' });
+    if ((await b.db.query(`SELECT 1 FROM kabul_kaydi WHERE dosya_ref = $1 AND kabul_turu = 'Nihai Kabul' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Nihai kabulden sonra garanti kararı değiştirilemez.' });
+    await b.db.query(`UPDATE dosya SET garanti_tanimli = $2, garanti_suresi_ay = $3, garanti_kapsami = $4, garanti_karar_veren_ref = $5, garanti_karar_zamani = now() WHERE kimlik = $1`, [id, g.tanimli, g.tanimli ? Number(g.sureAy) : null, g.tanimli ? g.kapsam!.trim() : null, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.tanimli ? 'Garanti Tanımlandı' : 'Garanti Tanımlanmadı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { sureAy: g.sureAy ?? null, kapsam: g.kapsam ?? null }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/dosya/:id/nihai-kabul', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!(await erisim(id, o.kullanici))) return yok(y);
@@ -458,7 +477,10 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM kabul_kaydi WHERE dosya_ref = $1 AND kabul_turu = 'Koşullu Kabul' AND etki_onayi IS NOT NULL AND etki_onayi <> 'Onaylandı' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Koşullu kabulün etki değerlendirmesi Teknik Müdür onayı bekliyor.' }); // YG-415
     const gr = (await b.db.query(`SELECT test_grubu, bool_or(sonuc = 'Başarılı') basari FROM test_kaydi WHERE dosya_ref = $1 AND durum = 'Tamamlandı' GROUP BY test_grubu`, [id])).rows;
     if (gr.length >= 2 && !gr.some((x) => x.test_grubu === 'Arayüz / Bütünleşik' && x.basari)) return y.code(409).send({ hata: 'Nihai kabul için Bütünleşik test bekleniyor.' });
-    const r = (await b.db.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, garanti_baslangic, kaydeden_ref) VALUES ($1,'Nihai Kabul',(now() AT TIME ZONE 'Europe/Istanbul')::date,$2) RETURNING garanti_baslangic::text`, [id, o.kullanici])).rows[0];
+    // YG-082, YG-870 (KS-1): garanti başlangıcı yalnız garanti tanımlı dosyada yazılır; karar verilmemişse Dosya Sorumlusuna görev açılır.
+    const gk = (await b.db.query(`SELECT garanti_tanimli, dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    const r = (await b.db.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, garanti_baslangic, kaydeden_ref) VALUES ($1,'Nihai Kabul',CASE WHEN $3 THEN (now() AT TIME ZONE 'Europe/Istanbul')::date END,$2) RETURNING garanti_baslangic::text`, [id, o.kullanici, gk.garanti_tanimli === true])).rows[0];
+    if (gk.garanti_tanimli === null && gk.dosya_sorumlusu_ref) await kartAc(b.db, { tur: 'Garanti Kararı', kategori: 'islem', baslik: `${gk.dosya_no} · Garanti Kararı Verilmedi`, ozet: 'Dosyada garanti kararı verilmeden nihai kabul yapıldı; bu dosyada garanti oluşmamıştır.', sahipKullanici: gk.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
     return { garantiBaslangic: r.garanti_baslangic };
   });
 

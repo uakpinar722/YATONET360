@@ -177,8 +177,19 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     await ek('Makine ve Tahrik'); await ek('Elektrik/Elektronik');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/nihai-kabul`, ty)).json().hata).toContain('Bütünleşik');
     await ek('Arayüz / Bütünleşik');
+    // T-YG082-GARANTI (KS-1): karar yalnız Dosya Sorumlusundan; tanımlıysa başlangıç yazılır.
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/garanti`, ty, { tanimli: true, sureAy: 12, kapsam: 'İşçilik' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/garanti`, await o.gir('ds'), { tanimli: true, sureAy: 12 })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/garanti`, await o.gir('ds'), { tanimli: true, sureAy: 12, kapsam: 'İşçilik' })).statusCode).toBe(200);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/nihai-kabul`, ty);
     expect(r.statusCode, r.body).toBe(200); expect(r.json().garantiBaslangic).toBe(ileri(0));
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/garanti`, await o.gir('ds'), { tanimli: false })).statusCode).toBe(409);
+  });
+  it('garanti kararı verilmeden nihai kabulde garanti oluşmaz (T-YG870-YOK)', async () => {
+    const d = await dosya(); const ty = await o.gir('ty');
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/nihai-kabul`, ty);
+    expect(r.statusCode, r.body).toBe(200); expect(r.json().garantiBaslangic).toBeNull();
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Garanti Kararı' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
   });
   it('kanıtsız gereklilik tam kabulü durdurur', async () => {
     const d = await dosya(); const e = await isEmri(d, 'Tamamlandı'); const tu = await o.gir('tu');

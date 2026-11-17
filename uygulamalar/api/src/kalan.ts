@@ -193,7 +193,9 @@ export async function kapanisAsamalari(db: Db, dosya: string, simdi = new Date()
   const tahsil = (await db.query(`SELECT 1 FROM musteri_faturasi WHERE dosya_ref = $1 AND durum NOT IN ('Tahsil Edildi', 'Reddedildi') LIMIT 1`, [dosya])).rowCount;
   const odeme = (await db.query(`SELECT 1 FROM hakedis WHERE dosya_ref = $1 AND statu NOT IN ('Ödendi', 'Reddedildi') LIMIT 1`, [dosya])).rowCount;
   const garantiAcik = (await db.query(`SELECT 1 FROM garanti_sikayet WHERE dosya_ref = $1 AND statu <> 'Kapalı' LIMIT 1`, [dosya])).rowCount;
-  const gBitis = d.teslim_tarihi ? new Date(`${d.teslim_tarihi}T00:00:00Z`) : null; if (gBitis) gBitis.setUTCFullYear(gBitis.getUTCFullYear() + 1);
+  // KS-1: garanti yalnız dosyada tanımlıysa ve tanımlı süre kadar izlenir.
+  const gTan = (await db.query(`SELECT garanti_tanimli, garanti_suresi_ay FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
+  const gBitis = d.teslim_tarihi && gTan?.garanti_tanimli ? new Date(`${d.teslim_tarihi}T00:00:00Z`) : null; if (gBitis) gBitis.setUTCMonth(gBitis.getUTCMonth() + Number(gTan.garanti_suresi_ay));
   const mali = d.statu === 'Kapalı' && d.kapanis_zamani;
   return [
     { asama: 'Teslim', durum: teslim ? 'Tamamlandı' : 'Bekliyor', zaman: teslim?.teslim_zamani ?? null, kosul: 'Yat Teslim Tutanağının onaylanması' },
@@ -696,11 +698,26 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
   const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_)/;
-  s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod <> 'fiyat_katsayisi' ORDER BY kod`)).rows : yok(y));
+  s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod NOT IN ('fiyat_katsayisi', 'ara_kademesiz_donem') ORDER BY kod`)).rows : yok(y));
+  // YG-176 (KS-8): Ara Kademesiz Dönemi yalnız CEO açar ve kapatır; her değişiklik gerekçeyle geçmişe yazılır.
+  s.get('/ara-kademesiz-donem', oturumlu, async (i, y) => {
+    if (!(await parametreci(i.oturum!.kullanici))) return yok(y);
+    return { acik: Number((await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'ara_kademesiz_donem'`)).rows[0]?.deger ?? 0) === 1, ceo: await rolVar(i.oturum!.kullanici, ['CEO']) };
+  });
+  s.post('/ara-kademesiz-donem', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { acik?: boolean; gerekce?: string };
+    if (!(await rolVar(o.kullanici, ['CEO']))) return y.code(403).send({ hata: 'Ara Kademesiz Dönemi yalnız CEO açar ve kapatır.' });
+    if (typeof g.acik !== 'boolean' || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Durum ve gerekçe zorunludur.' });
+    const eski = Number((await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'ara_kademesiz_donem'`)).rows[0]?.deger ?? 0);
+    await b.db.query(`UPDATE sistem_parametresi SET deger = $1, gecerlilik = current_date WHERE kod = 'ara_kademesiz_donem'`, [g.acik ? 1 : 0]);
+    await b.db.query(`INSERT INTO parametre_gecmisi (kod, eski, yeni, gerekce, giren_ref) VALUES ('ara_kademesiz_donem',$1,$2,$3,$4)`, [eski, g.acik ? 1 : 0, g.gerekce.trim(), o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.acik ? 'Ara Kademesiz Dönem Açıldı' : 'Ara Kademesiz Dönem Kapatıldı', nesneTuru: 'Parametre', nesneKimligi: 'ara_kademesiz_donem', gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { acik: g.acik };
+  });
   s.post('/parametre/:kod', oturumlu, async (i, y) => {
     const o = i.oturum!; const { kod } = i.params as { kod: string }; const g = (i.body ?? {}) as { deger?: number | null; gerekce?: string };
     if (!(await parametreci(o.kullanici))) return yok(y);
-    if (kod === 'fiyat_katsayisi') return yok(y);
+    if (kod === 'fiyat_katsayisi' || kod === 'ara_kademesiz_donem') return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Değişiklik gerekçesini yazmanızı rica ederiz.' });
     if (g.deger !== null && g.deger !== undefined && !(Number(g.deger) >= 0)) return y.code(400).send({ hata: 'Değer geçersizdir.' });
     const e = (await b.db.query(`SELECT deger, aciklama FROM sistem_parametresi WHERE kod = $1`, [kod])).rows[0]; if (!e) return yok(y);
