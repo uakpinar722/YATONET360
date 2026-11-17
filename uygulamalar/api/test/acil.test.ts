@@ -107,6 +107,7 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     const d = (await o.sup.query(`SELECT statu, asama, oncelik, acil_gecici_acilis, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [r.kimlik])).rows[0];
     expect(d).toMatchObject({ statu: 'Aktif', oncelik: 'Kritik', acil_gecici_acilis: true, dosya_sorumlusu_ref: o.K.ds });
     for (const k of ['opm', 'tm', 'tod', 'gmy']) expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND baslik = $2`, [o.K[k], `Acil İlk Tedbir: ${r.dosyaNo}`])).rowCount).toBe(1);
+    { const oz = (await o.sup.query(`SELECT ozet FROM bildirim WHERE baslik = $1 LIMIT 1`, [`Acil İlk Tedbir: ${r.dosyaNo}`])).rows[0].ozet; for (const s of ['Can/Çevre Riski:', 'Alınan Tedbir:', 'Tahmini Tutar:', 'Eşiğe Kalan:', 'Olay Yöneticisi:', 'Sonraki Adım:']) expect(oz).toContain(s); } // T-YG255-OZET
     expect((await o.sup.query(`SELECT kurulus_ref FROM acil_gorev_cagrisi WHERE dosya_ref = $1`, [r.kimlik])).rows[0].kurulus_ref).toBe(f1);
     expect((await o.sup.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Uzman' AND kullanici_ref = $2`, [r.kimlik, o.K.tu])).rowCount).toBe(1);
   });

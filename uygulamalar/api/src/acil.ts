@@ -157,8 +157,13 @@ async function acilDosyaAc(c: PoolClient, talep: string, g: { konum: string; ola
   const yon = (await nobetci(c, 'Yönetici', simdi));
   await c.query(`INSERT INTO acil_mudahale (dosya_ref, olay_turu, can_cevre_riski, tehlike, talimat_veren_ref, olay_yoneticisi_ref, hatirlatma_112, sinir_durumu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [d.kimlik, g.olayTuru, canCevre, g.olay, yapan, mesaiDisi ? yon : null, Boolean(g.hatirlatma112), canCevre ? 'Sınırsız' : 'Sınır Altında']);
   const al: string[] = []; for (const rl of ACIL_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, rl))); if (mesaiDisi && yon) al.push(yon);
-  await bildir(c, { olay: `acil-tedbir:${d.kimlik}`, kullanicilar: al, baslik: `Acil İlk Tedbir: ${d.dosya_no}`, ozet: `${g.olayTuru} · ${g.yatAdi} · ${g.konum} · Eşiğe kalan: ${tutar(await parametre(c, 'acil_sinir_eur'))} EUR`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
   const cagri = await cagriGonder(c, d.kimlik, simdi);
+  // YG-255: olay türü, yat, adres, can/çevre riski, alınan tedbir, tahmini tutar, eşiğe kalan, olay yöneticisi ve sonraki adım.
+  const yonAd = (await c.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [(mesaiDisi ? yon : null) ?? yapan])).rows[0]?.ad_soyad ?? '-';
+  const ozet = [`Olay: ${g.olayTuru}`, `Yat: ${g.yatAdi}`, `Adres: ${g.konum}`, `Can/Çevre Riski: ${canCevre ? 'Var' : 'Yok'}`, `Alınan Tedbir: Acil ilk tedbir başlatıldı${g.hatirlatma112 ? '; 112 hatırlatıldı' : ''}`,
+    'Tahmini Tutar: 0,00 EUR (firma kabulünde girilir)', canCevre ? 'Eşiğe Kalan: Sınırsız (can/çevre)' : `Eşiğe Kalan: ${tutar(await parametre(c, 'acil_sinir_eur'))} EUR`, `Olay Yöneticisi: ${yonAd}`,
+    `Sonraki Adım: ${cagri ? 'Sağlayıcı kabulü bekleniyor' : 'Müsait sağlayıcı yok; Operasyon Müdürü sağlayıcı arar'}`].join(' · ');
+  await bildir(c, { olay: `acil-tedbir:${d.kimlik}`, kullanicilar: al, baslik: `Acil İlk Tedbir: ${d.dosya_no}`, ozet, oncelik: 'Kritik', sms: true, acil: true }, simdi);
   if (mesaiDisi && canCevre) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Can veya çevre riski'); // YG-1481
   if (mesaiDisi && !cagri) await omAramaGorevi(c, d.kimlik, d.dosya_no, 'Müsait sağlayıcı yok');
   return { d, cagri };

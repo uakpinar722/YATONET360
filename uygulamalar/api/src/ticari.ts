@@ -563,6 +563,9 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [h.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli IBAN kaydı yoktur.' });
     const dolu = (await b.db.query(`SELECT tur FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%SGK%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [h.kurulus_ref])).rows[0];
     if (!dolu) return y.code(409).send({ hata: 'SGK borcu yoktur yazısı olmadan hakediş ödemesi bekletilir.' }); // YG-341, YG-839
+    // YG-839: işte görevli firma personelinin İSG eğitimi süresi geçmişse ödeme bekletilir.
+    { const isg = (await b.db.query(`SELECT p.ad_soyad FROM firma_personeli p WHERE p.kurulus_ref = $1 AND p.aktif AND p.isg_egitim_bitis < current_date`, [h.kurulus_ref])).rows.map((x) => x.ad_soyad as string);
+      if (isg.length) return y.code(409).send({ hata: `İSG eğitimi süresi geçmiş personel bulunduğundan hakediş ödemesi bekletilir: ${isg.join(', ')}.` }); }
     if (!(await b.db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%vergi borcu%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [h.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Vergi borcu yoktur yazısı olmadan hakediş ödemesi bekletilir.' }); // YG-341
     // YG-846: firma faturası Esas Müşteri Faturası ile aynı tarih ve kurda olmalı.
     if (!h.firma_fatura_tarihi || !h.firma_fatura_kuru) return y.code(409).send({ hata: 'Firma faturasının tarih ve kuru bekleniyor.' });
