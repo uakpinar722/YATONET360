@@ -22,3 +22,6 @@ Thumbs.db
 
 # Yüklenen belgeler
 .veri/
+
+# Tarayıcı testi ekran görüntüleri
+uygulamalar/web/*.png
