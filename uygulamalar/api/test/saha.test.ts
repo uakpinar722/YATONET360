@@ -258,8 +258,9 @@ describe('vefat ve itiraz (YG-1477, YG-1497)', () => {
 describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-1425)', () => {
   it('garanti kapalı dosyayı açmaz, GKnn alır, keşif süresi önceliğe göre; alındı bildirimi gider', async () => {
     const d = await hazir(); const c = await o.gir('ds');
-    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Normal', belirti: 'Sızıntı' });
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Normal', belirti: 'Sızıntı', tekrarlayan: true });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().kayitNo).toBe(`${d.dosyaNo}-GK01`);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Kök Neden İncelemesi' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].n).toBe(1); // YG-085 (T-YG085)
     const k = (await o.sup.query(`SELECT bildirim_zamani, kesif_son FROM garanti_sikayet WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
     expect(Math.round((+k.kesif_son - +k.bildirim_zamani) / 3_600_000)).toBe(72);
     expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`alindi:${r.json().kimlik}`])).rows[0].metin).toContain(`${d.dosyaNo}-GK01`);

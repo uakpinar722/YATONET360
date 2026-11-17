@@ -158,6 +158,25 @@ export async function teklifKdvUygula(c: Db, teklif: string): Promise<number> {
   return h.toplam;
 }
 
+/** YG-190: yayın öncesi aritmetik kontrol; ilk tutarsızlığı döndürür (kuruş farkı yok sayılmaz). */
+export async function aritmetikKontrol(db: Db, teklif: string): Promise<string | null> {
+  const f = (await db.query(`SELECT ara_toplam_eur, indirim_tutari_eur, kesif_mahsubu_eur, kdv_tutari_eur, tevkifat_eur, genel_toplam_eur FROM fiyat_teklifi WHERE kimlik = $1`, [teklif])).rows[0];
+  if (!f) return 'Teklif bulunamadı.';
+  const kl = (await db.query(`SELECT sira_no, miktar, birim_satis_fiyati_eur, tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [teklif])).rows;
+  for (const k of kl) if (k.birim_satis_fiyati_eur !== null && R2(Number(k.miktar) * Number(k.birim_satis_fiyati_eur)) !== R2(Number(k.tutar_eur))) return `Aritmetik kontrol: ${k.sira_no}. kalemde miktar × birim fiyat tutara eşit değildir.`;
+  const ara = R2(kl.filter((k) => !k.opsiyon).reduce((a, k) => a + Number(k.tutar_eur), 0));
+  if (ara !== R2(Number(f.ara_toplam_eur))) return 'Aritmetik kontrol: ara toplam kalemlerin toplamına eşit değildir.';
+  const genel = R2(ara - Number(f.indirim_tutari_eur ?? 0) - Number(f.kesif_mahsubu_eur ?? 0) + Number(f.kdv_tutari_eur ?? 0) - Number(f.tevkifat_eur ?? 0));
+  if (f.genel_toplam_eur !== null && genel !== R2(Number(f.genel_toplam_eur))) return 'Aritmetik kontrol: genel toplam (ara toplam − indirim − keşif mahsubu + KDV − tevkifat) tutmamaktadır.';
+  return null;
+}
+
+/** YG-156: teklif cetvele dayanıyorsa cetvel hâlâ dosyanın onaylı (yürürlükteki) sürümü olmalıdır. */
+export async function cetvelDegistiEngeli(db: Db, teklif: string): Promise<string | null> {
+  const r = (await db.query(`SELECT c.durum, c.surum FROM fiyat_teklifi f JOIN kapsam_cetveli c ON c.kimlik = f.cetvel_ref WHERE f.kimlik = $1`, [teklif])).rows[0];
+  return r && r.durum !== 'Onaylı' ? `Teklifin dayandığı kapsam cetveli (Rev.${r.surum}) yeni sürümle değişmiştir; önceki onay geçerli değildir. Teklifi güncel cetvelden revize ediniz.` : null;
+}
+
 export function toplamlar(kalemler: { tutar_eur: number | string; opsiyon: boolean }[], indirimOrani: number | null, kesifMahsubu: number, kdvOrani: number) {
   const ara = R2(kalemler.filter((k) => !k.opsiyon).reduce((a, k) => a + Number(k.tutar_eur), 0));
   const ops = R2(kalemler.filter((k) => k.opsiyon).reduce((a, k) => a + Number(k.tutar_eur), 0));
@@ -202,6 +221,9 @@ kapanisKaydet('Fiyat Teklifi', async (c, k, karar, yapan) => {
   if (karar === 'Onayla') {
     await c.query(`UPDATE fiyat_teklifi SET statu = 'Onaylı', son_onay_makami = (SELECT rol_adi FROM rol WHERE kimlik = (SELECT zincir[cardinality(zincir)] FROM is_karti WHERE tur = 'Fiyat Teklifi' AND nesne_kimligi = $1::text ORDER BY olusturma_zamani DESC LIMIT 1)), guncelleme_zamani = now() WHERE kimlik = $1::uuid`, [t.kimlik]);
     await izYaz(c, { aktor: yapan, eylem: 'Fiyat Teklifi İç Onay', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı' });
+    // YG-1601: onay tamamlanınca gönderim Dosya Sorumlusundan; teklif gönderilince görev kapanır (0314).
+    const ds = (await c.query(`SELECT d.dosya_sorumlusu_ref, d.dosya_no FROM dosya d WHERE d.kimlik = $1`, [t.dosya_ref])).rows[0];
+    if (ds?.dosya_sorumlusu_ref) { const { kartAc } = await import('./is_motoru.js'); await kartAc(c, { tur: 'Müşteriye Gönder', kategori: 'gorev', baslik: `${t.teklif_no} · Müşteriye Gönder`, ozet: `${ds.dosya_no} · Teklif iç onayı tamamlandı; müşteriye gönderiniz.`, sahipKullanici: ds.dosya_sorumlusu_ref, nesneTuru: 'Teklif', nesneKimligi: t.kimlik }); }
   } else if (karar === 'Reddet') await c.query(`UPDATE fiyat_teklifi SET statu = 'Reddedildi', guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
   else if (karar === 'Gerekçeyle İade Et') await c.query(`UPDATE fiyat_teklifi SET statu = 'Taslak', kilitli = false, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
 });
@@ -654,6 +676,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     { const sb = await sigortaBildirimEngeli(b.db, t.dosya_ref); if (sb) return y.code(409).send({ hata: sb }); } // YG-454
     if ((await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND bant_disi LIMIT 1`, [t.kimlik])).rowCount && !t.bant_disi_onay_ref) return y.code(409).send({ hata: 'Bant dışı kalem için Ticari İşler Direktörünün gerekçeli onayı gereklidir.' });
     if ((await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND gecici_kayit`, [t.yat_ref])).rowCount) return y.code(409).send({ hata: 'Teklif için önce Geçici yat kaydını doğrulamanızı rica ederiz.' });
+    { const ak = await aritmetikKontrol(b.db, t.kimlik); if (ak) return y.code(409).send({ hata: ak }); } // YG-190
+    { const ce = await cetvelDegistiEngeli(b.db, t.kimlik); if (ce) return y.code(409).send({ hata: ce }); } // YG-156
     if (t.teklif_muhatabi === 'Sigorta Şirketi') {
       const sg = (await b.db.query(`SELECT sigorta_hasar_dosya_no, cerceve_sozlesme_yok FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
       if (!sg?.sigorta_hasar_dosya_no) return y.code(409).send({ hata: 'Gönderim için Sigorta hasar dosya numarası bekleniyor.' }); // YG-101
@@ -676,6 +700,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
     if (t.statu !== 'Onaylı') return y.code(409).send({ hata: 'Teklif iç onaydan geçmemiştir.' });
+    { const ce = await cetvelDegistiEngeli(b.db, t.kimlik); if (ce) return y.code(409).send({ hata: ce }); } // YG-156
     if (t.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada teklif gönderimi bekletilmektedir.' });
     const yde = await yatDegeriEngeli(b.db, t.dosya_ref); if (yde) return y.code(409).send({ hata: yde });
     const dil = dilKod(t.yazisma_dili);

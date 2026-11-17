@@ -65,6 +65,8 @@ const onayla = async (id: string) => {
   const kim = son === 'Ticari İşler Direktörü' ? 'tid' : son === 'Genel Müdür Yardımcısı' ? 'gmy' : null;
   const sonuc = kim ? await o.karar(k.kimlik, kim, 'Onayla') : await o.ist('POST', `/api/is/${k.kimlik}/karar`, ceo, { karar: 'Onayla' });
   expect(sonuc.statusCode, sonuc.body).toBe(200);
+  { const ds = (await o.sup.query(`SELECT d.dosya_sorumlusu_ref r FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [id])).rows[0].r; // YG-1601 (T-YG1601)
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Müşteriye Gönder' AND nesne_kimligi = $1`, [id])).rows[0].n).toBe(ds ? 1 : 0); }
   return son;
 };
 

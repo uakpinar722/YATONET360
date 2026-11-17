@@ -697,7 +697,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
-  const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_)/;
+  const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_|hizmet_)/;
   s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod NOT IN ('fiyat_katsayisi', 'ara_kademesiz_donem') ORDER BY kod`)).rows : yok(y));
   // YG-176 (KS-8): Ara Kademesiz Dönemi yalnız CEO açar ve kapatır; her değişiklik gerekçeyle geçmişe yazılır.
   s.get('/ara-kademesiz-donem', oturumlu, async (i, y) => {

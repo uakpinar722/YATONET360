@@ -42,8 +42,12 @@ async function saatBul(db: Db, tur: string, oncelik: string): Promise<number | u
     const v = k ? (await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [k])).rows[0]?.deger : null;
     if (v !== null && v !== undefined && Number(v) > 0) return Number(v);
   }
+  // YG-1604: hizmet süresi parametresi varsa o geçerlidir (CEO onaylı değişiklik); yoksa koddaki başlangıç değeri.
+  const tk = HIZMET_TUR_KODU[tur]; const ok = { Kritik: 'kritik', Yüksek: 'yuksek', Normal: 'normal', Planlı: 'planli' }[oncelik];
+  if (tk && ok && SURE_SAAT[tur]?.[oncelik] !== undefined) { const v = (await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [`hizmet_${tk}_${ok}`])).rows[0]?.deger; if (v !== null && v !== undefined && Number(v) > 0) return Number(v); }
   return SURE_SAAT[tur]?.[oncelik];
 }
+const HIZMET_TUR_KODU: Record<string, string> = { 'İlk Yanıt': 'ilk_yanit', 'Teknik Uzman Ataması': 'tu_atama', 'Randevu İletişimi': 'randevu', Keşif: 'kesif', 'Sahaya Ulaşma': 'sahaya_ulasma', 'Keşiften Teklife': 'kesiften_teklife' };
 
 /** YG-042: saha merkezine 150 km'den uzak noktada en az 4 saat; 250 km'den sonra başlayan her 100 km için ayrıca 1,5 saat. */
 export function mesafeEki(km: number | null | undefined): number {

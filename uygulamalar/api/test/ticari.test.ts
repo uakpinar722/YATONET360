@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { kartelaEksperRaporuIsle, proformaSureIsle, riskUyariIsle } from '../src/ticari.js';
 import { eurCevir, kurGetir, tcmbKurIsle } from '../src/doviz.js';
 import { isGununeKaydir, odemeTakvimiUyariIsle, onerilenVadeler } from '../src/odeme_takvimi.js';
-import { parasalZincir } from '../src/teklif.js';
+import { aritmetikKontrol, cetvelDegistiEngeli, parasalZincir } from '../src/teklif.js';
 import { rolId } from '../src/ihbar.js';
 import { alacakIsle, avansHesapla, firmaOdemePlani, hakedisKesintisi, ibanGecerli, izinGunu, masrafOdenecek, teslimEngeli, yillikHak } from '../src/ticari.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
@@ -156,6 +156,23 @@ describe('kartela eksper raporu (YG-773)', () => {
     const t0 = new Date('2031-05-03T08:00:00Z');
     expect(await kartelaEksperRaporuIsle(o.db, t0)).toBe(1); expect(await kartelaEksperRaporuIsle(o.db, t0)).toBe(0);
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = 'kartela-eksper:2031-04'`, [o.K.tid])).rows[0].n).toBe(1);
+  });
+});
+
+describe('teklif aritmetik kontrolü ve cetvel değişimi (YG-190, YG-156)', () => {
+  it('kalem, ara toplam ve genel toplam tutarsızlığı yakalanır; cetveli değişen teklif engellenir (T-YG190)', async () => {
+    const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi', 1000, 'Taslak', null as never);
+    expect(await aritmetikKontrol(o.db, t)).toBeNull();
+    await o.sup.query(`UPDATE fiyat_teklifi_kalemi SET tutar_eur = 999 WHERE teklif_ref = $1`, [t]);
+    expect(await aritmetikKontrol(o.db, t)).toContain('1. kalemde');
+    await o.sup.query(`UPDATE fiyat_teklifi_kalemi SET tutar_eur = 1000 WHERE teklif_ref = $1`, [t]);
+    await o.sup.query(`UPDATE fiyat_teklifi SET genel_toplam_eur = 1199.99 WHERE kimlik = $1`, [t]);
+    expect(await aritmetikKontrol(o.db, t)).toContain('genel toplam');
+    const cv = (await o.sup.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref) VALUES ($1, 1, 'Yerine Geçti', $2) RETURNING kimlik`, [d.kimlik, o.K.tu])).rows[0].kimlik;
+    await o.sup.query(`UPDATE fiyat_teklifi SET cetvel_ref = $2 WHERE kimlik = $1`, [t, cv]);
+    expect(await cetvelDegistiEngeli(o.db, t)).toContain('Rev.1');
+    await o.sup.query(`UPDATE kapsam_cetveli SET durum = 'Onaylı' WHERE kimlik = $1`, [cv]);
+    expect(await cetvelDegistiEngeli(o.db, t)).toBeNull();
   });
 });
 
