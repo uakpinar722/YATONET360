@@ -156,6 +156,29 @@ export async function proformaSureIsle(db: Db, simdi = new Date()): Promise<numb
   return n;
 }
 
+/**
+ * YG-784: taahhüt riski (teslim tarihini 7 gün geçen açık sipariş) ve firma riski (son 90 günde iki ve üzeri Majör uygunsuzluk) erken uyarısı.
+ * YG-838: güvence kesintisi son hakedişten 12 ay sonra Ticari Sorumluya iade görevi olarak düşer.
+ */
+export async function riskUyariIsle(db: Db, simdi = new Date()): Promise<number> {
+  const rolu = async (r: string) => (await db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = $1`, [r])).rows.map((z) => z.kullanici_ref as string);
+  let n = 0;
+  for (const s of (await db.query(`SELECT s.kimlik, s.siparis_no, s.teslim_tarihi::text t, s.hazirlayan_ref FROM tedarik_siparisi s WHERE s.statu IN ('Verildi', 'Kısmi Teslim') AND s.teslim_tarihi < $1::date - 7`, [simdi.toISOString().slice(0, 10)])).rows) {
+    if (!(await birKez(db, 'siparis-gecikme-7', s.kimlik))) continue;
+    await bildir(db, { olay: `siparis-gecikme:${s.kimlik}`, kullanicilar: [s.hazirlayan_ref, ...await rolu('Tedarik Yönetimi Müdürü')], baslik: `${s.siparis_no} · Teslim 7 Günü Aştı`, ozet: `Söz verilen teslim: ${s.t.split('-').reverse().join('.')}`, oncelik: 'Yüksek' }, simdi); n++;
+  }
+  for (const f of (await db.query(`SELECT k.kimlik, k.ticari_unvan, k.kayit_rolu, count(*)::int n FROM uygunsuzluk u JOIN kurulus k ON k.kimlik = u.sorumlu_firma_ref WHERE u.sinif IN ('Majör', 'Kritik') AND u.statu <> 'Geçersiz' AND u.olusturma_zamani > $1::timestamptz - interval '90 days' GROUP BY 1, 2, 3 HAVING count(*) >= 2`, [simdi])).rows) {
+    const ay = simdi.toISOString().slice(0, 7);
+    if (!(await birKez(db, 'firma-risk-majoer', `${f.kimlik}:${ay}`))) continue;
+    await bildir(db, { olay: `firma-risk:${f.kimlik}:${ay}`, kullanicilar: await rolu(f.kayit_rolu === 'Tedarikçi' ? 'Tedarik Yönetimi Müdürü' : 'Firma Yönetimi Müdürü'), baslik: `${f.ticari_unvan} · Firma Riski`, ozet: `Son 90 günde ${f.n} Majör veya Kritik uygunsuzluk.`, oncelik: 'Yüksek' }, simdi); n++;
+  }
+  for (const e of (await db.query(`SELECT e.kimlik, e.is_emri_no, sum(h.kesinti)::float kes, max(h.olusturma_zamani) son FROM is_emri e JOIN hakedis h ON h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi' WHERE e.guvence_iade_zamani IS NULL GROUP BY 1, 2 HAVING sum(h.kesinti) > 0 AND max(h.olusturma_zamani) <= $1::timestamptz - interval '12 months'`, [simdi])).rows) {
+    await db.query(`UPDATE is_emri SET guvence_iade_zamani = $2 WHERE kimlik = $1`, [e.kimlik, simdi]);
+    await kartAc(db, { tur: 'Güvence Kesintisi İadesi', kategori: 'islem', baslik: `${e.is_emri_no} · Güvence Kesintisi İadesi`, ozet: `${tutar(e.kes)} EUR güvence kesintisi 12 ayını doldurdu; firmaya iade ödemesini planlayınız.`, sahipRol: await rolId(db, 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)'), nesneTuru: 'İş Emri', nesneKimligi: e.kimlik }); n++;
+  }
+  return n;
+}
+
 /** YG-897: Ödeme Alındı (BLD-27); sigortaya ve vefat işaretli dosyaya gitmez. */
 async function odemeAlindi(c: Db, dosya: string, muhatap: string, tarih: string) {
   if (muhatap === 'Sigorta Şirketi') return;
@@ -455,6 +478,17 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-903, YG-904, YG-1460: havale, POS, ödeme bağlantısı; çek/senet yok; kısmi tahsilat; kart üst sınırı 20.000,00 EUR.
+  // YG-838: banka mektubu (iş emri veya firma belgesi) Ticari Sorumluca iş emrine bağlanır; sonraki hakedişlerde güvence kesintisi yapılmaz.
+  s.post('/is-emri/:id/banka-mektubu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belge?: string };
+    if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Banka mektubunu Ticari Sorumlu kaydeder.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const e = (await b.db.query(`SELECT kurulus_ref, dosya_ref FROM is_emri WHERE kimlik = $1`, [id])).rows[0]; if (!e) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!g.belge || !UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND ((bag_turu = 'İş Emri' AND bag_kimligi = $2) OR (bag_turu = 'Kuruluş' AND bag_kimligi = $3::text) OR (bag_turu = 'Dosya' AND bag_kimligi = $4::text))`, [g.belge, id, e.kurulus_ref, e.dosya_ref])).rowCount) return y.code(400).send({ hata: 'Banka mektubu belgesini yükleyip seçiniz.' });
+    await b.db.query(`UPDATE is_emri SET banka_mektubu_ref = $2 WHERE kimlik = $1`, [id, g.belge]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Banka Mektubu Kaydı', nesneTuru: 'İş Emri', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/tahsilat', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { fatura?: string; odemeTalebi?: string; tutar?: number; tarih?: string; kanal?: string; referans?: string; ucuncuKisi?: string; taksit?: number };
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Tahsilatı Ticari Sorumlu kaydeder.' });
@@ -537,7 +571,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const dilim = await parametre(c, 'hakedis_dilim_eur'); const son = (await c.query(`SELECT max(olusturma_zamani) z FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [id])).rows[0].z ?? e.baslangic_tarihi ?? e.olusturma_zamani;
       const ay = new Date(son); ay.setMonth(ay.getMonth() + 1);
       if (Number(g.brut) < dilim && R2(kum + Number(g.brut)) < bedel && !['Tamamlandı', 'Kapalı'].includes(e.statu) && ay > new Date()) throw Object.assign(new Error(`Hakediş aylık ya da ${tutar(dilim)} EUR'luk dilimlerle verilir; bir sonraki hakediş tarihi ${ay.toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}.`), { statusCode: 409 });
-      const kes = hakedisKesintisi(Number(g.brut), bedel, await parametre(c, 'hakedis_kesinti_esik_eur'), await parametre(c, 'hakedis_kesinti_orani'));
+      const kes = hakedisKesintisi(Number(g.brut), bedel, await parametre(c, 'hakedis_kesinti_esik_eur'), await parametre(c, 'hakedis_kesinti_orani'), Boolean(e.banka_mektubu_ref)); // YG-838: banka mektubu varsa kesinti yok
       const no = await altNumara(c, e.dosya_no, 'HK');
       const sira = (await c.query(`SELECT coalesce(max(sira_no), 0) + 1 n FROM hakedis WHERE is_emri_ref = $1`, [id])).rows[0].n;
       const r = (await c.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, kesinti, net, kanit_belge_ref, firma_fatura_no, firma_fatura_tarihi, firma_fatura_kuru, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`, [no, id, e.dosya_ref, sira, g.brut, R2(kum + Number(g.brut)), kes, R2(Number(g.brut) - kes), g.belge, g.faturaNo ?? null, g.faturaTarihi || null, Number(g.faturaKuru) > 0 ? g.faturaKuru : null, o.kullanici])).rows[0];

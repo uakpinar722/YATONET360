@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { proformaSureIsle } from '../src/ticari.js';
+import { proformaSureIsle, riskUyariIsle } from '../src/ticari.js';
 import { alacakIsle, avansHesapla, firmaOdemePlani, hakedisKesintisi, ibanGecerli, izinGunu, masrafOdenecek, teslimEngeli, yillikHak } from '../src/ticari.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
@@ -133,6 +133,17 @@ describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
     await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref, olusturma_zamani) VALUES ($1,'Nihai Kabul',$2, now() - interval '49 hours')`, [d.kimlik, o.K.ty]);
     expect(await proformaSureIsle(o.db)).toBeGreaterThanOrEqual(1); await proformaSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ts, `proforma-48:${d.kimlik}`])).rows[0].n).toBe(1);
+  });
+});
+
+describe('güvence kesintisi iadesi (YG-838)', () => {
+  it('son hakedişten 12 ay sonra Ticari Sorumluya iade görevi bir kez (T-YG838-IADE)', async () => {
+    const d = await o.dosyaAc();
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Güvence Firma','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-GV${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'Y','K','Kapalı',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON66`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO hakedis (hakedis_no, is_emri_ref, dosya_ref, sira_no, bu_donem_brut, kumulatif, kesinti, net, statu, giren_ref, olusturma_zamani) VALUES ($1,$2,$3,1,12000,12000,600,11400,'Ödendi',$4, now() - interval '13 months')`, [`${d.dosyaNo}-HK66`, e, d.kimlik, o.K.ds]);
+    await riskUyariIsle(o.db); await riskUyariIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Güvence Kesintisi İadesi' AND nesne_kimligi = $1`, [e])).rows[0].n).toBe(1);
   });
 });
 
