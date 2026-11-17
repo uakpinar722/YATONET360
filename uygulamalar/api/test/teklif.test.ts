@@ -156,6 +156,9 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     await o.sup.query(`UPDATE degisiklik_protokolu SET durum = 'Onaylandı' WHERE dosya_ref = $1`, [d.kimlik]);
     const gg = await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('tu'), { satirlar: [{ aciklama: 'Genel gider payı', nitelik: 'Onarım', bedel: 'Masraf', miktar: 1, birim: 'adet', kartela: KARTELA, olcut: 'Ölçüt' }] });
     expect(gg.statusCode).toBe(400); expect(gg.json().hata).toContain('Genel gider'); // YG-182
+    const bb = await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('tu'), { satirlar: [{ aciklama: 'Boya', nitelik: 'Onarım', bedel: 'Malzeme', miktar: 1, birim: 'kutu', kartela: KARTELA, olcut: 'Ölçüt' }] });
+    expect(bb.statusCode).toBe(400); expect(bb.json().hata).toContain('ortak ölçü birimi'); // T-YG1257-BIRIM (KS-2)
+    expect((await o.ist('GET', '/api/olcu-birimleri', await o.gir('tu'))).json().map((x: { deger: string }) => x.deger)).toEqual(expect.arrayContaining(['m² × kat', 'tekne', 'nokta']));
     await cetvel(d.kimlik);
     expect((await o.sup.query(`SELECT DISTINCT cetvel_no FROM kapsam_cetveli WHERE dosya_ref = $1`, [d.kimlik])).rows).toEqual([{ cetvel_no: `${d.dosyaNo}-MT01` }]); // YG-008
   });

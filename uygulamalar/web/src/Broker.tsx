@@ -1,3 +1,4 @@
+import { DurumSayilari } from './DurumSayilari';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
@@ -10,7 +11,7 @@ export function BrokerAna() {
   useEffect(() => { void istek<NonNullable<typeof v>>('/broker/ana').then(setV).catch(() => setV(null)); }, []);
   if (!v) return null;
   const sat = (x: D) => <div className={x.yetki === 'Geçerli' ? 'soru' : 'soru hata'} key={x.kimlik}><span>{x.dosya_no} · {x.yat_adi}{x.yat_sahibi ? ` · ${x.yat_sahibi}` : ''} · {x.statu} · Yetki: {x.yetki}{x.bitis ? ` (${tarih(x.bitis)})` : ''}</span></div>;
-  return <section><div className="bolum">Yetki Belgesi Bekleyen Dosyalar</div>{v.bekleyen.length ? v.bekleyen.map(sat) : <div className="ozet bos">Yetki belgesi bekleyen dosya bulunmamaktadır.</div>}
+  return <section><DurumSayilari ogeler={[['Yetkili Dosya', v.dosyalar.length], ['Yetki Belgesi Bekleyen', v.bekleyen.length], ['Süresi Dolan Yetki', v.dolan.length]]} /><div className="bolum">Yetki Belgesi Bekleyen Dosyalar</div>{v.bekleyen.length ? v.bekleyen.map(sat) : <div className="ozet bos">Yetki belgesi bekleyen dosya bulunmamaktadır.</div>}
     <div className="bolum">Süresi Dolmak Üzere Olan Yetki Belgeleri</div>{v.dolan.length ? v.dolan.map(sat) : <div className="ozet bos">Süresi dolmak üzere olan yetki belgesi bulunmamaktadır.</div>}
     <div className="bolum">Dosyalarım</div>{v.dosyalar.length ? v.dosyalar.map(sat) : <div className="ozet bos">Dosya bulunmamaktadır.</div>}</section>;
 }

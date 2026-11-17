@@ -1,3 +1,4 @@
+import { DurumSayilari } from './DurumSayilari';
 import { eur } from './bicim';
 import { ProsesLgm } from './Proses';
 import { useEffect, useState, type ReactNode } from 'react';
@@ -34,6 +35,7 @@ export function TesisAna({ ben }: { ben: Ben }) {
   return (
     <>
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
+      {v && <DurumSayilari ogeler={[['Yanıt Bekleyen Talep', v.bekleyen.length], ['Planlı İşlem', v.takvim.length], ['Tesisteki Yat', v.yatlar.length], ['Açık Fatura', v.faturalar.filter((x) => !['Ödendi', 'Kapandı', 'İptal'].includes(x.durum)).length]]} />}
       {v.yatlar.filter((y) => !y.teslim).map((y) => <div className="ood" role="status" key={y.dosya}>⚠ {y.yat_adi} yatının teslimi veya taşınması için LGM teslim onayını beklemenizi rica ederiz.<div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/tesis-portal/dosya/${y.dosya}/teslim-talebi`, {}), 'Teslim talebiniz iletildi.')}>Teslim Talebi</button></div></div>)}
       {v.yatlar.filter((y) => y.teslim).map((y) => <div className="not" key={y.dosya}>{y.yat_adi}: Teslim onayı verilmiştir. Onay Kodu: {y.serbest_birakma_kodu}</div>)}
       <Blok baslik="Yanıt Bekleyenler">
@@ -375,6 +377,7 @@ export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' |
   return (
     <>
       <h1>{bolum === 'siparis' ? 'Siparişler' : bolum === 'teklif' ? 'Teklifler' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      {v && bolum === 'ana' && <DurumSayilari ogeler={[['Teklif Talebi', v.talepler.length], ['Açık Sipariş', v.siparisler.filter((x) => !['Teslim Alındı', 'Kapandı', 'İptal'].includes(x.statu)).length], ['Ödeme Bekleyen Fatura', v.faturalar.filter((x) => x.odeme_durumu !== 'Ödendi').length]]} />}
       {bolum !== 'teklif' && <TedarikciUygunsuzluk yap={yap} />}
       {bolum !== 'siparis' && <Blok baslik="Teklif Talepleri">
         {bekT.length === 0 && <div className="not">Bekleyen teklif talebi bulunmamaktadır.</div>}

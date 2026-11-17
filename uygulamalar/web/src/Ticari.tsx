@@ -1,3 +1,4 @@
+import { DurumSayilari } from './DurumSayilari';
 import { eur } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
 import { SigortaIhbar } from './SigortaIhbar';
@@ -215,6 +216,8 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   const yukle = () => Promise.all([istek<Kayitlar>(`/dosya/${id}/teklifler`).then(setV), istek<Mali>(`/dosya/${id}/mali`).then(setM)]);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yap(yukle); void istek<typeof firmalar>('/firma/uygunluk').then(setFirmalar).catch(() => setFirmalar([])); void istek<{ yer: string; kapsam: string }>(`/dosya/${id}/kesif-talebi`).then((r) => setIe((x) => ({ ...x, yer: x.yer || r.yer, kapsam: x.kapsam || r.kapsam }))).catch(() => {}); }, [id]);
+  const [olcuBirimleri, setOlcuBirimleri] = useState<string[]>([]); // YG-1257 (KS-2)
+  useEffect(() => { void istek<{ deger: string }[]>('/olcu-birimleri').then((l) => setOlcuBirimleri(l.map((x) => x.deger))).catch(() => {}); }, []);
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [ie, setIe] = useState({ ts: '', yo: '', bag: '', secim: '', tur: 'KN', firma: '', tesis: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '' }); const [tesisler, setTesisler] = useState<{ kimlik: string; ad: string; il: string | null; ilce: string | null }[]>([]);
   useEffect(() => { setTesisler([]); if (ie.firma) void istek<typeof tesisler>(`/firma/${ie.firma}/tesis`).then(setTesisler).catch(() => setTesisler([])); }, [ie.firma]); /* YG-309 */ const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
@@ -237,7 +240,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <label htmlFor="c-ol">Kabul Ölçütü</label><input id="c-ol" value={satir.olcut ?? ''} onChange={(e) => setSatir({ ...satir, olcut: e.target.value })} />
           <label htmlFor="c-k">Kartela Kodu (Varsa)</label><KartelaArama id="c-k" deger={satir.kod} sec={(k) => setSatir({ ...satir, kod: k })} />
           <div className="iki-tarih"><div><label htmlFor="c-n">İşin Niteliği</label><select id="c-n" value={satir.nitelik} onChange={(e) => setSatir({ ...satir, nitelik: e.target.value })}>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select></div><div><label htmlFor="c-b">Bedel Türü</label><select id="c-b" value={satir.bedel} onChange={(e) => setSatir({ ...satir, bedel: e.target.value })}>{BEDEL.map((x) => <option key={x}>{x}</option>)}</select></div></div>
-          <div className="iki-tarih"><div><label htmlFor="c-m">Miktar</label><input id="c-m" inputMode="decimal" value={satir.miktar} onChange={(e) => setSatir({ ...satir, miktar: e.target.value })} /></div><div><label htmlFor="c-r">Birim</label><input id="c-r" value={satir.birim} onChange={(e) => setSatir({ ...satir, birim: e.target.value })} /></div></div>
+          <div className="iki-tarih"><div><label htmlFor="c-m">Miktar</label><input id="c-m" inputMode="decimal" value={satir.miktar} onChange={(e) => setSatir({ ...satir, miktar: e.target.value })} /></div><div><label htmlFor="c-r">Birim</label><input id="c-r" list="c-r-l" value={satir.birim} onChange={(e) => setSatir({ ...satir, birim: e.target.value })} /><datalist id="c-r-l">{olcuBirimleri.map((x) => <option key={x} value={x} />)}</datalist></div></div>
           <button className="btn2" disabled={!satir.aciklama.trim() || !satir.olcut?.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '', olcut: '' }); }}>Satır Ekle</button>
           <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
         </>}
@@ -435,7 +438,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   if (acik) return (
     <>
       <button className="lnk" onClick={() => setAcik(null)}>← İş Emirleri</button>
-      <h1>{acik.isEmriNo}</h1><Mesaj />{acik.anaIsEmriNo && <div className="not">Bağlı Olduğu İş Emri: {acik.anaIsEmriNo}</div>}
+      <h1>{acik.isEmriNo}</h1><Mesaj />
+      {bolum === 'ana' && <DurumSayilari ogeler={[['Açık İş Emri', l.filter((x) => !['Kapalı', 'İptal', 'Yerine Geçti', 'Tamamlandı'].includes(x.statu)).length], ['Yanıtınızı Bekleyen', l.filter((x) => !x.yanit && !['Kapalı', 'İptal', 'Yerine Geçti'].includes(x.statu)).length], ['Acil Çağrı', ac.length], ['Kapanan İş Emri', l.filter((x) => x.statu === 'Kapalı').length]]} />}{acik.anaIsEmriNo && <div className="not">Bağlı Olduğu İş Emri: {acik.anaIsEmriNo}</div>}
       <div className="ozet"><div>{acik.yat} · {acik.yatTuru ?? '—'} · {acik.yer}</div><div>{acik.kapsam}</div><div>Bedel: {eur(acik.bedel)} · {acik.statu}</div>{acik.yanitSon && acik.statu === 'Kabul Bekliyor' && <div>Yanıt Son: {saat(acik.yanitSon)}</div>}</div>
       {acik.kalemler.length > 0 && <Blok baslik="Kapsam">{acik.kalemler.map((k) => <div key={k.aciklama}>{k.aciklama} · {k.gerceklesen_miktar}/{k.miktar} {k.birim}{k.kabul_olcutu ? ` · Teslim Ölçütü: ${k.kabul_olcutu}` : ''}</div>)}</Blok>}
       {acik.bitis && <div className="not">Hedef Bitiş: {saat(acik.bitis)}</div>}
@@ -508,6 +512,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       <>
         <button className="lnk" onClick={() => setT(null)}>← Ana Sayfa</button>
         <h1>{t.teklif_no} Rev.{t.surum_no}</h1><Mesaj />
+      <DurumSayilari ogeler={[['Açık Dosya', v.dosyalar.filter((k) => k.renk !== 'gri').length], ['Kararınızı Bekleyen Teklif', v.bekleyen.length], ['İhbar', v.ihbarlar?.length ?? 0], ['Tamamlanan Dosya', v.dosyalar.filter((k) => k.renk === 'gri').length]]} />
         {t.bildirilen_sure_gun && <div className="not">Tahmini Onarım Süresi: {t.bildirilen_sure_gun} iş günü</div>}
         <label className="kutu"><input type="checkbox" checked={sec.length === t.kalemler.length} onChange={(e) => setSec(e.target.checked ? t.kalemler.map((k) => k.sira_no) : [])} /><span>Tümünü Seç</span></label>
         {t.kalemler.map((k) => <label className="kutu" key={k.sira_no}><input type="checkbox" checked={sec.includes(k.sira_no)} onChange={(e) => setSec(e.target.checked ? [...sec, k.sira_no] : sec.filter((x) => x !== k.sira_no))} /><span>{k.aciklama} · {k.isin_niteligi} · {eur(k.tutar_eur)}</span></label>)}
@@ -1042,7 +1047,7 @@ export function MuhasebeAna() {
   useEffect(() => { void yk(); }, []);
   const al = (id: string) => f[id] ?? { no: '', tarih: '', kur: '', kurTarihi: '', pdf: '' };
   const yaz = (id: string, k: string, v: string) => setF({ ...f, [id]: { ...al(id), [k]: v } });
-  return <><h1>Proformalar</h1>{m && <div className="not" role="status">{m}</div>}{l.length === 0 && <div className="ozet bos">Muhasebeye iletilen proforma bulunmamaktadır.</div>}
+  return <><h1>Proformalar</h1><DurumSayilari ogeler={[['Fatura Bekleyen Proforma', l.filter((x) => !x.fatura_no).length], ['Faturalanan Proforma', l.filter((x) => x.fatura_no).length]]} />{m && <div className="not" role="status">{m}</div>}{l.length === 0 && <div className="ozet bos">Muhasebeye iletilen proforma bulunmamaktadır.</div>}
     {l.map((x) => { const v = al(x.kimlik); return <div className="ozet" key={x.kimlik}>
       <div><b>{x.proforma_no}</b> · {x.dosya_no} · {x.muhatap} · KDV Hariç {eur(Number(x.kdv_haric_eur))} · KDV {eur(Number(x.kdv_eur))} · Toplam {eur(Number(x.toplam_eur))} · {x.durum}{x.fatura_no ? ` · Fatura ${x.fatura_no}` : ''}</div>
       {x.durum === 'Muhasebeye İletildi' && <>

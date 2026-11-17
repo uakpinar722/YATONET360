@@ -309,6 +309,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`INSERT INTO islem_es_anlami (terim, karsilik, ekleyen_ref) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [g.terim.trim().toLocaleLowerCase('tr'), g.karsilik.trim().toLocaleLowerCase('tr'), o.kullanici]);
     return { tamam: true };
   });
+  // YG-1257 (KS-2): ortak ölçü birimi listesi (kartela, metraj, Fiyat Teklifi).
+  s.get('/olcu-birimleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' }) : (await b.db.query(`SELECT deger, aciklama FROM deger_listesi WHERE liste_kodu = 'LST_OLCU_BIRIMI' ORDER BY sira, deger`)).rows);
   s.get('/kartela/ara', oturumlu, async (i) => {
     const q = String((i.query as { q?: string }).q ?? '').trim();
     if (q.length < 2) return [];
@@ -392,6 +394,11 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     // YG-182: genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.
     if (g.satirlar.some((x) => /genel\s*gider|risk\s*pay/i.test(`${x.aciklama ?? ''} ${x.kod ?? ''}`))) return y.code(400).send({ hata: 'Genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.' });
     const sur = await yururlukSurumu(b.db);
+    // YG-1257, YG-1708 (KS-2): cetvel birimi ortak ölçü birimi listesinden olmalıdır; büyük-küçük harf farkı listedeki yazıma çevrilir.
+    const birimler = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_OLCU_BIRIMI'`)).rows.map((r) => r.deger as string);
+    for (const [n, x] of g.satirlar.entries()) {
+      if (birimler.length && x.birim?.trim() && !/ekip\s*[-·x×]?\s*saat/i.test(x.birim)) { const bu = birimler.find((v) => v.toLocaleLowerCase('tr') === x.birim!.trim().toLocaleLowerCase('tr')); if (!bu) return y.code(400).send({ hata: `${n + 1}. satırdaki birim ortak ölçü birimi listesinde yoktur: ${x.birim}. Listeden seçiniz.` }); x.birim = bu; }
+    }
     for (const [n, x] of g.satirlar.entries()) {
       if (!x.aciklama?.trim() || !(Number(x.miktar) > 0) || !x.birim?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda açıklama, miktar ve birim zorunludur.` });
       if (/ekip\s*[-·x×]?\s*saat/i.test(x.birim)) return y.code(400).send({ hata: `${n + 1}. satırda ekip-saat birimi kullanılmaz; ekibin bir saatini saat birimiyle yazınız.` }); // YG-1708
