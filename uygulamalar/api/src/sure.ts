@@ -17,6 +17,8 @@ export const SURE_SAAT: Record<string, Partial<Record<string, number>>> = {
   'Sahaya Ulaşma': { Kritik: 4 },
   // YG-043
   Teklif: { Yüksek: 48, Normal: 72, Planlı: 120 },
+  // YG-043: keşiften teklife toplam hedef; Kritikte yoktur.
+  'Keşiften Teklife': { Yüksek: 96, Normal: 144, Planlı: 240 },
 };
 
 /**
@@ -30,7 +32,18 @@ export const SURE_BASLANGIC: Record<string, string> = {
   Keşif: 'Keşif iş emrinin Çözüm Ortağına gönderilmesi; firmasız keşifte keşif planı (KSF-1)',
   'Sahaya Ulaşma': 'Acil eskalasyon',
   Teklif: 'Firma Teknik Raporu ve Firma Fiyat Teklifinin portala girilmesi',
+  'Keşiften Teklife': 'Keşif süresinin başlaması (teklif gönderilince biter)',
 };
+
+/** YG-043: teklif süresi sistem parametresinden okunur (Yüksek, Normal, Planlı); diğer süreler sabit tablodadır. */
+async function saatBul(db: Db, tur: string, oncelik: string): Promise<number | undefined> {
+  if (tur === 'Teklif' && SURE_SAAT.Teklif![oncelik] !== undefined) {
+    const k = { Yüksek: 'teklif_saat_yuksek', Normal: 'teklif_saat_normal', Planlı: 'teklif_saat_planli' }[oncelik];
+    const v = k ? (await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [k])).rows[0]?.deger : null;
+    if (v !== null && v !== undefined && Number(v) > 0) return Number(v);
+  }
+  return SURE_SAAT[tur]?.[oncelik];
+}
 
 /** YG-042: saha merkezine 150 km'den uzak noktada en az 4 saat; 250 km'den sonra başlayan her 100 km için ayrıca 1,5 saat. */
 export function mesafeEki(km: number | null | undefined): number {
@@ -63,7 +76,8 @@ export async function tatilGunleri(db: Db, arife = false): Promise<Set<string>> 
 
 /** Sayacı başlatır; aynı tür ikinci kez başlamaz. Önceliğe göre süre tanımı yoksa sayaç açılmaz. */
 export async function sureBaslat(db: Db, g: { tur: string; oncelik: string; baslangic: Date; dosya?: string; talep?: string; km?: number | null }): Promise<void> {
-  const saat = SURE_SAAT[g.tur]?.[g.oncelik];
+  if (g.tur === 'Keşif' && g.dosya) await sureBaslat(db, { tur: 'Keşiften Teklife', oncelik: g.oncelik, baslangic: g.baslangic, dosya: g.dosya }); // YG-043
+  const saat = await saatBul(db, g.tur, g.oncelik);
   if (saat === undefined) return;
   const ham = new Date(g.baslangic.getTime() + (saat + (g.tur === 'Keşif' || g.tur === 'Sahaya Ulaşma' ? mesafeEki(g.km) : 0)) * 3_600_000);
   const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db), await tatilGunleri(db, true));
@@ -72,7 +86,8 @@ export async function sureBaslat(db: Db, g: { tur: string; oncelik: string; basl
 
 /** KSF-1: açık süreyi verilen başlangıçtan yeniden kurar; yoksa açar. */
 export async function sureKur(db: Db, g: { tur: string; oncelik: string; baslangic: Date; dosya: string; km?: number | null }): Promise<void> {
-  const saat = SURE_SAAT[g.tur]?.[g.oncelik];
+  if (g.tur === 'Keşif') await sureKur(db, { tur: 'Keşiften Teklife', oncelik: g.oncelik, baslangic: g.baslangic, dosya: g.dosya }); // YG-043
+  const saat = await saatBul(db, g.tur, g.oncelik);
   if (saat === undefined) return;
   const ham = new Date(g.baslangic.getTime() + (saat + (g.tur === 'Keşif' || g.tur === 'Sahaya Ulaşma' ? mesafeEki(g.km) : 0)) * 3_600_000);
   const { bitis, not } = bitisKaydir(ham, g.oncelik, await tatilGunleri(db), await tatilGunleri(db, true));

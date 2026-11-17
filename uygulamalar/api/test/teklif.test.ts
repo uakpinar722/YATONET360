@@ -162,6 +162,19 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     await cetvel(d.kimlik);
     expect((await o.sup.query(`SELECT DISTINCT cetvel_no FROM kapsam_cetveli WHERE dosya_ref = $1`, [d.kimlik])).rows).toEqual([{ cetvel_no: `${d.dosyaNo}-MT01` }]); // YG-008
   });
+  it('keşifle birlikte Keşiften Teklife sayacı açılır; teklif süresi parametreden (T-YG043-SURE)', async () => {
+    const { sureBaslat } = await import('../src/sure.js');
+    const d = await hazir(); const bas = new Date('2031-03-05T07:00:00Z');
+    await o.sup.query(`DELETE FROM dosya_sure WHERE dosya_ref = $1 AND tur IN ('Keşif', 'Keşiften Teklife', 'Teklif')`, [d.kimlik]);
+    await sureBaslat(o.db, { tur: 'Keşif', oncelik: 'Normal', baslangic: bas, dosya: d.kimlik });
+    const kt = (await o.sup.query(`SELECT baslangic FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşiften Teklife'`, [d.kimlik])).rows[0];
+    expect(new Date(kt.baslangic).toISOString()).toBe(bas.toISOString());
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = 10 WHERE kod = 'teklif_saat_normal'`);
+    await sureBaslat(o.db, { tur: 'Teklif', oncelik: 'Normal', baslangic: bas, dosya: d.kimlik });
+    const tk = (await o.sup.query(`SELECT bitis FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Teklif'`, [d.kimlik])).rows[0];
+    expect(new Date(tk.bitis).getTime() - bas.getTime()).toBe(10 * 3_600_000);
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = 72 WHERE kod = 'teklif_saat_normal'`);
+  });
   it('Ara Kademesiz Dönemde GMY makamı CEO olur; yalnız CEO açar (T-YG176-AKD)', async () => {
     const rid = async (r: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [r])).rows[0].kimlik;
     expect((await o.ist('POST', '/api/ara-kademesiz-donem', await o.gir('gmy'), { acik: true, gerekce: 'G' })).statusCode).toBe(403);

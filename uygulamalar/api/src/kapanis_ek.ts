@@ -134,7 +134,7 @@ export function kapanisEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !((await dosyaErisimi(b.db, o.kullanici, id)) || (await rolVar(o.kullanici, KM)))) return yok(y);
     const d = (await b.db.query(`SELECT statu, arsiv_zamani, oncelik, tahmini_teslim_tarihi::text hedef, teslim_tarihi::text teslim FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (!d) return yok(y);
-    const sureler = (await b.db.query(`SELECT s.tur, s.bitis + make_interval(secs => ${DURAK_SN}) hedef, s.tamamlanma FROM dosya_sure s WHERE s.dosya_ref = $1 AND s.tur IN ('İlk Yanıt', 'Keşif', 'Teklif') ORDER BY s.bitis`, [id])).rows;
+    const sureler = (await b.db.query(`SELECT s.tur, s.bitis + make_interval(secs => ${DURAK_SN}) hedef, s.tamamlanma, round((${DURAK_SN}) / 3600.0, 1)::float duraklama_saat FROM dosya_sure s WHERE s.dosya_ref = $1 AND s.tur IN ('İlk Yanıt', 'Keşif', 'Teklif', 'Keşiften Teklife') ORDER BY s.bitis`, [id])).rows; // YG-046: duraklama ayrı
     const ilk = (await b.db.query(`SELECT count(*)::int n, (count(*) FILTER (WHERE teknik_ret_sayisi = 0))::int k FROM is_emri WHERE dosya_ref = $1 AND EXISTS (SELECT 1 FROM kabul_kaydi x WHERE x.is_emri_ref = is_emri.kimlik)`, [id])).rows[0];
     const uyg = (await b.db.query(`SELECT sinif, count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1 AND statu <> 'Geçersiz' GROUP BY sinif ORDER BY sinif`, [id])).rows;
     const mem = (await b.db.query(`SELECT ortalama FROM memnuniyet_anketi WHERE dosya_ref = $1`, [id])).rows[0]?.ortalama ?? null;

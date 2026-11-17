@@ -282,7 +282,7 @@ gonderimIsleyici('Fiyat Teklifi', async (c, r) => {
   if (t.statu !== 'Onaylı') throw Object.assign(new Error('Teklif gönderilebilir durumda değildir.'), { statusCode: 409 });
   const son = await isGunuSonu(c, new Date(), await parametre(c, 'sigorta_karar_is_gunu'));
   const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), sigorta_karar_son = $3, gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, await parametre(c, 'teklif_gecerlilik_gun'), son])).rows[0].b;
-  await sureBitir(c, { tur: 'Teklif', dosya: t.dosya_ref }); // YG-199
+  await sureBitir(c, { tur: 'Teklif', dosya: t.dosya_ref }); // YG-199 await sureBitir(c, { tur: 'Keşiften Teklife', dosya: t.dosya_ref }); // YG-043
   const sg = (await c.query(`SELECT sigorta_hasar_dosya_no FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
   const sahip = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
   if (sahip) await yatTarafinaYaz(c, { olay: `bld37:${t.kimlik}`, kod: 'BLD-37', dil: dilKod(t.yazisma_dili), konu: `${t.dosya_no} Bilgilendirme`, telefon: sahip.telefon, eposta: sahip.eposta, alanlar: { ...SIFIRLA_YAT(t), 'bağlantı': webAdresiTeklif, link: webAdresiTeklif } });
@@ -645,7 +645,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM yeniden_degerlendirme WHERE dosya_ref = $1 AND durum = 'Gönderildi' LIMIT 1`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigorta şirketinin yeniden değerlendirme yanıtı bekleniyor.' });
     return islem(async (c) => {
       const bit = (await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', gonderim_zamani = now(), gecerlilik_bitis_tarihi = (now() AT TIME ZONE 'Europe/Istanbul')::date + $2::int, guncelleme_zamani = now() WHERE kimlik = $1 RETURNING gecerlilik_bitis_tarihi::text b`, [t.kimlik, gun])).rows[0].b;
-      await sureBitir(c, { tur: 'Teklif', dosya: t.dosya_ref }); // YG-199
+      await sureBitir(c, { tur: 'Teklif', dosya: t.dosya_ref }); // YG-199 await sureBitir(c, { tur: 'Keşiften Teklife', dosya: t.dosya_ref }); // YG-043
       const sahip = (await c.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [t.dosya_ref])).rows[0];
       const alan = { ...SIFIRLA_YAT(t), 'bağlantı': b.webAdresi, link: b.webAdresi };
       if (!sahip) throw Object.assign(new Error('Yat sahibinin iletişim bilgisi kayıtlı değildir.'), { statusCode: 409 });
