@@ -483,6 +483,17 @@ describe('arama ve erişim', () => {
   });
 });
 
+describe('talimat ve karar kaydı (YG-569, YG-570)', () => {
+  it('özgün metin, gönderen ve zamanla kaydedilir; zorunlu alanlar (T-YG569-TALIMAT)', async () => {
+    const d = await dosyaAc(); const c = await gir('opm');
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/talimat`, c, { kanal: 'WhatsApp Grubu', gonderen: 'Kaptan', zaman: new Date().toISOString() })).statusCode).toBe(400);
+    const r = await ist('POST', `/api/dosya/${d.kimlik}/talimat`, c, { kanal: 'WhatsApp Grubu', tur: 'Karar', gonderen: 'Kaptan', zaman: new Date(Date.now() - 3_600_000).toISOString(), metin: 'Yarın 10:00 çekeğe alınsın.', not: 'Grup kararı' });
+    expect(r.statusCode, r.body).toBe(200);
+    const l = (await ist('GET', `/api/dosya/${d.kimlik}/talimatlar`, c)).json();
+    expect(l[0]).toMatchObject({ kanal: 'WhatsApp Grubu', tur: 'Karar', ozgun_metin: 'Yarın 10:00 çekeğe alınsın.', aktaran_notu: 'Grup kararı' });
+  });
+});
+
 describe('taraf ilişkisi tarihleri (YG-092, YG-515)', () => {
   it('ilişki gerekçeyle sonlanır, kimlik silinmez, listeden düşer', async () => {
     const d = await dosyaAc(); await sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, K.ds]);

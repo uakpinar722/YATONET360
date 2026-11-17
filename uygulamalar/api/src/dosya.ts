@@ -595,6 +595,24 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-068, YG-1491: Beklemede statü değildir; neden, sorumlu, hedef tarih ve kanıt olmadan konamaz. Dosya statüsü korunur.
+  // YG-569, YG-570: dış kanaldan alınan talimat/karar özgün metin, tarih ve göndereniyle kaydedilir; kayıt değiştirilemez, aktaranın notu ayrı alandadır.
+  s.get('/dosya/:id/talimatlar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT t.kimlik, t.kanal, t.tur, t.gonderen, t.alinma_zamani, t.ozgun_metin, t.belge_ref, t.aktaran_notu, h.ad_soyad kaydeden, t.kayit_zamani FROM talimat_kaydi t JOIN kullanici_hesabi h ON h.kimlik = t.kaydeden_ref WHERE t.dosya_ref = $1 ORDER BY t.alinma_zamani DESC`, [id])).rows;
+  });
+  s.post('/dosya/:id/talimat', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; tur?: string; gonderen?: string; zaman?: string; metin?: string; belge?: string; not?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (o.grup !== 'LGM İç Rolü') return yok(y);
+    if (!['E-posta', 'Telefon', 'SMS', 'WhatsApp', 'WhatsApp Grubu', 'Yüz Yüze', 'Diğer'].includes(g.kanal ?? '') || !['Talimat', 'Karar', 'Bilgi'].includes(g.tur ?? 'Talimat')) return y.code(400).send({ hata: 'Kanalı ve kayıt türünü seçiniz.' });
+    if (!g.gonderen?.trim() || !g.zaman || !g.metin?.trim()) return y.code(400).send({ hata: 'Gönderen, alınma zamanı ve özgün ileti metni zorunludur.' });
+    if (new Date(g.zaman).getTime() > Date.now() + 60_000) return y.code(400).send({ hata: 'Alınma zamanı ileri bir tarih olamaz.' });
+    if (g.belge && (!UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.belge, id])).rowCount)) return y.code(400).send({ hata: 'Ekran görüntüsü veya ileti belgesi bu dosyaya yüklenmiş olmalıdır.' });
+    const r = (await b.db.query(`INSERT INTO talimat_kaydi (dosya_ref, kanal, tur, gonderen, alinma_zamani, ozgun_metin, belge_ref, aktaran_notu, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, g.kanal, g.tur ?? 'Talimat', g.gonderen.trim(), g.zaman, g.metin.trim(), g.belge || null, g.not?.trim() || null, o.kullanici])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Talimat Kaydı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { kanal: g.kanal, tur: g.tur ?? 'Talimat', gonderen: g.gonderen }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
   s.post('/dosya/:id/beklemede', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; sorumlu?: string; hedefTarih?: string; kanitBelge?: string; mesaj?: string; tedarikciKaynakli?: boolean };
     const d = await dosyaGetir(id, o.kullanici);

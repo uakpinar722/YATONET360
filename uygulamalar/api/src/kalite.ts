@@ -283,9 +283,17 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (/^\s*uygun görüldü\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Ölçülebilir kabul ölçütü yazınız.' });
     const saat = (new Date(g.zaman).getTime() - Date.now()) / 3_600_000;
     if (e.oncelik !== 'Kritik' && ['Bekletme', 'Tanıklık'].includes(g.tur!) && saat < (g.eksperKlas ? 48 : 24)) return y.code(400).send({ hata: `Davet en az ${g.eksperKlas ? 48 : 24} saat önce yapılır.` });
+    if (e.oncelik === 'Kritik' && ['Bekletme', 'Tanıklık'].includes(g.tur!) && saat < 2) return y.code(400).send({ hata: 'Kritik öncelikli dosyada davet en az 2 saat önce yapılır.' }); // YG-553
     return islem(async (c) => {
       const no = await altNumara(c, e.is_emri_no, 'KP');
       const r = (await c.query(`INSERT INTO kontrol_noktasi (kontrol_noktasi_no, is_emri_ref, kalem, nokta_turu, kontrol_ozelligi, kabul_olcutu, planlanan_zaman, eksper_klas, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [no, id, g.kalem ?? null, g.tur, g.ozellik!.trim(), g.olcut!.trim(), g.zaman, Boolean(g.eksperKlas), o.kullanici])).rows[0];
+      // YG-553: tanıklık ve bekletme noktası daveti dosya ekibine ve firmaya sistem içi, SMS ve e-postayla gider.
+      if (['Bekletme', 'Tanıklık'].includes(g.tur!)) {
+        const al = [...(await c.query(`SELECT DISTINCT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((x) => x.kullanici_ref as string),
+          ...(await c.query(`SELECT u.kullanici_ref FROM is_emri x JOIN kurulus_kullanici u ON u.kurulus_ref = x.kurulus_ref WHERE x.kimlik = $1`, [id])).rows.map((x) => x.kullanici_ref as string)].filter((x) => x !== o.kullanici);
+        const zm = new Date(g.zaman!).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+        await bildir(c, { olay: `tanıklık-davet:${r.kimlik}`, kullanicilar: al, baslik: `${no} · ${g.tur} Noktası Daveti`, ozet: `${e.is_emri_no} · ${g.ozellik!.trim()} · ${zm}`, eposta: true, sms: true, oncelik: e.oncelik === 'Kritik' ? 'Kritik' : 'Yüksek' });
+      }
       return { kimlik: r.kimlik, no };
     });
   });
@@ -297,6 +305,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!['Uygun', 'Koşullu uygun', 'Düzeltme gerekli', 'Reddedildi'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
     if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Kanıt zorunludur.' });
     if (k.serbest_birakma_zamani) return y.code(409).send({ hata: 'Kontrol noktası serbest bırakılmıştır.' });
+    // YG-553: davetli katılmadıysa planlanan zamandan 2 saat sonra fotoğraf ve video kanıtıyla ilerlenir.
+    if (g.katilim === 'Katılım Olmadı' && ['Bekletme', 'Tanıklık'].includes(k.nokta_turu) && Date.now() < new Date(k.planlanan_zaman).getTime() + 2 * 3_600_000) return y.code(409).send({ hata: 'Davetli katılmadığında planlanan zamandan 2 saat sonra fotoğraf ve video kanıtıyla ilerlenir.' });
     const p = (await b.db.query(`SELECT kabul_sinifi FROM kalite_plani WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [k.dosya_ref])).rows[0];
     const gereken = SERBEST_ROLLERI[k.kabul_sinifi ?? p?.kabul_sinifi ?? 'D']!;
     const benimRol = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2)`, [o.kullanici, gereken])).rows.map((r) => r.rol_adi as string);

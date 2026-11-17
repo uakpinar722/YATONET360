@@ -31,6 +31,17 @@ export function sonrakiMesai(d: Date): Date {
   return new Date(gun.getTime() - TZ_FARK_DK * 60_000);
 }
 
+/** YG-521: ertelenen iletinin planı resmî tatile (tam gün) düşerse bir sonraki iş gününün mesai başlangıcına kayar. */
+export async function sonrakiIsMesaisi(db: Db, d: Date): Promise<Date> {
+  let p = sonrakiMesai(d);
+  const tatil = new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil WHERE NOT yarim_gun AND tarih >= $1::date - 1 AND tarih <= $1::date + 15`, [p.toISOString().slice(0, 10)])).rows.map((r) => r.t as string));
+  for (let n = 0; n < 15 && tatil.has(yerel(p).toISOString().slice(0, 10)); n++) {
+    const y = yerel(p); const ertesi = new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth(), y.getUTCDate() + 1, 0, 0) - TZ_FARK_DK * 60_000);
+    p = sonrakiMesai(ertesi);
+  }
+  return p;
+}
+
 export interface Bildirimi {
   olay: string; kullanicilar: string[]; baslik: string; ozet?: string | null; oncelik?: string; isRef?: string | null;
   /** Dış kanal. Sistem içi bildirim her zaman yazılır. */
@@ -50,7 +61,7 @@ export async function bildir(db: Db, b: Bildirimi, simdi = new Date()): Promise<
     if (!yeni.rowCount || (!b.eposta && !b.sms)) continue;
     const h = (await db.query(`SELECT e_posta, cep_telefonu, hesap_durumu, kullanici_grubu, bildirim_kanali FROM kullanici_hesabi WHERE kimlik = $1`, [k])).rows[0];
     if (!h || h.hesap_durumu !== 'Aktif') continue;
-    const plan = kritik ? simdi : sonrakiMesai(simdi);
+    const plan = kritik ? simdi : await sonrakiIsMesaisi(db, simdi); // YG-521: resmî tatil atlanır
     const metin = b.ozet ? `${b.baslik}: ${b.ozet}` : b.baslik;
     // YG-519: dış kullanıcı seçtiği kanaldan alır. WhatsApp bağlanana kadar e-posta yedek kanaldır.
     const dis = h.kullanici_grubu !== 'LGM İç Rolü';
@@ -90,7 +101,7 @@ export async function disGonder(db: Db, g: { olay: string; telefon?: string | nu
       if (h) { await bildirGizlilikDurdurma(db, g.olay, h); return false; }
     }
   }
-  const plan = g.oncelik === 'Kritik' || g.acil ? simdi : sonrakiMesai(simdi);
+  const plan = g.oncelik === 'Kritik' || g.acil ? simdi : await sonrakiIsMesaisi(db, simdi); // YG-521
   if (g.telefon) await kuyruk(db, g.olay, null, 'SMS', g.telefon, g.konu, g.metin, g.oncelik, plan);
   if (g.eposta) await kuyruk(db, g.olay, null, 'E-posta', g.eposta, g.konu, g.metin, g.oncelik, plan);
   if (g.eposta && g.ekler?.length) await db.query(`UPDATE gonderim SET ek_surumler = $3 WHERE olay_anahtari = $1 AND hedef = $2 AND kanal = 'E-posta'`, [g.olay, g.eposta, g.ekler]);

@@ -119,6 +119,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <div className="not">Yat sahibi sigorta onayıyla yürüyen işe itiraz ederse kaydedilir: çalışmalar geçici olarak durdurulur, yat sahibine onaylı itiraz bildirimi gider ve Dosya Sorumlusuna arama görevi açılır.</div>
       <div className="dugmeler"><button className="btn hayir kucuk" onClick={() => { if (window.confirm('Yat sahibi itirazı kaydedilsin ve çalışmalar geçici olarak durdurulsun mu?')) void yap(() => istek(`/dosya/${id}/itiraz`, {}), 'İtiraz kaydedildi; çalışmalar durduruldu.'); }}>Yat Sahibi İtirazını Kaydet</button></div>
       <GarantiKarari id={id} yap={yap} />
+      <TalimatKayitlari id={id} />
       <TeslimIslemleri id={id} yap={yap} />
       <SahaIslemleri id={id} yap={yap} />
 
@@ -304,6 +305,25 @@ function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
 }
 
 /** YG-456: Ticari İşler Direktörü mutabakat raporunu gönderir; ikili teyit sonrası itiraz süresi başlar. */
+/** YG-569, YG-570: dış kanaldan gelen talimat ve kararların özgün metinle kaydı; aktaranın notu ayrı. */
+export function TalimatKayitlari({ id }: { id: string }) {
+  const [l, setL] = useState<{ kimlik: string; kanal: string; tur: string; gonderen: string; alinma_zamani: string; ozgun_metin: string; aktaran_notu: string | null; kaydeden: string }[]>([]);
+  const [f, setF] = useState({ kanal: 'E-posta', tur: 'Talimat', gonderen: '', zaman: '', metin: '', not: '' }); const [bl, setBl] = useState(''); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>(`/dosya/${id}/talimatlar`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, [id]);
+  return <Blok baslik="Talimat ve Karar Kayıtları">{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div className="soru" key={x.kimlik}><span><b>{x.tur}</b> · {x.kanal} · {x.gonderen} · {new Date(x.alinma_zamani).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}<div>“{x.ozgun_metin}”</div>{x.aktaran_notu && <div className="not">Aktaranın notu: {x.aktaran_notu}</div>}<div className="not">Kaydeden: {x.kaydeden}</div></span></div>)}
+    <label htmlFor="tk-k">Kanal</label><select id="tk-k" value={f.kanal} onChange={(e) => setF({ ...f, kanal: e.target.value })}>{['E-posta', 'Telefon', 'SMS', 'WhatsApp', 'WhatsApp Grubu', 'Yüz Yüze', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="tk-t">Kayıt Türü</label><select id="tk-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Talimat', 'Karar', 'Bilgi'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="tk-g">Gönderen</label><input id="tk-g" value={f.gonderen} onChange={(e) => setF({ ...f, gonderen: e.target.value })} />
+    <label htmlFor="tk-z">Alınma Zamanı</label><input id="tk-z" type="datetime-local" value={f.zaman} onChange={(e) => setF({ ...f, zaman: e.target.value })} />
+    <label htmlFor="tk-m">Özgün İleti (Değiştirmeden)</label><textarea id="tk-m" value={f.metin} onChange={(e) => setF({ ...f, metin: e.target.value })} />
+    <BelgeSec ad="Ekran Görüntüsü veya İleti Belgesi (Varsa)" bagTuru="Dosya" bagKimligi={id} deger={bl} sec={setBl} />
+    <label htmlFor="tk-n">Aktaranın Notu (İsteğe Bağlı)</label><input id="tk-n" value={f.not} onChange={(e) => setF({ ...f, not: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.gonderen.trim() || !f.zaman || !f.metin.trim()} onClick={() => void istek(`/dosya/${id}/talimat`, { ...f, zaman: new Date(f.zaman).toISOString(), belge: bl || undefined, not: f.not || undefined }).then(() => { setF({ ...f, gonderen: '', zaman: '', metin: '', not: '' }); setBl(''); setM('Kayıt eklendi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button>
+  </Blok>;
+}
+
 export function MutabakatRaporlari() {
   const [l, setL] = useState<{ kimlik: string; sigortaci_adi: string; donem: string; kesim_tarihi: string; itiraz_son: string | null; durum: string; satirlar: { kimlik: string; dosya_no: string; fatura_no: string; acik_bakiye: string; itiraz_edildi: boolean; mutabik: boolean }[] }[] | null>(null); const [not, setNot] = useState<Record<string, string>>({});
   const yukle = () => istek<NonNullable<typeof l>>('/mutabakat').then(setL).catch(() => setL(null));

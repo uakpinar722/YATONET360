@@ -55,11 +55,15 @@ describe('mesai kuralı (YG-521)', () => {
     expect(mesaiIcinde(new Date('2026-11-07T13:00:00Z'))).toBe(false); // Cumartesi 16:00
     expect(mesaiIcinde(new Date('2026-11-08T09:00:00Z'))).toBe(false); // Pazar
   });
-  it('sonraki iş günü 09:00', () => {
+  it('sonraki iş günü 09:00', async () => {
     expect(sonrakiMesai(GECE).toISOString()).toBe('2026-11-04T06:00:00.000Z');
     expect(sonrakiMesai(new Date('2026-11-03T03:00:00Z')).toISOString()).toBe('2026-11-03T06:00:00.000Z'); // sabah 06:00 → aynı gün
     expect(sonrakiMesai(new Date('2026-11-07T14:00:00Z')).toISOString()).toBe('2026-11-09T06:00:00.000Z'); // Cumartesi akşam → Pazartesi
     expect(sonrakiMesai(SALI)).toBe(SALI);
+    { const { sonrakiIsMesaisi } = await import('../src/bildirim.js'); // T-YG521-TATIL
+      await sup.query(`INSERT INTO resmi_tatil (tarih, ad, yarim_gun) VALUES ('2031-11-04', 'Deneme Tatili', false) ON CONFLICT DO NOTHING`).catch(() => {});
+      const r = await sonrakiIsMesaisi(db, new Date('2031-11-03T20:00:00Z'));
+      expect(r.toISOString()).toBe('2031-11-05T06:00:00.000Z'); }
   });
 });
 
