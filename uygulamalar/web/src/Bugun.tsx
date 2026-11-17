@@ -11,7 +11,7 @@ export interface Kart {
 }
 export interface BugunVeri {
   zincirde?: (Kart & { makam?: string })[]; onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
-  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
+  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean; tur?: string }[]; ozelGunler?: { ad: string; gun: string; tur: string }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
 const TZ = 'Europe/Istanbul';
@@ -144,8 +144,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
         <div className="ozet duyuru">
           <b>Duyuru</b>
           {dHata && <div className="hata" role="alert">{dHata}</div>}
-          {veri.duyurular.length === 0 && <div className="not">Yayında duyuru bulunmamaktadır.</div>}
-          {veri.duyurular.map((d) => (
+          {veri.duyurular.filter((d) => d.tur !== 'Özel Gün').length === 0 && <div className="not">Yayında duyuru bulunmamaktadır.</div>}
+          {veri.duyurular.filter((d) => d.tur !== 'Özel Gün').map((d) => (
             <div key={d.kimlik} className="duyuru-satir">
               <div className="ust2"><span>{d.baslik}</span>{d.zorunlu && <Rozet s="kirmizi" c="Zorunlu" />}</div>
               {d.govde && <div className="not">{d.govde}</div>}
@@ -153,6 +153,13 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
             </div>
           ))}
         </div>
+        {((veri.ozelGunler?.length ?? 0) > 0 || veri.duyurular.some((d) => d.tur === 'Özel Gün')) && (
+          <div className="ozet duyuru" data-t="ozel-gunler">
+            <b>Özel Günler</b>
+            {veri.duyurular.filter((d) => d.tur === 'Özel Gün').map((d) => <div key={d.kimlik} className="duyuru-satir"><div className="ust2"><span>{d.baslik}</span></div>{d.govde && <div className="not">{d.govde}</div>}</div>)}
+            {veri.ozelGunler?.map((x) => <div key={`${x.ad}-${x.gun}-${x.tur}`}>{x.gun.slice(3)}.{x.gun.slice(0, 2)} · {x.ad} · {x.tur}</div>)}
+          </div>
+        )}
       </div>
 
       <h1 className="selam">Hoş Geldiniz, {ben.adSoyad}</h1>

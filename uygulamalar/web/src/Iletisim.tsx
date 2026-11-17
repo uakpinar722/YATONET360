@@ -52,14 +52,15 @@ export function DuyuruYayimla() {
   const [yetki, setYetki] = useState<{ kapsamlar: string[]; onaysiz: string[] } | null>(null); const [liste, setListe] = useState<Yayim[]>([]);
   const [baslik, setBaslik] = useState(''); const [govde, setGovde] = useState(''); const [kapsam, setKapsam] = useState(''); const [zorunlu, setZorunlu] = useState(false); const [bitis, setBitis] = useState('');
   const [hata, setHata] = useState(''); const [not, setNot] = useState('');
+  const [dTur, setDTur] = useState('Genel'); // YG-563
   const yukle = () => istek<Yayim[]>('/duyuru/yayimlarim').then(setListe).catch((e) => setHata(e.message));
   useEffect(() => { void istek<{ kapsamlar: string[]; onaysiz: string[] }>('/duyuru/yetkim').then((y) => { setYetki(y); setKapsam(y.kapsamlar[0] ?? ''); }).catch((e) => setHata(e.message)); void yukle(); }, []);
   const gonder = async (e: FormEvent) => {
     e.preventDefault(); setHata(''); setNot('');
     try {
-      const r = await istek<{ durum: string }>('/duyuru', { baslik, govde, kapsam, zorunlu, bitis: bitis || undefined });
+      const r = await istek<{ durum: string }>('/duyuru', { baslik, govde, kapsam, zorunlu, bitis: bitis || undefined, tur: dTur });
       setNot(r.durum === 'Yayında' ? 'Duyuru yayımlanmıştır.' : 'Duyuru onaya gönderilmiştir.');
-      setBaslik(''); setGovde(''); setZorunlu(false); setBitis(''); await yukle();
+      setBaslik(''); setGovde(''); setZorunlu(false); setBitis(''); setDTur('Genel'); await yukle();
     } catch (x) { setHata((x as Error).message); }
   };
   return (
@@ -74,6 +75,8 @@ export function DuyuruYayimla() {
           <input id="d-b" value={baslik} onChange={(e) => setBaslik(e.target.value)} />
           <label htmlFor="d-g">Metin</label>
           <textarea id="d-g" rows={4} value={govde} onChange={(e) => setGovde(e.target.value)} />
+          <label htmlFor="d-t">Duyuru Türü</label>
+          <select id="d-t" value={dTur} onChange={(e) => setDTur(e.target.value)}><option value="Genel">Genel Duyuru</option><option value="Özel Gün">Özel Gün Kutlaması</option></select>
           <label htmlFor="d-k">Hedef Kitle</label>
           <select id="d-k" value={kapsam} onChange={(e) => setKapsam(e.target.value)}>{yetki.kapsamlar.map((k) => <option key={k} value={k}>{KAPSAM_AD[k]}</option>)}</select>
           <div className="not">{yetki.onaysiz.includes(kapsam) ? 'Bu duyuru doğrudan yayımlanır.' : 'Bu duyuru bir üst kademenin onayından sonra yayımlanır.'}</div>

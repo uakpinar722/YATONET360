@@ -171,9 +171,11 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO uygunsuzluk (uygunsuzluk_no, dosya_ref, is_emri_ref, tespit_kaynagi, yer_nitelik, dayanak_olcut, gercek_durum, kanit_belge_ref, sinif, yaygin_isareti, emniyet_isareti, hedef_zamani, is_durduruldu, sorumlu_firma_ref, firma_yeni_hasar, acan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`, [no, id, e?.kimlik ?? null, g.kaynak, g.yer!.trim(), g.olcut!.trim(), g.durum!.trim(), g.belge, g.sinif, Boolean(g.yaygin), Boolean(g.emniyet), ncrHedefi(g.sinif!), dur && Boolean(e), e?.kurulus_ref ?? tedarikci ?? null, Boolean(g.yeniHasar), o.kullanici])).rows[0];
       if (gk) await c.query(`UPDATE malzeme_giris_kabulu SET uygunsuzluk_ref = $2 WHERE kimlik = $1`, [gk.kimlik, r.kimlik]); // YG-298
       if (dur && e && ['Aktif', 'Başlangıç Kontrolünde'].includes(e.statu)) await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, `Uygunsuzluk ${no}`]);
-      const alici = [d.dosya_sorumlusu_ref, ...await rolSahipleri(c, await rolId(c, dur ? KM : KK))].filter(Boolean);
-      await bildir(c, { olay: `ncr:${r.kimlik}`, kullanicilar: alici, baslik: `${no} · ${g.sinif} Uygunsuzluk`, oncelik: dur ? 'Kritik' : 'Normal' });
-      if (e) { const fk = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((x) => x.kullanici_ref as string); await bildir(c, { olay: `ncr-firma:${r.kimlik}`, kullanicilar: fk, baslik: `${no} · Uygunsuzluk Yanıtınız Bekleniyor`, oncelik: dur ? 'Kritik' : 'Normal' }); }
+      // YG-528: Dosya Sorumlusu ve dosyanın Teknik Uzmanları (Kalite Uzmanı da); Kritik veya Emniyet işaretliyse Kalite Müdürü ve Teknik Müdür. Sistem içi + e-posta, Kritikte SMS.
+      const tu = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Uzman' AND bitis_zamani IS NULL`, [id])).rows.map((x) => x.kullanici_ref as string);
+      const alici = [d.dosya_sorumlusu_ref, ...tu, ...await rolSahipleri(c, await rolId(c, KK)), ...(dur ? [...await rolSahipleri(c, await rolId(c, KM)), ...await rolSahipleri(c, await rolId(c, 'Teknik Müdür'))] : [])].filter(Boolean);
+      await bildir(c, { olay: `ncr:${r.kimlik}`, kullanicilar: alici, baslik: `${no} · ${g.sinif} Uygunsuzluk`, oncelik: dur ? 'Kritik' : 'Normal', eposta: true, sms: dur });
+      if (e) { const fk = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((x) => x.kullanici_ref as string); await bildir(c, { olay: `ncr-firma:${r.kimlik}`, kullanicilar: fk, baslik: `${no} · Uygunsuzluk Yanıtınız Bekleniyor`, oncelik: dur ? 'Kritik' : 'Normal', eposta: true, sms: dur }); }
       return { kimlik: r.kimlik, uygunsuzlukNo: no, isDurduruldu: dur && Boolean(e) };
     });
   });

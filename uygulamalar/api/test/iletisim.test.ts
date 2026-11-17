@@ -209,4 +209,12 @@ describe('iç mesaj (YG-1663)', () => {
     await expect(db.query(`DELETE FROM ic_mesaj`)).rejects.toThrow();
     await expect(db.query(`UPDATE ic_mesaj SET metin = 'x'`)).rejects.toThrow();
   });
+  it('özel gün duyurusu ana sayfada ayrı türle döner (T-YG563-OZEL)', async () => {
+    const y = await gir(CEO);
+    expect((await ist('POST', '/api/duyuru', y, { baslik: 'Denizcilik Bayramı', kapsam: 'LGM', tur: 'Kutlama' })).statusCode).toBe(400);
+    expect((await ist('POST', '/api/duyuru', y, { baslik: 'Denizcilik Bayramı', kapsam: 'LGM', tur: 'Özel Gün' })).statusCode).toBe(200);
+    const b = (await ist('GET', '/api/bugun', y)).json();
+    expect(b.duyurular.find((x: any) => x.baslik === 'Denizcilik Bayramı').tur).toBe('Özel Gün');
+    expect(Array.isArray(b.ozelGunler)).toBe(true);
+  });
 });

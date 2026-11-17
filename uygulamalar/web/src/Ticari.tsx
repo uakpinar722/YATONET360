@@ -565,6 +565,24 @@ function NobetCagrilari() {
   </>);
 }
 
+/** YG-247: nöbet ve kurumsal cihaz devri; kontrol listesi tamamlanmadan devredilmez, devralan onaylar. */
+function NobetDevri() {
+  const [v, setV] = useState<{ liste: string[]; kisiler: { kimlik: string; ad_soyad: string }[]; bekleyen: { kimlik: string; devreden: string; acik_olaylar: string | null }[] } | null>(null);
+  const [f, setF] = useState({ devralan: '', acikOlaylar: '' }); const [s, setS] = useState<string[]>([]);
+  const yk = () => istek<NonNullable<typeof v>>('/nobet/devir').then(setV).catch(() => setV(null));
+  const { yap, Mesaj } = useYap(yk);
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  return <><div className="bolum">Nöbet Devri</div><Mesaj />
+    <div className="ozet" data-t="nobet-devri">
+      {v.bekleyen.map((x) => <div className="soru" key={x.kimlik}><span>{x.devreden} nöbeti size devretti{x.acik_olaylar ? ` · Açık Olaylar: ${x.acik_olaylar}` : ''}</span><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/nobet/devir/${x.kimlik}/onayla`, {}).then(() => ({ uyari: 'Nöbet devri onaylandı.' })))}>Devraldım</button></div>)}
+      <label htmlFor="nd-k">Devralan</label><select id="nd-k" value={f.devralan} onChange={(e) => setF({ ...f, devralan: e.target.value })}><option value="">Seçiniz</option>{v.kisiler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+      {v.liste.map((m) => <label className="kutu" key={m}><input type="checkbox" checked={s.includes(m)} onChange={(e) => setS(e.target.checked ? [...s, m] : s.filter((x) => x !== m))} /><span>{m}</span></label>)}
+      <label htmlFor="nd-a">Açık Olaylar</label><input id="nd-a" value={f.acikOlaylar} onChange={(e) => setF({ ...f, acikOlaylar: e.target.value })} />
+      <button className="btn2" disabled={!f.devralan || s.length < v.liste.length} onClick={() => void yap(() => istek('/nobet/devir', { devralan: f.devralan, liste: s, acikOlaylar: f.acikOlaylar || undefined }).then(() => { setF({ devralan: '', acikOlaylar: '' }); setS([]); return { uyari: 'Devir kaydedildi; devralanın onayı bekleniyor.' }; }))}>Nöbeti Devret</button>
+    </div></>;
+}
+
 export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
   const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null } | null>(null);
   const { yap, Mesaj } = useYap(() => istek<NonNullable<typeof n>>('/nobet/simdi').then(setN));
@@ -577,6 +595,7 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
       {cizelge && <NobetCizelge />}
       {n && <div className="ozet"><div>{n.mesaiIcinde ? 'Mesai İçi' : 'Mesai Dışı'}</div><div>Nöbetçi Dosya Sorumlusu: {n.dosyaSorumlusu ?? '—'}</div><div>Nöbetçi Teknik Uzman: {n.teknikUzman ?? '—'}</div><div>Yönetici Nöbetçisi: {n.yonetici ?? '—'}</div></div>}
       <NobetCagrilari />
+      <NobetDevri />
       {izinli && <><div className="bolum">Acil Çağrı Aç</div>
         <div className="ozet">
           <div className="uyari">Can tehlikesi yoksa da kaptana 112&apos;yi hatırlatınız. Kaptan yoksa 112&apos;yi nöbetçi arar.</div>

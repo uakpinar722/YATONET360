@@ -12,7 +12,7 @@ import { rolSahipleri } from './makam.js';
 import { tutar } from './metin.js';
 import { onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { altNumara, sureBaslat } from './sure.js';
-import { parametre } from './teklif.js';
+import { isGunuSonu, parametre } from './teklif.js';
 import { UUID } from './yat.js';
 import { GRUP_YAT } from './portal.js';
 import { izinGerekli } from './yetki.js';
@@ -211,6 +211,15 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     await bildir(b.db, { olay: `nobet-devir:${r.kimlik}`, kullanicilar: [g.devralan], baslik: 'Nöbet Devri Onayınızı Bekliyor', acil: true, sms: true });
     return { kimlik: r.kimlik };
   });
+  // YG-247: devir ekranı için kontrol listesi, devredilebilecek kişiler ve onay bekleyen devirler.
+  s.get('/nobet/devir', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Nöbet devri LGM personeli arasında yapılır.' });
+    return {
+      liste: DEVIR_LISTESI,
+      kisiler: (await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif' AND kimlik <> $1 ORDER BY ad_soyad`, [o.kullanici])).rows,
+      bekleyen: (await b.db.query(`SELECT n.kimlik, h.ad_soyad AS devreden, n.acik_olaylar, n.kontrol_listesi FROM nobet_devri n JOIN kullanici_hesabi h ON h.kimlik = n.devreden_ref WHERE n.devralan_ref = $1 AND n.devralan_onay_zamani IS NULL ORDER BY n.kimlik`, [o.kullanici])).rows,
+    };
+  });
   s.post('/nobet/devir/:id/onayla', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
@@ -267,6 +276,9 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       }
       const r = await acKabul(c, a, f, o.kullanici, Number(g.tahmini), simdi);
       await c.query(`UPDATE acil_gorev_cagrisi SET durum = 'Kabul', yanit_zamani = $2, is_emri_ref = $3 WHERE kimlik = $1`, [id, simdi, r.isEmri]);
+      // YG-268: firmanın portaldan verdiği kabulü nöbetçi Dosya Sorumlusu (yoksa dosyanın Dosya Sorumlusu) teyit eder.
+      const teyitci = (await nobetci(c, 'Dosya Sorumlusu', simdi)) ?? (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [a.dosya_ref])).rows[0]?.r;
+      if (teyitci) await kartAc(c, { tur: 'Acil Kabul Teyidi', kategori: 'islem', baslik: `${a.dosya_no} · Acil Kabul Teyidi`, ozet: `${r.isEmriNo} acil iş emrini firma kabul etti; firmayla teyit ederek kartı kapatınız.`, sahipKullanici: teyitci, nesneTuru: 'Dosya', nesneKimligi: a.dosya_ref });
       return { durum: 'Kabul', ...r };
     });
   });
@@ -351,6 +363,8 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       if (sg) {
         const sgdil = dilKod(m.yazisma_dili); const zmn = new Date(m.baslangic ?? Date.now()).toLocaleString(sgdil === 'en' ? 'en-GB' : 'tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
         const { sigortayaHazirla } = await import('./sigorta_gonderim.js'); const { metinGetir } = await import('./metin.js');
+        // YG-556: sigortaca ödenmeyecek acil tedbir kalemi tedbir kapanışından itibaren 5 iş günü içinde bildirilir.
+        { const ds = (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]?.r; if (ds) await kartAc(c, { tur: 'Ödenmeyecek Acil Kalem Bildirimi', kategori: 'islem', baslik: `${m.dosya_no} · Sigortaca Ödenmeyecek Acil Tedbir Kalemi`, ozet: 'Sigortaca ödenmeyecek acil tedbir kalemi varsa 5 iş günü içinde yat sahibine bildiriniz (ayrı teklif); yoksa kartı kapatınız.', sahipKullanici: ds, sonZaman: await isGunuSonu(c, new Date(), 5), nesneTuru: 'Dosya', nesneKimligi: dosya }); }
         await sigortayaHazirla(c, { dosya, tur: 'BLD-74', nesne: dosya, alici: sg.eposta ?? null, acil: true, konu: `${m.dosya_no} Acil İlk Tedbir`, metin: await metinGetir(c, 'BLD-74', sgdil, { Kurum: sg.sigortaci_adi ?? '', Institution: sg.sigortaci_adi ?? '', 'Dosya No': m.dosya_no, 'File No': m.dosya_no, 'tarih saat': zmn, 'date time': zmn, 'tedbir özeti': g.sonuc!.trim(), 'summary of measure': g.sonuc!.trim() }) });
       }
       if (t) await yatTarafinaYaz(c, { olay: `bld55:${dosya}`, kod: 'BLD-55', dil: dilKod(m.yazisma_dili), konu: `${m.dosya_no} Acil Tedbir`, telefon: t.telefon, eposta: t.eposta, acil: true, alanlar: alan });

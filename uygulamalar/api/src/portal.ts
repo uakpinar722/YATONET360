@@ -210,6 +210,8 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı veya erişim yetkiniz yok.' });
     if (!belge || !UUID.test(belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [belge, id])).rowCount) return y.code(400).send({ hata: 'Muvafakat belgesini dosyaya yükleyip seçiniz.' });
     if (await (await import('./belge_kural.js')).bilgiBelgesiMi(b.db, belge)) return y.code(409).send({ hata: (await import('./belge_kural.js')).BILGI_HATA }); // YG-622
+    // YG-214: muvafakat kilidini yalnız dosyanın Dosya Sorumlusu açar.
+    if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Lehtar muvafakatini dosyanın Dosya Sorumlusu girer.' });
     await b.db.query(`UPDATE yat SET lehtar_muvafakati_ref = $2, guncelleme_zamani = now() WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [id, belge]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Lehtar Muvafakati Girildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

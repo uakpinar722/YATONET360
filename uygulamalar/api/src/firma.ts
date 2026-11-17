@@ -187,6 +187,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
         if (!g.kanit || !UUID.test(g.kanit) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Kuruluş' AND bag_kimligi = $2`, [g.kanit, id])).rowCount) return y.code(409).send({ hata: 'Statü yükseltmesi için firmaya yüklenmiş ve doğrulanmış iyileştirme kanıtını seçiniz.' });
       }
     }
+    // YG-361: açık Emniyet işaretli uygunsuzluğu olan firmaya Tercihli risk derecesi verilmez.
+    if (g.risk === 'Tercihli' && (await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND emniyet_isareti AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık emniyet uygunsuzluğu bulunan firmaya Tercihli risk derecesi verilemez.' });
     // YG-1659, K-178: Koşullu Onaylı ve Reddedildi önerisinde Hukuk ve Uyum görüşü alınır; bağlayıcı değildir, kademe sayılmaz.
     if ((g.asama === 'Koşullu Onaylı' || g.asama === 'Reddedildi') && !(await b.db.query(`UPDATE firma_hukuk_gorusu SET durum = 'Kullanıldı' WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi' RETURNING kimlik`, [id, g.asama])).rowCount) return y.code(409).send({ hata: 'Hukuk ve Uyum görüşü bekleniyor.' });
     if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND r.rol_adi = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Kalıcı askı ve ağdan çıkarma Direktör kararıdır.' });

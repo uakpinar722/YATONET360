@@ -58,6 +58,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
   useEffect(() => { void yukle().catch(() => {}); }, [id]);
   const [hn, setHn] = useState(''); const [k, setK] = useState({ teklif: '', eylem: '', sorumlu: '', son: '', gerceklesmezse: '' }); const [kb, setKb] = useState(''); const [kg, setKg] = useState(''); const [kt, setKt] = useState({ tarih: '', bedel: '' });
   const [p, setP] = useState({ tur: 'Değişiklik', mevcut: '', onerilen: '', fark: '', toplam: '', sure: '', kanal: 'YATONET 360', sigorta: 'Gerekli Değil', starih: '' }); const [pb, setPb] = useState('');
+  const [ek, setEk] = useState({ firma: '', kanal: 'Telefon', kisi: '', talimat: '', tahmini: '' }); // YG-270
   const [ku, setKu] = useState({ hizmet: 'Kurtarma', saglayici: '', acil: false }); const [dalis, setDalis] = useState({ limanIzni: '', dalisPlani: '', enerjiIzolasyonu: '' }); const [kod, setKod] = useState(''); const [te, setTe] = useState({ tur: '112 Arandı', ozet: '' }); const [sec, setSec] = useState('Devam');
   const ret = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && t.karar === 'Ret');
   const kismi = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && (['Kısmi Onay', 'Ret'].includes(t.karar ?? '') || t.odeme_farki_ayri));
@@ -121,6 +122,14 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <label htmlFor="de-tt">Muhatap</label><select id="de-tt" value={te.tur} onChange={(e) => setTe({ ...te, tur: e.target.value })}>{['112 Arandı', 'Marina Teması', 'Operasyon Müdürü Arandı', 'Refakatli Giriş', 'Sahil Güvenlik', 'Liman Başkanlığı', 'İl Çevre Müdürlüğü'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="de-to">Temas Özeti</label><input id="de-to" value={te.ozet} onChange={(e) => setTe({ ...te, ozet: e.target.value })} />
       <button className="btn2 kucuk" disabled={!te.ozet.trim()} onClick={() => void yap(() => istek(`/acil/${id}/temas`, te), 'Temas kaydedildi.')}>Temas Kaydet</button>
+      <div className="bolum">Firma Kabulünü Elle Kaydet</div>
+      <div className="not">Firmanın telefonla veya başka kanaldan verdiği acil iş kabulü buradan kaydedilir; acil iş emri açılır, sıralı çağrı durur.</div>
+      <label htmlFor="de-ef">Kabul Eden Firma</label><select id="de-ef" value={ek.firma} onChange={(e) => setEk({ ...ek, firma: e.target.value })}><option value="">Seçiniz</option>{firmalar.map((f) => <option key={f.kurulus_ref} value={f.kurulus_ref}>{f.ticari_unvan}</option>)}</select>
+      <label htmlFor="de-ek">Kanal</label><select id="de-ek" value={ek.kanal} onChange={(e) => setEk({ ...ek, kanal: e.target.value })}>{['Telefon', 'WhatsApp', 'E-posta', 'Yüz Yüze'].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="de-ei">Firmada Görüşülen Kişi</label><input id="de-ei" value={ek.kisi} onChange={(e) => setEk({ ...ek, kisi: e.target.value })} />
+      <label htmlFor="de-et">Verilen Talimat</label><input id="de-et" value={ek.talimat} onChange={(e) => setEk({ ...ek, talimat: e.target.value })} />
+      <label htmlFor="de-eu">Firmanın Tahmini Tutarı (EUR)</label><input id="de-eu" inputMode="decimal" value={ek.tahmini} onChange={(e) => setEk({ ...ek, tahmini: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!ek.firma || !ek.kisi.trim() || !ek.talimat.trim()} onClick={() => void yap(() => istek(`/acil/${id}/elle-kabul`, { ...ek, tahmini: ek.tahmini ? sayi(ek.tahmini) : 0 }), 'Firma kabulü kaydedildi; acil iş emri açıldı.')}>Kabulü Kaydet</button>
     </Blok>
   );
 }
@@ -407,7 +416,20 @@ export function FirmaKapsamaRaporu() {
   if (!l) return null;
   return <><div className="bolum">{aday ? 'Aday Firma Kapsama Raporu' : 'Firma Kapsama Raporu'}</div>
     <label className="kutu"><input type="checkbox" checked={aday} onChange={(e) => setAday(e.target.checked)} /><span>Aday firmalar</span></label>
-    <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={`${x.ana_brans}-${x.kapsama}-${x.bolge}`}>{x.ana_brans} · {x.kapsama} · {x.bolge} · {x.firma === 0 ? 'Boş' : `${x.firma} firma`}</div>)}</div></>;
+    {l.length === 0 ? <div className="ozet"><div className="not">Kayıt bulunmamaktadır.</div></div> : <KapsamaTablosu l={l} />}
+    <div className="not">Kırmızı: firma yok · Sarı: tek firma · Yeşil: iki ve üzeri firma</div></>;
+}
+
+/** YG-772: bölge × branş tablosu; hücre rengi firma sayısına göre (0 kırmızı, 1 sarı, 2+ yeşil). */
+function KapsamaTablosu({ l }: { l: { ana_brans: string; kapsama: string; bolge: string; firma: number }[] }) {
+  const bolgeler = [...new Set(l.map((x) => x.bolge))].sort((a, b) => a.localeCompare(b, 'tr'));
+  const satirlar = [...new Set(l.map((x) => `${x.ana_brans} · ${x.kapsama}`))];
+  const say = new Map(l.map((x) => [`${x.ana_brans} · ${x.kapsama}|${x.bolge}`, x.firma]));
+  const sinif = (n: number) => n === 0 ? 'ks-0' : n === 1 ? 'ks-1' : 'ks-2';
+  return <div className="tablo"><table className="kapsama">
+    <thead><tr><th>Branş</th>{bolgeler.map((b) => <th key={b}>{b}</th>)}</tr></thead>
+    <tbody>{satirlar.map((s) => <tr key={s}><th scope="row">{s}</th>{bolgeler.map((b) => { const n = say.get(`${s}|${b}`); return <td key={b} className={n === undefined ? '' : sinif(n)}>{n === undefined ? '' : n}</td>; })}</tr>)}</tbody>
+  </table></div>;
 }
 
 /** YG-1660: yurt dışı yerel firma talebi; Operasyon Müdürü açar, iki onay birbirini beklemez. */

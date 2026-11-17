@@ -141,6 +141,7 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     const y = await o.ist('POST', `/api/firma-portal/acil-cagri/${await firmaCagriId()}/yanit`, firmaC, { yanit: 'Kabul', tahmini: 1000 });
     expect(y.statusCode, y.body).toBe(200);
     expect(y.json()).toMatchObject({ durum: 'Kabul', isEmriNo: `${r.dosyaNo}-AC01`, yansiyan: 1300, sinirDurumu: 'Sınır Altında' });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Acil Kabul Teyidi' AND nesne_kimligi = $1`, [r.kimlik])).rows[0].n).toBe(1); // T-YG268-TEYIT
     const u = `/api/firma-portal/is-emri/${y.json().isEmri}/acil-tutar`;
     expect((await o.ist('POST', u, firmaC, { tahmini: 1600 })).json().sinirDurumu).toBe('Ön Uyarı');
     expect((await o.ist('POST', u, firmaC, { tahmini: 2000 })).json()).toEqual({ yansiyan: 2600, sinirDurumu: 'Onay Bekliyor' });

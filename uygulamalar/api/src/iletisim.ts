@@ -46,7 +46,8 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
   s.post('/duyuru', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
-    const { baslik, govde, zorunlu, kapsam, bitis } = (i.body ?? {}) as { baslik?: string; govde?: string; zorunlu?: boolean; kapsam?: string; bitis?: string };
+    const { baslik, govde, zorunlu, kapsam, bitis, tur } = (i.body ?? {}) as { baslik?: string; govde?: string; zorunlu?: boolean; kapsam?: string; bitis?: string; tur?: string };
+    if (tur !== undefined && !['Genel', 'Özel Gün'].includes(tur)) return y.code(400).send({ hata: 'Duyuru türünü seçiniz.' }); // YG-563
     if (!baslik?.trim() || !kapsam || !KAPSAM.includes(kapsam)) return y.code(400).send({ hata: 'Başlık ve kapsam zorunludur.' });
     const roller = await kullaniciRolleri(b.db, o.kullanici);
     const ceo = roller.some((r) => r.rol_adi === 'CEO');
@@ -59,8 +60,8 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const { rows } = await c.query(
-        `INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`,
-        [baslik.trim(), govde?.trim() || null, Boolean(zorunlu), kapsam, o.kullanici, bitis || null, dogrudan ? 'Yayında' : 'Onay Bekliyor']);
+        `INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum, tur) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`,
+        [baslik.trim(), govde?.trim() || null, Boolean(zorunlu), kapsam, o.kullanici, bitis || null, dogrudan ? 'Yayında' : 'Onay Bekliyor', tur ?? 'Genel']);
       const id = rows[0].kimlik as string;
       if (!dogrudan) {
         const kart = await kartAc(c, { tur: 'Duyuru Yayımı', baslik: `Dış Duyuru Onayı · ${baslik.trim()}`, ozet: govde?.trim() || undefined, hazirlayan: o.kullanici, zincir: [await onayMakami(c, (ust ?? roller[0]!).kimlik)], nesneTuru: 'duyuru', nesneKimligi: id });
