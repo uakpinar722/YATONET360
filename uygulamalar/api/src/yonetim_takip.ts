@@ -39,6 +39,28 @@ export async function butceGerceklesme(db: Db, yil: number) {
   return { yil, butceDurumu: durum, satir, gelir: R2(gelir), toplam: { butce: R2(satir.reduce((a, x) => a + x.butce, 0)), gerceklesen: R2(satir.reduce((a, x) => a + x.gerceklesen, 0)) } };
 }
 
+/**
+ * YG-919: onaylı bütçede birim gerçekleşmesi, yılın geçen gün oranına göre hesaplanan bütçenin %10'undan fazla aşılırsa Ticari İşler Direktörüne bildirim gider;
+ * aynı birim için ayda bir kez. Gelir satırı değerlendirilmez.
+ */
+export async function butceSapmaIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const yil = simdi.getUTCFullYear();
+  if ((await db.query(`SELECT durum FROM butce_donemi WHERE yil = $1`, [yil])).rows[0]?.durum !== 'Onaylandı') return 0;
+  const oran = Math.min(1, (simdi.getTime() - Date.UTC(yil, 0, 1)) / (Date.UTC(yil + 1, 0, 1) - Date.UTC(yil, 0, 1)));
+  const { birKez, bildir } = await import('./bildirim.js'); const { rolId } = await import('./ihbar.js'); const { rolSahipleri } = await import('./makam.js'); const { tutar } = await import('./metin.js');
+  const al = await rolSahipleri(db, await rolId(db, 'Ticari İşler Direktörü')); if (!al.length) return 0;
+  let n = 0;
+  for (const s of (await butceGerceklesme(db, yil)).satir) {
+    const hedef = R2(s.butce * oran);
+    if (!(s.butce > 0) || !(s.gerceklesen > hedef * 1.1)) continue;
+    if (!(await birKez(db, 'butce-sapma', `${yil}-${String(simdi.getUTCMonth() + 1).padStart(2, '0')}:${s.birim}`))) continue;
+    const sapma = Math.round(((s.gerceklesen - hedef) / hedef) * 1000) / 10;
+    await bildir(db, { olay: `butce-sapma:${yil}:${simdi.getUTCMonth() + 1}:${s.birim}`, kullanicilar: al, baslik: `Bütçe Sapması · ${s.birim}`, ozet: `Gerçekleşen ${tutar(s.gerceklesen)} EUR; dönem bütçesi ${tutar(hedef)} EUR (yıllık ${tutar(s.butce)} EUR); sapma %${String(sapma).replace('.', ',')}.`, oncelik: 'Yüksek' });
+    n++;
+  }
+  return n;
+}
+
 /** YG-805: yaklaşan (30 gün) ve geciken gözden geçirmeler; firma, risk kabulü, saklama istisnası, gözden geçirme görevleri. */
 export async function gozdenGecirmeler(db: Db, kullanici: string) {
   return (await db.query(`SELECT * FROM (

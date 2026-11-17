@@ -143,8 +143,8 @@ describe('rapor PDF ve Word, Cilt I göstergeleri, gider planı (YG-761, YG-762,
     const pdf = await o.ist('GET', '/api/yonetim-raporu/belge?donem=2026-10', tid); expect(pdf.statusCode).toBe(200); expect(pdf.rawPayload.subarray(0, 4).toString()).toBe('%PDF');
     const { ceoRaporuTanim } = await import('../src/rapor_belge.js'); const c = await ceoRaporuTanim(o.db, '2026-10'); expect(c.bolumler.map((x) => x.baslik)).toContain('Cilt I §9 Performans Göstergeleri');
     expect((await o.ist('GET', '/api/ceo-raporu/belge?donem=2026-10&bicim=docx', tid)).statusCode).toBe(200);
-    const { gostergeleriHesapla, GOSTERGELER } = await import('../src/gosterge.js'); expect(GOSTERGELER.length).toBe(24);
-    const g0 = await gostergeleriHesapla(o.db, () => true); expect(g0.length).toBe(24);
+    const { gostergeleriHesapla, GOSTERGELER } = await import('../src/gosterge.js'); expect(GOSTERGELER.length).toBe(26); // YG-783: +2 tahsilat süresi
+    const g0 = await gostergeleriHesapla(o.db, () => true); expect(g0.length).toBe(26);
     expect((await o.ist('POST', '/api/gosterge/hedef', tid, { kod: 'G-9.10-5', hedef: 10, gerekce: 'G' })).statusCode).toBe(404);
     expect((await o.ist('POST', '/api/ramak-kala', await o.gir('ds'), { faaliyet: 'Sıcak iş', aciklama: 'Yangın söndürücü yoktu' })).statusCode).toBe(200);
     expect((await gostergeleriHesapla(o.db, () => true)).find((x) => x.kod === 'G-9.7-2')!.deger).toBe(1);
