@@ -106,7 +106,7 @@ describe('fiyat kuralı (YG-185, YG-187, YG-1709)', () => {
 describe('kartela ve cetvel (YG-195, YG-198, YG-1706)', () => {
   it('kartela 1.510 kalem, 131 grup (KS-131, YG-1704); arama fiyat vermez', async () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi`)).rows[0].n).toBe(1510);
-    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_birlikte_yazilmaz`)).rows[0].n).toBe(131);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_birlikte_yazilmaz`)).rows[0].n).toBe(132); // YG-1703: KS-132
     const r = (await o.ist('GET', '/api/kartela/ara?q=KESIF-01.01', firmaC)).json();
     expect(r.length).toBeGreaterThan(0); expect(r[0].maliyet_eur).toBeUndefined();
   });

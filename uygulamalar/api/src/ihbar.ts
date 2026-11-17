@@ -129,6 +129,14 @@ export async function ihbarAlindiGonder(c: Db, talepId: string, web: string) {
   }
   // YG-723, K-205: bakım ve planlı hizmette "geçmiş olsun" içermeyen BLD-35P varyantı seçilir.
   const planli = t.oncelik === 'Planlı' || /planlı|bakım/i.test(t.ihbar_alindi_varyanti ?? '');
+  // YG-1437: yat sahibi kurumsal müşteriyse İhbar Alındı, Ek-2'de yetkili olarak tanımlı kurum kullanıcılarının e-postasına gider (yat sahibi kişisel kanalı yerine).
+  const kurum = (await c.query(`SELECT DISTINCT h.e_posta FROM yat y JOIN kurumsal_kurum k ON k.taraf_ref = y.yat_sahibi_ref JOIN kurumsal_kullanici u ON u.kurum_ref = k.kimlik AND u.yetkili JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE y.kimlik = $1 AND h.hesap_durumu = 'Aktif' AND h.e_posta IS NOT NULL`, [t.yat_ref])).rows.map((r) => r.e_posta as string);
+  if (kurum.length) {
+    let n = false;
+    for (const e of kurum) n = (await yatTarafinaYaz(c, { olay: `bld35:${talepId}:${e}`, kod: planli ? 'BLD-35P' : 'BLD-35', dil: dilKod(t.yazisma_dili), konu: `${t.talep_no} İhbar Alındı`, eposta: e, oncelik: t.oncelik, acil: t.acil_durum,
+      alanlar: { 'Tekne türü + Yat': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Boat type + Yacht': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Dosya No': t.talep_no, 'File No': t.talep_no, 'bağlantı': web, link: web } })) || n;
+    return n;
+  }
   return yatTarafinaYaz(c, { olay: `bld35:${talepId}`, kod: planli ? 'BLD-35P' : 'BLD-35', dil: dilKod(t.yazisma_dili), konu: `${t.talep_no} İhbar Alındı`, telefon, eposta, oncelik: t.oncelik, acil: t.acil_durum,
     alanlar: { 'Tekne türü + Yat': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Boat type + Yacht': [t.tur, t.yat_adi].filter(Boolean).join(' '), 'Dosya No': t.talep_no, 'File No': t.talep_no, 'bağlantı': web, link: web } });
 }

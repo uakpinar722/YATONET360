@@ -365,7 +365,7 @@ function TedarikciUygunsuzluk({ yap }: { yap: (f: () => Promise<unknown>, m?: st
 export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'siparis' | 'teklif' }) {
   const [v, setV] = useState<TedarikciV | null>(null); const [fy, setFy] = useState<Record<string, { fiyat: string; sure: string }>>({});
   const [ka, setKa] = useState<Record<string, { kod: string; teslim: string; gerekce: string }>>({});
-  const [se, setSe] = useState<Record<string, { tarih: string; irsaliye: string; tasiyici: string; lot: string; belge: string }>>({});
+  const [se, setSe] = useState<Record<string, { tarih: string; irsaliye: string; tasiyici: string; lot: string; belge: string; sertifika?: string }>>({});
   const [fa, setFa] = useState<Record<string, { no: string; tarih: string; tutar: string; belge: string }>>({});
   const yukle = () => istek<TedarikciV>('/tedarikci-portal/ana').then(setV);
   const { yap, Mesaj } = useYap(yukle);
@@ -407,7 +407,8 @@ export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' |
               {s.tedarikci_kabul === 'Kabul' && !s.sevk_var && <>
                 <div className="iki-tarih"><div><label htmlFor={`sv-t-${s.kimlik}`}>Sevk Tarihi</label><input id={`sv-t-${s.kimlik}`} type="date" value={b.tarih} onChange={(e) => setSe({ ...se, [s.kimlik]: { ...b, tarih: e.target.value } })} /></div><div><label htmlFor={`sv-i-${s.kimlik}`}>İrsaliye No</label><input id={`sv-i-${s.kimlik}`} value={b.irsaliye} onChange={(e) => setSe({ ...se, [s.kimlik]: { ...b, irsaliye: e.target.value } })} /></div></div>
                 <div className="iki-tarih"><div><label htmlFor={`sv-s-${s.kimlik}`}>Taşıyıcı</label><input id={`sv-s-${s.kimlik}`} value={b.tasiyici} onChange={(e) => setSe({ ...se, [s.kimlik]: { ...b, tasiyici: e.target.value } })} /></div><div><label htmlFor={`sv-l-${s.kimlik}`}>Lot No</label><input id={`sv-l-${s.kimlik}`} value={b.lot} onChange={(e) => setSe({ ...se, [s.kimlik]: { ...b, lot: e.target.value } })} /></div></div>
-                <BelgeSec ad="İrsaliye ve Sertifika" bagTuru="Kuruluş" bagKimligi={v.kurulus} deger={b.belge} sec={(x) => setSe({ ...se, [s.kimlik]: { ...b, belge: x } })} />
+                <BelgeSec ad="İrsaliye" bagTuru="Kuruluş" bagKimligi={v.kurulus} deger={b.belge} sec={(x) => setSe({ ...se, [s.kimlik]: { ...b, belge: x } })} />
+                <BelgeSec ad="Sertifika (Varsa)" bagTuru="Kuruluş" bagKimligi={v.kurulus} deger={b.sertifika ?? ''} sec={(x) => setSe({ ...se, [s.kimlik]: { ...b, sertifika: x } })} />
                 <button className="btn2" disabled={!b.belge} onClick={() => void yap(() => istek(`/tedarikci-portal/siparis/${s.kimlik}/sevk`, b), 'Sevk bildiriminiz iletildi.')}>Sevk Bildir</button>
               </>}
               {s.tedarikci_kabul === 'Kabul' && <>

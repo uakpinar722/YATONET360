@@ -137,6 +137,25 @@ export async function alacakIsle(db: Pool, simdi = new Date()): Promise<number> 
 }
 
 let webAdresi = '';
+/**
+ * YG-885: nihai (teknik) kabulden 48 saat geçtiği hâlde proforma hazırlanmamışsa Ticari Sorumluya ve Ticari İşler Direktörüne;
+ * muhasebeye iletilen proformanın faturası 48 saatte girilmemişse Muhasebe Hizmetine ve Muhasebe ve Finans Müdürüne bir kez bildirim gider.
+ */
+export async function proformaSureIsle(db: Db, simdi = new Date()): Promise<number> {
+  const al = async (roller: string[]) => (await db.query(`SELECT DISTINCT a.kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($1)`, [roller])).rows.map((x) => x.kullanici_ref as string);
+  let n = 0;
+  for (const d of (await db.query(`SELECT d.kimlik, d.dosya_no FROM kabul_kaydi k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.kabul_turu = 'Nihai Kabul' AND k.olusturma_zamani <= $1::timestamptz - interval '48 hours' AND k.olusturma_zamani > $1::timestamptz - interval '30 days'
+      AND NOT EXISTS (SELECT 1 FROM musteri_faturasi f WHERE f.dosya_ref = d.kimlik AND f.olusturma_zamani >= k.olusturma_zamani) AND d.statu <> 'Kapalı'`, [simdi])).rows) {
+    if (!(await birKez(db, 'proforma-48', d.kimlik))) continue;
+    await bildir(db, { olay: `proforma-48:${d.kimlik}`, kullanicilar: await al(['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü']), baslik: `${d.dosya_no} · Proforma Gecikti`, ozet: 'Teknik kabulden 48 saat geçti; proforma hazırlanmadı.', oncelik: 'Yüksek' }, simdi); n++;
+  }
+  for (const f of (await db.query(`SELECT f.kimlik, f.proforma_no, d.dosya_no FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum = 'Muhasebeye İletildi' AND f.fatura_no IS NULL AND f.muhasebe_iletim_zamani <= $1::timestamptz - interval '48 hours'`, [simdi])).rows) {
+    if (!(await birKez(db, 'fatura-48', f.kimlik))) continue;
+    await bildir(db, { olay: `fatura-48:${f.kimlik}`, kullanicilar: await al(['Muhasebe Hizmeti', 'Muhasebe ve Finans Müdürü']), baslik: `${f.dosya_no} · ${f.proforma_no} · Fatura Gecikti`, ozet: 'Proforma muhasebeye iletileli 48 saat geçti; fatura bilgisi girilmedi.', oncelik: 'Yüksek' }, simdi); n++;
+  }
+  return n;
+}
+
 /** YG-897: Ödeme Alındı (BLD-27); sigortaya ve vefat işaretli dosyaya gitmez. */
 async function odemeAlindi(c: Db, dosya: string, muhatap: string, tarih: string) {
   if (muhatap === 'Sigorta Şirketi') return;
@@ -365,7 +384,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!f) return yok(y);
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Bu işlem Ticari Sorumluya aittir.' });
     if (f.durum !== 'Proforma') return y.code(409).send({ hata: 'Önce proforma onaylanmalıdır.' });
-    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Muhasebeye İletildi' WHERE kimlik = $1`, [f.kimlik]);
+    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Muhasebeye İletildi', muhasebe_iletim_zamani = now() WHERE kimlik = $1`, [f.kimlik]); // YG-885
     return { durum: 'Muhasebeye İletildi' };
   });
   // YG-875, YG-884, YG-900, K-193: fatura no, tarih ve kuru muhasebeden gelince Ticari Sorumlu girer; kur önceki iş günü TCMB satış; TL tutar nihai; vade sigortada 30 gün.

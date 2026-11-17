@@ -18,26 +18,38 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
       WHERE h.kullanici_grubu = 'LGM İç Rolü' AND h.hesap_durumu = 'Aktif' AND a.atama_durumu = 'Aktif' AND a.baslangic_tarihi <= current_date AND (a.bitis_tarihi IS NULL OR a.bitis_tarihi >= current_date) ORDER BY h.ad_soyad`)).rows;
 
   /** YG-1478: önce aynı rol veya aynı kademe; Müdür ve Müdür Yardımcısı birbirine; yoksa ilk dolu üst kademe. YG-1058: Genel Müdür Yardımcısı CEO'ya vekâlet eder. */
-  async function uygunMu(asil: Satir, aday: Satir) {
-    if (aday.kullanici === asil.kullanici) return false;
-    if (aday.rol === asil.rol) return true;
+  /** YG-1744: uygun adayın öncelik basamağı (1 en öncelikli); uygun değilse null. */
+  async function seviye(asil: Satir, aday: Satir): Promise<number | null> {
+    if (aday.kullanici === asil.kullanici) return null;
+    if (aday.rol === asil.rol) return 1;
     if (asil.rol_adi === 'CEO') { // YG-1058: T&O Direktörü yalnız CEO ve GMY birlikte yokken.
-      if (aday.rol_adi === 'Genel Müdür Yardımcısı') return true;
-      if (aday.rol_adi !== 'Teknik ve Operasyon Direktörü') return false;
-      return yokMu('Genel Müdür Yardımcısı');
+      if (aday.rol_adi === 'Genel Müdür Yardımcısı') return 2;
+      if (aday.rol_adi !== 'Teknik ve Operasyon Direktörü') return null;
+      return (await yokMu('Genel Müdür Yardımcısı')) ? 3 : null;
     }
     // YG-1660: BT ve Firma Yönetimi Direktörüne GMY ancak vekili Bilgi İşlem Müdürü de yokken vekâlet eder.
-    if (asil.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü' && aday.rol_adi === 'Genel Müdür Yardımcısı') return yokMu('Bilgi İşlem Müdürü');
+    if (asil.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü' && aday.rol_adi === 'Genel Müdür Yardımcısı') return (await yokMu('Bilgi İşlem Müdürü')) ? 2 : null; // tablo vekili yokken GMY aynı basamakta
     // YG-1058: GMY ve Direktör vekilleri kritik pozisyon vekil tablosundan (LST_KRITIK_POZISYON_VEKILI); tablo vekili yoksa üst makam.
     if (asil.kademe === 'Direktör' || asil.rol_adi === 'Genel Müdür Yardımcısı') {
       const tablo = await kritikVekiller(asil.rol_adi);
-      if (tablo.includes(aday.rol_adi)) return true;
-      return (await onayMakami(b.db, asil.rol)) === aday.rol;
+      if (tablo.includes(aday.rol_adi)) return 2;
+      return (await onayMakami(b.db, asil.rol)) === aday.rol ? 4 : null;
     }
-    if (aday.birim === asil.birim && aday.kademe === asil.kademe) return true;
+    if (aday.birim === asil.birim && aday.kademe === asil.kademe) return 2;
     const cift = new Set(['Müdür', 'Müdür Yardımcısı']);
-    if (aday.birim === asil.birim && cift.has(aday.kademe) && cift.has(asil.kademe)) return true;
-    return (await onayMakami(b.db, asil.rol)) === aday.rol;
+    if (aday.birim === asil.birim && cift.has(aday.kademe) && cift.has(asil.kademe)) return 3;
+    return (await onayMakami(b.db, asil.rol)) === aday.rol ? 4 : null;
+  }
+  async function uygunMu(asil: Satir, aday: Satir) { return (await seviye(asil, aday)) !== null; }
+  /** YG-1744: izinli, raporlu ya da bugün aktif vekâleti olan kişi öncelik hesabında aday sayılmaz. */
+  async function kisiYok(k: string): Promise<boolean> {
+    return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE h.kimlik = $1 AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date))`, [k])).rowCount);
+  }
+  /** YG-1744: kadrodaki en öncelikli basamak; daha alt basamaktan vekil seçilemez. */
+  async function enIyiSeviye(asil: Satir, kadro: Satir[]): Promise<number | null> {
+    let en: number | null = null;
+    for (const k of kadro) { if (await kisiYok(k.kullanici)) continue; const s = await seviye(asil, k); if (s !== null && (en === null || s < en)) en = s; }
+    return en;
   }
 
   /** Rol sahibi izinli, raporlu ya da kendisi vekâlete bırakılmışsa yok sayılır. */
@@ -65,7 +77,8 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     const secenek = [];
     for (const a of alt) {
       const vekiller: { kimlik: string; ad: string; rol: string }[] = [];
-      for (const k of kadro) if (await uygunMu(a, k) && !vekiller.some((v) => v.kimlik === k.kullanici)) vekiller.push({ kimlik: k.kullanici, ad: k.ad_soyad, rol: k.rol_adi });
+      const en = await enIyiSeviye(a, kadro); // YG-1744: yalnız en öncelikli basamaktaki adaylar
+      for (const k of kadro) if (en !== null && (await seviye(a, k)) === en && !vekiller.some((v) => v.kimlik === k.kullanici)) vekiller.push({ kimlik: k.kullanici, ad: k.ad_soyad, rol: k.rol_adi });
       secenek.push({ kimlik: a.kullanici, ad: a.ad_soyad, rol: a.rol, rolAdi: a.rol_adi, vekiller });
     }
     const l = await b.db.query(
@@ -89,8 +102,9 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     const a = alt.find((x) => x.kullanici === asil && x.rol === rol);
     if (!a) return y.code(403).send({ hata: 'Bu görevli için vekil atama yetkiniz bulunmamaktadır.' });
     const adaylar = kadro.filter((k) => k.kullanici === vekil);
-    let uygun = false; for (const k of adaylar) if (await uygunMu(a, k)) uygun = true;
+    let uygun = false; let sv: number | null = null; for (const k of adaylar) { const s = await seviye(a, k); if (s !== null) { uygun = true; sv = sv === null ? s : Math.min(sv, s); } }
     if (!uygun) return y.code(400).send({ hata: 'Bu role vekâlet için başka bir kişi seçmenizi rica ederiz.' });
+    { const en = await enIyiSeviye(a, kadro); if (en !== null && sv! > en) return y.code(400).send({ hata: 'Öncelikli vekil adayı vardır (sıra: aynı rol, aynı birim ve kademe, Müdür–Müdür Yardımcısı, onay makamı); listeden seçiniz.' }); } // YG-1744
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

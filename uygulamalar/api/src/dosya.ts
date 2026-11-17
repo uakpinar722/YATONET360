@@ -217,6 +217,20 @@ export async function sureIsle(db: Pool, simdi = new Date()): Promise<number> {
   return n;
 }
 
+/**
+ * YG-1552: sicilde kayıtlı sigorta şirketinin yürürlükte "Sigorta Şirketi" sözleşmesi yoksa dosya açılışı engellenmez; dosya sigorta kaydı
+ * "çerçeve sözleşmesi yok" işaretlenir (teklifte ödeme vadesi ve fatura bilgisi zorunlu olur), Müşteri ve Paydaş İlişkileri Müdürüne görev açılır, GMY bilgilendirilir.
+ */
+export async function cerceveKontrol(c: Db, dosya: string, dosyaNo: string): Promise<void> {
+  const s = (await c.query(`SELECT s.sigortaci_adi, u.kimlik kurulus, EXISTS (SELECT 1 FROM sozlesme_kaydi z WHERE z.kurulus_ref = u.kimlik AND z.sozlesme_turu = 'Sigorta Şirketi' AND z.durum = 'Yürürlükte' AND (z.bitis IS NULL OR z.bitis >= current_date)) sozlesme
+      FROM dosya_sigorta_kaydi s LEFT JOIN LATERAL (SELECT kimlik FROM kurulus WHERE s.sigortaci_adi IS NOT NULL AND tr_norm(trim(ticari_unvan)) = tr_norm(trim(s.sigortaci_adi)) LIMIT 1) u ON true WHERE s.dosya_ref = $1`, [dosya])).rows[0];
+  if (!s?.kurulus || s.sozlesme) return;
+  await c.query(`UPDATE dosya_sigorta_kaydi SET cerceve_sozlesme_yok = true WHERE dosya_ref = $1`, [dosya]);
+  const { kartAc } = await import('./is_motoru.js'); const { bildir } = await import('./bildirim.js'); const { rolSahipleri } = await import('./makam.js'); const { rolId } = await import('./ihbar.js');
+  await kartAc(c, { tur: 'Sigorta Çerçeve Sözleşmesi', kategori: 'gorev', baslik: `${dosyaNo} · ${s.sigortaci_adi} · Çerçeve Sözleşmesi Yok`, ozet: 'Sigorta şirketiyle iletişime geçiniz; iş bu dosyada dosya bazlı Sigorta Görevlendirmesiyle yürür, çerçeve sözleşme otomatik gönderilmez.', sahipRol: await rolId(c, 'Müşteri ve Paydaş İlişkileri Müdürü'), nesneTuru: 'Dosya', nesneKimligi: dosya });
+  await bildir(c, { olay: `cerceve-yok:${dosya}`, kullanicilar: await rolSahipleri(c, await rolId(c, 'Genel Müdür Yardımcısı')), baslik: `${dosyaNo} · Çerçeve Sözleşmesi Olmayan Sigorta Şirketi`, ozet: `${s.sigortaci_adi}: dosya açıldı; Müşteri ve Paydaş İlişkileri Müdürüne görev açıldı.` });
+}
+
 export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const ihbarci = { preHandler: izinGerekli(b, 'ihbar.kaydet') };
@@ -289,6 +303,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (sahip && t.talep_sahibi_turu !== 'Yat Sahibi') await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_ref, taraf_rolu, kisi_adi_soyadi, telefon, eposta, kullanici_ref, olusturan_ref) VALUES ($1,$2,'Yat Sahibi',$3,$4,$5,$6,$7)`, [d.kimlik, sahip.kimlik, sahip.unvan_ad_soyad, sahip.telefon, sahip.eposta, sahip.kullanici_ref, o.kullanici]);
       if (sahip && t.talep_sahibi_turu === 'Yat Sahibi') await c.query(`UPDATE dosya_tarafi SET taraf_ref = $2, kullanici_ref = $3 WHERE kimlik = $1`, [talepTarafi.kimlik, sahip.kimlik, sahip.kullanici_ref]);
       if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigorta_taraf_ref, sigortaci_adi, police_no, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [d.kimlik, t.talep_sahibi_turu === 'Sigorta Şirketi' ? talepTarafi.kimlik : null, sigortaAdi, g.policeNo?.trim() || t.police_no_beyan, g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan, o.kullanici]);
+      if (sigortali) await cerceveKontrol(c, d.kimlik, d.dosya_no); // YG-1552
       await (await import('./belge_uret.js')).belgeUret(c, { tur: 'Hasar İhbar ve İlk Kayıt', nesne: d.kimlik, dosya: d.kimlik }); // YG-715
       // Açılışı yapan görevli yeni dosya sorumlusu olmaz; atamayı Operasyon Müdürü yapar (YG-047).
       await c.query(`UPDATE is_karti SET nesne_turu = 'Dosya', nesne_kimligi = $2 WHERE nesne_kimligi = $1 AND tur = 'Kritik Öncelik Teyidi'`, [id, d.kimlik]);

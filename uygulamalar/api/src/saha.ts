@@ -36,6 +36,17 @@ export async function kapanisEksikleri(db: PoolClient | Baglam['db'], d: { kimli
   return l;
 }
 
+// YG-1416: 5.000,00 EUR üstü kapsam kararı Teknik Müdür onaylayınca yazılır; ret veya iadede bekleyen karar düşer.
+kapanisKaydet('Garanti Kapsam Onayı', async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
+  const s = (await c.query(`SELECT dosya_ref, onay_bekleyen_karar, onay_bekleyen_maliyet FROM garanti_sikayet WHERE kimlik = $1::uuid`, [k.nesne_kimligi])).rows[0];
+  if (!s?.onay_bekleyen_karar) return;
+  if (karar === 'Onayla') {
+    await c.query(`UPDATE garanti_sikayet SET karar = onay_bekleyen_karar, duzeltme_maliyeti = onay_bekleyen_maliyet, karar_veren_ref = $2, statu = 'Karar', karar_zamani = coalesce(karar_zamani, now()), yanit_zamani = coalesce(yanit_zamani, now()), onay_bekleyen_karar = NULL, onay_bekleyen_maliyet = NULL WHERE kimlik = $1::uuid`, [k.nesne_kimligi, yapan]);
+    if (s.onay_bekleyen_karar === 'Garanti') await garantiKarneIsle(c, s.dosya_ref); // Ek I §7.5
+  } else await c.query(`UPDATE garanti_sikayet SET statu = 'Açık', onay_bekleyen_karar = NULL, onay_bekleyen_maliyet = NULL WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
+});
+
 kapanisKaydet('İyi Niyet Kararı', async (c, k, karar, yapan) => {
   if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
   if (karar === 'Onayla') await c.query(`UPDATE garanti_sikayet SET karar = 'İyi Niyet', statu = 'Karar', karar_veren_ref = $2, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`, [k.nesne_kimligi, yapan]);
@@ -53,8 +64,17 @@ kapanisKaydet('Dosya İşlemi', async (c, k, karar, yapan) => {
   else {
     await c.query(`UPDATE dosya SET kapanma_nedeni = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.dosya_ref, t.kapanis_nedeni]);
     await statuYaz(c, d, { statu: 'Kapalı', asama: t.asama }, t.gerekce, yapan);
+    await bld42(c, t.dosya_ref, t.kapanis_nedeni); // YG-1501
   }
 });
+
+/** YG-1501, K-214: yalnız bireysel dosyada yanıtsız teklif kapanışında yat sahibine onaylı BLD-42 gider. */
+async function bld42(c: PoolClient, dosya: string, neden: string | null) {
+  if (neden !== 'Müşteri Vazgeçti – Yanıt Alınamadı') return;
+  const d = (await c.query(`SELECT d.dosya_no, d.musteri_turu, d.yazisma_dili, d.vefat_isareti, t.telefon, t.eposta FROM dosya d LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [dosya])).rows[0];
+  if (!d || d.musteri_turu !== 'Bireysel Müşteri' || d.vefat_isareti || (!d.telefon && !d.eposta)) return;
+  await yatTarafinaYaz(c, { olay: `bld42:${dosya}`, kod: 'BLD-42', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Dosya Kapanışı`, telefon: d.telefon, eposta: d.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no } });
+}
 
 kapanisKaydet('Dosya Kapanışı', async (c, k, karar, yapan) => {
   const t = (await c.query(`SELECT t.*, d.statu, d.asama FROM kapanis_kontrolu t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [k.nesne_kimligi])).rows[0];
@@ -64,6 +84,7 @@ kapanisKaydet('Dosya Kapanışı', async (c, k, karar, yapan) => {
   await c.query(`UPDATE kapanis_kontrolu SET durum = 'Onaylandı', onaylayan_ref = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.kimlik, yapan]);
   if (t.cikis_statusu === 'Kapalı') {
     await c.query(`UPDATE dosya SET kapanma_nedeni = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.dosya_ref, t.kapanma_nedeni]);
+    await bld42(c, t.dosya_ref, t.kapanma_nedeni); // YG-1501
     await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE p.surum_ref = s.kimlik AND p.iptal_zamani IS NULL AND e.bag_turu = 'Dosya' AND e.bag_kimligi = $1::text`, [t.dosya_ref]); // YG-416
   }
   // YG-086: kanuni sorumluluk bitişi teslim + 24 ay; elle değiştirilmez.
@@ -553,11 +574,17 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const roller = await ekipRolleri(k.dosya_ref, o.kullanici);
       const izinler = await kullaniciIzinleri(b.db, o.kullanici);
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });
-      if ((g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Düzeltme maliyeti 5.000,00 EUR üstünde karar Teknik Müdür onayındadır.' });
+      const tmOnayi = (g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik') && g.karar !== 'İyi Niyet'; // YG-1416: kart Teknik Müdüre gider
       if (g.kapat && !g.kokNeden) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
       // YG-083: arızanın nedeni araştırılıp yazılmadan kapsam kararı verilmez.
       if (!g.nedenArastirmasi?.trim() && !k.neden_arastirmasi) return y.code(409).send({ hata: 'Neden araştırması tamamlanmadan garanti kararı verilmez; bulunan nedeni yazınız.' });
       if (g.nedenArastirmasi?.trim()) await b.db.query(`UPDATE garanti_sikayet SET neden_arastirmasi = $2 WHERE kimlik = $1`, [id, g.nedenArastirmasi.trim()]);
+      if (tmOnayi) {
+        if (k.onay_bekleyen_karar) return y.code(409).send({ hata: 'Bu kayıt için Teknik Müdür onayı bekleniyor.' });
+        await b.db.query(`UPDATE garanti_sikayet SET onay_bekleyen_karar = $2, onay_bekleyen_maliyet = $3, karar_gerekcesi = $4, statu = 'İncelemede' WHERE kimlik = $1`, [id, g.karar, g.maliyet, g.gerekce.trim()]);
+        await kartAc(b.db, { tur: 'Garanti Kapsam Onayı', baslik: `${k.kayit_no} · Garanti Kapsam Kararı (${g.karar})`, ozet: `Düzeltme maliyeti ${tutar(Number(g.maliyet))} EUR · ${g.gerekce.trim()}`, hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Teknik Müdür')], nesneTuru: 'Garanti Şikâyet', nesneKimligi: id });
+        return { durum: 'Onay Bekleniyor', makam: 'Teknik Müdür' };
+      }
     }
     // YG-175: iyi niyet fatura tutarının %5'ine kadar GMY, üzeri CEO; karar onaylanınca yazılır. Fatura yoksa oran hesaplanamaz, CEO'ya gider.
     if (garanti && g.karar === 'İyi Niyet') {

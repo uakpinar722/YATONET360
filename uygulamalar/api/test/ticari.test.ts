@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { proformaSureIsle } from '../src/ticari.js';
 import { alacakIsle, avansHesapla, firmaOdemePlani, hakedisKesintisi, ibanGecerli, izinGunu, masrafOdenecek, teslimEngeli, yillikHak } from '../src/ticari.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
@@ -122,6 +123,15 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     await alacakIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM alacak_takip_adimi WHERE fatura_ref = $1`, [fv.kimlik])).rows[0].n).toBe(0);
     expect(await o.kart('Vefat Alacak Askısı', fv.kimlik)).toBeDefined();
+  });
+});
+
+describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
+  it('nihai kabulden 48 saat sonra proforma yoksa Ticari Sorumluya bir kez bildirim (T-YG885-48)', async () => {
+    const d = await o.dosyaAc();
+    await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref, olusturma_zamani) VALUES ($1,'Nihai Kabul',$2, now() - interval '49 hours')`, [d.kimlik, o.K.ty]);
+    expect(await proformaSureIsle(o.db)).toBeGreaterThanOrEqual(1); await proformaSureIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ts, `proforma-48:${d.kimlik}`])).rows[0].n).toBe(1);
   });
 });
 

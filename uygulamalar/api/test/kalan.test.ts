@@ -549,6 +549,27 @@ describe('sağlayıcı matrisi, parametreler, dışa aktarım, kalıcı hata (YG
 });
 
 describe('garanti çekek mahsubu (YG-1418)', () => {
+  it('5.000 EUR üstü garanti kapsam kararı Teknik Müdür onayıyla yazılır (T-YG1416-TM)', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const gs = (await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, olusturan_ref) VALUES ($1,$2,'{Garanti bildirimi}','Telefon',now(),'Normal',$3) RETURNING kimlik`, [`GS-T${++n}`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    const r = await o.ist('POST', `/api/garanti-sikayet/${gs}/karar`, await o.gir('ty'), { karar: 'Ücretli İş', maliyet: 6000, gerekce: 'Kullanım hatası', nedenArastirmasi: 'Yanlış kullanım' });
+    expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ durum: 'Onay Bekleniyor', makam: 'Teknik Müdür' });
+    expect((await o.sup.query(`SELECT karar FROM garanti_sikayet WHERE kimlik = $1`, [gs])).rows[0].karar).toBeNull();
+    const k = await o.kart('Garanti Kapsam Onayı', gs);
+    expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT karar, duzeltme_maliyeti::float m FROM garanti_sikayet WHERE kimlik = $1`, [gs])).rows[0]).toEqual({ karar: 'Ücretli İş', m: 6000 });
+    await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1`, [d.kimlik]); // kapasite diğer testleri etkilemesin
+  });
+  it('çerçeve sözleşmesi olmayan sicilli sigorta şirketinde işaret, görev ve GMY bildirimi (T-YG1552-CERCEVE)', async () => {
+    const { cerceveKontrol } = await import('../src/dosya.js');
+    const d = await o.dosyaAc({}, {});
+    await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Çerçevesiz Sigorta AŞ','Çözüm Ortağı',$2)`, [`S-CS${++n}`, o.K.ds]);
+    if (!(await o.sup.query(`UPDATE dosya_sigorta_kaydi SET sigortaci_adi = 'ÇERÇEVESİZ SİGORTA AŞ' WHERE dosya_ref = $1`, [d.kimlik])).rowCount) await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,'ÇERÇEVESİZ SİGORTA AŞ',$2)`, [d.kimlik, o.K.ds]);
+    await cerceveKontrol(o.db, d.kimlik, d.dosyaNo);
+    expect((await o.sup.query(`SELECT cerceve_sozlesme_yok FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].cerceve_sozlesme_yok).toBe(true);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Sigorta Çerçeve Sözleşmesi' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.gmy, `cerceve-yok:${d.kimlik}`])).rows[0].n).toBe(1);
+  });
   it('garanti kararında LGM\'nin ödediği çekek firma hakedişine mahsup önerisi olur; yat sahibine kalem açılmaz', async () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Firma GM','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-GM${++n}`, o.K.ds])).rows[0].kimlik;

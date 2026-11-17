@@ -130,3 +130,4 @@ KS-128	PROJE-01.04.03-02 HAVUZLAMA-01.04.03-01	kapalı alanda havalandırma ve g
 KS-129	MAKINE-01.04.04-03 AKISKAN-01.06.01-03	karışım dirseği değişimi (MAKINE ek) söküm ve takmayı içerir; aynı dirsek için sökülüp kontrol edilip yeniden takılması (AKISKAN ek) birlikte yazılmaz.
 KS-130	SUALTI-01.05.03-02 AKISKAN-01.05.01-02	deniz vanası servisi (ek kalem) vananın açılıp kapanma kontrolünü (AKISKAN-01.05.01-02) içerir; aynı vanada ikisi birden yazılmaz.
 KS-131	KESIF-01.03.03-01 HASAR-01.04.01-01	hasar haritası ve fotoğraflı bulgu kaydı (KESIF-01.03.03-01) ile hasar fotoğraf, video ve ölçüm kaydı (HASAR-01.04.01-01) aynı ziyaret için birlikte yazılırsa çift sayım olur (YG-1704).
+KS-132	STABILITE-01.05.01-01 STABILITE-01.01.04-01 STABILITE-01.01.05-01	GMO tarifeli stabilite raporu (STABILITE-01.05.01-01) ile saatle stabilite değerlendirmesi (STABILITE-01.01.04-01 veya STABILITE-01.01.05-01) aynı teklife birlikte yazılırsa aynı iş iki kez fiyatlanır (YG-1703).

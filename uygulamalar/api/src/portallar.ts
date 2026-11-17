@@ -208,14 +208,15 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     });
   });
   s.post('/tedarikci-portal/siparis/:id/sevk', oturumlu, async (i, y) => {
-    const o = i.oturum!; const f = await tedarikci(o.kullanici); const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarih?: string; irsaliye?: string; tasiyici?: string; lot?: string; belge?: string };
+    const o = i.oturum!; const f = await tedarikci(o.kullanici); const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarih?: string; irsaliye?: string; tasiyici?: string; lot?: string; belge?: string; sertifika?: string };
     if (!f || !UUID.test(id)) return yok(y);
+    if (g.sertifika && (!UUID.test(g.sertifika) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Kuruluş' AND bag_kimligi = $2::text`, [g.sertifika, f])).rowCount)) return y.code(400).send({ hata: 'Sertifika belgesini yükleyip seçiniz.' }); // YG-1088
     const t = (await b.db.query(`SELECT siparis_no, tedarikci_kabul, hazirlayan_ref FROM tedarik_siparisi WHERE kimlik = $1 AND kurulus_ref = $2`, [id, f])).rows[0];
     if (!t) return yok(y);
     if (t.tedarikci_kabul !== 'Kabul') return y.code(409).send({ hata: 'Sevk bildirimi sipariş kabulünden sonra yapılır.' });
     if (!g.tarih || !g.irsaliye?.trim() || !g.tasiyici?.trim() || !g.lot?.trim() || !g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Sevk tarihi, irsaliye, taşıyıcı, lot ve belgeyi eklemenizi rica ederiz.' });
     return islem(async (c) => {
-      await c.query(`INSERT INTO tedarik_sevki (siparis_ref, sevk_tarihi, irsaliye_no, tasiyici, lot_no, belge_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, g.tarih, g.irsaliye!.trim(), g.tasiyici!.trim(), g.lot!.trim(), g.belge, o.kullanici]);
+      await c.query(`INSERT INTO tedarik_sevki (siparis_ref, sevk_tarihi, irsaliye_no, tasiyici, lot_no, belge_ref, giren_ref, sertifika_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, g.tarih, g.irsaliye!.trim(), g.tasiyici!.trim(), g.lot!.trim(), g.belge, o.kullanici, g.sertifika || null]);
       await bildir(c, { olay: `sevk:${id}:${g.irsaliye}`, kullanicilar: [t.hazirlayan_ref], baslik: `${t.siparis_no} · Sevk Edildi` });
       return { tamam: true };
     });

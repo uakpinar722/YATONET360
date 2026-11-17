@@ -139,11 +139,23 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-481: hazır bildirimi BLD-12; 7 takvim günü sayılır.
+  // YG-1867: teslim alınmayan yatın barınma gideri tutarını Ticari Sorumlu elle girer; Barınma Gideri görevi kapanır.
+  s.post('/dosya/:id/barinma-gideri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tutar?: number };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)'`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Barınma giderini Ticari Sorumlu girer.' });
+    if (!(Number(g.tutar) >= 0) || g.tutar === undefined || g.tutar === null) return y.code(400).send({ hata: 'Barınma gideri tutarını giriniz.' });
+    if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND teslim_son_tarihi IS NOT NULL AND teslim_son_tarihi < current_date`, [id])).rowCount) return y.code(409).send({ hata: 'Barınma gideri, teslim için verilen sürenin dolmasından sonra girilir.' });
+    await b.db.query(`UPDATE dosya SET barinma_gideri_eur = $2, barinma_gideri_giren_ref = $3, barinma_gideri_zamani = now() WHERE kimlik = $1`, [id, Number(g.tutar), o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Barınma Gideri' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    return { tamam: true };
+  });
   s.post('/dosya/:id/teslime-hazir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = await dosya(id); const t = await sahip(id);
     if (d.teslime_hazir_zamani) return y.code(409).send({ hata: 'Hazır bildirimi yapılmıştır.' });
+    if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Teslime Hazır bildirimini dosyanın Dosya Sorumlusu yapar.' }); // YG-1867
     if (!(await b.db.query(`SELECT 1 FROM teslim_alici_dogrulama WHERE dosya_ref = $1`, [id])).rowCount) return y.code(409).send({ hata: 'Teslim bildiriminden önce yetkili alıcıyı doğrulayınız.' }); // YG-415
     const son = new Date(Date.now() + TESLIM_GUN * 86_400_000); const gs = son.toISOString().slice(0, 10); const tr = gunAy(son);
     return islem(async (c) => {

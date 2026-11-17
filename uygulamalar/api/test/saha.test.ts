@@ -282,7 +282,8 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
     const K = async (k: string, x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir(k), { gerekce: 'G', karar: 'Garanti', nedenArastirmasi: 'N', ...x });
     expect((await K('ds', {})).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir('ty'), { gerekce: 'G', karar: 'Garanti' })).json().hata).toContain('Neden araştırması'); // YG-083
-    expect((await K('ty', { maliyet: 5000.01 })).statusCode).toBe(403);
+    expect((await K('ty', { maliyet: 5000.01 })).json()).toMatchObject({ durum: 'Onay Bekleniyor', makam: 'Teknik Müdür' }); // YG-1416: Teknik Müdür onayına gider
+    await o.sup.query(`UPDATE garanti_sikayet SET onay_bekleyen_karar = NULL, onay_bekleyen_maliyet = NULL WHERE kimlik = $1`, [id]);
     expect((await K('ty', { maliyet: 5000, kapat: true })).statusCode).toBe(409);
     expect((await K('ty', { maliyet: 5000, kapat: true, kokNeden: true })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT statu FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0].statu).toBe('Kapalı');

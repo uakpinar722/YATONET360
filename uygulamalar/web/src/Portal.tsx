@@ -71,9 +71,11 @@ function AcilDugmesi() {
     };
     gonder(); const z = setInterval(gonder, 600_000); return () => clearInterval(z);
   }, [t]);
-  if (t) return <div className="ozet"><div>{msg}</div><div className="not">Konumunuzun iletilmesi için lütfen bu sayfayı açık tutunuz.</div><button className="btn2" onClick={() => void istek(`/portal/acil/${t}/konum-durdur`, {}).then(() => { setT(null); setMsg('Konum gönderimi durduruldu.'); })}>Konum Göndermeyi Durdur</button></div>;
+  const u112 = <div className="hata" role="alert" data-t="uyari-112"><b>Acil durumlarda lütfen önce 112&apos;yi arayınız.</b> <a className="btn hayir" href="tel:112">112&apos;yi Ara</a></div>; // YG-1657
+  if (t) return <div className="ozet">{u112}<div>{msg}</div><div className="not">Konumunuzun iletilmesi için lütfen bu sayfayı açık tutunuz.</div><button className="btn2" onClick={() => void istek(`/portal/acil/${t}/konum-durdur`, {}).then(() => { setT(null); setMsg('Konum gönderimi durduruldu.'); })}>Konum Göndermeyi Durdur</button></div>;
   return (
     <div className="ozet">
+      {u112}
       {hata && <div className="hata" role="alert">{hata}</div>}{msg && <div>{msg}</div>}
       <label htmlFor="pa-t">Acil Durum Türü</label><select id="pa-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{TUR.map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="pa-y">Yat</label><input id="pa-y" value={f.yatAdi} onChange={(e) => setF({ ...f, yatAdi: e.target.value })} />

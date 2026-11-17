@@ -545,7 +545,7 @@ try {
   kontrol('kurum kullanıcı talebi ekrandan açılır, hesap teyitten önce açılmaz', (await sup.query(`SELECT durum FROM kurum_kullanici_talebi WHERE eposta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rows[0]?.durum === 'Teyit Bekliyor' && !(await sup.query(`SELECT 1 FROM kullanici_hesabi WHERE e_posta = $1`, [`e2e-yeni-${tek}@deneme.local`])).rowCount);
   await pTc.getByRole('button', { name: 'Siparişler' }).first().click(); await pTc.locator(`#sv-t-${sp2.kimlik}`).waitFor();
   await pTc.locator(`#sv-t-${sp2.kimlik}`).fill('2027-01-10'); await pTc.locator(`#sv-i-${sp2.kimlik}`).fill('İ9'); await pTc.locator(`#sv-s-${sp2.kimlik}`).fill('Kargo'); await pTc.locator(`#sv-l-${sp2.kimlik}`).fill('L9');
-  await pTc.getByLabel('İrsaliye ve Sertifika', { exact: true }).setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
+  await pTc.getByLabel('İrsaliye', { exact: true }).setInputFiles(dosyaYaz('g')); await pTc.getByText('Dosya yüklendi.').first().waitFor();
   await tikla(pTc, 'Sevk Bildir');
   const pMt = await al('mfm', E); await pMt.getByRole('button', { name: 'Tedarikçi Ödemeleri' }).first().click(); await pMt.getByRole('heading', { name: 'Tedarikçi Ödemeleri' }).waitFor();
   kontrol('muhasebe Tedarikçi Ödemeleri sayfasını açar', await pMt.getByText('Açık Faturalar').first().isVisible());

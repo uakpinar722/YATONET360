@@ -170,6 +170,7 @@ function GarantiKarari({ id, yap }: { id: string; yap: Yap }) {
 }
 
 function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
+  const [bg, setBg] = useState(''); // YG-1867
   const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null); const [pf, setPf] = useState({ belge: '', aciklama: '' });
   const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
   const yp = () => istek<typeof parca>(`/dosya/${id}/sokulen-parca`).then(setParca);
@@ -221,6 +222,8 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <TeslimAlici dosya={id} />
     <div className="bolum">Teslim</div>
     <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/teslime-hazir`, {}), 'Hazır bildirimi gönderildi; 7 gün başladı.')}>Teslime Hazır Bildir</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/teslim-hatirlat`, {}), 'Tek hatırlatma gönderildi.')}>Tutanak Hatırlat</button><button className="btn2 kucuk" onClick={() => void yap(() => istek<Record<string, number>>(`/dosya/${id}/kapanis-hesabi`).then(setHs))}>Kapanış Hesabı</button></div>
+    <label htmlFor="tb-bg">Barınma Gideri (EUR; Teslim Süresi Dolunca Ticari Sorumlu Girer)</label><input id="tb-bg" inputMode="decimal" value={bg} onChange={(e) => setBg(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!bg.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/barinma-gideri`, { tutar: sayi(bg) }), 'Barınma gideri kaydedildi.')}>Barınma Giderini Kaydet</button>
     {hs && <div>Onaylı: {hs.onayliKdvHaric} · Faturalı: {hs.faturali} · Tahsil: {hs.tahsil} · Açık Alacak: {hs.acikAlacak} · Firma Hakedişi: {hs.firmaHakedis} · Ödenen: {hs.firmayaOdenen} · Firma Borcu: {hs.firmaBorcu} EUR</div>}
     <label htmlFor="ts-at">Teslim Alan Türü</label><select id="ts-at" value={tes.aliciTuru} onChange={(e) => setTes({ ...tes, aliciTuru: e.target.value })}>{['Yat Sahibi', 'Yetkili Temsilci', 'Marina veya Tersane'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="ts-a">Teslim Alan</label><input id="ts-a" value={tes.alici} onChange={(e) => setTes({ ...tes, alici: e.target.value })} />

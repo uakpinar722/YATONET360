@@ -6,7 +6,7 @@ import { GozdenGecirmeler } from './YonetimTakip';
 import { OzelGunler } from './OzelGunler';
 
 export interface Kart {
-  kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null;
+  kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null; olusturma_zamani?: string;
   kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null; vekaleten?: boolean; arz_notlari?: string | null;
 }
 export interface BugunVeri {
@@ -18,19 +18,22 @@ const TZ = 'Europe/Istanbul';
 const sonYazi = (s: string) => new Date(s).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: TZ }).replace(',', '');
 
 /** YG-1635: 5 güne kadar saat, üzeri gün. Süresi geçen kırmızı; renk yanıp sönmez. */
-export function kalan(s: string, simdi = Date.now()): { yazi: string; sinif: string; yanip?: string } {
+export function kalan(s: string, simdi = Date.now(), baslangic?: string): { yazi: string; sinif: string; yanip?: string } {
   const ms = new Date(s).getTime() - simdi;
   if (ms < 0) { const dk = Math.ceil(-ms / 60_000); return { yazi: `${Math.floor(dk / 60)} Saat ${dk % 60} Dakika Geçti`, sinif: 'kirmizi', yanip: 'yanip-gecti' }; }
   const yanip = ms <= 1_800_000 ? 'yanip-1' : ms <= 3_600_000 ? 'yanip-3' : ms <= 7_200_000 ? 'yanip-5' : undefined; // YG-1606
   if (yanip) return { ...kalanYazi(ms), yanip };
-  return kalanYazi(ms, new Date(s), simdi);
+  const r = kalanYazi(ms, new Date(s), simdi);
+  // YG-1755: kalan süre toplam sürenin dörtte birine inince sarı olur (kırmızı eşikleri aynen kalır).
+  if (baslangic && r.sinif === 'gri') { const top = new Date(s).getTime() - new Date(baslangic).getTime(); if (top > 0 && ms <= top / 4) return { ...r, sinif: 'sari' }; }
+  return r;
 }
 /** YG-1605: 120 saatin üzerinde gün sayısı İstanbul takvim günü değişiminde (00:00) bir azalır. */
 const takvimGunu = (d: Date) => Date.parse(`${d.toLocaleDateString('sv-SE', { timeZone: TZ })}T00:00:00Z`) / 86_400_000;
 function kalanYazi(ms: number, bitis?: Date, simdi = Date.now()): { yazi: string; sinif: string } {
   const saat = ms / 3_600_000;
   if (saat < 1) return { yazi: `${Math.max(1, Math.ceil(ms / 60_000))} Dakika Kaldı`, sinif: 'kirmizi' };
-  if (saat <= 120) return { yazi: `${Math.ceil(saat)} Saat Kaldı`, sinif: saat <= 24 ? 'kirmizi' : 'sari' };
+  if (saat <= 120) return { yazi: `${Math.ceil(saat)} Saat Kaldı`, sinif: saat <= 24 ? 'kirmizi' : 'gri' }; // YG-1755: sarı dörtte bir kuralıyla
   return { yazi: `${bitis ? takvimGunu(bitis) - takvimGunu(new Date(simdi)) : Math.ceil(saat / 24)} Gün Kaldı`, sinif: 'gri' };
 }
 
@@ -39,7 +42,7 @@ const Rozet = ({ s, c, y }: { s: string; c: string; y?: string }) => <em classNa
 const Bos = ({ m }: { m: string }) => <div className="ozet bos">{m}</div>;
 
 function KartUst({ k, sayac = true }: { k: Kart; sayac?: boolean }) {
-  const kl = k.son_zaman ? kalan(k.son_zaman) : null;
+  const kl = k.son_zaman ? kalan(k.son_zaman, Date.now(), k.olusturma_zamani) : null;
   return (
     <>
       <div className="ust2"><b>{k.baslik}</b>{sayac && kl && <Rozet s={kl.sinif} c={kl.yazi} y={kl.yanip} />}</div>

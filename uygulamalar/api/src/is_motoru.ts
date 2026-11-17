@@ -43,7 +43,7 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
 
 /** Görev ayrılığı yalnız son gönderimden sonraki kararlara bakar: iade edilip yeniden gönderilen kayda aynı makam yine karar verir. */
 const SON_GONDERIM = `(SELECT coalesce(max(g.kimlik), 0) FROM is_karti_adim g WHERE g.is_ref = k.kimlik AND g.karar = 'Yeniden Gönder')`;
-const SECIM = `k.kimlik, k.tur, k.kategori, k.baslik, k.ozet, k.oncelik, k.son_zaman, k.kademe, k.durum, k.hazirlayan_ref, cardinality(k.zincir) AS kademe_sayisi, (SELECT string_agg('Kademe ' || (a.kademe + 1) || ': ' || a.gerekce, ' · ' ORDER BY a.kimlik) FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.karar = 'Onaya Gönder' AND a.gerekce IS NOT NULL) AS arz_notlari`; // YG-166
+const SECIM = `k.kimlik, k.tur, k.kategori, k.baslik, k.ozet, k.oncelik, k.son_zaman, k.olusturma_zamani, k.kademe, k.durum, k.hazirlayan_ref, cardinality(k.zincir) AS kademe_sayisi, (SELECT string_agg('Kademe ' || (a.kademe + 1) || ': ' || a.gerekce, ' · ' ORDER BY a.kimlik) FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.karar = 'Onaya Gönder' AND a.gerekce IS NOT NULL) AS arz_notlari`; // YG-166
 
 export function isYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
