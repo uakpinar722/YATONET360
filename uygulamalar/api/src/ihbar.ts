@@ -109,6 +109,12 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
     if (!mesaiIcinde(simdi)) { const n = await (await import('./acil.js')).nobetci(c, 'Dosya Sorumlusu', simdi); if (n) acilisSahibi = n; }
   }
   await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: acilisSahibi, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
+  // YG-525: yeni talep Operasyon Müdürlüğü talep kuyruğuna sistem içi bildirimle düşer; mesai dışında nöbetçi Dosya Sorumlusu da bilgilendirilir (Kritikte SMS).
+  { const { mesaiIcinde } = await import('./bildirim.js'); const mesaiDisi = !mesaiIcinde(simdi);
+    const om = await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü'));
+    await bildir(c, { olay: `yeni-talep:${id}`, kullanicilar: om.filter((x) => x !== kullanici), baslik: `Yeni Talep: ${no}`, ozet: `${oncelik} · ${g.ihtiyac.trim().slice(0, 160)}`, oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal' }, simdi);
+    if (mesaiDisi) { const n = await (await import('./acil.js')).nobetci(c, 'Dosya Sorumlusu', simdi);
+      if (n && n !== kullanici) await bildir(c, { olay: `yeni-talep-nobet:${id}`, kullanicilar: [n], baslik: `Yeni Talep (Mesai Dışı): ${no}`, ozet: `${oncelik} · ${g.ihtiyac.trim().slice(0, 160)}`, oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sms: oncelik === 'Kritik', acil: oncelik === 'Kritik' }, simdi); } }
   // YG-026: Kritik öncelikte son onay Operasyon Yöneticisindedir.
   if (oncelik === 'Kritik') {
     await kartAc(c, { tur: 'Kritik Öncelik Teyidi', baslik: `${no} · Kritik Öncelik Teyidi`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: 'Kritik', hazirlayan: kullanici, zincir: [await rolId(c, 'Operasyon Yöneticisi')], nesneTuru: 'Talep', nesneKimligi: id });
