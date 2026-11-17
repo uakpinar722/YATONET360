@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { acilIsle, acilSinir, ilkIsGunu12, nobetci } from '../src/acil.js';
 import { aydinlatmaKodu } from '../src/adimlar.js';
 import { sigortaSureIsle } from '../src/sigorta.js';
+import { musteriGostergeleri } from '../src/portal.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
@@ -247,6 +248,12 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     const fu = `Gizli Onarım Firması ${Date.now()}`; const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı',$3) RETURNING kimlik`, [`S-GZ${Date.now()}`, fu, o.K.ds])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON09`, d.kimlik, f, o.K.ds]);
     for (const u of ['/api/sigorta/ana', `/api/sigorta/teklif/${t}`]) { const b = (await o.ist('GET', u, sigortaC)).body; expect(b).not.toContain(fu); expect(b).not.toContain('-ON09'); }
+    // YG-1564 (T-YG1564): başlamış iş, ek bulguyla durdurma ve açık iş göstergeleri
+    expect(await musteriGostergeleri(o.db, d.kimlik, [])).toMatchObject({ isBasladi: true, acikIs: true, ekBulgu: false, yasalBekleme: false });
+    const ie = (await o.sup.query(`UPDATE is_emri SET statu = 'Durduruldu' WHERE is_emri_no = $1 RETURNING kimlik`, [`${d.dosyaNo}-ON09`])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO zamanlanmis_is (ad, anahtar) VALUES ('bld04', $1)`, [ie]);
+    expect((await musteriGostergeleri(o.db, d.kimlik, [])).ekBulgu).toBe(true);
+    await o.sup.query(`UPDATE is_emri SET statu = 'Aktif' WHERE kimlik = $1`, [ie]);
     expect((await o.ist('GET', '/api/sigorta/ana', await o.gir('ds'))).statusCode).toBe(403);
   });
   it('sigorta adına ihbar dosya açılmadan portalda görünür; başka sigortaya görünmez (YG-017)', async () => {

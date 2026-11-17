@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { denemeHesaplari, kurVeritabani } from '../araclar/kurulum.js';
 import { COOKIE_ADI, ortamOku } from '../src/ayarlar.js';
-import { beklemedeIsle, sureIsle } from '../src/dosya.js';
+import { acikKonuGecikmeIsle, beklemedeIsle, sureIsle } from '../src/dosya.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { DenemeKutusu } from '../src/sms.js';
@@ -463,6 +463,18 @@ describe('süre aşımı ve açık konu (YG-040, YG-059)', () => {
     await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'Doğrulamada', kanit: 'Foto' });
     expect((await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'Kapalı' })).statusCode).toBe(403);
     expect((await ist('POST', `/api/konu/${id}/durum`, await gir('tu'), { statu: 'Kapalı' })).statusCode).toBe(200);
+  });
+  it('gecikmiş konu sahibine/DS ve 3 günde Operasyon Müdürüne bir kez yükselir; hedef tarihi yalnız DS gerekçeyle değiştirir (T-YG059)', async () => {
+    await sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await dosyaAc(); await ekipKur(d.kimlik); const c = await gir('ds');
+    await sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, K.ds]);
+    const id = (await ist('POST', `/api/dosya/${d.kimlik}/konu`, c, { baslik: 'Gecikecek', sahip: K.tu, hedefTarih: '2026-12-01', kabulOlcutu: 'Ö' })).json().kimlik;
+    expect((await ist('POST', `/api/konu/${id}/hedef`, await gir('tu'), { tarih: '2026-12-10', gerekce: 'G' })).statusCode).toBe(403);
+    expect((await ist('POST', `/api/konu/${id}/hedef`, c, { tarih: '2026-12-10' })).statusCode).toBe(400);
+    expect((await ist('POST', `/api/konu/${id}/hedef`, c, { tarih: '2026-12-10', gerekce: 'Parça bekleniyor' })).statusCode).toBe(200);
+    const t0 = new Date('2026-12-14T09:00:00+03:00');
+    expect(await acikKonuGecikmeIsle(db, t0)).toBeGreaterThanOrEqual(2); await acikKonuGecikmeIsle(db, t0);
+    expect((await sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [K.tu, `konu-gecikme:${id}:2026-12-10`])).rows[0].n).toBe(1);
+    expect((await sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [K.opm, `konu-gecikme-ust:${id}:2026-12-10`])).rows[0].n).toBe(1);
   });
 });
 

@@ -156,6 +156,7 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
     if (o.kullanici === t.hazirlayan_ref || onay.includes(o.kullanici) || o.kullanici === t.teknik_kabul_eden_ref) return y.code(409).send({ hata: 'Talimatı hazırlayan, onaylayan veya teknik kabulü veren kişi ödemeyi kaydedemez; başka bir yetkiliden işlem bekleniyor.' });
     if (!t.acil_onayli) { const le = await listeEngeli(b.db, o.kullanici, t.odeme_listesi_ref); if (le) return y.code(409).send({ hata: le }); }
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli banka hesabı bekleniyor.' }); // YG-928
+    if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Karantina'`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın banka hesabı değişikliği bağımsız kanaldan doğrulanıyor; doğrulama sonuçlanana kadar ödeme durdurulmuştur.' }); // YG-1590
     if (t.dosya_ref && !t.acil_onayli) {
       const p = await plan(t.dosya_ref, t.olusturma_zamani);
       if (p.tarih.getTime() > Date.now()) return y.code(409).send({ hata: `Ödeme planı tarihi ${tarihTr(p.tarih)} olup bu tarih bekleniyor.` });

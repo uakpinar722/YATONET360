@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { kartelaEksperRaporuIsle, proformaSureIsle, riskUyariIsle } from '../src/ticari.js';
 import { eurCevir, kurGetir, tcmbKurIsle } from '../src/doviz.js';
+import { isGununeKaydir, odemeTakvimiUyariIsle, onerilenVadeler } from '../src/odeme_takvimi.js';
+import { parasalZincir } from '../src/teklif.js';
+import { rolId } from '../src/ihbar.js';
 import { alacakIsle, avansHesapla, firmaOdemePlani, hakedisKesintisi, ibanGecerli, izinGunu, masrafOdenecek, teslimEngeli, yillikHak } from '../src/ticari.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
@@ -156,6 +159,36 @@ describe('kartela eksper raporu (YG-773)', () => {
   });
 });
 
+describe('parasal zincir üst kademeleri (YG-165)', () => {
+  it('son makam GMY/CEO iken TİD (ticari) ve GMY ara kademe olarak girer; ticari olmayan zincire TİD girmez (T-YG165)', async () => {
+    const r = async (x: string) => rolId(o.db, x);
+    const tid = await r('Ticari İşler Direktörü'); const gmy = await r('Genel Müdür Yardımcısı'); const mfm = await r('Muhasebe ve Finans Müdürü');
+    expect(await parasalZincir(o.db, ['Muhasebe ve Finans Müdürü'], 'Ticari İşler Direktörü')).toEqual([mfm, tid]);
+    expect(await parasalZincir(o.db, ['Muhasebe ve Finans Müdürü'], 'Genel Müdür Yardımcısı')).toEqual([mfm, tid, gmy]);
+    const z = await parasalZincir(o.db, ['Muhasebe ve Finans Müdürü'], 'CEO');
+    expect(z.slice(0, 3)).toEqual([mfm, tid, gmy]); expect(z).toHaveLength(4);
+    expect(await parasalZincir(o.db, ['Operasyon Müdürü'], 'Genel Müdür Yardımcısı')).not.toContain(tid);
+  });
+});
+
+describe('ödeme takvimi (YG-918)', () => {
+  it('vade önerisi, tatil kaydırması, elle kalem, 72 saat uyarısı tek kez, ödendi (T-YG918)', async () => {
+    expect(await onerilenVadeler(o.db, new Date('2026-11-17T09:00:00+03:00'))).toEqual({ masraf: '2026-11-21', maas: '2026-12-01' });
+    expect(await isGununeKaydir(o.db, '2026-11-22')).toBe('2026-11-23');
+    const ts = await o.gir('ts');
+    expect((await o.ist('POST', '/api/odeme-takvimi/kalem', await o.gir('ds'), { tur: 'SGK', aciklama: 'Prim', vade: '2026-11-22' })).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/odeme-takvimi/kalem', ts, { tur: 'Kira', aciklama: 'K', vade: '2026-11-22' })).statusCode).toBe(400);
+    const k = (await o.ist('POST', '/api/odeme-takvimi/kalem', ts, { tur: 'SGK', aciklama: 'Ekim primi', tutarTl: 1500, vade: '2026-11-22' })).json();
+    expect(k.vade).toBe('2026-11-23');
+    const t0 = new Date('2026-11-21T10:00:00+03:00');
+    expect(await odemeTakvimiUyariIsle(o.db, t0)).toBeGreaterThan(0); await odemeTakvimiUyariIsle(o.db, t0);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ts, `odeme-vade-72:SGK:${k.kimlik}`])).rows[0].n).toBe(1);
+    expect((await o.ist('GET', '/api/odeme-takvimi', ts)).json().satirlar.some((s: { kimlik?: string }) => s.kimlik === k.kimlik)).toBe(true);
+    expect((await o.ist('POST', `/api/odeme-takvimi/kalem/${k.kimlik}/odendi`, ts)).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/odeme-takvimi', ts)).json().satirlar.some((s: { kimlik?: string }) => s.kimlik === k.kimlik)).toBe(false);
+  });
+});
+
 describe('TCMB döviz kuru (YG-1356, YG-825, YG-955)', () => {
   it('yayın okunur, tekrar yazılmaz, elle giriş TCMB kaydını değiştirmez, çapraz çevrim (T-YG1356)', async () => {
     const xml = `<Tarih_Date Tarih="02.01.2026" Date="01/02/2026"><Currency CrossOrder="0" Kod="USD" CurrencyCode="USD"><ForexBuying>40.0000</ForexBuying><ForexSelling>40.5000</ForexSelling></Currency><Currency CrossOrder="9" Kod="EUR" CurrencyCode="EUR"><ForexBuying>45.0000</ForexBuying><ForexSelling>45.0000</ForexSelling></Currency></Tarih_Date>`;
@@ -169,6 +202,10 @@ describe('TCMB döviz kuru (YG-1356, YG-825, YG-955)', () => {
     expect((await o.ist('POST', '/api/doviz-kuru', await o.gir('ts'), { tarih: '2026-01-02', pb: 'GBP', satis: 54 })).statusCode).toBe(200);
     expect(await eurCevir(o.db, 900, 'GBP', '2026-01-02')).toBe(1080);
     expect((await o.ist('GET', '/api/doviz-kurlari', await o.gir('ds'))).json().map((x: { pb: string }) => x.pb)).toEqual(['EUR', 'USD', 'GBP']);
+    // YG-236 (T-YG236): teklif gönderilince o günkü EUR satış kuru teklife yazılır
+    const tk = await teklifVer(await dosya(), 'Yat Sahibi', 1000, 'Taslak', null as never);
+    await o.sup.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi' WHERE kimlik = $1`, [tk]);
+    expect(Number((await o.sup.query(`SELECT teklif_kuru FROM fiyat_teklifi WHERE kimlik = $1`, [tk])).rows[0].teklif_kuru)).toBeGreaterThan(0);
   });
 });
 

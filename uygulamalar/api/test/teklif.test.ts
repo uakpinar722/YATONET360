@@ -32,6 +32,7 @@ const cetvel = async (id: string, satirlar: object[] = [{ aciklama: 'İnceleme',
   expect(r.statusCode, r.body).toBe(200);
   const k = await o.kart('Kapsam Cetveli', r.json().kimlik);
   expect((await o.karar(k.kimlik, 'ty', 'Onayla')).statusCode).toBe(200);
+  expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].n).toBeLessThanOrEqual(1); // YG-1599 (T-YG1599)
   return r.json().kimlik as string;
 };
 const kesifIsEmri = async (id: string, gonder = true) => {
@@ -387,6 +388,10 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, c, { karar: 'Tam Onay', kanal: 'Telefon', yetkili: 'Y' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, c, { karar: 'Tam Onay', kanal: 'KEP', yetkili: 'Y' })).statusCode).toBe(400);
     void d;
+  });
+  it('cetvel onayında Fiyat Teklifi Hazırla görevi açılır (T-YG1599b)', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const cv = await cetvel(d.kimlik);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [cv])).rows[0].n).toBe(1);
   });
   it('tam onay dosyayı Uygulama aşamasına alır, BLD-38 gider', async () => {
     const { d, t } = await gonder();

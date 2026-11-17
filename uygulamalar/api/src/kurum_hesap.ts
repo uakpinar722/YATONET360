@@ -226,6 +226,7 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     if (f.odeme_zamani) return y.code(409).send({ hata: 'Bu fatura ödenmiştir.' });
     if (f.eslestirme !== 'Eşleşti') return y.code(409).send({ hata: 'Üçlü eşleşme tamamlanmadan ödeme kaydedilmemektedir.' });
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [f.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Tedarikçinin teyitli banka hesabı bekleniyor.' }); // YG-928
+    if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Karantina'`, [f.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Tedarikçinin banka hesabı değişikliği bağımsız kanaldan doğrulanıyor; doğrulama sonuçlanana kadar ödeme durdurulmuştur.' }); // YG-1590
     const le = await listeEngeli(b.db, o.kullanici, f.odeme_listesi_ref); if (le) return y.code(409).send({ hata: le }); // YG-830
     await b.db.query(`UPDATE tedarikci_faturasi SET odeme_zamani = now(), odeyen_ref = $2 WHERE kimlik = $1`, [id, o.kullanici]);
     await listeTamamla(b.db, f.odeme_listesi_ref);

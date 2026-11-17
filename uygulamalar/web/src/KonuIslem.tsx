@@ -5,6 +5,17 @@ const SONRAKI: Record<string, string[]> = { 'Açık': ['İşlemde', 'Geçersiz']
 const AD: Record<string, string> = { İşlemde: 'İşleme Al', Geçersiz: 'Geçersiz Say', Doğrulamada: 'Doğrulamaya Gönder', Kapalı: 'Kapat' };
 
 /** YG-059, YG-153: açık konu durum geçişleri; doğrulamaya kanıtla gönderilir, kapanmış konu gerekçeyle yeniden açılır. */
+/** YG-059: Dosya Sorumlusu hedef tarihi gerekçeyle değiştirir. */
+export function KonuHedef({ kimlik, statu, yenile }: { kimlik: string; statu: string; yenile: () => void }) {
+  const [t, setT] = useState(''); const [g, setG] = useState(''); const [m, setM] = useState(''); const [ac, setAc] = useState(false);
+  if (['Kapalı', 'Geçersiz'].includes(statu)) return null;
+  if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Hedef Tarihi Değiştir</button>;
+  return <span className="tam">{m && <span className="not" role="status">{m}</span>}
+    <label htmlFor={`kh-t-${kimlik}`}>Yeni Hedef Tarih</label><input id={`kh-t-${kimlik}`} type="date" value={t} onChange={(e) => setT(e.target.value)} />
+    <label htmlFor={`kh-g-${kimlik}`}>Değişiklik Gerekçesi</label><input id={`kh-g-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!t || !g.trim()} onClick={() => void istek(`/konu/${kimlik}/hedef`, { tarih: t, gerekce: g }).then(() => { setAc(false); setT(''); setG(''); yenile(); }).catch((e) => setM(e.message))}>Kaydet</button></span>;
+}
+
 export function KonuIslem({ kimlik, statu, yenile }: { kimlik: string; statu: string; yenile: () => void }) {
   const [m, setM] = useState(''); const [not, setNot] = useState('');
   const l = SONRAKI[statu] ?? [];

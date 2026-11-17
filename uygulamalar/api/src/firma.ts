@@ -79,7 +79,9 @@ export async function firmaUygunlugu(db: Db, firma: string, brans?: string | nul
 
 async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; dosya_ref: string; kurulus_ref: string }, simdi = new Date()) {
   const d = (await c.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0];
-  const son = new Date(simdi.getTime() + (YANIT_SAAT[d.oncelik] ?? 24) * 3_600_000);
+  // YG-326: yanıt sonu Pazar, resmî tatil veya 22:00-08:00 arasına düşerse ilk çalışma günü 12:00'a kayar; Kritikte kaydırma yoktur.
+  const { bitisKaydir, tatilGunleri } = await import('./sure.js');
+  const son = bitisKaydir(new Date(simdi.getTime() + (YANIT_SAAT[d.oncelik] ?? 24) * 3_600_000), d.oncelik, await tatilGunleri(c), await tatilGunleri(c, true)).bitis;
   await c.query(`UPDATE is_emri SET statu = 'Kabul Bekliyor', yayim_zamani = $2, yanit_son = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, simdi, son]);
   const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
   // YG-1518: kabul son zamanı ve kabulden sonraki Teknik Rapor / Fiyat Teklifi süresi bildirimde yazılır.

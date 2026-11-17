@@ -8,7 +8,7 @@ import { KaliteBolumu, RaporBolumu, SigortaEposta, SigortaGonderimBolumu, Tedari
 import { TeklifTalebiBolumu, TesisIslemleri } from './Portallar';
 import { MusteriTalimati } from './MusteriTalimati';
 import { VeriDuzeltme } from './VeriDuzeltme';
-import { KonuIslem } from './KonuIslem';
+import { KonuHedef, KonuIslem } from './KonuIslem';
 import { BelgeInceleme } from './BelgeInceleme';
 import { Malikler } from './Malikler';
 import { SahipDevri } from './SahipDevri';
@@ -331,7 +331,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       </Blok>}
       <Blok baslik="Açık Konular">
         {d.konular.length === 0 && <div className="not">Açık konu bulunmamaktadır.</div>}
-        {d.konular.map((k) => <div key={k.kimlik}>{k.konu_no} · {k.konu_turu && k.konu_turu !== 'İş' ? `${k.konu_turu} · ` : ''}{k.baslik} · {k.sahip} · {k.statu} · {gun(k.hedef_tarih)}{k.gecikmis ? ' · Gecikmiş' : ''}{k.asama ? ` · Aşama: ${k.asama}` : ''}{k.kabul_olcutu ? ` · Kabul Ölçütü: ${k.kabul_olcutu}` : ''}{k.gerekli_belge ? ` · Gerekli Belge: ${k.gerekli_belge}` : ''}<KonuIslem kimlik={k.kimlik} statu={k.statu} yenile={() => void yukle()} /></div>)}
+        {d.konular.map((k) => <div key={k.kimlik}>{k.konu_no} · {k.konu_turu && k.konu_turu !== 'İş' ? `${k.konu_turu} · ` : ''}{k.baslik} · {k.sahip} · {k.statu} · {gun(k.hedef_tarih)}{k.gecikmis ? ' · Gecikmiş' : ''}{k.asama ? ` · Aşama: ${k.asama}` : ''}{k.kabul_olcutu ? ` · Kabul Ölçütü: ${k.kabul_olcutu}` : ''}{k.gerekli_belge ? ` · Gerekli Belge: ${k.gerekli_belge}` : ''}<KonuIslem kimlik={k.kimlik} statu={k.statu} yenile={() => void yukle()} />{d.rollerim.includes('Dosya Sorumlusu') && <KonuHedef kimlik={k.kimlik} statu={k.statu} yenile={() => void yukle()} />}</div>)}
         <label htmlFor="n-tr">Konu Türü</label><select id="n-tr" value={kTur} onChange={(e) => setKTur(e.target.value)}>{['İş', 'Belge', 'Eğitim'].map((x) => <option key={x}>{x}</option>)}</select>
         <label htmlFor="n-b">Yeni Konu</label><input id="n-b" value={kBaslik} onChange={(e) => setKBaslik(e.target.value)} />
         <div className="iki-tarih"><div><label htmlFor="n-s">Sahibi</label><select id="n-s" value={kSahip} onChange={(e) => setKSahip(e.target.value)}><option value="">Seçiniz</option>{[...new Map(d.ekip.map((e) => [e.kullanici, e])).values()].map((e) => <option key={e.kullanici} value={e.kullanici}>{e.ad_soyad}</option>)}</select></div><div><label htmlFor="n-t">Hedef Tarih</label><input id="n-t" type="date" value={kTarih} onChange={(e) => setKTarih(e.target.value)} /></div></div>
@@ -469,6 +469,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, belge: gBelge, bolge: gBolge || undefined, olcek: gOlcek || undefined }))}>Fotoğrafı Kaydet</button>
         {!gKalem.startsWith('Bölge') && <><label htmlFor="gr-n">Çekilemedi Nedeni</label><select id="gr-n" value={gNeden} onChange={(e) => setGNeden(e.target.value)}><option value="">Seçiniz</option>{CEKILEMEDI.map((x) => <option key={x}>{x}</option>)}</select><button className="btn2" disabled={!gNeden} onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, cekilemedi: gNeden }))}>Çekilemedi</button></>}
       </Blok>
+      {d.statu === 'Kapalı' && <YenidenAc id={id} yap={yap} />}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <>
         <Blok baslik="Kapanış Kontrolü">
           <label htmlFor="kp-n">Kapanma Nedeni (Kapalı için)</label><select id="kp-n" value={kNeden} onChange={(e) => setKNeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select>
@@ -505,6 +506,16 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
 }
 
 /** Üst arama: eski numara ana dosyaya yönlendirir (YG-024). */
+/** YG-080: kapalı dosya yeni bilgi/olgu, hata veya müşteri bildirimi gerekçesiyle Operasyon Müdürü onayına gönderilerek yeniden açılır. */
+function YenidenAc({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
+  const [tur, setTur] = useState(''); const [g, setG] = useState('');
+  return <Blok baslik="Yeniden Açma Talebi">
+    <label htmlFor="ya-t">Gerekçe Türü</label><select id="ya-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option>{['Yeni Bilgi', 'Hata', 'Müşteri Bildirimi'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="ya-g">Yeniden Açma Gerekçesi</label><textarea id="ya-g" value={g} onChange={(e) => setG(e.target.value)} />
+    <button className="btn2" disabled={!tur || !g.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/yeniden-ac`, { tur, gerekce: g }), 'Yeniden açma talebi Operasyon Müdürü onayına gönderildi.')}>Onaya Gönder</button>
+  </Blok>;
+}
+
 export function AramaSonucu({ q, ac }: { q: string; ac: (id: string) => void }) {
   const [r, setR] = useState<{ kimlik: string; dosya_no: string; yat_adi: string; statu: string; oncelik: string; ana_kimlik: string | null; ana_no: string | null }[] | null>(null); const [hata, setHata] = useState('');
   const [fl, setFl] = useState<{ kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; ag_statusu: string }[]>([]);

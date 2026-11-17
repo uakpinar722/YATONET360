@@ -1,4 +1,5 @@
 import { DurumSayilari } from './DurumSayilari';
+import { OdemeTakvimi } from './OdemeTakvimi';
 import { eur } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
 import { SigortaIhbar } from './SigortaIhbar';
@@ -804,6 +805,7 @@ export function TedarikciOdemeleri() {
   return (
     <>
       <h1>Tedarikçi Ödemeleri</h1><Mesaj />
+      <OdemeTakvimi />
       <MahsupItirazlari />
       <FirmaOdemeleri />
       <VergiKayitlari />

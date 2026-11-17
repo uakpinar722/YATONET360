@@ -56,9 +56,15 @@ export async function parasalZincir(db: Db, ara: string[], son: string, gorus: s
   const z: string[] = [];
   for (const r of [...ara, ...gorus]) if (r !== son && await dolu(r)) z.push(await rolId(db, r));
   // YG-176 (KS-8): Ara Kademesiz Dönem açıkken GMY makamına düşen (5.000 EUR üstü) onay doğrudan CEO'ya gider.
-  if (son === 'Genel Müdür Yardımcısı' && Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'ara_kademesiz_donem'`)).rows[0]?.deger ?? 0) === 1) son = 'CEO';
+  const kademesiz = Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'ara_kademesiz_donem'`)).rows[0]?.deger ?? 0) === 1;
+  if (son === 'Genel Müdür Yardımcısı' && kademesiz) son = 'CEO';
   let i = sira.indexOf(son); let makam = son;
   while (i >= 0 && i < sira.length - 1 && !(await dolu(makam))) makam = sira[++i]!;
+  // YG-165: son makama kadar aradaki üst kademeler sırayla geçer: ticari zincirde Ticari İşler Direktörü, her zincirde GMY (Ara Kademesiz Dönemde geçmez).
+  if (!kademesiz && i > 0) {
+    const ticari = ara.some((r) => r.startsWith('Muhasebe ve Finans'));
+    for (const r of sira.slice(0, i)) { if (r === 'Ticari İşler Direktörü' && !ticari) continue; const id = await rolId(db, r); if (await dolu(r) && !z.includes(id)) z.push(id); }
+  }
   z.push(await rolId(db, makam));
   return z;
 }
@@ -181,6 +187,13 @@ kapanisKaydet('Kapsam Cetveli', async (c, k, karar, yapan) => {
   if (karar !== 'Onayla') return;
   await c.query(`UPDATE kapsam_cetveli SET durum = 'Yerine Geçti' WHERE dosya_ref = (SELECT dosya_ref FROM kapsam_cetveli WHERE kimlik = $1) AND durum = 'Onaylı'`, [k.nesne_kimligi]);
   await c.query(`UPDATE kapsam_cetveli SET durum = 'Onaylı', onaylayan_ref = $2, onay_zamani = now() WHERE kimlik = $1`, [k.nesne_kimligi, yapan]);
+  // YG-1599: onaylı cetvelle teklif hazırlığı kendiliğinden başlar (dosyada hazırlanan teklif yoksa); görev dosyanın Ticari Sorumlusuna, yoksa role.
+  const d = (await c.query(`SELECT d.kimlik, d.dosya_no, d.ticari_sorumlu_ref, x.surum FROM kapsam_cetveli x JOIN dosya d ON d.kimlik = x.dosya_ref WHERE x.kimlik = $1`, [k.nesne_kimligi])).rows[0];
+  if (d && !(await c.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu IN ('Taslak', 'İç Onayda') LIMIT 1`, [d.kimlik])).rowCount
+    && !(await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1 AND durum = 'Bekliyor' LIMIT 1`, [String(k.nesne_kimligi)])).rowCount) {
+    const { kartAc } = await import('./is_motoru.js');
+    await kartAc(c, { tur: 'Fiyat Teklifi Hazırla', kategori: 'islem', baslik: `${d.dosya_no} · Fiyat Teklifi Hazırla`, ozet: `Kapsam cetveli Rev.${d.surum} onaylandı.`, ...(d.ticari_sorumlu_ref ? { sahipKullanici: d.ticari_sorumlu_ref } : { sahipRol: await rolId(c, TICARI) }), nesneTuru: 'Kapsam Cetveli', nesneKimligi: String(k.nesne_kimligi) });
+  }
 });
 
 kapanisKaydet('Fiyat Teklifi', async (c, k, karar, yapan) => {

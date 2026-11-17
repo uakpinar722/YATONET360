@@ -39,6 +39,20 @@ export function musteriDurumu(d: { statu: string; asama: string | null; yat_sahi
   }
 }
 
+/**
+ * YG-1564: müşteri durumunu besleyen göstergeler: cayma (yasal bekleme) süresi; ek bulgu bildirimi (BLD-04) yapılmış ve durdurulmuş iş emri;
+ * teknik kapanış sonrası açık iş emri; başlamış (Aktif, Tamamlandı veya Durduruldu) iş emri.
+ */
+export async function musteriGostergeleri(db: Db, dosya: string, beklemede: string[]) {
+  const { caymaEngeli } = await import('./teklif.js');
+  const r = (await db.query(`SELECT
+      EXISTS (SELECT 1 FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu = 'Durduruldu' AND EXISTS (SELECT 1 FROM zamanlanmis_is z WHERE z.ad = 'bld04' AND z.anahtar = e.kimlik::text)) ek,
+      EXISTS (SELECT 1 FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu')) acik,
+      EXISTS (SELECT 1 FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu IN ('Aktif', 'Tamamlandı', 'Durduruldu', 'Kapalı')) basladi`, [dosya])).rows[0];
+  const cayma = await caymaEngeli(db, dosya);
+  return { beklemede, yasalBekleme: Boolean(cayma) && !cayma!.includes('kullanmıştır'), ekBulgu: Boolean(r.ek), acikIs: Boolean(r.acik), isBasladi: Boolean(r.basladi) };
+}
+
 belgeBagiKaydet('Talep', async (db, k, id) => {
   if (!UUID.test(id)) return 'yok';
   const r = (await db.query(`SELECT olusturan_ref, olusturma_zamani FROM talep WHERE kimlik = $1`, [id])).rows[0];
@@ -220,7 +234,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   const benimDosyalarim = `EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND t.kullanici_ref = $1 AND t.aktif AND t.taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci', 'Kaptan', 'İşletmeci', 'Yat Yönetim Şirketi')) OR EXISTS (SELECT 1 FROM kurumsal_kullanici u JOIN kurumsal_kurum c ON c.kimlik = u.kurum_ref JOIN yat ky ON ky.yat_sahibi_ref = c.taraf_ref WHERE u.kullanici_ref = $1 AND ky.kimlik = d.yat_ref)`;
   const kart = async (d: Record<string, any>) => {
     const bek = (await b.db.query(`SELECT neden FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.neden as string);
-    const durum = musteriDurumu(d as never, { beklemede: bek });
+    const durum = musteriDurumu(d as never, await musteriGostergeleri(b.db, d.kimlik, bek)); // YG-1564
     return { kimlik: d.kimlik, dosyaNo: d.dosya_no, yat: d.yat_adi, durum: durum.ad, renk: durum.renk, ilerleme: Number(d.ilerleme_yuzdesi), acilis: d.acilis_tarihi, dosyaSorumlusu: d.dosya_sorumlusu ?? null };
   };
 

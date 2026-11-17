@@ -231,6 +231,19 @@ export async function cerceveKontrol(c: Db, dosya: string, dosyaNo: string): Pro
   await bildir(c, { olay: `cerceve-yok:${dosya}`, kullanicilar: await rolSahipleri(c, await rolId(c, 'Genel Müdür Yardımcısı')), baslik: `${dosyaNo} · Çerçeve Sözleşmesi Olmayan Sigorta Şirketi`, ozet: `${s.sigortaci_adi}: dosya açıldı; Müşteri ve Paydaş İlişkileri Müdürüne görev açıldı.` });
 }
 
+/** YG-059: hedef tarihi geçen açık konu ertesi gün sahibine ve Dosya Sorumlusuna, 3 gün sonra Operasyon Müdürüne birer kez bildirilir. */
+export async function acikKonuGecikmeIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const bugun = new Date(simdi.getTime() + 180 * 60_000).toISOString().slice(0, 10); let n = 0;
+  const { rows } = await db.query(`SELECT k.kimlik, k.konu_no, k.baslik, k.sahip_ref, to_char(k.hedef_tarih, 'YYYY-MM-DD') hedef, ($1::date - k.hedef_tarih) gun, d.dosya_no, d.dosya_sorumlusu_ref FROM acik_konu k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.statu IN ('Açık', 'İşlemde', 'Doğrulamada') AND k.hedef_tarih < $1::date`, [bugun]);
+  const om = (await db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = 'Operasyon Müdürü'`)).rows.map((r) => r.kullanici_ref as string);
+  for (const k of rows) {
+    const ozet = `${k.dosya_no} · ${k.konu_no} · Hedef: ${k.hedef.split('-').reverse().join('.')} · ${k.gun} gün gecikme`;
+    if (await birKez(db, 'konu-gecikme', `${k.kimlik}:${k.hedef}`)) { await bildir(db, { olay: `konu-gecikme:${k.kimlik}:${k.hedef}`, kullanicilar: [...new Set([k.sahip_ref, k.dosya_sorumlusu_ref].filter(Boolean))], baslik: `Gecikmiş Açık Konu: ${k.baslik}`, ozet, oncelik: 'Yüksek' }, simdi); n++; }
+    if (Number(k.gun) >= 3 && om.length && await birKez(db, 'konu-gecikme-ust', `${k.kimlik}:${k.hedef}`)) { await bildir(db, { olay: `konu-gecikme-ust:${k.kimlik}:${k.hedef}`, kullanicilar: om, baslik: `Yükseltme · Gecikmiş Açık Konu: ${k.baslik}`, ozet, oncelik: 'Yüksek' }, simdi); n++; }
+  }
+  return n;
+}
+
 export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const ihbarci = { preHandler: izinGerekli(b, 'ihbar.kaydet') };
@@ -717,6 +730,21 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
 
+  // YG-059: hedef tarih yalnız Dosya Sorumlusunca gerekçeyle değiştirilir; eski ve yeni tarih iz kaydına yazılır, konu sahibine bildirilir.
+  s.post('/konu/:id/hedef', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarih?: string; gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT k.*, d.dosya_sorumlusu_ref FROM acik_konu k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.kimlik = $1`, [id])).rows[0];
+    if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
+    if (k.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Hedef tarihi dosyanın Dosya Sorumlusu değiştirir.' });
+    if (['Kapalı', 'Geçersiz'].includes(k.statu)) return y.code(409).send({ hata: 'Kapanmış konunun hedef tarihi değiştirilemez.' });
+    if (!g.tarih || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Yeni hedef tarih ve gerekçe zorunludur.' });
+    const eski = (await b.db.query(`SELECT $1::date::text t`, [k.hedef_tarih])).rows[0].t as string;
+    await b.db.query(`UPDATE acik_konu SET hedef_tarih = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, g.tarih]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Açık Konu Hedef Tarihi Değişti', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, eski: { hedef: eski }, yeni: { hedef: g.tarih }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    if (k.sahip_ref !== o.kullanici) await bildir(b.db, { olay: `konu-hedef:${id}:${g.tarih}`, kullanicilar: [k.sahip_ref], baslik: `Hedef Tarih Değişti: ${k.baslik}`, ozet: `${eski.split('-').reverse().join('.')} → ${g.tarih.split('-').reverse().join('.')} · ${g.gerekce.trim()}` });
+    return { tamam: true };
+  });
   s.post('/konu/:id/durum', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { statu?: string; kanit?: string; gerekce?: string };
     if (!UUID.test(id)) return yok(y);

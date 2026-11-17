@@ -78,7 +78,7 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   const dosyaKosul = `(lower(s.sigortaci_adi) = lower($1) OR EXISTS (SELECT 1 FROM dosya_tarafi e WHERE e.dosya_ref = d.kimlik AND e.taraf_rolu = 'Eksper' AND e.kullanici_ref = $2 AND e.aktif))`;
   const durum = async (d: Record<string, any>) => {
     const bek = (await b.db.query(`SELECT neden FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.neden as string);
-    const m = musteriDurumu(d as never, { beklemede: bek });
+    const m = musteriDurumu(d as never, await (await import('./portal.js')).musteriGostergeleri(b.db, d.kimlik, bek)); // YG-1564
     return GIZLI_DURUM.includes(m.ad) ? { ad: 'Beklemede', renk: 'kırmızı' } : m;
   };
 
