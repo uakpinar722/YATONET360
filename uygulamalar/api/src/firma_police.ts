@@ -41,6 +41,21 @@ export function firmaPoliceYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`INSERT INTO firma_police_brans_limit (brans, limit_eur, giren_ref) VALUES ($1,$2,$3) ON CONFLICT (brans) DO UPDATE SET limit_eur = $2, giren_ref = $3, zaman = now()`, [g.brans.trim(), l, o.kullanici]);
     return { tamam: true };
   });
+  // YG-1471 (BLD-95, CEO 17.11.2026): poliçe tavsiye hatırlatması; varyant listedeki duruma göre seçilir, aynı firmaya aynı gün bir kez.
+  s.post('/firma/:id/police-hatirlat', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = $2 LIMIT 1`, [o.kullanici, FYM])).rowCount) return yok(y);
+    const s0 = (await policeListesi(b.db)).find((x) => x.kimlik === id); if (!s0) return yok(y);
+    if (s0.durum === 'Uygun' && !s0.tavsiye) return y.code(409).send({ hata: 'Bu firmanın poliçesi uygun görünmektedir.' });
+    const kod = s0.durum === 'Süresi Dolmuş' ? 'BLD-95S' : s0.durum === 'Düşük' ? 'BLD-95D' : 'BLD-95';
+    const { metinGetir } = await import('./metin.js'); const { bildir, disGonder, birKez } = await import('./bildirim.js');
+    if (!(await birKez(b.db, 'police-hatirlat', `${id}:${new Date().toISOString().slice(0, 10)}`))) return y.code(409).send({ hata: 'Bu firmaya bugün hatırlatma gönderilmiştir.' });
+    const metin = await metinGetir(b.db, kod, 'tr', { tarih: s0.bitis ? s0.bitis.split('-').reverse().join('.') : '', 'bağlantı': b.webAdresi });
+    const kisi = (await b.db.query(`SELECT u.kullanici_ref, h.e_posta FROM kurulus_kullanici u JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE u.kurulus_ref = $1`, [id])).rows;
+    await bildir(b.db, { olay: `police-hatirlat:${id}:${Date.now()}`, kullanicilar: kisi.map((x) => x.kullanici_ref as string), baslik: 'Sorumluluk Poliçesi Hatırlatması', ozet: metin });
+    for (const x of kisi) if (x.e_posta) await disGonder(b.db, { olay: `bld95:${id}:${x.kullanici_ref}:${new Date().toISOString().slice(0, 10)}`, eposta: x.e_posta, konu: 'Sorumluluk Poliçesi Hatırlatması', metin });
+    return { kod };
+  });
   s.get('/firma/police-listesi', oturumlu, async (i, y) => {
     const yetkili = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [i.oturum!.kullanici, [FYM, BTD, GMY]])).rowCount;
     return yetkili ? policeListesi(b.db) : yok(y);

@@ -1,0 +1,32 @@
+{
+ "kod": "RHB-01",
+ "onay": "CEO 17.11.2026 (13 metin)",
+ "tr": {
+  "baslik": "YATONET 360 Kurulum Rehberi",
+  "adimlar": [
+   "LİMİT GLOBAL MARINE’ın kurumsal WhatsApp hattından, SMS veya e-postayla gönderdiği bağlantıya dokununuz. Bağlantı cihazınızı kendiliğinden tanır.",
+   "iPhone / iPad: YATONET 360’ın App Store sayfası açılır; “Al” veya “Yükle” düğmesiyle kurunuz.",
+   "Android: YATONET 360 uygulama dosyası indirilir; dosyayı açınız. Telefonunuz bu kaynaktan yükleme izni isterse izin veriniz ve kurulumu tamamlayınız.",
+   "Bilgisayar: YATONET 360 web girişi açılır; kurulum gerekmez.",
+   "Uygulamayı açarak kayıt veya giriş adımlarını izleyiniz.",
+   "Güncellemeler uygulama içinden kendiliğinden gelir; güncelleme istendiğinde onaylayınız."
+  ],
+  "web": "Uygulamayı kuramazsanız YATONET 360’ı [web adresi] adresinden telefonunuzun veya bilgisayarınızın tarayıcısıyla kullanabilirsiniz.",
+  "yardim": "Yardım için: [destek telefonu / e-posta].",
+  "guvenlik": "Güvenliğiniz için: Uygulamayı yalnız LİMİT GLOBAL MARINE’ın gönderdiği bağlantıdan kurunuz. LİMİT GLOBAL MARINE kodunuzu veya şifrenizi hiçbir zaman sormaz."
+ },
+ "en": {
+  "baslik": "YATONET 360 Installation Guide",
+  "adimlar": [
+   "Tap the link sent to you by LİMİT GLOBAL MARINE via its corporate WhatsApp line, SMS or e-mail. The link automatically recognises your device.",
+   "iPhone / iPad: the YATONET 360 page opens in the App Store; install it with the “Get” or “Install” button.",
+   "Android: the YATONET 360 app file is downloaded; open the file. If your phone asks for permission to install from this source, allow it and complete the installation.",
+   "Computer: the YATONET 360 web login opens; no installation is needed.",
+   "Open the app and follow the registration or login steps.",
+   "Updates arrive automatically within the app; please confirm when an update is requested."
+  ],
+  "web": "If you cannot install the app, you can use YATONET 360 in your phone or computer browser at [web address].",
+  "yardim": "For help: [support phone / e-mail].",
+  "guvenlik": "For your security: install the app only from the link sent by LİMİT GLOBAL MARINE. LİMİT GLOBAL MARINE will never ask you for your code or password."
+ }
+}

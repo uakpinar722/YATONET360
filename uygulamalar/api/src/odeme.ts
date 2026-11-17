@@ -48,10 +48,20 @@ kapanisKaydet('Ödeme Listesi', async (c, k, karar) => {
 kapanisKaydet('Acil Ödeme İstisnası', async (c, k, karar) => {
   if (karar === 'Onayla') await c.query(`UPDATE odeme_talimati SET acil_onayli = true WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
+let WEB_ODEME = ''; // BLD-92 bağlantısı; yollar kaydedilirken doldurulur
 kapanisKaydet('Hakediş Mahsubu', async (c, k, karar) => {
   if (karar === 'Onayla') {
-    const m = (await c.query(`UPDATE hakedis_mahsubu SET statu = 'Onaylandı', kalan_eur = tutar_eur, onay_zamani = now() WHERE kimlik = $1::uuid RETURNING kurulus_ref, tur, tutar_eur`, [k.nesne_kimligi])).rows[0];
-    if (m) await bildir(c, { olay: `mahsup:${k.nesne_kimligi}`, kullanicilar: await firmaKisileri(c, m.kurulus_ref), baslik: `Hakediş Mahsubu: ${m.tur}`, ozet: `${tutar(Number(m.tutar_eur))} EUR` });
+    const m = (await c.query(`UPDATE hakedis_mahsubu SET statu = 'Onaylandı', kalan_eur = tutar_eur, onay_zamani = now() WHERE kimlik = $1::uuid RETURNING kurulus_ref, dosya_ref, tur, tutar_eur, aciklama`, [k.nesne_kimligi])).rows[0];
+    if (m) {
+      // YG-423 (BLD-92, CEO 17.11.2026): rücu ve mahsup bildirimi; itiraz 5 iş günü, itiraz sonuçlanana kadar mahsup uygulanmaz.
+      const { isGunuSonu } = await import('./teklif.js'); const { disGonder } = await import('./bildirim.js');
+      const ie = (await c.query(`SELECT coalesce((SELECT string_agg(is_emri_no, ', ' ORDER BY is_emri_no) FROM is_emri WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')), (SELECT dosya_no FROM dosya WHERE kimlik = $1)) n`, [m.dosya_ref, m.kurulus_ref])).rows[0].n as string;
+      const son = await isGunuSonu(c, new Date(), 5);
+      const metin = await metinGetir(c, 'BLD-92', 'tr', { 'İş Emri No': ie, 'mahsup türü': m.tur, tutar: tutar(Number(m.tutar_eur)), 'açıklama ve belge': m.aciklama ?? m.tur, 'itiraz son tarihi': gunAy(son), 'bağlantı': WEB_ODEME });
+      const kisi = await firmaKisileri(c, m.kurulus_ref);
+      await bildir(c, { olay: `mahsup:${k.nesne_kimligi}`, kullanicilar: kisi, baslik: `Rücu ve Mahsup Bildirimi: ${m.tur}`, ozet: metin, oncelik: 'Yüksek' });
+      for (const e of (await c.query(`SELECT kimlik, e_posta FROM kullanici_hesabi WHERE kimlik = ANY($1) AND e_posta IS NOT NULL`, [kisi])).rows) await disGonder(c, { olay: `bld92:${k.nesne_kimligi}:${e.kimlik}`, eposta: e.e_posta, konu: `${ie} Rücu ve Mahsup Bildirimi`, metin });
+    }
   } else if (karar === 'Reddet') await c.query(`UPDATE hakedis_mahsubu SET statu = 'Reddedildi' WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
 kapanisKaydet('Malzeme Avansı', async (c, k, karar, yapan) => {
@@ -62,6 +72,7 @@ kapanisKaydet('Malzeme Avansı', async (c, k, karar, yapan) => {
 });
 
 export function odemeYollari(s: FastifyInstance, b: Baglam) {
+  WEB_ODEME = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolVar = async (k: string, roller: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, roller])).rowCount);

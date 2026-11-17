@@ -77,6 +77,13 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     expect((await o.sup.query(`SELECT durum, alici_turu FROM teslim_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0]).toEqual({ durum: 'Teslim Edildi - Onay Verilmedi', alici_turu: 'Marina veya Tersane' });
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE 'bld49:%'`)).rowCount).toBeGreaterThan(0);
   });
+  it('Dosya Sorumlusu İlerleme Özetini gönderir; metinde firma ve fiyat yok (T-YG555-OZET)', async () => {
+    const d = await dosya(); const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ilerleme-ozeti`, ds, {})).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/ilerleme-ozeti`, ds, { sonrakiAdim: 'Gövde boyası' }); expect(r.statusCode, r.body).toBe(200);
+    const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld93:${d.kimlik}%`])).rows[0]?.metin as string;
+    expect(m).toContain('Gövde boyası'); expect(m).not.toContain('EUR'); expect(m).not.toContain('[');
+  });
   it('ıslak imzalı taranmış tutanakla teslim onaylı sayılır (T-YG1433-ISLAK)', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
     await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref) VALUES ($1,$2)`, [d.kimlik, o.K.ds]);

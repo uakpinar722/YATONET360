@@ -30,6 +30,9 @@ export function geriYuklemeYollari(s: FastifyInstance, b: Baglam) {
       await c.query('BEGIN');
       const k = (await c.query(`INSERT INTO geri_yukleme_kaydi (yedek_ref, yedek_zamani, aciklama, kaydeden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.yedek, zaman, g.aciklama.trim(), o.kullanici])).rows[0].kimlik as string;
       await c.query(`INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum) VALUES ($1,$2,true,'LGM',$3, now() + interval '7 days','Yayında')`, ['Sistem Geri Yüklendi: Kayıtlarınızı Kontrol Ediniz', `YATONET 360, ${anSaat(zaman)} tarihli yedekten geri yüklenmiştir. Bu saatten sonra girdiğiniz kayıtları kontrol ediniz; eksik kaydı yeniden giriniz.`, o.kullanici]);
+      // YG-564 (BLD-94, CEO 17.11.2026): dış kullanıcılara ana sayfa zorunlu duyurusu, 7 gün (V-749 MT-8).
+      { const { metinGetir } = await import('./metin.js'); const govde = await metinGetir(c, 'BLD-94', 'tr', { 'tarih saat': anSaat(zaman) });
+        await c.query(`INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum) VALUES ('YATONET 360 Hizmet Bilgilendirmesi',$1,true,'Dış',$2, now() + interval '7 days','Yayında')`, [govde, o.kullanici]); }
       const son = await isGunuSonu(c, new Date(), 1); let n = 0;
       for (const d of (await c.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref FROM dosya d WHERE d.statu NOT IN ('Kapalı') AND d.dosya_sorumlusu_ref IS NOT NULL`)).rows) {
         await kartAc(c, { tur: TUR, kategori: 'gorev', baslik: `${d.dosya_no} · Geri Yükleme Sonrası Kontrol`, ozet: `${anSaat(zaman)} sonrasında e-posta, SMS ve kurumsal WhatsApp ile gelen ihbar ve onayları yeniden giriniz.`, oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, sonZaman: son, nesneTuru: 'Geri Yükleme', nesneKimligi: `${k}:${d.kimlik}` }); n++;

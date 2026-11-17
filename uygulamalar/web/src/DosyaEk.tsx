@@ -59,6 +59,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
   const [hn, setHn] = useState(''); const [k, setK] = useState({ teklif: '', eylem: '', sorumlu: '', son: '', gerceklesmezse: '' }); const [kb, setKb] = useState(''); const [kg, setKg] = useState(''); const [kt, setKt] = useState({ tarih: '', bedel: '' });
   const [p, setP] = useState({ tur: 'Değişiklik', mevcut: '', onerilen: '', fark: '', toplam: '', sure: '', kanal: 'YATONET 360', sigorta: 'Gerekli Değil', starih: '' }); const [pb, setPb] = useState('');
   const [ek, setEk] = useState({ firma: '', kanal: 'Telefon', kisi: '', talimat: '', tahmini: '' }); // YG-270
+  const [ioS, setIoS] = useState(''); // YG-555
   const [ak, setAk] = useState({ sonuc: '', risk: '', kapsam: '', gerekce: '', yetkiliKisi: '', kaynak: '', sonradan: '', devam: '' }); // YG-254
   const [ku, setKu] = useState({ hizmet: 'Kurtarma', saglayici: '', acil: false }); const [dalis, setDalis] = useState({ limanIzni: '', dalisPlani: '', enerjiIzolasyonu: '' }); const [kod, setKod] = useState(''); const [te, setTe] = useState({ tur: '112 Arandı', ozet: '' }); const [sec, setSec] = useState('Devam');
   const ret = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && t.karar === 'Ret');
@@ -115,6 +116,10 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <label className="kutu"><input type="checkbox" checked={ku.acil} onChange={(e) => setKu({ ...ku, acil: e.target.checked })} /><span>Acil</span></label>
       <button className="btn2 kucuk" disabled={!ku.saglayici} onClick={() => void yap(() => istek(`/dosya/${id}/kurtarma`, ku), 'Kurtarma operasyonu açıldı; yat sahibi onayı gönderildi.')}>Operasyon Aç</button>
 
+      <div className="bolum">Müşteri İlerleme Özeti</div>
+      <div className="not">Yat sahibine fiziksel ilerleme, sonraki adım ve planlanan teslim tarihi gönderilir; firma adı ve fiyat yer almaz.</div>
+      <label htmlFor="io-s">Sonraki Adım</label><input id="io-s" value={ioS} onChange={(e) => setIoS(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!ioS.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/ilerleme-ozeti`, { sonrakiAdim: ioS }).then(() => setIoS('')), 'İlerleme Özeti gönderildi.')}>İlerleme Özetini Gönder</button>
       <div className="bolum">Sigortalı Dosyada Yat Sahibi İtirazı</div>
       <div className="not">Yat sahibi sigorta onayıyla yürüyen işe itiraz ederse kaydedilir: çalışmalar geçici olarak durdurulur, yat sahibine onaylı itiraz bildirimi gider ve Dosya Sorumlusuna arama görevi açılır.</div>
       <div className="dugmeler"><button className="btn hayir kucuk" onClick={() => { if (window.confirm('Yat sahibi itirazı kaydedilsin ve çalışmalar geçici olarak durdurulsun mu?')) void yap(() => istek(`/dosya/${id}/itiraz`, {}), 'İtiraz kaydedildi; çalışmalar durduruldu.'); }}>Yat Sahibi İtirazını Kaydet</button></div>
@@ -187,21 +192,25 @@ function GarantiKarari({ id, yap }: { id: string; yap: Yap }) {
 
 function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   const [bg, setBg] = useState(''); // YG-1867
+  const [yd, setYd] = useState({ mevcut: '', yeni: '' }); // YG-1864
   const [islak, setIslak] = useState(''); // YG-1433
   const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null); const [pf, setPf] = useState({ belge: '', aciklama: '' });
   const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
   const yp = () => istek<typeof parca>(`/dosya/${id}/sokulen-parca`).then(setParca);
   useEffect(() => { void yp().catch(() => {}); }, [id]);
-  const AD: Record<string, string> = { 'ONY-03': 'Sigorta Bilgilendirmesi', 'ONY-06': 'Ek İş Ret Beyanı', 'ONY-07': 'Muadil Parça', 'ONY-08': 'İadesi Mümkün Olmayan Parça', 'ONY-09': 'Deniz Denemesi', 'ONY-10': 'Garanti İşi Planı' };
+  const AD: Record<string, string> = { 'ONY-03': 'Sigorta Bilgilendirmesi', 'ONY-06': 'Ek İş Ret Beyanı', 'ONY-07': 'Muadil Parça', 'ONY-08': 'İadesi Mümkün Olmayan Parça', 'ONY-09': 'Deniz Denemesi', 'ONY-09Y': 'Yer Değiştirme', 'ONY-10': 'Garanti İşi Planı' };
   return (<>
     <div className="bolum">Yat Sahibi Onayı İste</div>
     <label htmlFor="ts-o">Onay Türü</label><select id="ts-o" value={on.ony} onChange={(e) => setOn({ ...on, ony: e.target.value })}>{Object.entries(AD).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
     {['ONY-07', 'ONY-08'].includes(on.ony) && <><label htmlFor="ts-p">Parça Adı</label><input id="ts-p" value={on.parca} onChange={(e) => setOn({ ...on, parca: e.target.value })} /></>}
     {on.ony === 'ONY-08' && <><label htmlFor="ts-t">Parça Bedeli (EUR)</label><input id="ts-t" inputMode="decimal" value={on.tutar} onChange={(e) => setOn({ ...on, tutar: e.target.value })} /></>}
     {on.ony === 'ONY-09' && <><label htmlFor="ts-z">Deneme Tarih ve Saati</label><input id="ts-z" type="datetime-local" value={on.zaman} onChange={(e) => setOn({ ...on, zaman: e.target.value })} /></>}
+    {on.ony === 'ONY-09Y' && <><label htmlFor="ts-yz">Taşıma Tarih ve Saati</label><input id="ts-yz" type="datetime-local" value={on.zaman} onChange={(e) => setOn({ ...on, zaman: e.target.value })} />
+      <label htmlFor="ts-my">Mevcut Yer</label><input id="ts-my" value={yd.mevcut} onChange={(e) => setYd({ ...yd, mevcut: e.target.value })} />
+      <label htmlFor="ts-yy">Yeni Yer</label><input id="ts-yy" value={yd.yeni} onChange={(e) => setYd({ ...yd, yeni: e.target.value })} /></>}
     {on.ony === 'ONY-10' && <><label htmlFor="ts-k">Garanti Kayıt No</label><input id="ts-k" value={on.kayitNo} onChange={(e) => setOn({ ...on, kayitNo: e.target.value })} /></>}
     {on.ony === 'ONY-06' && <><label htmlFor="ts-n">Teklif No</label><input id="ts-n" value={on.teklifNo} onChange={(e) => setOn({ ...on, teklifNo: e.target.value })} /></>}{on.ony === 'ONY-06' && <>{[['yapilmayanIs', 'Yapılmayan İş'], ['teknikEtki', 'Olası Teknik Etki'], ['kullanimSiniri', 'Kullanım Sınırı'], ['onerilenKontrol', 'Önerilen Kontrol']].map(([k, ad]) => <div key={k}><label htmlFor={`oi-${k}`}>{ad}</label><input id={`oi-${k}`} value={(on as Record<string, string>)[k!]} onChange={(e) => setOn({ ...on, [k!]: e.target.value })} /></div>)}</>}
-    <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/onay-iste`, { ony: on.ony, parca: on.parca || undefined, tutar: on.tutar ? sayi(on.tutar) : undefined, zaman: on.zaman || undefined, kayitNo: on.kayitNo || undefined, teklifNo: on.teklifNo || undefined }), 'Onay ekranı yat sahibine gönderildi.')}>Onay İste</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/acil/${id}/ilk-tedbir-talebi`, {}), 'Acil İlk Tedbir talebi gönderildi.')}>Acil İlk Tedbir Talebi</button></div>
+    <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/onay-iste`, { ony: on.ony, mevcutYer: yd.mevcut || undefined, yeniYer: yd.yeni || undefined, parca: on.parca || undefined, tutar: on.tutar ? sayi(on.tutar) : undefined, zaman: on.zaman || undefined, kayitNo: on.kayitNo || undefined, teklifNo: on.teklifNo || undefined }), 'Onay ekranı yat sahibine gönderildi.')}>Onay İste</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/acil/${id}/ilk-tedbir-talebi`, {}), 'Acil İlk Tedbir talebi gönderildi.')}>Acil İlk Tedbir Talebi</button></div>
 
     <DisTalepler id={id} />
     <DosyaDestek dosya={id} />

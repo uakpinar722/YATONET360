@@ -1,3 +1,4 @@
+import { KurulumRehberi } from './KurulumRehberi';
 import { useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { istek, type GirisYaniti } from './api';
 import { YatSahibiKayit } from './Portal';
@@ -56,7 +57,7 @@ export function KodKutulari({ deger, degisti }: { deger: string; degisti: (s: st
 }
 
 export function Giris({ girdi }: { girdi: () => void }) {
-  const [dil, setDil] = useState<Dil>('tr');
+  const [dil, setDil] = useState<Dil>('tr'); const [rehber, setRehber] = useState(false); // YG-491
   const t = T[dil];
   const [adim, setAdim] = useState<Adim>('giris');
   const [kimlik, setKimlik] = useState('');
@@ -166,7 +167,9 @@ export function Giris({ girdi }: { girdi: () => void }) {
         {adim === 'yatyetkili' && <YatSahibiKayit yetkili bitti={girdi} geri={() => setAdim('hesap')} />}
         {adim === 'kurum' && <KurumTalebiFormu dil={dil} geri={() => setAdim('hesap')} />}
 
+        {rehber && <KurulumRehberi dil={dil} kapat={() => setRehber(false)} />}
         <div className="alt">
+          <button type="button" className="lnk" onClick={() => setRehber(!rehber)}>{dil === 'tr' ? 'Kurulum Rehberi' : 'Installation Guide'}</button>
           <span className="dil">
             <button type="button" className={dil === 'tr' ? 'secili' : ''} onClick={() => setDil('tr')}>TR</button> | <button type="button" className={dil === 'en' ? 'secili' : ''} onClick={() => setDil('en')}>EN</button>
           </span>

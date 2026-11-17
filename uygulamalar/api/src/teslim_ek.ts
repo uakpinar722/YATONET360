@@ -15,7 +15,7 @@ import { Depo } from './depo.js';
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
 const SECIMLER = ['İade', 'Montaj', 'Süreli Bekletme', 'Hurda-Bertaraf', 'Sigorta Eksperi İncelemesi İçin Bekletme'];
-const ONAYLAR = ['ONY-03', 'ONY-06', 'ONY-07', 'ONY-08', 'ONY-09', 'ONY-10'];
+const ONAYLAR = ['ONY-03', 'ONY-06', 'ONY-07', 'ONY-08', 'ONY-09', 'ONY-09Y', 'ONY-10']; // YG-1864: ONY-09Y yer değiştirme
 const TESLIM_GUN = 7; const PARCA_GUN = 30;
 
 /** YG-475, YG-414: teslim kararı Kabul veya Koşullu Kabul (çekinceli); çekincede metin zorunlu. */
@@ -84,12 +84,13 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-471, YG-474, YG-1500: ONY-03, 06, 07, 08, 09, 10; onay PDF'i onay akışından e-postayla gider.
   s.post('/dosya/:id/onay-iste', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ony?: string; parca?: string; tutar?: number; zaman?: string; kayitNo?: string; teklifNo?: string; yapilmayanIs?: string; teknikEtki?: string; kullanimSiniri?: string; onerilenKontrol?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ony?: string; parca?: string; tutar?: number; zaman?: string; mevcutYer?: string; yeniYer?: string; kayitNo?: string; teklifNo?: string; yapilmayanIs?: string; teknikEtki?: string; kullanimSiniri?: string; onerilenKontrol?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!ONAYLAR.includes(g.ony ?? '')) return y.code(400).send({ hata: 'Onay türünü seçmenizi rica ederiz.' });
     if (['ONY-07', 'ONY-08'].includes(g.ony!) && !g.parca?.trim()) return y.code(400).send({ hata: 'Parça adını yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-08' && !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Parça bedelini yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-09' && !g.zaman) return y.code(400).send({ hata: 'Deneme tarih ve saatini yazmanızı rica ederiz.' });
+    if (g.ony === 'ONY-09Y' && (!g.zaman || !g.mevcutYer?.trim() || !g.yeniYer?.trim())) return y.code(400).send({ hata: 'Taşıma tarih ve saatini, mevcut ve yeni yeri yazmanızı rica ederiz.' }); // YG-1864
     if (g.ony === 'ONY-10' && !g.kayitNo?.trim()) return y.code(400).send({ hata: 'Garanti kayıt numarasını yazmanızı rica ederiz.' });
     if (g.ony === 'ONY-06' && !g.teklifNo?.trim()) return y.code(400).send({ hata: 'Teklif numarasını yazmanızı rica ederiz.' });
     // YG-726: kullanım sınırı bildirimi alanları (yapılmayan iş, olası teknik etki, kullanım sınırı, önerilen kontrol).
@@ -99,7 +100,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return y.code(409).send({ hata: 'Yat sahibi kaydı bulunamadı.' });
     const dil = dilKod(d.yazisma_dili); const web = b.webAdresi; const ts = tutar(Number(g.tutar ?? 0), dil);
     const zm = g.zaman ? new Date(g.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' }) : '';
-    const alanlar = { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, Yat: d.yat_adi, Yacht: d.yat_adi, 'bağlantı': web, link: web, 'Parça adı': g.parca ?? '', 'Part name': g.parca ?? '', '0.000,00': ts, '0,000.00': ts, 'tarih saat': zm, 'date time': zm, 'Kayıt No': g.kayitNo ?? '', 'Record No': g.kayitNo ?? '', 'Teklif No / Sürüm': g.teklifNo ?? '', 'Quotation No / Version': g.teklifNo ?? '' };
+    const alanlar = { 'mevcut yer': g.mevcutYer?.trim() ?? '', 'current place': g.mevcutYer?.trim() ?? '', 'yeni yer': g.yeniYer?.trim() ?? '', 'new place': g.yeniYer?.trim() ?? '', 'Dosya No': d.dosya_no, 'File No': d.dosya_no, Yat: d.yat_adi, Yacht: d.yat_adi, 'bağlantı': web, link: web, 'Parça adı': g.parca ?? '', 'Part name': g.parca ?? '', '0.000,00': ts, '0,000.00': ts, 'tarih saat': zm, 'date time': zm, 'Kayıt No': g.kayitNo ?? '', 'Record No': g.kayitNo ?? '', 'Teklif No / Sürüm': g.teklifNo ?? '', 'Quotation No / Version': g.teklifNo ?? '' };
     return islem(async (c) => {
       const on = await onayTalebiAc(c, { dosya: id, ony: g.ony!, dil, alanlar, baslikAlanlari: alanlar, tutar: g.ony === 'ONY-08' ? g.tutar : null, taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, nesneTuru: 'Dosya', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: web, konu: `${d.dosya_no} Onayınız Bekleniyor` });
       if (g.ony === 'ONY-06') await c.query(`INSERT INTO ek_is_reddi (dosya_ref, onay_talebi_ref, teklif_no, yapilmayan_is, teknik_etki, kullanim_siniri, onerilen_kontrol, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, on.kimlik, g.teklifNo!.trim(), g.yapilmayanIs!.trim(), g.teknikEtki!.trim(), g.kullanimSiniri!.trim(), g.onerilenKontrol!.trim(), o.kullanici]); // YG-726
@@ -111,11 +112,11 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { dosya: id } = i.params as { dosya: string }; const rol = ((i.body ?? {}) as { alici?: string }).alici === 'Kaptan' ? 'Kaptan' : 'Yat Sahibi';
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = await dosya(id);
-    if (d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada tedbir hemen uygulanır; onay ekranı gönderilmez.' });
+    if (rol !== 'Kaptan' && d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada tedbir hemen uygulanır; onay ekranı gönderilmez.' }); // YG-472: kaptan izni (ONY-31) her dosyada
     const t = (await b.db.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = $2 AND aktif LIMIT 1`, [id, rol])).rows[0];
     if (!t) return y.code(409).send({ hata: `${rol} kaydı bulunamadı.` });
     return islem(async (c) => {
-      const on = await onayTalebiAc(c, { dosya: id, ony: 'ONY-28', dil: dilKod(d.yazisma_dili), alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi }, taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, nesneTuru: 'Dosya', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: `${d.dosya_no} Acil İlk Tedbir` });
+      const on = await onayTalebiAc(c, { dosya: id, ony: rol === 'Kaptan' ? 'ONY-31' : 'ONY-28', dil: dilKod(d.yazisma_dili), alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi, 'Dosya No': d.dosya_no, 'File No': d.dosya_no }, /* YG-472: kaptana bedelsiz ONY-31 */ taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, nesneTuru: 'Dosya', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: b.webAdresi, konu: `${d.dosya_no} Acil İlk Tedbir` });
       return { kimlik: on.kimlik };
     });
   });
@@ -148,6 +149,23 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND teslim_son_tarihi IS NOT NULL AND teslim_son_tarihi < current_date`, [id])).rowCount) return y.code(409).send({ hata: 'Barınma gideri, teslim için verilen sürenin dolmasından sonra girilir.' });
     await b.db.query(`UPDATE dosya SET barinma_gideri_eur = $2, barinma_gideri_giren_ref = $3, barinma_gideri_zamani = now() WHERE kimlik = $1`, [id, Number(g.tutar), o.kullanici]);
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Barınma Gideri' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    return { tamam: true };
+  });
+  // YG-555, YG-787 (BLD-93, CEO 17.11.2026): Müşteri İlerleme Özeti; yalnız fiziksel ilerleme; firma, fiyat ve finansal oran yazılmaz; sigortaya e-postayla gitmez (MT-6).
+  s.post('/dosya/:id/ilerleme-ozeti', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonrakiAdim?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'İlerleme Özetini Dosya Sorumlusu gönderir.' });
+    if (!g.sonrakiAdim?.trim()) return y.code(400).send({ hata: 'Sonraki adımı yazınız.' });
+    const d = (await b.db.query(`SELECT d.dosya_no, d.hizmet_turu, d.ilerleme_yuzdesi, d.tahmini_teslim_tarihi::text teslim, d.yazisma_dili, d.vefat_isareti, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [id])).rows[0];
+    if (/kurtarma/i.test(d.hizmet_turu ?? '')) return y.code(409).send({ hata: 'Kurtarma dosyasında İlerleme Özeti gönderilmez.' });
+    const t = await sahip(id); if (!t || (!t.telefon && !t.eposta)) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });
+    if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmez.' });
+    const tr = gunAy(new Date()); const oran = String(Math.floor(Number(d.ilerleme_yuzdesi ?? 0))); const tes = d.teslim ? gunAy(d.teslim) : '-';
+    await yatTarafinaYaz(b.db, { olay: `bld93:${id}:${new Date().toISOString().slice(0, 10)}`, kod: 'BLD-93', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Müşteri İlerleme Özeti`, telefon: t.telefon, eposta: t.eposta,
+      alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi, tarih: tr, date: tr, oran, rate: oran, 'sonraki adım': g.sonrakiAdim.trim(), 'next step': g.sonrakiAdim.trim(), 'teslim tarihi': tes, 'delivery date': tes, 'bağlantı': b.webAdresi, link: b.webAdresi } });
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'İlerleme Özetini Gönder' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Müşteri İlerleme Özeti Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
   s.post('/dosya/:id/teslime-hazir', oturumlu, async (i, y) => {

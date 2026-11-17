@@ -469,7 +469,12 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, coalesce((SELECT sum(h.bu_donem_brut) FROM hakedis h WHERE h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi'), e.firma_bedeli_eur) AS tutar FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [f.dosya_ref])).rows) {
       if (!(Number(e.tutar) > 0)) continue;
       const kisi = (await b.db.query(`SELECT u.kullanici_ref, h.e_posta FROM kurulus_kullanici u JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE u.kurulus_ref = $1`, [e.kurulus_ref])).rows;
-      const metin = await metinGetir(b.db, 'BLD-80', 'tr', { 'İş Emri No': e.is_emri_no, tarih: gunAy(g.tarih), 'kur tarihi': gunAy(g.kurTarihi), kur: String(g.kur).replace('.', ','), tutar: tutar(Number(e.tutar)), 'bağlantı': webAdresi });
+      // YG-421 (BLD-80 Rev., CEO 17.11.2026): TL tutar KDV hariç; kesintiler (garanti kesintisi ve onaylı mahsuplar) yoksa cümle çıkmaz; fatura açıklaması iş emri ve hakediş numarasıyla.
+      const kes = [...(await b.db.query(`SELECT coalesce(sum(kesinti), 0)::float k FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [e.kimlik])).rows.filter((x) => x.k > 0).map((x) => `%5 garanti kesintisi ${tutar(x.k)} EUR`),
+        ...(await b.db.query(`SELECT tur, sum(tutar_eur)::float t FROM hakedis_mahsubu WHERE kurulus_ref = $1 AND dosya_ref = $2 AND statu IN ('Onaylandı', 'Uygulandı') GROUP BY tur`, [e.kurulus_ref, f.dosya_ref])).rows.map((x) => `${x.tur} ${tutar(x.t)} EUR`)];
+      const hk = (await b.db.query(`SELECT string_agg(hakedis_no, ', ' ORDER BY sira_no) n FROM hakedis WHERE is_emri_ref = $1 AND statu <> 'Reddedildi'`, [e.kimlik])).rows[0]?.n as string | null;
+      const metin = (await metinGetir(b.db, 'BLD-80', 'tr', { 'İş Emri No': e.is_emri_no, tarih: gunAy(g.tarih), 'kur tarihi': gunAy(g.kurTarihi), kur: String(g.kur).replace('.', ','), tutar: tutar(Number(e.tutar)), 'tutar TL': tutar(Math.round(Number(e.tutar) * Number(g.kur) * 100) / 100), 'kesinti türü ve tutarı': kes.length ? kes.join('; ') : '§YOK§', 'fatura açıklama metni': hk ? `${e.is_emri_no} numaralı iş emri – ${hk} numaralı hakediş` : `${e.is_emri_no} numaralı iş emri`, 'bağlantı': webAdresi }))
+        .replace(/ ?Bu işe ilişkin kesintiler: §YOK§\./, '');
       await bildir(b.db, { olay: `bld80:${f.kimlik}:${e.kimlik}`, kullanicilar: kisi.map((x) => x.kullanici_ref), baslik: `${e.is_emri_no} · Fatura Düzenleme Bildirimi`, ozet: metin });
       for (const x of kisi) if (x.e_posta) await disGonder(b.db, { olay: `bld80:${f.kimlik}:${e.kimlik}:${x.kullanici_ref}`, eposta: x.e_posta, konu: `${e.is_emri_no} Fatura Düzenleme Bildirimi`, metin });
     }

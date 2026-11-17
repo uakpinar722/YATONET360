@@ -61,7 +61,7 @@ export async function onayTalebiAc(c: Db, g: OnayGirdisi): Promise<{ kimlik: str
   const baglanti = `${g.webAdresi}/#onay=${belirtec}`;
   const dosyaNo = g.dosya ? (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [g.dosya])).rows[0]?.dosya_no ?? '' : '';
   const ad = g.belgeAdi ?? baslik;
-  const ileti = await metinGetir(c, 'BLD-05', dil, { 'Dosya No': dosyaNo, 'File No': dosyaNo, 'belge adı': ad, 'document name': ad, 'bağlantı': baglanti, link: baglanti });
+  const ileti = await metinGetir(c, g.ony === 'ONY-23' ? 'BLD-05T' : 'BLD-05', dil, { /* YG-207: ONY-23'te onaylı BLD-05T */ 'Dosya No': dosyaNo, 'File No': dosyaNo, 'belge adı': ad, 'document name': ad, 'bağlantı': baglanti, link: baglanti });
   await disGonder(c, { olay: `onay-bag:${id}`, telefon: g.telefon, eposta: g.eposta, konu: g.konu ?? ad, metin: ileti, acil: g.ony === 'ONY-28' || g.ony === 'ONY-29' });
   if (g.kullanici) await bildir(c, { olay: `onay-bag:${id}`, kullanicilar: [g.kullanici], baslik: `Onayınızı Bekliyor: ${ad}`, ozet: dosyaNo || null });
   return { kimlik: id, baglanti };

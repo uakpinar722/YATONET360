@@ -1,3 +1,4 @@
+import { gonderimIsleyici as gonderimIsleyiciKaydet } from './sigorta_gonderim.js';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -325,10 +326,13 @@ async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
     { baslik: 'Onay ve Kabul', tur: 'alanlar', alanlar: [{ et: 'LGM Onayı', deger: lgm ? `${lgm.rol_adi}  ·  YATONET 360  ·  ${anSaat(lgm.zaman)}` : null, genis: true }, { et: 'Firma Kabulü', deger: e.firma_yaniti === 'Kabul' ? `Firma Yetkilisi  ·  YATONET 360 portalında “Kabul ediyorum”  ·  ${anSaat(e.firma_kabul_zamani)}  ·  imza alınmaz` : 'Bekleniyor', genis: true }] },
   );
   if (e.ana_is_emri_ref) { const ana = (await db.query(`SELECT is_emri_no FROM is_emri WHERE kimlik = $1`, [e.ana_is_emri_ref])).rows[0]?.is_emri_no; bolumler.unshift({ baslik: 'Bağlı Olduğu İş Emri', tur: 'alanlar', alanlar: [{ et: 'İş Emri No', deger: ana }] }); } // YG-658
+  // YG-843 (M11, CEO 17.11.2026): tahsilata bağlı ödeme cümlesi; gün sayıları parametreden.
+  const pg = async (k: string) => Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [k])).rows[0]?.deger ?? 0);
+  const m11 = await metinGetir(db, 'M11', 'tr', { 'ödeme günü': String(await pg('firma_odeme_gun')), 'azami gün': String(await pg('firma_odeme_azami_gun')) }).catch(() => null);
   return {
     dosyaAdi: `${e.is_emri_no}.pdf`, sinif: 'Kritik',
     t: { ad: e.is_emri_turu === 'EK' ? 'Ek İş Emri' : 'İş Emri', kod: 'FR-OPS-008', no: e.is_emri_no, /* YG-656 */ dosyaNo: b.d.dosya_no, tarih: gunAy(e.yayim_zamani ?? new Date()), surum: `Rev.${e.surum}`, dil, yat: b.d.yat_adi, bolumler,
-      matbuSon: [gizli(dil), 'Bu iş emri kapsamındaki işler; İş Birliği Firması Çerçeve Sözleşmesi, iş güvenliği kuralları, kalite ve kayıt yükümlülükleri ile gizlilik hükümlerine uygun olarak yürütülür. Kapsam dışı işler YATONET 360 onayı olmadan yapılmaz.', dogrula(dil, kod, web), 'İş birliğiniz için teşekkür ederiz.'],
+      matbuSon: [gizli(dil), 'Bu iş emri kapsamındaki işler; İş Birliği Firması Çerçeve Sözleşmesi, iş güvenliği kuralları, kalite ve kayıt yükümlülükleri ile gizlilik hükümlerine uygun olarak yürütülür. Kapsam dışı işler YATONET 360 onayı olmadan yapılmaz.', ...(m11 ? [m11] : []), dogrula(dil, kod, web), 'İş birliğiniz için teşekkür ederiz.'],
       onay: e.firma_yaniti === 'Kabul' ? { rol: 'Firma Yetkilisi', zaman: anSaat(e.firma_kabul_zamani), kanal: 'YATONET 360', kod } : undefined } as BelgeTanim,
   };
 }
@@ -594,7 +598,24 @@ export async function sigortaOnayTanim(db: Db, id: string, kod: string, web: str
 export async function sigortaOnayBelgesiUret(c: Db, teklif: string): Promise<void> {
   const s = (await c.query(`SELECT kimlik, dosya_ref FROM sigorta_onayi WHERE teklif_ref = $1 AND karar IN ('Tam Onay', 'Kısmi Onay') ORDER BY onay_tarihi DESC LIMIT 1`, [teklif])).rows[0];
   if (s) await belgeUret(c, { tur: 'Sigorta Onay Belgesi', nesne: s.kimlik, dosya: s.dosya_ref });
+  // YG-1569 (BLD-96, CEO 17.11.2026): onayı Sigorta Eksperi verdiyse sigorta şirketine e-posta; K-241 ikili teyit kuyruğuna girer, ek ikinci teyitte üretilmiş belgeden.
+  const e = s ? (await c.query(`SELECT o.onay_tarihi, f.teklif_no, f.surum_no, d.dosya_no, k.sigortaci_adi, coalesce(k.onay_yetkilisi_eposta, t.eposta) eposta, coalesce(k.sigorta_hasar_dosya_no, '-') hasar
+      FROM sigorta_onayi o JOIN fiyat_teklifi f ON f.kimlik = o.teklif_ref JOIN dosya d ON d.kimlik = o.dosya_ref LEFT JOIN dosya_sigorta_kaydi k ON k.dosya_ref = d.kimlik LEFT JOIN dosya_tarafi t ON t.kimlik = k.sigorta_taraf_ref
+      WHERE o.kimlik = $1 AND EXISTS (SELECT 1 FROM dosya_tarafi x WHERE x.dosya_ref = o.dosya_ref AND x.taraf_rolu = 'Eksper' AND x.aktif AND x.kullanici_ref = o.kaydi_yapan_ref)`, [s.kimlik])).rows[0] : null;
+  if (s && e?.eposta) {
+    const zm = new Date(e.onay_tarihi).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+    const metin = await metinGetir(c, 'BLD-96', 'tr', { Kurum: e.sigortaci_adi ?? '', 'Dosya No': e.dosya_no, 'Hasar Dosya No': e.hasar, 'Teklif No / Sürüm': `${e.teklif_no} / Sürüm ${e.surum_no}`, 'tarih saat': zm, 'Onay No': `${e.dosya_no}-SO` });
+    await (await import('./sigorta_gonderim.js')).sigortayaHazirla(c, { dosya: s.dosya_ref, tur: 'Sigorta Onay Belgesi E-postası', nesne: s.kimlik, alici: e.eposta, konu: `${e.dosya_no} · Sigorta Onay Belgesi`, metin });
+  }
 }
+// YG-1569: ikinci teyitte üretilmiş Sigorta Onay Belgesi eklenerek gönderilir; metindeki onay no belge adından tamamlanır.
+gonderimIsleyiciKaydet('Sigorta Onay Belgesi E-postası', async (c, r) => {
+  const u = (await c.query(`SELECT u.surum_ref, e.ad FROM belge_uretim u JOIN belge e ON e.kimlik = u.belge_ref WHERE u.tur = 'Sigorta Onay Belgesi' AND u.nesne = $1 AND u.durum = 'Üretildi' ORDER BY u.olusturma_zamani DESC LIMIT 1`, [r.nesne_kimligi])).rows[0];
+  if (!u?.surum_ref) throw Object.assign(new Error('Sigorta Onay Belgesi henüz üretilmedi; biraz sonra yeniden teyit ediniz.'), { statusCode: 409 });
+  const metin = (r.metin ?? '').replace(/\S+-SO numaralı/, `${String(u.ad).replace(/\.pdf$/i, '')} numaralı`);
+  await disGonder(c, { olay: `bld96:${r.nesne_kimligi}`, eposta: r.alici!, konu: r.konu, metin, sigortaTeyitli: true, ekler: [u.surum_ref] });
+  return { metin, ekli: true };
+});
 
 /** CEO 09.11: kaşe basılan belgeler; sözleşmeler ve karşı tarafın beyan/onay belgeleri dışarıda. */
 /** YG-610: üretilen belgenin alt bilgisinde gizlilik sınıfı ve dosya referansı. */

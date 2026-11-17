@@ -95,7 +95,7 @@ describe('dış bildirimler ve avans (YG-421, YG-897, YG-908)', () => {
     const r = await o.ist('POST', `/api/teklif/${t}/proforma`, ts); await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Muhasebeye İletildi' WHERE kimlik = $1`, [r.json().kimlik]);
     expect((await o.ist('POST', `/api/fatura/${r.json().kimlik}/bilgi`, ts, { no: `FB${Date.now()}`, tarih: '2026-11-03', kur: 40.5, kurTarihi: '2026-11-02' })).statusCode).toBe(200);
     const m80 = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld80:${r.json().kimlik}:%`])).rows[0].metin as string;
-    expect(m80).toContain(`${d.dosyaNo}-ON01`); expect(m80).toContain('800,00'); expect(m80).not.toContain('[');
+    expect(m80).toContain(`${d.dosyaNo}-ON01`); expect(m80).toContain('800,00'); expect(m80).not.toContain('['); expect(m80).not.toContain('§'); expect(m80).toContain('32.400,00 TL'); expect(m80).toContain('Fatura açıklamasına'); // YG-421 Rev.
     expect((await o.ist('POST', '/api/tahsilat', ts, { fatura: r.json().kimlik, tutar: 100, tarih: '2026-11-03', kanal: 'Havale' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld27:${d.kimlik}:%`])).rowCount).toBeGreaterThan(0);
     await alacakIsle(o.db, new Date('2026-11-05T12:00:00Z'));
