@@ -351,14 +351,20 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-254, YG-274, YG-1595: kapanış sonuç, risk ve devam kararıyla; sigortalıda ilk bilgi tutarsız. BLD-55 tutar içermez.
   s.post('/acil/:dosya/kapat', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { dosya } = i.params as { dosya: string }; const g = (i.body ?? {}) as { sonuc?: string; risk?: string };
+    const o = i.oturum!; const { dosya } = i.params as { dosya: string }; const g = (i.body ?? {}) as { sonuc?: string; risk?: string; kapsam?: string; gerekce?: string; yetkiliKisi?: string; kaynak?: string; sonradan?: string; devam?: string };
     if (!UUID.test(dosya) || !(await dosyaErisimi(b.db, o.kullanici, dosya))) return yok(y);
     if (!g.sonuc?.trim() || !g.risk?.trim()) return y.code(400).send({ hata: 'Sonuç ve riskin son durumu zorunludur.' });
+    if (g.devam && !['Esas Onarıma Devam', 'Dosya Kapatılsın'].includes(g.devam)) return y.code(400).send({ hata: 'Devam kararını seçiniz.' }); // YG-274
     return islem(async (c) => {
       const m = (await c.query(`SELECT m.*, d.dosya_no, d.oncelik, d.statu, d.asama, d.yazisma_dili, y.yat_adi FROM acil_mudahale m JOIN dosya d ON d.kimlik = m.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE m.dosya_ref = $1 FOR UPDATE OF m`, [dosya])).rows[0];
       if (!m) throw Object.assign(new Error('Acil kaydı bulunamadı.'), { statusCode: 404 });
       if (m.durum === 'Kapalı') throw Object.assign(new Error('Acil kaydı kapalıdır.'), { statusCode: 409 });
       await c.query(`UPDATE acil_mudahale SET durum = 'Kapalı', sonuc = $2, risk_durumu = $3, bitis = now() WHERE dosya_ref = $1`, [dosya, g.sonuc!.trim(), g.risk!.trim()]);
+      // YG-254, YG-274: kapsam, gerekçe, yetkili kişi, kaynak, sonradan tamamlanacak kayıtlar, devam kararı ve normal akışa dönüş zamanı.
+      await c.query(`UPDATE acil_mudahale SET mudahale_kapsami = $2, gerekce = $3, yetkili_kisi = $4, kaynak = $5, sonradan_tamamlanacak = $6, devam_karari = $7, normal_akis_zamani = now() WHERE dosya_ref = $1`, [dosya, g.kapsam?.trim() || null, g.gerekce?.trim() || null, g.yetkiliKisi?.trim() || null, g.kaynak?.trim() || null, g.sonradan?.trim() || null, g.devam ?? null]);
+      { const ds = (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]?.r;
+        if (ds && g.sonradan?.trim()) await kartAc(c, { tur: 'Acil Kayıt Tamamlama', kategori: 'gorev', baslik: `${m.dosya_no} · Acil Müdahale Kayıtlarını Tamamla`, ozet: g.sonradan.trim(), sahipKullanici: ds, nesneTuru: 'Dosya', nesneKimligi: dosya });
+        if (ds && ['Yangın', 'Kirlilik', 'Can Güvenliği'].includes(m.olay_turu)) await kartAc(c, { tur: 'Resmî Tutanak', kategori: 'gorev', baslik: `${m.dosya_no} · Resmî Tutanak / İtfaiye Raporu Yükleyiniz`, ozet: `${m.olay_turu}: resmî tutanak veya itfaiye raporunu dosyaya yükleyiniz.`, sahipKullanici: ds, nesneTuru: 'Dosya', nesneKimligi: dosya }); }
       await c.query(`UPDATE acil_gorev_cagrisi SET durum = 'İptal' WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [dosya]);
       const t = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu IN ('Yat Sahibi', 'Kaptan') AND aktif ORDER BY taraf_rolu = 'Yat Sahibi' DESC LIMIT 1`, [dosya])).rows[0];
       const saat = new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });

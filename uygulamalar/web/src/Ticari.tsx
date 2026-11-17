@@ -150,7 +150,7 @@ function useYap(yenile: () => unknown) {
 
 const NITELIK = ['Onarım', 'Yenileme (Değişim)', 'Bakım', 'Keşif ve Test', 'Geçici / Acil Önlem', 'Yat Sahibi Talebi'];
 const BEDEL = ['Malzeme', 'İşçilik', 'Nakliye', 'Masraf', 'Kurtarma', 'Çekme / Refakat', 'Dalgıçlık', 'Ulaşım', 'Konaklama', 'Harcırah', 'Gümrük ve İzin Giderleri'];
-interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string; olcut?: string }
+interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string; olcut?: string; tur?: string }
 interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
   ekonomikKilit: boolean;
@@ -240,9 +240,10 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <label htmlFor="c-ol">Kabul Ölçütü</label><input id="c-ol" value={satir.olcut ?? ''} onChange={(e) => setSatir({ ...satir, olcut: e.target.value })} />
           <label htmlFor="c-k">Kartela Kodu (Varsa)</label><KartelaArama id="c-k" deger={satir.kod} sec={(k) => setSatir({ ...satir, kod: k })} />
           <div className="iki-tarih"><div><label htmlFor="c-n">İşin Niteliği</label><select id="c-n" value={satir.nitelik} onChange={(e) => setSatir({ ...satir, nitelik: e.target.value })}>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select></div><div><label htmlFor="c-b">Bedel Türü</label><select id="c-b" value={satir.bedel} onChange={(e) => setSatir({ ...satir, bedel: e.target.value })}>{BEDEL.map((x) => <option key={x}>{x}</option>)}</select></div></div>
+          <label htmlFor="c-st">Satır Türü</label><select id="c-st" value={satir.tur ?? 'Ana Kapsam'} onChange={(e) => setSatir({ ...satir, tur: e.target.value })}>{['Ana Kapsam', 'Opsiyon', 'Koşullu', 'Alternatif'].map((x) => <option key={x}>{x}</option>)}</select>
           <div className="iki-tarih"><div><label htmlFor="c-m">Miktar</label><input id="c-m" inputMode="decimal" value={satir.miktar} onChange={(e) => setSatir({ ...satir, miktar: e.target.value })} /></div><div><label htmlFor="c-r">Birim</label><input id="c-r" list="c-r-l" value={satir.birim} onChange={(e) => setSatir({ ...satir, birim: e.target.value })} /><datalist id="c-r-l">{olcuBirimleri.map((x) => <option key={x} value={x} />)}</datalist></div></div>
           <button className="btn2" disabled={!satir.aciklama.trim() || !satir.olcut?.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '', olcut: '' }); }}>Satır Ekle</button>
-          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
+          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim, tur: x.tur || undefined })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
         </>}
       </Blok>
       <Blok baslik="Fiyat Teklifleri">
@@ -1000,11 +1001,12 @@ export function KurumsalEk2({ yap }: { yap: (f: () => Promise<any>, tamam?: stri
 /** YG-231: indirim %1–%10 tam sayı, gerekçe zorunlu; %5'e kadar Genel Müdür Yardımcısı, üzeri CEO (yetki sunucuda denetlenir). */
 function TeklifIndirim({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
   const [ac, setAc] = useState(false); const [oran, setOran] = useState(''); const [ger, setGer] = useState('');
-  if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>İndirim Uygula</button>;
+  if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>İndirim</button>;
   return <span className="satir">
     <label htmlFor={`ti-o-${teklif}`}>İndirim Oranı (%)</label><input id={`ti-o-${teklif}`} inputMode="numeric" value={oran} onChange={(x) => setOran(x.target.value)} />
     <label htmlFor={`ti-g-${teklif}`}>İndirim Gerekçesi</label><input id={`ti-g-${teklif}`} value={ger} onChange={(x) => setGer(x.target.value)} />
-    <button className="btn2 kucuk" disabled={!oran || !ger.trim()} onClick={() => void yap(() => istek(`/teklif/${teklif}/indirim`, { oran: Number(oran), gerekce: ger }), 'İndirim uygulandı.').then(() => setAc(false))}>Uygula</button>
+    <button className="btn2 kucuk" disabled={!oran || !ger.trim()} onClick={() => void yap(() => istek(`/teklif/${teklif}/indirim-talebi`, { oran: Number(oran), gerekce: ger }), 'İndirim talebi onaya gönderildi.').then(() => setAc(false))}>Talep Et (Ticari Sorumlu)</button>
+    <button className="btn2 kucuk" disabled={!oran || !ger.trim()} onClick={() => void yap(() => istek(`/teklif/${teklif}/indirim`, { oran: Number(oran), gerekce: ger }), 'İndirim uygulandı.').then(() => setAc(false))}>Uygula (GMY / CEO)</button>
   </span>;
 }
 

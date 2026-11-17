@@ -104,6 +104,21 @@ export async function firmaAralikIsaretle(c: Db, teklif: string): Promise<number
   return n;
 }
 
+/** YG-174: onaylanan indirim talebi teklife uygulanır (taslak ve kilitsiz tekliflerde); ret veya iadede talep düşer. */
+kapanisKaydet('İndirim Talebi', async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
+  const t = (await c.query(`SELECT kimlik, statu, indirim_talep_orani, indirim_talep_gerekcesi, kesif_mahsubu_eur, kdv_orani FROM fiyat_teklifi WHERE kimlik = $1::uuid`, [k.nesne_kimligi])).rows[0];
+  if (!t?.indirim_talep_orani) return;
+  if (karar === 'Onayla' && t.statu === 'Taslak') {
+    const kalem = (await c.query(`SELECT tutar_eur, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows;
+    const top = toplamlar(kalem, Number(t.indirim_talep_orani), Number(t.kesif_mahsubu_eur ?? 0), Number(t.kdv_orani));
+    await c.query(`UPDATE fiyat_teklifi SET indirim_orani = $2, indirim_gerekcesi = $3, indirim_tutari_eur = $4, kdv_tutari_eur = $5, genel_toplam_eur = $6, onay_limit_tutari_eur = $7, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, t.indirim_talep_orani, t.indirim_talep_gerekcesi, top.ind, top.kdv, top.genel, top.matrah]);
+    await teklifKdvUygula(c, t.kimlik);
+    void yapan;
+  }
+  await c.query(`UPDATE fiyat_teklifi SET indirim_talep_orani = NULL, indirim_talep_gerekcesi = NULL, indirim_talep_eden_ref = NULL WHERE kimlik = $1`, [t.kimlik]);
+});
+
 /** YG-190: ara toplam, opsiyon, indirim, KDV ve genel toplam sistemce; KDV indirimli matrahtan. */
 /** YG-189: düzeltilen firma fiyatı taslak teklife sistemce yansır; gönderilmiş teklifte yeni sürüm görevi açılır, eski değer kayıtta kalır. */
 export async function firmaFiyatYansit(c: Db, firmaKalem: string): Promise<number> {
@@ -383,7 +398,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   // YG-195, YG-198: cetveli Teknik Uzman hazırlar, Teknik Yönetici onaylar; bedel türü ve nitelik satırda seçilir.
   s.post('/dosya/:id/cetvel', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { satirlar?: { kod?: string; kartela?: string; aciklama?: string; nitelik?: string; bedel?: string; miktar?: number; birim?: string; bolge?: string; kabul?: string; olcut?: string; gecici?: boolean }[]; dahilHaric?: string; varsayimlar?: string };
+    const g = (i.body ?? {}) as { satirlar?: { kod?: string; kartela?: string; aciklama?: string; nitelik?: string; bedel?: string; miktar?: number; birim?: string; bolge?: string; kabul?: string; olcut?: string; gecici?: boolean; tur?: string }[]; dahilHaric?: string; varsayimlar?: string };
     const d = await dosyam(id, o.kullanici);
     if (!d) return yok(y);
     const ekip = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount;
@@ -393,6 +408,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!g.satirlar?.length) return y.code(400).send({ hata: 'En az bir satır giriniz.' });
     // YG-182: genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.
     if (g.satirlar.some((x) => /genel\s*gider|risk\s*pay/i.test(`${x.aciklama ?? ''} ${x.kod ?? ''}`))) return y.code(400).send({ hata: 'Genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.' });
+    if (g.satirlar.some((x) => x.tur !== undefined && !['Ana Kapsam', 'Opsiyon', 'Koşullu', 'Alternatif'].includes(x.tur))) return y.code(400).send({ hata: 'Satır türünü seçiniz: Ana Kapsam, Opsiyon, Koşullu veya Alternatif.' }); // YG-196
     const sur = await yururlukSurumu(b.db);
     // YG-1257, YG-1708 (KS-2): cetvel birimi ortak ölçü birimi listesinden olmalıdır; büyük-küçük harf farkı listedeki yazıma çevrilir.
     const birimler = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_OLCU_BIRIMI'`)).rows.map((r) => r.deger as string);
@@ -412,8 +428,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       // YG-139: cetvelde yazılmadıysa onaylı İlk Kapsamın hariçleri ve varsayımları teklifin Kapsam Dışı ve Varsayımlar bölümüne aktarılır.
       const ik = (await c.query(`SELECT hariclar, varsayimlar FROM ilk_kapsam WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
       const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric?.trim() || ik?.hariclar || null, g.varsayimlar?.trim() || ik?.varsayimlar || null])).rows[0];
-      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim()]);
+      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu, satir_turu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim(), x.tur ?? 'Ana Kapsam']);
       await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no}-MT01 · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
       return { kimlik: t.kimlik, surum };
     });
@@ -476,8 +492,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
         const bantAU = h.bant; // YG-233
         if (r.kartela_kodu) kodlar.push(r.kartela_kodu);
         hesap.push({ tutar_eur: h.tutar, opsiyon: false });
-        await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, tedarikci_kalem_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-          [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi, r.tedarikci_kalem ?? null]);
+        await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, tedarikci_kalem_ref, opsiyon) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+          [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi, r.tedarikci_kalem ?? null, (r.satir_turu ?? 'Ana Kapsam') !== 'Ana Kapsam']); // YG-196: ana dışı satır opsiyon
         if (bantAU) await c.query(`UPDATE fiyat_teklifi_kalemi SET bant_alt_eur = $2, bant_ust_eur = $3 WHERE teklif_ref = $1 AND sira_no = $4`, [t.kimlik, bantAU.alt, bantAU.ust, n]);
       }
       const top = toplamlar(hesap, null, 0, kdvO);
@@ -518,6 +534,20 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     return { cetveller, teklifler, firma, isEmirleri, zarfSapmalari, ekonomikKilit: !(await ekonomikKilitEngeli(b.db, id) === null) };
   });
 
+  // YG-174: Ticari Sorumlu gerekçeli indirim talebi açar; talep tutardan bağımsız GMY'ye çıkar, %5 üzeri GMY görüşüyle CEO'ya gider.
+  s.post('/teklif/:id/indirim-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { oran?: number; gerekce?: string };
+    if (!t) return yok(y);
+    if (t.kilitli || t.statu !== 'Taslak') return y.code(409).send({ hata: 'İndirim talebi taslak teklifte açılır.' });
+    if (!(await roller(o.kullanici)).includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)')) return y.code(403).send({ hata: 'İndirim talebini Ticari Sorumlu açar.' });
+    if (!Number.isInteger(g.oran) || g.oran! < 1 || g.oran! > 10) return y.code(400).send({ hata: 'İndirim oranı %1–%10 arasında tam sayı olmalıdır.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'İndirim gerekçesi zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'İndirim Talebi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklif için onay bekleyen indirim talebi vardır.' });
+    await b.db.query(`UPDATE fiyat_teklifi SET indirim_talep_orani = $2, indirim_talep_gerekcesi = $3, indirim_talep_eden_ref = $4 WHERE kimlik = $1`, [t.kimlik, g.oran, g.gerekce.trim(), o.kullanici]);
+    const zincir = [await rolId(b.db, 'Genel Müdür Yardımcısı'), ...(g.oran! > 5 ? [await rolId(b.db, 'CEO')] : [])];
+    await kartAc(b.db, { tur: 'İndirim Talebi', baslik: `${t.teklif_no} · %${g.oran} İndirim Talebi`, ozet: g.gerekce.trim(), hazirlayan: o.kullanici, zincir, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
+    return { durum: 'Onaya Gönderildi', makam: g.oran! > 5 ? 'CEO' : 'Genel Müdür Yardımcısı' };
+  });
   // YG-174: indirim yalnız GMY ve CEO ekranında; %1–%10 tam sayı; tutara bakmadan GMY'ye çıkar, %5 üstü GMY görüşüyle CEO.
   s.post('/teklif/:id/indirim', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { oran?: number; gerekce?: string };

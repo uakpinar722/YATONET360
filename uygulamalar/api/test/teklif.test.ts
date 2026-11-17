@@ -158,6 +158,7 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     expect(gg.statusCode).toBe(400); expect(gg.json().hata).toContain('Genel gider'); // YG-182
     const bb = await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('tu'), { satirlar: [{ aciklama: 'Boya', nitelik: 'Onarım', bedel: 'Malzeme', miktar: 1, birim: 'kutu', kartela: KARTELA, olcut: 'Ölçüt' }] });
     expect(bb.statusCode).toBe(400); expect(bb.json().hata).toContain('ortak ölçü birimi'); // T-YG1257-BIRIM (KS-2)
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/cetvel`, await o.gir('tu'), { satirlar: [{ aciklama: 'Boya', nitelik: 'Onarım', bedel: 'Malzeme', miktar: 1, birim: 'adet', kartela: KARTELA, olcut: 'Ölçüt', tur: 'Hayali' }] })).statusCode).toBe(400); // T-YG196-TUR
     expect((await o.ist('GET', '/api/olcu-birimleri', await o.gir('tu'))).json().map((x: { deger: string }) => x.deger)).toEqual(expect.arrayContaining(['m² × kat', 'tekne', 'nokta']));
     await cetvel(d.kimlik);
     expect((await o.sup.query(`SELECT DISTINCT cetvel_no FROM kapsam_cetveli WHERE dosya_ref = $1`, [d.kimlik])).rows).toEqual([{ cetvel_no: `${d.dosyaNo}-MT01` }]); // YG-008
@@ -263,6 +264,17 @@ describe('indirim (YG-174)', () => {
     expect((await o.ist('POST', u, g, { oran: 5 })).statusCode).toBe(400);
     expect((await o.ist('POST', u, g, { oran: 5, gerekce: 'Sadakat' })).json()).toEqual({ indirim: 33.15, genelToplam: 755.82 });
     expect((await o.ist('POST', u, ceo, { oran: 10, gerekce: 'Sadakat' })).json().indirim).toBe(66.3);
+  });
+  it('Ticari Sorumlu indirim talebi açar; %5 üzeri GMY görüşüyle CEO onayında uygulanır (T-YG174-TALEP)', async () => {
+    const d = await hazir(); const t = await teklifAc(d); const u = `/api/teklif/${t.kimlik}/indirim-talebi`;
+    expect((await o.ist('POST', u, await o.gir('gmy'), { oran: 7, gerekce: 'G' })).statusCode).toBe(403);
+    const r = await o.ist('POST', u, await o.gir('ts'), { oran: 7, gerekce: 'Uzun süreli müşteri' }); expect(r.statusCode, r.body).toBe(200); expect(r.json().makam).toBe('CEO');
+    expect((await o.ist('POST', u, await o.gir('ts'), { oran: 3, gerekce: 'G' })).statusCode).toBe(409);
+    const k = await o.kart('İndirim Talebi', t.kimlik);
+    expect((await o.karar(k.kimlik, 'gmy', 'Onaya Gönder', 'Uygun')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT indirim_orani FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].indirim_orani).toBeNull();
+    expect((await o.karar(k.kimlik, 'bceo', 'Onayla')).statusCode).toBe(200);
+    expect(Number((await o.sup.query(`SELECT indirim_orani FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].indirim_orani)).toBe(7);
   });
 });
 

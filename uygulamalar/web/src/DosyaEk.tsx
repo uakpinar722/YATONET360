@@ -59,6 +59,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
   const [hn, setHn] = useState(''); const [k, setK] = useState({ teklif: '', eylem: '', sorumlu: '', son: '', gerceklesmezse: '' }); const [kb, setKb] = useState(''); const [kg, setKg] = useState(''); const [kt, setKt] = useState({ tarih: '', bedel: '' });
   const [p, setP] = useState({ tur: 'Değişiklik', mevcut: '', onerilen: '', fark: '', toplam: '', sure: '', kanal: 'YATONET 360', sigorta: 'Gerekli Değil', starih: '' }); const [pb, setPb] = useState('');
   const [ek, setEk] = useState({ firma: '', kanal: 'Telefon', kisi: '', talimat: '', tahmini: '' }); // YG-270
+  const [ak, setAk] = useState({ sonuc: '', risk: '', kapsam: '', gerekce: '', yetkiliKisi: '', kaynak: '', sonradan: '', devam: '' }); // YG-254
   const [ku, setKu] = useState({ hizmet: 'Kurtarma', saglayici: '', acil: false }); const [dalis, setDalis] = useState({ limanIzni: '', dalisPlani: '', enerjiIzolasyonu: '' }); const [kod, setKod] = useState(''); const [te, setTe] = useState({ tur: '112 Arandı', ozet: '' }); const [sec, setSec] = useState('Devam');
   const ret = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && t.karar === 'Ret');
   const kismi = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && (['Kısmi Onay', 'Ret'].includes(t.karar ?? '') || t.odeme_farki_ayri));
@@ -126,6 +127,17 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <label htmlFor="de-tt">Muhatap</label><select id="de-tt" value={te.tur} onChange={(e) => setTe({ ...te, tur: e.target.value })}>{['112 Arandı', 'Marina Teması', 'Operasyon Müdürü Arandı', 'Refakatli Giriş', 'Sahil Güvenlik', 'Liman Başkanlığı', 'İl Çevre Müdürlüğü'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="de-to">Temas Özeti</label><input id="de-to" value={te.ozet} onChange={(e) => setTe({ ...te, ozet: e.target.value })} />
       <button className="btn2 kucuk" disabled={!te.ozet.trim()} onClick={() => void yap(() => istek(`/acil/${id}/temas`, te), 'Temas kaydedildi.')}>Temas Kaydet</button>
+      <div className="bolum">Acil Tedbiri Kapat</div>
+      <div className="not">Onay beklenmeden yapılan acil müdahalenin kapanış kaydıdır; normal akışa dönüş zamanı kayda geçer.</div>
+      <label htmlFor="ak-s">Yapılan İşlem ve Sonuç</label><input id="ak-s" value={ak.sonuc} onChange={(e) => setAk({ ...ak, sonuc: e.target.value })} />
+      <label htmlFor="ak-r">Riskin Son Durumu</label><input id="ak-r" value={ak.risk} onChange={(e) => setAk({ ...ak, risk: e.target.value })} />
+      <label htmlFor="ak-k">Müdahale Kapsamı</label><input id="ak-k" value={ak.kapsam} onChange={(e) => setAk({ ...ak, kapsam: e.target.value })} />
+      <label htmlFor="ak-g">Acil Müdahale Gerekçesi</label><input id="ak-g" value={ak.gerekce} onChange={(e) => setAk({ ...ak, gerekce: e.target.value })} />
+      <label htmlFor="ak-y">Talimat Veren / Yetkili Kişi</label><input id="ak-y" value={ak.yetkiliKisi} onChange={(e) => setAk({ ...ak, yetkiliKisi: e.target.value })} />
+      <label htmlFor="ak-ky">Kaynak (Ekip, Firma, Ekipman)</label><input id="ak-ky" value={ak.kaynak} onChange={(e) => setAk({ ...ak, kaynak: e.target.value })} />
+      <label htmlFor="ak-st">Sonradan Tamamlanacak Kayıtlar</label><input id="ak-st" value={ak.sonradan} onChange={(e) => setAk({ ...ak, sonradan: e.target.value })} />
+      <label htmlFor="ak-d">Devam Kararı</label><select id="ak-d" value={ak.devam} onChange={(e) => setAk({ ...ak, devam: e.target.value })}><option value="">Seçiniz</option><option>Esas Onarıma Devam</option><option>Dosya Kapatılsın</option></select>
+      <button className="btn2 kucuk" disabled={!ak.sonuc.trim() || !ak.risk.trim() || !ak.devam} onClick={() => void yap(() => istek(`/acil/${id}/kapat`, { ...ak }), 'Acil tedbir kapatıldı.')}>Acil Tedbiri Kapat</button>
       <div className="bolum">Firma Kabulünü Elle Kaydet</div>
       <div className="not">Firmanın telefonla veya başka kanaldan verdiği acil iş kabulü buradan kaydedilir; acil iş emri açılır, sıralı çağrı durur.</div>
       <label htmlFor="de-ef">Kabul Eden Firma</label><select id="de-ef" value={ek.firma} onChange={(e) => setEk({ ...ek, firma: e.target.value })}><option value="">Seçiniz</option>{firmalar.map((f) => <option key={f.kurulus_ref} value={f.kurulus_ref}>{f.ticari_unvan}</option>)}</select>
