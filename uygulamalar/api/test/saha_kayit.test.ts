@@ -58,6 +58,13 @@ describe('günlük kayıt (YG-1574, YG-381)', () => {
     expect((await o.ist('POST', u, fC, { faaliyet: 'F', fotograflar: [b1] })).statusCode).toBe(409); // aynı görsel ikinci gün
     const y = await isEmri('Kapalı');
     expect((await o.ist('POST', `/api/firma-portal/is-emri/${y.e}/gunluk`, fC, { faaliyet: 'F' })).statusCode).toBe(409);
+    // YG-420 (T-YG420): firma gecikme bildirimi
+    const gu = (x: string) => `/api/firma-portal/is-emri/${x}/gecikme`;
+    expect((await o.ist('POST', gu(y.e), fC, { neden: 'Parça', yeniTarih: '2026-12-01' })).statusCode).toBe(409);
+    expect((await o.ist('POST', gu(ik.e), f2C, { neden: 'Parça', yeniTarih: '2026-12-01' })).statusCode).toBe(404);
+    expect((await o.ist('POST', gu(ik.e), fC, { neden: 'Parça' })).statusCode).toBe(400);
+    expect((await o.ist('POST', gu(ik.e), fC, { neden: 'Parça gecikti', yeniTarih: '2026-12-01' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE olay_anahtari LIKE 'gecikme:%' AND baslik LIKE '%Firmadan Gecikme Bildirimi'`)).rows[0].n).toBeGreaterThan(0);
   });
 });
 

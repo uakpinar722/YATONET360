@@ -263,6 +263,7 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect((await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, baskaSigortaC, { siralar: [1] })).statusCode).toBe(404);
     const r = await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [1], surum: 1 });
     expect(r.json()).toEqual({ karar: 'Kısmi Onay', tutar: 150, onaylanmayan: 1 });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1`, [t])).rows[0].n).toBe(1); // YG-455
     expect((await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [2] })).statusCode).toBe(409);
   });
   it('ek iş teklifinde 1. iş günü hatırlatma, 3. iş günü telefon görevi (YG-447)', async () => {

@@ -89,7 +89,7 @@ async function girdiTopla(db: Db, id: string, p: P): Promise<{ g: Girdi; e: Reco
   }
   // Önceden bildirim: gecikme varsa hedef bitişten önce günlük kayda engel yazılmış olmalı; gecikme yoksa ölçülmez.
   let oncedenBildirim: number | null = null;
-  if (firmaGecikmeGun > 0) oncedenBildirim = (await say(`SELECT count(*) n FROM firma_gunluk_kaydi WHERE is_emri_ref = $1 AND engel IS NOT NULL AND tarih <= $2::date`, id, e.hedef_bitis_tarihi)) > 0 ? 100 : 0;
+  if (firmaGecikmeGun > 0) oncedenBildirim = (await say(`SELECT count(*) n FROM (SELECT 1 FROM firma_gunluk_kaydi WHERE is_emri_ref = $1 AND engel IS NOT NULL AND tarih <= $2::date UNION ALL SELECT 1 FROM firma_gecikme_bildirimi WHERE is_emri_ref = $1 AND (zaman AT TIME ZONE 'Europe/Istanbul')::date <= $2::date) x`, id, e.hedef_bitis_tarihi)) > 0 ? 100 : 0; // YG-420
   const sapma = (await db.query(`SELECT count(*) FILTER (WHERE isg_ihlali)::int isg, count(*) FILTER (WHERE NOT isg_ihlali AND tur IN ('Yöntem', 'Güvenlik', 'Belge'))::int prosedur, count(*) FILTER (WHERE onaysiz_ek_is)::int onaysiz FROM sapma_kaydi WHERE is_emri_ref = $1 AND firma_kaynakli`, [id])).rows[0];
   const denetim = (await db.query(`SELECT count(*) FILTER (WHERE sinif = 'Majör')::int majoer, count(*) FILTER (WHERE sinif = 'Minör')::int minoer FROM firma_denetim_bulgusu WHERE is_emri_ref = $1`, [id])).rows[0];
   const yanit = e.yayim_zamani && e.firma_kabul_zamani ? ((new Date(e.firma_kabul_zamani).getTime() - new Date(e.yayim_zamani).getTime()) / 3_600_000 <= saat ? 100 : 0) : null;

@@ -390,8 +390,12 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
   });
   it('tam onay dosyayı Uygulama aşamasına alır, BLD-38 gider', async () => {
     const { d, t } = await gonder();
-    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' });
+    // YG-455 (T-YG455): geliş zamanından 8 saat sonra kayıtta gecikme gerekçesi zorunlu
+    const ob = await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`); const gelis = new Date(Date.now() - 10 * 3_600_000).toISOString();
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: ob, yetkili: 'Y', gelis })).statusCode).toBe(409);
+    const r = await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: ob, yetkili: 'Y', gelis, gecikmeGerekcesi: 'Resmî tatil' });
     expect(r.json()).toMatchObject({ durum: 'Tam Onay', onaylananTutar: 260 });
+    expect((await o.sup.query(`SELECT kayit_gecikme_gerekcesi g, gelis_zamani IS NOT NULL z FROM sigorta_onayi WHERE teklif_ref = $1`, [t.kimlik])).rows[0]).toEqual({ g: 'Resmî tatil', z: true });
     expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).toBe('Uygulama');
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBeGreaterThan(0);
   });

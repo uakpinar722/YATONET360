@@ -183,6 +183,16 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (a.length < 2) return [];
     return (await b.db.query(`SELECT kimlik, taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, telefon, eposta, durum, tckn, vergi_no FROM taraf WHERE lower(unvan_ad_soyad) LIKE '%' || lower($1) || '%' OR vergi_no = $1 OR tckn = $1 ORDER BY lower(unvan_ad_soyad) LIMIT 20`, [a])).rows.map((r) => ({ ...r, tckn: maskeTckn(r.tckn) }));
   });
+  // YG-926: taraf pasife alınır (gerekçeyle); pasif yat sahibiyle yeni dosya açılmaz. Operasyon Müdürü veya Müşteri ve Paydaş İlişkileri Müdürü.
+  s.post('/taraf/:no/pasif', ihbarci, async (i, y) => {
+    const o = i.oturum!; const { no } = i.params as { no: string }; const g = (i.body ?? {}) as { pasif?: boolean; gerekce?: string };
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi IN ('Operasyon Müdürü', 'Müşteri ve Paydaş İlişkileri Müdürü')`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Tarafı Operasyon Müdürü veya Müşteri ve Paydaş İlişkileri Müdürü pasife alır.' });
+    if (typeof g.pasif !== 'boolean' || (g.pasif && !g.gerekce?.trim())) return y.code(400).send({ hata: 'Durum ve gerekçe zorunludur.' });
+    const r = await b.db.query(`UPDATE taraf SET pasif = $2, pasif_gerekcesi = $3, pasif_yapan_ref = $4, pasif_zamani = now() WHERE taraf_no = $1 RETURNING kimlik`, [no, g.pasif, g.gerekce?.trim() || null, o.kullanici]);
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.pasif ? 'Taraf Pasife Alındı' : 'Taraf Aktifleştirildi', nesneTuru: 'Taraf', nesneKimligi: r.rows[0].kimlik, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/taraf', ihbarci, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { kisiTuru?: string; musteriTuru?: string; ad?: string; tckn?: string; vergiNo?: string; vergiDairesi?: string; telefon?: string; eposta?: string; adres?: string; il?: string; ulke?: string; roller?: string[] };
     if (!['Gerçek kişi', 'Tüzel kişi'].includes(g.kisiTuru ?? '')) return y.code(400).send({ hata: 'Kişi türünü seçiniz.' });
@@ -195,6 +205,9 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarası geçersiz.' });
     const es = await b.db.query(`SELECT taraf_no FROM taraf WHERE vergi_no = $1 OR tckn = $2 LIMIT 1`, [g.vergiNo ?? null, g.tckn ?? null]);
     if (es.rows[0]) return y.code(409).send({ hata: `Bu kimlik bilgisiyle kayıt mevcuttur: ${es.rows[0].taraf_no}`, tarafNo: es.rows[0].taraf_no });
+    // YG-926: tüzel kişide aynı unvanla (büyük-küçük harf ve Türkçe karakter farkı gözetmeden) ikinci kayıt açılmaz.
+    if (g.kisiTuru === 'Tüzel kişi') { const u = (await b.db.query(`SELECT taraf_no FROM taraf WHERE kisi_turu = 'Tüzel kişi' AND tr_norm(trim(unvan_ad_soyad)) = tr_norm(trim($1)) LIMIT 1`, [g.ad.trim()])).rows[0];
+      if (u) return y.code(409).send({ hata: `Bu unvanla kayıt mevcuttur: ${u.taraf_no}`, tarafNo: u.taraf_no }); }
     const { rows } = await b.db.query(
       `INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, tckn, vergi_no, vergi_dairesi, telefon, eposta, adres, il, ulke, taraf_rolleri, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik, taraf_no`,
       [await tarafNo(b.db), g.kisiTuru, g.musteriTuru ?? null, g.ad.trim(), g.tckn ?? null, g.vergiNo ?? null, g.vergiDairesi ?? null, g.telefon ?? null, g.eposta ?? null, g.adres ?? null, g.il ?? null, g.ulke ?? 'TR', g.roller ?? [], o.kullanici]);

@@ -702,9 +702,13 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   // YG-205, YG-219, YG-1464: sigorta kararı; kanal yalnız tanımlı kanallar. Kısmi onayda kalem silinmez, işaretlenir; onaylanmayanlardan yat sahibine ayrı teklif. Sonuç BLD-38 / BLD-39.
   s.post('/teklif/:id/sigorta-karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
-    const g = (i.body ?? {}) as { karar?: string; kanal?: string; yetkili?: string; belge?: string; gonderen?: string; onaylananSiralar?: number[] };
+    const g = (i.body ?? {}) as { karar?: string; kanal?: string; yetkili?: string; belge?: string; gonderen?: string; onaylananSiralar?: number[]; gelis?: string; gecikmeGerekcesi?: string };
     if (!t) return yok(y);
     if (t.teklif_muhatabi !== 'Sigorta Şirketi' || t.statu !== 'Gönderildi') return y.code(409).send({ hata: 'Sigorta kararı gönderilmiş tekliflere girilir.' });
+    // YG-455: yazılı onay geliş zamanından itibaren 8 saat içinde kaydedilir; aşımda gecikme gerekçesi zorunludur.
+    const gelis = g.gelis ? new Date(g.gelis) : null;
+    if (gelis && (Number.isNaN(gelis.getTime()) || gelis.getTime() > Date.now() + 60_000)) return y.code(400).send({ hata: 'Onayın geliş zamanı geçersizdir.' });
+    if (gelis && Date.now() - gelis.getTime() > 8 * 3_600_000 && !g.gecikmeGerekcesi?.trim()) return y.code(409).send({ hata: 'Onay geldikten sonra 8 saat geçmiştir; kayıt gecikmesinin gerekçesini yazmanızı rica ederiz.' });
     if (!['Tam Onay', 'Kısmi Onay', 'Ret', 'Revizyon İstendi'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
     if (!['YATONET 360', 'KEP', 'E-imza', 'Sözleşmede Tanımlı Kurumsal E-posta'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Telefon ve WhatsApp onay kanalı sayılmaz; tanımlı kanalı seçiniz.' }); // YG-218, YG-221
     if (g.kanal === 'YATONET 360') return y.code(400).send({ hata: 'YATONET 360 onayını sigorta kullanıcısı portaldan verir; burada yazılı onay belgesi girilir.' }); // YG-449
@@ -719,6 +723,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       const tutarOnay = R2(kalemler.filter((k) => onayli.includes(k.sira_no)).reduce((a, k) => a + Number(k.tutar_eur), 0));
       if (g.kanal === KURUMSAL_EPOSTA) { const h = await ek2Engeli(c, t.dosya_ref, g.gonderen, tutarOnay, o.kullanici); if (h) throw Object.assign(new Error(h), { statusCode: g.gonderen ? 409 : 400 }); } // YG-219
       await c.query(`INSERT INTO sigorta_onayi (dosya_ref, teklif_ref, karar, onaylanan_tutar_eur, onay_kanali, onay_tarihi, onay_belgesi_ref, gonderen_eposta, onaylayan_yetkili, kaydi_yapan_ref) VALUES ($1,$2,$3,$4,$5,now(),$6,$9,$7,$8)`, [t.dosya_ref, t.kimlik, g.karar, tutarOnay, g.kanal, g.belge ?? null, g.yetkili!.trim(), o.kullanici, g.gonderen?.trim() || null]);
+      if (gelis) await c.query(`UPDATE sigorta_onayi SET gelis_zamani = $2, kayit_gecikme_gerekcesi = $3 WHERE kimlik = (SELECT kimlik FROM sigorta_onayi WHERE teklif_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 1)`, [t.kimlik, gelis, g.gecikmeGerekcesi?.trim() || null]); // YG-455
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = $2, karar_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [t.kimlik, g.karar]);
       if (g.karar === 'Tam Onay' || g.karar === 'Kısmi Onay') await (await import('./belge_uret.js')).sigortaOnayBelgesiUret(c, t.kimlik); // YG-1569
       if (g.karar === 'Tam Onay' || g.karar === 'Kısmi Onay') {

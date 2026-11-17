@@ -179,6 +179,25 @@ export async function riskUyariIsle(db: Db, simdi = new Date()): Promise<number>
   return n;
 }
 
+/**
+ * YG-773: önceki ayda eksper bedeli girilen kartelalı teklif kalemlerinde teklif tutarının eksper bedeline oranı (ortalama sapma, eksperin
+ * altında/üstünde kalan kalem sayısı, en çok sapan 5 kartela kodu) her ayın ilk çalışmasında Ticari İşler Direktörüne bildirilir.
+ */
+export async function kartelaEksperRaporuIsle(db: Db, simdi = new Date()): Promise<number> {
+  const ay = new Date(Date.UTC(simdi.getUTCFullYear(), simdi.getUTCMonth() - 1, 1)); const donem = ay.toISOString().slice(0, 7);
+  if (!(await birKez(db, 'kartela-eksper-raporu', donem))) return 0;
+  const l = (await db.query(`SELECT k.kartela_kodu, k.tutar_eur::float t, e.eksper_tutar_eur::float e FROM eksper_karsilastirma e JOIN fiyat_teklifi_kalemi k ON k.kimlik = e.kalem_ref
+      WHERE k.kartela_kodu IS NOT NULL AND e.eksper_tutar_eur > 0 AND e.zaman >= $1::date AND e.zaman < ($1::date + interval '1 month')`, [`${donem}-01`])).rows as { kartela_kodu: string; t: number; e: number }[];
+  const al = (await db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = 'Ticari İşler Direktörü'`)).rows.map((r) => r.kullanici_ref as string);
+  if (!al.length) return 0;
+  const sap = l.map((x) => ({ kod: x.kartela_kodu, s: (x.t - x.e) / x.e * 100 }));
+  const ort = sap.length ? Math.round(sap.reduce((a, x) => a + x.s, 0) / sap.length * 10) / 10 : null;
+  const en = [...sap].sort((a, b) => Math.abs(b.s) - Math.abs(a.s)).slice(0, 5).map((x) => `${x.kod} %${String(Math.round(x.s * 10) / 10).replace('.', ',')}`);
+  const ozet = sap.length ? `${sap.length} kalem · ortalama sapma %${String(ort).replace('.', ',')} · eksperin üstünde ${sap.filter((x) => x.s > 0).length}, altında ${sap.filter((x) => x.s < 0).length} · en çok sapan: ${en.join(', ')}` : 'Bu dönemde eksper bedeli girilen kartelalı kalem yok.';
+  await bildir(db, { olay: `kartela-eksper:${donem}`, kullanicilar: al, baslik: `Kartela – Eksper Konum Raporu · ${donem}`, ozet }, simdi);
+  return 1;
+}
+
 /** YG-897: Ödeme Alındı (BLD-27); sigortaya ve vefat işaretli dosyaya gitmez. */
 async function odemeAlindi(c: Db, dosya: string, muhatap: string, tarih: string) {
   if (muhatap === 'Sigorta Şirketi') return;
@@ -226,7 +245,16 @@ kapanisKaydet('İzin Talebi', async (c, k, karar) => {
   } else if (karar === 'Reddet') await c.query(`UPDATE izin_talebi SET durum = 'Reddedildi' WHERE kimlik = $1`, [t.kimlik]);
 });
 
+// YG-920: masraf fişinin görseli personel tarafından fişe bağlanır; Muhasebe ve Finans rolleri görür.
+belgeBagiKaydet('Masraf', async (db, k, id) => {
+  const t = (await db.query(`SELECT personel_ref FROM personel_masraf_fisi WHERE kimlik::text = $1`, [id])).rows[0]; if (!t) return 'yok';
+  if (t.personel_ref === k) return 'tamam';
+  return (await db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi LIKE 'Muhasebe ve Finans%' LIMIT 1`, [k])).rowCount ? 'tamam' : 'yok';
+});
 kapanisKaydet('Masraf Fişi', async (c, k, karar) => {
+  // YG-920: kağıt fişte fiş görseli yüklenmeden onay verilmez (ara kademe dahil).
+  if (karar === 'Onayla' || karar === 'Onaya Gönder') { const f = (await c.query(`SELECT belge_ref, belge_turu FROM personel_masraf_fisi WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0];
+    if (f && f.belge_turu === 'Kağıt Fiş' && !f.belge_ref) throw Object.assign(new Error('Fiş görseli yüklenmeden masraf onaylanamaz.'), { statusCode: 409 }); }
   if (karar === 'Onayla') await c.query(`UPDATE personel_masraf_fisi SET durum = 'Onaylandı' WHERE kimlik = $1`, [k.nesne_kimligi]);
   else if (karar === 'Reddet') await c.query(`UPDATE personel_masraf_fisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [k.nesne_kimligi]);
 });
@@ -595,6 +623,22 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE hakedis SET firma_fatura_no = $2, firma_fatura_tarihi = $3, firma_fatura_kuru = $4 WHERE kimlik = $1`, [id, g.no.trim(), g.tarih, g.kur]);
     return { tamam: true };
   });
+  // YG-420: Ticari Sorumlu, ödeme talimatı açılmamış hakedişte firma faturasını gerekçeyle iade eder; fatura bilgileri silinir, firma yeniden girer.
+  s.post('/hakedis/:id/fatura-iade', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { gerekce } = (i.body ?? {}) as { gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Faturayı Ticari Sorumlu iade eder.' });
+    if (!gerekce?.trim()) return y.code(400).send({ hata: 'İade gerekçesini yazmanızı rica ederiz.' });
+    const h = (await b.db.query(`SELECT h.hakedis_no, h.firma_fatura_no, e.kurulus_ref, e.is_emri_no FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE h.kimlik = $1`, [id])).rows[0];
+    if (!h) return yok(y);
+    if (!h.firma_fatura_no) return y.code(409).send({ hata: 'Hakedişte firma faturası yoktur.' });
+    if ((await b.db.query(`SELECT 1 FROM odeme_talimati WHERE hakedis_ref = $1 AND durum <> 'Reddedildi'`, [id])).rowCount) return y.code(409).send({ hata: 'Ödeme talimatı açılmış hakedişte fatura iade edilemez.' });
+    await b.db.query(`UPDATE hakedis SET firma_fatura_no = NULL, firma_fatura_tarihi = NULL, firma_fatura_kuru = NULL, fatura_iade_gerekcesi = $2, fatura_iade_zamani = now(), fatura_iade_eden_ref = $3 WHERE kimlik = $1`, [id, gerekce.trim(), o.kullanici]);
+    const al = (await b.db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [h.kurulus_ref])).rows.map((x) => x.kullanici_ref as string);
+    await bildir(b.db, { olay: `fatura-iade:${id}:${Date.now()}`, kullanicilar: al, baslik: `${h.is_emri_no} · ${h.hakedis_no} · Fatura İadesi`, ozet: `${h.firma_fatura_no} numaralı fatura iade edilmiştir: ${gerekce.trim()}. Düzeltilmiş fatura bilgilerini portalden girmenizi rica ederiz.`, oncelik: 'Yüksek' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Faturası İade Edildi', nesneTuru: 'Hakediş', nesneKimligi: id, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   // YG-834: Saha Sorumlusu, atanmamışsa Dosya Sorumlusu doğrular.
   s.post('/hakedis/:id/dogrula', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { karar } = (i.body ?? {}) as { karar?: string };
@@ -686,6 +730,13 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-948, YG-950, YG-951, YG-1614: izin; gün sistemce; bakiye negatif olamaz; açık dosyası olanda vekil zorunlu; İK sonra birim amiri.
+  // YG-920: fiş görseli masraf kaydına bağlanır.
+  s.post('/masraf/:id/belge', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const be = ((i.body ?? {}) as { belge?: string }).belge;
+    if (!UUID.test(id) || !be || !UUID.test(be) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Masraf' AND bag_kimligi = $2`, [be, id])).rowCount) return y.code(400).send({ hata: 'Fiş görselini yüklemenizi rica ederiz.' });
+    const r = await b.db.query(`UPDATE personel_masraf_fisi SET belge_ref = $2 WHERE kimlik = $1 AND personel_ref = $3 AND durum NOT IN ('Onaylandı', 'Reddedildi', 'Ödendi')`, [id, be, o.kullanici]);
+    return r.rowCount ? { tamam: true } : yok(y);
+  });
   s.post('/izin/:id/belge', oturumlu, async (i, y) => { // YG-952
     const o = i.oturum!; const { id } = i.params as { id: string }; const be = ((i.body ?? {}) as { belge?: string }).belge;
     if (!UUID.test(id) || !be || !UUID.test(be)) return y.code(400).send({ hata: 'Belgeyi yüklemenizi rica ederiz.' });
@@ -752,6 +803,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   s.post('/masraf', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string; belgeTuru?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
+    // YG-955: kur girilmezse fiş tarihindeki (veya önceki son yayın) TCMB EUR satış kuru kullanılır.
+    if (!(Number(g.kur) > 0) && g.tarih) { const k = await (await import('./doviz.js')).kurGetir(b.db, 'EUR', g.tarih); if (k) g.kur = k.kur; }
     if (!g.tur?.trim() || !g.tarih || !(Number(g.tutarTl) > 0) || !(Number(g.kur) > 0)) return y.code(400).send({ hata: 'Tür, tarih, tutar ve kur zorunludur.' });
     if (!g.belgeOzeti?.trim()) return y.code(400).send({ hata: 'Masraf için belge numarasını yazmanızı rica ederiz.' });
     if (g.belgeTuru && !['Kağıt Fiş', 'e-Fatura', 'e-Arşiv'].includes(g.belgeTuru)) return y.code(400).send({ hata: 'Belge türü geçersizdir.' }); // YG-1622
@@ -784,7 +837,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       sigortali: (await b.db.query(`SELECT dosya_niteligi FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.dosya_niteligi === 'Sigorta bağlantılı',
       ayriKalemler: await q(`SELECT kimlik, tur, aciklama, tutar_eur, durum FROM odeme_sorumlulugu_kalemi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       faturalar: await q(`SELECT kimlik, proforma_no, durum, fatura_no, fatura_tarihi::text, toplam_eur, toplam_tl, vade::text, tahsil_edilen_eur, kdv_durumu, kdv_eur, kdv_tl, tevkifat_orani, tevkifat_eur, aciklama FROM musteri_faturasi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
-      hakedisler: await q(`SELECT kimlik, hakedis_no, bu_donem_brut, kesinti, net, statu FROM hakedis WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
+      hakedisler: await q(`SELECT kimlik, hakedis_no, bu_donem_brut, kesinti, net, statu, firma_fatura_no, NOT EXISTS (SELECT 1 FROM odeme_talimati t WHERE t.hakedis_ref = hakedis.kimlik AND t.durum <> 'Reddedildi') talimatsiz FROM hakedis WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       isEmirleri: await q(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, k.ticari_unvan FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti') ORDER BY e.olusturma_zamani`),
       teslimEngeli: await teslimEngeli(b.db, id),
       kredi: await krediDurumu(b.db, id),

@@ -90,6 +90,9 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     const eng = await parcaOdemeEngeli(b.db, id) ?? await sozlesmeEngeli(b.db, g.tedarikci);
     if (eng) return y.code(409).send({ hata: eng });
     const matrah = R2(kl.reduce((a, k) => a + R2(Number(k.miktar) * Number(k.bedel)), 0)); const kdv = R2((matrah * await parametre(b.db, 'kdv_orani')) / 100);
+    // YG-823: onaylı dosya bütçesi varsa sipariş, gerçekleşen ve açık taahhütle birlikte güncel bütçe + kalan risk rezervini aşamaz.
+    { const bt = await (await import('./risk_rezervi.js')).dosyaButcesi(b.db, id);
+      if (bt.guncelButce > 0 && R2(bt.bitisTahmini + matrah) > R2(bt.guncelButce + bt.rezervKalan)) return y.code(409).send({ hata: `Sipariş dosya bütçesini aşıyor (bütçe ${tutar(bt.guncelButce)} EUR, tahmini bitiş ${tutar(R2(bt.bitisTahmini + matrah))} EUR); değişiklik kaydı veya risk rezervi kullanım talebi gerekir.` }); }
     return islem(async (c) => {
       const no = await disNumara(c, 'SP'); // YG-298: dosya kimliği tedarikçiye görünmez
       const r = (await c.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kismi_teslim_izni, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, dil) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`, [no, id, g.tedarikci, g.teklifRef!.trim(), g.kullanim!.trim(), matrah, kdv, R2(matrah + kdv), g.teslimTarihi, g.teslimYeri!.trim(), Boolean(g.kismi), g.olcut!.trim(), g.gerekce!.trim(), o.kullanici, g.dil === 'İngilizce' ? 'İngilizce' : 'Türkçe'])).rows[0];

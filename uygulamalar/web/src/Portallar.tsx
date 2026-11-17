@@ -100,8 +100,18 @@ export function GunlukKayit({ isEmri, yap }: { isEmri: string; yap: (f: () => Pr
       <label htmlFor={`gl-s-${isEmri}`}>Sorumlu</label><input id={`gl-s-${isEmri}`} value={f.sorumlu} onChange={(e) => setF({ ...f, sorumlu: e.target.value })} />
       <div className="not">Günü kapatabilmeniz için zorunlu alanları tamamlamanızı rica ederiz.</div>
       <div className="dugmeler"><button className="btn2" onClick={() => kaydet(false)}>Kaydı Sakla</button><button className="btn evet" onClick={() => kaydet(true)}>Günü Kapat</button></div>
+      <GecikmeBildirimi isEmri={isEmri} yap={yap} />
     </Blok>
   );
+}
+
+/** YG-420: öngörülen gecikme nedeni ve yeni tahmini bitiş tarihiyle LGM'ye bildirilir. */
+function GecikmeBildirimi({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
+  const [n, setN] = useState(''); const [t, setT] = useState('');
+  return <div className="ozet" data-t="gecikme-bildirimi"><b>Gecikme Bildirimi</b>
+    <label htmlFor={`gc-n-${isEmri}`}>Gecikme Nedeni</label><input id={`gc-n-${isEmri}`} value={n} onChange={(e) => setN(e.target.value)} />
+    <label htmlFor={`gc-t-${isEmri}`}>Yeni Tahmini Bitiş Tarihi</label><input id={`gc-t-${isEmri}`} type="date" value={t} onChange={(e) => setT(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!n.trim() || !t} onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/gecikme`, { neden: n, yeniTarih: t }), 'Gecikme bildirildi.').then(() => { setN(''); setT(''); })}>Gecikmeyi Bildir</button></div>;
 }
 
 /** A7 Çözüm Ortağı alt menüsü: açık kayıtlar ve aktif iş emirleri. */

@@ -287,6 +287,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (sigortali && !sigortaAdi) return dur(400, 'Sigorta şirketini giriniz.');
       if (t.oncelik === 'Kritik' && (await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Kritik Öncelik Teyidi' AND nesne_kimligi = $1 AND durum = 'Reddedildi'`, [id])).rowCount) return dur(409, 'Kritik öncelik teyit edilmedi; önceliği güncelleyiniz.');
       const hasarIlerler = t.oncelik_cevaplari && Object.entries(t.oncelik_cevaplari as Record<string, string>).some(([k, v]) => k.startsWith('Hasar ilerleyebilir') && v === 'Evet');
+      { const ps = (await c.query(`SELECT x.taraf_no, x.pasif_gerekcesi FROM yat y JOIN taraf x ON x.kimlik = y.yat_sahibi_ref WHERE y.kimlik = $1 AND x.pasif`, [t.yat_ref])).rows[0]; // YG-926
+        if (ps) return dur(409, `Yat sahibi kaydı (${ps.taraf_no}) pasiftir; yeni dosya açılmaz. ${ps.pasif_gerekcesi ?? ''}`.trim()); }
       const d = (await c.query(
         `INSERT INTO dosya (dosya_no, talep_ref, yat_ref, bildirim_tarihi, olay_tarihi, konum, kisa_teknik_tanim, hizmet_turu, musteri_turu, dosya_niteligi, odeme_sorumlusu, oncelik, onerilen_oncelik, musteri_hedef_tarihi, acil_gecici_acilis, eksik_alan_gerekcesi, tamamlama_hedef_tarihi, garantili_ekipman, garantili_ekipman_marka, garanti_bitis, yazisma_dili, hasar_ilerleyebilir, olusturan_ref)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING kimlik, dosya_no`,

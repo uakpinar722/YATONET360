@@ -90,8 +90,19 @@ function OnayKanali({ no, id, kanal: kanal0, setKanal, yetkili, setYetkili, gond
       <label htmlFor={`y-${no}`}>Onaylayan Yetkili</label><input id={`y-${no}`} value={yetkili} onChange={(e) => setYetkili(e.target.value)} />
       {kanal === KURUMSAL && <><label htmlFor={`g-${no}`}>Onayın Geldiği E-posta Adresi</label><input id={`g-${no}`} type="email" value={gonderen} onChange={(e) => setGonderen(e.target.value)} /></>}
       {kanal !== 'YATONET 360' && <BelgeSec ad={`Onay Belgesi ${no}`} bagTuru="Dosya" bagKimligi={id} deger={belge} sec={setBelge} />}
+      {belgeli && <GelisAlani no={no} />}
     </>
   );
+}
+
+/** YG-455: yazılı onayın geliş zamanı; 8 saati aşan kayıtta gecikme gerekçesi. Değerler karar isteğine eklenir. */
+const GELIS = { zaman: '', gerekce: '' };
+const gelisAlani = () => (GELIS.zaman ? { gelis: new Date(GELIS.zaman).toISOString(), gecikmeGerekcesi: GELIS.gerekce || undefined } : {});
+function GelisAlani({ no }: { no: string }) {
+  const [z, setZ] = useState(GELIS.zaman); const [g, setG] = useState(GELIS.gerekce);
+  const gec = z && Date.now() - new Date(z).getTime() > 8 * 3_600_000;
+  return <><label htmlFor={`gz-${no}`}>Onayın Geliş Zamanı</label><input id={`gz-${no}`} type="datetime-local" value={z} onChange={(e) => { GELIS.zaman = e.target.value; setZ(e.target.value); }} />
+    {gec && <><label htmlFor={`gg-${no}`}>Kayıt Gecikmesinin Gerekçesi</label><input id={`gg-${no}`} value={g} onChange={(e) => { GELIS.gerekce = e.target.value; setG(e.target.value); }} /></>}</>;
 }
 
 interface Karsilastirma { satirlar: { sira: number; aciklama: string; teklif: number; eksper: number | null; fark: number | null; not: string | null; onay: string | null; yd: string | null }[]; toplam: { teklif: number; eksper: number; fark: number; girilen: number }; talep: { kimlik: string; durum: string } | null }
@@ -125,7 +136,7 @@ function SigortaTeklifIslem({ id, teklif, statu, karar, kanal, setKanal, yetkili
       <div>Toplam · Teklif: {eur(v.toplam.teklif)} · Eksper: {v.toplam.girilen ? eur(v.toplam.eksper) : '—'} · Fark: {v.toplam.girilen ? eur(v.toplam.fark) : '—'}</div>
       <BelgeSec ad="Eksper Raporu" bagTuru="Dosya" bagKimligi={id} deger={belge} sec={setBelge} />
       <button className="btn2 kucuk" disabled={!belge || !girilen.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/eksper-karsilastirma`, { belge, satirlar: girilen.map(([s, x]) => ({ sira: Number(s), tutar: Number(x.tutar), not: x.not })) }), 'Eksper tutarları kaydedildi.')}>Eksper Tutarlarını Kaydet</button>
-      {statu === 'Gönderildi' && <button className="btn2 kucuk" disabled={!sec.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/sigorta-karar`, { karar: 'Kısmi Onay', kanal: kanal === 'YATONET 360' ? 'KEP' : kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined, onaylananSiralar: sec }), 'Sigorta kararı kaydedildi.')}>Seçilenlerle Kısmi Onay Kaydet</button>}
+      {statu === 'Gönderildi' && <button className="btn2 kucuk" disabled={!sec.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/sigorta-karar`, { karar: 'Kısmi Onay', kanal: kanal === 'YATONET 360' ? 'KEP' : kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined, onaylananSiralar: sec, ...gelisAlani() }), 'Sigorta kararı kaydedildi.')}>Seçilenlerle Kısmi Onay Kaydet</button>}
       {istenebilir && !v.talep && secimli && <>
         <label htmlFor={`yd-${teklif}`}>Teknik Gerekçe</label><textarea id={`yd-${teklif}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
         <button className="btn2 kucuk" disabled={!sec.length || !gerekce.trim()} onClick={() => void isle(() => istek(`/teklif/${teklif}/yeniden-degerlendirme`, { siralar: sec, gerekce }).then(() => { window.dispatchEvent(new Event('sigorta-gonderim')); }), 'Yeniden değerlendirme teyide hazırlandı.')}>Seçilenler İçin Yeniden Değerlendirme İste</button>
@@ -159,7 +170,7 @@ interface Kayitlar {
   zarfSapmalari: { kimlik: string; aciklama: string; is_emri_no: string }[];
   isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; paket_statusu: string | null; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
 }
-interface Mali { kredi: { acik: number; limit: number; oran: number; uyari: boolean; asim: boolean; buyuk: boolean } | null; itirazlar: { kimlik: string; fatura_ref: string; kalem: string; tutar_eur: string; durum: string; yanit: string | null; yanit_son: string }[]; gecikme: { fatura: string; gun: number; tur: string; oran: number | null; faiz: number | null }[]; sigortali: boolean; ayriKalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string }[]; teslimEngeli: string | null }
+interface Mali { kredi: { acik: number; limit: number; oran: number; uyari: boolean; asim: boolean; buyuk: boolean } | null; itirazlar: { kimlik: string; fatura_ref: string; kalem: string; tutar_eur: string; durum: string; yanit: string | null; yanit_son: string }[]; gecikme: { fatura: string; gun: number; tur: string; oran: number | null; faiz: number | null }[]; sigortali: boolean; ayriKalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string; firma_fatura_no?: string | null; talimatsiz?: boolean }[]; teslimEngeli: string | null }
 
 /** YG-386: firmanın girdiği ilerlemeyi Teknik Uzman veya Saha Sorumlusu doğrular; kabul bundan sonra verilir. */
 function IlerlemeDogrula({ isEmri }: { isEmri: string }) {
@@ -273,7 +284,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             </div>
             {t.statu === 'Gönderildi' && t.teklif_muhatabi === 'Sigorta Şirketi' && <div className="tam">
               <OnayKanali belgeli no={t.kimlik} id={id} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} belge={onayBelge} setBelge={setOnayBelge} />
-              <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/sigorta-karar`, { karar: 'Tam Onay', kanal: kanal === 'YATONET 360' ? 'KEP' : kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined }), 'Sigorta kararı kaydedildi.')}>Tam Onay Kaydet</button>
+              <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/sigorta-karar`, { karar: 'Tam Onay', kanal: kanal === 'YATONET 360' ? 'KEP' : kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined, ...gelisAlani() }), 'Sigorta kararı kaydedildi.')}>Tam Onay Kaydet</button>
             </div>}
             {t.teklif_muhatabi === 'Sigorta Şirketi' && ['Gönderildi', 'Karar'].includes(t.statu) && <SigortaTeklifIslem id={id} teklif={t.kimlik} statu={t.statu} karar={t.karar} kanal={kanal} setKanal={setKanal} yetkili={yetkili} setYetkili={setYetkili} gonderen={gonderen} setGonderen={setGonderen} onayBelge={onayBelge} setOnayBelge={setOnayBelge} yap={yap} />}
           </div>
@@ -341,7 +352,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         <AlacakBolumu dosya={id} m={m} ticari={ticari} yap={yap} />
         {ticari && <MahsupAvans dosya={id} isEmirleri={m.isEmirleri} yap={yap} />}
         {(ticari || m.sigortali) && <KesifVeAyriKalem dosya={id} ticari={ticari} sigortali={m.sigortali} kalemler={m.ayriKalemler} yap={yap} />}
-        {m.hakedisler.map((h) => <div key={h.kimlik} className="soru"><span>{h.hakedis_no} · Brüt {eur(h.bu_donem_brut)} · Kesinti {eur(h.kesinti)} · Net {eur(h.net)} · {h.statu}</span><div className="dugmeler">{h.statu === 'Doğrulama Bekliyor' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/dogrula`, {}))}>Doğrula</button>}{h.statu === 'Doğrulandı' && ticari && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/odeme-talimati`, {}), 'Talimat onaya gönderildi.')}>Ödeme Talimatı</button>}</div></div>)}
+        {m.hakedisler.map((h) => <div key={h.kimlik} className="soru"><span>{h.hakedis_no} · Brüt {eur(h.bu_donem_brut)} · Kesinti {eur(h.kesinti)} · Net {eur(h.net)} · {h.statu}</span><div className="dugmeler">{h.statu === 'Doğrulama Bekliyor' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/dogrula`, {}))}>Doğrula</button>}{h.statu === 'Doğrulandı' && ticari && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/hakedis/${h.kimlik}/odeme-talimati`, {}), 'Talimat onaya gönderildi.')}>Ödeme Talimatı</button>}{ticari && h.firma_fatura_no && h.talimatsiz && <button className="btn2 kucuk" onClick={() => { const gr = window.prompt('İade gerekçesi'); if (gr?.trim()) void yap(() => istek(`/hakedis/${h.kimlik}/fatura-iade`, { gerekce: gr }), 'Fatura iade edildi.'); }}>Faturayı İade Et</button>}</div></div>)}
         {asama === 'Teslim' && rollerim.includes('Dosya Sorumlusu') && <><label htmlFor="tk-ee">Envantere Göre Eksik (yoksa boş bırakınız)</label><input id="tk-ee" value={envEksik} onChange={(e) => setEnvEksik(e.target.value)} />
           <button className="btn2" disabled={Boolean(m.teslimEngeli)} onClick={() => void yap(() => istek(`/dosya/${id}/teslim`, { envanterEksik: envEksik || undefined }), 'Teslim onayı yat sahibine gönderildi.')}>Teslimi Başlat</button></>}
       </Blok>}
@@ -587,6 +598,18 @@ function NobetDevri() {
       <label htmlFor="nd-a">Açık Olaylar</label><input id="nd-a" value={f.acikOlaylar} onChange={(e) => setF({ ...f, acikOlaylar: e.target.value })} />
       <button className="btn2" disabled={!f.devralan || s.length < v.liste.length} onClick={() => void yap(() => istek('/nobet/devir', { devralan: f.devralan, liste: s, acikOlaylar: f.acikOlaylar || undefined }).then(() => { setF({ devralan: '', acikOlaylar: '' }); setS([]); return { uyari: 'Devir kaydedildi; devralanın onayı bekleniyor.' }; }))}>Nöbeti Devret</button>
     </div></>;
+}
+
+/** YG-920: fiş tarihinden kalan giriş günü; son teslim (ayın 1'i/15'i 12:00), onay (5'i/19'u) ve ödeme (7'si/21'i) günleri. Tatil kaydırması sunucu kurallarında. */
+function MasrafTakvimi({ tarih }: { tarih: string }) {
+  if (!tarih) return null;
+  const g = new Date(`${tarih}T00:00:00`); const bugun = new Date(); bugun.setHours(0, 0, 0, 0);
+  const kalan = 30 - Math.floor((bugun.getTime() - g.getTime()) / 86_400_000);
+  const d = bugun.getDate(); const ay = new Date(bugun.getFullYear(), bugun.getMonth() + (d >= 15 ? 1 : 0), 1);
+  const ilk = d < 15; const yaz = (x: Date) => x.toLocaleDateString('tr-TR');
+  const teslim = ilk ? new Date(bugun.getFullYear(), bugun.getMonth(), 15) : ay;
+  const onay = new Date(teslim.getFullYear(), teslim.getMonth(), teslim.getDate() === 1 ? 5 : 19); const odeme = new Date(teslim.getFullYear(), teslim.getMonth(), teslim.getDate() === 1 ? 7 : 21);
+  return <div className="not" data-t="masraf-takvim">Kalan giriş günü: {Math.max(0, kalan)} · Son teslim: {yaz(teslim)} 12:00 · Onay: {yaz(onay)} · Ödeme: {yaz(odeme)}</div>;
 }
 
 export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
@@ -855,6 +878,7 @@ export function SigortaEk2() {
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
   const [izId, setIzId] = useState(''); const [izB, setIzB] = useState('');
+  const [msId, setMsId] = useState(''); const [msB, setMsB] = useState(''); // YG-920
   const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '', belgeTuru: 'Kağıt Fiş' });
   return (
     <>
@@ -951,7 +975,9 @@ export function IdariIslemler() {
         <label htmlFor="ms-bt">Belge Türü</label><select id="ms-bt" value={m.belgeTuru} onChange={(e) => setM({ ...m, belgeTuru: e.target.value })}><option>Kağıt Fiş</option><option>e-Fatura</option><option>e-Arşiv</option></select>
         <div className="iki-tarih"><div><label htmlFor="ms-d">Fiş Tarihi</label><input id="ms-d" type="date" value={m.tarih} onChange={(e) => setM({ ...m, tarih: e.target.value })} /></div><div><label htmlFor="ms-n">Belge No</label><input id="ms-n" value={m.belgeOzeti} onChange={(e) => setM({ ...m, belgeOzeti: e.target.value })} /></div></div>
         <div className="iki-tarih"><div><label htmlFor="ms-a">Tutar (TL)</label><input id="ms-a" inputMode="decimal" value={m.tutarTl} onChange={(e) => setM({ ...m, tutarTl: e.target.value })} /></div><div><label htmlFor="ms-k">TCMB Kuru</label><input id="ms-k" inputMode="decimal" value={m.kur} onChange={(e) => setM({ ...m, kur: e.target.value })} /></div></div>
-        <button className="btn2" onClick={() => void yap(() => istek<{ odenecek: number; kesilen: number }>('/masraf', { ...m, tutarTl: Number(m.tutarTl.replace(',', '.')), kur: Number(m.kur.replace(',', '.')), miktar: Number(m.miktar) }).then((r) => ({ uyari: `Ödenecek: ${eur(r.odenecek)}${r.kesilen > 0 ? ` · Limit Aşımı: ${eur(r.kesilen)}` : ''}` })))}>Masraf Gönder</button>
+        <MasrafTakvimi tarih={m.tarih} />
+        <button className="btn2" onClick={() => void yap(() => istek<{ odenecek: number; kesilen: number; kimlik?: string }>('/masraf', { ...m, tutarTl: Number(m.tutarTl.replace(',', '.')), kur: Number(m.kur.replace(',', '.')), miktar: Number(m.miktar) }).then((r) => { if (r.kimlik) setMsId(r.kimlik); return { uyari: `Ödenecek: ${eur(r.odenecek)}${r.kesilen > 0 ? ` · Limit Aşımı: ${eur(r.kesilen)}` : ''}${m.belgeTuru === 'Kağıt Fiş' ? ' · Fiş görselini yükleyiniz.' : ''}` }; }))}>Masraf Gönder</button>
+        {msId && <BelgeSec ad="Fiş Görseli" bagTuru="Masraf" bagKimligi={msId} deger={msB} sec={(k) => { setMsB(k); void yap(() => istek(`/masraf/${msId}/belge`, { belge: k }).then(() => ({ uyari: 'Fiş görseli eklendi.' }))); }} />}
       </Blok>
     </>
   );

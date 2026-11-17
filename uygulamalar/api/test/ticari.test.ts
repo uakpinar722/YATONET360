@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { proformaSureIsle, riskUyariIsle } from '../src/ticari.js';
+import { kartelaEksperRaporuIsle, proformaSureIsle, riskUyariIsle } from '../src/ticari.js';
+import { eurCevir, kurGetir, tcmbKurIsle } from '../src/doviz.js';
 import { alacakIsle, avansHesapla, firmaOdemePlani, hakedisKesintisi, ibanGecerli, izinGunu, masrafOdenecek, teslimEngeli, yillikHak } from '../src/ticari.js';
 import { COOKIE_ADI } from '../src/ayarlar.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
@@ -147,6 +148,30 @@ describe('güvence kesintisi iadesi (YG-838)', () => {
   });
 });
 
+describe('kartela eksper raporu (YG-773)', () => {
+  it('ayda bir kez TİD bildirimi (T-YG773)', async () => {
+    const t0 = new Date('2031-05-03T08:00:00Z');
+    expect(await kartelaEksperRaporuIsle(o.db, t0)).toBe(1); expect(await kartelaEksperRaporuIsle(o.db, t0)).toBe(0);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = 'kartela-eksper:2031-04'`, [o.K.tid])).rows[0].n).toBe(1);
+  });
+});
+
+describe('TCMB döviz kuru (YG-1356, YG-825, YG-955)', () => {
+  it('yayın okunur, tekrar yazılmaz, elle giriş TCMB kaydını değiştirmez, çapraz çevrim (T-YG1356)', async () => {
+    const xml = `<Tarih_Date Tarih="02.01.2026" Date="01/02/2026"><Currency CrossOrder="0" Kod="USD" CurrencyCode="USD"><ForexBuying>40.0000</ForexBuying><ForexSelling>40.5000</ForexSelling></Currency><Currency CrossOrder="9" Kod="EUR" CurrencyCode="EUR"><ForexBuying>45.0000</ForexBuying><ForexSelling>45.0000</ForexSelling></Currency></Tarih_Date>`;
+    expect(await tcmbKurIsle(o.db, async () => xml)).toBe(2); expect(await tcmbKurIsle(o.db, async () => xml)).toBe(0);
+    expect(await tcmbKurIsle(o.db, async () => { throw new Error('erişim yok'); })).toBe(0);
+    expect((await kurGetir(o.db, 'EUR', '2026-01-05'))?.kur).toBe(45);
+    expect(await eurCevir(o.db, 900, 'USD', '2026-01-02')).toBe(810);
+    expect(await eurCevir(o.db, 900, 'GBP', '2026-01-02')).toBeNull();
+    expect((await o.ist('POST', '/api/doviz-kuru', await o.gir('ds'), { tarih: '2026-01-02', pb: 'GBP', satis: 50 })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/doviz-kuru', await o.gir('ts'), { tarih: '2026-01-02', pb: 'EUR', satis: 50 })).statusCode).toBe(409);
+    expect((await o.ist('POST', '/api/doviz-kuru', await o.gir('ts'), { tarih: '2026-01-02', pb: 'GBP', satis: 54 })).statusCode).toBe(200);
+    expect(await eurCevir(o.db, 900, 'GBP', '2026-01-02')).toBe(1080);
+    expect((await o.ist('GET', '/api/doviz-kurlari', await o.gir('ds'))).json().map((x: { pb: string }) => x.pb)).toEqual(['EUR', 'USD', 'GBP']);
+  });
+});
+
 describe('teslim kilidi (YG-087, YG-910, YG-216)', () => {
   it('bireyselde bakiye teslimi durdurur; sigortada vade engellemez; GMY istisnası açar; ONY-27 gider', async () => {
     const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi');
@@ -234,6 +259,14 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
     await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, fatura_no, fatura_tarihi, kur, kur_tarihi, vade, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',1000,0,1000,'Faturalandı',$4,'2026-11-02',40.5,'2026-10-30','2026-11-02',$5)`, [`PF-${d.dosyaNo}`, d.kimlik, await teklifVer(d, 'Yat Sahibi'), `MF-${d.dosyaNo}`, o.K.ts]);
     expect((await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts)).json().hata).toContain('aynı değildir');
     expect((await o.ist('POST', fu, firmaC, { no: fn, tarih: '2026-11-02', kur: 40.5 })).statusCode).toBe(200);
+    // YG-420 (T-YG420): Ticari Sorumlu faturayı gerekçeyle iade eder; firma yeniden girer.
+    const iu = `/api/hakedis/${h}/fatura-iade`;
+    expect((await o.ist('POST', iu, await o.gir('ds'), { gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', iu, ts, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', iu, ts, { gerekce: 'Unvan hatalı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT firma_fatura_no, fatura_iade_gerekcesi FROM hakedis WHERE kimlik = $1`, [h])).rows[0]).toEqual({ firma_fatura_no: null, fatura_iade_gerekcesi: 'Unvan hatalı' });
+    expect((await o.ist('POST', iu, ts, { gerekce: 'G' })).statusCode).toBe(409);
+    expect((await o.ist('POST', fu, firmaC, { no: fn, tarih: '2026-11-02', kur: 40.5 })).statusCode).toBe(200);
     const r = await o.ist('POST', `/api/hakedis/${h}/odeme-talimati`, ts);
     expect(r.statusCode, r.body).toBe(200); expect(r.json().tahsilataBagli).toBe(false);
     const k = await o.kart('Firma Ödeme Talimatı', r.json().kimlik);
@@ -241,6 +274,7 @@ describe('hakediş ve firma ödemesi (YG-829, YG-834, YG-836, YG-838, YG-928)', 
     expect((await o.karar(k.kimlik, 'mfm', 'Onaya Gönder')).statusCode).toBe(200);
     expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM odeme_talimati WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Onaylandı');
+    expect((await o.ist('POST', iu, ts, { gerekce: 'G' })).statusCode).toBe(409); // talimat açıldıktan sonra iade yok
     // Ödeme kaydı odeme.test.ts: V-131, YG-830
     const u = `/api/firma-odemeleri/${r.json().kimlik}/odendi`; const my = await o.gir('my');
     expect((await o.ist('POST', u, await o.gir('ds'), { referans: 'B1' })).statusCode).toBe(404);

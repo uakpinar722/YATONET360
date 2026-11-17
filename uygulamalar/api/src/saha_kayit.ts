@@ -94,6 +94,17 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
   const rolVar = async (k: string, l: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, l])).rowCount);
   const isBelgesi = async (belge: unknown, isEmri: string) => typeof belge === 'string' && UUID.test(belge) && Boolean((await b.db.query(`SELECT 1 FROM belge x JOIN is_emri e ON e.kimlik = $2 WHERE x.kimlik = $1 AND ((x.bag_turu = 'İş Emri' AND x.bag_kimligi::text = e.kimlik::text) OR (x.bag_turu = 'Dosya' AND x.bag_kimligi::text = e.dosya_ref::text))`, [belge, isEmri])).rowCount);
 
+  // YG-420: firma, aktif iş emrinde öngördüğü gecikmeyi nedeni ve yeni tahmini bitiş tarihiyle bildirir; Dosya ve Saha Sorumlusuna gider.
+  s.post('/firma-portal/is-emri/:id/gecikme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { neden?: string; yeniTarih?: string };
+    if (!e) return yok(y);
+    if (!['Başlangıç Kontrolünde', 'Aktif', 'Çekinceli'].includes(e.statu)) return y.code(409).send({ hata: 'Gecikme bildirimi açık iş emrine yapılır.' });
+    if (!g.neden?.trim() || !g.yeniTarih || !/^\d{4}-\d{2}-\d{2}$/.test(g.yeniTarih)) return y.code(400).send({ hata: 'Gecikme nedenini ve yeni tahmini bitiş tarihini yazmanızı rica ederiz.' });
+    const r = (await b.db.query(`INSERT INTO firma_gecikme_bildirimi (is_emri_ref, kurulus_ref, neden, yeni_tarih, giren_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [e.kimlik, e.kurulus_ref, g.neden.trim(), g.yeniTarih, o.kullanici])).rows[0];
+    const al = (await b.db.query(`SELECT dosya_sorumlusu_ref k FROM dosya WHERE kimlik = $1 UNION SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((x) => x.k as string).filter(Boolean);
+    await bildir(b.db, { olay: `gecikme:${r.kimlik}`, kullanicilar: al, baslik: `${e.is_emri_no} · Firmadan Gecikme Bildirimi`, ozet: `${g.neden.trim()} · Yeni tahmini bitiş: ${g.yeniTarih.split('-').reverse().join('.')}`, oncelik: 'Yüksek' });
+    return { tamam: true };
+  });
   // YG-1574, YG-381: gün başına bir kayıt; zorunlu alanlar dolmadan gün kapanmaz; aynı görsel başka kayıtta kanıt olmaz.
   s.post('/firma-portal/is-emri/:id/gunluk', oturumlu, async (i, y) => {
     const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { faaliyet?: string; fotograflar?: string[]; olcumler?: string; engel?: string; sonrakiPlan?: string; sorumlu?: string; kapat?: boolean };

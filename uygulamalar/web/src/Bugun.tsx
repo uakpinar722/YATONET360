@@ -142,7 +142,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
     <>
       <div className="izgara-ust">
         {lgm && (
-          <div className="ozet kur"><b>Piyasa Kuru · Bilgi Amaçlıdır</b><div>EUR — · USD — · GBP —</div></div>
+          <KurSeridi />
         )}
         <div className="ozet duyuru">
           <b>Duyuru</b>
@@ -234,6 +234,14 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 interface Bildirim { kimlik: string; zaman: string; baslik: string; ozet: string | null; okunma_zamani: string | null; dosya_no?: string | null }
 
 /** YG-1626: tarih-saatiyle, okunmamışlar önde. */
+/** YG-1356: TCMB döviz satış kuru (bilgi amaçlı); kayıt yoksa tire. */
+function KurSeridi() {
+  const [l, setL] = useState<{ pb: string; kur: number; tarih: string }[]>([]);
+  useEffect(() => { istek<{ pb: string; kur: number; tarih: string }[]>('/doviz-kurlari').then(setL).catch(() => setL([])); }, []);
+  const k = (pb: string) => { const x = l.find((z) => z.pb === pb); return x ? x.kur.toLocaleString('tr-TR', { minimumFractionDigits: 4 }) : '—'; };
+  return <div className="ozet kur" data-t="kur-seridi"><b>TCMB Döviz Satış Kuru · Bilgi Amaçlıdır</b><div>EUR {k('EUR')} · USD {k('USD')} · GBP {k('GBP')}</div>{l[0] && <div className="not">{l[0].tarih.split('-').reverse().join('.')}</div>}</div>;
+}
+
 export function Bildirimler({ yenile }: { yenile: () => void }) {
   const [l, setL] = useState<Bildirim[] | null>(null);
   const [hata, setHata] = useState('');
