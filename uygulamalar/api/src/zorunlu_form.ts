@@ -29,6 +29,13 @@ const KOSULLU: (Form & { kosul: string })[] = [
   { kod: 'FR-ISG-001', ad: 'İzin Belgesi Kaydı · sıcak iş', kosul: `SELECT 1 FROM form_kaydi WHERE dosya_ref = $1 AND form_kodu = 'FR-ONR-004' LIMIT 1`, sql: ISE('calisma_izni_belgesi'), teklifSonrasi: true },
   { kod: 'FR-TIC-004', ad: 'Avans ve Mahsup İzleme · firma avansı', kosul: `SELECT 1 FROM firma_malzeme_avansi WHERE dosya_ref = $1 LIMIT 1`, sql: DOSYA('hakedis_mahsubu'), teklifSonrasi: true },
 ];
+/** YG-1531: gövde malzemesinden kontrol listesi ve ana branş eşlemesi; "Bilinmiyor" geçici yanıttır, eşleme vermez. */
+export const GOVDE_ESLEME: Record<string, { kontrolListesi: string | null; tur: string; branslar: string[] }> = {
+  'Fiber': { kontrolListesi: 'KL-TEK-003', tur: 'Kompozit', branslar: ['KOMPOZIT-01'] },
+  'Çelik': { kontrolListesi: 'KL-TEK-002', tur: 'Metal', branslar: ['CELIK-01'] },
+  'Alüminyum': { kontrolListesi: 'KL-TEK-002', tur: 'Metal', branslar: ['ALUMINYUM-01'] },
+  'Ahşap': { kontrolListesi: null, tur: 'Ahşap', branslar: ['AHSAP-01'] },
+};
 /** YG-636: onaylı teklif kalemlerinin ana branşına (kartela kodu öneki) göre istenen formlar. Ana branş → kontrol listesi, proses kaydı, test grubu. */
 const BRANS_FORM: { kod: string; ad: string; branslar: string[]; sql: string }[] = [
   ...([

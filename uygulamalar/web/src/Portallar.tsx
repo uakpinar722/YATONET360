@@ -257,7 +257,7 @@ export function Kullanicilarim() {
           <label htmlFor="kk-e">E-posta</label><input id="kk-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
           <label htmlFor="kk-t">Telefon</label><input id="kk-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
           <label htmlFor="kk-r">Rol</label><select id="kk-r" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>{['İzleyici', 'Talep Açan', 'Onaylayan'].map((x) => <option key={x}>{x}</option>)}</select>
-          {f.rol === 'Onaylayan' && <><label htmlFor="kk-s">Onay Sınırı (EUR)</label><input id="kk-s" inputMode="decimal" value={f.sinir} onChange={(e) => setF({ ...f, sinir: e.target.value })} /></>}
+          {f.rol === 'Onaylayan' && <div className="not">Onaylayan kullanıcılar kurumunuzun Ek-2 onay sınırı ({eur(v.ek2Siniri)}) içinde onay verir.</div>}
           <button className="btn2" disabled={!f.ad.trim() || !f.eposta.trim()} onClick={() => void yap(() => istek('/kurumsal/kullanici', { ad: f.ad, eposta: f.eposta, telefon: f.telefon, rol: f.rol, sinir: f.sinir ? Number(f.sinir.replace(',', '.')) : undefined }).then(() => { setF({ ad: '', eposta: '', telefon: '', rol: 'İzleyici', sinir: '' }); return { uyari: 'Kullanıcı eklendi, davet gönderildi.' }; }))}>Kullanıcı Ekle</button>
         </Blok>}
       </>}

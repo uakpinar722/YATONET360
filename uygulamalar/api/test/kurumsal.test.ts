@@ -39,9 +39,7 @@ describe('Kullanıcılarım (YG-1563)', () => {
   it('yetkili kullanıcı ekler, onay adımı yok, A53 bilgi alır; sınır Ek-2 üstü olamaz; yetkisiz ekleyemez', async () => {
     const u = '/api/kurumsal/kullanici';
     expect((await o.ist('POST', u, yC, { ad: 'A', eposta: 'a@filo.local', rol: 'Yönetici' })).statusCode).toBe(400);
-    expect((await o.ist('POST', u, yC, { ad: 'A', eposta: 'a@filo.local', rol: 'Onaylayan' })).statusCode).toBe(400);
-    const as = await o.ist('POST', u, yC, { ad: 'A', eposta: 'a@filo.local', rol: 'Onaylayan', sinir: 5000.01 }); expect(as.statusCode).toBe(400); expect(as.json().hata).toContain('Ek-2');
-    const r = await o.ist('POST', u, yC, { ad: 'Onaylayan Kişi', eposta: 'onay@filo.local', rol: 'Onaylayan', sinir: 1000 }); expect(r.statusCode, r.body).toBe(200);
+    const r = await o.ist('POST', u, yC, { ad: 'Onaylayan Kişi', eposta: 'onay@filo.local', rol: 'Onaylayan' }); expect(r.statusCode, r.body).toBe(200); // YG-1819: kullanıcı başına sınır yok
     expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.mpm, `kurumsal-kullanici:${r.json().kimlik}`])).rowCount).toBe(1);
     expect((await o.ist('POST', u, yC, { ad: 'İzleyici Kişi', eposta: 'izle@filo.local', rol: 'İzleyici' })).statusCode).toBe(200);
     const v = (await o.ist('GET', '/api/kurumsal/kullanicilar', yC)).json(); expect(v.kullanicilar).toHaveLength(3); expect(v.ek2Siniri).toBe('5000.00');
@@ -53,10 +51,10 @@ describe('Kullanıcılarım (YG-1563)', () => {
   it('onay yalnız Onaylayan, kendi ve Ek-2 sınırı içinde', async () => {
     const k = async (e: string) => (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE e_posta = $1`, [e])).rows[0].kimlik as string;
     expect(await onayEngeli(o.db, await k('izle@filo.local'), 10)).toContain('Onay yetkiniz');
-    expect(await onayEngeli(o.db, await k('onay@filo.local'), 1000)).toBeNull();
-    expect(await onayEngeli(o.db, await k('onay@filo.local'), 1000.01)).toContain('sınırınızın');
+    expect(await onayEngeli(o.db, await k('onay@filo.local'), 5000)).toBeNull(); // YG-1819: kurum düzeyinde tek tutar
+    expect(await onayEngeli(o.db, await k('onay@filo.local'), 5000.01)).toContain('Ek-2');
     await o.sup.query(`UPDATE kurumsal_kurum SET ek2_onay_siniri = 500 WHERE kimlik = $1`, [kurum]);
-    expect(await onayEngeli(o.db, await k('onay@filo.local'), 600)).toContain('sınırınızın');
+    expect(await onayEngeli(o.db, await k('onay@filo.local'), 600)).toContain('Ek-2');
     await o.sup.query(`UPDATE kurumsal_kurum SET ek2_onay_siniri = 5000 WHERE kimlik = $1`, [kurum]);
     expect(await onayEngeli(o.db, o.K.ds!, 10)).toBeNull();
   });

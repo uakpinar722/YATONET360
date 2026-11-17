@@ -114,6 +114,9 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <label className="kutu"><input type="checkbox" checked={ku.acil} onChange={(e) => setKu({ ...ku, acil: e.target.checked })} /><span>Acil</span></label>
       <button className="btn2 kucuk" disabled={!ku.saglayici} onClick={() => void yap(() => istek(`/dosya/${id}/kurtarma`, ku), 'Kurtarma operasyonu açıldı; yat sahibi onayı gönderildi.')}>Operasyon Aç</button>
 
+      <div className="bolum">Sigortalı Dosyada Yat Sahibi İtirazı</div>
+      <div className="not">Yat sahibi sigorta onayıyla yürüyen işe itiraz ederse kaydedilir: çalışmalar geçici olarak durdurulur, yat sahibine onaylı itiraz bildirimi gider ve Dosya Sorumlusuna arama görevi açılır.</div>
+      <div className="dugmeler"><button className="btn hayir kucuk" onClick={() => { if (window.confirm('Yat sahibi itirazı kaydedilsin ve çalışmalar geçici olarak durdurulsun mu?')) void yap(() => istek(`/dosya/${id}/itiraz`, {}), 'İtiraz kaydedildi; çalışmalar durduruldu.'); }}>Yat Sahibi İtirazını Kaydet</button></div>
       <GarantiKarari id={id} yap={yap} />
       <TeslimIslemleri id={id} yap={yap} />
       <SahaIslemleri id={id} yap={yap} />
@@ -171,6 +174,7 @@ function GarantiKarari({ id, yap }: { id: string; yap: Yap }) {
 
 function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   const [bg, setBg] = useState(''); // YG-1867
+  const [islak, setIslak] = useState(''); // YG-1433
   const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null); const [pf, setPf] = useState({ belge: '', aciklama: '' });
   const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
   const yp = () => istek<typeof parca>(`/dosya/${id}/sokulen-parca`).then(setParca);
@@ -229,6 +233,8 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <label htmlFor="ts-a">Teslim Alan</label><input id="ts-a" value={tes.alici} onChange={(e) => setTes({ ...tes, alici: e.target.value })} />
     <BelgeSec ad="Teslim Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={foto} sec={setFoto} />
     <button className="btn2 kucuk" disabled={!tes.alici.trim() || !foto} onClick={() => void yap(() => istek(`/dosya/${id}/teslim-onaysiz`, { ...tes, belge: foto }), 'Teslim edildi, onay verilmedi olarak kaydedildi.')}>Onaysız Teslimi Kaydet</button>
+    <BelgeSec ad="Islak İmzalı Teslim Tutanağı (Taranmış)" bagTuru="Dosya" bagKimligi={id} deger={islak} sec={setIslak} />
+    <button className="btn2 kucuk" disabled={!tes.alici.trim() || !islak || tes.aliciTuru === 'Marina veya Tersane'} onClick={() => void yap(() => istek(`/dosya/${id}/teslim-islak-imza`, { ...tes, belge: islak }), 'Islak imzalı tutanakla teslim kaydedildi.')}>Islak İmzalı Teslimi Kaydet</button>
     <button className="btn2 kucuk" disabled={!tes.alici.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/tam-ziya-teslim`, { teslimAlan: `${tes.aliciTuru}: ${tes.alici.trim()}` }), 'Tam ziya teslimi kaydedildi; kapanışı başlatabilirsiniz.')}>Tam Ziya Teslimini Kaydet</button>
 
     <div className="bolum">Yat Teslim Alma ve Envanter Tutanağı (Yat Onarım Sözleşmesi Ek-2)</div>

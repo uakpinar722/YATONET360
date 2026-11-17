@@ -456,11 +456,14 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-903, YG-904, YG-1460: havale, POS, ödeme bağlantısı; çek/senet yok; kısmi tahsilat; kart üst sınırı 20.000,00 EUR.
   s.post('/tahsilat', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { fatura?: string; odemeTalebi?: string; tutar?: number; tarih?: string; kanal?: string; referans?: string; ucuncuKisi?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { fatura?: string; odemeTalebi?: string; tutar?: number; tarih?: string; kanal?: string; referans?: string; ucuncuKisi?: string; taksit?: number };
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Tahsilatı Ticari Sorumlu kaydeder.' });
     if (!['Havale', 'POS', 'Ödeme Bağlantısı'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Ödeme kanalını havale, POS veya ödeme bağlantısı olarak seçmenizi rica ederiz.' });
     if (!(Number(g.tutar) > 0) || !g.tarih) return y.code(400).send({ hata: 'Tutar ve tarih zorunludur.' });
     if (g.kanal !== 'Havale' && Number(g.tutar) > 20000) return y.code(400).send({ hata: '20.000,00 EUR karşılığı üzerindeki tahsilatta havale kullanmanızı rica ederiz.' });
+    // YG-1460: POS tek çekimdir (taksit yok); POS ve ödeme bağlantısı banka/ödeme kuruluşu seçimine kadar kapalıdır, o zamana kadar havale (IBAN) kullanılır.
+    if (g.taksit !== undefined && Number(g.taksit) !== 1) return y.code(400).send({ hata: 'POS ile tek çekim yapılır; taksit uygulanmaz.' });
+    if (g.kanal !== 'Havale' && Number((await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'pos_odeme_baglantisi_acik'`)).rows[0]?.deger ?? 0) !== 1) return y.code(409).send({ hata: 'POS ve ödeme bağlantısı banka seçimi tamamlanana kadar kapalıdır; havale (IBAN) ile tahsilat kaydediniz.' });
     if (g.ucuncuKisi) { // YG-916: üçüncü kişi ödemesi onaylı kayda bağlıdır
       const u = UUID.test(g.ucuncuKisi) ? (await b.db.query(`UPDATE ucuncu_kisi_odeme SET durum = 'Kullanıldı' WHERE kimlik = $1 AND durum = 'Onaylandı' AND tutar_eur >= $2 RETURNING kimlik`, [g.ucuncuKisi, g.tutar])).rows[0] : undefined;
       if (!u) return y.code(409).send({ hata: 'Üçüncü kişi ödemesi için onay bekleniyor.' });

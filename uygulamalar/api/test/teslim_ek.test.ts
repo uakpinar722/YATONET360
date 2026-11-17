@@ -77,6 +77,14 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     expect((await o.sup.query(`SELECT durum, alici_turu FROM teslim_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0]).toEqual({ durum: 'Teslim Edildi - Onay Verilmedi', alici_turu: 'Marina veya Tersane' });
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE 'bld49:%'`)).rowCount).toBeGreaterThan(0);
   });
+  it('ıslak imzalı taranmış tutanakla teslim onaylı sayılır (T-YG1433-ISLAK)', async () => {
+    const d = await dosya(); const ds = await o.gir('ds');
+    await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref) VALUES ($1,$2)`, [d.kimlik, o.K.ds]);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teslim-islak-imza`, ds, { aliciTuru: 'Yat Sahibi', alici: 'Sahip' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teslim-islak-imza`, ds, { aliciTuru: 'Yat Sahibi', alici: 'Sahip', belge: await belge(d.kimlik) }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.sup.query(`SELECT durum, islak_imzali_belge_ref IS NOT NULL b FROM teslim_kaydi WHERE dosya_ref = $1`, [d.kimlik])).rows[0];
+    expect(k).toEqual({ durum: 'Teslim Edildi', b: true });
+  });
   it('yasal bekleme bitince BLD-50 ve görev; erken ifada yok', async () => {
     const d = await dosya(); const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',20,'Karar','Tam Onay',$3) RETURNING kimlik`, [`${d.dosyaNo}-T`, d.kimlik, o.K.ts])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis, erken_ifa_onayi) VALUES ($1,$2,now() - interval '20 days',now() - interval '20 days',now() - interval '1 day',false)`, [t, d.kimlik]);

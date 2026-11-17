@@ -108,6 +108,7 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     expect((await th({ tutar: 700 })).json()).toEqual({ durum: 'Kısmi Tahsil', kalan: 500 });
     expect((await th({ tutar: 500 })).json()).toEqual({ durum: 'Tahsil Edildi', kalan: 0 });
     expect((await o.ist('POST', '/api/tahsilat', c, { fatura: id, tarih: '2026-11-20', kanal: 'POS', tutar: 20000.01 })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/tahsilat', c, { fatura: id, tarih: '2026-11-20', kanal: 'POS', tutar: 100 })).statusCode).toBe(409); // T-YG1460-POS: banka seçimine kadar kapalı
   });
   it('hasar numarası yoksa sigortaya proforma kesilmez', async () => {
     const d = await dosya('Sigorta Şirketi'); await o.sup.query(`UPDATE dosya_sigorta_kaydi SET sigorta_hasar_dosya_no = NULL WHERE dosya_ref = $1`, [d.kimlik]);

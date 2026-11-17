@@ -182,6 +182,27 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     });
     return { tamam: true };
   });
+  // YG-1433: teslim alan YATONET 360 onayı veremiyorsa (sistem erişimi yok) ıslak imzalı tutanak taranıp yüklenir; teslim onaylı sayılır, kayıt belge sürümüyle tutulur.
+  s.post('/dosya/:id/teslim-islak-imza', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { aliciTuru?: string; alici?: string; belge?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!['Yat Sahibi', 'Yetkili Temsilci'].includes(g.aliciTuru ?? '') || !g.alici?.trim()) return y.code(400).send({ hata: 'Teslim alanı girmenizi rica ederiz.' });
+    if (!(await dosyaBelgesi(g.belge, id))) return y.code(400).send({ hata: 'Islak imzalı taranmış teslim tutanağını yükleyip seçiniz.' });
+    if (await (await import('./belge_kural.js')).bilgiBelgesiMi(b.db, g.belge!)) return y.code(409).send({ hata: (await import('./belge_kural.js')).BILGI_HATA }); // YG-622
+    if (g.aliciTuru === 'Yetkili Temsilci' && !(await b.db.query(`SELECT 1 FROM yetki_kaydi y JOIN dosya_tarafi x ON x.kimlik = y.dosya_tarafi_ref WHERE y.dosya_ref = $1 AND lower(x.kisi_adi_soyadi) = lower($2) AND y.yetki_durumu = 'Geçerli' AND (y.gecerlilik_bitisi IS NULL OR y.gecerlilik_bitisi >= current_date)`, [id, g.alici.trim()])).rowCount) return y.code(409).send({ hata: 'Yetkili temsilcinin geçerli yetki kaydı bulunmamaktadır.' }); // YG-414
+    const k = (await b.db.query(`SELECT kimlik FROM teslim_kaydi WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' LIMIT 1`, [id])).rows[0];
+    if (!k) return y.code(409).send({ hata: 'Onay bekleyen teslim kaydı yoktur.' });
+    return islem(async (c) => {
+      await c.query(`UPDATE teslim_kaydi SET durum = 'Teslim Edildi', teslim_alan = $2, alici_turu = $3, islak_imzali_belge_ref = $4, teslim_zamani = now() WHERE kimlik = $1`, [k.kimlik, g.alici!.trim(), g.aliciTuru, g.belge]);
+      await c.query(`UPDATE onay_talebi SET durum = 'İptal' WHERE dosya_ref = $1 AND ony_kod = 'ONY-27' AND durum = 'Bekliyor'`, [id]);
+      const { belgeUret } = await import('./belge_uret.js');
+      await belgeUret(c, { tur: 'Teslim Tutanağı', nesne: k.kimlik, dosya: id });
+      await belgeUret(c, { tur: 'Garanti Belgesi', nesne: k.kimlik, dosya: id });
+      await (await import('./portallar.js')).tesisSerbestBirak(c, id, g.alici!.trim()); // YG-554
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teslim – Islak İmzalı Tutanak', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { alici: g.alici, tur: g.aliciTuru, belge: g.belge }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { durum: 'Teslim Edildi' };
+    });
+  });
   s.post('/dosya/:id/teslim-onaysiz', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { aliciTuru?: string; alici?: string; belge?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);

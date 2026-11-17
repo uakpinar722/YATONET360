@@ -21,13 +21,13 @@ export async function talepEngeli(db: Db, k: string): Promise<string | null> {
   return u?.rol === 'İzleyici' ? 'Talep açma yetkiniz bulunmamaktadır; kurum yetkilinizle görüşmenizi rica ederiz.' : null;
 }
 
-/** YG-1563, YG-1070: onayı yalnız Onaylayan rolü, kendi sınırı içinde verir; sınır Ek-2 sınırını aşamaz. */
+/** YG-1563, YG-1070, YG-1819: onayı yalnız Onaylayan rolü verir; onay sınırı kurum düzeyinde tek tutardır (Ek-2 sınırı), kullanıcı başına sınır yoktur. */
 export async function onayEngeli(db: Db, k: string, tutar: number | null): Promise<string | null> {
   const u = await kurumsalKullanici(db, k);
   if (!u) return null;
   if (u.rol !== 'Onaylayan') return 'Onay yetkiniz bulunmamaktadır; kurumunuzun onaylayan kullanıcısından onay bekleniyor.';
-  const s = Math.min(Number(u.onay_siniri ?? 0), Number(u.ek2_onay_siniri));
-  return tutar !== null && tutar > s ? 'Tutar onay sınırınızın üzerindedir; kurumunuzun yetkili onaylayanından onay bekleniyor.' : null;
+  const s = Number(u.ek2_onay_siniri);
+  return tutar !== null && tutar > s ? 'Tutar kurumunuzun Ek-2 onay sınırının üzerindedir; onay LGM ile ayrıca kararlaştırılır.' : null;
 }
 
 const davetGonder = async (c: PoolClient, b: Baglam, g: { ad: string; eposta: string; telefon?: string; unvan: string; olusturan: string }) => {
@@ -76,14 +76,12 @@ export function kurumsalYollari(s: FastifyInstance, b: Baglam) {
     if (!u) return yok(y);
     if (!u.yetkili) return y.code(403).send({ hata: 'Kullanıcıyı kurum yetkiliniz ekler.' });
     if (!g.ad?.trim() || !g.eposta || !EPOSTA.test(g.eposta.trim()) || !ROLLER.includes(g.rol ?? '')) return y.code(400).send({ hata: 'Ad soyad, geçerli e-posta ve rolü girmenizi rica ederiz.' });
-    if (g.rol === 'Onaylayan' && !(Number(g.sinir) >= 0)) return y.code(400).send({ hata: 'Onaylayan için onay sınırını girmenizi rica ederiz.' });
-    if (g.rol === 'Onaylayan' && Number(g.sinir) > Number(u.ek2_onay_siniri)) return y.code(400).send({ hata: 'Onay sınırını kurumunuzun Ek-2 sınırına eşit veya altında belirlemenizi rica ederiz.' });
     if (await adresVar(g.eposta.trim())) return y.code(409).send({ hata: 'Bu e-posta adresiyle kayıtlı hesap bulunmaktadır.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
       const kim = await davetGonder(c, b, { ad: g.ad.trim(), eposta: g.eposta.trim(), telefon: g.telefon?.trim() || undefined, unvan: u.unvan, olusturan: o.kullanici });
-      await c.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, ekleyen_ref) VALUES ($1,$2,$3,$4,$5)`, [kim, u.kurum_ref, g.rol, g.rol === 'Onaylayan' ? g.sinir : null, o.kullanici]);
+      await c.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, ekleyen_ref) VALUES ($1,$2,$3,$4,$5)`, [kim, u.kurum_ref, g.rol, null, o.kullanici] /* YG-1819: kullanıcı başına sınır tutulmaz */);
       await bildir(c, { olay: `kurumsal-kullanici:${kim}`, kullanicilar: await rolSahipleri(c, await rolId(c, MPM)), baslik: `${u.unvan} · Yeni Kullanıcı`, ozet: `${g.ad.trim()} · ${g.rol}` });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Kullanıcı Eklendi', nesneTuru: 'Kullanıcı', nesneKimligi: kim, yeni: { rol: g.rol }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
       await c.query('COMMIT');

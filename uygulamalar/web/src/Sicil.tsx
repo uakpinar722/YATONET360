@@ -8,7 +8,7 @@ import { FirmaOzet } from './FirmaOzet';
 import { FirmaBrans } from './FirmaBrans';
 import { istek, type Ben } from './api';
 
-interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kayit_asamasi: string; ag_statusu: string }
+interface Firma { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; kayit_asamasi: string; ag_statusu: string; uzun_sure_guncellenmemis?: boolean }
 
 /** YG-344, YG-354, YG-928: firma sicili; IBAN karantinada başlar, geri arama ve iki onayla geçerli olur. */
 export function FirmaSicil({ ben }: { ben: Ben }) {
@@ -37,7 +37,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
       </div>
       <div className="bolum">Kayıtlar</div>
       {l.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
-      {l.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Sicil No</th><th>Unvan</th><th>Rol</th><th>Durum</th><th /></tr></thead><tbody>{l.map((f) => <tr key={f.kimlik}><td data-ad="Sicil No">{f.sicil_no}</td><td data-ad="Unvan">{f.ticari_unvan}</td><td data-ad="Rol">{f.kayit_rolu}</td><td data-ad="Durum">{f.kayit_asamasi} · {f.ag_statusu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setSecili(f.kimlik)}>Seç</button></td></tr>)}</tbody></table></div>}
+      {l.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Sicil No</th><th>Unvan</th><th>Rol</th><th>Durum</th><th /></tr></thead><tbody>{l.map((f) => <tr key={f.kimlik}><td data-ad="Sicil No">{f.sicil_no}</td><td data-ad="Unvan">{f.ticari_unvan}</td><td data-ad="Rol">{f.kayit_rolu}</td><td data-ad="Durum">{f.kayit_asamasi} · {f.ag_statusu}{f.uzun_sure_guncellenmemis ? ' · ⚠ Uzun Süre Güncellenmemiş' : ''}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setSecili(f.kimlik)}>Seç</button></td></tr>)}</tbody></table></div>}
       {secili && <>
         <div className="bolum">{l.find((f) => f.kimlik === secili)?.ticari_unvan}</div>
         <FirmaOzet id={secili} />
