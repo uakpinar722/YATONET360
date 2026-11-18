@@ -91,6 +91,9 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     return { turler: [...(await planlanabilir(o.kullanici)).map((c) => ({ kod: c.kod, ad: c.ad, katilimcilar: c.katilimcilar })), ...dosyaTurleri], kisiler: kisiler.rows };
   });
 
+  // YG-1408: dış katılımcı portalda kendi toplantılarını görür; gündem ve kararlar iç kayıttır, gösterilmez.
+  s.get('/portal/toplantilarim', oturumlu, async (i) => (await b.db.query(`SELECT t.kimlik, t.konu, t.baslangic, t.sure_dk, t.durum, t.gorusme_baglantisi, d.dosya_no FROM toplanti t JOIN toplanti_katilimci p ON p.toplanti_ref = t.kimlik LEFT JOIN dosya d ON d.kimlik = t.dosya_ref
+      WHERE p.kullanici_ref = $1 AND t.durum = 'Planlandı' AND t.baslangic > now() - interval '2 hours' ORDER BY t.baslangic LIMIT 20`, [i.oturum!.kullanici])).rows);
   s.get('/toplanti', oturumlu, async (i, y) => {
     const o = i.oturum!; const e = lgmDegil(o.grup, y); if (e) return e;
     const { rows } = await b.db.query(
@@ -129,8 +132,11 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (secilen.some((x) => x.katilim && !KATILIM.includes(x.katilim))) return y.code(400).send({ hata: 'Geçersiz katılım durumu.' });
     const liste = new Map<string, string>(secilen.map((x) => [x.kullanici, x.katilim ?? 'Zorunlu']));
     if (liste.size) {
-      const v = await b.db.query(`SELECT count(*)::int n FROM kullanici_hesabi WHERE kimlik = ANY($1) AND kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif'`, [[...liste.keys()]]);
-      if (v.rows[0].n !== liste.size) return y.code(400).send({ hata: 'Katılımcı geçersizdir.' });
+      const v = await b.db.query(`SELECT kimlik, kullanici_grubu FROM kullanici_hesabi WHERE kimlik = ANY($1) AND hesap_durumu = 'Aktif'`, [[...liste.keys()]]);
+      if (v.rowCount !== liste.size) return y.code(400).send({ hata: 'Katılımcı geçersizdir.' });
+      // YG-1408: dış katılımcı yalnız dosyaya bağlı toplantıya ve dosyaya erişimi varsa eklenir.
+      const { dosyaErisimi } = await import('./dosya.js');
+      for (const k of v.rows.filter((x) => x.kullanici_grubu !== 'LGM İç Rolü')) if (!g.dosya || !(await dosyaErisimi(b.db, k.kimlik, g.dosya))) return y.code(400).send({ hata: 'Dış katılımcı yalnız erişimi olduğu dosyanın toplantısına eklenir.' });
     }
     const oto = await b.db.query(`SELECT DISTINCT a.kullanici_ref k FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND h.hesap_durumu = 'Aktif' AND (r.rol_adi = ANY($1) OR r.kademe = ANY($2))`, [c.oto_roller, c.oto_kademeler]);
     for (const r of oto.rows) if (!liste.has(r.k)) liste.set(r.k, 'Zorunlu');

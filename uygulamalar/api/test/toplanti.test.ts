@@ -87,6 +87,9 @@ describe('planlama yetkisi ve başkan (YG-579, YG-583)', () => {
     expect((await planla(d, { ...k, baslangic: ileri(-5) })).statusCode).toBe(400);
     expect((await planla(d, { ...k, sureDk: 1 })).statusCode).toBe(400);
     expect((await planla(d, { katilimcilar: [{ kullanici: K[YAT] }] })).statusCode).toBe(400);
+    // YG-1408 (T-YG1408): dış kullanıcı dosyasız toplantıya eklenmez; portal listesi kendi toplantılarıdır
+    expect((await planla(d, { katilimcilar: [{ kullanici: K[YAT] }] })).json().hata).toContain('Dış katılımcı');
+    expect((await ist('GET', '/api/portal/toplantilarim', await gir(YAT))).json()).toEqual([]);
     expect((await planla(d, { katilimcilar: [{ kullanici: K[BIM], katilim: 'Belki' }] })).statusCode).toBe(400);
   });
   it('en üst kademedeki LGM katılımcısı başkan olur; düzenleyen üst kademe varken başkanlık edemez', async () => {

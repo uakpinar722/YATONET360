@@ -389,6 +389,9 @@ export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' |
       <h1>{bolum === 'siparis' ? 'Siparişler' : bolum === 'teklif' ? 'Teklifler' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
       {v && bolum === 'ana' && <DurumSayilari ogeler={[['Teklif Talebi', v.talepler.length], ['Açık Sipariş', v.siparisler.filter((x) => !['Teslim Alındı', 'Kapandı', 'İptal'].includes(x.statu)).length], ['Ödeme Bekleyen Fatura', v.faturalar.filter((x) => x.odeme_durumu !== 'Ödendi').length]]} />}
       {bolum !== 'teklif' && <TedarikciUygunsuzluk yap={yap} />}
+      {v && bolum === 'ana' && (() => { /* YG-1577: kabul edilmiş, sevki yapılmamış ve teslimi 7 gün içinde olan siparişler */ const bugun = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' }); const sinir = new Date(Date.now() + 7 * 86_400_000).toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' });
+        const y = v.siparisler.filter((s) => s.tedarikci_kabul && !s.sevk_var && !['Teslim Alındı', 'Kapandı', 'İptal'].includes(s.statu) && (s.tedarikci_teslim_tarihi ?? s.teslim_tarihi) && (s.tedarikci_teslim_tarihi ?? s.teslim_tarihi)! <= sinir).sort((a, c) => String(a.tedarikci_teslim_tarihi ?? a.teslim_tarihi).localeCompare(String(c.tedarikci_teslim_tarihi ?? c.teslim_tarihi)));
+        return <Blok baslik="Yaklaşan Sevkiyatlar">{y.length === 0 ? <div className="not">7 gün içinde sevki gereken sipariş bulunmamaktadır.</div> : y.map((s) => { const tt = String(s.tedarikci_teslim_tarihi ?? s.teslim_tarihi); return <div key={s.kimlik} className={tt < bugun ? 'hata' : undefined}>{s.siparis_no} · Teslim: {tt.split('-').reverse().join('.')}{tt < bugun ? ' · Gecikti' : ''}</div>; })}</Blok>; })()}
       {bolum !== 'siparis' && <Blok baslik="Teklif Talepleri">
         {bekT.length === 0 && <div className="not">Bekleyen teklif talebi bulunmamaktadır.</div>}
         {bekT.map((t) => (

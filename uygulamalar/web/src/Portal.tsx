@@ -58,9 +58,17 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
 }
 
 /** YG-1658: konum 10 dakikada bir iletilir; izin yoksa yatın kayıtlı konumu; kullanıcı her an durdurabilir. */
+/** YG-1408: dış katılımcının toplantıları (dosya, zaman, görüşme bağlantısı). */
+export function PortalToplantilar() {
+  const [l, setL] = useState<{ kimlik: string; konu: string; baslangic: string; sure_dk: number; gorusme_baglantisi: string | null; dosya_no: string | null }[]>([]);
+  useEffect(() => { void istek<typeof l>('/portal/toplantilarim').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Toplantılarım</div>{l.map((t) => <div key={t.kimlik} className="ozet kart-sol"><b>{t.konu}</b><div className="not">{t.dosya_no ? `${t.dosya_no} · ` : ''}{new Date(t.baslangic).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} · {t.sure_dk} dk{t.gorusme_baglantisi ? <> · <a href={t.gorusme_baglantisi} target="_blank" rel="noreferrer">Görüşmeye Katıl</a></> : ''}</div></div>)}</>;
+}
+
 /** YG-1656: A1, A2, A3, A6, A7 ve A8 ana ekranlarında her zaman görünen Acil Durum bölümü. */
 export function AcilDurumBolumu() {
-  return <><div className="bolum">Acil Durum</div>
+  return <><PortalToplantilar /><div className="bolum">Acil Durum</div>
     <div className="uyari">Yat su alıyor, sürükleniyor, yangın sonrası durum varsa veya bağlama emniyeti tehlikedeyse hemen arayınız. Acil durumlarda lütfen önce 112&apos;yi arayınız.</div>
     <AcilDugmesi /></>;
 }
