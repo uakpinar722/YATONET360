@@ -19,11 +19,13 @@ export const haftaAnahtari = (d: Date) => {
 /** YG-807: her hafta Hukuk ve Uyum Direktörüne Resmî Gazete taraması; altı ayda bir (Ocak ve Temmuz) uyum matrisi gözden geçirme görevi. */
 export async function uyumTaramaGorevi(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0; const hud = await rolId(db, HUD);
+  // YG-1695: haftalık tarama Hukuk ve Uyum Uzmanının görevidir; Uzman yoksa Direktöre düşer.
+  const uzman = await rolId(db, 'Hukuk ve Uyum Uzmanı'); const taramaSahibi = (await db.query(`SELECT 1 FROM rol_atamasi WHERE rol_ref = $1 AND atama_durumu = 'Aktif' LIMIT 1`, [uzman])).rowCount ? uzman : hud;
   const h = haftaAnahtari(simdi);
   if (await birKez(db, 'resmi-gazete', h)) {
     const t = (await db.query(`INSERT INTO resmi_gazete_tarama (donem) VALUES ($1) ON CONFLICT (donem) DO UPDATE SET donem = EXCLUDED.donem RETURNING kimlik`, [h])).rows[0].kimlik as string;
     const cuma = new Date(simdi); cuma.setDate(cuma.getDate() + ((5 - cuma.getDay() + 7) % 7)); cuma.setHours(18, 0, 0, 0);
-    await kartAc(db, { tur: TARAMA, kategori: 'gorev', baslik: `${TARAMA} · ${h}`, ozet: 'Haftanın Resmî Gazete yayınlarını tarayınız; değişikliği ilgili uyum kuralına işleyiniz.', sahipRol: hud, sonZaman: cuma, nesneTuru: TARAMA, nesneKimligi: t }); n++;
+    await kartAc(db, { tur: TARAMA, kategori: 'gorev', baslik: `${TARAMA} · ${h}`, ozet: 'Haftanın Resmî Gazete yayınlarını tarayınız; değişikliği ilgili uyum kuralına işleyiniz.', sahipRol: taramaSahibi, sonZaman: cuma, nesneTuru: TARAMA, nesneKimligi: t }); n++;
   }
   if ((simdi.getMonth() === 0 || simdi.getMonth() === 6) && (await birKez(db, 'uyum-matrisi', `${simdi.getFullYear()}-${simdi.getMonth() + 1}`))) {
     await kartAc(db, { tur: MATRIS, kategori: 'gorev', baslik: `${MATRIS} · ${simdi.getMonth() === 0 ? 'Ocak' : 'Temmuz'} ${simdi.getFullYear()}`, ozet: 'Uyum matrisini (MUM satırları) gözden geçiriniz.', sahipRol: hud, sonZaman: new Date(simdi.getFullYear(), simdi.getMonth() + 1, 0, 18), nesneTuru: MATRIS, nesneKimligi: `${simdi.getFullYear()}-${simdi.getMonth() + 1}` }); n++;
@@ -34,7 +36,7 @@ export async function uyumTaramaGorevi(db: Pool, simdi = new Date()): Promise<nu
 export function uyumTaramaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
-  const hudMu = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2 LIMIT 1`, [k, HUD])).rowCount);
+  const hudMu = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, [HUD, 'Hukuk ve Uyum Uzmanı']])).rowCount); // YG-1695: Uzman da taramayı yürütür
 
   s.get('/resmi-gazete', oturumlu, async (i, y) => {
     if (!(await hudMu(i.oturum!.kullanici))) return yok(y);

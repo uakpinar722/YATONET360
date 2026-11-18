@@ -485,6 +485,15 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Ödemesi Yat Sahibine', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: g.dayanak.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-1610: ekip süre uyarıları; nihai kabulden 48 saat içinde proforma, muhasebeye iletilen proformada 48 saat içinde fatura bilgisi.
+  s.get('/muhasebe-ekip-sureleri', oturumlu, async (i, y) => {
+    const r = await roller(i.oturum!.kullanici); if (!r.some((x) => ['Muhasebe ve Finans Yöneticisi', MFM, 'Ticari İşler Direktörü'].includes(x))) return yok(y);
+    const proforma = (await b.db.query(`SELECT d.kimlik, d.dosya_no, k.olusturma_zamani + interval '48 hours' son FROM kabul_kaydi k JOIN dosya d ON d.kimlik = k.dosya_ref
+      WHERE k.kabul_turu = 'Nihai Kabul' AND d.statu <> 'Kapalı' AND NOT EXISTS (SELECT 1 FROM musteri_faturasi f WHERE f.dosya_ref = d.kimlik AND f.olusturma_zamani >= k.olusturma_zamani) ORDER BY son LIMIT 50`)).rows;
+    const fatura = (await b.db.query(`SELECT f.kimlik, d.dosya_no, f.proforma_no, f.muhasebe_iletim_zamani + interval '48 hours' son FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref
+      WHERE f.durum = 'Muhasebeye İletildi' AND f.fatura_no IS NULL AND f.muhasebe_iletim_zamani IS NOT NULL ORDER BY son LIMIT 50`)).rows;
+    return [...proforma.map((x) => ({ kimlik: x.kimlik, baslik: `${x.dosya_no} · Proforma (Nihai Kabulden 48 Saat)`, son: x.son })), ...fatura.map((x) => ({ kimlik: x.kimlik, baslik: `${x.dosya_no} · ${x.proforma_no} · Fatura Bilgisi (48 Saat)`, son: x.son }))].sort((a, c) => +new Date(a.son) - +new Date(c.son));
+  });
   // YG-1608: vadesi geçen faturalar; gecikme günü, son takip basamağı ve yazılı ihtar (15. gün basamağı) zamanı.
   s.get('/tahsilat-izleme', oturumlu, async (i, y) => {
     const r = await roller(i.oturum!.kullanici); if (!r.some((x) => [TICARI, 'Ticari İşler Direktörü', MFM].includes(x))) return yok(y);

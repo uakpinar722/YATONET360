@@ -18,3 +18,18 @@ export function Entegrasyonlar() {
     {v.hazirlar && <>{ALAN.map(([k, et]) => <span key={k}><label htmlFor={`en-${k}`}>{et}</label><input id={`en-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></span>)}<label htmlFor="en-bs">Bilgi Sınıfı</label><select id="en-bs" value={f.bilgiSinifi} onChange={(e) => setF({ ...f, bilgiSinifi: e.target.value })}>{v.siniflar.map((x) => <option key={x}>{x}</option>)}</select>
       <button className="btn2 kucuk" onClick={() => is(istek('/entegrasyon', f), 'Tanım onaya gönderildi.')}>Onaya Gönder</button></>}</details>;
 }
+
+/** YG-1309: karantinadaki entegrasyon kayıtları; yetkili karar ve gerekçeyle elle uzlaştırır (en yeni zaman damgası kendiliğinden doğru sayılmaz). */
+export function EntegrasyonKarantina() {
+  const [l, setL] = useState<{ kimlik: string; ad: string; dis_kimlik: string | null; beklenen_sonuc: string | null; hata: string | null; olusturma_zamani: string }[] | null>(null); const [g, setG] = useState<Record<string, { karar: string; gerekce: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/entegrasyon/karantina').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  const al = (id: string) => g[id] ?? { karar: '', gerekce: '' };
+  return <details><summary>Entegrasyon Karantinası · {l.length}</summary>{m && <div className="not" role="status">{m}</div>}
+    {l.length === 0 && <div className="not">Karantinada kayıt bulunmamaktadır.</div>}
+    {l.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad}{x.dis_kimlik ? ` · ${x.dis_kimlik}` : ''} · {x.hata ?? '—'}{x.beklenen_sonuc ? ` · Beklenen: ${x.beklenen_sonuc}` : ''}</span>
+      <div className="tam"><label htmlFor={`ek-k-${x.kimlik}`}>Karar</label><select id={`ek-k-${x.kimlik}`} value={al(x.kimlik).karar} onChange={(e) => setG({ ...g, [x.kimlik]: { ...al(x.kimlik), karar: e.target.value } })}><option value="">Seçiniz</option>{['Sistem Kaydı Doğru', 'Karşı Kayıt Doğru', 'Elle Düzeltildi', 'Geçersiz'].map((k) => <option key={k}>{k}</option>)}</select>
+        <label htmlFor={`ek-g-${x.kimlik}`}>Gerekçe</label><input id={`ek-g-${x.kimlik}`} value={al(x.kimlik).gerekce} onChange={(e) => setG({ ...g, [x.kimlik]: { ...al(x.kimlik), gerekce: e.target.value } })} />
+        <button className="btn2 kucuk" disabled={!al(x.kimlik).karar || !al(x.kimlik).gerekce.trim()} onClick={() => void istek(`/entegrasyon/kayit/${x.kimlik}/uzlastir`, al(x.kimlik)).then(() => { setM('Kayıt uzlaştırıldı.'); return yk(); }).catch((e) => setM(e.message))}>Uzlaştırmayı Kaydet</button></div></div>)}</details>;
+}

@@ -52,7 +52,7 @@ import { SablonMetinleri } from './SablonMetinleri';
 import { SozlesmeTakip } from './SozlesmeTakip';
 import { NakitTahmini } from './NakitTahmini';
 import { YonetimPanosu } from './YonetimPanosu';
-import { Entegrasyonlar } from './Entegrasyon';
+import { EntegrasyonKarantina, Entegrasyonlar } from './Entegrasyon';
 import { KartelaNorm } from './KartelaNorm';
 import { TopluDuzeltme } from './TopluDuzeltme';
 import { Kesinti } from './Kesinti';
@@ -927,6 +927,7 @@ export function IdariIslemler() {
       <YonetimRaporu />
       <NakitTahmini />
       <Entegrasyonlar />
+      <EntegrasyonKarantina />
       <KartelaNorm />
       <TopluDuzeltme />
       <Kesinti />

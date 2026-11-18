@@ -145,6 +145,12 @@ describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
     expect(await proformaSureIsle(o.db)).toBeGreaterThanOrEqual(1); await proformaSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ts, `proforma-48:${d.kimlik}`])).rows[0].n).toBe(1);
   });
+  it('ekip süre uyarıları proforma ve fatura bilgisi sürelerini verir (T-YG1610)', async () => {
+    const d = await dosya(); await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref) VALUES ($1,'Nihai Kabul',$2)`, [d.kimlik, o.K.ty]);
+    const l = (await o.ist('GET', '/api/muhasebe-ekip-sureleri', await o.gir('my'))).json();
+    expect(l.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    expect((await o.ist('GET', '/api/muhasebe-ekip-sureleri', await o.gir('ds'))).statusCode).toBe(404);
+  });
   it('muhasebeye iletilen proformada 48 saatte fatura no yoksa Ticari Sorumluya görev (T-YG546)', async () => {
     const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi', 1000, 'Taslak', null as never);
     const f = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, muhasebe_iletim_zamani, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',1000,200,1200,'Muhasebeye İletildi', now() - interval '49 hours', $4) RETURNING kimlik`, [`PF-546-${Date.now()}`, d.kimlik, t, o.K.ts])).rows[0].kimlik;

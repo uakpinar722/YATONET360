@@ -234,6 +234,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
       {ben.roller.some((r) => ['Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Tedarik Sorumlusu') && <TedarikSorumlusuPano />}
+      {ben.roller.some((r) => ['Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdürü', 'Ticari İşler Direktörü'].includes(r.rol_adi)) && <EkipSureleri />}
       {ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) && <TahsilatIzleme />}
       {lgm && <HaftaVeGecmis veri={veri} />}
       {lgm && <><OzelGunler /><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
@@ -318,6 +319,15 @@ function OperasyonPano() {
     <div className="bolum">Ekip · Kapasite</div>
     <div className="ozet">{v.ekip.map((e) => <div key={e.ad}>{e.ad} · {e.yuk.toLocaleString('tr-TR')} / {e.ust}{e.yuk >= e.ust ? <Rozet s="kirmizi" c="Kapasite Dolu" /> : e.yuk >= e.ust * 0.8 ? <Rozet s="sari" c="Kapasite %80" /> : ''}</div>)}{v.oneri && <div className="uyari">{v.oneri}</div>}</div>
   </>;
+}
+
+/** YG-1610: ekibin proforma ve fatura bilgisi süreleri. */
+function EkipSureleri() {
+  const [l, setL] = useState<{ kimlik: string; baslik: string; son: string }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>('/muhasebe-ekip-sureleri').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Ekip Süre Uyarıları</div>
+    {l.length === 0 ? <Bos m="Ekip süre uyarısı bulunmamaktadır." /> : l.map((x) => { const kl = kalan(x.son); return <div key={`${x.kimlik}-${x.baslik}`} className="ozet kart-sol"><div className="ust2"><b>{x.baslik}</b><Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} /></div></div>; })}</>;
 }
 
 /** YG-1608: vadesi geçen faturalar (gecikme günü, son takip basamağı, yazılı ihtar zamanı). */
