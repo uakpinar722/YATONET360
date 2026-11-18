@@ -14,7 +14,7 @@ import { belgeBagiKaydet } from './belge.js';
 
 type Db = Pool | PoolClient;
 const SAAT = 3_600_000; const TZ = 3 * SAAT;
-const BT = ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Bilgi İşlem Müdürü', 'Bilgi İşlem Müdür Yardımcısı', 'Sistem Yöneticisi'];
+const BT = ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Bilgi İşlem Müdürü', 'Bilgi İşlem Müdür Yardımcısı', 'Sistem Yöneticisi', 'Bilgi İşlem Destek Sorumlusu']; // YG-1641: Destek Sorumlusu kuyruğu yürütür
 /** YG-1410: yanıt ve çözüm hedefleri (saat). D4 çözümü sürüm planına alınır, son zaman tutulmaz. */
 const HEDEF: Record<string, { yanit: number; cozum: number | null; gecici?: number }> = { D1: { yanit: 0.5, cozum: null, gecici: 4 }, D2: { yanit: 2, cozum: 24 }, D3: { yanit: 24, cozum: 120 }, D4: { yanit: 48, cozum: null } };
 
@@ -155,12 +155,25 @@ export function destekYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-1412: çözüm kaydı dört unsurla; kullanıcı doğrulamadan kayıt kapanmaz, sessizlik memnuniyet sayılmaz.
+  // YG-1645: Destek Sorumlusu çözemediği talebi gerekçeyle Bilgi İşlem Müdür Yardımcısına gönderir (yoksa Bilgi İşlem Müdürüne).
+  s.post('/destek/:id/ust-kademe', oturumlu, async (i, y) => {
+    const o = i.oturum!; const a = await talep((i.params as { id: string }).id, o.kullanici); const gerekce = String(((i.body ?? {}) as { gerekce?: string }).gerekce ?? '').trim();
+    if (!a || a.yetki !== 'cozen' || !(await btMi(o.kullanici))) return yok(y);
+    if (['Çözüldü', 'Kapalı'].includes(a.t.durum)) return y.code(409).send({ hata: 'Talep çözülmüş veya kapalıdır.' });
+    if (!gerekce) return y.code(400).send({ hata: 'Gönderme gerekçesini yazmanızı rica ederiz.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Destek Eskalasyonu' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [a.t.kimlik])).rowCount) return y.code(409).send({ hata: 'Talep üst kademeye gönderilmiştir.' });
+    const mya = await rolId(b.db, 'Bilgi İşlem Müdür Yardımcısı'); const hedef = (await rolSahipleri(b.db, mya)).length ? mya : await rolId(b.db, 'Bilgi İşlem Müdürü');
+    await kartAc(b.db, { tur: 'Destek Eskalasyonu', kategori: 'gorev', baslik: `${a.t.talep_no} · ${a.t.seviye} · Destek Sorumlusundan`, ozet: gerekce, oncelik: a.t.seviye === 'D1' ? 'Kritik' : 'Yüksek', sahipRol: hedef, sonZaman: a.t.cozum_son ? new Date(a.t.cozum_son) : undefined, nesneTuru: 'Destek Talebi', nesneKimligi: a.t.kimlik });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Destek Üst Kademeye Gönderildi', nesneTuru: 'Destek Talebi', nesneKimligi: a.t.kimlik, gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/destek/:id/cozum', oturumlu, async (i, y) => {
     const o = i.oturum!; const a = await talep((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { yapilan?: string; degisen?: string; dogrulama?: string; sonuc?: string };
     if (!a || a.yetki !== 'cozen') return yok(y);
     if (a.t.durum === 'Kapalı') return y.code(409).send({ hata: 'Talep kapalıdır.' });
     if (!g.yapilan?.trim() || !g.degisen?.trim() || !g.dogrulama?.trim() || !g.sonuc?.trim()) return y.code(400).send({ hata: 'Yapılan işlem, değişen kayıt veya sürüm, doğrulama yöntemi ve kullanıcıya bildirilen sonuç zorunludur.' });
     await b.db.query(`UPDATE destek_talebi SET durum = 'Çözüldü', yapilan_islem = $2, degisen_kayit = $3, dogrulama_yontemi = $4, kullaniciya_sonuc = $5, cozum_zamani = now(), cozen_ref = $6, yanit_zamani = coalesce(yanit_zamani, now()), kullanici_dogrulama = NULL WHERE kimlik = $1`, [a.t.kimlik, g.yapilan.trim(), g.degisen.trim(), g.dogrulama.trim(), g.sonuc.trim(), o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Destek Eskalasyonu' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [a.t.kimlik]); // YG-1645
     await bildir(b.db, { olay: `destek-cozum:${a.t.kimlik}:${Date.now()}`, kullanicilar: [a.t.acan_ref], baslik: `${a.t.talep_no} · Çözüm Bildirildi`, ozet: `${g.sonuc.trim().slice(0, 180)} Sonucu doğrulamanızı rica ederiz.`, eposta: true });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Destek Çözümü', nesneTuru: 'Destek Talebi', nesneKimligi: a.t.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { durum: 'Çözüldü' };

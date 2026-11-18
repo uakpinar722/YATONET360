@@ -1,3 +1,4 @@
+import { UUID } from './yat.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez } from './bildirim.js';
@@ -106,6 +107,22 @@ export function yonetimEkYollari(s: FastifyInstance, b: Baglam) {
   s.get('/yonetim-ekleri', oturumlu, async (i, y) => (await rolde(i.oturum!.kullanici, GORUR)) ? raporCalistir(b.db, 'RP-YON-EK', { donem: donemAl(i.query) }, () => yonetimEkleri(b.db, donemAl(i.query))) : yok(y));
   s.get('/ic-denetim/orneklem', oturumlu, async (i, y) => {
     if (!(await rolde(i.oturum!.kullanici, DENETIM))) return yok(y);
-    return (await b.db.query(`SELECT o.donem, d.kimlik, d.dosya_no, o.havuz, d.kapanis_zamani FROM ic_denetim_orneklemi o JOIN dosya d ON d.kimlik = o.dosya_ref ORDER BY o.donem DESC, d.dosya_no LIMIT 300`)).rows;
+    return (await b.db.query(`SELECT o.donem, d.kimlik, d.dosya_no, o.havuz, d.kapanis_zamani, h.ad_soyad denetci, o.atama_zamani FROM ic_denetim_orneklemi o JOIN dosya d ON d.kimlik = o.dosya_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = o.denetci_ref ORDER BY o.donem DESC, d.dosya_no LIMIT 300`)).rows;
+  });
+  // YG-1672: örneklemdeki dosya İç Denetim Müdürünce İç Denetçiye atanır; denetçiye görev açılır, dönemin tüm dosyaları atanınca örneklem görevi kapanır.
+  s.get('/ic-denetim/denetciler', oturumlu, async (i, y) => {
+    if (!(await rolde(i.oturum!.kullanici, ['İç Denetim Müdürü']))) return yok(y);
+    return (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = 'İç Denetçi' AND h.hesap_durumu = 'Aktif' ORDER BY h.ad_soyad`)).rows;
+  });
+  s.post('/ic-denetim/orneklem/ata', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; dosya?: string; denetci?: string };
+    if (!(await rolde(o.kullanici, ['İç Denetim Müdürü']))) return yok(y);
+    if (!/^\d{4}-\d{2}$/.test(g.donem ?? '') || !g.dosya || !UUID.test(g.dosya) || !g.denetci) return y.code(400).send({ hata: 'Dönem, dosya ve denetçiyi seçiniz.' });
+    if (!(await rolde(g.denetci, ['İç Denetçi']))) return y.code(400).send({ hata: 'Seçilen kişi İç Denetçi değildir.' });
+    const r = (await b.db.query(`UPDATE ic_denetim_orneklemi o SET denetci_ref = $3, atama_zamani = now() FROM dosya d WHERE d.kimlik = o.dosya_ref AND o.donem = $1 AND o.dosya_ref = $2 RETURNING d.dosya_no`, [g.donem, g.dosya, g.denetci])).rows[0];
+    if (!r) return yok(y);
+    await kartAc(b.db, { tur: 'Örneklem Denetimi', kategori: 'gorev', baslik: `${g.donem} · ${r.dosya_no} · Örneklem Denetimi`, ozet: 'Kapanan dosyayı iç denetim örneklemi kapsamında inceleyiniz.', sahipKullanici: g.denetci, nesneTuru: 'Dosya', nesneKimligi: g.dosya });
+    if (!(await b.db.query(`SELECT 1 FROM ic_denetim_orneklemi WHERE donem = $1 AND denetci_ref IS NULL`, [g.donem])).rowCount) await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'İç Denetim Örneklemi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.donem]);
+    return { tamam: true };
   });
 }

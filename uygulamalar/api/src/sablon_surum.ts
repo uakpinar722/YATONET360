@@ -39,24 +39,26 @@ export function sablonSurumYollari(s: FastifyInstance, b: Baglam) {
   s.get('/sablon-metni', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const q = (i.query ?? {}) as { ara?: string };
-    const { rows } = await b.db.query(`SELECT kod, dil, surum, tur, baslik, metin, durum, sahip_rol, onay_dayanagi, degisiklik_gerekcesi, yayim_zamani FROM sablon_metni
+    const { rows } = await b.db.query(`SELECT kod, dil, surum, tur, baslik, metin, durum, sahip_rol, onay_dayanagi, degisiklik_gerekcesi, yayim_zamani, hukuki FROM sablon_metni
       WHERE $1::text IS NULL OR kod ILIKE '%' || $1 || '%' OR baslik ILIKE '%' || $1 || '%' ORDER BY kod, dil, surum DESC LIMIT 400`, [q.ara?.trim() || null]);
     return { duzenler: await duzenler(o.kullanici), metinler: rows };
   });
   // Anlamı etkileyen değişiklik yeni sürüm olarak Onayda açılır ve CEO'ya gider; yazım düzeltmesi de yeni sürümdür, sahip onayıyla doğrudan yürürlüğe girer.
   s.post('/sablon-metni/:kod/:dil', oturumlu, async (i, y) => {
     const o = i.oturum!; const { kod, dil } = i.params as { kod: string; dil: string };
-    const g = (i.body ?? {}) as { metin?: string; gerekce?: string; anlamEtkiler?: boolean };
+    const g = (i.body ?? {}) as { metin?: string; gerekce?: string; anlamEtkiler?: boolean; hukuki?: boolean };
     if (!(await duzenler(o.kullanici))) return yok(y);
-    const son = (await b.db.query(`SELECT surum, tur, baslik, metin, durum FROM sablon_metni WHERE kod = $1 AND dil = $2 ORDER BY surum DESC LIMIT 1`, [kod, dil])).rows[0];
+    const son = (await b.db.query(`SELECT surum, tur, baslik, metin, durum, hukuki FROM sablon_metni WHERE kod = $1 AND dil = $2 ORDER BY surum DESC LIMIT 1`, [kod, dil])).rows[0];
     if (!son) return yok(y);
     if (['Onayda', 'Taslak'].includes(son.durum)) return y.code(409).send({ hata: 'Bu metnin sonuçlanmamış bir sürümü var.' });
     if (!g.metin?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Yeni metin ve değişiklik gerekçesi zorunludur.' });
     if (g.metin.trim() === son.metin) return y.code(409).send({ hata: 'Metin değişmemiştir.' });
-    const yeni = sonrakiSurum(son.surum); const anlam = g.anlamEtkiler !== false;
-    await b.db.query(`INSERT INTO sablon_metni (kod, dil, surum, tur, baslik, metin, durum, sahip_rol, degisiklik_gerekcesi, onay_dayanagi, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [kod, dil, yeni, son.tur, son.baslik, g.metin.trim(), anlam ? 'Onayda' : 'Yürürlükte', SAHIP, g.gerekce.trim(), anlam ? 'Genel Müdür Yardımcısı onayı (YATONET 360)' : 'Yazım düzeltmesi · metin sahibi', o.kullanici]);
-    if (anlam) await kartAc(b.db, { tur: 'Şablon Metni Onayı', baslik: `${kod} (${dil.toUpperCase()}) · ${yeni}`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, ONAY)], nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}` });
+    // YG-626, K-144: hukuki işaret bir kez konunca yeni sürümlere taşınır; İngilizce hukuki metnin her yeni sürümü (yazım düzeltmesi dahil) CEO onayına gider.
+    const hukuki = Boolean(son.hukuki) || g.hukuki === true; const ceo = hukuki && dil === 'en';
+    const yeni = sonrakiSurum(son.surum); const anlam = g.anlamEtkiler !== false || ceo;
+    await b.db.query(`INSERT INTO sablon_metni (kod, dil, surum, tur, baslik, metin, durum, sahip_rol, degisiklik_gerekcesi, onay_dayanagi, hazirlayan_ref, hukuki) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [kod, dil, yeni, son.tur, son.baslik, g.metin.trim(), anlam ? 'Onayda' : 'Yürürlükte', SAHIP, g.gerekce.trim(), ceo ? 'CEO onayı (YATONET 360) · İngilizce hukuki metin' : anlam ? 'Genel Müdür Yardımcısı onayı (YATONET 360)' : 'Yazım düzeltmesi · metin sahibi', o.kullanici, hukuki]);
+    if (anlam) await kartAc(b.db, { tur: 'Şablon Metni Onayı', baslik: `${kod} (${dil.toUpperCase()}) · ${yeni}`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, ceo ? 'CEO' : ONAY)], nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}` });
     else { await ceoBilgi(b.db, `${kod} (${dil.toUpperCase()}) ${yeni} yürürlüğe girdi`, `Yazım düzeltmesi. ${g.gerekce.trim()}`); await b.db.query(`UPDATE sablon_metni SET durum = 'Yerine Geçti' WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, son.surum]); await b.db.query(`UPDATE sablon_metni SET yayim_zamani = now(), onaylayan_ref = $4 WHERE kod = $1 AND dil = $2 AND surum = $3`, [kod, dil, yeni, o.kullanici]); }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Şablon Metni Yeni Sürüm', nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}`, eski: { metin: son.metin }, yeni: { metin: g.metin.trim() }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { surum: yeni, durum: anlam ? 'Onayda' : 'Yürürlükte' };

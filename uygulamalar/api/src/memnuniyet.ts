@@ -68,7 +68,7 @@ export function memnuniyetYollari(s: FastifyInstance, b: Baglam) {
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
   });
 
-  const mpm = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = $2 LIMIT 1`, [k, MPM])).rowCount);
+  const mpm = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, [MPM, 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı']])).rowCount); // YG-1698: Müdür Yardımcısı da görüşmeyi yürütür
   s.get('/anket-gorusme', oturumlu, async (i, y) => {
     if (!(await mpm(i.oturum!.kullanici))) return yok(y);
     return (await b.db.query(`SELECT a.kimlik, d.dosya_no, a.genel, a.iletisim, a.is_kalitesi, a.yorum FROM memnuniyet_anketi a JOIN dosya d ON d.kimlik = a.dosya_ref WHERE least(a.genel, a.iletisim, a.is_kalitesi) <= 2 AND a.gorusme_sonucu IS NULL ORDER BY a.cevap_zamani`)).rows;

@@ -145,6 +145,13 @@ describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
     expect(await proformaSureIsle(o.db)).toBeGreaterThanOrEqual(1); await proformaSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ts, `proforma-48:${d.kimlik}`])).rows[0].n).toBe(1);
   });
+  it('mali erken uyarılar açık uyarı kartlarını ve 15 günü geçen alacağı verir (T-YG1613)', async () => {
+    const d = await dosya(); const tid = await o.gir('tid');
+    await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, durum, sahip_rol_ref, nesne_turu, nesne_kimligi) SELECT 'Kredi Limiti Uyarısı', 'islem', 'Deneme Müşteri · Kredi Limiti %80', 'Bekliyor', kimlik, 'Taraf', $1 FROM rol WHERE rol_adi = 'Ticari İşler Direktörü'`, [d.kimlik]);
+    const l = (await o.ist('GET', '/api/mali-erken-uyarilar', tid)).json();
+    expect(l.some((x: { tur: string }) => x.tur === 'Müşteri Limiti %80')).toBe(true);
+    expect((await o.ist('GET', '/api/mali-erken-uyarilar', await o.gir('ds'))).statusCode).toBe(404);
+  });
   it('ekip süre uyarıları proforma ve fatura bilgisi sürelerini verir (T-YG1610)', async () => {
     const d = await dosya(); await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref) VALUES ($1,'Nihai Kabul',$2)`, [d.kimlik, o.K.ty]);
     const l = (await o.ist('GET', '/api/muhasebe-ekip-sureleri', await o.gir('my'))).json();

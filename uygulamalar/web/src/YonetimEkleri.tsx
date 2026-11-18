@@ -34,8 +34,13 @@ export function YonetimEkleri() {
 
 /** YG-808: iç denetim örneklemi. */
 export function IcDenetimOrneklem() {
-  const [l, setL] = useState<{ donem: string; kimlik: string; dosya_no: string; havuz: number }[] | null>(null);
-  useEffect(() => { void istek<NonNullable<typeof l>>('/ic-denetim/orneklem').then(setL).catch(() => setL(null)); }, []);
+  const [l, setL] = useState<{ donem: string; kimlik: string; dosya_no: string; havuz: number; denetci: string | null }[] | null>(null);
+  const [dl, setDl] = useState<{ kimlik: string; ad_soyad: string }[]>([]); const [sec, setSec] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof l>>('/ic-denetim/orneklem').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); void istek<typeof dl>('/ic-denetim/denetciler').then(setDl).catch(() => setDl([])); }, []);
   if (!l) return null;
-  return <details><summary>İç Denetim Örneklemi</summary>{l.length ? l.map((x) => <div className="soru" key={x.kimlik}><span>{x.donem} · <DosyaBag no={x.dosya_no} /> · Havuz {x.havuz} dosya</span></div>) : <div className="ozet bos">Örneklem bulunmamaktadır.</div>}</details>;
+  // YG-1672: Denetçiye Ata (yalnız İç Denetim Müdürüne denetçi listesi gelir)
+  return <details><summary>İç Denetim Örneklemi</summary>{m && <div className="not" role="status">{m}</div>}{l.length ? l.map((x) => <div className="soru" key={`${x.donem}-${x.kimlik}`}><span>{x.donem} · <DosyaBag no={x.dosya_no} /> · Havuz {x.havuz} dosya{x.denetci ? ` · Denetçi: ${x.denetci}` : ''}</span>
+    {!x.denetci && dl.length > 0 && <div className="tam"><label htmlFor={`od-${x.kimlik}`}>Denetçi</label><select id={`od-${x.kimlik}`} value={sec[x.kimlik] ?? ''} onChange={(e) => setSec({ ...sec, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{dl.map((d) => <option key={d.kimlik} value={d.kimlik}>{d.ad_soyad}</option>)}</select>
+      <button className="btn2 kucuk" disabled={!sec[x.kimlik]} onClick={() => void istek('/ic-denetim/orneklem/ata', { donem: x.donem, dosya: x.kimlik, denetci: sec[x.kimlik] }).then(() => { setM('Dosya denetçiye atandı.'); return yk(); }).catch((e) => setM(e.message))}>Denetçiye Ata</button></div>}</div>) : <div className="ozet bos">Örneklem bulunmamaktadır.</div>}</details>;
 }

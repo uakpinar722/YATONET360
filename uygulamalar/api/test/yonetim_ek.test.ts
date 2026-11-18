@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { isGunuSayisi, orneklemSec, yonetimEkIsle } from '../src/yonetim_ek.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { cg: 'CEO', gmy: 'Genel Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', idm: 'İç Denetim Müdürü', ds: 'Dosya Sorumlusu' };
+const KADRO = { cg: 'CEO', gmy: 'Genel Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', idm: 'İç Denetim Müdürü', icd: 'İç Denetçi', ds: 'Dosya Sorumlusu' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test93', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -28,6 +28,14 @@ describe('yönetim raporu ekleri (YG-764, 769, 770, 779, 781, 808, 1462, 1536)',
     expect(await orneklemSec(o.db, '2026-09')).toBe(0);
     expect((await o.ist('GET', '/api/ic-denetim/orneklem', await o.gir('idm'))).json().some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
     expect((await o.kart('İç Denetim Örneklemi', '2026-09')).durum).toBe('Bekliyor');
+    // T-YG1672: Denetçiye Ata yalnız İç Denetim Müdürü; denetçi İç Denetçi olmalı; tüm dosyalar atanınca örneklem görevi kapanır
+    const idm = await o.gir('idm'); const g = { donem: '2026-09', dosya: d.kimlik, denetci: o.K.icd };
+    expect((await o.ist('GET', '/api/ic-denetim/denetciler', idm)).json().map((x: { kimlik: string }) => x.kimlik)).toContain(o.K.icd);
+    expect((await o.ist('POST', '/api/ic-denetim/orneklem/ata', await o.gir('ds'), g)).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/ic-denetim/orneklem/ata', idm, { ...g, denetci: o.K.ds })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/ic-denetim/orneklem/ata', idm, g)).statusCode).toBe(200);
+    expect((await o.kart('Örneklem Denetimi', d.kimlik)).sahip_kullanici_ref).toBe(o.K.icd);
+    expect((await o.kart('İç Denetim Örneklemi', '2026-09')).durum).toBe('Tamamlandı');
     expect(await yonetimEkIsle(o.db, new Date('2026-11-02T08:00:00Z'))).toBeGreaterThanOrEqual(1);
   });
 });

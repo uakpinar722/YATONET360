@@ -481,7 +481,8 @@ try {
   await tikla(pTd, 'Teknik Kontrole Gönder');
   await dosyaAc(pT2, d2.dosyaNo);
   await pT2.locator('.soru', { hasText: 'Lot L1' }).getByRole('button', { name: 'Kabul', exact: true }).click(); await pT2.waitForTimeout(500); await hataVarsa(pT2, 'Malzeme');
-  kontrol('sipariş, giriş ve teknik kabul ekrandan tamamlanır', (await sup.query(`SELECT statu FROM tedarik_siparisi WHERE kimlik = $1`, [sp.kimlik])).rows[0].statu === 'Teslim Alındı');
+  let spSt = ''; for (let i = 0; i < 25 && spSt !== 'Teslim Alındı'; i++) { spSt = (await sup.query(`SELECT statu FROM tedarik_siparisi WHERE kimlik = $1`, [sp.kimlik])).rows[0].statu; if (spSt !== 'Teslim Alındı') await pT2.waitForTimeout(200); } /* yük altında yanıt gecikebilir */
+  kontrol('sipariş, giriş ve teknik kabul ekrandan tamamlanır', spSt === 'Teslim Alındı');
   await dosyaAc(pTd, d2.dosyaNo);
   await pTd.locator(`#fa-n-${sp.kimlik}`).fill(`S${tek}`); await pTd.locator(`#fa-t-${sp.kimlik}`).fill('2026-11-20'); await pTd.locator(`#fa-u-${sp.kimlik}`).fill('200,00');
   await pTd.getByRole('button', { name: 'Üçlü Eşleştir' }).click(); await pTd.getByText('Eşleştirme: Eşleşti').waitFor();

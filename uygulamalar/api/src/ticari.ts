@@ -501,6 +501,15 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
         (SELECT basamak FROM alacak_takip_adimi a WHERE a.fatura_ref = f.kimlik ORDER BY a.zaman DESC LIMIT 1) basamak, (SELECT zaman FROM alacak_takip_adimi a WHERE a.fatura_ref = f.kimlik AND a.basamak = '15 Gün') ihtar
       FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum IN ('Faturalandı', 'Kısmi Tahsil') AND f.vade < current_date ORDER BY f.vade LIMIT 100`)).rows;
   });
+  // YG-1613: Mali Erken Uyarılar; brüt katkı 5 puan düşüşü, bütçe %10 aşımı, müşteri kredi limiti %80 (açık uyarı kartlarından) ve vadesini 15 günden fazla geçen alacak.
+  s.get('/mali-erken-uyarilar', oturumlu, async (i, y) => {
+    const r = await roller(i.oturum!.kullanici); if (!r.some((x) => ['Ticari İşler Direktörü', MFM].includes(x))) return yok(y);
+    const kartlar = (await b.db.query(`SELECT k.tur, k.baslik, k.ozet, k.olusturma_zamani zaman FROM is_karti k WHERE k.tur IN ('Bütçe Erken Uyarısı', 'Bütçe Aşımı Erken Uyarısı', 'Kredi Limiti Uyarısı') AND k.durum = 'Bekliyor' ORDER BY k.olusturma_zamani DESC LIMIT 50`)).rows;
+    const alacak = (await b.db.query(`SELECT 'Alacak 15 Günü Geçti' tur, d.dosya_no || ' · ' || coalesce(f.fatura_no, f.proforma_no) || ' · ' || f.muhatap baslik, to_char(f.toplam_eur - f.tahsil_edilen_eur, 'FM999G999G990D00') || ' EUR · ' || (current_date - f.vade) || ' gün' ozet, f.vade zaman
+      FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum IN ('Faturalandı', 'Kısmi Tahsil') AND f.vade < current_date - 15 ORDER BY f.vade LIMIT 50`)).rows;
+    const ad: Record<string, string> = { 'Bütçe Erken Uyarısı': 'Brüt Katkı 5 Puan Altı', 'Bütçe Aşımı Erken Uyarısı': 'Bütçe %10 Aşım', 'Kredi Limiti Uyarısı': 'Müşteri Limiti %80' };
+    return [...kartlar.map((x) => ({ ...x, tur: ad[x.tur] ?? x.tur })), ...alacak];
+  });
   s.get('/muhasebe/proformalar', oturumlu, async (i, y) => {
     if (!(await muhasebeHizmetiMi(b.db, i.oturum!.kullanici))) return yok(y);
     return (await b.db.query(`SELECT m.kimlik, m.proforma_no, d.dosya_no, m.muhatap, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.durum, m.fatura_no, m.fatura_tarihi::text AS fatura_tarihi FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.durum = ANY($1) ORDER BY (m.durum = 'Muhasebeye İletildi') DESC, m.proforma_no DESC LIMIT 200`, [MUHASEBE_GORUR])).rows;

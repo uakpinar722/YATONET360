@@ -17,7 +17,7 @@ export function DosyaDestek({ dosya }: { dosya: string }) {
 /** YG-1409–1412, YG-1504: Yardım | BT Destek / LGM Merkez; talep açma, taleplerim, BT çözüm kaydı ve kullanıcı doğrulaması. */
 export function DestekSayfasi({ lgm }: { lgm: boolean }) {
   const [f, setF] = useState({ tur: 'Hata', belirti: '', etki: '', beklenen: '', ekran: '', etkilenen: '1', sistemKullanilamiyor: false, kritikSurec: false, guvenlik: false, veriButunlugu: false, musteriMali: false });
-  const [l, setL] = useState<Talep[]>([]); const [bt, setBt] = useState<Talep[] | null>(null); const [m, setM] = useState(''); const [son, setSon] = useState<string | null>(null); const [eg, setEg] = useState('');
+  const [l, setL] = useState<Talep[]>([]); const [bt, setBt] = useState<Talep[] | null>(null); const [m, setM] = useState(''); const [son, setSon] = useState<string | null>(null); const [eg, setEg] = useState(''); const [ug, setUg] = useState<Record<string, string>>({});
   const [cz, setCz] = useState<Record<string, { yapilan: string; degisen: string; dogrulama: string; sonuc: string }>>({});
   const yk = () => { void istek<Talep[]>('/destek').then(setL).catch(() => setL([])); if (lgm) void istek<Talep[]>('/destek?hepsi=1').then(setBt).catch(() => setBt(null)); };
   useEffect(() => { yk(); }, []);
@@ -44,5 +44,7 @@ export function DestekSayfasi({ lgm }: { lgm: boolean }) {
     {bt && <><div className="bolum">Açık Destek Talepleri</div>
       <div className="ozet">{bt.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{bt.map((x) => <div key={x.kimlik}><div>{x.talep_no} · {x.seviye} · {x.durum}{x.dosya_no ? ` · ${x.dosya_no}` : ''} · {x.belirti} · Yanıt: {zaman(x.yanit_son)} · Çözüm: {zaman(x.cozum_son)}</div>
         {x.durum !== 'Çözüldü' && <>{(['yapilan', 'degisen', 'dogrulama', 'sonuc'] as const).map((k) => <span key={k}><label htmlFor={`dc-${k}-${x.kimlik}`}>{{ yapilan: 'Yapılan İşlem', degisen: 'Değişen Kayıt veya Sürüm', dogrulama: 'Doğrulama Yöntemi', sonuc: 'Kullanıcıya Bildirilen Sonuç' }[k]}</label><input id={`dc-${k}-${x.kimlik}`} value={c(x.kimlik)[k]} onChange={(e) => setCz({ ...cz, [x.kimlik]: { ...c(x.kimlik), [k]: e.target.value } })} /></span>)}
-          <button className="btn2 kucuk" onClick={() => is(`/destek/${x.kimlik}/cozum`, c(x.kimlik), 'Çözüm kaydedildi; kullanıcı doğrulaması bekleniyor.')}>Çözümü Kaydet</button></>}</div>)}</div></>}</>;
+          <button className="btn2 kucuk" onClick={() => is(`/destek/${x.kimlik}/cozum`, c(x.kimlik), 'Çözüm kaydedildi; kullanıcı doğrulaması bekleniyor.')}>Çözümü Kaydet</button>
+          <label htmlFor={`du-${x.kimlik}`}>Üst Kademe Gerekçesi</label><input id={`du-${x.kimlik}`} value={ug[x.kimlik] ?? ''} onChange={(e) => setUg({ ...ug, [x.kimlik]: e.target.value })} />
+          <button className="btn2 kucuk" disabled={!(ug[x.kimlik] ?? '').trim()} onClick={() => is(`/destek/${x.kimlik}/ust-kademe`, { gerekce: ug[x.kimlik] }, 'Talep Bilgi İşlem Müdür Yardımcısına gönderildi.')}>Bilgi İşlem Müdür Yardımcısına Gönder</button></>}</div>)}</div></>}</>;
 }

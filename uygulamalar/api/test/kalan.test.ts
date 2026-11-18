@@ -1006,9 +1006,16 @@ describe('destek talebi (YG-1409–1412, YG-1504)', () => {
     const id = r.json().kimlik as string;
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Destek Talebi' AND nesne_kimligi = $1 AND sahip_rol_ref IS NOT NULL`, [id])).rowCount).toBe(1);
     const bt = await o.gir('btd');
+    // T-YG1645: üst kademeye gerekçeyle bir kez gönderilir; çözümde görev kapanır
+    const uk = `/api/destek/${id}/ust-kademe`;
+    expect((await o.ist('POST', uk, bt, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', uk, bt, { gerekce: 'Veritabanı yetkisi gerekiyor' })).statusCode).toBe(200);
+    expect((await o.ist('POST', uk, bt, { gerekce: 'Tekrar' })).statusCode).toBe(409);
+    expect((await o.kart('Destek Eskalasyonu', id)).durum).toBe('Bekliyor');
     expect((await o.ist('POST', `/api/destek/${id}/cozum`, bt, { yapilan: 'Düzeltildi' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/destek/${id}/cozum`, await o.gir('mpm'), { yapilan: 'a', degisen: 'b', dogrulama: 'c', sonuc: 'd' })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/destek/${id}/cozum`, bt, { yapilan: 'Sorgu düzeltildi', degisen: 'teklif.ts', dogrulama: 'Ekran denendi', sonuc: 'Ekran açılıyor' })).statusCode).toBe(200);
+    expect((await o.kart('Destek Eskalasyonu', id)).durum).toBe('Tamamlandı');
     expect((await o.sup.query(`SELECT durum FROM destek_talebi WHERE kimlik = $1`, [id])).rows[0].durum).toBe('Çözüldü');
     expect((await o.ist('POST', `/api/destek/${id}/kapat`, bt, {})).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/destek/${id}/dogrula`, await o.gir('ds'), { sonuc: 'Çözüldü' })).json().durum).toBe('Kapalı');

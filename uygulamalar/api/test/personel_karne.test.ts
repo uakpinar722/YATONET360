@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { gostergePuani, karneKapanisGorevi, maliBirlesik, nihaiPuan, puantajGorevi } from '../src/personel_karne.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', mpy: 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test73', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -111,6 +111,7 @@ describe('memnuniyet anketi ve değerlendirme (YG-1470, YG-962, YG-971, YG-973)'
     const k = (await o.sup.query(`SELECT kimlik, ortalama::float o FROM memnuniyet_anketi WHERE dosya_ref = $1`, [d])).rows[0]; expect(k.o).toBe(4);
     expect((await o.kart('Memnuniyet Görüşmesi', k.kimlik)).durum).toBe('Bekliyor');
     expect((await o.ist('POST', `/api/anket-gorusme/${k.kimlik}`, await o.gir('ds'), { sonuc: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('GET', '/api/anket-gorusme', await o.gir('mpy'))).statusCode).toBe(200); /* T-YG1698 */
     expect((await o.ist('POST', `/api/anket-gorusme/${k.kimlik}`, await o.gir('mpm'), { sonuc: 'Arandı, çözüldü' })).statusCode).toBe(200);
     expect((await o.kart('Memnuniyet Görüşmesi', k.kimlik)).durum).toBe('Tamamlandı');
   });
