@@ -201,6 +201,8 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     const d = await hazir({}, {}, [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }, { aciklama: 'B', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' }]);
     const kap = (await o.ist('GET', `/api/firma-portal/dosya/${d.kimlik}/kapsam`, firmaC)).json();
     const ff = (await o.ist('POST', `/api/firma-portal/dosya/${d.kimlik}/fiyat`, firmaC, { kalemler: [{ satir: kap[0].kimlik, fiyat: 10 }] })).json().kimlik;
+    // YG-1599 (T-YG1599c): firma fiyatı gelişi Ticari Sorumlunun teklif görevine işlenir
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND ozet LIKE '%Firma fiyatı geldi%' AND nesne_kimligi = (SELECT kimlik::text FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı' LIMIT 1)`, [d.kimlik])).rows[0].n).toBeGreaterThan(0);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teklif`, await o.gir('ts'), { firmaTeklifi: ff });
     expect(r.statusCode).toBe(409); expect(r.json().eksik).toEqual(['S002']);
   });

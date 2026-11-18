@@ -62,6 +62,9 @@ describe('kurumsal iletişim talebi (YG-1556)', () => {
     const t = (await o.sup.query(`SELECT kimlik FROM kurum_talebi WHERE e_posta = $1`, [G.eposta])).rows[0].kimlik as string;
     expect((await o.kart('Kurumsal İletişim Talebi', t)).sahip_rol_ref).toBe(await rol('Firma Yönetimi Müdürü'));
     expect(Number((await o.sup.query(`SELECT count(*) n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Yeni Kurumsal İletişim Talebi%'`, [o.K.btd])).rows[0].n)).toBe(1);
+    // YG-1560 (T-YG1560): giriş ekranından Çözüm Ortağı başvurusu aynı kuyruğa düşer
+    expect((await o.ist('POST', '/api/iletisim/kurum-talebi', undefined, { ...G, kurumTuru: 'Çözüm Ortağı Adayı', eposta: 'aday1560@deneme.local' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kurum_talebi WHERE kurum_turu = 'Çözüm Ortağı Adayı'`)).rows[0].n).toBe(1);
     expect((await o.ist('GET', '/api/kurum-talebi', await o.gir('ds'))).statusCode).toBe(404);
     const mpm = await rol('Müşteri ve Paydaş İlişkileri Müdürü');
     expect((await o.ist('POST', `/api/kurum-talebi/${t}/yonlendir`, await o.gir('btd'), { rol: mpm })).statusCode).toBe(404);

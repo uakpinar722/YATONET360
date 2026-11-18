@@ -10,13 +10,15 @@ const T = {
 };
 
 /** YG-1556: Hesap Oluştur → kurumsal iletişim talebi (herkese açık). */
-export function KurumTalebiFormu({ dil, geri }: { dil: 'tr' | 'en'; geri: () => void }) {
-  const t = T[dil]; const [f, setF] = useState({ kurumTuru: TURLER[0]!, kurumAdi: '', adSoyad: '', eposta: '', telefon: '', mesaj: '' }); const [h, setH] = useState(''); const [ok, setOk] = useState(false);
+// YG-1560: Çözüm Ortağı başvurusu aynı formla alınır; teşekkür metni onaylı G-1 s2a seçeneğinden türetilmiştir.
+const BASVURU = { tr: { b: 'Çözüm Ortağı Başvurusu', kurum: 'Firma Unvanı', tamam: 'Başvurunuz alınmıştır; değerlendirme sonucu size bildirilecek, onaylandığında hesabınız açılacaktır.' }, en: { b: 'Solution Partner Application', kurum: 'Company Name', tamam: 'Your application has been received; you will be notified of the result and your account will be opened upon approval.' } };
+export function KurumTalebiFormu({ dil, geri, basvuru = false }: { dil: 'tr' | 'en'; geri: () => void; basvuru?: boolean }) {
+  const t = basvuru ? { ...T[dil], ...BASVURU[dil] } : T[dil]; const [f, setF] = useState({ kurumTuru: basvuru ? 'Çözüm Ortağı Adayı' : TURLER[0]!, kurumAdi: '', adSoyad: '', eposta: '', telefon: '', mesaj: '' }); const [h, setH] = useState(''); const [ok, setOk] = useState(false);
   const gonder = (e: FormEvent) => { e.preventDefault(); setH(''); void istek('/iletisim/kurum-talebi', f).then(() => setOk(true)).catch((x) => setH((x as Error).message)); };
   const al = (k: keyof typeof f, l: string, tip = 'text') => <><label htmlFor={`kt-${k}`}>{l}</label><input id={`kt-${k}`} type={tip} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
   return <div><h2>{t.b}</h2>{h && <div className="hata" role="alert">{h}</div>}
     {ok ? <div className="not orta" role="status">{t.tamam}</div> : <form onSubmit={gonder}>
-      <label htmlFor="kt-tur">{t.tur}</label><select id="kt-tur" value={f.kurumTuru} onChange={(e) => setF({ ...f, kurumTuru: e.target.value })}>{TURLER.map((x) => <option key={x} value={x}>{dil === 'en' ? EN[x] : x}</option>)}</select>
+      {!basvuru && <><label htmlFor="kt-tur">{t.tur}</label><select id="kt-tur" value={f.kurumTuru} onChange={(e) => setF({ ...f, kurumTuru: e.target.value })}>{TURLER.map((x) => <option key={x} value={x}>{dil === 'en' ? EN[x] : x}</option>)}</select></>}
       {al('kurumAdi', t.kurum)}{al('adSoyad', t.ad)}{al('eposta', t.ep, 'email')}{al('telefon', t.tel, 'tel')}{al('mesaj', t.mesaj)}
       <button className="btn">{t.gonder}</button></form>}
     <button type="button" className="lnk" onClick={geri}>{t.geri}</button></div>;

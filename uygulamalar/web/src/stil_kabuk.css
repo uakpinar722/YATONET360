@@ -40,6 +40,7 @@
 .rozet.kirmizi { background: #FBE3E0; color: var(--hata); }
 .rozet.sari { background: #FBF0CF; color: #7A5A00; }
 .rozet.gri { background: #ECE9E3; color: #4A4A4A; }
+.rozet.yesil { background: #E2F1E5; color: #1E6B34; }
 .dugmeler { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .dugmeler .btn, .dugmeler .btn2 { width: auto; margin: 0; padding: 9px 16px; flex: 0 1 auto; }
 .btn.evet { background: #1E6B3A; }

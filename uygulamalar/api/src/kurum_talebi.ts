@@ -9,7 +9,7 @@ import { silsileBildir } from './silsile.js';
 import { isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
 
-export const KURUM_TURLERI = ['Sigorta Şirketi', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Kurumsal Müşteri', 'Marina / Tersane / Çekek Sahası', 'Tedarikçi'];
+export const KURUM_TURLERI = ['Sigorta Şirketi', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Kurumsal Müşteri', 'Marina / Tersane / Çekek Sahası', 'Tedarikçi', 'Çözüm Ortağı Adayı']; // YG-1560
 const EPOSTA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FYM = 'Firma Yönetimi Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü';
 const TUR = 'Kurumsal İletişim Talebi'; const YON = 'Kurumsal Talep Görüşmesi';

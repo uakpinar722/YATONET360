@@ -53,11 +53,11 @@ export function DenetimArama() {
 
 /** YG-1546, YG-1547: görev, kanıt, doğrulama. */
 function UyumGorevleri() {
-  const { yap, Mesaj } = useYap(); const [l, setL] = useState<{ kimlik: string; ad: string; son_tarih: string; sorumlu_rol: string; dogrulayan_rol: string; gerekli_kanit: string; durum: string }[]>([]); const [b, setB] = useState<Record<string, string>>({});
+  const { yap, Mesaj } = useYap(); const [l, setL] = useState<{ kimlik: string; ad: string; son_tarih: string; sorumlu_rol: string; dogrulayan_rol: string; gerekli_kanit: string; durum: string; renk?: string }[]>([]); const [b, setB] = useState<Record<string, string>>({});
   const yk = () => istek<typeof l>('/uyum-gorevleri').then(setL);
   useEffect(() => { void yk().catch(() => {}); }, []);
   if (!l.length) return null;
-  return <><div className="bolum">Uyum Görevleri</div><Mesaj />{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad} · Son: {x.son_tarih} · {x.durum}<br />Kanıt: {x.gerekli_kanit}</span><div className="tam">{x.durum === 'Açık' && <><BelgeSec ad="Uyum Kanıtı" bagTuru="Uyum Görevi" bagKimligi={x.kimlik} deger={b[x.kimlik] ?? ''} sec={(z: string) => setB({ ...b, [x.kimlik]: z })} /><button className="btn2 kucuk" disabled={!b[x.kimlik]} onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/kanit`, { belge: b[x.kimlik] }).then(yk), 'Kanıt yüklendi.')}>Kanıtı Kaydet</button></>}{x.durum === 'Kanıt Yüklendi' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/dogrula`, {}).then(yk), 'Görev kapatıldı.')}>Doğrula ve Kapat</button>}</div></div>)}</>;
+  return <><div className="bolum">Uyum Görevleri</div><Mesaj />{l.map((x) => <div className="soru" key={x.kimlik}><span><em className={`rozet ${x.renk ?? 'gri'}`}>{x.renk === 'kirmizi' ? 'Gecikti' : x.renk === 'sari' ? 'Süresi Yaklaşıyor' : 'Süresi Var'}</em> {x.ad} · Son: {x.son_tarih} · {x.durum}<br />Kanıt: {x.gerekli_kanit}</span><div className="tam">{x.durum === 'Açık' && <><BelgeSec ad="Uyum Kanıtı" bagTuru="Uyum Görevi" bagKimligi={x.kimlik} deger={b[x.kimlik] ?? ''} sec={(z: string) => setB({ ...b, [x.kimlik]: z })} /><button className="btn2 kucuk" disabled={!b[x.kimlik]} onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/kanit`, { belge: b[x.kimlik] }).then(yk), 'Kanıt yüklendi.')}>Kanıtı Kaydet</button></>}{x.durum === 'Kanıt Yüklendi' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/dogrula`, {}).then(yk), 'Görev kapatıldı.')}>Doğrula ve Kapat</button>}</div></div>)}</>;
 }
 
 /** YG-1544: VERBİS eşik kontrolü; önceki yılın ortalama çalışan sayısı ve bilanço toplamı eşiklerle; bilanço Muhasebe ve Finans Müdürünce girilir. */

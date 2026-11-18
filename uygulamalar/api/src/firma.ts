@@ -429,6 +429,12 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE firma_fiyat_teklifi SET toplam_eur = (SELECT sum(k.birim_fiyat_eur * s.miktar) FROM firma_fiyat_kalemi k JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.teklif_ref = $1) WHERE kimlik = $1`, [t.kimlik]);
       await firmaAralikIsaretle(c, t.kimlik); // YG-234: aralık işareti yalnız LGM ekranında görünür.
       await teklifSayaciBaslat(c, id); // YG-199
+      // YG-1599: firma fiyatı gelince Ticari Sorumlunun teklif görevi güncellenir; görev yoksa ve taslak teklif yoksa açılır.
+      const ac = await c.query(`UPDATE is_karti SET ozet = left(coalesce(ozet, '') || ' Firma fiyatı geldi: ' || $2 || '.', 400) WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [String(cetvel.kimlik), no]);
+      if (!ac.rowCount && !(await c.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu IN ('Taslak', 'İç Onayda') LIMIT 1`, [id])).rowCount) {
+        const ts = (await c.query(`SELECT ticari_sorumlu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.ticari_sorumlu_ref as string | null;
+        await kartAc(c, { tur: 'Fiyat Teklifi Hazırla', kategori: 'islem', baslik: `${dosyaNo} · Fiyat Teklifi Hazırla`, ozet: `Firma fiyatı geldi: ${no}.`, ...(ts ? { sahipKullanici: ts } : { sahipRol: await rolId(c, 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)') }), nesneTuru: 'Kapsam Cetveli', nesneKimligi: String(cetvel.kimlik) });
+      }
       return { kimlik: t.kimlik, teklifNo: no };
     });
   });

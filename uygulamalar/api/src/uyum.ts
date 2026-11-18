@@ -148,7 +148,8 @@ export function uyumYollari(s: FastifyInstance, b: Baglam) {
   s.get('/uyum-gorevleri', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     const r = await rolleri(i.oturum!.kullanici);
-    return (await b.db.query(`SELECT kimlik, ad, son_tarih::text, sorumlu_rol, dogrulayan_rol, gerekli_kanit, durum, kanit_bitis::text FROM uyum_gorevi WHERE durum <> 'Kapalı' AND (sorumlu_rol = ANY($1::text[]) OR dogrulayan_rol = ANY($1::text[]) OR $2) ORDER BY son_tarih LIMIT 200`, [r, r.includes(HUD)])).rows;
+    // YG-1550: pano rengi; kırmızı gecikti, sarı 7 gün ve daha az kaldı, yeşil süresi var. Hukuk ve Uyum Direktörü ve GMY tümünü görür.
+    return (await b.db.query(`SELECT kimlik, ad, son_tarih::text, sorumlu_rol, dogrulayan_rol, gerekli_kanit, durum, kanit_bitis::text, CASE WHEN son_tarih < current_date THEN 'kirmizi' WHEN son_tarih <= current_date + 7 THEN 'sari' ELSE 'yesil' END renk FROM uyum_gorevi WHERE durum <> 'Kapalı' AND (sorumlu_rol = ANY($1::text[]) OR dogrulayan_rol = ANY($1::text[]) OR $2) ORDER BY son_tarih LIMIT 200`, [r, r.includes(HUD) || r.includes(GMY)])).rows;
   });
   s.post('/uyum-gorevi/:id/kanit', oturumlu, async (i, y) => { // YG-1547
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belge?: string; bitis?: string };

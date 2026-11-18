@@ -13,7 +13,12 @@ export function SozlesmeTakip() {
   if (!v) return null;
   const is = (p: Promise<unknown>, s: string) => void p.then(() => { setM(s); setG({}); yk(); }).catch((e) => setM(e.message));
   const oneri = turler.find((x) => x.tur === f.tur)?.sahip;
-  return <details><summary>Sözleşme Takibi · {v.kayitlar.filter((x) => x.durum === 'Yürürlükte').length} yürürlükte</summary>{m && <div className="not" role="status">{m}</div>}
+  // YG-1055: Sözleşme Süre Uyarısı; bitişi veya fesih bildirimi son günü 90 gün içinde olan yürürlükteki sözleşmeler (15 gün kırmızı, 45 gün sarı).
+  const kalan = (d: string | null) => (d ? Math.ceil((Date.parse(`${d.slice(0, 10)}T12:00:00Z`) - Date.now()) / 86_400_000) : null);
+  const uyari = v.kayitlar.filter((x) => x.durum === 'Yürürlükte').flatMap((x) => [['Bitiş', x.bitis], ['Fesih Bildirimi Son Günü', x.fesih_bildirim_son]].map(([ad, d]) => ({ x, ad: ad!, d, g: kalan(d ?? null) })))
+    .filter((u) => u.g !== null && u.g <= 90).sort((a, c) => a.g! - c.g!);
+  return <details open={uyari.length > 0}><summary>Sözleşme Takibi · {v.kayitlar.filter((x) => x.durum === 'Yürürlükte').length} yürürlükte{uyari.length ? ` · ${uyari.length} süre uyarısı` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
+    {uyari.length > 0 && <div className="ozet"><b>Sözleşme Süre Uyarısı</b>{uyari.map((u) => <div key={`${u.x.kimlik}-${u.ad}`}><em className={`rozet ${u.g! < 0 || u.g! <= 15 ? 'kirmizi' : u.g! <= 45 ? 'sari' : 'gri'}`}>{u.g! < 0 ? `${-u.g!} Gün Geçti` : `${u.g} Gün`}</em> {u.x.sozlesme_turu} · {u.x.taraf ?? '---'} · {u.ad}: {t(u.d ?? null)} · Sahip: {u.x.sozlesme_sahibi_rolu ?? '---'}</div>)}</div>}
     {v.kayitlar.map((x) => <div className={x.durum === 'Yürürlükte' ? 'soru' : 'soru bos'} key={x.kimlik}><span>{x.sozlesme_no ? `${x.sozlesme_no} · ` : ''}{x.sozlesme_turu} · {x.taraf ?? '---'} · Sahip: {x.sozlesme_sahibi_rolu ?? '---'} · {x.durum}<br />
       <small>Yürürlük {t(x.yururluk)} · Bitiş {t(x.bitis)}{x.otomatik_yenileme ? ' · Otomatik yenileme' : ''} · Fesih bildirimi son gün {t(x.fesih_bildirim_son)} · {x.imzali ? `İmzalı (${x.imza_turu ?? '---'})` : 'İmzalı nüsha yok'} · Ek: {x.ek_sayisi}{x.yenileme_karari ? ` · Karar: ${x.yenileme_karari}` : ''}{x.kendiliginden_yenilendi ? ' · Karar olmadan yenilendi' : ''}</small></span>
       {x.durum === 'Yürürlükte' && <div className="tam"><label htmlFor={`st-k-${x.kimlik}`}>Karar</label><select id={`st-k-${x.kimlik}`} value={g[`k${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`k${x.kimlik}`]: e.target.value })}><option value="">Seçiniz</option>{['Yenileme', 'Fesih', 'Yeniden Görüşme'].map((k) => <option key={k}>{k}</option>)}</select>
