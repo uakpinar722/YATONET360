@@ -40,6 +40,20 @@ export function tedarikDagitimYollari(s: FastifyInstance, b: Baglam) {
     const sorumlular = (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = $1 AND h.hesap_durumu = 'Aktif' ORDER BY h.ad_soyad`, [TS])).rows;
     return { bekleyen, uyarilar, sorumlular, dagitir: r.includes(TY) };
   });
+  // YG-1590: Tedarik Sorumlusunun kendi talepleri, siparişleri ve uyarıları.
+  s.get('/tedarik-sorumlusu-pano', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (!(await roller(o.kullanici)).includes(TS)) return yok(y);
+    const talepler = (await b.db.query(`SELECT f.kimlik, f.kayit_no, d.dosya_no, coalesce(d.oncelik, 'Normal') oncelik, t.zaman FROM tedarik_dagitim t JOIN form_kaydi f ON f.kimlik = t.form_ref LEFT JOIN dosya d ON d.kimlik = f.dosya_ref
+      WHERE t.sorumlu_ref = $1 AND EXISTS (SELECT 1 FROM is_karti k WHERE k.tur = 'Malzeme Talebi' AND k.nesne_kimligi = f.kimlik::text AND k.durum = 'Bekliyor') ORDER BY t.zaman`, [o.kullanici])).rows;
+    const siparisler = (await b.db.query(`SELECT s.kimlik, s.siparis_no, s.statu, s.tedarikci_kabul, s.teslim_tarihi::text, (SELECT x.rol_adi FROM is_karti k JOIN rol x ON x.kimlik = k.zincir[k.kademe + 1] WHERE k.tur = 'Tedarik Siparişi' AND k.nesne_kimligi = s.kimlik::text AND k.durum = 'Bekliyor' LIMIT 1) makam
+      FROM tedarik_siparisi s WHERE s.hazirlayan_ref = $1 AND s.statu NOT IN ('Kapalı', 'İptal') ORDER BY s.olusturma_zamani DESC LIMIT 50`, [o.kullanici])).rows;
+    const uyarilar = [
+      ...(await b.db.query(`SELECT s.siparis_no, 'Karantinada Ürün' tur FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE m.kabul_karari = 'Karantina' AND s.hazirlayan_ref = $1`, [o.kullanici])).rows,
+      ...(await b.db.query(`SELECT siparis_no, 'Tedarikçi Kabulü 48 Saati Aştı' tur FROM tedarik_siparisi WHERE hazirlayan_ref = $1 AND statu = 'Verildi' AND tedarikci_kabul IS NULL AND verilme_zamani < now() - interval '48 hours'`, [o.kullanici])).rows,
+      ...(await b.db.query(`SELECT siparis_no, 'Teslim Gecikmesi (Dosya Sorumlusu ve Teknik Uzmana bilgi veriniz)' tur FROM tedarik_siparisi WHERE hazirlayan_ref = $1 AND statu IN ('Verildi', 'Kısmi Teslim') AND coalesce(tedarikci_teslim_tarihi, teslim_tarihi) < current_date`, [o.kullanici])).rows,
+    ];
+    return { talepler, siparisler, uyarilar };
+  });
   s.post('/tedarik/dagitim/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sorumlu?: string; iadeGerekcesi?: string };
     if (!UUID.test(id) || !(await roller(o.kullanici)).includes(TY)) return yok(y);

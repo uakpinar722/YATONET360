@@ -233,11 +233,27 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
       {ben.roller.some((r) => ['Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikPano />}
+      {ben.roller.some((r) => r.rol_adi === 'Tedarik Sorumlusu') && <TedarikSorumlusuPano />}
       {ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) && <TahsilatIzleme />}
       {lgm && <HaftaVeGecmis veri={veri} />}
       {lgm && <><OzelGunler /><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
     </>
   );
+}
+
+/** YG-1590: Yeni Malzeme Talepleri, Tedarik Uyarıları ve Siparişlerim. */
+function TedarikSorumlusuPano() {
+  const [v, setV] = useState<{ talepler: { kimlik: string; kayit_no: string; dosya_no: string | null; oncelik: string }[]; siparisler: { kimlik: string; siparis_no: string; statu: string; tedarikci_kabul: string | null; teslim_tarihi: string; makam: string | null }[]; uyarilar: { siparis_no: string; tur: string }[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/tedarik-sorumlusu-pano').then(setV).catch(() => setV(null)); }, []);
+  if (!v) return null;
+  return <>
+    <div className="bolum">Yeni Malzeme Talepleri</div>
+    {v.talepler.length === 0 ? <Bos m="Size atanmış yeni malzeme talebi bulunmamaktadır." /> : v.talepler.map((x) => <div key={x.kimlik} className={`ozet kart-sol${x.oncelik === 'Kritik' ? ' hata' : ''}`}><b>{x.kayit_no}{x.dosya_no ? ` · ${x.dosya_no}` : ''}</b><div className="not">{x.oncelik}</div></div>)}
+    <div className="bolum">Tedarik Uyarıları</div>
+    {v.uyarilar.length === 0 ? <Bos m="Tedarik uyarısı bulunmamaktadır." /> : v.uyarilar.map((u, i) => <div key={i} className="ozet kart-sol"><b>{u.siparis_no}</b> · {u.tur}</div>)}
+    <div className="bolum">Siparişlerim</div>
+    {v.siparisler.length === 0 ? <Bos m="Açık siparişiniz bulunmamaktadır." /> : v.siparisler.map((s) => <div key={s.kimlik} className="ozet kart-sol"><b>{s.siparis_no}</b> · {s.makam ? `${s.makam} Kontrolünde` : s.statu}{s.tedarikci_kabul ? ` · Tedarikçi: ${s.tedarikci_kabul}` : ''} · Teslim: {s.teslim_tarihi.split('-').reverse().join('.')}</div>)}
+  </>;
 }
 
 /** YG-1592, YG-1593: Dağıtım Bekleyen Talepler (Tedarik Sorumlusu seçimi, Onayla / Gerekçeyle İade Et) ve Ekip Uyarıları. */
@@ -274,10 +290,12 @@ function KalitePano() {
 
 /** YG-1586, YG-1587: Gözetim Uyarıları ve Gözetim / Müdürlük Dosyaları (teknik rapor durumu). */
 function TeknikPano() {
-  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; yat_adi: string; rapor: string | null }[]; uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[]; mudur: boolean } | null>(null); const [m, setM] = useState('');
+  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; yat_adi: string; rapor: string | null }[]; uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[]; mudur: boolean; durdurulan?: { kimlik: string; dosya_no: string; yat_adi: string; neden: string | null }[]; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; eksik: string[] }[] } | null>(null); const [m, setM] = useState('');
   useEffect(() => { void istek<NonNullable<typeof v>>('/teknik-pano').then(setV).catch(() => setV(null)); }, []);
   if (!v) return null;
   return <>
+    {(v.durdurulan ?? []).map((d) => <div key={d.kimlik} className="hata kart-sol"><div className="ust2"><b>Karar Seviyesi: Siz · {d.dosya_no} · {d.yat_adi}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{d.neden ?? 'İş durduruldu'} · GMY ve CEO bilgilendirildi; güvenli koşul doğrulanmadan iş yeniden başlatılmaz.</div></div>)}
+    {v.kuyruk && v.mudur && <><div className="bolum">Atama Bekleyenler</div>{v.kuyruk.length === 0 ? <Bos m="Teknik atama bekleyen dosya bulunmamaktadır." /> : v.kuyruk.map((k) => { const kl = k.son ? kalan(k.son) : null; return <div key={k.kimlik} className={`ozet kart-sol${k.oncelik === 'Kritik' ? ' hata' : ''}`}><div className="ust2"><b>{k.dosya_no} · {k.yat_adi}</b>{kl && <Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} />}</div><div className="not">{k.oncelik} · Atanacak: {k.eksik.join(', ')}</div></div>; })}</>}
     <div className="bolum">{v.mudur ? 'Müdürlük Uyarıları' : 'Gözetim Uyarıları'}</div>{m && <div className="not" role="status">{m}</div>}
     {v.uyarilar.length === 0 ? <Bos m="Gözetim uyarısı bulunmamaktadır." /> : v.uyarilar.map((u, i) => <div key={i} className="ozet kart-sol"><div className="ust2"><b>{u.dosya_no} · {u.tur}</b></div><div className="not">{u.ozet}</div>
       {!v.mudur && u.tur === 'Saha Sorumlusu Gerekiyor' && <button className="btn2 kucuk" onClick={() => void istek(`/dosya/${u.dosya}/saha-sorumlusu-bildir`, {}).then(() => setM('Teknik Müdüre bildirildi.')).catch((e) => setM(e.message))}>Teknik Müdüre Bildir</button>}</div>)}

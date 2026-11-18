@@ -66,7 +66,16 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     }
     for (const u of (await b.db.query(`SELECT u.dosya_ref, d.dosya_no, u.uygunsuzluk_no, u.sinif FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref WHERE u.statu NOT IN ('Kapalı', 'Geçersiz') AND u.sinif IN ('Majör', 'Kritik') AND u.dosya_ref = ANY($1::uuid[])`, [dosyalar.map((d) => d.kimlik)])).rows)
       uyarilar.push({ dosya: u.dosya_ref, dosya_no: u.dosya_no, tur: `${u.sinif} Uygunsuzluk`, ozet: u.uygunsuzluk_no });
-    return { dosyalar, uyarilar, mudur };
+    // YG-1588: Teknik Müdürde ciddi tehlikeyle durdurulan dosyalar (Karar Seviyesi: Siz) ve teknik atama kuyruğu (öncelik → kalan süre → geliş).
+    const tm = l.some((r) => r.rol_adi === 'Teknik Müdür');
+    const durdurulan = !tm ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi, (SELECT e.durdurma_nedeni FROM is_emri e WHERE e.dosya_ref = d.kimlik AND e.statu = 'Durduruldu' LIMIT 1) neden FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.calisma_durduruldu AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')`)).rows;
+    const kuyruk = !mudur ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik, y.yat_adi, (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) son,
+        array_remove(ARRAY[CASE WHEN NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) THEN 'Teknik Uzman' END,
+          CASE WHEN NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL) THEN 'Teknik Yönetici' END], NULL) eksik
+      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.statu = 'Açılış Kontrolünde'
+        AND (NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) OR NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL))
+      ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
+    return { dosyalar, uyarilar, mudur, durdurulan, kuyruk };
   });
   // YG-1586: Teknik Yönetici Saha Sorumlusu ihtiyacını Teknik Müdüre bildirir; atama ayrı onay aranmadan Teknik Müdürdedir.
   s.post('/dosya/:id/saha-sorumlusu-bildir', oturumlu, async (i, y) => {

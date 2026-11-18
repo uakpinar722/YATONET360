@@ -21,6 +21,9 @@ describe('Talep Dağıtımı (YG-1592, YG-1593)', () => {
     expect((await o.ist('POST', `/api/tedarik/dagitim/${f1}`, await o.gir('tmy'), { sorumlu: o.K.tso })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/tedarik/dagitim/${f1}`, await o.gir('tyo'), { sorumlu: o.K.tso })).statusCode).toBe(200);
     expect(await o.kart('Malzeme Talebi', f1)).toBeDefined();
+    // YG-1590 (T-YG1590): Tedarik Sorumlusu kendi talebini görür
+    expect((await o.ist('GET', '/api/tedarik-sorumlusu-pano', await o.gir('tso'))).json().talepler.map((x: { kimlik: string }) => x.kimlik)).toContain(f1);
+    expect((await o.ist('GET', '/api/tedarik-sorumlusu-pano', await o.gir('tyo'))).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/tedarik/dagitim/${f2}`, await o.gir('tyo'), { iadeGerekcesi: 'Teknik şart eksik' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum, iade_nedeni FROM form_kaydi WHERE kimlik = $1`, [f2])).rows[0]).toEqual({ durum: 'Açık', iade_nedeni: 'Teknik şart eksik' });
     expect((await o.ist('GET', '/api/tedarik-pano', await o.gir('ds'))).statusCode).toBe(404);

@@ -42,6 +42,7 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET oncelik = 'Kritik' WHERE kimlik = $1`, [d.kimlik]);
     const v = (await o.ist('GET', '/api/teknik-pano', await o.gir('tm'))).json();
     expect(v.mudur).toBe(true); expect(v.dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    expect(Array.isArray(v.kuyruk) && Array.isArray(v.durdurulan)).toBe(true); // YG-1588
     expect(v.uyarilar.some((x: { dosya: string; tur: string }) => x.dosya === d.kimlik && x.tur === 'Saha Sorumlusu Gerekiyor')).toBe(true);
     expect((await o.ist('GET', '/api/teknik-pano', await o.gir('ts'))).statusCode).toBe(404);
   });
