@@ -491,6 +491,13 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     await o.ist('POST', `/api/firma/${f}/belge`, await o.gir('sc'), { tur: 'Vergi Levhası', bitis: '2020-01-01' });
     expect(await firmaUygunlugu(o.db, f)).toContain('Vergi Levhası');
     expect(await firmaUygunlugu(o.db, firma, 'Olmayan Branş')).toContain('branşta');
+    // YG-303 (T-YG303): Bölge kapsamlı yetki başka bölgedeki dosyaya geçmez; Ulusal kapsam geçer
+    await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama, bolge, yetkinlik_seviyesi) VALUES ($1,'Bölge Deneme','Bölge','Ege','Y2')`, [f]);
+    await o.ist('POST', `/api/firma/${f}/belge`, await o.gir('sc'), { tur: 'Vergi Levhası', bitis: '2030-01-01' }); await o.sup.query(`DELETE FROM sicil_belgesi WHERE kurulus_ref = $1 AND gecerlilik_bitis < current_date`, [f]);
+    expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', 'Ege')).toBeNull();
+    expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', 'Marmara')).toContain('Marmara');
+    await o.sup.query(`UPDATE brans_yetkinligi SET kapsama = 'Ulusal' WHERE kurulus_ref = $1 AND ana_brans = 'Bölge Deneme'`, [f]);
+    expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', 'Marmara')).toBeNull();
     expect((await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { ag: 'Çıkarıldı', gerekce: 'G' })).statusCode).toBe(403);
   });
   it('tam akış: onay, yayın, firma görünümünde müşteri yok, kod ile kabul, başlangıç, ilerleme, teknik kabul, kapanış', async () => {

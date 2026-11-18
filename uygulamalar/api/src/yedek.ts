@@ -154,6 +154,11 @@ export async function saglikIzle(db: Pool, klasor: string, simdi = new Date(), s
   try { mkdirSync(klasor, { recursive: true }); const f = statfsSync(klasor); if ((f.bavail / f.blocks) * 100 < sinir.diskYuzde) u.push('Disk kapasitesi kritik düzeyde.'); } catch { u.push('Disk kapasitesi okunamadı.'); }
   const n = (await db.query(`SELECT zaman FROM sistem_nabzi WHERE kimlik = 1`)).rows[0]?.zaman as Date | undefined;
   if (n && simdi.getTime() - new Date(n).getTime() > sinir.nabizSaat * 3_600_000) u.push('Zamanlanmış işler bir süre çalışmadı; günlük ve izleme hizmeti durmuş olabilir.');
+  // YG-511: iş sonucu geciktiğinde de uyarı; kuyrukta 30 dakikayı aşan ileti ve son bir saatte 5 ve üzeri başarısız gönderim. Tüm uyarılar saatte tek bildirimde birleşir.
+  const kuyruk = Number((await db.query(`SELECT count(*) n FROM gonderim WHERE durum = 'Bekliyor' AND plan_zamani < $1::timestamptz - interval '30 minutes'`, [simdi])).rows[0].n);
+  if (kuyruk > 0) u.push(`Gönderim kuyruğunda 30 dakikayı aşan ${kuyruk} ileti bekliyor.`);
+  const basarisiz = Number((await db.query(`SELECT count(*) n FROM gonderim WHERE durum = 'Başarısız' AND olusturma_zamani > $1::timestamptz - interval '1 hour'`, [simdi])).rows[0].n);
+  if (basarisiz >= 5) u.push(`Son bir saatte ${basarisiz} gönderim başarısız oldu.`);
   await db.query(`INSERT INTO sistem_nabzi (kimlik, zaman) VALUES (1,$1) ON CONFLICT (kimlik) DO UPDATE SET zaman = EXCLUDED.zaman`, [simdi]);
   if (u.length && await birKez(db, 'sistem_sagligi', simdi.toISOString().slice(0, 13))) { const al = [...await rolSahipleri(db, await rolId(db, SY)), ...await rolSahipleri(db, await rolId(db, BIM))]; await bildir(db, { olay: `sistem-sagligi:${simdi.toISOString().slice(0, 13)}`, kullanicilar: al, baslik: '⚠ Sistem Sağlığı Uyarısı', ozet: u.join(' '), oncelik: 'Kritik', sms: true, acil: true }); }
   return u;

@@ -26,6 +26,12 @@ describe('onay süreleri (YG-172)', () => {
     await yas(a, 301); await onaySureIsle(o.db); await onaySureIsle(o.db);
     const s = await satir(a); expect(s.kademe).toBe(1); expect(s.zincir).toHaveLength(2);
     expect((await o.sup.query(`SELECT count(*)::int n FROM kart_sure_kaydi WHERE is_ref = $1`, [a])).rows[0].n).toBeGreaterThanOrEqual(3);
+    // YG-536 (T-YG536): beklenen eylem yazılır; kart kapanınca kapanış sonucu düşer
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kart_sure_kaydi WHERE is_ref = $1 AND beklenen_eylem IS NULL`, [a])).rows[0].n).toBe(0);
+    { const k2 = (await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, sahip_kullanici_ref) VALUES ('Deneme','gorev','Eskalasyon Deneme',$1) RETURNING kimlik`, [o.K[Object.keys(o.K)[0]!]])).rows[0].kimlik;
+      await o.sup.query(`INSERT INTO kart_sure_kaydi (is_ref, kademe, adim, beklenen_eylem) VALUES ($1,0,'Uyarı','X')`, [k2]);
+      await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [k2]);
+      expect((await o.sup.query(`SELECT kapanis_sonucu FROM kart_sure_kaydi WHERE is_ref = $1`, [k2])).rows[0].kapanis_sonucu).toBe('Tamamlandı'); }
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti_adim WHERE is_ref = $1 AND karar = 'Süre Aşımıyla Geçti'`, [a])).rows[0].n).toBe(1);
     await yas(a, 301); await onaySureIsle(o.db);
     const s2 = await satir(a); expect(s2.kademe).toBe(2); expect(s2.zincir).toHaveLength(3); expect(s2.zincir[2]).toBe(await rol('Genel Müdür Yardımcısı'));

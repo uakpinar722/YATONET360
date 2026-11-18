@@ -881,7 +881,7 @@ export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
   const [izId, setIzId] = useState(''); const [izB, setIzB] = useState('');
   const [msId, setMsId] = useState(''); const [msB, setMsB] = useState(''); // YG-920
-  const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '', belgeTuru: 'Kağıt Fiş' });
+  const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '', belgeTuru: 'Kağıt Fiş', istisna: '' });
   return (
     <>
       <h1>İdari İşlemlerim</h1><Mesaj />
@@ -977,6 +977,7 @@ export function IdariIslemler() {
         <label htmlFor="ms-bt">Belge Türü</label><select id="ms-bt" value={m.belgeTuru} onChange={(e) => setM({ ...m, belgeTuru: e.target.value })}><option>Kağıt Fiş</option><option>e-Fatura</option><option>e-Arşiv</option></select>
         <div className="iki-tarih"><div><label htmlFor="ms-d">Fiş Tarihi</label><input id="ms-d" type="date" value={m.tarih} onChange={(e) => setM({ ...m, tarih: e.target.value })} /></div><div><label htmlFor="ms-n">Belge No</label><input id="ms-n" value={m.belgeOzeti} onChange={(e) => setM({ ...m, belgeOzeti: e.target.value })} /></div></div>
         <div className="iki-tarih"><div><label htmlFor="ms-a">Tutar (TL)</label><input id="ms-a" inputMode="decimal" value={m.tutarTl} onChange={(e) => setM({ ...m, tutarTl: e.target.value })} /></div><div><label htmlFor="ms-k">TCMB Kuru</label><input id="ms-k" inputMode="decimal" value={m.kur} onChange={(e) => setM({ ...m, kur: e.target.value })} /></div></div>
+        {m.tur === 'Konaklama' && <><label htmlFor="ms-i">Sınır Aşımı İstisna Gerekçesi (İsteğe Bağlı)</label><input id="ms-i" value={m.istisna} onChange={(e) => setM({ ...m, istisna: e.target.value })} /><div className="not">Gecelik sınırı aşan kısım yalnız Ticari İşler Direktörünün istisna onayıyla ödenir.</div></>}
         <MasrafTakvimi tarih={m.tarih} />
         <button className="btn2" onClick={() => void yap(() => istek<{ odenecek: number; kesilen: number; kimlik?: string }>('/masraf', { ...m, tutarTl: Number(m.tutarTl.replace(',', '.')), kur: Number(m.kur.replace(',', '.')), miktar: Number(m.miktar) }).then((r) => { if (r.kimlik) setMsId(r.kimlik); return { uyari: `Ödenecek: ${eur(r.odenecek)}${r.kesilen > 0 ? ` · Limit Aşımı: ${eur(r.kesilen)}` : ''}${m.belgeTuru === 'Kağıt Fiş' ? ' · Fiş görselini yükleyiniz.' : ''}` }; }))}>Masraf Gönder</button>
         {msId && <BelgeSec ad="Fiş Görseli" bagTuru="Masraf" bagKimligi={msId} deger={msB} sec={(k) => { setMsB(k); void yap(() => istek(`/masraf/${msId}/belge`, { belge: k }).then(() => ({ uyari: 'Fiş görseli eklendi.' }))); }} />}

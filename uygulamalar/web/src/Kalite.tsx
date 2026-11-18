@@ -167,6 +167,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
           <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/test`, t), 'Test planlandı.')}>Testi Planla</button>
         </>}
       </Blok>
+      <KosulUzatma id={id} ds={roller.includes('Dosya Sorumlusu')} />
       {v.acikIsler.length > 0 && <Blok baslik="Açık İşler">{v.acikIsler.map((x) => <div key={x.kimlik}>{x.tanim} · Hedef: {x.hedef_tarih.split('-').reverse().join('.')} · {x.kapanis_zamani ? 'Kapalı' : 'Açık'}</div>)}</Blok>}
       {(roller.includes(KM) || roller.includes('Teknik Yönetici') || roller.includes('Teknik Müdür')) && <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/nihai-kabul`, {}), 'Nihai kabul kaydedildi; garanti başladı.')}>Nihai Kabul</button>}
     </>
@@ -176,6 +177,17 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
 interface Siparisler { siparisler: { kimlik: string; siparis_no: string; statu: string; kdv_haric_eur: string; ticari_unvan: string }[]; girisler: { kimlik: string; kayit_no: string; siparis_ref: string; miktar: string; lot_no: string; kabul_karari: string | null; benim: boolean }[] }
 
 /** YG-823, YG-404, YG-1589: sipariş Tedarik Sorumlusundan onay zincirine gider; giriş kontrolünü Saha Sorumlusu, yoksa Teknik Uzman yapar. */
+/** YG-1692: koşullu kabul süresi; Dosya Sorumlusu gerekçeyle bir kez 15 gün uzatma talep eder (Gönderilecek: Kalite Müdürü). */
+function KosulUzatma({ id, ds }: { id: string; ds: boolean }) {
+  const [l, setL] = useState<{ kimlik: string; is_emri_no: string | null; kosul_bitis: string; uzatildi: boolean; talep: string | null }[]>([]); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>(`/dosya/${id}/kosullu-kabuller`).then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, [id]);
+  if (!l.length) return null;
+  return <Blok baslik="Koşullu Kabul Süresi">{m && <div className="not" role="status">{m}</div>}{l.map((x) => <div key={x.kimlik} className="soru"><span>{x.is_emri_no ?? 'Dosya'} · Koşul Bitişi: {x.kosul_bitis.split('-').reverse().join('.')}{x.uzatildi ? ' · Uzatıldı' : ''}{x.talep === 'Bekliyor' ? ' · Uzatma Talebi Kalite Müdürü Kontrolünde' : x.talep === 'Reddedildi' ? ' · Uzatma Talebi Reddedildi' : ''}</span>
+    {ds && !x.uzatildi && x.talep !== 'Bekliyor' && <div className="tam"><div className="not">Gönderilecek: Kalite Müdürü</div><label htmlFor={`ku-${x.kimlik}`}>Uzatma Gerekçesi</label><input id={`ku-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!(g[x.kimlik] ?? '').trim()} onClick={() => void istek(`/kabul/${x.kimlik}/uzatma-talebi`, { gerekce: g[x.kimlik] }).then(() => { setM('Uzatma talebi Kalite Müdürüne gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Uzatma Talep Et</button></div>}</div>)}</Blok>;
+}
+
 export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [f, setF] = useState({ dil: 'Türkçe', tedarikci: '', teklifRef: '', kullanim: '', teslimTarihi: '', teslimYeri: '', olcut: '', gerekce: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', bedel: '' });
   const [v, setV] = useState<Siparisler | null>(null); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [yer, setYer] = useState<{ kimlik: string; ticari_unvan: string }[]>([]);

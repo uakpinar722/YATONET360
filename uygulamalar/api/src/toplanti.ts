@@ -33,7 +33,13 @@ async function baskanBul(db: Db, rol: string | null, kisiler: string[], duzenley
 async function gundemUret(db: Db, kod: string): Promise<string | null> {
   if (kod !== 'TPL-02' && kod !== 'TPL-03') return null;
   const { rows } = await db.query(`SELECT count(*)::int n FROM is_karti WHERE durum = 'Bekliyor' AND kategori = 'onay' AND son_zaman < now()`);
-  return `Süresi Aşan Onay: ${rows[0].n}`;
+  // YG-584: süre aşımları, açık uygunsuzluklar ve Kritik dosyalar gündeme kendiliğinden girer.
+  const s = (await db.query(`SELECT (SELECT count(*)::int FROM is_karti WHERE durum = 'Bekliyor' AND kategori IN ('islem', 'gorev') AND son_zaman < now()) gorev,
+      (SELECT count(*)::int FROM dosya_sure s JOIN dosya d ON d.kimlik = s.dosya_ref WHERE s.tamamlanma IS NULL AND s.bitis < now() AND d.statu <> 'Kapalı') sure,
+      (SELECT count(*)::int FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz')) uyg, (SELECT count(*)::int FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz') AND sinif IN ('Kritik', 'Majör')) agir,
+      (SELECT count(*)::int FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz') AND hedef_zamani < now()) gecen,
+      (SELECT string_agg(dosya_no, ', ' ORDER BY dosya_no) FROM (SELECT dosya_no FROM dosya WHERE oncelik = 'Kritik' AND statu NOT IN ('Kapalı', 'Teknik Kapalı') ORDER BY dosya_no LIMIT 10) x) kritik`)).rows[0];
+  return [`Süresi Aşan Onay: ${rows[0].n}`, `Süresi Aşan Görev ve İşlem: ${s.gorev}`, `Hedef Süresi Aşan Dosya Süresi: ${s.sure}`, `Açık Uygunsuzluk: ${s.uyg} (Kritik/Majör: ${s.agir}; hedef süresi geçen: ${s.gecen})`, `Kritik Öncelikli Açık Dosyalar: ${s.kritik ?? 'Yok'}`].join('\n');
 }
 
 /** Ek II §1.8: vekil üst makamın onayıyla geçerlidir; süre geçtiyse katılımcı mazeretli sayılır. */

@@ -249,6 +249,10 @@ kapanisKaydet('Teslim İstisnası', async (c, k, karar) => {
 kapanisKaydet('İzin Talebi', async (c, k, karar) => {
   const t = (await c.query(`SELECT * FROM izin_talebi WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
+  // YG-1057: 10 gün ve üzeri izinde birim amiri onay vermeden önce izin dönemine rol vekâleti atanmış olmalıdır.
+  if ((karar === 'Onayla' || karar === 'Onaya Gönder') && t.durum === 'Birim Amirinde' && Number(t.gun) >= 10
+    && !(await c.query(`SELECT 1 FROM vekalet WHERE asil_ref = $1 AND durum = 'Aktif' AND baslangic_tarihi <= $3 AND bitis_tarihi >= $2`, [t.personel_ref, t.baslangic, t.bitis])).rowCount)
+    throw Object.assign(new Error('10 gün ve üzeri izinde önce izin dönemi için rol vekâleti atanmalıdır (Vekâlet ekranı).'), { statusCode: 409 });
   if (karar === 'Onayla') {
     await c.query(`UPDATE izin_talebi SET durum = 'Onaylandı' WHERE kimlik = $1`, [t.kimlik]);
     if (t.izin_turu === 'Yıllık') await c.query(`UPDATE izin_bakiyesi SET kullanilan = kullanilan + $3 WHERE personel_ref = $1 AND yil = $2`, [t.personel_ref, new Date(t.baslangic).getUTCFullYear(), t.gun]);
@@ -831,7 +835,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     return [...new Set(sira)];
   }
   s.post('/masraf', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string; belgeTuru?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; tarih?: string; tutarTl?: number; kur?: number; miktar?: number; belge?: string; belgeOzeti?: string; belgeTuru?: string; istisna?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     // YG-955: kur girilmezse fiş tarihindeki (veya önceki son yayın) TCMB EUR satış kuru kullanılır.
     if (!(Number(g.kur) > 0) && g.tarih) { const k = await (await import('./doviz.js')).kurGetir(b.db, 'EUR', g.tarih); if (k) g.kur = k.kur; }
@@ -847,13 +851,16 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     }
     const eur = R2(Number(g.tutarTl) / Number(g.kur));
     const lim = { km: await parametre(b.db, 'masraf_km_eur'), yemek: await parametre(b.db, 'masraf_yemek_eur'), konaklama: await parametre(b.db, 'masraf_konaklama_eur') };
-    const od = masrafOdenecek(g.tur, eur, Number(g.miktar ?? 1), lim);
-    if ((await b.db.query(`SELECT 1 FROM personel_masraf_fisi WHERE personel_ref = $1 AND belge_ozeti = $2`, [o.kullanici, g.belgeOzeti.trim()])).rowCount) return y.code(409).send({ hata: 'Bu belge daha önce girilmiştir.' });
+    // YG-921: konaklamada aşan kısım gerekçeli istisnayla Ticari İşler Direktörü onayına bağlanır; istisna yoksa ödenmez.
+    const istisna = g.tur === 'Konaklama' && g.istisna?.trim() && masrafOdenecek(g.tur, eur, Number(g.miktar ?? 1), lim) < eur ? g.istisna.trim() : null;
+    const od = istisna ? eur : masrafOdenecek(g.tur, eur, Number(g.miktar ?? 1), lim);
+    if ((await b.db.query(`SELECT 1 FROM personel_masraf_fisi WHERE personel_ref = $1 AND belge_ozeti = $2 AND durum <> 'Reddedildi'`, [o.kullanici, g.belgeOzeti.trim()])).rowCount) return y.code(409).send({ hata: 'Bu belge daha önce girilmiştir.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO personel_masraf_fisi (personel_ref, masraf_turu, fis_tarihi, tutar_tl, kur, tutar_eur, odenecek_eur, miktar, belge_ref, belge_ozeti, belge_turu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11, 'Kağıt Fiş')) RETURNING kimlik`, [o.kullanici, g.tur, g.tarih, g.tutarTl, g.kur, eur, od, g.miktar ?? 1, g.belge ?? null, g.belgeOzeti!.trim(), g.belgeTuru ?? null])).rows[0];
       const zincir = await masrafZinciri(c, o.kullanici);
-      if (od > await parametre(c, 'masraf_tid_esik_eur')) { const tid = await rolId(c, 'Ticari İşler Direktörü'); if (!zincir.includes(tid)) zincir.push(tid); }
-      await kartAc(c, { tur: 'Masraf Fişi', baslik: `Masraf Fişi · ${g.tur}`, ozet: `${tutar(od)} EUR`, hazirlayan: o.kullanici, zincir, nesneTuru: 'Masraf', nesneKimligi: r.kimlik });
+      if (istisna) await c.query(`UPDATE personel_masraf_fisi SET istisna_gerekcesi = $2 WHERE kimlik = $1`, [r.kimlik, istisna]);
+      if (istisna || od > await parametre(c, 'masraf_tid_esik_eur')) { const tid = await rolId(c, 'Ticari İşler Direktörü'); if (!zincir.includes(tid)) zincir.push(tid); }
+      await kartAc(c, { tur: 'Masraf Fişi', baslik: `Masraf Fişi · ${g.tur}`, ozet: `${tutar(od)} EUR${istisna ? ` · Konaklama sınırı istisnası: ${istisna}` : ''}`, hazirlayan: o.kullanici, zincir, nesneTuru: 'Masraf', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, odenecek: od, kesilen: R2(eur - od) };
     });
   });

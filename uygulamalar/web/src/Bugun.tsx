@@ -89,7 +89,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
           {!son && <div className="not">Gönderilecek: <b className="koyu">{k.sonraki_rol}</b></div>}
           {!son && <><label htmlFor={`an-${k.kimlik}`}>Not (İsteğe Bağlı)</label><input id={`an-${k.kimlik}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} /></>}
           <div className="dugmeler">
-            {son ? <button className="btn evet" disabled={mesgul} onClick={() => void ver('Onayla')}>{teyit ? 'Teyit Et' : 'Onayla'}</button> : <button className="btn" disabled={mesgul} onClick={() => void ver('Onaya Gönder', gerekce.trim() || undefined)}>Onaya Gönder</button>}
+            {son ? <button className="btn evet" disabled={mesgul} onClick={() => void ver('Onayla')}>{teyit ? 'Teyit Et' : 'Onayla'}</button> : <button className="btn" disabled={mesgul} onClick={() => void ver('Onaya Gönder', gerekce.trim() || undefined)}>{k.tur === 'Masraf Fişi' ? 'Uygundur' : 'Onaya Gönder'}</button>}
             {son && !teyit && <button className="btn hayir" onClick={() => setAcik('ret')}>Reddet</button>}
             <button className="btn2" onClick={() => setAcik('iade')}>Gerekçeyle İade Et</button>
           </div>

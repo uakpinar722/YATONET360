@@ -1,3 +1,4 @@
+import { sahaSorumlusuGerekceleri, sahaSorumlusuIhtiyacIsle } from '../src/dosya.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { acilIsle, acilSinir, ilkIsGunu12, nobetci } from '../src/acil.js';
 import { aydinlatmaKodu } from '../src/adimlar.js';
@@ -307,3 +308,19 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect(r.statusCode, r.body).toBe(200); expect(r.json().talepNo).toMatch(/^LGM-/);
   });
 });
+
+describe('Saha Sorumlusu zorunluluğu (YG-050)', () => {
+  it('iki firma ve 5.000 EUR üstü işte gerekçeli zorunluluk; Teknik Müdüre bir kez görev (T-YG050)', async () => {
+    const d = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya SET oncelik = 'Normal' WHERE kimlik = $1`, [d.kimlik]);
+    expect(await sahaSorumlusuGerekceleri(o.db, d.kimlik)).toEqual([]);
+    for (const [n, b] of [['01', 3000], ['02', 2500]] as const) {
+      const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı',$3) RETURNING kimlik`, [`S-SS${n}${Date.now()}`, `Saha Firma ${n} ${Date.now()}`, o.K.ds])).rows[0].kimlik;
+      await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref, firma_bedeli_eur) VALUES ($1,'ON',$2,$3,'M','Boya','Aktif',$4,$5)`, [`${d.dosyaNo}-ON${n}`, d.kimlik, f, o.K.ds, b]);
+    }
+    expect(await sahaSorumlusuGerekceleri(o.db, d.kimlik)).toEqual(['Aynı Sahada Birden Fazla Firma', '5.000,00 EUR Üzerinde İş']);
+    await sahaSorumlusuIhtiyacIsle(o.db); await sahaSorumlusuIhtiyacIsle(o.db);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Saha Sorumlusu Ataması' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
+});
+

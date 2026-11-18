@@ -304,8 +304,9 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
       let sahip = (await c.query(`SELECT kimlik FROM taraf WHERE kullanici_ref = $1 LIMIT 1`, [o.kullanici])).rows[0];
       if (!sahip) sahip = (await c.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, telefon, eposta, taraf_rolleri, kullanici_ref, olusturan_ref) VALUES ($1,'Gerçek kişi','Bireysel Müşteri',$2,$3,$4,'{Yat Sahibi}',$5,$5) RETURNING kimlik`, [await tarafNo(c), h.ad_soyad, h.cep_telefonu, h.e_posta, o.kullanici])).rows[0];
       const yat = (await c.query(`SELECT kimlik FROM yat WHERE yat_sahibi_ref = $1 AND lower(yat_adi) = lower($2) LIMIT 1`, [sahip.kimlik, g.yatAdi.trim()])).rows[0];
-      // YG-1553: mesai içinde Operasyon Müdürü kuyruğu. Mesai dışı nöbetçi Dosya Sorumlusu Nöbet modülüyle gelir.
-      const ilk = (await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü')))[0] ?? o.kullanici;
+      // YG-1553: mesai içinde Operasyon Müdürü kuyruğu; mesai dışında nöbetçi Dosya Sorumlusu (nöbetçi yoksa Operasyon Müdürü).
+      const mesai = (await import('./bildirim.js')).mesaiIcinde(new Date());
+      const ilk = (!mesai ? await (await import('./acil.js')).nobetci(c, 'Dosya Sorumlusu') : null) ?? (await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü')))[0] ?? o.kullanici;
       const r = await ihbarKaydet(c, {
         kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: 'Yat Sahibi', telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum, yatDurumu: 'Beyan edilmedi', ihtiyac: g.ozet,
         yat: yat ? { yatId: yat.kimlik } : { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, sigortaci: g.sigorta === 'Türkiye\'de Sigortalı' ? g.sigortaci : undefined, hasarNo: g.hasarNo, dil: h.tercih_dili, oncelik: 'Normal', cevaplar: {},

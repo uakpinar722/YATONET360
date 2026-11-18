@@ -84,6 +84,32 @@ async function boyGovdeEksik(db: Db, id: string): Promise<boolean> {
   return r.tam_boy_m === null || !r.govde_malzemesi || r.govde_malzemesi === 'Bilinmiyor';
 }
 
+/** YG-050: Saha Sorumlusunu zorunlu kılan durumlar; boş liste zorunluluk yok demektir. Teknik Müdürlük talebi ayrı akıştadır (saha-sorumlusu-talebi). */
+export async function sahaSorumlusuGerekceleri(db: Db, dosya: string): Promise<string[]> {
+  const d = (await db.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]; if (!d) return [];
+  const e = (await db.query(`SELECT count(DISTINCT kurulus_ref)::int firma, coalesce(sum(firma_bedeli_eur), 0)::float bedel, string_agg(coalesce(kapsam, ''), ' ') kapsam FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('AC', 'ON', 'EK', 'GR') AND statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti', 'Kapalı')`, [dosya])).rows[0];
+  const l: string[] = [];
+  if (d.oncelik === 'Kritik') l.push('Kritik Öncelik');
+  if (e.firma >= 2) l.push('Aynı Sahada Birden Fazla Firma');
+  if (/karaya al|çekek|cekek/i.test(e.kapsam ?? '')) l.push('Karaya Alma veya Çekek');
+  if (e.bedel > 5000) l.push('5.000,00 EUR Üzerinde İş');
+  if ((await import('./uyum.js')).isEmriUyumOlaylari(e.kapsam ?? '').length) l.push('Yüksek Riskli Çalışma');
+  return l;
+}
+
+/** YG-050: zorunlu durumda Saha Sorumlusu yoksa Teknik Müdüre (yokluğunda vekiline) gerekçeli atama görevi bir kez açılır. */
+export async function sahaSorumlusuIhtiyacIsle(db: Pool): Promise<number> {
+  let n = 0;
+  for (const d of (await db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik FROM dosya d WHERE d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Saha Sorumlusu' AND a.bitis_zamani IS NULL)
+      AND EXISTS (SELECT 1 FROM is_emri e WHERE e.dosya_ref = d.kimlik AND e.statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti', 'Kapalı'))`)).rows) {
+    const g = await sahaSorumlusuGerekceleri(db, d.kimlik); if (!g.length) continue;
+    if (!(await birKez(db, 'saha_sorumlusu_ihtiyac', d.kimlik))) continue;
+    const { kartAc } = await import('./is_motoru.js');
+    await kartAc(db, { tur: 'Saha Sorumlusu Ataması', kategori: 'gorev', baslik: `${d.dosya_no} · Saha Sorumlusunu Ata`, ozet: `Zorunlu: ${g.join(', ')}`, oncelik: d.oncelik, sahipRol: await rolId(db, 'Teknik Müdür'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik }); n++;
+  }
+  return n;
+}
+
 /** YG-064: dosya ekranındaki yapılacaklar; sıradaki işlem, sorumlu ve eksik kayıtlar. Tamamlandıkça sonraki adım kendiliğinden açılır. */
 export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; asama: string | null; oncelik: string; dosya_niteligi: string }) {
   const l: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null }[] = [];
@@ -95,7 +121,7 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
     if (!ekip.has('Teknik Yönetici')) l.push({ is: 'Teknik Yöneticiyi Ata', sorumlu: 'Teknik Müdür', engel: true });
   }
   // YG-050: zorunlu durumda Saha Sorumlusu uyarısı.
-  if (d.oncelik === 'Kritik' && !ekip.has('Saha Sorumlusu')) l.push({ is: 'Saha Sorumlusunu Ata (Kritik Öncelikte Zorunlu)', sorumlu: 'Teknik Müdür' });
+  if (!ekip.has('Saha Sorumlusu')) { const sg = await sahaSorumlusuGerekceleri(db, d.kimlik); if (sg.length) l.push({ is: `Saha Sorumlusunu Ata (Zorunlu: ${sg.join(', ')})`, sorumlu: 'Teknik Müdür' }); }
   if (d.dosya_niteligi === 'Sigorta bağlantılı' && !(await db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [d.kimlik])).rowCount) l.push({ is: 'Sigorta Hasar Dosya Numarasını Gir (Teklif Gönderilmeden Önce)', sorumlu: 'Dosya Sorumlusu' });
   // YG-1360: her yapılacak işin hedefi dosyanın en yakın açık süresidir; dosyaya bağlı bekleyen görev kartları sorumlu ve hedef zamanla eklenir.
   const hedef = (await db.query(`SELECT min(bitis) b FROM dosya_sure WHERE dosya_ref = $1 AND tamamlanma IS NULL`, [d.kimlik])).rows[0]?.b ?? null;

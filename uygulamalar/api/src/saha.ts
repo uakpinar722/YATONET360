@@ -500,6 +500,11 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const sg = (await c.query(`SELECT t.eposta FROM dosya_sigorta_kaydi s JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [id])).rows[0];
       if (sg?.eposta) await sigortayaHazirla(c, { dosya: id, tur: 'BLD-45', nesne: id, alici: sg.eposta, konu: `${d.dosya_no} Bilgilendirme`, metin: await metinGetir(c, 'BLD-45', 'tr', { 'Dosya No': d.dosya_no }), acil: true });
       else await sigortaAdresiBekleniyor(c, id);
+      // YG-1477, BLD-46: açık iş emri olan firmalara vefat bilgisi içermeyen bekletme bildirimi otomatik gider (portal ve SMS).
+      for (const e of (await c.query(`SELECT kimlik, is_emri_no, kurulus_ref FROM is_emri WHERE dosya_ref = $1 AND statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti', 'Kapalı', 'Tamamlandı')`, [id])).rows) {
+        const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
+        if (kisiler.length) await bildir(c, { olay: `bld46:${e.kimlik}`, kullanicilar: kisiler, baslik: `${e.is_emri_no} · İşlemler Bekletiliyor`, ozet: await metinGetir(c, 'BLD-46', 'tr', { 'İş Emri No': e.is_emri_no }), sms: true });
+      }
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vefat İşareti', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { tamam: true };
     });

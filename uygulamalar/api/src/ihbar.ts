@@ -66,7 +66,8 @@ export async function doganGorevAc(c: Db, kod: string, dosyaNo: string, olay: st
     const rolKimlik = kisi ? undefined : (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ROL_ADI[rol] ?? rol])).rows[0]?.kimlik as string | undefined;
     if (!kisi && !rolKimlik) continue;
     let son: Date | undefined;
-    if (/en kısa sürede/i.test(is)) son = new Date(simdi.getTime() + (ILK_YANIT_SAAT[d.oncelik] ?? 4) * 3_600_000);
+    if (/(gelince|girilince|gerçekleşince|değiştiğinde)/i.test(is)) son = undefined; // koşula bağlı iş: süre koşul gerçekleşince sahibince izlenir
+    else if (/en kısa sürede/i.test(is)) son = new Date(simdi.getTime() + (ILK_YANIT_SAAT[d.oncelik] ?? 4) * 3_600_000);
     else if (/1 iş günü/i.test(is)) { const { bitisKaydir, tatilGunleri } = await import('./sure.js'); son = bitisKaydir(new Date(simdi.getTime() + 24 * 3_600_000), d.oncelik, await tatilGunleri(c)).bitis; }
     await kartAc(c, { tur: 'Doğan Görev', kategori: 'gorev', baslik: `${dosyaNo} · ${kod} sonrası görev`, ozet: is.replace(/\s*\(üst sınır: öncelik ilk yanıt süresi\)/, ''), oncelik: d.oncelik, sahipKullanici: kisi, sahipRol: kisi ? undefined : rolKimlik, sonZaman: son, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
     n++;

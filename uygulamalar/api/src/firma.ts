@@ -65,7 +65,13 @@ function uygunlukEngeli(f: { kayit_asamasi: string; ag_statusu: string | null; d
   if (!f.brans_var) return 'Firma bu branşta yetkili değildir.';
   return null;
 }
-export async function firmaUygunlugu(db: Db, firma: string, brans?: string | null): Promise<string | null> {
+/** YG-303, YG-322: dosyanın bölgesi; konum bağlama noktası adıyla eşleşirse o noktanın bölgesi (eşleşme yoksa null, denetim yapılmaz). */
+export async function dosyaBolgesi(db: Db, dosya: string): Promise<string | null> {
+  return (await db.query(`SELECT n.bolge FROM dosya d JOIN LATERAL (SELECT bolge FROM baglama_noktasi n WHERE n.bolge IS NOT NULL AND (n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi') AND d.konum IS NOT NULL AND length(trim(d.konum)) > 2
+      AND (lower(d.konum) LIKE '%' || lower(n.ad) || '%' OR lower(n.ad) LIKE '%' || lower(d.konum) || '%') ORDER BY length(n.ad) DESC LIMIT 1) n ON true WHERE d.kimlik = $1`, [dosya])).rows[0]?.bolge ?? null;
+}
+
+export async function firmaUygunlugu(db: Db, firma: string, brans?: string | null, bolge?: string | null): Promise<string | null> {
   const f = (await db.query(`SELECT kayit_asamasi, ag_statusu FROM kurulus WHERE kimlik = $1`, [firma])).rows[0];
   if (!f) return 'Firma bulunamadı.';
   if (!['Onaylı', 'Koşullu Onaylı'].includes(f.kayit_asamasi)) return 'Firmanın kaydı onaylı değildir.';
@@ -74,6 +80,8 @@ export async function firmaUygunlugu(db: Db, firma: string, brans?: string | nul
   const b = (await db.query(`SELECT tur FROM sicil_belgesi WHERE kurulus_ref = $1 AND gecerlilik_bitis < current_date ORDER BY tur LIMIT 1`, [firma])).rows[0];
   if (b) return `Firmanın belgesinin süresi dolmuştur: ${b.tur}.`;
   if (brans && !(await db.query(`SELECT 1 FROM brans_yetkinligi WHERE kurulus_ref = $1 AND ana_brans = $2 AND durum = 'Aktif' LIMIT 1`, [firma, brans])).rowCount) return 'Firma bu branşta yetkili değildir.';
+  // YG-303: bölge kapsamlı yetki yalnız kendi bölgesinde geçerlidir; Komşu, Mobil Ekip ve Ulusal kapsam ile bölgesi tanımsız eski kayıt bölge denetimine takılmaz.
+  if (brans && bolge && !(await db.query(`SELECT 1 FROM brans_yetkinligi WHERE kurulus_ref = $1 AND ana_brans = $2 AND durum = 'Aktif' AND (kapsama <> 'Bölge' OR bolge IS NULL OR lower(bolge) = lower($3)) LIMIT 1`, [firma, brans, bolge])).rowCount) return `Firma bu branşta ${bolge} bölgesinde yetkili değildir.`;
   return null;
 }
 
@@ -272,8 +280,11 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const red = (await b.db.query(`SELECT is_emri_no FROM is_emri WHERE dosya_ref = $1 AND kurulus_ref = $2 AND is_emri_turu = $3 AND firma_yaniti = 'Ret' LIMIT 1`, [id, g.firma, g.tur])).rows[0];
     if (red && !(g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi?.trim()) return y.code(409).send({ hata: `Firma ${red.is_emri_no} iş emrini reddetmiştir; aynı firmaya yeniden atama için gerekçe yazınız.`, yenidenAtama: true });
     if (red) await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Reddeden Firmaya Yeniden Atama', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: (g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi!.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    const engel = await firmaUygunlugu(b.db, g.firma, g.brans ?? null);
+    const dBolge = await dosyaBolgesi(b.db, id);
+    const engel = await firmaUygunlugu(b.db, g.firma, g.brans ?? null, dBolge);
     if (engel) return y.code(409).send({ hata: engel });
+    // YG-326: mesai dışında Kritik iş yalnız acil hizmet veren firmaya verilir.
+    if (d.oncelik === 'Kritik' && !(await import('./bildirim.js')).mesaiIcinde(new Date()) && (await b.db.query(`SELECT 1 FROM kurulus WHERE acil_hizmet_verir LIMIT 1`)).rowCount && !(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND acil_hizmet_verir`, [g.firma])).rowCount) return y.code(409).send({ hata: 'Mesai dışında Kritik iş yalnız acil hizmet veren firmaya verilir; acil hizmet listesinden firma seçmenizi rica ederiz.' });
     // YG-1548: dalış ve sıcak işte kanıt yoksa iş emri açılmaz; acil işler beklemez.
     { const u = await import('./uyum.js'); for (const ol of u.isEmriUyumOlaylari(g.kapsam!)) { const ue = await u.uyumEngeli(b.db, ol, 'Dosya', id, d.oncelik === 'Kritik'); if (ue) return y.code(409).send({ hata: ue }); } }
     // YG-306: görevlendirme kontrolü; Ret engeller, Koşullu Kabul uyarıyla geçer.
@@ -284,7 +295,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     // YG-305: aynı branşta uygun olmayan diğer aktif firmalar elenme nedeniyle kaydedilir; seçim gerekçesi karar sahibince yazılır.
     const elenen: { firma: string; neden: string }[] = [];
     for (const f of (await b.db.query(`SELECT kimlik, ticari_unvan FROM kurulus WHERE kayit_rolu = 'Çözüm Ortağı' AND ag_statusu = 'Aktif' AND kimlik <> $1 ORDER BY ticari_unvan LIMIT 25`, [g.firma])).rows) {
-      const en = await firmaUygunlugu(b.db, f.kimlik, g.brans ?? null); if (en) elenen.push({ firma: f.ticari_unvan, neden: en });
+      const en = await firmaUygunlugu(b.db, f.kimlik, g.brans ?? null, dBolge); if (en) elenen.push({ firma: f.ticari_unvan, neden: en });
     }
     await b.db.query(`INSERT INTO gorevlendirme_kontrolu (dosya_ref, kurulus_ref, gorev_sinifi, sonuc, engeller, uyarilar, yapan_ref, secim_gerekcesi, elenen_adaylar) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id, g.firma, gk.sinif, gk.sonuc, gk.engeller, gk.uyarilar, o.kullanici, (g as { secimGerekcesi?: string }).secimGerekcesi?.trim() || null, JSON.stringify(elenen)]);
     if (gk.sonuc === 'Ret') return y.code(409).send({ hata: gk.engeller[0] });

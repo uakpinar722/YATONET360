@@ -164,7 +164,16 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     expect(k.statusCode, k.body).toBe(200);
     expect((await o.kart('Koşullu Kabul Etki Onayı', k.json().kimlik)).durum).toBe('Bekliyor');
     expect((await o.ist('POST', `/api/kabul/${k.json().kimlik}/uzat`, tu)).statusCode).toBe(403);
-    expect((await o.ist('POST', `/api/kabul/${k.json().kimlik}/uzat`, km)).statusCode).toBe(200);
+    // YG-1692 (T-YG1692): Dosya Sorumlusu gerekçeyle talep eder, Kalite Müdürü onaylar; ikinci uzatma yok
+    const ku = `/api/kabul/${k.json().kimlik}/uzatma-talebi`;
+    expect((await o.ist('POST', ku, tu, { gerekce: 'Parça gecikti' })).statusCode).toBe(403);
+    expect((await o.ist('POST', ku, await o.gir('ds'), { gerekce: '' })).statusCode).toBe(400);
+    const kt = await o.ist('POST', ku, await o.gir('ds'), { gerekce: 'Parça gecikti' }); expect(kt.statusCode, kt.body).toBe(200);
+    expect((await o.ist('POST', ku, await o.gir('ds'), { gerekce: 'Tekrar' })).statusCode).toBe(409);
+    const once = (await o.sup.query(`SELECT kosul_bitis FROM kabul_kaydi WHERE kimlik = $1`, [k.json().kimlik])).rows[0].kosul_bitis;
+    expect((await o.ist('POST', `/api/is/${kt.json().kimlik}/karar`, km, { karar: 'Onayla' })).statusCode).toBe(200);
+    const sonra = (await o.sup.query(`SELECT kosul_bitis, uzatildi FROM kabul_kaydi WHERE kimlik = $1`, [k.json().kimlik])).rows[0];
+    expect((new Date(sonra.kosul_bitis).getTime() - new Date(once).getTime()) / 86_400_000).toBe(15); expect(sonra.uzatildi).toBe(true);
     expect((await o.ist('POST', `/api/kabul/${k.json().kimlik}/uzat`, km)).statusCode).toBe(409);
     await o.sup.query(`UPDATE kabul_kaydi SET kosul_bitis = current_date - 1 WHERE kimlik = $1`, [k.json().kimlik]);
     await kaliteSureIsle(o.db); await kaliteSureIsle(o.db);

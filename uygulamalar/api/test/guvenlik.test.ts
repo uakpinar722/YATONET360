@@ -94,6 +94,10 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     const a = AY().klasor; await saglikIzle(o.db, a, new Date(Date.now() - 5 * 3_600_000));
     const u = await saglikIzle(o.db, a); expect(u.join(' ')).toContain('Zamanlanmış işler');
     expect((await saglikIzle(o.db, a, new Date(), { diskYuzde: 101, sapmaSn: 60, nabizSaat: 2 })).join(' ')).toContain('Disk');
+    // YG-511 (T-YG511): kuyruk gecikmesi teknik uyarıdır
+    await o.sup.query(`INSERT INTO gonderim (olay_anahtari, kanal, hedef, konu, metin, plan_zamani) VALUES ('t-511','E-posta','x@y.z','K','M', now() - interval '45 minutes')`);
+    expect((await saglikIzle(o.db, a)).join(' ')).toContain('Gönderim kuyruğunda');
+    await o.sup.query(`UPDATE gonderim SET durum = 'Gönderildi' WHERE olay_anahtari = 't-511'`);
   });
   it('olay sürümlü güncellenir, kişisel veride ihlal bağlanır; 30 dakika uyarısı; açıklama yetkisi CEO', async () => {
     const c = await o.gir('sy'); const ol = (await o.ist('POST', '/api/olay-komutasi', await o.gir('oy'), { tur: 'BT Kesintisi veya Veri İhlali', ozet: 'Kesinti' })).json().kimlik; const u = `/api/olay/${ol}`;

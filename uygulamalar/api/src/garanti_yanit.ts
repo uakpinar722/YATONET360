@@ -8,6 +8,8 @@ import { izYaz } from './denetim.js';
 import { dosyaErisimi } from './dosya.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
+import { bildir, birKez } from './bildirim.js';
+import { rolSahipleri } from './makam.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { gunAy, tutar, type Dil } from './metin.js';
@@ -43,6 +45,18 @@ kapanisKaydet('Garanti Şikâyet Yanıtı', async (c, k, karar, yapan) => {
     await belgeUret(c, { tur: 'Garanti Şikâyet Yanıtı', nesne: y.kimlik, dosya: g.dosya_ref, gonder: g.eposta ? { olay: `garanti-yanit:${y.kimlik}`, eposta: g.eposta, konu: `${y.yazi_no} ${y.varyant}`, metin: `${y.yazi_no} ${y.varyant}` } : undefined });
   } else if (karar === 'Reddet') await c.query(`UPDATE garanti_sikayet_yazisi SET durum = 'Reddedildi' WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi]);
 });
+
+/** YG-1424: teknik iş sürdüğü için nihai yanıt verilmemiş şikâyette her 7 günde bir, yat sahibine hedef tarihli Ara Bilgilendirme yazısı gönderilmesi hatırlatılır. */
+export async function sikayetHaftalikIsle(db: Pool, simdi = new Date()): Promise<number> {
+  let n = 0;
+  for (const g of (await db.query(`SELECT kimlik, kayit_no, sikayet_takip_ref, olusturma_zamani FROM garanti_sikayet WHERE sikayet_konusu IS NOT NULL AND yanit_zamani IS NULL AND statu <> 'Kapalı' AND olusturma_zamani <= $1::timestamptz - interval '7 days'`, [simdi])).rows) {
+    const hafta = Math.floor((simdi.getTime() - new Date(g.olusturma_zamani).getTime()) / (7 * 86_400_000));
+    if (!(await birKez(db, 'sikayet_haftalik', `${g.kimlik}:${hafta}`))) continue;
+    const kisiler = [...new Set([...(g.sikayet_takip_ref ? [g.sikayet_takip_ref as string] : []), ...await rolSahipleri(db, await rolId(db, HAZIRLAYAN))])];
+    await bildir(db, { olay: `sikayet-haftalik:${g.kimlik}:${hafta}`, kullanicilar: kisiler, baslik: `${g.kayit_no} · Haftalık Bilgilendirme`, ozet: 'Şikâyete nihai yanıt verilmedi; yat sahibine hedef tarihli Ara Bilgilendirme yazısı hazırlayınız.' }, simdi); n++;
+  }
+  return n;
+}
 
 /** YG-728: FR-KLT-016; metinler onaylı şablondan (ŞABLONLAR\FR-KLT-016, TR/EN). Konu paragrafı yalnız Şikâyet Yanıtı için onaylıdır; diğer varyantlarda konu satırı varyant adıdır. */
 export async function garantiYanitTanim(db: Db, id: string): Promise<{ dosyaAdi: string; sinif: string; t: BelgeTanim }> {

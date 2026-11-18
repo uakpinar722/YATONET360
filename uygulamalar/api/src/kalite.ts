@@ -95,6 +95,11 @@ export async function kaliteSureIsle(db: Pool, simdi = new Date()): Promise<numb
   return n;
 }
 
+// YG-1692: Kalite Müdürü uzatma talebini onaylarsa koşul süresi bir kez 15 gün uzar.
+kapanisKaydet('Koşullu Kabul Uzatma', async (c, k, karar) => {
+  if (karar === 'Onayla') await c.query(`UPDATE kabul_kaydi SET kosul_bitis = kosul_bitis + 15, uzatildi = true WHERE kimlik = $1 AND kabul_turu = 'Koşullu Kabul' AND NOT uzatildi`, [k.nesne_kimligi]);
+});
+
 kapanisKaydet('Kalite Planı', async (c, k, karar) => {
   if (karar === 'Onayla') {
     const p = (await c.query(`UPDATE kalite_plani p SET durum = 'Onaylı' FROM dosya d WHERE p.kimlik = $1 AND d.kimlik = p.dosya_ref RETURNING p.dosya_ref, p.kabul_sinifi, d.dosya_no`, [k.nesne_kimligi])).rows[0];
@@ -452,6 +457,23 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE is_emri SET teknik_kabul_sonucu = 'Koşullu Kabul', teknik_kabul_eden_ref = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
       return { kimlik: r.kimlik };
     });
+  });
+  s.get('/dosya/:id/kosullu-kabuller', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string }; if (!(await erisim(id, i.oturum!.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT a.kimlik, e.is_emri_no, a.kosul_bitis::text kosul_bitis, a.uzatildi, (SELECT durum FROM is_karti WHERE tur = 'Koşullu Kabul Uzatma' AND nesne_kimligi = a.kimlik::text ORDER BY olusturma_zamani DESC LIMIT 1) talep
+      FROM kabul_kaydi a LEFT JOIN is_emri e ON e.kimlik = a.is_emri_ref WHERE a.dosya_ref = $1 AND a.kabul_turu = 'Koşullu Kabul' ORDER BY a.kosul_bitis`, [id])).rows;
+  });
+  s.post('/kabul/:id/uzatma-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = String((i.body as { gerekce?: string } | undefined)?.gerekce ?? '').trim();
+    if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT a.kimlik, a.uzatildi, d.dosya_no, d.dosya_sorumlusu_ref FROM kabul_kaydi a JOIN dosya d ON d.kimlik = a.dosya_ref WHERE a.kimlik = $1 AND a.kabul_turu = 'Koşullu Kabul'`, [id])).rows[0];
+    if (!k) return yok(y);
+    if (k.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Uzatmayı Dosya Sorumlusu talep eder.' });
+    if (!g) return y.code(400).send({ hata: 'Uzatma gerekçesini yazmanızı rica ederiz.' });
+    if (k.uzatildi) return y.code(409).send({ hata: 'Koşul süresi yalnız bir kez uzatılır.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Koşullu Kabul Uzatma' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id])).rowCount) return y.code(409).send({ hata: 'Bu kabul için bekleyen uzatma talebi bulunmaktadır.' });
+    const kart = await kartAc(b.db, { tur: 'Koşullu Kabul Uzatma', baslik: `${k.dosya_no} · Koşullu Kabul Süre Uzatması (15 Gün)`, ozet: g.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(b.db, KM)], nesneTuru: 'Kabul', nesneKimligi: id });
+    return { kimlik: kart };
   });
   s.post('/kabul/:id/uzat', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };

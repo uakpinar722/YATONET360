@@ -14,7 +14,9 @@ export function sureAdimi(oncelik: string, gecenDk: number, sureDk: number): 'Uy
   return gecenDk >= sureDk - (oncelik === 'Kritik' ? 10 : 30) ? 'Uyarı' : null;
 }
 
-const iz = async (db: Db, id: string, kademe: number, adim: string, rol: string) => Boolean((await db.query(`INSERT INTO kart_sure_kaydi (is_ref, kademe, adim, rol_ref) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING adim`, [id, kademe, adim, rol])).rowCount);
+// YG-536: her adımın beklenen eylemi kayda geçer; kapanış sonucu kart kapanınca (0319) yazılır.
+const BEKLENEN: Record<string, string> = { 'Uyarı': 'Makamın kararı (Onaya Gönder, Onayla, Reddet veya Gerekçeyle İade Et)', 'Süre Doldu': 'Makamın gecikmeli kararı; üst makam bilgilendirildi', 'Yeniden Uyarı': 'Makamın kararı (yeniden hatırlatma)', 'Üst Kademeye Geçti': 'Üst makamın kararı veya kademe atlaması' };
+const iz = async (db: Db, id: string, kademe: number, adim: string, rol: string) => Boolean((await db.query(`INSERT INTO kart_sure_kaydi (is_ref, kademe, adim, rol_ref, beklenen_eylem) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING adim`, [id, kademe, adim, rol, BEKLENEN[adim] ?? null])).rowCount);
 
 /** YG-172: onaylayana uyarı, üst kademeye bilgi; 1 saat aşımda talep üst kademeye geçer. Mesleki kararda yalnız uyarı; son makam CEO ise uyarı ve CEO Asistanına bilgi. Kayıt performans girdisidir. */
 export async function onaySureIsle(db: Pool, simdi = new Date()): Promise<number> {

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { garantiYanitTanim } from '../src/garanti_yanit.js';
+import { garantiYanitTanim, sikayetHaftalikIsle } from '../src/garanti_yanit.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', mpy: 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', opm: 'Operasyon Müdürü', oy: 'Operasyon Yöneticisi', tu: 'Teknik Uzman' };
@@ -15,6 +15,10 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     const ds = await o.gir('ds');
     { const gc = (await o.ist('GET', `/api/garanti-sikayet/${g}/gecmis`, ds)).json(); expect(gc.dosya.dosya_no).toBe(d.dosyaNo); for (const k of ['oncekiDosyalar', 'firmalar', 'parcalar', 'testler', 'teslim', 'belgeler', 'oncekiKayitlar']) expect(Array.isArray(gc[k])).toBe(true); } // YG-084
     expect((await o.ist('GET', `/api/garanti-sikayet/${g}/yanit`, await o.gir('mpy'))).json().hazirlar).toBe(true);
+    // YG-1424 (T-YG1424): yanıtsız şikâyette haftada bir ara bilgilendirme hatırlatması
+    await o.sup.query(`UPDATE garanti_sikayet SET olusturma_zamani = now() - interval '8 days' WHERE kimlik = $1`, [g]);
+    expect(await sikayetHaftalikIsle(o.db)).toBe(1); expect(await sikayetHaftalikIsle(o.db)).toBe(0);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.mpy, `sikayet-haftalik:${g}:1`])).rows[0].n).toBe(1);
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, await o.gir('tu'), { varyant: 'Şikâyet Yanıtı', inceleme: 'X' })).statusCode).not.toBe(200);
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, ds, { varyant: 'Şikâyet Yanıtı', inceleme: 'X' })).json().hata).toMatch(/Düzeltmenin tamamlandığı/);
     const r = await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, ds, { varyant: 'Şikâyet Yanıtı', inceleme: 'Yerinde incelendi.', duzeltmeTarihi: '2026-12-05', islemler: [{ islem: 'Son kat yenilendi', tarih: '04.12.2026', durum: 'Tamamlandı' }] });

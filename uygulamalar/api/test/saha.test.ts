@@ -235,11 +235,18 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
 describe('vefat ve itiraz (YG-1477, YG-1497)', () => {
   it('vefat: bekleyen onay durur; bağlantı kapanır; DS sıralı görev; kurumsalda çalışmaz; yalnız DS', async () => {
     const d = await hazir(); await kesifAc(d.kimlik);
+    const vf = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı',$3) RETURNING kimlik`, [`S-VF${Date.now()}`, `Vefat Firma ${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO kurulus_kullanici (kurulus_ref, kullanici_ref) VALUES ($1,$2)`, [vf, o.K.tu]);
+    const ve = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4) RETURNING kimlik`, [`${d.dosyaNo}-ON77`, d.kimlik, vf, o.K.ds])).rows[0].kimlik;
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat`, await o.gir('tu'), {})).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat`, await o.gir('ds'), { tarih: '2026-11-01' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT count(*)::int n FROM onay_talebi WHERE dosya_ref = $1 AND durum = 'Durduruldu'`, [d.kimlik])).rows[0].n).toBeGreaterThan(0);
     const g = (await o.sup.query(`SELECT baslik, son_zaman FROM is_karti WHERE tur = 'Vefat Görevi' AND nesne_kimligi = $1 ORDER BY baslik`, [d.kimlik])).rows;
     expect(g).toHaveLength(3);
+    // YG-1477 (T-YG1477): firmaya vefat bilgisi içermeyen BLD-46 bekletme bildirimi
+    const bf = (await o.sup.query(`SELECT ozet FROM bildirim WHERE olay_anahtari = $1 AND kullanici_ref = $2`, [`bld46:${ve}`, o.K.tu])).rows[0];
+    expect(bf.ozet).toContain('geçici olarak bekletilmektedir'); expect(bf.ozet).not.toMatch(/vefat/i);
+    await o.sup.query(`UPDATE is_emri SET statu = 'İptal' WHERE kimlik = $1`, [ve]);
     expect((+new Date(g[0].son_zaman) - +new Date('2026-11-01')) / 3_600_000).toBe(96);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat`, await o.gir('ds'), {})).statusCode).toBe(409);
     const ku = await hazir({}, { musteriTuru: 'Kurumsal Müşteri' });

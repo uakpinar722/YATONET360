@@ -232,6 +232,9 @@ describe('doğan görev (YG-1465)', () => {
     const oncelik = (await o.sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].oncelik as string;
     expect(new Date(k.son_zaman).getTime() - t0.getTime()).toBe(({ Kritik: 0.5, Yüksek: 2, Normal: 4, Planlı: 8 } as Record<string, number>)[oncelik]! * 3_600_000);
     expect(await doganGorevAc(o.db, 'BLD-01', d.dosyaNo, 'deneme-1465b', t0)).toBe(0);
+    await o.sup.query(`UPDATE sablon_metni SET dogan_gorev = 'Dosya Sorumlusu – yanıt gelince en kısa sürede randevuyu kesinleştirmek' WHERE kod = 'BLD-08' AND dil = 'tr'`);
+    expect(await doganGorevAc(o.db, 'BLD-08', d.dosyaNo, 'deneme-1465c', t0)).toBe(1);
+    expect((await o.kart('Doğan Görev', d.kimlik)).son_zaman).toBeNull();
   });
 });
 
@@ -399,6 +402,10 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     expect(r.statusCode, r.body).toBe(200); expect(r.json().gun).toBe(5);
     const k = await o.kart('İzin Talebi', r.json().kimlik);
     expect(k.ozet).toBe('5 gün');
+    // YG-1057 (T-YG1057): 10 gün ve üzeri izinde rol vekâleti yoksa amir kararı durur
+    { const { KAPANIS } = await import('../src/kapanis.js'); const iz = (await o.sup.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, durum) VALUES ($1,'Yıllık','2027-06-01','2027-06-14',10,'Birim Amirinde') RETURNING kimlik`, [o.K.ik])).rows[0].kimlik;
+      const cl = await o.db.connect(); try { await expect(KAPANIS.get('İzin Talebi')!(cl, { nesne_kimligi: iz, ozet: null }, 'Onaya Gönder', o.K.tid!)).rejects.toThrow('rol vekâleti'); } finally { cl.release(); }
+      await o.sup.query(`DELETE FROM izin_talebi WHERE kimlik = $1`, [iz]); }
     const ikm = (await o.sup.query(`SELECT 1 FROM rol WHERE rol_adi = 'İnsan Kaynakları Müdürü'`)).rowCount; expect(ikm).toBe(1);
     expect((await o.sup.query(`SELECT durum FROM izin_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Birim Amirinde');
     expect(k.zincir[0]).not.toBe((await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'İnsan Kaynakları Sorumlusu'`)).rows[0].kimlik); // KT-1
@@ -414,6 +421,13 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     const r = await o.ist('POST', '/api/masraf', c, M);
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ odenecek: 25, kesilen: 25 });
     expect((await o.ist('POST', '/api/masraf', c, M)).statusCode).toBe(409);
+    // YG-921 (T-YG921): konaklama sınır aşımı gerekçeyle TİD onayına gider ve tamamı ödenecek olur; reddedilen belge yeniden girilir
+    const ks = await o.ist('POST', '/api/masraf', c, { ...M, tur: 'Konaklama', tutarTl: 6000, belgeOzeti: 'F921', istisna: 'Bölgede uygun otel yok' });
+    expect(ks.json()).toMatchObject({ odenecek: 150, kesilen: 0 });
+    const kk = await o.kart('Masraf Fişi', ks.json().kimlik); const tidR = (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Ticari İşler Direktörü'`)).rows[0].kimlik;
+    expect(kk.zincir).toContain(tidR);
+    await o.sup.query(`UPDATE personel_masraf_fisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [ks.json().kimlik]);
+    expect((await o.ist('POST', '/api/masraf', c, { ...M, tur: 'Konaklama', tutarTl: 6000, belgeOzeti: 'F921' })).json()).toMatchObject({ odenecek: 90, kesilen: 60 });
     // YG-922: yakıt girilmez; km Saha Sorumlusu dışında ön onay ister
     expect((await o.ist('POST', '/api/masraf', c, { ...M, tur: 'Yakıt', belgeOzeti: 'F2' })).statusCode).toBe(400);
     const K = { ...M, tur: 'Km', miktar: 100, tutarTl: 400, belgeOzeti: 'F3' };
