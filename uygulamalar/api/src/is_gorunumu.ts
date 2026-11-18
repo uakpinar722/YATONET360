@@ -41,6 +41,58 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
 
   // YG-814–817: iş birimi iş emri; tedarik kolunda sipariş. Listeler iş emri başlangıç, kabul/teslim ve sipariş kayıtlarından oluşur.
+  // YG-1586, YG-1587: teknik gözetim panosu. Teknik Yönetici gözetimindeki, Teknik Müdür ve Yardımcısı tüm açık dosyaları kapsar; Teknik Uzman yükü gösterilmez.
+  s.get('/teknik-pano', oturumlu, async (i, y) => {
+    const o = i.oturum!; const l = await roller(b.db, o.kullanici);
+    const mudur = l.some((r) => ['Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)); const ty = l.some((r) => r.rol_adi === 'Teknik Yönetici');
+    if (!mudur && !ty) return yok(y);
+    const dosyalar = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik, d.statu, y.yat_adi,
+        (SELECT CASE WHEN r.durum = 'Kontrolde' THEN coalesce((SELECT x.rol_adi FROM is_karti k JOIN rol x ON x.kimlik = k.zincir[k.kademe + 1] WHERE k.tur = 'Teknik Rapor' AND k.nesne_kimligi = r.kimlik::text AND k.durum = 'Bekliyor' LIMIT 1), 'Makam') || ' Kontrolünde' ELSE r.durum END FROM teknik_rapor r WHERE r.dosya_ref = d.kimlik ORDER BY r.olusturma_zamani DESC LIMIT 1) rapor
+      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND ($1 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL))
+      ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, d.dosya_no LIMIT 200`, [mudur, o.kullanici])).rows;
+    const { sahaSorumlusuGerekceleri } = await import('./dosya.js'); const uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[] = [];
+    for (const d of dosyalar) {
+      if (!(await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [d.kimlik])).rowCount) { const g = await sahaSorumlusuGerekceleri(b.db, d.kimlik); if (g.length) uyarilar.push({ dosya: d.kimlik, dosya_no: d.dosya_no, tur: 'Saha Sorumlusu Gerekiyor', ozet: g.join(', ') }); }
+    }
+    for (const u of (await b.db.query(`SELECT u.dosya_ref, d.dosya_no, u.uygunsuzluk_no, u.sinif FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref WHERE u.statu NOT IN ('Kapalı', 'Geçersiz') AND u.sinif IN ('Majör', 'Kritik') AND u.dosya_ref = ANY($1::uuid[])`, [dosyalar.map((d) => d.kimlik)])).rows)
+      uyarilar.push({ dosya: u.dosya_ref, dosya_no: u.dosya_no, tur: `${u.sinif} Uygunsuzluk`, ozet: u.uygunsuzluk_no });
+    return { dosyalar, uyarilar, mudur };
+  });
+  // YG-1586: Teknik Yönetici Saha Sorumlusu ihtiyacını Teknik Müdüre bildirir; atama ayrı onay aranmadan Teknik Müdürdedir.
+  s.post('/dosya/:id/saha-sorumlusu-bildir', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!/^[0-9a-f-]{36}$/.test(id) || !(await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = 'Teknik Yönetici' AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount) return yok(y);
+    const d = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    const g = await (await import('./dosya.js')).sahaSorumlusuGerekceleri(b.db, id);
+    const { bildir } = await import('./bildirim.js'); const { rolSahipleri } = await import('./makam.js'); const { rolId } = await import('./ihbar.js');
+    await bildir(b.db, { olay: `ss-bildir:${id}:${new Date().toISOString().slice(0, 10)}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, 'Teknik Müdür')), baslik: `${d.dosya_no} · Saha Sorumlusu Gerekiyor`, ozet: g.length ? g.join(', ') : 'Teknik Yönetici bildirimi', oncelik: 'Yüksek' });
+    return { tamam: true };
+  });
+  // YG-1582, YG-1583: Operasyon panosu. Operasyon Yöneticisi gözetimindeki dosyaları, Müdür ve Müdür Yardımcısı tüm aktif dosyaları kapsar.
+  s.get('/operasyon-pano', oturumlu, async (i, y) => {
+    const o = i.oturum!; const l = await roller(b.db, o.kullanici);
+    const mudur = l.some((r) => ['Operasyon Müdürü', 'Operasyon Müdür Yardımcısı'].includes(r.rol_adi)); const oy = l.some((r) => r.rol_adi === 'Operasyon Yöneticisi');
+    if (!mudur && !oy) return yok(y);
+    const kapsam = `d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND ($1 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.rol = 'Operasyon Yöneticisi' AND a.bitis_zamani IS NULL))`;
+    const dosyalar = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik, d.statu, d.asama, y.yat_adi, h.ad_soyad dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE ${kapsam} ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, d.dosya_no LIMIT 200`, [mudur, o.kullanici])).rows;
+    const ids = dosyalar.map((x) => x.kimlik as string);
+    const mudahale = [
+      ...(await b.db.query(`SELECT k.baslik, k.son_zaman, 'Gecikmiş Görev' tur FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.son_zaman < now() AND k.nesne_turu = 'Dosya' AND k.nesne_kimligi = ANY($1::text[]) AND k.tur <> 'İlerleme Özetini Gönder' ORDER BY k.son_zaman LIMIT 50`, [ids])).rows,
+      ...(await b.db.query(`SELECT k.baslik, k.son_zaman, 'Gönderilmemiş İlerleme Özeti' tur FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.tur = 'İlerleme Özetini Gönder' AND k.son_zaman < now() AND k.nesne_kimligi = ANY($1::text[]) LIMIT 50`, [ids])).rows,
+      ...(await b.db.query(`SELECT d.dosya_no || ' · Beklemede ' || (current_date - x.olusturma_zamani::date) || '. gün · ' || x.neden baslik, x.hedef_tarih::text son_zaman, 'Beklemede 10. Gün' tur FROM beklemede_isareti x JOIN dosya d ON d.kimlik = x.dosya_ref WHERE x.kaldirilma_zamani IS NULL AND x.olusturma_zamani <= now() - interval '10 days' AND x.dosya_ref = ANY($1::uuid[])`, [ids])).rows,
+    ];
+    const ekip = (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi = 'Dosya Sorumlusu' AND h.hesap_durumu = 'Aktif' ORDER BY h.ad_soyad`)).rows;
+    const { kapasiteYuku, KAPASITE } = await import('./dosya.js'); const ust = KAPASITE['Dosya Sorumlusu'] ?? 25;
+    for (const e of ekip) e.yuk = await kapasiteYuku(b.db, e.kimlik, 'Dosya Sorumlusu');
+    const dolu = ekip.filter((e) => e.yuk >= ust * 0.8); const bos = ekip.filter((e) => e.yuk <= ust * 0.5).sort((a, c) => a.yuk - c.yuk);
+    const oneri = dolu.length && bos.length ? `${dolu.map((e) => e.ad_soyad).join(', ')} kapasitesinin %80'ine ulaştı; yeni dosyalar ${bos.slice(0, 2).map((e) => e.ad_soyad).join(', ')} üzerinden dengelenebilir (öneri Operasyon Müdürüne).` : null;
+    // YG-1584: atama kuyruğu (yalnız Müdürlük); öncelik sınıfı, sonra hizmet süresinin dolmasına en az kalan, sonra geliş sırası; önerilen Dosya Sorumlusu en düşük yüklü ve %100 olmayan kişi.
+    const kuyruk = !mudur ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik, y.yat_adi, d.olusturma_zamani, (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) son FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref
+        WHERE d.statu = 'Açılış Kontrolünde' AND NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Dosya Sorumlusu' AND a.bitis_zamani IS NULL)
+        ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
+    const onerilen = ekip.filter((e) => e.yuk < ust).sort((a, c) => a.yuk - c.yuk)[0]?.ad_soyad ?? null;
+    return { dosyalar, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk.map((k) => ({ ...k, onerilen })) };
+  });
   s.get('/is-listeleri', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const l = await roller(b.db, o.kullanici); const adGorur = firmaAdiGorur(l);

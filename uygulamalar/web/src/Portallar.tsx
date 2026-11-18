@@ -79,7 +79,7 @@ export function TesisAna({ ben }: { ben: Ben }) {
 interface TedarikciV {
   kurulus: string;
   talepler: { kimlik: string; talep_no: string; son_zaman: string; durum: string; kalemler: { kimlik: string; urun_tanimi: string; uretici_parca_no: string | null; miktar: string; birim: string; birim_fiyat_eur: string | null; teslim_suresi_gun: number | null }[] }[];
-  siparisler: { kimlik: string; siparis_no: string; statu: string; kdv_haric_eur: string; teslim_tarihi: string; teslim_yeri: string; tedarikci_kabul: string | null; tedarikci_teslim_tarihi: string | null; sevk_var: boolean; kalemler: { urun_tanimi: string; uretici_parca_no: string; miktar: string; birim: string; birim_bedel_eur: string }[] }[];
+  siparisler: { kimlik: string; siparis_no: string; statu: string; kdv_haric_eur: string; teslim_tarihi: string; teslim_yeri: string; tedarikci_kabul: string | null; tedarikci_teslim_tarihi: string | null; sevk_var: boolean; fatura_kuru?: { tarih: string; kur: number; kurTarihi: string } | null; kalemler: { urun_tanimi: string; uretici_parca_no: string; miktar: string; birim: string; birim_bedel_eur: string }[] }[];
   faturalar: { kimlik: string; fatura_no: string; tarih: string; tutar_eur: string; siparis_no: string; eslestirme: string | null; vade: string; odeme_durumu: string }[];
 }
 
@@ -408,7 +408,7 @@ export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' |
           const a = ka[s.kimlik] ?? { kod: '', teslim: '', gerekce: '' }; const b = se[s.kimlik] ?? { tarih: '', irsaliye: '', tasiyici: '', lot: '', belge: '' }; const c = fa[s.kimlik] ?? { no: '', tarih: '', tutar: '', belge: '' };
           return (
             <div className="soru" key={s.kimlik}>
-              <span><b className="koyu">{s.siparis_no}</b> · {s.statu} · {eur(s.kdv_haric_eur)} (KDV Hariç) · Teslim Yeri: {s.teslim_yeri}</span>
+              <span><b className="koyu">{s.siparis_no}</b> · {s.statu} · {eur(s.kdv_haric_eur)} (KDV Hariç) · Teslim Yeri: {s.teslim_yeri}{s.fatura_kuru ? ` · Faturanızı ${s.fatura_kuru.tarih.split('-').reverse().join('.')} tarihli, ${s.fatura_kuru.kurTarihi.split('-').reverse().join('.')} TCMB satış kuru ${String(s.fatura_kuru.kur).replace('.', ',')} ile TL düzenleyiniz` : ''}</span>
               {s.kalemler.map((k) => <div key={k.uretici_parca_no + k.urun_tanimi}>{k.urun_tanimi} · {k.uretici_parca_no} · {k.miktar} {k.birim} · {eur(k.birim_bedel_eur)}</div>)}
               {s.statu === 'Verildi' && !s.tedarikci_kabul && <>
                 <div className="iki-tarih"><div><label htmlFor={`sk-t-${s.kimlik}`}>Teslim Tarihi</label><input id={`sk-t-${s.kimlik}`} type="date" value={a.teslim} onChange={(e) => setKa({ ...ka, [s.kimlik]: { ...a, teslim: e.target.value } })} /></div><div><label htmlFor={`sk-k-${s.kimlik}`}>Onay Kodu</label><input id={`sk-k-${s.kimlik}`} inputMode="numeric" value={a.kod} onChange={(e) => setKa({ ...ka, [s.kimlik]: { ...a, kod: e.target.value } })} /></div></div>

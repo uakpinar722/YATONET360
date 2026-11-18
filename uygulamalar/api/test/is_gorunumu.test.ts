@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { konumPlani } from '../src/is_gorunumu.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test92', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -28,6 +28,22 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     expect((await o.ist('GET', '/api/is-listeleri', await o.gir('ikm'))).json().devamEden.some((x: { kimlik: string }) => x.kimlik === geciken)).toBe(false);
     await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Kalite Kontrolör',$2)`, [d.kimlik, o.K.iks]);
     expect((await o.ist('GET', '/api/is-listeleri', await o.gir('ikm'))).json().devamEden.some((x: { kimlik: string }) => x.kimlik === geciken)).toBe(true);
+  });
+  it('operasyon panosu müdahale, gözetim dosyaları ve ekip kapasitesini verir; yetkisiz göremez (T-YG1582)', async () => {
+    const d = await o.dosyaAc();
+    await o.sup.query(`INSERT INTO beklemede_isareti (dosya_ref, neden, sorumlu_ref, hedef_tarih, sayac_durur, olusturan_ref, olusturma_zamani) VALUES ($1,'Parça bekleniyor',$2,current_date + 5,true,$2, now() - interval '11 days')`, [d.kimlik, o.K.ds]);
+    const v = (await o.ist('GET', '/api/operasyon-pano', await o.gir('opm'))).json();
+    expect(v.dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    expect(v.mudahale.some((x: { tur: string }) => x.tur === 'Beklemede 10. Gün')).toBe(true);
+    expect(v.ekip[0]).toMatchObject({ ust: 25 }); expect(Array.isArray(v.kuyruk)).toBe(true); // YG-1584
+    expect((await o.ist('GET', '/api/operasyon-pano', await o.gir('ts'))).statusCode).toBe(404);
+  });
+  it('teknik pano gözetim dosyalarını ve uyarılarını verir; yetkisiz göremez (T-YG1586)', async () => {
+    const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET oncelik = 'Kritik' WHERE kimlik = $1`, [d.kimlik]);
+    const v = (await o.ist('GET', '/api/teknik-pano', await o.gir('tm'))).json();
+    expect(v.mudur).toBe(true); expect(v.dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    expect(v.uyarilar.some((x: { dosya: string; tur: string }) => x.dosya === d.kimlik && x.tur === 'Saha Sorumlusu Gerekiyor')).toBe(true);
+    expect((await o.ist('GET', '/api/teknik-pano', await o.gir('ts'))).statusCode).toBe(404);
   });
   it('konum planı izin, nöbet ve keşiften oluşur; izinde yalnız İzinli yazar; yetkisiz kişi başkasını görmez', async () => {
     const d = await o.dosyaAc();
