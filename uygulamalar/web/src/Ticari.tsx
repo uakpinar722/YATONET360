@@ -23,7 +23,7 @@ import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
 import { EtikBildirim, ErisimInceleme, IcDenetim } from './ErisimEtik';
-import { KurumTalepleri } from './KurumTalebi';
+import { KurumTalepleri, GelenTalepler } from './KurumTalebi';
 import { UcretBandi } from './UcretBandi';
 import { KilitRoller } from './KilitRol';
 import { DenetimPlani, ResmiGazete, SosyalMedya } from './DenetimUyum';
@@ -914,6 +914,7 @@ export function IdariIslemler() {
       <EtikBildirim />
       <IcDenetim />
       <KurumTalepleri />
+      <GelenTalepler />
       <UcretBandi />
       <KilitRoller />
       <DenetimPlani />

@@ -151,6 +151,26 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Barınma Gideri' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     return { tamam: true };
   });
+  // YG-551: Bilgi ve Belge Talebi (BLD-17) ve Ulaşılamama (BLD-18); Dosya Sorumlusu gönderir, e-posta ve telefon Dosya Sorumlusunun kurumsal iletişim bilgisidir.
+  s.post('/dosya/:id/belge-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belgeler?: string[]; ulasilamadi?: boolean };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const d = (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, h.e_posta, h.cep_telefonu FROM dosya d JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1 AND d.dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rows[0];
+    if (!d) return y.code(403).send({ hata: 'Belge talebini Dosya Sorumlusu gönderir.' });
+    if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmez.' });
+    const t = await sahip(id); if (!t || (!t.telefon && !t.eposta)) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });
+    const gun = new Date().toISOString().slice(0, 16);
+    if (g.ulasilamadi) {
+      if (!d.cep_telefonu) return y.code(409).send({ hata: 'Telefon numaranız hesabınızda kayıtlı değildir.' });
+      await yatTarafinaYaz(b.db, { olay: `bld18:${id}:${gun}`, kod: 'BLD-18', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Bilgilendirme`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, telefon: d.cep_telefonu, phone: d.cep_telefonu } });
+    } else {
+      const l = (g.belgeler ?? []).map((x) => String(x).trim()).filter(Boolean);
+      if (!l.length) return y.code(400).send({ hata: 'İstenen belgeleri yazınız.' });
+      await yatTarafinaYaz(b.db, { olay: `bld17:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': d.e_posta, 'e-mail': d.e_posta } });
+    }
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.ulasilamadi ? 'Ulaşılamama Bildirimi' : 'Belge Talebi Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   // YG-555, YG-787 (BLD-93, CEO 17.11.2026): Müşteri İlerleme Özeti; yalnız fiziksel ilerleme; firma, fiyat ve finansal oran yazılmaz; sigortaya e-postayla gitmez (MT-6).
   s.post('/dosya/:id/ilerleme-ozeti', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonrakiAdim?: string };

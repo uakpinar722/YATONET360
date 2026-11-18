@@ -70,6 +70,8 @@ describe('olağanüstü dönem (YG-1459, YG-1489, YG-265)', () => {
     expect(s[0]!.dosya_no).toBe(b.dosyaNo); expect(s.findIndex((x) => x.dosya_no === a.dosyaNo)).toBeLessThan(s.findIndex((x) => x.sira === 6));
     expect((await o.ist('POST', '/api/olaganustu/bitir', await o.gir('ds'), {})).statusCode).toBe(403);
     expect((await o.ist('POST', '/api/olaganustu/bitir', await o.gir('opm'), {})).statusCode).toBe(200);
+    // YG-1542 (T-YG1542): ilanda ve bitişte GMY'ye duyuru şeridi görevi
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Duyuru Şeridi'`)).rows[0].n).toBeGreaterThanOrEqual(2);
     expect((await o.sup.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL`)).rowCount).toBe(0);
   });
 });

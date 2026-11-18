@@ -84,6 +84,17 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld93:${d.kimlik}%`])).rows[0]?.metin as string;
     expect(m).toContain('Gövde boyası'); expect(m).not.toContain('EUR'); expect(m).not.toContain('[');
   });
+  it('Dosya Sorumlusu belge talebi ve ulaşılamama bildirimi gönderir (T-YG551)', async () => {
+    const d = await dosya(); const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: [] })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, await o.gir('ty'), { belgeler: ['Ruhsat'] })).statusCode).not.toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: ['Ruhsat', ' Poliçe '] })).statusCode).toBe(200);
+    const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld17:${d.kimlik}%`])).rows[0]?.metin as string;
+    expect(m).toContain('Ruhsat, Poliçe'); expect(m).not.toContain('[');
+    await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = coalesce(cep_telefonu, '+905550001551') WHERE kimlik = $1`, [o.K.ds]);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { ulasilamadi: true })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld18:${d.kimlik}%`])).rows[0].n).toBeGreaterThan(0);
+  });
   it('ıslak imzalı taranmış tutanakla teslim onaylı sayılır (T-YG1433-ISLAK)', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
     await o.sup.query(`INSERT INTO teslim_kaydi (dosya_ref, teslim_eden_ref) VALUES ($1,$2)`, [d.kimlik, o.K.ds]);

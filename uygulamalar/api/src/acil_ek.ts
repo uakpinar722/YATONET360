@@ -85,6 +85,8 @@ export const ACILIYET = `CASE m.olay_turu WHEN 'Can Güvenliği' THEN 1 WHEN 'Ki
 async function donemIlan(c: Db, g: { bolge: string; olay: string; ilanEden: string; oneren: string }, webAdresi: string) {
   const d = (await c.query(`INSERT INTO olaganustu_donem (ilan_eden, sebep, bolge, olay) VALUES ($1,$2,$3,$4) RETURNING kimlik, baslangic`, [g.ilanEden, `${g.bolge} · ${g.olay}`, g.bolge, g.olay])).rows[0];
   await donemBildir(c, d.kimlik, g.bolge, { olay: g.olay, tarih: gunAy(d.baslangic) }, 'bas', g.oneren, webAdresi);
+  // YG-1542: web sitesi duyuru şeridi GMY onayıyla BT ve Firma Yönetimince yayımlanır.
+  await kartAc(c, { tur: 'Duyuru Şeridi', kategori: 'gorev', baslik: `Web Sitesi Duyuru Şeridi · ${g.bolge} Olağanüstü Olay Dönemi`, ozet: 'Şerit metnini (bölge, aciliyet sırası, iletişim kanalları) onaylayıp Bilgi Teknolojileri ve Firma Yönetimine yayımlatınız.', oncelik: 'Kritik', sahipRol: await rolId(c, 'Genel Müdür Yardımcısı'), nesneTuru: 'Olağanüstü Dönem', nesneKimligi: d.kimlik });
   return d.kimlik as string;
 }
 async function donemBildir(c: Db, donem: string, bolge: string, a: { olay?: string; tarih?: string; bas?: string; bit?: string }, tur: 'bas' | 'son', sorumlu: string, _web: string) {
@@ -252,6 +254,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
       const d = (await c.query(`UPDATE olaganustu_donem SET bitis = now() WHERE bitis IS NULL RETURNING kimlik, bolge, baslangic, bitis`)).rows[0];
       if (!d) throw Object.assign(new Error('Açık Olağanüstü Olay Dönemi bulunmamaktadır.'), { statusCode: 409 });
       await donemBildir(c, d.kimlik, d.bolge ?? '', { bas: gunAy(d.baslangic), bit: gunAy(d.bitis) }, 'son', o.kullanici, b.webAdresi);
+      await kartAc(c, { tur: 'Duyuru Şeridi', kategori: 'gorev', baslik: `Web Sitesi Duyuru Şeridini Kaldır · ${d.bolge ?? ''}`, ozet: 'Olağanüstü Olay Dönemi sona erdi; şeridin kaldırılmasını Bilgi Teknolojileri ve Firma Yönetimine yaptırınız.', oncelik: 'Yüksek', sahipRol: await rolId(c, 'Genel Müdür Yardımcısı'), nesneTuru: 'Olağanüstü Dönem', nesneKimligi: d.kimlik }); // YG-1542
       return { tamam: true };
     });
   });

@@ -470,6 +470,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         {!gKalem.startsWith('Bölge') && <><label htmlFor="gr-n">Çekilemedi Nedeni</label><select id="gr-n" value={gNeden} onChange={(e) => setGNeden(e.target.value)}><option value="">Seçiniz</option>{CEKILEMEDI.map((x) => <option key={x}>{x}</option>)}</select><button className="btn2" disabled={!gNeden} onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, cekilemedi: gNeden }))}>Çekilemedi</button></>}
       </Blok>
       {d.statu === 'Kapalı' && <YenidenAc id={id} yap={yap} />}
+      {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <BelgeTalebi id={id} yap={yap} />}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <>
         <Blok baslik="Kapanış Kontrolü">
           <label htmlFor="kp-n">Kapanma Nedeni (Kapalı için)</label><select id="kp-n" value={kNeden} onChange={(e) => setKNeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select>
@@ -507,6 +508,16 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
 
 /** Üst arama: eski numara ana dosyaya yönlendirir (YG-024). */
 /** YG-080: kapalı dosya yeni bilgi/olgu, hata veya müşteri bildirimi gerekçesiyle Operasyon Müdürü onayına gönderilerek yeniden açılır. */
+/** YG-551: yat sahibinden belge isteme (BLD-17) ve ulaşılamama bildirimi (BLD-18). */
+function BelgeTalebi({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
+  const [l, setL] = useState('');
+  return <Blok baslik="Belge Talebi">
+    <label htmlFor="bt-l">İstenen Belgeler (virgülle ayırınız)</label><input id="bt-l" value={l} onChange={(e) => setL(e.target.value)} />
+    <div className="dugmeler"><button className="btn2" disabled={!l.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { belgeler: l.split(',') }), 'Belge talebi yat sahibine gönderildi.').then(() => setL(''))}>Yat Sahibine Gönder</button>
+      <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { ulasilamadi: true }), 'Ulaşılamama bildirimi gönderildi.')}>Ulaşılamadı Bildir</button></div>
+  </Blok>;
+}
+
 function YenidenAc({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [tur, setTur] = useState(''); const [g, setG] = useState('');
   return <Blok baslik="Yeniden Açma Talebi">

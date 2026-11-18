@@ -76,3 +76,18 @@ describe('kurumsal iletişim talebi (YG-1556)', () => {
     expect((await o.kart('Kurumsal Talep Görüşmesi', t)).durum).toBe('Tamamlandı');
   });
 });
+
+describe('gelen talep (YG-1543, YG-1554)', () => {
+  it('web formu konuya göre role görev açar; Diğer MPİ Müdürünce yönlendirilir; şikâyette dosya no zorunlu (T-YG1554)', async () => {
+    const G = { adSoyad: 'Kişi', eposta: 'kisi@ornek.local', mesaj: 'Bilgi rica ederim' };
+    expect((await o.ist('POST', '/api/iletisim/gelen-talep', undefined, { ...G, konu: 'Garanti veya şikâyet bildirimi' })).statusCode).toBe(400);
+    const f = (await o.ist('POST', '/api/iletisim/gelen-talep', undefined, { ...G, konu: 'Fatura / ödeme' })).json();
+    expect(f.talepNo).toMatch(/^GT-\d{4}-\d{4}$/);
+    const fk = (await o.sup.query(`SELECT k.sahip_rol_ref, r.rol_adi FROM is_karti k JOIN gelen_talep g ON g.kimlik::text = k.nesne_kimligi JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE g.talep_no = $1`, [f.talepNo])).rows[0];
+    expect(fk.rol_adi).toBe('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
+    const d = (await o.ist('POST', '/api/iletisim/gelen-talep', undefined, { ...G, konu: 'Bilinmeyen' })).json();
+    const dk = (await o.sup.query(`SELECT g.kimlik, g.durum, g.konu FROM gelen_talep g WHERE g.talep_no = $1`, [d.talepNo])).rows[0];
+    expect(dk).toMatchObject({ durum: 'Yönlendirme bekliyor', konu: 'Diğer' });
+    expect((await o.ist('POST', `/api/gelen-talep/${dk.kimlik}/yonlendir`, await o.gir('btd'), { rol: 'Teknik Müdür' })).statusCode).toBe(404);
+  });
+});

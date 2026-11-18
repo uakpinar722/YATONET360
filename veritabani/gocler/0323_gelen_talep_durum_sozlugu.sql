@@ -1,0 +1,6 @@
+-- YG-1554, YG-1365: gelen talep durumlarının sözlük tanımı.
+INSERT INTO durum_sozlugu (kayit_turu, durum, is_anlami, giris_kosulu, cikis_kosulu, yetkili_rol, izinli_gecisler, zorunlu_aciklama, sure_durur, otomatik_bildirim, musteri_adi) VALUES
+  ('gelen_talep', 'Yönlendirme bekliyor', 'Konusu belirsiz veya Diğer olan talep Müşteri ve Paydaş İlişkileri Müdürlüğünde birime yönlendirilmeyi bekliyor.', 'Web formundan Diğer veya tanımsız konuyla talep gelince', 'Müşteri ve Paydaş İlişkileri Müdürlüğü birim seçince Yönlendirildi', 'Müşteri ve Paydaş İlişkileri Müdürü', ARRAY['Yönlendirildi','Kapatıldı']::text[], false, false, NULL, NULL),
+  ('gelen_talep', 'Yönlendirildi', 'Talep ilgili birime yönlendirildi; görüşme ve sonuç bekleniyor.', 'Konu listesine göre kayıtta veya Müşteri ve Paydaş İlişkileri Müdürlüğünün seçimiyle', 'Hedef rol görevi tamamlar; yeniden yönlendirilebilir', 'Müşteri ve Paydaş İlişkileri Müdürü', ARRAY['Kapatıldı']::text[], false, false, NULL, NULL),
+  ('gelen_talep', 'Kapatıldı', 'Kayıt yetkili kişi tarafından kapatıldı; yeni işlem yapılmaz.', 'Talep sonuçlandırılınca', 'Son durum; değişmez', 'Müşteri ve Paydaş İlişkileri Müdürü', '{}'::text[], false, false, NULL, NULL)
+ON CONFLICT DO NOTHING;

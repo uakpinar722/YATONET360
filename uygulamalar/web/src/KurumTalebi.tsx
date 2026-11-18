@@ -38,3 +38,17 @@ export function KurumTalepleri() {
         {v.yonlendirir && <><label htmlFor={`kr-${x.kimlik}`}>Birim</label><select id={`kr-${x.kimlik}`} value={g[`r${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`r${x.kimlik}`]: e.target.value })}><option value="">Seçiniz</option>{v.roller.map((r) => <option key={r.kimlik} value={r.kimlik}>{r.rol_adi}</option>)}</select><button className="btn2 kucuk" onClick={() => is(istek(`/kurum-talebi/${x.kimlik}/yonlendir`, { rol: g[`r${x.kimlik}`], not: g[x.kimlik] }), 'Talep yönlendirildi.')}>Yönlendir</button></>}
         <button className="btn2 kucuk" onClick={() => is(istek(`/kurum-talebi/${x.kimlik}/sonuc`, { durum: 'Davet Edildi', not: g[x.kimlik] }), 'Kaydedildi.')}>Davet Edildi</button><button className="btn2 kucuk" onClick={() => is(istek(`/kurum-talebi/${x.kimlik}/sonuc`, { durum: 'Kapatıldı', not: g[x.kimlik] }), 'Kaydedildi.')}>Kapat</button></div>}</div>)}</details>;
 }
+
+type GT = { kimlik: string; talep_no: string; kanal: string; konu: string; ad_soyad: string; e_posta: string | null; telefon: string | null; mesaj: string; dosya_no: string | null; durum: string; yonlenen_rol: string | null };
+/** YG-1554: Gelen Talepler; konuya göre yönlendirilir, "Diğer" Müşteri ve Paydaş İlişkileri Müdürlüğünce birime yönlendirilir. */
+export function GelenTalepler() {
+  const [v, setV] = useState<{ roller: string[]; talepler: GT[] } | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/gelen-talepler').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  return <details className="ozet"><summary>Gelen Talepler · {v.talepler.filter((x) => x.durum === 'Yönlendirme bekliyor').length} yönlendirme bekliyor</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.talepler.length === 0 && <div className="not">Gelen talep bulunmamaktadır.</div>}
+    {v.talepler.map((x) => <div className="soru" key={x.kimlik}><span><b>{x.talep_no}</b> · {x.kanal} · {x.konu} · {x.durum}{x.yonlenen_rol ? ` · ${x.yonlenen_rol}` : ''}<br /><small>{x.ad_soyad} · {x.e_posta ?? ''}{x.telefon ? ` · ${x.telefon}` : ''}{x.dosya_no ? ` · Dosya: ${x.dosya_no}` : ''} · {x.mesaj}</small></span>
+      <div className="tam"><label htmlFor={`gt-${x.kimlik}`}>Yönlendirilecek Birim</label><select id={`gt-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.roller.map((r) => <option key={r}>{r}</option>)}</select>
+        <button className="btn2 kucuk" disabled={!g[x.kimlik]} onClick={() => void istek(`/gelen-talep/${x.kimlik}/yonlendir`, { rol: g[x.kimlik] }).then(() => { setM('Talep yönlendirildi.'); return yk(); }).catch((e) => setM(e.message))}>{g[x.kimlik] ? `${g[x.kimlik]}na Gönder` : 'Gönder'}</button></div></div>)}</details>;
+}
