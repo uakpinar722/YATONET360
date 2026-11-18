@@ -528,7 +528,11 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const l0 = (await b.db.query(`SELECT u.kimlik, u.ticari_unvan, y.kapsama, y.bolge FROM brans_yetkinligi y JOIN kurulus u ON u.kimlik = y.kurulus_ref WHERE y.ana_brans = $1 AND y.durum = 'Aktif' AND u.kayit_rolu = 'Çözüm Ortağı' AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [brans])).rows;
     // YG-1539: katmanlar Bölge (varsayılan), Komşu, Mobil Ekip, Ulusal; istenen katmana kadar birikimli listelenir.
     const SIRA = ['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal']; const ust = Math.max(0, SIRA.indexOf(q.katman ?? 'Bölge'));
-    const katmanOf = (f: { kapsama: string; bolge: string | null }) => f.kapsama === 'Bölge' ? (!f.bolge || konum.includes(String(f.bolge).toLocaleLowerCase('tr')) ? 'Bölge' : null) : f.kapsama;
+    // Komşu Bölge Tablosu: Komşu kapsamlı firma yalnız kendi bölgesi veya komşu bölgesindeki dosyada listelenir (dosya bölgesi belirlenemezse listelenir).
+    const dBolge = await (await import('./firma.js')).dosyaBolgesi(b.db, id);
+    const komsular = dBolge ? new Set((await b.db.query(`SELECT lower(bolge) b FROM komsu_bolge WHERE lower(komsu) = lower($1)`, [dBolge])).rows.map((r) => r.b as string)) : null;
+    const katmanOf = (f: { kapsama: string; bolge: string | null }) => f.kapsama === 'Bölge' ? (!f.bolge || konum.includes(String(f.bolge).toLocaleLowerCase('tr')) || (dBolge && f.bolge.toLocaleLowerCase('tr') === dBolge.toLocaleLowerCase('tr')) ? 'Bölge' : null)
+      : f.kapsama === 'Komşu' ? (!f.bolge || !dBolge || f.bolge.toLocaleLowerCase('tr') === dBolge.toLocaleLowerCase('tr') || komsular!.has(f.bolge.toLocaleLowerCase('tr')) ? 'Komşu' : null) : f.kapsama;
     const mobiller = new Set((await b.db.query(`SELECT DISTINCT kurulus_ref FROM brans_yetkinligi WHERE kapsama = 'Mobil Ekip' AND durum = 'Aktif'`)).rows.map((r) => r.kurulus_ref as string));
     const l = l0.map((f) => ({ ...f, katman: katmanOf(f) })).filter((f) => f.katman && SIRA.indexOf(f.katman) <= ust && (q.yalnizMobil !== '1' || mobiller.has(f.kimlik)));
     const S = { Kabul: 0, 'Koşullu Kabul': 1, Ret: 2 } as const; const sonuc = [];

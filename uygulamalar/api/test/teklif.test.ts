@@ -498,6 +498,11 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', 'Marmara')).toContain('Marmara');
     await o.sup.query(`UPDATE brans_yetkinligi SET kapsama = 'Ulusal' WHERE kurulus_ref = $1 AND ana_brans = 'Bölge Deneme'`, [f]);
     expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', 'Marmara')).toBeNull();
+    // Komşu Bölge Tablosu (T-KMS): Komşu kapsam kendi ve komşu bölgede geçer, komşu olmayanda geçmez
+    await o.sup.query(`UPDATE brans_yetkinligi SET kapsama = 'Komşu', bolge = '3. Güney Ege' WHERE kurulus_ref = $1 AND ana_brans = 'Bölge Deneme'`, [f]);
+    expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', '4. Batı Akdeniz')).toBeNull();
+    expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', '2. Kuzey Ege')).toBeNull();
+    expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', '6. Doğu Akdeniz')).toContain('6. Doğu Akdeniz');
     expect((await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { ag: 'Çıkarıldı', gerekce: 'G' })).statusCode).toBe(403);
   });
   it('tam akış: onay, yayın, firma görünümünde müşteri yok, kod ile kabul, başlangıç, ilerleme, teknik kabul, kapanış', async () => {

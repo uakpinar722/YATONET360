@@ -80,8 +80,10 @@ export async function firmaUygunlugu(db: Db, firma: string, brans?: string | nul
   const b = (await db.query(`SELECT tur FROM sicil_belgesi WHERE kurulus_ref = $1 AND gecerlilik_bitis < current_date ORDER BY tur LIMIT 1`, [firma])).rows[0];
   if (b) return `Firmanın belgesinin süresi dolmuştur: ${b.tur}.`;
   if (brans && !(await db.query(`SELECT 1 FROM brans_yetkinligi WHERE kurulus_ref = $1 AND ana_brans = $2 AND durum = 'Aktif' LIMIT 1`, [firma, brans])).rowCount) return 'Firma bu branşta yetkili değildir.';
-  // YG-303: bölge kapsamlı yetki yalnız kendi bölgesinde geçerlidir; Komşu, Mobil Ekip ve Ulusal kapsam ile bölgesi tanımsız eski kayıt bölge denetimine takılmaz.
-  if (brans && bolge && !(await db.query(`SELECT 1 FROM brans_yetkinligi WHERE kurulus_ref = $1 AND ana_brans = $2 AND durum = 'Aktif' AND (kapsama <> 'Bölge' OR bolge IS NULL OR lower(bolge) = lower($3)) LIMIT 1`, [firma, brans, bolge])).rowCount) return `Firma bu branşta ${bolge} bölgesinde yetkili değildir.`;
+  // YG-303: bölge kapsamlı yetki yalnız kendi bölgesinde geçerlidir; Mobil Ekip ve Ulusal kapsam ile bölgesi tanımsız eski kayıt bölge denetimine takılmaz.
+  // Komşu Bölge Tablosu: Komşu kapsamlı yetki firmanın kendi bölgesinde ve komşu bölgelerinde geçerlidir.
+  if (brans && bolge && !(await db.query(`SELECT 1 FROM brans_yetkinligi WHERE kurulus_ref = $1 AND ana_brans = $2 AND durum = 'Aktif' AND (kapsama IN ('Mobil Ekip', 'Ulusal') OR bolge IS NULL OR lower(bolge) = lower($3)
+      OR (kapsama = 'Komşu' AND EXISTS (SELECT 1 FROM komsu_bolge k WHERE lower(k.bolge) = lower(brans_yetkinligi.bolge) AND lower(k.komsu) = lower($3)))) LIMIT 1`, [firma, brans, bolge])).rowCount) return `Firma bu branşta ${bolge} bölgesinde yetkili değildir.`;
   return null;
 }
 
