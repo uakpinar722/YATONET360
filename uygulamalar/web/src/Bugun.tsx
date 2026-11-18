@@ -232,11 +232,31 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Operasyon Yöneticisi', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı'].includes(r.rol_adi)) && <OperasyonPano />}
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
+      {ben.roller.some((r) => ['Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikPano />}
       {ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) && <TahsilatIzleme />}
       {lgm && <HaftaVeGecmis veri={veri} />}
       {lgm && <><OzelGunler /><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
     </>
   );
+}
+
+/** YG-1592, YG-1593: Dağıtım Bekleyen Talepler (Tedarik Sorumlusu seçimi, Onayla / Gerekçeyle İade Et) ve Ekip Uyarıları. */
+function TedarikPano() {
+  const [v, setV] = useState<{ bekleyen: { kimlik: string; kayit_no: string; dosya_no: string | null; oncelik: string; son_zaman: string | null }[]; uyarilar: { siparis_no: string; tur: string }[]; sorumlular: { kimlik: string; ad_soyad: string }[]; dagitir: boolean } | null>(null);
+  const [sec, setSec] = useState<Record<string, string>>({}); const [iade, setIade] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/tedarik-pano').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const is = (id: string, g: object, t: string) => void istek(`/tedarik/dagitim/${id}`, g).then(() => { setM(t); return yk(); }).catch((e) => setM(e.message));
+  return <>
+    <div className="bolum">Dağıtım Bekleyen Talepler</div>{m && <div className="not" role="status">{m}</div>}
+    {v.bekleyen.length === 0 ? <Bos m="Dağıtım bekleyen talep bulunmamaktadır." /> : v.bekleyen.map((x) => { const kl = x.son_zaman ? kalan(x.son_zaman) : null; return <div key={x.kimlik} className={`ozet kart-sol${x.oncelik === 'Kritik' ? ' hata' : ''}`}><div className="ust2"><b>{x.kayit_no}{x.dosya_no ? ` · ${x.dosya_no}` : ''}</b>{kl && <Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} />}</div><div className="not">{x.oncelik}</div>
+      {v.dagitir && <><label htmlFor={`td-${x.kimlik}`}>Tedarik Sorumlusu</label><select id={`td-${x.kimlik}`} value={sec[x.kimlik] ?? ''} onChange={(e) => setSec({ ...sec, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.sorumlular.map((s) => <option key={s.kimlik} value={s.kimlik}>{s.ad_soyad}</option>)}</select>
+        <label htmlFor={`ti-${x.kimlik}`}>İade Gerekçesi (teknik şart eksikse)</label><input id={`ti-${x.kimlik}`} value={iade[x.kimlik] ?? ''} onChange={(e) => setIade({ ...iade, [x.kimlik]: e.target.value })} />
+        <div className="dugmeler"><button className="btn evet" disabled={!sec[x.kimlik]} onClick={() => is(x.kimlik, { sorumlu: sec[x.kimlik] }, 'Talep atandı.')}>Onayla</button><button className="btn hayir" disabled={!(iade[x.kimlik] ?? '').trim()} onClick={() => is(x.kimlik, { iadeGerekcesi: iade[x.kimlik] }, 'Talep iade edildi.')}>Gerekçeyle İade Et</button></div></>}</div>; })}
+    <div className="bolum">Ekip Uyarıları</div>
+    {v.uyarilar.length === 0 ? <Bos m="Ekip uyarısı bulunmamaktadır." /> : v.uyarilar.map((u, i) => <div key={i} className="ozet kart-sol"><b>{u.siparis_no}</b> · {u.tur}</div>)}
+  </>;
 }
 
 /** YG-1685: Kritik Uygunsuzluk acil kartı ve Kontrol Noktalarım (H Bekletme, W Tanıklık, R Belge İnceleme). */

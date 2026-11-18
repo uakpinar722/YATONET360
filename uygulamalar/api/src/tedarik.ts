@@ -145,11 +145,18 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const m = (await b.db.query(`SELECT * FROM malzeme_giris_kabulu WHERE kimlik = $1`, [id])).rows[0];
     if (!m) return yok(y);
-    if (m.kontrol_eden_ref !== o.kullanici) return y.code(403).send({ hata: 'Kontrolü sistemin belirlediği sorumlu yapar.' });
-    if (m.kabul_karari) return y.code(409).send({ hata: 'Karar verilmiştir.' });
+    // YG-1593: karantinadaki ürün için nihai kararı (10 gün içinde) kontrol eden veya Tedarik Müdür Yardımcısı verir.
+    const karantinada = m.kabul_karari === 'Karantina';
+    const tmy = karantinada && (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = 'Tedarik Müdür Yardımcısı'`, [o.kullanici])).rowCount;
+    if (m.kontrol_eden_ref !== o.kullanici && !tmy) return y.code(403).send({ hata: 'Kontrolü sistemin belirlediği sorumlu yapar.' });
+    if (m.kabul_karari && !karantinada) return y.code(409).send({ hata: 'Karar verilmiştir.' });
+    if (karantinada && karar === 'Karantina') return y.code(409).send({ hata: 'Ürün zaten karantinadadır; kabul, ret veya iade kararı veriniz.' });
     if (!['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].includes(karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
     return islem(async (c) => {
       await c.query(`UPDATE malzeme_giris_kabulu SET kabul_karari = $2, onay_zamani = now() WHERE kimlik = $1`, [id, karar]);
+      if (karar === 'Karantina') { const { kartAc } = await import('./is_motoru.js'); const { rolId } = await import('./ihbar.js'); const sp = (await c.query(`SELECT siparis_no FROM tedarik_siparisi WHERE kimlik = $1`, [m.siparis_ref])).rows[0]?.siparis_no ?? '';
+        await kartAc(c, { tur: 'Karantina Kararı', kategori: 'gorev', baslik: `${sp} · Karantinadaki Ürün Kararı`, ozet: 'Karantinadaki ürün için 10 gün içinde kabul, ret veya iade kararı veriniz.', oncelik: 'Yüksek', sahipRol: await rolId(c, 'Tedarik Müdür Yardımcısı'), sonZaman: new Date(Date.now() + 10 * 86_400_000), nesneTuru: 'Malzeme Giriş', nesneKimligi: id }); }
+      else if (karantinada) await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Karantina Kararı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
       if (karar === 'Kabul' || karar === 'Koşullu Kabul') {
         await c.query(`UPDATE tedarik_siparisi_kalemi SET teslim_alinan = teslim_alinan + $3 WHERE siparis_ref = $1 AND satir_no = $2`, [m.siparis_ref, m.satir_no, m.miktar]);
         const kalan = (await c.query(`SELECT 1 FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 AND teslim_alinan < miktar LIMIT 1`, [m.siparis_ref])).rowCount;

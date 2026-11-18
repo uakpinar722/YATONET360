@@ -78,6 +78,7 @@ export function formDogrula(alanlar: FormAlani[], v: Record<string, unknown>): {
 const SIKLIK: [RegExp, number][] = [[/aylık/i, 1], [/3 ayda bir/i, 3], [/6 ayda bir/i, 6], [/yılda bir|yıllık|her yıl/i, 12]];
 export async function gozdenGecirmeIsle(c: Db, id: string) {
   const f = (await c.query(`SELECT kimlik, kayit_no, veriler, hazirlayan_ref, form_kodu FROM form_kaydi WHERE kimlik = $1`, [id])).rows[0];
+  if (f?.form_kodu === 'FR-MLZ-001') { await (await import('./tedarik_dagitim.js')).dagitimaAc(c, f.kimlik); return; } // YG-1592
   if (!f || f.form_kodu !== 'FR-KLT-013') return;
   const v = (f.veriler ?? {}) as Record<string, string>;
   const satirlar = String(v.eylemler ?? '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);

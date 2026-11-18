@@ -258,7 +258,12 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
     const g = await o.ist('POST', `/api/siparis/${id}/giris`, c, G);
     expect(g.statusCode, g.body).toBe(200); expect(g.json().gonderilen).toBe('Teknik Uzman');
     expect((await o.ist('POST', `/api/malzeme-giris/${g.json().kimlik}/karar`, c, { karar: 'Kabul' })).statusCode).toBe(403);
+    // YG-1593 (T-YG1593): karantina 10 günlük karar görevi açar; karantinadan nihai kararla görev kapanır
+    expect((await o.ist('POST', `/api/malzeme-giris/${g.json().kimlik}/karar`, await o.gir('tu'), { karar: 'Karantina' })).statusCode).toBe(200);
+    expect((await o.kart('Karantina Kararı', g.json().kimlik)).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', `/api/malzeme-giris/${g.json().kimlik}/karar`, await o.gir('tu'), { karar: 'Karantina' })).statusCode).toBe(409);
     expect((await o.ist('POST', `/api/malzeme-giris/${g.json().kimlik}/karar`, await o.gir('tu'), { karar: 'Kabul' })).statusCode).toBe(200);
+    expect((await o.kart('Karantina Kararı', g.json().kimlik)).durum).toBe('Tamamlandı');
     expect((await o.sup.query(`SELECT statu FROM tedarik_siparisi WHERE kimlik = $1`, [id])).rows[0].statu).toBe('Teslim Alındı');
     { const kb = await o.belge(d.kimlik, 'ds'); const nu = await o.ist('POST', `/api/dosya/${d.kimlik}/uygunsuzluk`, await o.gir('tu'), { giris: g.json().kimlik, kaynak: 'Malzeme Girişi', yer: 'Depo', olcut: 'Sertifika', durum: 'Sertifika eksik', belge: kb, sinif: 'Minör' }); // YG-298
       expect(nu.statusCode, nu.body).toBe(200); expect((await o.sup.query(`SELECT sorumlu_firma_ref FROM uygunsuzluk WHERE kimlik = $1`, [nu.json().kimlik])).rows[0].sorumlu_firma_ref).toBe(tedarikci); }
