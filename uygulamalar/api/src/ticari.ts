@@ -152,6 +152,8 @@ export async function proformaSureIsle(db: Db, simdi = new Date()): Promise<numb
   for (const f of (await db.query(`SELECT f.kimlik, f.proforma_no, d.dosya_no FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum = 'Muhasebeye İletildi' AND f.fatura_no IS NULL AND f.muhasebe_iletim_zamani <= $1::timestamptz - interval '48 hours'`, [simdi])).rows) {
     if (!(await birKez(db, 'fatura-48', f.kimlik))) continue;
     await bildir(db, { olay: `fatura-48:${f.kimlik}`, kullanicilar: await al(['Muhasebe Hizmeti', 'Muhasebe ve Finans Müdürü']), baslik: `${f.dosya_no} · ${f.proforma_no} · Fatura Gecikti`, ozet: 'Proforma muhasebeye iletileli 48 saat geçti; fatura bilgisi girilmedi.', oncelik: 'Yüksek' }, simdi); n++;
+    // YG-546: fatura no kayda alınmadan alacak takibi başlamaz; Ticari Sorumlu fatura bilgisini muhasebeden alıp işler.
+    await kartAc(db, { tur: 'Fatura No Bekleniyor', kategori: 'gorev', baslik: `${f.dosya_no} · ${f.proforma_no} · Fatura No Bekleniyor`, ozet: 'Fatura no kayda alınmadığı için alacak takibi başlamadı; fatura no, tarih ve PDF\'i muhasebe hizmetinden alıp işleyiniz.', oncelik: 'Yüksek', sahipRol: await rolId(db, TICARI), nesneTuru: 'Fatura', nesneKimligi: f.kimlik });
   }
   return n;
 }
@@ -199,6 +201,16 @@ export async function kartelaEksperRaporuIsle(db: Db, simdi = new Date()): Promi
 }
 
 /** YG-897: Ödeme Alındı (BLD-27); sigortaya ve vefat işaretli dosyaya gitmez. */
+/** YG-900: sigortada şirketin girilmiş ödeme günü (yoksa sigorta_vade_gun, en çok 30); kurumsalda sözleşme vadesi (yoksa fatura günü); diğerlerinde fatura günü. */
+export async function tahsilatVadeGunu(db: Db, dosya: string, muhatap: string): Promise<number> {
+  if (muhatap === 'Sigorta Şirketi') {
+    const v = (await db.query(`SELECT v.gun FROM dosya_sigorta_kaydi k JOIN sozlesme_odeme_vadesi v ON lower(v.sigortaci_adi) = lower(trim(k.sigortaci_adi)) WHERE k.dosya_ref = $1`, [dosya])).rows[0]?.gun;
+    return v ?? Math.min(30, Number(await parametre(db, 'sigorta_vade_gun')));
+  }
+  if (muhatap === 'Kurumsal Müşteri') return (await db.query(`SELECT v.gun FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref JOIN kurumsal_kurum k ON k.taraf_ref = y.yat_sahibi_ref JOIN sozlesme_odeme_vadesi v ON v.kurum_ref = k.kimlik WHERE d.kimlik = $1`, [dosya])).rows[0]?.gun ?? 0;
+  return 0;
+}
+
 async function odemeAlindi(c: Db, dosya: string, muhatap: string, tarih: string) {
   if (muhatap === 'Sigorta Şirketi') return;
   const d = (await c.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, t.telefon, t.eposta FROM dosya d LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [dosya])).rows[0];
@@ -481,10 +493,13 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (muhasebe && !g.pdf) return y.code(400).send({ hata: 'Fatura PDF dosyasını yüklemenizi rica ederiz.' });
     if (g.pdf && (!UUID.test(g.pdf) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Müşteri Faturası' AND bag_kimligi = $2::text`, [g.pdf, f.kimlik])).rowCount)) return y.code(400).send({ hata: 'Fatura PDF dosyası bu proformaya bağlı olmalıdır.' });
     if (f.durum !== 'Muhasebeye İletildi') return y.code(409).send({ hata: 'Proforma önce muhasebeye iletilmelidir.' });
-    if (!g.no?.trim() || !g.tarih || !(Number(g.kur) > 0) || !g.kurTarihi) return y.code(400).send({ hata: 'Fatura no, tarih, kur ve kur tarihi zorunludur.' });
-    if (g.kurTarihi >= g.tarih) return y.code(400).send({ hata: 'Kur, fatura tarihinden önceki iş gününün TCMB satış kurudur.' });
+    if (!g.no?.trim() || !g.tarih) return y.code(400).send({ hata: 'Fatura no ve tarih zorunludur.' });
+    // YG-875, YG-1325: kur sistemce kopyalanır; yayın yoksa elle girilir ve kaynağı kaydedilir.
+    const fk = await (await import('./doviz.js')).faturaKuru(b.db, g.tarih, { kur: g.kur, tarih: g.kurTarihi });
+    if ('hata' in fk) return y.code(/sistemce/.test(fk.hata) ? 409 : 400).send({ hata: fk.hata });
+    g.kur = fk.kur; g.kurTarihi = fk.tarih;
     if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE fatura_no = $1`, [g.no.trim()])).rowCount) return y.code(409).send({ hata: 'Bu fatura numarası kayıtlıdır.' });
-    const vadeGun = f.muhatap === 'Sigorta Şirketi' ? await parametre(b.db, 'sigorta_vade_gun') : 0;
+    const vadeGun = await tahsilatVadeGunu(b.db, f.dosya_ref, f.muhatap);
     const vade = new Date(`${g.tarih}T12:00:00Z`); vade.setUTCDate(vade.getUTCDate() + vadeGun);
     // YG-874: KDV TL matrah üzerinden hesaplanır.
     const matrahTl = R2(Number(f.kdv_haric_eur) * Number(g.kur)); const oranK = f.kdv_orani === null ? (Number(f.kdv_haric_eur) > 0 ? (Number(f.kdv_eur) / Number(f.kdv_haric_eur)) * 100 : 0) : Number(f.kdv_orani);
@@ -492,7 +507,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const tevTl = Number(f.kdv_eur) > 0 ? R2((kdvTl * Number(f.tevkifat_eur)) / Number(f.kdv_eur)) : 0;
     const tl = R2(matrahTl + kdvTl - tevTl);
     await (await import('./uyum.js')).uyumOlay(b.db, 'fatura', 'Fatura No', g.no.trim()); // YG-1546
-    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8, fatura_pdf_ref = $9, fatura_giren_ref = $10 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl, g.pdf ?? null, o.kullanici]);
+    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8, fatura_pdf_ref = $9, fatura_giren_ref = $10, kur_kaynagi = $11 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl, g.pdf ?? null, o.kullanici, fk.kaynak]);
     // YG-421, K-193: firmaya Fatura Düzenleme Bildirimi (BLD-80).
     for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, coalesce((SELECT sum(h.bu_donem_brut) FROM hakedis h WHERE h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi'), e.firma_bedeli_eur) AS tutar FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [f.dosya_ref])).rows) {
       if (!(Number(e.tutar) > 0)) continue;
@@ -535,7 +550,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const u = UUID.test(g.ucuncuKisi) ? (await b.db.query(`UPDATE ucuncu_kisi_odeme SET durum = 'Kullanıldı' WHERE kimlik = $1 AND durum = 'Onaylandı' AND tutar_eur >= $2 RETURNING kimlik`, [g.ucuncuKisi, g.tutar])).rows[0] : undefined;
       if (!u) return y.code(409).send({ hata: 'Üçüncü kişi ödemesi için onay bekleniyor.' });
     }
-    return islem(async (c) => {
+    const sonuc = await islem(async (c) => {
       if (g.fatura) return faturaTahsilatIsle(c, { fatura: g.fatura, tutar: Number(g.tutar), tarih: g.tarih!, kanal: g.kanal!, referans: g.referans ?? null, giren: o.kullanici, ucuncuKisi: g.ucuncuKisi ?? null });
       const t = g.odemeTalebi ? (await c.query(`SELECT * FROM odeme_talebi WHERE kimlik = $1 FOR UPDATE`, [g.odemeTalebi])).rows[0] : undefined;
       if (!t || t.durum !== 'Gönderildi') throw Object.assign(new Error('Ödeme talebi bulunamadı.'), { statusCode: 404 });
@@ -545,6 +560,14 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       await odemeAlindi(c, t.dosya_ref, t.muhatap, g.tarih!);
       return { durum: top >= Number(t.tutar_eur) ? 'Ödendi' : 'Kısmi', kalan: R2(Math.max(0, Number(t.tutar_eur) - top)) };
     });
+    // YG-904: eksik gelen ödemede kalan kısım müşteriden ayrıca istenir; tamamı gelince görev kapanır.
+    const nesne = g.fatura ?? g.odemeTalebi!; const kalanEur = Number((sonuc as { kalan?: number }).kalan ?? 0);
+    if (kalanEur > 0) {
+      const d = (await b.db.query(`SELECT d.dosya_no FROM dosya d WHERE d.kimlik = (SELECT dosya_ref FROM musteri_faturasi WHERE kimlik::text = $1 UNION ALL SELECT dosya_ref FROM odeme_talebi WHERE kimlik::text = $1 LIMIT 1)`, [nesne])).rows[0];
+      await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Eksik Tahsilatı İste' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [nesne]);
+      await kartAc(b.db, { tur: 'Eksik Tahsilatı İste', kategori: 'gorev', baslik: `${d?.dosya_no ?? ''} · Eksik Tahsilatı İste`, ozet: `Ödeme eksik geldi; kalan ${tutar(kalanEur)} EUR müşteriden ayrıca istenmelidir.`, sahipKullanici: o.kullanici, nesneTuru: g.fatura ? 'Fatura' : 'Ödeme Talebi', nesneKimligi: nesne });
+    } else await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Eksik Tahsilatı İste' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [nesne]);
+    return sonuc;
   });
 
   // YG-087, YG-216, YG-1434: teslim kilidi; istisna GMY. Bireyselde tüm bakiye. ONY-27 yat sahibine.

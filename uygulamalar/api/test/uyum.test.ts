@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { isEmriUyumOlaylari, sureUyariIsle, uyumEngeli, uyumIsle, uyumOlay } from '../src/uyum.js';
+import { isEmriUyumOlaylari, ortalamaCalisan, sureUyariIsle, uyumEngeli, uyumIsle, uyumOlay } from '../src/uyum.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', hud: 'Hukuk ve Uyum Direktörü', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', sy: 'Sistem Yöneticisi', gmy: 'Genel Müdür Yardımcısı', kmd: 'Kalite Müdürü' };
@@ -67,5 +67,21 @@ describe('süre uyarıları (YG-531–533)', () => {
     expect(await var0(`sozlesme_bitis:${s}:45`)).toBeGreaterThan(0); expect(await var0(`sozlesme_fesih:${s}:15`)).toBeGreaterThan(0); expect(await var0(`sicil_belge:${b}:30`)).toBeGreaterThan(0); expect(await var0(`bt_varligi:${v}:30`)).toBeGreaterThan(0);
     expect((await o.sup.query(`SELECT kabul FROM olcum_cihazi WHERE kimlik = $1`, [c])).rows[0].kabul).toBe(false);
     const adet = Number((await o.sup.query(`SELECT count(*) n FROM bildirim`)).rows[0].n); await sureUyariIsle(o.db); expect(Number((await o.sup.query(`SELECT count(*) n FROM bildirim`)).rows[0].n)).toBe(adet);
+  });
+});
+
+describe('VERBİS eşik kontrolü (YG-1544)', () => {
+  it('ortalama çalışan ve bilanço gösterilir; bilanço eşiği aşılınca VERBİS kaydı görevi bir kez açılır (T-YG1544)', async () => {
+    const once = await ortalamaCalisan(o.db, 2020);
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, ayrilis_tarihi, guncelleyen_ref) VALUES ($1, '2019-01-01', '2020-06-30', $1) ON CONFLICT (kullanici_ref) DO UPDATE SET ise_giris_tarihi = '2019-01-01', ayrilis_tarihi = '2020-06-30'`, [o.K.sc]);
+    expect(await ortalamaCalisan(o.db, 2020)).toBe(Math.round((once + 0.5) * 10) / 10);
+    const mfm = await o.gir('mfm');
+    expect((await o.ist('POST', '/api/yillik-bilanco', await o.gir('ds'), { yil: 2020, toplamTl: 1 })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/yillik-bilanco', mfm, { yil: 2020, toplamTl: 50_000_000 })).json().asildi).toBe(false);
+    const r = (await o.ist('POST', '/api/yillik-bilanco', mfm, { yil: 2020, toplamTl: 150_000_000 })).json();
+    expect(r).toMatchObject({ yil: 2020, bilancoTl: 150000000, bilancoEsigi: 100000000, asildi: true });
+    await o.ist('POST', '/api/yillik-bilanco', mfm, { yil: 2020, toplamTl: 160_000_000 });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM uyum_gorevi WHERE nesne = 'verbis-2020'`)).rows[0].n).toBe(1);
+    expect((await o.ist('GET', '/api/verbis-esik?yil=2020', await o.gir('hud'))).json().asildi).toBe(true);
   });
 });

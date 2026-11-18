@@ -20,6 +20,20 @@ export async function eurCevir(db: Db, tutar: number, pb: string, tarih: string 
   return Math.round((tutar * k.kur / e.kur) * 100) / 100;
 }
 
+/** YG-875, YG-1325: fatura kuru, fatura tarihinden önceki iş gününün (en çok 7 gün geriye) EUR satış kurudur; kayıt varsa sistemce
+ *  kopyalanır ve farklı değer kabul edilmez. Kayıt yoksa (yayın kesintisi) girilen kur ve tarih 'Elle' kaynağıyla kabul edilir. */
+export async function faturaKuru(db: Db, faturaTarihi: string, girilen?: { kur?: number | null; tarih?: string | null }): Promise<{ kur: number; tarih: string; kaynak: 'TCMB' | 'Elle' } | { hata: string }> {
+  const on = new Date(`${faturaTarihi}T12:00:00Z`); on.setUTCDate(on.getUTCDate() - 1); const onGun = on.toISOString().slice(0, 10);
+  const k = await kurGetir(db, 'EUR', onGun);
+  if (k && +new Date(`${k.tarih}T12:00:00Z`) >= +on - 7 * 86_400_000) {
+    if (girilen?.kur !== undefined && girilen?.kur !== null && Math.abs(Number(girilen.kur) - k.kur) > 0.00005) return { hata: `Kur sistemce alınır: ${k.tarih.split('-').reverse().join('.')} tarihli satış kuru ${String(k.kur).replace('.', ',')}; elle değiştirilemez.` };
+    return { kur: k.kur, tarih: k.tarih, kaynak: k.kaynak === 'TCMB' ? 'TCMB' : 'Elle' };
+  }
+  if (!(Number(girilen?.kur) > 0) || !girilen?.tarih) return { hata: 'TCMB kuru bulunamadı; kur ve kur tarihini elle giriniz.' };
+  if (girilen.tarih >= faturaTarihi) return { hata: 'Kur, fatura tarihinden önceki iş gününün TCMB satış kurudur.' };
+  return { kur: Number(girilen.kur), tarih: girilen.tarih, kaynak: 'Elle' };
+}
+
 /** TCMB günlük kur yayınını (today.xml) okur; yayın yoksa veya erişilemezse sessizce geçer, Muhasebe elle girer. */
 export function tcmbAyristir(xml: string): { tarih: string; kurlar: { pb: string; alis: number | null; satis: number }[] } | null {
   const t = /Tarih="(\d{2})\.(\d{2})\.(\d{4})"/.exec(xml); if (!t) return null;

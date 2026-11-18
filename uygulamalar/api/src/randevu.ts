@@ -25,6 +25,13 @@ export function takvimDaveti(g: { uid: string; baslik: string; aciklama: string;
   return ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LIMIT GLOBAL MARINE//YATONET 360//TR', 'METHOD:PUBLISH', 'BEGIN:VEVENT', `UID:${g.uid}@yatonet360`, `DTSTAMP:${icsZaman(new Date())}`, `DTSTART:${icsZaman(g.baslangic)}`, `DTEND:${icsZaman(bitis)}`, `SUMMARY:${icsMetin(g.baslik)}`, `DESCRIPTION:${icsMetin(g.aciklama)}`, `LOCATION:${icsMetin(g.yer)}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
 }
 
+/** YG-502: birden çok olayı tek takvim dosyasında verir (kişisel takvime aktarım). */
+export function takvimDosyasi(olaylar: { uid: string; baslik: string; aciklama: string; yer: string; baslangic: Date; dakika: number }[]): string {
+  const s = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//LIMIT GLOBAL MARINE//YATONET 360//TR', 'METHOD:PUBLISH'];
+  for (const g of olaylar) s.push('BEGIN:VEVENT', `UID:${g.uid}@yatonet360`, `DTSTAMP:${icsZaman(new Date())}`, `DTSTART:${icsZaman(g.baslangic)}`, `DTEND:${icsZaman(new Date(+g.baslangic + g.dakika * 60_000))}`, `SUMMARY:${icsMetin(g.baslik)}`, `DESCRIPTION:${icsMetin(g.aciklama)}`, `LOCATION:${icsMetin(g.yer)}`, 'END:VEVENT');
+  return [...s, 'END:VCALENDAR', ''].join('\r\n');
+}
+
 // K-241: sigortaya ikinci teyitten sonra davet ekiyle gider.
 gonderimIsleyici(SIGORTA, async (c, r) => {
   await disGonder(c, { olay: `randevu-sigorta:${r.nesne_kimligi}`, eposta: r.alici, konu: r.konu, metin: r.metin!, sigortaTeyitli: true, ekler: (r.veri.ekler as string[] | undefined) ?? [] });

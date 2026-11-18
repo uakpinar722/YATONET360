@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { kartelaEksperRaporuIsle, proformaSureIsle, riskUyariIsle } from '../src/ticari.js';
-import { eurCevir, kurGetir, tcmbKurIsle } from '../src/doviz.js';
+import { eurCevir, faturaKuru, kurGetir, tcmbKurIsle } from '../src/doviz.js';
 import { isGununeKaydir, odemeTakvimiUyariIsle, onerilenVadeler } from '../src/odeme_takvimi.js';
 import { aritmetikKontrol, cetvelDegistiEngeli, parasalZincir } from '../src/teklif.js';
 import { rolId } from '../src/ihbar.js';
@@ -110,6 +110,8 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     expect((await th({ tutar: 100, kanal: 'Çek' })).statusCode).toBe(400);
     expect((await th({ tutar: 1300 })).statusCode).toBe(409);
     expect((await th({ tutar: 700 })).json()).toEqual({ durum: 'Kısmi Tahsil', kalan: 500 });
+    // YG-904 (T-YG904): eksik kalan kısım için görev açılır
+    expect((await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Eksik Tahsilatı İste' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id])).rows[0]?.ozet).toContain('500,00 EUR');
     expect((await th({ tutar: 500 })).json()).toEqual({ durum: 'Tahsil Edildi', kalan: 0 });
     expect((await o.ist('POST', '/api/tahsilat', c, { fatura: id, tarih: '2026-11-20', kanal: 'POS', tutar: 20000.01 })).statusCode).toBe(400);
     expect((await o.ist('POST', '/api/tahsilat', c, { fatura: id, tarih: '2026-11-20', kanal: 'POS', tutar: 100 })).statusCode).toBe(409); // T-YG1460-POS: banka seçimine kadar kapalı
@@ -137,6 +139,12 @@ describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
     await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref, olusturma_zamani) VALUES ($1,'Nihai Kabul',$2, now() - interval '49 hours')`, [d.kimlik, o.K.ty]);
     expect(await proformaSureIsle(o.db)).toBeGreaterThanOrEqual(1); await proformaSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ts, `proforma-48:${d.kimlik}`])).rows[0].n).toBe(1);
+  });
+  it('muhasebeye iletilen proformada 48 saatte fatura no yoksa Ticari Sorumluya görev (T-YG546)', async () => {
+    const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi', 1000, 'Taslak', null as never);
+    const f = (await o.sup.query(`INSERT INTO musteri_faturasi (proforma_no, dosya_ref, teklif_ref, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, muhasebe_iletim_zamani, hazirlayan_ref) VALUES ($1,$2,$3,'Yat Sahibi',1000,200,1200,'Muhasebeye İletildi', now() - interval '49 hours', $4) RETURNING kimlik`, [`PF-546-${Date.now()}`, d.kimlik, t, o.K.ts])).rows[0].kimlik;
+    await proformaSureIsle(o.db);
+    expect(await o.kart('Fatura No Bekleniyor', f)).toBeDefined();
   });
 });
 
@@ -206,6 +214,37 @@ describe('ödeme takvimi (YG-918)', () => {
   });
 });
 
+describe('doğan görev (YG-1465)', () => {
+  it('şablon gönderimiyle Dosya Sorumlusuna ilk yanıt süreli görev açılır, aynı gönderimde tekrar açılmaz (T-YG1465)', async () => {
+    const { doganGorevAc } = await import('../src/ihbar.js');
+    const d = await dosya();
+    await o.sup.query(`UPDATE sablon_metni SET dogan_gorev = 'Dosya Sorumlusu – en kısa sürede (üst sınır: öncelik ilk yanıt süresi) arama' WHERE kod = 'BLD-08' AND dil = 'tr'`);
+    const t0 = new Date('2026-11-18T10:00:00+03:00');
+    expect(await doganGorevAc(o.db, 'BLD-08', d.dosyaNo, 'deneme-1465', t0)).toBe(1);
+    expect(await doganGorevAc(o.db, 'BLD-08', d.dosyaNo, 'deneme-1465', t0)).toBe(0);
+    const k = await o.kart('Doğan Görev', d.kimlik);
+    expect(k.ozet).toBe('en kısa sürede arama'); expect(k.sahip_kullanici_ref).toBe(o.K.ds);
+    const oncelik = (await o.sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].oncelik as string;
+    expect(new Date(k.son_zaman).getTime() - t0.getTime()).toBe(({ Kritik: 0.5, Yüksek: 2, Normal: 4, Planlı: 8 } as Record<string, number>)[oncelik]! * 3_600_000);
+    expect(await doganGorevAc(o.db, 'BLD-01', d.dosyaNo, 'deneme-1465b', t0)).toBe(0);
+  });
+});
+
+describe('tahsilat vadesi (YG-900)', () => {
+  it('sigortada şirketin ödeme günü, en çok 30 gün; yoksa 30 gün; yat sahibinde fatura günü (T-YG900)', async () => {
+    const { tahsilatVadeGunu } = await import('../src/ticari.js');
+    const d = await dosya();
+    await o.sup.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi) VALUES ($1, 'Vade Sigorta A.Ş.') ON CONFLICT (dosya_ref) DO UPDATE SET sigortaci_adi = EXCLUDED.sigortaci_adi`, [d.kimlik]);
+    expect(await tahsilatVadeGunu(o.db, d.kimlik, 'Sigorta Şirketi')).toBe(30);
+    expect(await tahsilatVadeGunu(o.db, d.kimlik, 'Yat Sahibi')).toBe(0);
+    const tid = await o.gir('tid');
+    expect((await o.ist('POST', '/api/sozlesme-odeme-vadesi', tid, { sigortaci: 'Vade Sigorta A.Ş.', gun: 45, dayanak: 'Yazı' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/sozlesme-odeme-vadesi', await o.gir('ds'), { sigortaci: 'Vade Sigorta A.Ş.', gun: 20, dayanak: 'Yazı' })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/sozlesme-odeme-vadesi', tid, { sigortaci: 'vade sigorta a.ş.', gun: 20, dayanak: 'Sigorta şirketi yazısı' })).statusCode).toBe(200);
+    expect(await tahsilatVadeGunu(o.db, d.kimlik, 'Sigorta Şirketi')).toBe(20);
+  });
+});
+
 describe('TCMB döviz kuru (YG-1356, YG-825, YG-955)', () => {
   it('yayın okunur, tekrar yazılmaz, elle giriş TCMB kaydını değiştirmez, çapraz çevrim (T-YG1356)', async () => {
     const xml = `<Tarih_Date Tarih="02.01.2026" Date="01/02/2026"><Currency CrossOrder="0" Kod="USD" CurrencyCode="USD"><ForexBuying>40.0000</ForexBuying><ForexSelling>40.5000</ForexSelling></Currency><Currency CrossOrder="9" Kod="EUR" CurrencyCode="EUR"><ForexBuying>45.0000</ForexBuying><ForexSelling>45.0000</ForexSelling></Currency></Tarih_Date>`;
@@ -218,6 +257,11 @@ describe('TCMB döviz kuru (YG-1356, YG-825, YG-955)', () => {
     expect((await o.ist('POST', '/api/doviz-kuru', await o.gir('ts'), { tarih: '2026-01-02', pb: 'EUR', satis: 50 })).statusCode).toBe(409);
     expect((await o.ist('POST', '/api/doviz-kuru', await o.gir('ts'), { tarih: '2026-01-02', pb: 'GBP', satis: 54 })).statusCode).toBe(200);
     expect(await eurCevir(o.db, 900, 'GBP', '2026-01-02')).toBe(1080);
+    // YG-875 (T-YG875): fatura kuru önceki iş günü kaydından kopyalanır; farklı elle değer reddedilir; kayıt yoksa elle kabul edilir
+    expect(await faturaKuru(o.db, '2026-01-05')).toEqual({ kur: 45, tarih: '2026-01-02', kaynak: 'TCMB' });
+    expect(await faturaKuru(o.db, '2026-01-05', { kur: 46, tarih: '2026-01-02' })).toHaveProperty('hata');
+    expect(await faturaKuru(o.db, '2026-03-05', { kur: 47.5, tarih: '2026-03-04' })).toEqual({ kur: 47.5, tarih: '2026-03-04', kaynak: 'Elle' });
+    expect(await faturaKuru(o.db, '2026-03-05')).toHaveProperty('hata');
     expect((await o.ist('GET', '/api/doviz-kurlari', await o.gir('ds'))).json().map((x: { pb: string }) => x.pb)).toEqual(['EUR', 'USD', 'GBP']);
     // YG-236 (T-YG236): teklif gönderilince o günkü EUR satış kuru teklife yazılır
     const tk = await teklifVer(await dosya(), 'Yat Sahibi', 1000, 'Taslak', null as never);

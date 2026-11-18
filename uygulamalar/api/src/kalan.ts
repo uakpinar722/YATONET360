@@ -376,6 +376,23 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sözleşme Hedef Süresi', nesneTuru: 'Parametre', nesneKimligi: `${g.sigortaci ?? g.kurum}:${g.tur}:${g.oncelik}`, yeni: { saat: g.saat }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-900: tahsilat vadesi; sigortada şirketin bildirdiği ödeme günü (en çok 30 gün), kurumsalda sözleşme vadesi.
+  s.get('/sozlesme-odeme-vadeleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    return (await b.db.query(`SELECT v.kimlik, v.sigortaci_adi, k.unvan kurum, v.gun, v.dayanak FROM sozlesme_odeme_vadesi v LEFT JOIN kurumsal_kurum k ON k.kimlik = v.kurum_ref ORDER BY coalesce(v.sigortaci_adi, k.unvan)`)).rows;
+  });
+  s.post('/sozlesme-odeme-vadesi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { sigortaci?: string; kurum?: string; gun?: number; dayanak?: string };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'))).includes(o.kullanici) && !(await rolSahipleri(b.db, await rolId(b.db, 'Ticari İşler Direktörü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Ödeme vadesini Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörü girer.' });
+    if (Boolean(g.sigortaci?.trim()) === Boolean(g.kurum)) return y.code(400).send({ hata: 'Sigorta şirketini veya kurumsal müşteriyi seçiniz.' });
+    if (g.kurum && !(UUID.test(g.kurum) && (await b.db.query(`SELECT 1 FROM kurumsal_kurum WHERE kimlik = $1`, [g.kurum])).rowCount)) return y.code(400).send({ hata: 'Kurumsal müşteri bulunamadı.' });
+    const gun = Number(g.gun); if (!Number.isInteger(gun) || gun < 0 || gun > 180) return y.code(400).send({ hata: 'Vade gün olarak girilir.' });
+    if (g.sigortaci && (gun < 1 || gun > 30)) return y.code(400).send({ hata: 'Sigorta şirketinde vade fatura tarihinden en çok 30 takvim günüdür.' });
+    if (!g.dayanak?.trim()) return y.code(400).send({ hata: 'Dayanağı (sigorta şirketi yazısı veya sözleşme maddesi) yazınız.' });
+    await b.db.query(`INSERT INTO sozlesme_odeme_vadesi (sigortaci_adi, kurum_ref, gun, dayanak, giren_ref) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (coalesce(lower(sigortaci_adi), kurum_ref::text)) DO UPDATE SET gun = EXCLUDED.gun, dayanak = EXCLUDED.dayanak, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.sigortaci?.trim() || null, g.kurum || null, gun, g.dayanak.trim(), o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sözleşme Ödeme Vadesi', nesneTuru: 'Parametre', nesneKimligi: String(g.sigortaci ?? g.kurum), yeni: { gun, dayanak: g.dayanak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.get('/dosya/:id/kapanis-asamalari', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-073
     const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });

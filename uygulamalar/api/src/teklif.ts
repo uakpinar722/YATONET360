@@ -365,14 +365,18 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const q = String((i.query as { q?: string }).q ?? '').trim();
     if (q.length < 2) return [];
     const sur = await yururlukSurumu(b.db);
+    // YG-1371: ana/alt branş kutuları isteğe bağlı süzgeçtir.
+    const { ana, alt } = i.query as { ana?: string; alt?: string };
     // YG-1372: eş anlamlı terimler her iki yönde aranır; kullanıcının tekliflerinde sık seçtiği işlemler önce gelir.
     const terimler = [q, ...(await b.db.query(`SELECT karsilik t FROM islem_es_anlami WHERE tr_norm(terim) = tr_norm($1) UNION SELECT terim FROM islem_es_anlami WHERE tr_norm(karsilik) = tr_norm($1)
       UNION SELECT karsilik FROM islem_es_anlami WHERE tr_norm($1) LIKE '%' || tr_norm(terim) || '%' UNION SELECT terim FROM islem_es_anlami WHERE tr_norm($1) LIKE '%' || tr_norm(karsilik) || '%'`, [q])).rows.map((r) => r.t as string)];
-    return (await b.db.query(`SELECT k.kod, k.ana_brans, k.tali_brans, k.islem, k.birim, coalesce(s.n, 0)::int sik FROM kartela_kalemi k
+    return (await b.db.query(`SELECT k.kod, k.ana_brans, k.alt_brans, k.tali_brans, k.islem, k.birim, coalesce(s.n, 0)::int sik FROM kartela_kalemi k
         LEFT JOIN (SELECT x.kartela_kodu, count(*) n FROM fiyat_teklifi_kalemi x JOIN fiyat_teklifi f ON f.kimlik = x.teklif_ref WHERE f.hazirlayan_ref = $3 AND x.kartela_kodu IS NOT NULL GROUP BY 1) s ON s.kartela_kodu = k.kod
       WHERE k.surum = $1 AND (k.kod ILIKE $2 || '%' OR EXISTS (SELECT 1 FROM unnest($4::text[]) t WHERE tr_norm(k.islem) LIKE '%' || tr_norm(t) || '%'))
-      ORDER BY coalesce(s.n, 0) DESC, k.kod LIMIT $5`, [sur, q, i.oturum!.kullanici, terimler, await parametre(b.db, 'arama_oneri_azami')])).rows; // PRM-1: öneri en çok 10
+        AND ($6::text IS NULL OR k.ana_brans = $6) AND ($7::text IS NULL OR k.alt_brans = $7)
+      ORDER BY coalesce(s.n, 0) DESC, k.kod LIMIT $5`, [sur, q, i.oturum!.kullanici, terimler, await parametre(b.db, 'arama_oneri_azami'), ana?.trim() || null, alt?.trim() || null])).rows; // PRM-1: öneri en çok 10
   });
+  s.get('/kartela/branslar', oturumlu, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' }) : (await b.db.query(`SELECT DISTINCT ana_brans, alt_brans FROM kartela_kalemi WHERE surum = $1 ORDER BY 1, 2`, [await yururlukSurumu(b.db)])).rows);
 
   // YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO tarafından görülür ve taslak sürümde girilir.
   const kartelaYetkili = async (k: string) => (await roller(k)).some((r) => ['Ticari İşler Direktörü', 'CEO'].includes(r));

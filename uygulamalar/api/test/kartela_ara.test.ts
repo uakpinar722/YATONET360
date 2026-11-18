@@ -18,4 +18,11 @@ describe('işlem araması (YG-1372)', () => {
     expect((await o.ist('POST', '/api/kartela/es-anlam', await o.gir('tm'), { terim: 'yatak', karsilik: 'bearing' })).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/kartela/ara?q=bearing', tu)).json().some((x: { kod: string }) => x.kod === 'ARA-01.01.01-I01')).toBe(true);
   });
+  it('branş kutuları isteğe bağlı süzer; seçilen işlem üst branşlarını taşır (T-YG1371)', async () => {
+    const tu = await o.gir('tu');
+    const r = (await o.ist('GET', `/api/kartela/ara?q=ARA-01&ana=${encodeURIComponent('ŞAFT')}`, tu)).json();
+    expect(r.find((x: { kod: string }) => x.kod === 'ARA-01.01.01-I01')).toMatchObject({ ana_brans: 'ŞAFT', alt_brans: 'Yatak', tali_brans: 'Kesik' });
+    expect((await o.ist('GET', `/api/kartela/ara?q=ARA-01&ana=${encodeURIComponent('YOK-BRANŞ')}`, tu)).json()).toEqual([]);
+    expect((await o.ist('GET', '/api/kartela/branslar', tu)).json()).toEqual(expect.arrayContaining([{ ana_brans: 'ŞAFT', alt_brans: 'Yatak' }]));
+  });
 });

@@ -186,7 +186,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {(() => { const acil = [...veri.onay, ...veri.islem, ...veri.gorev].filter((k) => k.oncelik === 'Kritik'); return acil.length > 0 && <>{/* YG-1635: acil kartlar Süre Uyarılarının üstünde */}
         <div className="bolum">Acil</div>
         {acil.map((k) => <div key={`acil-${k.kimlik}`} className="hata kart-sol"><KartUst k={k} /></div>)}</>; })()}
-      <div className="bolum">Süre Uyarıları</div>
+      <div className="bolum">Süre Uyarıları {lgm && <a className="btn2 kucuk" href="/api/takvim/gorevlerim.ics" download title="Süreli işlerinizi ve toplantılarınızı kişisel takviminize aktarır">Takvime Aktar</a>}</div>
       {veri.sureUyarilari.length === 0 ? <Bos m="Süresi yaklaşan işiniz bulunmamaktadır." /> : veri.sureUyarilari.map((k) => (
         <div key={k.kimlik} className="ozet kart-sol"><KartUst k={k} /></div>
       ))}

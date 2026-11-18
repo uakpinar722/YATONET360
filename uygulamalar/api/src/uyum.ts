@@ -43,13 +43,29 @@ export async function uyumEngeli(db: Db, olay: string, nesneTuru: string, nesne:
 /** İş emri kapsamından uyum olayı: dalış, sıcak iş ve benzeri işler (MUM-047, MUM-048, MUM-054). */
 export const isEmriUyumOlaylari = (kapsam: string) => { const o: string[] = []; if (/dal[ıi]ş|dalg[ıi]ç|sualt/i.test(kapsam)) o.push('is_emri_dalis'); if (/s[ıi]cak iş|kaynak|antifouling|z[ıi]mpara/i.test(kapsam)) o.push('is_emri_sicak'); return o; };
 
+/** YG-1544: yılın her ayının 15'inde kayıtlı (girişi yapılmış, ayrılmamış) personel sayısının ortalaması. */
+export async function ortalamaCalisan(db: Db, yil: number): Promise<number> {
+  const r = await db.query(`SELECT avg((SELECT count(*) FROM personel_karti p WHERE p.ise_giris_tarihi <= g AND (p.ayrilis_tarihi IS NULL OR p.ayrilis_tarihi >= g)))::float n FROM generate_series(make_date($1, 1, 15), make_date($1, 12, 15), interval '1 month') g`, [yil]);
+  return Math.round(Number(r.rows[0].n) * 10) / 10;
+}
+
+/** YG-1544: eşik kontrolü; çalışan sayısı veya bilanço eşiği aşılmışsa Hukuk ve Uyum Direktörüne VERBİS kaydı görevi (KVKK-06 envanteri esas) bir kez açılır. */
+export async function verbisDegerlendir(db: Db, yil: number, simdi = new Date()) {
+  const p = new Map((await db.query(`SELECT kod, deger FROM sistem_parametresi WHERE kod IN ('verbis_calisan_esigi', 'verbis_bilanco_esigi_tl')`)).rows.map((r) => [r.kod as string, Number(r.deger)]));
+  const calisan = await ortalamaCalisan(db, yil); const bilanco = (await db.query(`SELECT toplam_tl::float t FROM yillik_bilanco WHERE yil = $1`, [yil])).rows[0]?.t as number | undefined;
+  const calisanEsigi = p.get('verbis_calisan_esigi') ?? 50; const bilancoEsigi = p.get('verbis_bilanco_esigi_tl') ?? 100_000_000;
+  const asildi = calisan > calisanEsigi || (bilanco !== undefined && bilanco > bilancoEsigi);
+  if (asildi && await birKez(db, 'verbis_kayit', String(yil))) await gorevAc(db, { mum: null, ad: `VERBİS kaydı (${yil} eşik aşımı; KVKK-06 kişisel veri envanteri esas alınır)`, nesneTuru: 'Takvim', nesne: `verbis-${yil}`, son: gunEkle(simdi, 30), sorumlu: HUD, dogrulayan: HUD, kanit: 'VERBİS kayıt belgesi' });
+  return { yil, ortalamaCalisan: calisan, bilancoTl: bilanco ?? null, calisanEsigi, bilancoEsigi, asildi };
+}
+
 /** YG-1546, YG-1549: hatırlatma, eskalasyon ve takvimden görev. */
 export async function uyumIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0; const bugun = G(simdi); const ay = simdi.getUTCMonth(); const yil = simdi.getUTCFullYear(); const donem = `${yil}-${String(ay + 1).padStart(2, '0')}`;
   const T = async (ad: string, rol: string, dogrulayan: string, kanit: string, gun: number) => { if (await birKez(db, 'uyum_takvim', `${ad}:${donem}`)) n += await gorevAc(db, { mum: null, ad, nesneTuru: 'Takvim', nesne: donem, son: new Date(Date.UTC(yil, ay, gun)), sorumlu: rol, dogrulayan, kanit }); };
   await T('Aylık muhtasar beyanname', MFM, 'Ticari İşler Direktörü', 'Beyanname ve tahakkuk', 26);
   if (ay === 5 || ay === 9) await T('Oda aidatı', MFM, 'Ticari İşler Direktörü', 'Ödeme belgesi', 28);
-  if (ay === 0) { await T('VERBİS eşik kontrolü', HUD, HUD, 'Eşik kontrol notu', 31); await T('Hakem heyeti parasal sınırı kontrolü', HUD, HUD, 'Güncel sınır notu', 31); }
+  if (ay === 0) { await T('VERBİS eşik kontrolü', HUD, HUD, 'Eşik kontrol notu', 31); await T('Hakem heyeti parasal sınırı kontrolü', HUD, HUD, 'Güncel sınır notu', 31); await verbisDegerlendir(db, yil - 1, simdi); }
   for (const g of (await db.query(`SELECT kimlik, ad, sorumlu_rol, son_tarih::text son FROM uyum_gorevi WHERE durum <> 'Kapalı'`)).rows) {
     const kalan = Math.round((new Date(g.son).getTime() - new Date(bugun).getTime()) / 86_400_000);
     if (kalan <= 3 && kalan >= 0 && await birKez(db, 'uyum_hatir', g.kimlik)) { await bildir(db, { olay: `uyum-hatir:${g.kimlik}`, kullanicilar: await rolSahipleri(db, await rolId(db, g.sorumlu_rol)), baslik: `Uyum Görevi Yaklaşıyor · ${g.ad.slice(0, 60)}`, ozet: `Son tarih: ${g.son}` }); n++; }
@@ -115,6 +131,20 @@ export function uyumYollari(s: FastifyInstance, b: Baglam) {
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolleri = async (k: string) => (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [k])).rows.map((r) => r.rol_adi as string);
   // YG-1545: kural kodu ve olay adı kullanıcıya gösterilmez.
+  // YG-1544: önceki yılın ortalama çalışan sayısı ve bilanço toplamı eşiklerle gösterilir; bilanço muhasebe hizmetinden gelen değerle Muhasebe ve Finans Müdürünce girilir.
+  s.get('/verbis-esik', oturumlu, async (i, y) => {
+    const r = await rolleri(i.oturum!.kullanici); if (!r.some((x) => [HUD, GMY, 'CEO', MFM].includes(x))) return yok(y);
+    const yil = Number((i.query as { yil?: string }).yil) || new Date().getUTCFullYear() - 1;
+    return verbisDegerlendir(b.db, yil);
+  });
+  s.post('/yillik-bilanco', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (!(await rolleri(o.kullanici)).includes(MFM)) return y.code(403).send({ hata: 'Bilanço toplamını Muhasebe ve Finans Müdürü girer.' });
+    const g = (i.body ?? {}) as { yil?: number; toplamTl?: number };
+    if (!Number.isInteger(Number(g.yil)) || !(Number(g.toplamTl) >= 0)) return y.code(400).send({ hata: 'Yıl ve bilanço toplamı (TL) zorunludur.' });
+    await b.db.query(`INSERT INTO yillik_bilanco (yil, toplam_tl, giren_ref) VALUES ($1,$2,$3) ON CONFLICT (yil) DO UPDATE SET toplam_tl = EXCLUDED.toplam_tl, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.yil, g.toplamTl, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yıllık Bilanço Toplamı', nesneTuru: 'Parametre', nesneKimligi: String(g.yil), yeni: { toplam_tl: g.toplamTl }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return verbisDegerlendir(b.db, Number(g.yil));
+  });
   s.get('/uyum-gorevleri', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     const r = await rolleri(i.oturum!.kullanici);

@@ -94,6 +94,17 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     return { ...k, toplantilar: tpl.rows, sureUyarilari: sure, duyurular: d.rows, ozelGunler: ozel, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n, okunmamisMesaj: msj.rows[0].n, vekaletler: vek.rows };
   });
 
+  // YG-502: süreli kartlar son zamandan önceki 30 dakikalık olay, toplantılar kendi süresiyle kişisel takvime aktarılır.
+  s.get('/takvim/gorevlerim.ics', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const k = await kartlarim(o.kullanici); const { takvimDosyasi } = await import('./randevu.js');
+    const kart = [...k.onay, ...k.islem, ...k.gorev].filter((x) => x.son_zaman).map((x) => ({ uid: `is-${x.kimlik}`, baslik: `${x.baslik} (Son Zaman)`, aciklama: `${x.tur}${x.ozet ? ` · ${x.ozet}` : ''} · YATONET 360 Bugün ekranından işleyiniz.`, yer: 'YATONET 360', baslangic: new Date(+new Date(x.son_zaman) - 30 * 60_000), dakika: 30 }));
+    const tpl = (await b.db.query(`SELECT DISTINCT t.kimlik, t.konu, t.baslangic, t.sure_dk, t.gorusme_baglantisi FROM toplanti t JOIN toplanti_katilimci p ON p.toplanti_ref = t.kimlik WHERE p.kullanici_ref = $1 AND t.durum = 'Planlandı' AND t.baslangic BETWEEN now() AND now() + interval '30 days' ORDER BY t.baslangic`, [o.kullanici])).rows
+      .map((t) => ({ uid: `tpl-${t.kimlik}`, baslik: t.konu as string, aciklama: 'Toplantı · YATONET 360', yer: (t.gorusme_baglantisi as string | null) ?? '', baslangic: new Date(t.baslangic), dakika: Number(t.sure_dk) }));
+    y.header('content-type', 'text/calendar; charset=utf-8').header('content-disposition', 'attachment; filename="yatonet360-gorevlerim.ics"');
+    return takvimDosyasi([...kart, ...tpl]);
+  });
+
   s.post('/is/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const { karar, gerekce, kod, donulecekKademe } = (i.body ?? {}) as { karar?: Karar; gerekce?: string; kod?: string; donulecekKademe?: number };

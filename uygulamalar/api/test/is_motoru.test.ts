@@ -141,6 +141,13 @@ describe('Bugün (YG-1635)', () => {
     expect((await karar(DEN, a, 'Tamamlandı')).statusCode).toBe(403);
     expect((await karar(CEO, a, 'Tamamlandı')).json().durum).toBe('Tamamlandı');
   });
+  it('süreli kartlar kişisel takvim dosyasına aktarılır, başkasının kartı girmez (T-YG502)', async () => {
+    await kartAc(db, { tur: 'Deneme', baslik: 'Takvim İşi', sahipKullanici: K[CEO], sonZaman: new Date(Date.now() + 5 * 3_600_000) });
+    await kartAc(db, { tur: 'Deneme', baslik: 'Başkasının İşi', sahipKullanici: K[DEN], sonZaman: new Date(Date.now() + 5 * 3_600_000) });
+    const r = await ist('GET', '/api/takvim/gorevlerim.ics', await gir(CEO));
+    expect(r.headers['content-type']).toContain('text/calendar');
+    expect(r.body).toContain('BEGIN:VCALENDAR'); expect(r.body).toContain('SUMMARY:Takvim İşi (Son Zaman)'); expect(r.body).not.toContain('Başkasının İşi');
+  });
   it('Olağanüstü Olay Dönemi görünür, bitince kalkar (YG-1629)', async () => {
     expect((await bugun(CEO)).olaganustu).toBeNull();
     await sup.query(`INSERT INTO olaganustu_donem DEFAULT VALUES`);

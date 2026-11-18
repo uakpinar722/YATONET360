@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
-import { bildir, disGonder } from './bildirim.js';
+import { bildir, birKez, disGonder } from './bildirim.js';
 import { izYaz } from './denetim.js';
 import { kartAc } from './is_motoru.js';
 import type { Baglam } from './kimlik.js';
@@ -38,7 +38,40 @@ export async function oncelikOner(db: Db, cevaplar: Record<string, string>, acil
 
 /** Portal hesabı olmayan yat sahibi/yetkilisine dosya metni (YG-022, YG-1423). Vefat işaretinde otomatik ileti durur (YG-1477). */
 export async function yatTarafinaYaz(c: Db, g: { olay: string; kod: string; dil: Dil; alanlar: Record<string, string | string[]>; telefon?: string | null; eposta?: string | null; konu: string; oncelik?: string; acil?: boolean }) {
-  return disGonder(c, { olay: g.olay, telefon: g.telefon, eposta: g.eposta, konu: g.konu, metin: await metinGetir(c, g.kod, g.dil, g.alanlar), oncelik: g.oncelik, acil: g.acil });
+  const r = await disGonder(c, { olay: g.olay, telefon: g.telefon, eposta: g.eposta, konu: g.konu, metin: await metinGetir(c, g.kod, g.dil, g.alanlar), oncelik: g.oncelik, acil: g.acil });
+  const no = g.alanlar['Dosya No'] ?? g.alanlar['File No'];
+  if (typeof no === 'string' && no) await doganGorevAc(c, g.kod, no, g.olay);
+  return r;
+}
+
+const EKIP_ROLLERI = ['Dosya Sorumlusu', 'Yedek Sorumlu', 'Operasyon Yöneticisi', 'Teknik Uzman', 'Teknik Yönetici', 'Saha Sorumlusu', 'Kalite Kontrolör', 'Tedarik Sorumlusu'];
+const ROL_ADI: Record<string, string> = { 'Ticari Sorumlu': 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)' };
+const ILK_YANIT_SAAT: Record<string, number> = { Kritik: 0.5, Yüksek: 2, Normal: 4, Planlı: 8 };
+
+/** YG-1465: şablon kataloğundaki "doğan görev" (Rol – iş; noktalı virgülle birden çok) gönderimle birlikte dosya ekibindeki kişiye, yoksa role açılır.
+ *  "En kısa sürede" denen işin üst sınırı dosyanın öncelik ilk yanıt süresidir; "1 iş günü" 24 saattir (pazar, tatil ve gece kaydırmalı). Dışa giden metne süre yazılmaz. */
+export async function doganGorevAc(c: Db, kod: string, dosyaNo: string, olay: string, simdi = new Date()): Promise<number> {
+  const tanim = (await c.query(`SELECT dogan_gorev FROM sablon_metni WHERE kod = $1 AND dil = 'tr' AND dogan_gorev IS NOT NULL AND dogan_gorev !~ '^\\s*[—-]?\\s*$' LIMIT 1`, [kod])).rows[0]?.dogan_gorev as string | undefined;
+  if (!tanim) return 0;
+  const d = (await c.query(`SELECT kimlik, oncelik, dosya_sorumlusu_ref FROM dosya WHERE dosya_no = $1`, [dosyaNo])).rows[0];
+  if (!d) return 0;
+  let n = 0;
+  for (const [i, parca] of tanim.split(';').map((x) => x.trim()).filter(Boolean).entries()) {
+    const m = parca.match(/^([^–]+?)\s+–\s+(.+)$/); if (!m) continue;
+    const rol = m[1]!.trim(); const is = m[2]!.trim();
+    if (!(await birKez(c, 'dogan_gorev', `${olay}:${i}`))) continue;
+    let kisi: string | undefined;
+    if (rol === 'Dosya Sorumlusu' && d.dosya_sorumlusu_ref) kisi = d.dosya_sorumlusu_ref;
+    else if (EKIP_ROLLERI.includes(rol)) kisi = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = $2 AND bitis_zamani IS NULL ORDER BY atama_zamani DESC LIMIT 1`, [d.kimlik, rol])).rows[0]?.kullanici_ref;
+    const rolKimlik = kisi ? undefined : (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ROL_ADI[rol] ?? rol])).rows[0]?.kimlik as string | undefined;
+    if (!kisi && !rolKimlik) continue;
+    let son: Date | undefined;
+    if (/en kısa sürede/i.test(is)) son = new Date(simdi.getTime() + (ILK_YANIT_SAAT[d.oncelik] ?? 4) * 3_600_000);
+    else if (/1 iş günü/i.test(is)) { const { bitisKaydir, tatilGunleri } = await import('./sure.js'); son = bitisKaydir(new Date(simdi.getTime() + 24 * 3_600_000), d.oncelik, await tatilGunleri(c)).bitis; }
+    await kartAc(c, { tur: 'Doğan Görev', kategori: 'gorev', baslik: `${dosyaNo} · ${kod} sonrası görev`, ozet: is.replace(/\s*\(üst sınır: öncelik ilk yanıt süresi\)/, ''), oncelik: d.oncelik, sahipKullanici: kisi, sahipRol: kisi ? undefined : rolKimlik, sonZaman: son, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    n++;
+  }
+  return n;
 }
 
 interface IhbarGirdisi {

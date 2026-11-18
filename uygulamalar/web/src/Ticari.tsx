@@ -340,14 +340,14 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <span>{f.proforma_no} · {f.durum} · {eur(f.toplam_eur)}{f.fatura_no ? ` · Fatura: ${f.fatura_no}` : ''}{f.vade ? ` · Vade: ${f.vade.split('-').reverse().join('.')}` : ''}</span>
             {ticari && <div className="dugmeler">
               {f.durum === 'Proforma' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/muhasebeye`, {}))}>Muhasebeye İlet</button>}
-              {f.durum === 'Muhasebeye İletildi' && <button className="btn2 kucuk" disabled={!fNo || !fTarih || !fKur || !fKurT} onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/bilgi`, { no: fNo, tarih: fTarih, kur: Number(fKur.replace(',', '.')), kurTarihi: fKurT }))}>Fatura Bilgisini Kaydet</button>}
+              {f.durum === 'Muhasebeye İletildi' && <button className="btn2 kucuk" disabled={!fNo || !fTarih} onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/bilgi`, { no: fNo, tarih: fTarih, kur: fKur ? Number(fKur.replace(',', '.')) : undefined, kurTarihi: fKurT || undefined }))}>Fatura Bilgisini Kaydet</button>}
               {['Faturalandı', 'Kısmi Tahsil'].includes(f.durum) && <button className="btn2 kucuk" disabled={!thTutar || !thTarih} onClick={() => void yap(() => istek('/tahsilat', { fatura: f.kimlik, tutar: Number(thTutar.replace(',', '.')), tarih: thTarih, kanal: 'Havale' }))}>Havale Tahsilatı</button>}
             </div>}
           </div>
         ))}
         {ticari && m.faturalar.length > 0 && <>
           <div className="iki-tarih"><div><label htmlFor="f-n">Fatura No (Muhasebeden)</label><input id="f-n" value={fNo} onChange={(e) => setFNo(e.target.value)} /></div><div><label htmlFor="f-t">Fatura Tarihi</label><input id="f-t" type="date" value={fTarih} onChange={(e) => setFTarih(e.target.value)} /></div></div>
-          <div className="iki-tarih"><div><label htmlFor="f-k">TCMB Satış Kuru</label><input id="f-k" inputMode="decimal" value={fKur} onChange={(e) => setFKur(e.target.value)} /></div><div><label htmlFor="f-kt">Kur Tarihi</label><input id="f-kt" type="date" value={fKurT} onChange={(e) => setFKurT(e.target.value)} /></div></div>
+          <div className="iki-tarih"><div><label htmlFor="f-k">TCMB Satış Kuru (yalnız yayın yoksa)</label><input id="f-k" inputMode="decimal" value={fKur} onChange={(e) => setFKur(e.target.value)} /></div><div><label htmlFor="f-kt">Kur Tarihi</label><input id="f-kt" type="date" value={fKurT} onChange={(e) => setFKurT(e.target.value)} /></div></div>
           <div className="iki-tarih"><div><label htmlFor="h-t">Tahsilat (EUR)</label><input id="h-t" inputMode="decimal" value={thTutar} onChange={(e) => setThTutar(e.target.value)} /></div><div><label htmlFor="h-d">Tahsilat Tarihi</label><input id="h-d" type="date" value={thTarih} onChange={(e) => setThTarih(e.target.value)} /></div></div>
         </>}
         <AlacakBolumu dosya={id} m={m} ticari={ticari} yap={yap} />
@@ -1082,9 +1082,9 @@ export function MuhasebeAna() {
       <div><b>{x.proforma_no}</b> · {x.dosya_no} · {x.muhatap} · KDV Hariç {eur(Number(x.kdv_haric_eur))} · KDV {eur(Number(x.kdv_eur))} · Toplam {eur(Number(x.toplam_eur))} · {x.durum}{x.fatura_no ? ` · Fatura ${x.fatura_no}` : ''}</div>
       {x.durum === 'Muhasebeye İletildi' && <>
         <div className="iki-tarih"><div><label htmlFor={`mh-n-${x.kimlik}`}>Fatura No</label><input id={`mh-n-${x.kimlik}`} value={v.no} onChange={(e) => yaz(x.kimlik, 'no', e.target.value)} /></div><div><label htmlFor={`mh-t-${x.kimlik}`}>Fatura Tarihi</label><input id={`mh-t-${x.kimlik}`} type="date" value={v.tarih} onChange={(e) => yaz(x.kimlik, 'tarih', e.target.value)} /></div></div>
-        <div className="iki-tarih"><div><label htmlFor={`mh-k-${x.kimlik}`}>TCMB Satış Kuru</label><input id={`mh-k-${x.kimlik}`} inputMode="decimal" value={v.kur} onChange={(e) => yaz(x.kimlik, 'kur', e.target.value)} /></div><div><label htmlFor={`mh-kt-${x.kimlik}`}>Kur Tarihi</label><input id={`mh-kt-${x.kimlik}`} type="date" value={v.kurTarihi} onChange={(e) => yaz(x.kimlik, 'kurTarihi', e.target.value)} /></div></div>
+        <div className="iki-tarih"><div><label htmlFor={`mh-k-${x.kimlik}`}>TCMB Satış Kuru (yalnız yayın yoksa)</label><input id={`mh-k-${x.kimlik}`} inputMode="decimal" value={v.kur} onChange={(e) => yaz(x.kimlik, 'kur', e.target.value)} /></div><div><label htmlFor={`mh-kt-${x.kimlik}`}>Kur Tarihi</label><input id={`mh-kt-${x.kimlik}`} type="date" value={v.kurTarihi} onChange={(e) => yaz(x.kimlik, 'kurTarihi', e.target.value)} /></div></div>
         <label htmlFor={`mh-p-${x.kimlik}`}>Fatura PDF</label><input id={`mh-p-${x.kimlik}`} type="file" accept=".pdf" onChange={(e) => { const d = e.target.files?.[0]; if (d) void belgeYukle(d, 'Müşteri Faturası', x.kimlik).then((b) => yaz(x.kimlik, 'pdf', b)).catch((h) => setM(h.message)); }} />
-        <button className="btn2 kucuk" disabled={!v.no.trim() || !v.tarih || !v.kur || !v.kurTarihi || !v.pdf} onClick={() => void istek(`/fatura/${x.kimlik}/bilgi`, { no: v.no, tarih: v.tarih, kur: Number(v.kur.replace(',', '.')), kurTarihi: v.kurTarihi, pdf: v.pdf }).then(() => { setM('Fatura bilgisi kaydedildi.'); return yk(); }).catch((h) => setM(h.message))}>Fatura Bilgisini Kaydet</button>
+        <button className="btn2 kucuk" disabled={!v.no.trim() || !v.tarih || !v.pdf} onClick={() => void istek(`/fatura/${x.kimlik}/bilgi`, { no: v.no, tarih: v.tarih, kur: v.kur ? Number(v.kur.replace(',', '.')) : undefined, kurTarihi: v.kurTarihi || undefined, pdf: v.pdf }).then(() => { setM('Fatura bilgisi kaydedildi.'); return yk(); }).catch((h) => setM(h.message))}>Fatura Bilgisini Kaydet</button>
       </>}
     </div>; })}<TevkifatListesi /></>;
 }

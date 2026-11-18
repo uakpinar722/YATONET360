@@ -229,9 +229,9 @@ function Yetkilerim({ ben, y, yenile }: { ben: Ben; y: Yetkili; yenile: () => vo
   return <>
     <div className="bolum">Yetkilerim</div>
     <div className="ozet">{y.sahip_ad} adına yapabileceğiniz işlemler aşağıda gösterilmiştir.
-      {y.belge_durumu === 'Geçerli' ? <div>Yetki Belgesi Geçerli{y.ust_limit_eur ? ` · Üst Limit: ${eurB(y.ust_limit_eur)}` : ''}{y.bitis_tarihi ? ` · Bitiş: ${y.bitis_tarihi}` : ''}{!y.odeme_yetkisi && <div>Yetki belgeniz ödeme ve onay yetkisi içermediğinden onay işlemleri yat sahibine iletilecektir.</div>}<div>Yetki sınırınızı aşan veya yetki belgenizde yer almayan işlemler yat sahibinin onayına iletilir.</div></div>
+      {y.belge_durumu === 'Geçerli' ? <div>Yetki Belgesi Geçerli{y.ust_limit_eur ? ` · Üst Limit: ${eurB(y.ust_limit_eur)}` : ''}{y.bitis_tarihi ? ` · Bitiş: ${y.bitis_tarihi}` : ''}{!y.odeme_yetkisi && <div><b>Ödeme ve Onay Yetkisi: Yok</b> · Onay işlemleri yat sahibine gönderilir.</div>}<div>Yetki sınırınızı aşan veya yetki belgenizde yer almayan işlemler yat sahibinin onayına iletilir.</div></div>
         : y.belge_durumu === 'Kontrolde' ? <div>Yetki belgeniz kontrol edilmektedir.</div>
-        : <><div><b>Yetki Belgesi Bekleniyor</b></div><div>Yetki belgeniz sisteme ulaşana kadar dosyaları, teknik raporu ve fiyat teklifini görüntüleyebilirsiniz; bu sürede onay işlemleri yat sahibine iletilecektir.</div><div>Vekâletname, yetki yazısı veya yat yönetim sözleşmesi (PDF ya da fotoğraf).</div>
+        : <><div><b>Yetki Belgesi Bekleniyor</b></div><div>Yetki belgeniz sisteme ulaşana kadar dosyaları, teknik raporu ve fiyat teklifini görüntüleyebilirsiniz; onay veremezsiniz. Onay işlemleri yat sahibine gönderilir.</div><div>Vekâletname, yetki yazısı veya yat yönetim sözleşmesi (PDF ya da fotoğraf).</div>
           {h && <div className="hata" role="alert">{h}</div>}<BelgeSec ad="Yetki Belgesi" bagTuru="Yat Yetkilisi" bagKimligi={ben.kimlik} deger={b} sec={setB} /><button className="btn2" disabled={!b} onClick={() => void istek('/yetkilerim/belge', { belge: b }).then(yenile).catch((e) => setH(e.message))}>Yetki Belgesi Yükle</button></>}
     </div>
   </>;
