@@ -96,6 +96,9 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
   // Hazırlayan kendi setini üretime onaylayamaz; onay sonrası izleme görevi açılır (YG-1137).
   s.post('/yayin-seti/:id/uretime-al', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; if (!UUID.test(id) || !(await rolde(o.kullanici, ONAY))) return yok(y);
+    // YG-1652: sürüm öncesi öz denetim başarılı olmadan sürüm üretime alınmaz.
+    const ts = (await b.db.query(`SELECT test_edilen_ref FROM yayin_seti WHERE kimlik = $1`, [id])).rows[0]?.test_edilen_ref as string | null;
+    const oz = await (await import('./oz_denetim.js')).surumOzDenetimEngeli(b.db, [id, ts ?? '']); if (oz) return y.code(409).send({ hata: oz });
     const r = (await b.db.query(`UPDATE yayin_seti SET durum = 'Üretimde', onaylayan_ref = $2, uretim_zamani = now() WHERE kimlik = $1 AND ortam = 'Üretim' AND durum = 'Onayda' AND hazirlayan_ref <> $2 RETURNING surum`, [id, o.kullanici])).rows[0];
     if (!r) return y.code(409).send({ hata: 'Set onayda değil veya hazırlayan kendi setini onaylayamaz.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Üretime Alma Onayı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);

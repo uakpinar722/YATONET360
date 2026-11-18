@@ -74,3 +74,23 @@ export function DegisiklikBiletleri() {
     {kv && <span><label htmlFor="dg-vs">Veri Sahibi Rol</label><input id="dg-vs" value={f.veriSahibiRol ?? ''} onChange={(e) => setF({ ...f, veriSahibiRol: e.target.value })} /></span>}
     <button className="btn2 kucuk" disabled={ALAN.some(([k]) => !(f[k] ?? '').trim()) || (kv && !(f.veriSahibiRol ?? '').trim())} onClick={() => void istek<{ biletNo: string }>('/degisiklik-bileti', { ...f, kisiselVeri: kv }).then((r) => { setM(`${r.biletNo} Bilgi İşlem Müdürü onayına gönderildi.`); setF({}); setKv(false); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></details>;
 }
+
+/** YG-1652: Sistem Öz Denetimi; çalışmalar, senaryo sonuçları ve bulgular. Sürüm öncesi ve kural değişikliği sonrası çalışma elle başlatılır. */
+export function OzDenetim() {
+  type S = { senaryo_kodu: string; surec: string; ad: string; senaryo_turu: string; beklenen: string; gerceklesen: string; basarili: boolean; bulgu_no: string | null };
+  type C = { kimlik: string; calisma_no: string; tur: string; sonuc: string; aciklama: string | null; baslangic: string; surum: string | null; sonuclar: S[] };
+  const [v, setV] = useState<{ calismalar: C[]; setler: { kimlik: string; surum: string; ortam: string }[]; havuz: number; sabit: string[] } | null>(null);
+  const [tur, setTur] = useState(''); const [ys, setYs] = useState(''); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/oz-denetim').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const zaman = (z: string) => new Date(z).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+  return <details><summary>Sistem Öz Denetimi · Havuz {v.havuz} senaryo{v.sabit.length ? ` · Sabit set ${v.sabit.length}` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.calismalar.length === 0 && <div className="not">Öz denetim çalışması bulunmamaktadır.</div>}
+    {v.calismalar.map((c) => <div className="ozet" key={c.kimlik}><div><b>{c.calisma_no}</b> · {c.tur}{c.surum ? ` · ${c.surum}` : ''} · {zaman(c.baslangic)} · <span className={c.sonuc === 'Başarılı' ? 'rozet yesil' : c.sonuc === 'Sürüyor' ? 'rozet gri' : 'rozet kirmizi'}>{c.sonuc}</span>{c.aciklama ? ` · ${c.aciklama}` : ''}</div>
+      {c.sonuclar.map((s) => <div key={s.senaryo_kodu} className="not">{s.basarili ? '✓' : '✗'} {s.senaryo_kodu} · {s.surec} · {s.ad} · Beklenen: {s.beklenen} · Gerçekleşen: {s.gerceklesen}{s.bulgu_no ? ` · Bulgu: ${s.bulgu_no}` : ''}</div>)}</div>)}
+    <div className="bolum">Öz Denetim Başlat</div>
+    <label htmlFor="od-t">Çalışma Türü</label><select id="od-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option><option>Sürüm Öncesi</option><option>Kural Değişikliği</option></select>
+    {tur === 'Sürüm Öncesi' && <><label htmlFor="od-y">Yayın Seti</label><select id="od-y" value={ys} onChange={(e) => setYs(e.target.value)}><option value="">Seçiniz</option>{v.setler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.surum} · {x.ortam}</option>)}</select></>}
+    <button className="btn2 kucuk" disabled={!tur || (tur === 'Sürüm Öncesi' && !ys)} onClick={() => void istek<{ calismaNo: string }>('/oz-denetim', { tur, yayin: ys || undefined }).then((r) => { setM(`${r.calismaNo} başlatıldı; sonuç birkaç dakika içinde listelenir.`); return yk(); }).catch((e) => setM(e.message))}>Öz Denetimi Başlat</button></details>;
+}

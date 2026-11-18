@@ -160,6 +160,12 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     await bildir(b.db, { olay: `nobet-cagri:${r.kimlik}:0`, kullanicilar: sorumlu ? [sorumlu] : await sahipleri(b.db, rol), baslik: `Nöbet Çağrısı: ${g.arayan.trim()}`, ozet: g.ozet.trim(), oncelik: 'Kritik', sms: true, acil: true });
     return { kimlik: r.kimlik, sonZaman: son.toISOString() };
   });
+  // YG-1582, YG-1586, YG-1587: üst katmana yükselen ve dönülmemiş çağrılar, o katmanın rolündeki kullanıcıya kart olarak görünür.
+  s.get('/nobet/yukselen-cagrilarim', oturumlu, async (i) => {
+    const o = i.oturum!; if (o.grup !== LGM) return [];
+    return (await b.db.query(`SELECT c.kimlik, c.hat, c.arayan, c.telefon, c.ozet, c.sorumlu_rol, c.kademe, c.son_zaman FROM nobet_cagrisi c WHERE c.donus_zamani IS NULL AND c.kademe > 0
+      AND c.sorumlu_rol IN (SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif') ORDER BY c.son_zaman`, [o.kullanici])).rows;
+  });
   s.get('/nobet/cagrilar', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== LGM) return yok(y);
     return (await b.db.query(`SELECT kimlik, hat, arayan, telefon, ozet, sorumlu_rol, son_zaman, son_zaman < now() AS gecikti FROM nobet_cagrisi WHERE donus_zamani IS NULL ORDER BY son_zaman`)).rows;
@@ -173,6 +179,14 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
 
+  // YG-1584: açık olaylarda olay yöneticisi rolündeki kullanıcıya "Olay Yöneticisi: Siz" kartı ve bilgilendirilecek makamlar.
+  s.get('/olay/yoneticisi-oldugum', oturumlu, async (i) => {
+    const o = i.oturum!; if (o.grup !== LGM) return [];
+    const r = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [o.kullanici])).rows.map((z) => z.rol_adi as string);
+    const turler = Object.entries(KOMUTA).filter(([, k]) => k.yonetici.some((x) => r.includes(x))).map(([t]) => t); if (!turler.length) return [];
+    const l = (await b.db.query(`SELECT k.kimlik, k.olay_no, k.olay_turu, k.ozet, k.olusturma_zamani, d.dosya_no FROM olay_kaydi k LEFT JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.durum = 'Açık' AND k.ana_olay_ref IS NULL AND k.olay_turu = ANY($1::text[]) ORDER BY k.olusturma_zamani DESC LIMIT 20`, [turler])).rows;
+    return l.map((x) => ({ ...x, bilgilendir: KOMUTA[x.olay_turu]?.bilgi ?? [] }));
+  });
   // YG-261: olay türüne göre ilk müdahale eden, olay yöneticisi ve bilgilendirilecekler.
   s.post('/olay-komutasi', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; ozet?: string; dosya?: string };

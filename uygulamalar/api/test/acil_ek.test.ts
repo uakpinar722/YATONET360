@@ -22,6 +22,9 @@ describe('nöbet çağrısı (YG-243)', () => {
     const rol = async () => (await o.sup.query(`SELECT sorumlu_rol, kademe FROM nobet_cagrisi WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
     let t = Date.now() + 16 * 60_000; await nobetCagriIsle(o.db, new Date(t)); expect((await rol()).sorumlu_rol).toBe('Operasyon Yöneticisi');
     expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Yanıtsız Nöbet%'`, [o.K.oy])).rowCount).toBe(1);
+    // T-YG1582: yükselen çağrı yalnız yükseldiği katmanın rolünde kart olarak görünür
+    expect((await o.ist('GET', '/api/nobet/yukselen-cagrilarim', await o.gir('oy'))).json().map((x: { kimlik: string }) => x.kimlik)).toContain(r.json().kimlik);
+    expect((await o.ist('GET', '/api/nobet/yukselen-cagrilarim', ds)).json()).toEqual([]);
     t += 16 * 60_000; await nobetCagriIsle(o.db, new Date(t)); expect((await rol()).sorumlu_rol).toBe('Operasyon Müdür Yardımcısı');
     t += 16 * 60_000; await nobetCagriIsle(o.db, new Date(t)); expect((await rol()).sorumlu_rol).toBe('Operasyon Müdürü');
     expect((await o.ist('GET', '/api/nobet/cagrilar', ds)).json()).toHaveLength(1);
@@ -37,6 +40,9 @@ describe('olay komutası (YG-261)', () => {
     const r = await o.ist('POST', '/api/olay-komutasi', await o.gir('ds'), { tur: 'BT Kesintisi veya Veri İhlali', ozet: 'Sunucu kapalı' }); expect(r.statusCode, r.body).toBe(200);
     expect(r.json()).toMatchObject({ ilkMudahale: 'Bilgi İşlem Destek Sorumlusu', olayYoneticisi: ['Bilgi İşlem Müdürü', 'Hukuk ve Uyum Direktörü'] });
     for (const k of [o.K.bid, o.K.bim, o.K.hud, o.K.gmy]) expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [k, `olay:${r.json().kimlik}%`])).rowCount).toBe(1);
+    // T-YG1584: olay yöneticisi kendi kartını görür, ilk müdahale eden görmez
+    const oy = (await o.ist('GET', '/api/olay/yoneticisi-oldugum', await o.gir('bim'))).json(); expect(oy.find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).bilgilendir).toContain('CEO');
+    expect((await o.ist('GET', '/api/olay/yoneticisi-oldugum', await o.gir('ds'))).json()).toEqual([]);
     expect((await o.ist('POST', '/api/olay-komutasi', await o.gir('ds'), { tur: 'Yok', ozet: 'X' })).statusCode).toBe(400);
   });
 });

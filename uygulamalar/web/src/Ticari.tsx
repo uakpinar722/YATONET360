@@ -22,7 +22,7 @@ import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
-import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, IcDenetim } from './ErisimEtik';
+import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, IcDenetim, OzDenetim } from './ErisimEtik';
 import { KurumTalepleri, GelenTalepler } from './KurumTalebi';
 import { UcretBandi } from './UcretBandi';
 import { KilitRoller } from './KilitRol';
@@ -912,6 +912,7 @@ export function IdariIslemler() {
       <ArsivListesi />
       <ErisimInceleme />
       <DegisiklikBiletleri />
+      <OzDenetim />
       <EtikBildirim />
       <IcDenetim />
       <KurumTalepleri />

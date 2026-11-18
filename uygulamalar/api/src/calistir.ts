@@ -100,6 +100,8 @@ const YEDEK = { veritabani: 'yatonet360', superParola: e.POSTGRES_SUPER_PAROLA!,
 setInterval(() => { saglikIzle(db, YEDEK.klasor).catch((h) => s.log.error(h.message)); yedekIsle(db, YEDEK).catch((h) => s.log.error(h.message)); }, 1_800_000);
 setInterval(() => { belgeYururlukIsle(db).catch((h) => s.log.error(h.message)); butceDonemiIsle(db).catch((h) => s.log.error(h.message)); musaitlikHatirlat(db).catch((h) => s.log.error(h.message)); geciciIthalatHatirlat(db).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { sureIsle(db).catch((h) => s.log.error(h.message)); }, 60_000);
+// YG-1652: sistem öz denetimi; sıklık gününde 02:00'de.
+setInterval(() => { void import('./oz_denetim.js').then((m) => m.ozDenetimZamanla(db)).catch((h) => s.log.error(h.message)); }, 3_600_000);
 setInterval(() => { beklemedeIsle(db).catch((h) => s.log.error(h.message)); void import('./dosya.js').then((m) => m.belgeSuresiIsle(db)).catch((h) => s.log.error(h.message)); }, 3_600_000); // YG-1440
 setInterval(() => { teklifSureIsle(db).catch((h) => s.log.error(h.message)); sozlesmeSureIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000); // YG-147
 tcmbKurIsle(db).catch((h) => s.log.error(h.message)); setInterval(() => { tcmbKurIsle(db).catch((h) => s.log.error(h.message)); odemeTakvimiUyariIsle(db).catch((h) => s.log.error(h.message)); sikayetHaftalikIsle(db).catch((h) => s.log.error(h.message)); sahaSorumlusuIhtiyacIsle(db).catch((h) => s.log.error(h.message)); acikKonuGecikmeIsle(db).catch((h) => s.log.error(h.message)); }, 3_600_000); // YG-1356: TCMB günlük kur; YG-918 ödeme takvimi uyarısı

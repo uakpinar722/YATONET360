@@ -2,6 +2,8 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool } from 'pg';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { kullaniciIzinleri } from './yetki.js';
+import { haftaAnahtari } from './uyum_tarama.js';
+import { UUID } from './yat.js';
 
 type Rol = { rol_adi: string; kademe: string; birim: string };
 const TEDARIK = ['Tedarik Sorumlusu', 'Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'];
@@ -75,6 +77,7 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
       FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.statu = 'Açılış Kontrolünde'
         AND (NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) OR NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL))
       ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
+    await notEkle(dosyalar, 'Teknik Yönetici');
     return { dosyalar, uyarilar, mudur, durdurulan, kuyruk };
   });
   // YG-1586: Teknik Yönetici Saha Sorumlusu ihtiyacını Teknik Müdüre bildirir; atama ayrı onay aranmadan Teknik Müdürdedir.
@@ -85,6 +88,22 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     const g = await (await import('./dosya.js')).sahaSorumlusuGerekceleri(b.db, id);
     const { bildir } = await import('./bildirim.js'); const { rolSahipleri } = await import('./makam.js'); const { rolId } = await import('./ihbar.js');
     await bildir(b.db, { olay: `ss-bildir:${id}:${new Date().toISOString().slice(0, 10)}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, 'Teknik Müdür')), baslik: `${d.dosya_no} · Saha Sorumlusu Gerekiyor`, ozet: g.length ? g.join(', ') : 'Teknik Yönetici bildirimi', oncelik: 'Yüksek' });
+    return { tamam: true };
+  });
+  // YG-1582, YG-1586: haftalık gözetim notu; dosyada etkin Operasyon Yöneticisi veya Teknik Yönetici olan yazar, hafta içinde günceller.
+  const hafta = () => haftaAnahtari(new Date(Date.now() + 3 * 3_600_000));
+  const notEkle = async (l: { kimlik: string; gozetim_notu?: string | null }[], rol: string) => {
+    if (!l.length) return;
+    const n = new Map((await b.db.query(`SELECT dosya_ref::text, notu FROM gozetim_notu WHERE rol = $1 AND hafta = $2 AND dosya_ref = ANY($3::uuid[])`, [rol, hafta(), l.map((x) => x.kimlik)])).rows.map((r) => [r.dosya_ref as string, r.notu as string]));
+    for (const x of l) x.gozetim_notu = n.get(x.kimlik) ?? null;
+  };
+  s.post('/dosya/:id/gozetim-notu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const notu = String(((i.body ?? {}) as { notu?: string }).notu ?? '').trim();
+    if (!UUID.test(id)) return yok(y);
+    const rol = (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Operasyon Yöneticisi', 'Teknik Yönetici') AND bitis_zamani IS NULL ORDER BY rol LIMIT 1`, [id, o.kullanici])).rows[0]?.rol as string | undefined;
+    if (!rol) return yok(y);
+    if (!notu) return y.code(400).send({ hata: 'Gözetim notunu yazmanızı rica ederiz.' });
+    await b.db.query(`INSERT INTO gozetim_notu (dosya_ref, rol, hafta, notu, yazan_ref) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (dosya_ref, rol, hafta) DO UPDATE SET notu = EXCLUDED.notu, yazan_ref = EXCLUDED.yazan_ref, zaman = now()`, [id, rol, hafta(), notu, o.kullanici]);
     return { tamam: true };
   });
   // YG-1582, YG-1583: Operasyon panosu. Operasyon Yöneticisi gözetimindeki dosyaları, Müdür ve Müdür Yardımcısı tüm aktif dosyaları kapsar.
@@ -110,7 +129,8 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
         WHERE d.statu = 'Açılış Kontrolünde' AND NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Dosya Sorumlusu' AND a.bitis_zamani IS NULL)
         ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
     const onerilen = ekip.filter((e) => e.yuk < ust).sort((a, c) => a.yuk - c.yuk)[0]?.ad_soyad ?? null;
-    return { dosyalar, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk.map((k) => ({ ...k, onerilen })) };
+    await notEkle(dosyalar, 'Operasyon Yöneticisi');
+    return { dosyalar, mudur, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk.map((k) => ({ ...k, onerilen })) };
   });
   s.get('/is-listeleri', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);

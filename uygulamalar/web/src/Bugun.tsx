@@ -113,6 +113,28 @@ function IslemKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
 
 /** YG-1631: 7 günlük plan İK modülüyle dolar; o zamana kadar gün şeridi boş görünür. */
 /** YG-1631: 7 günlük planlanan konum; veri kişinin konum planından (görev, izin, saha) gelir. */
+/** YG-1582, YG-1586, YG-1587: yanıtsız kalıp size yükselen nöbet çağrısı; 15 dakikalık dönüş sayacıyla. */
+function YukselenCagri() {
+  const [l, setL] = useState<{ kimlik: string; hat: string; arayan: string; telefon: string | null; ozet: string; sorumlu_rol: string; son_zaman: string }[]>([]); const [n, setN] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/nobet/yukselen-cagrilarim').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (l.length === 0) return m ? <div className="not" role="status">{m}</div> : null;
+  return <>{m && <div className="not" role="status">{m}</div>}{l.map((x) => { const kl = kalan(x.son_zaman); return <div key={x.kimlik} className="hata kart-sol" data-t="yukselen-cagri"><div className="ust2"><b>Yükselen Çağrı · {x.hat} Hattı · {x.arayan}</b><Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} /></div>
+    <div className="not">{x.ozet}{x.telefon ? ` · ${x.telefon}` : ''} · Önceki katman yanıt vermedi; arayana dönmenizi rica ederiz.</div>
+    <label htmlFor={`yc-${x.kimlik}`}>Görüşme Notu</label><input id={`yc-${x.kimlik}`} value={n[x.kimlik] ?? ''} onChange={(e) => setN({ ...n, [x.kimlik]: e.target.value })} />
+    <div className="dugmeler"><button className="btn evet" disabled={!(n[x.kimlik] ?? '').trim()} onClick={() => void istek(`/nobet/cagri/${x.kimlik}/donus`, { not: n[x.kimlik] }).then(() => { setM('Dönüş kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Döndüm</button></div></div>; })}</>;
+}
+
+/** YG-1584: olay yöneticisi olduğunuz açık olaylar; bilgilendirilecek makamlar hatırlatılır. */
+function OlayYoneticisiKarti() {
+  const [l, setL] = useState<{ kimlik: string; olay_no: string; olay_turu: string; ozet: string; dosya_no: string | null; bilgilendir: string[] }[]>([]);
+  useEffect(() => { void istek<typeof l>('/olay/yoneticisi-oldugum').then(setL).catch(() => setL([])); }, []);
+  if (l.length === 0) return null;
+  return <>{l.map((x) => <div key={x.kimlik} className="hata kart-sol" data-t="olay-yoneticisi"><div className="ust2"><b>Olay Yöneticisi: Siz · {x.olay_no}</b><Rozet s="kirmizi" c="Acil" /></div>
+    <div className="not">{x.olay_turu}{x.dosya_no ? ` · ${x.dosya_no}` : ''} · {x.ozet}</div>
+    <div className="not">Bilgilendiriniz: {x.bilgilendir.join(', ')}</div></div>)}</>;
+}
+
 /** YG-1579, YG-246: size devredilen ve henüz onaylanmamış nöbet; açık olaylarla birlikte acil kartların üstünde. */
 function NobetDevirKarti() {
   const [l, setL] = useState<{ kimlik: string; devreden: string; acik_olaylar: string | null; kontrol_listesi: string[] | null }[]>([]); const [m, setM] = useState('');
@@ -200,6 +222,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       ))}
 
       {lgm && <NobetDevirKarti />}
+      {lgm && <OlayYoneticisiKarti />}
+      {lgm && <YukselenCagri />}
       {(() => { const acil = [...veri.onay, ...veri.islem, ...veri.gorev].filter((k) => k.oncelik === 'Kritik'); return acil.length > 0 && <>{/* YG-1635: acil kartlar Süre Uyarılarının üstünde */}
         <div className="bolum">Acil</div>
         {acil.map((k) => <div key={`acil-${k.kimlik}`} className="hata kart-sol"><KartUst k={k} /></div>)}</>; })()}
@@ -305,8 +329,9 @@ function KalitePano() {
 
 /** YG-1586, YG-1587: Gözetim Uyarıları ve Gözetim / Müdürlük Dosyaları (teknik rapor durumu). */
 function TeknikPano() {
-  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; yat_adi: string; rapor: string | null }[]; uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[]; mudur: boolean; durdurulan?: { kimlik: string; dosya_no: string; yat_adi: string; neden: string | null }[]; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; eksik: string[] }[] } | null>(null); const [m, setM] = useState('');
-  useEffect(() => { void istek<NonNullable<typeof v>>('/teknik-pano').then(setV).catch(() => setV(null)); }, []);
+  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; yat_adi: string; rapor: string | null; gozetim_notu: string | null }[]; uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[]; mudur: boolean; durdurulan?: { kimlik: string; dosya_no: string; yat_adi: string; neden: string | null }[]; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; eksik: string[] }[] } | null>(null); const [m, setM] = useState('');
+  const [gn, setGn] = useState(0);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/teknik-pano').then(setV).catch(() => setV(null)); }, [gn]);
   if (!v) return null;
   return <>
     {(v.durdurulan ?? []).map((d) => <div key={d.kimlik} className="hata kart-sol"><div className="ust2"><b>Karar Seviyesi: Siz · {d.dosya_no} · {d.yat_adi}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{d.neden ?? 'İş durduruldu'} · GMY ve CEO bilgilendirildi; güvenli koşul doğrulanmadan iş yeniden başlatılmaz.</div></div>)}
@@ -316,13 +341,27 @@ function TeknikPano() {
       {!v.mudur && u.tur === 'Saha Sorumlusu Gerekiyor' && <button className="btn2 kucuk" onClick={() => void istek(`/dosya/${u.dosya}/saha-sorumlusu-bildir`, {}).then(() => setM('Teknik Müdüre bildirildi.')).catch((e) => setM(e.message))}>Teknik Müdüre Bildir</button>}</div>)}
     <div className="bolum">{v.mudur ? 'Müdürlük Dosyaları' : 'Gözetim Dosyaları'}</div>
     {v.dosyalar.length === 0 ? <Bos m="Gözetiminizde dosya bulunmamaktadır." /> : <div className="tablo"><table className="kartli"><thead><tr><th>Dosya</th><th>Yat</th><th>Öncelik</th><th>Teknik Rapor</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Dosya">{d.dosya_no}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Öncelik">{d.oncelik}</td><td data-ad="Teknik Rapor">{d.rapor ?? '—'}</td></tr>)}</tbody></table></div>}
+    {!v.mudur && <GozetimNotu dosyalar={v.dosyalar} yenile={() => setGn(gn + 1)} />}
   </>;
+}
+
+/** YG-1582, YG-1586: haftalık gözetim notu; bu hafta not yazılmamış dosyalar sarı rozetle sayılır. */
+function GozetimNotu({ dosyalar, yenile }: { dosyalar: { kimlik: string; dosya_no: string; gozetim_notu: string | null }[]; yenile: () => void }) {
+  const [s, setS] = useState(''); const [n, setN] = useState(''); const [m, setM] = useState('');
+  if (dosyalar.length === 0) return null;
+  const bekleyen = dosyalar.filter((d) => !d.gozetim_notu).length;
+  return <><div className="bolum">Haftalık Gözetim Notu {bekleyen > 0 && <Rozet s="sari" c={`${bekleyen} Dosyada Bekleniyor`} />}</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="ozet">{dosyalar.map((d) => <div key={d.kimlik}>{d.dosya_no} · {d.gozetim_notu ?? 'Bu hafta not yazılmadı'}</div>)}
+      <label htmlFor="gn-d">Dosya</label><select id="gn-d" value={s} onChange={(e) => { setS(e.target.value); setN(dosyalar.find((d) => d.kimlik === e.target.value)?.gozetim_notu ?? ''); }}><option value="">Seçiniz</option>{dosyalar.map((d) => <option key={d.kimlik} value={d.kimlik}>{d.dosya_no}</option>)}</select>
+      <label htmlFor="gn-n">Gözetim Notu</label><textarea id="gn-n" value={n} onChange={(e) => setN(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!s || !n.trim()} onClick={() => void istek(`/dosya/${s}/gozetim-notu`, { notu: n }).then(() => { setM('Gözetim notu kaydedildi.'); setS(''); setN(''); yenile(); }).catch((e) => setM(e.message))}>Gözetim Notunu Kaydet</button></div></>;
 }
 
 /** YG-1582, YG-1583: Müdahale Gerekenler, Gözetim Dosyaları ve ekip kapasitesi (/25). */
 function OperasyonPano() {
-  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; asama: string | null; yat_adi: string; dosya_sorumlusu: string | null }[]; mudahale: { baslik: string; son_zaman: string | null; tur: string }[]; ekip: { ad: string; yuk: number; ust: number }[]; oneri: string | null; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; onerilen: string | null }[] } | null>(null);
-  useEffect(() => { void istek<NonNullable<typeof v>>('/operasyon-pano').then(setV).catch(() => setV(null)); }, []);
+  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; asama: string | null; yat_adi: string; dosya_sorumlusu: string | null; gozetim_notu: string | null }[]; mudur?: boolean; mudahale: { baslik: string; son_zaman: string | null; tur: string }[]; ekip: { ad: string; yuk: number; ust: number }[]; oneri: string | null; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; onerilen: string | null }[] } | null>(null);
+  const [gn, setGn] = useState(0);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/operasyon-pano').then(setV).catch(() => setV(null)); }, [gn]);
   if (!v) return null;
   return <>
     {v.kuyruk && <><div className="bolum">Atama Bekleyenler</div>{v.kuyruk.length === 0 ? <Bos m="Atama bekleyen dosya bulunmamaktadır." /> : v.kuyruk.map((k) => { const kl = k.son ? kalan(k.son) : null; return <div key={k.kimlik} className={`ozet kart-sol${k.oncelik === 'Kritik' ? ' hata' : ''}`}><div className="ust2"><b>{k.dosya_no} · {k.yat_adi}</b>{kl && <Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} />}</div><div className="not">{k.oncelik}{k.onerilen ? ` · Önerilen Dosya Sorumlusu: ${k.onerilen}` : ''}</div></div>; })}</>}
@@ -330,6 +369,7 @@ function OperasyonPano() {
     {v.mudahale.length === 0 ? <Bos m="Müdahale gerektiren konu bulunmamaktadır." /> : v.mudahale.map((x, i) => <div key={i} className="ozet kart-sol"><div className="ust2"><b>{x.baslik}</b><Rozet s="kirmizi" c={x.tur} /></div>{x.son_zaman && <div className="not">Son: {sonYazi(x.son_zaman)}</div>}</div>)}
     <div className="bolum">Gözetim Dosyaları</div>
     {v.dosyalar.length === 0 ? <Bos m="Gözetiminizde dosya bulunmamaktadır." /> : <div className="tablo"><table className="kartli"><thead><tr><th>Dosya</th><th>Yat</th><th>Öncelik</th><th>Durum</th><th>Dosya Sorumlusu</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Dosya">{d.dosya_no}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Öncelik">{d.oncelik}</td><td data-ad="Durum">{d.statu}{d.asama ? ` · ${d.asama}` : ''}</td><td data-ad="Dosya Sorumlusu">{d.dosya_sorumlusu ?? '—'}</td></tr>)}</tbody></table></div>}
+    {!v.mudur && <GozetimNotu dosyalar={v.dosyalar} yenile={() => setGn(gn + 1)} />}
     <div className="bolum">Ekip · Kapasite</div>
     <div className="ozet">{v.ekip.map((e) => <div key={e.ad}>{e.ad} · {e.yuk.toLocaleString('tr-TR')} / {e.ust}{e.yuk >= e.ust ? <Rozet s="kirmizi" c="Kapasite Dolu" /> : e.yuk >= e.ust * 0.8 ? <Rozet s="sari" c="Kapasite %80" /> : ''}</div>)}{v.oneri && <div className="uyari">{v.oneri}</div>}</div>
   </>;

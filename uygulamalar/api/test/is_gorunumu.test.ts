@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { konumPlani } from '../src/is_gorunumu.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', oy: 'Operasyon Yöneticisi', ty: 'Teknik Yönetici' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test92', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -37,6 +37,15 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     expect(v.mudahale.some((x: { tur: string }) => x.tur === 'Beklemede 10. Gün')).toBe(true);
     expect(v.ekip[0]).toMatchObject({ ust: 25 }); expect(Array.isArray(v.kuyruk)).toBe(true); // YG-1584
     expect((await o.ist('GET', '/api/operasyon-pano', await o.gir('ts'))).statusCode).toBe(404);
+    // T-YG1582: haftalık gözetim notu yalnız dosyanın Operasyon Yöneticisi tarafından yazılır
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Operasyon Yöneticisi',$3)`, [d.kimlik, o.K.oy, o.K.opm]);
+    const u = `/api/dosya/${d.kimlik}/gozetim-notu`; const oy = await o.gir('oy');
+    expect((await o.ist('POST', u, await o.gir('ty'), { notu: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, oy, { notu: ' ' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, oy, { notu: 'Parça bekleniyor, firma bilgilendirildi.' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, oy, { notu: 'Güncel not.' })).statusCode).toBe(200);
+    const g = (await o.ist('GET', '/api/operasyon-pano', oy)).json(); expect(g.mudur).toBe(false);
+    expect(g.dosyalar.find((x: { kimlik: string }) => x.kimlik === d.kimlik).gozetim_notu).toBe('Güncel not.');
   });
   it('teknik pano gözetim dosyalarını ve uyarılarını verir; yetkisiz göremez (T-YG1586)', async () => {
     const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET oncelik = 'Kritik' WHERE kimlik = $1`, [d.kimlik]);
