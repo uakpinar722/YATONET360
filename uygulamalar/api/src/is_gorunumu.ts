@@ -61,7 +61,8 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
         coalesce((SELECT max(a.olusturma_zamani) FROM kabul_kaydi a WHERE a.is_emri_ref = e.kimlik AND a.kabul_turu IN ('Teknik Kabul', 'Koşullu Kabul', 'Nihai Kabul')), (SELECT max(t.teslim_zamani) FROM teslim_kaydi t WHERE t.dosya_ref = d.kimlik AND t.durum LIKE 'Teslim Edildi%'), e.kapanis_zamani) tamamlanma
       FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat x ON x.kimlik = d.yat_ref JOIN kurulus k ON k.kimlik = e.kurulus_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref
       WHERE e.statu NOT IN ('İptal', 'Yerine Geçti') AND NOT EXISTS (SELECT 1 FROM is_emri n WHERE n.is_emri_no = e.is_emri_no AND n.surum > e.surum)
-        AND ($1 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.bitis_zamani IS NULL) OR d.dosya_sorumlusu_ref = $2)`, [tum, o.kullanici])).rows
+        AND ($1 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.bitis_zamani IS NULL) OR d.dosya_sorumlusu_ref = $2
+          OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a JOIN rol_atamasi ra ON ra.kullanici_ref = a.kullanici_ref AND ra.atama_durumu = 'Aktif' JOIN rol r ON r.kimlik = ra.rol_ref WHERE a.dosya_ref = d.kimlik AND a.bitis_zamani IS NULL AND r.rol_sahibi_birim = ANY($3::text[])))`, [tum, o.kullanici, l.filter((r) => ['Müdür', 'Müdür Yardımcısı'].includes(r.kademe)).map((r) => r.birim)])).rows // YG-1084: müdür birimindeki personelin dosyalarını görür
       .map((x) => ({ ...x, cozum_ortagi: adGorur ? x.cozum_ortagi : null }));
     const bugun = tarihStr(new Date()); const simdi = Date.now();
     return {

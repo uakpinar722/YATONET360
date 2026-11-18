@@ -235,3 +235,16 @@ describe('tazminat neti (YG-978)', () => {
     expect(n.ihbar).toMatchObject({ damga: 151.8, gelirVergisi: 'Bordroda hesaplanır', netDamgaSonrasi: 19848.2 });
   });
 });
+
+describe('bakiye kontrolü bekleyen izinler (YG-1615)', () => {
+  it('İK kontrolündeki izin sayaç ve bakiye bilgisiyle listelenir; İK dışı göremez (T-YG1615)', async () => {
+    const yil = new Date().getFullYear() + 1;
+    await o.sup.query(`INSERT INTO izin_bakiyesi VALUES ($1, $2, 14, 4) ON CONFLICT DO NOTHING`, [o.K.ds2, yil]);
+    const iz = (await o.sup.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, durum) VALUES ($1,'Yıllık',$2,$3,3,'İK Kontrolünde') RETURNING kimlik`, [o.K.ds2, `${yil}-02-02`, `${yil}-02-04`])).rows[0].kimlik;
+    const l = (await o.ist('GET', '/api/ik/izin-kontrol', await o.gir('iks'))).json();
+    expect(l.find((x: { kimlik: string }) => x.kimlik === iz)).toMatchObject({ izin_turu: 'Yıllık', gun: 3 });
+    expect(l.find((x: { kimlik: string }) => x.kimlik === iz).kalan_gun).toBeGreaterThan(0);
+    expect((await o.ist('GET', '/api/ik/izin-kontrol', await o.gir('ds'))).statusCode).toBe(403);
+    await o.sup.query(`DELETE FROM izin_talebi WHERE kimlik = $1`, [iz]);
+  });
+});

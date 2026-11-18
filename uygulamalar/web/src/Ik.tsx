@@ -38,6 +38,17 @@ export function PersonelIslemlerim({ yap }: { yap: Yap }) {
 }
 
 /** İnsan Kaynakları: personel kartı, eğitim, puantaj özeti, disiplin, ayrılış, iş kazası. */
+/** YG-1615: bakiye kontrolü bekleyen izinler; karar Bugün sayfasındaki İzin Talebi kartından verilir. */
+function IzinKontrol() {
+  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; izin_turu: string; baslangic: string; bitis: string; gun: number; kalan_gun: number; kalan_bakiye: number | null }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>('/ik/izin-kontrol').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  const tr = (d: string) => d.slice(0, 10).split('-').reverse().join('.');
+  return <><div className="bolum">Bakiye Kontrolü Bekleyen İzinler</div>
+    {l.length === 0 ? <div className="ozet bos">Bakiye kontrolü bekleyen izin talebi bulunmamaktadır.</div> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.ad_soyad} · {x.izin_turu} · {x.gun} Gün</b><em className={`rozet ${x.kalan_gun <= 2 ? 'kirmizi' : x.kalan_gun <= 7 ? 'sari' : 'gri'}`}>{x.kalan_gun < 0 ? 'Başladı' : `Başlangıca ${x.kalan_gun} Gün`}</em></div>
+      <div className="not">{tr(x.baslangic)} – {tr(x.bitis)}{x.kalan_bakiye !== null ? ` · Kalan Bakiye: ${x.kalan_bakiye} gün${x.kalan_bakiye >= x.gun ? ' · İzin Bakiyesi Yeterli' : ' · Bakiye Yetersiz'}` : ''}</div></div>)}</>;
+}
+
 export function IkYonetimi({ yap }: { yap: Yap }) {
   const [yt, setYt] = useState<{ ik: boolean; isg: boolean; tid: boolean } | null>(null); const [l, setL] = useState<Pers[]>([]); const [k, setK] = useState({ kisi: '', iseGiris: '', brut: '', ek3Yil: '', ek3Serbest: false, vize: '', pasaport: '' }); const [eg, setEg] = useState({ personel: '', tur: 'İSG', ad: '', saat: '', tesis: '', tamamlanma: '', gecerlilik: '' }); const [ay, setAy] = useState(''); const [oz, setOz] = useState<{ kimlik: string; ad_soyad: string; net: number; fazla: number; izin: number; devamsizlik: number; serbestDakika: number; fazlaUcretTl: number }[]>([]); const [ds, setDs] = useState({ personel: '', olayTarihi: '', konu: '', kademe: 'Yazılı Uyarı', savunmaSon: '' }); const [dl, setDl] = useState<{ kimlik: string; ad_soyad: string; konu: string; kademe: string; savunma: string | null; karar: string | null; savunma_son: string | null }[]>([]); const [kr, setKr] = useState<Record<string, string>>({}); const [ay2, setAy2] = useState({ personel: '', tur: 'İşveren Feshi', bildirim: '', son: '', dilekce: '' }); const [al, setAl] = useState<{ kimlik: string; personel_ref: string; ad_soyad: string; tur: string; son_is_gunu: string; odeme_durumu: string; durum: string }[]>([]); const [dt, setDt] = useState<Record<string, { net?: { kidem: { damga: number; net: number } | null; ihbar: { damga: number; netDamgaSonrasi: number } } | null; devir: { kimlik: string; tur: string; aciklama: string; durum: string }[]; engel: string | null; ihbar?: { hafta: number; tutar: number; odeyen: string | null }; kidem?: number | null; uyari?: string | null }>>({}); const [dv, setDv] = useState<Record<string, string>>({}); const [par, setPar] = useState(''); const [kz, setKz] = useState<{ olay_ref: string; isveren: string; ticari_unvan: string | null; son_zaman: string; bilgi_gonderme_zamani: string | null; ozet: string }[]>([]); const [sg, setSg] = useState(''); const [dg, setDg] = useState('');
   const yk = (r: { ik: boolean; isg: boolean }) => {
@@ -51,6 +62,7 @@ export function IkYonetimi({ yap }: { yap: Yap }) {
   return (<>
     {yt.tid && <><div className="bolum">Günlük Harcırah</div><label htmlFor="hr-t">Günlük Tutar (EUR)</label><input id="hr-t" inputMode="decimal" value={par} onChange={(e) => setPar(e.target.value)} /><button className="btn2" disabled={!par} onClick={() => void yap(() => istek('/ik/parametre', { kod: 'harcirah_gunluk_eur', deger: Number(par.replace(',', '.')) }).then(() => ({ uyari: 'Tutar kaydedildi.' })))}>Kaydet</button></>}
     {yt.ik && <>
+      <IzinKontrol />
       <div className="bolum">Personel Kartı</div>
       <label htmlFor="pk-k">Personel</label>{secici('pk-k', k.kisi, (x) => { const s = l.find((y) => y.kimlik === x); setK({ kisi: x, iseGiris: s?.ise_giris_tarihi ?? '', brut: s?.brut_aylik_tl ?? '', ek3Yil: s?.ek3_yil ? String(s.ek3_yil) : '', ek3Serbest: Boolean(s?.ek3_serbest_zaman), vize: '', pasaport: '' }); })}
       <div className="iki-tarih"><div><label htmlFor="pk-g">İşe Giriş</label><input id="pk-g" type="date" value={k.iseGiris} onChange={(e) => setK({ ...k, iseGiris: e.target.value })} /></div><div><label htmlFor="pk-b">Brüt Aylık (TL)</label><input id="pk-b" inputMode="decimal" value={k.brut} onChange={(e) => setK({ ...k, brut: e.target.value })} /></div></div>

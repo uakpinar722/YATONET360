@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { konumPlani } from '../src/is_gorunumu.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test92', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -24,6 +24,10 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     const ide = (await o.ist('GET', '/api/is-listeleri', await o.gir('ide'))).json();
     expect(ide.devamEden.every((x: { cozum_ortagi: string | null }) => x.cozum_ortagi === null)).toBe(true);
     expect((await o.ist('GET', '/api/is-listeleri', await o.gir('ts'))).json().tur).toBe('Sipariş');
+    // YG-1084 (T-YG1084): İnsan Kaynakları Müdürü, birim personelinin ekipte olduğu dosyanın işini görür
+    expect((await o.ist('GET', '/api/is-listeleri', await o.gir('ikm'))).json().devamEden.some((x: { kimlik: string }) => x.kimlik === geciken)).toBe(false);
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Kalite Kontrolör',$2)`, [d.kimlik, o.K.iks]);
+    expect((await o.ist('GET', '/api/is-listeleri', await o.gir('ikm'))).json().devamEden.some((x: { kimlik: string }) => x.kimlik === geciken)).toBe(true);
   });
   it('konum planı izin, nöbet ve keşiften oluşur; izinde yalnız İzinli yazar; yetkisiz kişi başkasını görmez', async () => {
     const d = await o.dosyaAc();

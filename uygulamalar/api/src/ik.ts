@@ -177,6 +177,14 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
   const ikMi = (k: string) => rolVar(k, IK);
   const paramOku = async (kod: string) => { const r = (await b.db.query(`SELECT deger FROM ik_parametresi WHERE kod = $1`, [kod])).rows[0]; return r ? Number(r.deger) : null; };
 
+  // YG-1615: birim amirinden geçip İK kontrolüne gelen izinler; başlangıca kalan gün ve yıllık izinde güncel bakiye.
+  s.get('/ik/izin-kontrol', oturumlu, async (i, y) => {
+    if (!(await ikMi(i.oturum!.kullanici))) return y.code(403).send({ hata: 'İzin kontrolünü İnsan Kaynakları yapar.' });
+    const l = (await b.db.query(`SELECT t.kimlik, h.ad_soyad, t.izin_turu, t.baslangic::text, t.bitis::text, t.gun, t.personel_ref, (t.baslangic - current_date)::int kalan_gun FROM izin_talebi t JOIN kullanici_hesabi h ON h.kimlik = t.personel_ref WHERE t.durum = 'İK Kontrolünde' ORDER BY t.baslangic`)).rows;
+    const { izinBakiyesi } = await import('./ticari.js');
+    for (const x of l) { const bk = x.izin_turu === 'Yıllık' ? await izinBakiyesi(b.db, x.personel_ref, Number(String(x.baslangic).slice(0, 4)), x.baslangic) : null; x.kalan_bakiye = bk ? bk.hak - bk.kullanilan : null; delete x.personel_ref; }
+    return l;
+  });
   s.get('/ik/yetki', oturumlu, async (i) => ({ ik: await ikMi(i.oturum!.kullanici), isg: await rolVar(i.oturum!.kullanici, [ISG]), tid: await rolVar(i.oturum!.kullanici, [TID]) }));
   s.get('/ik/personel', oturumlu, async (i, y) => {
     if (!(await ikMi(i.oturum!.kullanici))) return y.code(403).send({ hata: 'Personel kayıtlarını İnsan Kaynakları görür.' });
