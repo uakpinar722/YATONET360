@@ -39,6 +39,9 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     expect(opm.some((x: { kimlik: string }) => x.kimlik === o.K.ds)).toBe(true);
     const mf = (await o.ist('GET', '/api/konum-plani', await o.gir('mfm'))).json().kisiler;
     expect(mf.some((x: { kimlik: string }) => x.kimlik === o.K.ds)).toBe(false);
+    // YG-1631 (T-YG1631): Bugün şeridi kişinin kendi planından
+    const ben = (await o.ist('GET', '/api/konum-plani/ben', await o.gir('ds'))).json();
+    expect(ben).toHaveLength(7); expect(ben[2].konum).toBe('İzinli');
   });
   it('dosya haritası bölge özeti verir; LGM dışı ve sigorta dışı dış kullanıcıya kapalıdır', async () => {
     const r = await o.ist('GET', '/api/dosya-haritasi', await o.gir('opm'));

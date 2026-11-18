@@ -60,6 +60,18 @@ function UyumGorevleri() {
   return <><div className="bolum">Uyum Görevleri</div><Mesaj />{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad} · Son: {x.son_tarih} · {x.durum}<br />Kanıt: {x.gerekli_kanit}</span><div className="tam">{x.durum === 'Açık' && <><BelgeSec ad="Uyum Kanıtı" bagTuru="Uyum Görevi" bagKimligi={x.kimlik} deger={b[x.kimlik] ?? ''} sec={(z: string) => setB({ ...b, [x.kimlik]: z })} /><button className="btn2 kucuk" disabled={!b[x.kimlik]} onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/kanit`, { belge: b[x.kimlik] }).then(yk), 'Kanıt yüklendi.')}>Kanıtı Kaydet</button></>}{x.durum === 'Kanıt Yüklendi' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uyum-gorevi/${x.kimlik}/dogrula`, {}).then(yk), 'Görev kapatıldı.')}>Doğrula ve Kapat</button>}</div></div>)}</>;
 }
 
+/** YG-1544: VERBİS eşik kontrolü; önceki yılın ortalama çalışan sayısı ve bilanço toplamı eşiklerle; bilanço Muhasebe ve Finans Müdürünce girilir. */
+function VerbisEsik() {
+  const [v, setV] = useState<{ yil: number; ortalamaCalisan: number; bilancoTl: number | null; calisanEsigi: number; bilancoEsigi: number; asildi: boolean } | null>(null); const [tl, setTl] = useState(''); const [m, setM] = useState('');
+  useEffect(() => { void istek<NonNullable<typeof v>>('/verbis-esik').then(setV).catch(() => setV(null)); }, []);
+  if (!v) return null;
+  const sayi = (n: number) => n.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return <><div className="bolum">VERBİS Eşik Kontrolü · {v.yil}</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="ozet"><div>Ortalama Çalışan Sayısı: {v.ortalamaCalisan.toLocaleString('tr-TR')} (Eşik: {v.calisanEsigi})</div><div>Yıllık Bilanço Toplamı: {v.bilancoTl === null ? 'Girilmedi' : `${sayi(v.bilancoTl)} TL`} (Eşik: {sayi(v.bilancoEsigi)} TL)</div><div><b>{v.asildi ? 'Eşik aşıldı; VERBİS kaydı görevi açıldı.' : 'Eşik aşılmadı.'}</b></div></div>
+    <label htmlFor="vb-tl">Bilanço Toplamı (TL)</label><input id="vb-tl" inputMode="decimal" value={tl} onChange={(e) => setTl(e.target.value)} />
+    <button className="btn2" disabled={!tl} onClick={() => void istek<NonNullable<typeof v>>('/yillik-bilanco', { yil: v.yil, toplamTl: Number(tl.replace(/\./g, '').replace(',', '.')) }).then((r) => { setV(r); setTl(''); setM('Bilanço toplamı kaydedildi.'); }).catch((e) => setM(e.message))}>Bilanço Toplamını Kaydet</button></>;
+}
+
 /** YG-1276, YG-1642, YG-1645: yedek kayıtları, başarısız yedeği olay kaydına bağlama ve geri yükleme testi kaydı. */
 function Yedekler() {
   type V = { yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null; olay_no: string | null }[]; testler: { tur: string; sonuc: string; kabul: string | null; zaman: string }[] };
@@ -98,6 +110,7 @@ export function KvkkEkrani() {
     <h1>KVKK ve Uyum</h1><Mesaj />
     <Yedekler />
     <UyumGorevleri />
+    <VerbisEsik />
     <SaglayiciMatrisi />
     <OlayKayitlari />
     {y.ihlal && <><div className="bolum">Veri İhlali Kayıtları</div>

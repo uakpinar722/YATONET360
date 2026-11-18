@@ -148,6 +148,15 @@ describe('Bugün (YG-1635)', () => {
     expect(r.headers['content-type']).toContain('text/calendar');
     expect(r.body).toContain('BEGIN:VCALENDAR'); expect(r.body).toContain('SUMMARY:Takvim İşi (Son Zaman)'); expect(r.body).not.toContain('Başkasının İşi');
   });
+  it('son 72 saatte tamamlananlar ve 7 günlük takvim Bugün verisinde (T-YG1579)', async () => {
+    const a = await kartAc(db, { tur: 'Deneme', baslik: 'Biten İş', sahipKullanici: K[CEO] });
+    await karar(CEO, a, 'Tamamlandı');
+    await kartAc(db, { tur: 'Deneme', baslik: 'Haftalık İş', sahipKullanici: K[CEO], sonZaman: new Date(Date.now() + 3 * 86_400_000) });
+    await kartAc(db, { tur: 'Deneme', baslik: 'Uzak İş', sahipKullanici: K[CEO], sonZaman: new Date(Date.now() + 10 * 86_400_000) });
+    const b = await bugun(CEO);
+    expect(b.tamamlanan.map((x: any) => x.baslik)).toContain('Biten İş');
+    expect(b.takvim.map((x: any) => x.baslik)).toContain('Haftalık İş'); expect(b.takvim.map((x: any) => x.baslik)).not.toContain('Uzak İş');
+  });
   it('Olağanüstü Olay Dönemi görünür, bitince kalkar (YG-1629)', async () => {
     expect((await bugun(CEO)).olaganustu).toBeNull();
     await sup.query(`INSERT INTO olaganustu_donem DEFAULT VALUES`);

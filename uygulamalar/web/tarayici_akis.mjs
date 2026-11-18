@@ -555,7 +555,7 @@ try {
   const atlaB = `E2E Kademe ${tek}`; await sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir) VALUES ('Deneme','onay',$1,$2,$3)`, [atlaB, kimlikler.ds, [atlaR, atlaS]]);
   const pTd2 = await al('tid', E);
   const atlaK = pTd2.locator('.ozet', { hasText: atlaB }); await atlaK.waitFor();
-  await atlaK.getByLabel('Gerekçe', { exact: true }).fill('Acil'); await atlaK.getByRole('button', { name: 'Kademeyi Atla' }).click(); await atlaK.waitFor({ state: 'detached' });
+  await atlaK.getByLabel('Gerekçe', { exact: true }).fill('Acil'); await atlaK.getByRole('button', { name: 'Kademeyi Atla' }).click(); await pTd2.getByRole('button', { name: 'Kademeyi Atla' }).and(pTd2.locator('.ozet', { hasText: atlaB }).getByRole('button')).waitFor({ state: 'detached' });
   kontrol('Direktör Bugün ekranından kademeyi gerekçeyle atlar', (await sup.query(`SELECT durum FROM is_karti WHERE baslik = $1`, [atlaB])).rows[0].durum === 'Onaylandı');
   const iadeB = `E2E İade ${tek}`; await sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir, durum) VALUES ('Deneme','onay',$1,$2,$3,'İade Edildi')`, [iadeB, kimlikler.ds, [atlaS]]);
   await al('ds', E); const iadeK = pDs.locator('.ozet', { hasText: iadeB }); await iadeK.waitFor();

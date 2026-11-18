@@ -83,6 +83,14 @@ describe('vekâlet (YG-1056, YG-1478)', () => {
     expect((await ata(bim, { asil: K[DES], rol: R['Bilgi İşlem Destek Sorumlusu'], vekil: K[SIC] })).statusCode).toBe(400);
     expect((await ata(bim, { asil: K[DES], rol: R['Bilgi İşlem Destek Sorumlusu'], vekil: K[DES] })).statusCode).toBe(400);
   });
+  it('görevlendirmedeki kişi vekil listesinde çıkmaz ve atanamaz (T-YG1478)', async () => {
+    const bim = await gir(BIM);
+    await sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, personel_durumu, guncelleyen_ref) VALUES ($1, '2026-01-01', 'Görevlendirmede', $1) ON CONFLICT (kullanici_ref) DO UPDATE SET personel_durumu = 'Görevlendirmede'`, [K[BIM]]);
+    const a = (await ist('GET', '/api/vekalet', bim)).json().secenek.find((x: any) => x.rolAdi === 'Bilgi İşlem Destek Sorumlusu');
+    expect(a.vekiller.map((v: any) => v.kimlik)).not.toContain(K[BIM]);
+    expect((await ata(bim, { asil: K[DES], rol: R['Bilgi İşlem Destek Sorumlusu'], vekil: K[BIM] })).statusCode).toBe(400);
+    await sup.query(`UPDATE personel_karti SET personel_durumu = 'Görevde' WHERE kullanici_ref = $1`, [K[BIM]]);
+  });
   it('CEO vekili Genel Müdür Yardımcısı veya Teknik ve Operasyon Direktörüdür (YG-1058)', async () => {
     const ceo = await gir(CEO);
     expect((await ata(ceo, { asil: K[CEO], rol: R['CEO'], vekil: K[DEN] })).statusCode).toBe(400);

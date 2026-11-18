@@ -481,6 +481,13 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Ödemesi Yat Sahibine', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: g.dayanak.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-1608: vadesi geçen faturalar; gecikme günü, son takip basamağı ve yazılı ihtar (15. gün basamağı) zamanı.
+  s.get('/tahsilat-izleme', oturumlu, async (i, y) => {
+    const r = await roller(i.oturum!.kullanici); if (!r.some((x) => [TICARI, 'Ticari İşler Direktörü', MFM].includes(x))) return yok(y);
+    return (await b.db.query(`SELECT f.kimlik, d.dosya_no, f.fatura_no, f.muhatap, f.vade::text vade, (f.toplam_eur - f.tahsil_edilen_eur)::float kalan, (current_date - f.vade)::int gecikme,
+        (SELECT basamak FROM alacak_takip_adimi a WHERE a.fatura_ref = f.kimlik ORDER BY a.zaman DESC LIMIT 1) basamak, (SELECT zaman FROM alacak_takip_adimi a WHERE a.fatura_ref = f.kimlik AND a.basamak = '15 Gün') ihtar
+      FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum IN ('Faturalandı', 'Kısmi Tahsil') AND f.vade < current_date ORDER BY f.vade LIMIT 100`)).rows;
+  });
   s.get('/muhasebe/proformalar', oturumlu, async (i, y) => {
     if (!(await muhasebeHizmetiMi(b.db, i.oturum!.kullanici))) return yok(y);
     return (await b.db.query(`SELECT m.kimlik, m.proforma_no, d.dosya_no, m.muhatap, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.durum, m.fatura_no, m.fatura_tarihi::text AS fatura_tarihi FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.durum = ANY($1) ORDER BY (m.durum = 'Muhasebeye İletildi') DESC, m.proforma_no DESC LIMIT 200`, [MUHASEBE_GORUR])).rows;

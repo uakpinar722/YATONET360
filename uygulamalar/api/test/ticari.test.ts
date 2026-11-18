@@ -110,6 +110,11 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     expect((await th({ tutar: 100, kanal: 'Çek' })).statusCode).toBe(400);
     expect((await th({ tutar: 1300 })).statusCode).toBe(409);
     expect((await th({ tutar: 700 })).json()).toEqual({ durum: 'Kısmi Tahsil', kalan: 500 });
+    // YG-1608 (T-YG1608): vadesi geçen fatura tahsilat izlemesinde; yetkisiz rol göremez
+    await o.sup.query(`UPDATE musteri_faturasi SET vade = current_date - 3 WHERE kimlik = $1`, [id]);
+    expect((await o.ist('GET', '/api/tahsilat-izleme', c)).json().find((x: { kimlik: string }) => x.kimlik === id)).toMatchObject({ kalan: 500, gecikme: 3 });
+    expect((await o.ist('GET', '/api/tahsilat-izleme', await o.gir('ds'))).statusCode).toBe(404);
+    await o.sup.query(`UPDATE musteri_faturasi SET vade = '2026-12-10' WHERE kimlik = $1`, [id]);
     // YG-904 (T-YG904): eksik kalan kısım için görev açılır
     expect((await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Eksik Tahsilatı İste' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id])).rows[0]?.ozet).toContain('500,00 EUR');
     expect((await th({ tutar: 500 })).json()).toEqual({ durum: 'Tahsil Edildi', kalan: 0 });

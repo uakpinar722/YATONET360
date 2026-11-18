@@ -91,7 +91,14 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const tpl = await b.db.query(`SELECT DISTINCT t.kimlik, t.tpl_kod, t.konu, t.baslangic FROM toplanti t JOIN toplanti_katilimci p ON p.toplanti_ref = t.kimlik WHERE p.kullanici_ref = $1 AND t.durum = 'Planlandı' AND t.baslangic BETWEEN now() - interval '1 hour' AND now() + interval '24 hours' ORDER BY t.baslangic`, [o.kullanici]);
     // YG-563: ana sayfada önümüzdeki 7 günün özel günleri (yalnız LGM personeline, rıza verenler).
     const ozel = o.grup === 'LGM İç Rolü' ? await ozelGunler(b.db) : [];
-    return { ...k, toplantilar: tpl.rows, sureUyarilari: sure, duyurular: d.rows, ozelGunler: ozel, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n, okunmamisMesaj: msj.rows[0].n, vekaletler: vek.rows };
+    // YG-1579, YG-1585: son 72 saatte kişinin tamamladığı veya karar verdiği işler; 7 günlük takvim (süreli işler ve toplantılar).
+    const tamamlanan = o.grup !== 'LGM İç Rolü' ? [] : (await b.db.query(`SELECT k.kimlik, k.tur, k.baslik, k.durum, k.kapanma_zamani FROM is_karti k WHERE k.kapanma_zamani > now() - interval '72 hours' AND k.durum IN ('Tamamlandı', 'Onaylandı', 'Reddedildi')
+        AND (k.sahip_kullanici_ref = $1 OR EXISTS (SELECT 1 FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.yapan_ref = $1)) ORDER BY k.kapanma_zamani DESC LIMIT 20`, [o.kullanici])).rows;
+    const hafta = Date.now() + 7 * 86_400_000;
+    const takvim = o.grup !== 'LGM İç Rolü' ? [] : [...[...k.onay, ...k.islem, ...k.gorev].filter((x) => x.son_zaman && +new Date(x.son_zaman) <= hafta).map((x) => ({ zaman: x.son_zaman, baslik: x.baslik, tur: 'Son Zaman' })),
+      ...(await b.db.query(`SELECT DISTINCT t.kimlik, t.konu, t.baslangic FROM toplanti t JOIN toplanti_katilimci p ON p.toplanti_ref = t.kimlik WHERE p.kullanici_ref = $1 AND t.durum = 'Planlandı' AND t.baslangic BETWEEN now() AND now() + interval '7 days'`, [o.kullanici])).rows.map((t) => ({ zaman: t.baslangic, baslik: t.konu, tur: 'Toplantı' }))]
+      .sort((a, c) => +new Date(a.zaman) - +new Date(c.zaman));
+    return { ...k, tamamlanan, takvim, toplantilar: tpl.rows, sureUyarilari: sure, duyurular: d.rows, ozelGunler: ozel, olaganustu: ood.rows[0]?.baslangic ?? null, okunmamisBildirim: say.rows[0].n, okunmamisMesaj: msj.rows[0].n, vekaletler: vek.rows };
   });
 
   // YG-502: süreli kartlar son zamandan önceki 30 dakikalık olay, toplantılar kendi süresiyle kişisel takvime aktarılır.

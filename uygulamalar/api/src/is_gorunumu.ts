@@ -73,6 +73,8 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-812: kişinin kendisi, amirleri (aynı birimde Müdür ve üstü), Operasyon ve Teknik Müdürlükleri, GMY ve CEO görür; dış kullanıcı göremez.
+  // YG-1631: kişinin kendi 7 günlük konum planı (Bugün şeridi).
+  s.get('/konum-plani/ben', oturumlu, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? yok(y) : (await konumPlani(b.db, [i.oturum!.kullanici]))[0]?.gunler ?? []);
   s.get('/konum-plani', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const l = await roller(b.db, o.kullanici);

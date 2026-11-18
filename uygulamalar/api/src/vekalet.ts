@@ -43,7 +43,7 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
   async function uygunMu(asil: Satir, aday: Satir) { return (await seviye(asil, aday)) !== null; }
   /** YG-1744: izinli, raporlu ya da bugün aktif vekâleti olan kişi öncelik hesabında aday sayılmaz. */
   async function kisiYok(k: string): Promise<boolean> {
-    return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE h.kimlik = $1 AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date))`, [k])).rowCount);
+    return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE h.kimlik = $1 AND (p.personel_durumu IN ('İzinli', 'Raporlu', 'Görevlendirmede') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date))`, [k])).rowCount);
   }
   /** YG-1744: kadrodaki en öncelikli basamak; daha alt basamaktan vekil seçilemez. */
   async function enIyiSeviye(asil: Satir, kadro: Satir[]): Promise<number | null> {
@@ -54,7 +54,7 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
 
   /** Rol sahibi izinli, raporlu ya da kendisi vekâlete bırakılmışsa yok sayılır. */
   async function yokMu(rolAdi: string): Promise<boolean> {
-    return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik JOIN rol x ON x.kimlik = a.rol_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE x.rol_adi = $1 AND a.atama_durumu = 'Aktif' AND (p.personel_durumu IN ('İzinli', 'Raporlu') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif')) LIMIT 1`, [rolAdi])).rowCount);
+    return Boolean((await b.db.query(`SELECT 1 FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik JOIN rol x ON x.kimlik = a.rol_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE x.rol_adi = $1 AND a.atama_durumu = 'Aktif' AND (p.personel_durumu IN ('İzinli', 'Raporlu', 'Görevlendirmede') OR EXISTS (SELECT 1 FROM vekalet v WHERE v.asil_ref = h.kimlik AND v.durum = 'Aktif')) LIMIT 1`, [rolAdi])).rowCount);
   }
 
   async function kritikVekiller(rolAdi: string): Promise<string[]> {
@@ -78,7 +78,7 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     for (const a of alt) {
       const vekiller: { kimlik: string; ad: string; rol: string }[] = [];
       const en = await enIyiSeviye(a, kadro); // YG-1744: yalnız en öncelikli basamaktaki adaylar
-      for (const k of kadro) if (en !== null && (await seviye(a, k)) === en && !vekiller.some((v) => v.kimlik === k.kullanici)) vekiller.push({ kimlik: k.kullanici, ad: k.ad_soyad, rol: k.rol_adi });
+      for (const k of kadro) if (en !== null && (await seviye(a, k)) === en && !vekiller.some((v) => v.kimlik === k.kullanici) && !(await kisiYok(k.kullanici))) vekiller.push({ kimlik: k.kullanici, ad: k.ad_soyad, rol: k.rol_adi }); // YG-1478: yalnız görevde olanlar
       secenek.push({ kimlik: a.kullanici, ad: a.ad_soyad, rol: a.rol, rolAdi: a.rol_adi, vekiller });
     }
     const l = await b.db.query(
@@ -104,6 +104,7 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     const adaylar = kadro.filter((k) => k.kullanici === vekil);
     let uygun = false; let sv: number | null = null; for (const k of adaylar) { const s = await seviye(a, k); if (s !== null) { uygun = true; sv = sv === null ? s : Math.min(sv, s); } }
     if (!uygun) return y.code(400).send({ hata: 'Bu role vekâlet için başka bir kişi seçmenizi rica ederiz.' });
+    if (await kisiYok(vekil)) return y.code(400).send({ hata: 'Seçilen kişi izinli, raporlu, görevlendirmede veya kendisi vekâlete bırakılmış; görevde olan bir kişi seçmenizi rica ederiz.' }); // YG-1478
     { const en = await enIyiSeviye(a, kadro); if (en !== null && sv! > en) return y.code(400).send({ hata: 'Öncelikli vekil adayı vardır (sıra: aynı rol, aynı birim ve kademe, Müdür–Müdür Yardımcısı, onay makamı); listeden seçiniz.' }); } // YG-1744
     const c = await b.db.connect();
     try {

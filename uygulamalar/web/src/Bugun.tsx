@@ -11,7 +11,7 @@ export interface Kart {
 }
 export interface BugunVeri {
   zincirde?: (Kart & { makam?: string })[]; onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
-  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean; tur?: string }[]; ozelGunler?: { ad: string; gun: string; tur: string }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
+  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean; tur?: string }[]; ozelGunler?: { ad: string; gun: string; tur: string }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; tamamlanan?: { kimlik: string; tur: string; baslik: string; durum: string; kapanma_zamani: string }[]; takvim?: { zaman: string; baslik: string; tur: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
 const TZ = 'Europe/Istanbul';
@@ -112,14 +112,17 @@ function IslemKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
 }
 
 /** YG-1631: 7 günlük plan İK modülüyle dolar; o zamana kadar gün şeridi boş görünür. */
+/** YG-1631: 7 günlük planlanan konum; veri kişinin konum planından (görev, izin, saha) gelir. */
 function KonumSeridi() {
+  const [p, setP] = useState<{ tarih: string; konum: string }[]>([]);
+  useEffect(() => { void istek<{ tarih: string; konum: string }[]>('/konum-plani/ben').then(setP).catch(() => setP([])); }, []);
   const gunler = Array.from({ length: 7 }, (_, i) => new Date(Date.now() + i * 86_400_000));
   return (
     <div className="konum7">{gunler.map((g) => (
       <div key={g.toISOString()}>
         <b>{g.toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', timeZone: TZ })}</b>
         <span>{g.toLocaleDateString('tr-TR', { weekday: 'short', timeZone: TZ })}</span>
-        <i>—</i>
+        <i>{p.find((x) => x.tarih === g.toLocaleDateString('sv-SE', { timeZone: TZ }))?.konum || '—'}</i>
       </div>
     ))}</div>
   );
@@ -226,9 +229,40 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
       <div className="bolum">Görevler ve Periyodik İşler</div>
       {veri.gorev.length === 0 ? <Bos m="Bugün için görev bulunmamaktadır." /> : veri.gorev.map((k) => <IslemKarti key={k.kimlik} k={k} yenile={yenile} />)}
+      {ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) && <TahsilatIzleme />}
+      {lgm && <HaftaVeGecmis veri={veri} />}
       {lgm && <><OzelGunler /><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
     </>
   );
+}
+
+/** YG-1608: vadesi geçen faturalar (gecikme günü, son takip basamağı, yazılı ihtar zamanı). */
+function TahsilatIzleme() {
+  const [l, setL] = useState<{ kimlik: string; dosya_no: string; fatura_no: string; muhatap: string; vade: string; kalan: number; gecikme: number; basamak: string | null; ihtar: string | null }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>('/tahsilat-izleme').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Tahsilat</div>
+    {l.length === 0 ? <Bos m="Vadesi geçen faturanız bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className={`ozet kart-sol${x.gecikme >= 30 ? ' hata' : ''}`}>
+      <div className="ust2"><b>{x.dosya_no} · {x.fatura_no}</b><Rozet s={x.gecikme >= 15 ? 'kirmizi' : 'sari'} c={`${x.gecikme} Gün Gecikti`} /></div>
+      <div className="not">{x.muhatap} · Vade: {x.vade.split('-').reverse().join('.')} · Kalan: {x.kalan.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR{x.basamak ? ` · Takip: ${x.basamak}` : ''}{x.ihtar ? ` · Yazılı İhtar: ${sonYazi(x.ihtar)}` : ''}</div></div>)}</>;
+}
+
+/** YG-1579, YG-1585: Planlı İşler, 7 günlük Takvim (Bugün, Yarın, tarih ve gün adı) ve Son 72 Saatte Tamamlananlar. */
+function HaftaVeGecmis({ veri }: { veri: BugunVeri }) {
+  const planli = [...veri.islem, ...veri.gorev].filter((k) => k.oncelik === 'Planlı');
+  const gun = (z: string) => new Date(z).toLocaleDateString('sv-SE', { timeZone: TZ });
+  const bugunG = gun(new Date().toISOString()); const yarinG = gun(new Date(Date.now() + 86_400_000).toISOString());
+  const etiket = (g: string) => g === bugunG ? 'Bugün' : g === yarinG ? 'Yarın' : new Date(`${g}T12:00:00Z`).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', weekday: 'long', timeZone: 'UTC' });
+  const gunler = [...new Set((veri.takvim ?? []).map((x) => gun(x.zaman)))];
+  return <>
+    <div className="bolum">Planlı İşler</div>
+    {planli.length === 0 ? <Bos m="Planlı işiniz bulunmamaktadır." /> : planli.map((k) => <div key={`p-${k.kimlik}`} className="ozet kart-sol"><KartUst k={k} /></div>)}
+    <div className="bolum">Takvim · 7 Gün</div>
+    {gunler.length === 0 ? <Bos m="Önümüzdeki 7 gün için takvim kaydınız bulunmamaktadır." /> : gunler.map((g) => <div key={g} className="ozet kart-sol"><b>{etiket(g)}</b>
+      {(veri.takvim ?? []).filter((x) => gun(x.zaman) === g).map((x, i) => <div key={i} className="not">{new Date(x.zaman).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: TZ })} · {x.tur} · {x.baslik}</div>)}</div>)}
+    <div className="bolum">Son 72 Saatte Tamamlananlar</div>
+    {(veri.tamamlanan ?? []).length === 0 ? <Bos m="Son 72 saatte tamamlanan işiniz bulunmamaktadır." /> : (veri.tamamlanan ?? []).map((k) => <div key={`t-${k.kimlik}`} className="ozet kart-sol"><div className="ust2"><b>{k.baslik}</b><Rozet s="gri" c={k.durum} /></div><div className="not">{k.tur} · {sonYazi(k.kapanma_zamani)}</div></div>)}
+  </>;
 }
 
 interface Bildirim { kimlik: string; zaman: string; baslik: string; ozet: string | null; okunma_zamani: string | null; dosya_no?: string | null }
