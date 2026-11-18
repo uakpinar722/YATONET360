@@ -1,3 +1,4 @@
+import { belgeYukle } from './Kalite';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -50,4 +51,26 @@ function DenetciAtama({ d, v }: { d: D; v: { atayabilir?: boolean; denetciler?: 
       <button className="btn2 kucuk" disabled={!f.denetci || !f.bitis || !f.amac.trim()} onClick={() => void istek(`/ic-denetim/${d.kimlik}/ata`, f).then(() => setM('Denetçi atandı; erişim açıldı.')).catch((e) => setM(e.message))}>Denetçi Ata</button></>}
     {d.denetci_ref === v.ben && <button className="btn2 kucuk" onClick={() => void istek<NonNullable<typeof iz>>(`/ic-denetim/${d.kimlik}/izler`).then(setIz).catch((e) => setM(e.message))}>İşlem İzlerini Gör</button>}
     {iz && <div className="ozet">{iz.length === 0 ? <div className="not">Kayıt bulunmamaktadır.</div> : iz.map((x, n) => <div key={n}>{new Date(x.olay_zamani).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })} · {x.eylem} · {x.sonuc}{x.aktor ? ` · ${x.aktor}` : ''}</div>)}</div>}</div>;
+}
+
+/** YG-1642, YG-1646: değişiklik bileti (DGS) açma, izleme ve öncesi/sonrası kanıtıyla kapatma. */
+export function DegisiklikBiletleri() {
+  type B = { kimlik: string; bilet_no: string; konu: string; gerekce: string; durum: string; kisisel_veri: boolean; zaman: string; benim: boolean };
+  const [l, setL] = useState<B[] | null>(null); const [f, setF] = useState<Record<string, string>>({}); const [kv, setKv] = useState(false); const [m, setM] = useState('');
+  const [kn, setKn] = useState<Record<string, { oncesi?: File; sonrasi?: File }>>({});
+  const yk = () => istek<B[]>('/degisiklik-biletleri').then(setL).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  const ALAN: [string, string][] = [['konu', 'Konu (Sorun)'], ['gerekce', 'Gerekçe'], ['mevcut', 'Mevcut Davranış'], ['beklenen', 'Beklenen Sonuç'], ['talepSahibi', 'Talep Sahibi'], ['etkilenen', 'Etkilenen Kullanıcılar'], ['kabulOlcutu', 'Kabul Ölçütü']];
+  const kapat = async (x: B) => { const k = kn[x.kimlik]; if (!k?.oncesi || !k.sonrasi) return; try { const oncesi = await belgeYukle(k.oncesi, 'Değişiklik Bileti', x.kimlik); const sonrasi = await belgeYukle(k.sonrasi, 'Değişiklik Bileti', x.kimlik); await istek(`/degisiklik-bileti/${x.kimlik}/kapat`, { oncesi, sonrasi }); setM(`${x.bilet_no} kapatıldı.`); await yk(); } catch (e) { setM((e as Error).message); } };
+  return <details><summary>Değişiklik Biletleri (DGS) · {l.filter((x) => x.durum !== 'Kapalı').length} açık</summary>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div className="soru" key={x.kimlik}><span><b>{x.bilet_no}</b> · {x.konu} · {x.durum === 'Onayda' ? 'Bilgi İşlem Müdürü Kontrolünde' : x.durum}{x.kisisel_veri ? ' · Kişisel Veri' : ''}</span>
+      {x.benim && x.durum === 'Onaylandı' && <div className="tam"><label htmlFor={`dg-o-${x.kimlik}`}>Öncesi Kanıtı</label><input id={`dg-o-${x.kimlik}`} type="file" onChange={(e) => setKn({ ...kn, [x.kimlik]: { ...kn[x.kimlik], oncesi: e.target.files?.[0] } })} />
+        <label htmlFor={`dg-s-${x.kimlik}`}>Sonrası Kanıtı</label><input id={`dg-s-${x.kimlik}`} type="file" onChange={(e) => setKn({ ...kn, [x.kimlik]: { ...kn[x.kimlik], sonrasi: e.target.files?.[0] } })} />
+        <button className="btn2 kucuk" disabled={!kn[x.kimlik]?.oncesi || !kn[x.kimlik]?.sonrasi} onClick={() => void kapat(x)}>Bileti Kapat</button></div>}</div>)}
+    <div className="bolum">Yeni Değişiklik Bileti</div>
+    {ALAN.map(([k, et]) => <span key={k}><label htmlFor={`dg-${k}`}>{et}</label><input id={`dg-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></span>)}
+    <label><input type="checkbox" checked={kv} onChange={(e) => setKv(e.target.checked)} /> Kişisel veriye dokunuyor</label>
+    {kv && <span><label htmlFor="dg-vs">Veri Sahibi Rol</label><input id="dg-vs" value={f.veriSahibiRol ?? ''} onChange={(e) => setF({ ...f, veriSahibiRol: e.target.value })} /></span>}
+    <button className="btn2 kucuk" disabled={ALAN.some(([k]) => !(f[k] ?? '').trim()) || (kv && !(f.veriSahibiRol ?? '').trim())} onClick={() => void istek<{ biletNo: string }>('/degisiklik-bileti', { ...f, kisiselVeri: kv }).then((r) => { setM(`${r.biletNo} Bilgi İşlem Müdürü onayına gönderildi.`); setF({}); setKv(false); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></details>;
 }

@@ -576,6 +576,12 @@ describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
     expect((await o.ist('POST', u, await o.gir('ts'), { kod: k.kod, maliyet: 1, tarih: '2026-11-06', kaynak: 'X' })).statusCode).toBe(404);
     expect((await o.ist('POST', u, c, { kod: k.kod, maliyet: Number(k.maliyet_eur), tarih: '2026-11-06', kaynak: 'Firma teklifi ortalaması' })).statusCode).toBe(200);
     expect((await o.ist('POST', '/api/kartela/taslak/onaya-gonder', c, {})).json().hata).toContain('eksiktir');
+    // T-YG661: kalem taslaktan gerekçeyle kaldırılır; yürürlükteki sürüm değişmez
+    const kl = (await o.sup.query(`SELECT kod FROM kartela_kalemi WHERE surum = $1 AND kod <> $2 ORDER BY kod DESC LIMIT 1`, [sur, k.kod])).rows[0].kod;
+    expect((await o.ist('POST', '/api/kartela/taslak/kaldir', c, { kod: kl })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/kartela/taslak/kaldir', c, { kod: kl, gerekce: 'Uygulamadan kalktı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [kl, sur])).rows[0].n).toBe(0);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [kl, eski])).rows[0].n).toBe(1);
     await o.sup.query(`UPDATE kartela_kalemi SET maliyet_tarihi = '2026-11-06', kaynak_norm = 'Deneme', maliyet_eur = greatest(maliyet_eur, 1) WHERE surum = $1 AND kod <> $2`, [sur, k.kod]);
     const g = await o.ist('POST', '/api/kartela/taslak/onaya-gonder', c, {}); expect(g.statusCode, g.body).toBe(200);
     expect((await o.karar(g.json().kart, 'bceo', 'Onayla')).statusCode).toBe(200);

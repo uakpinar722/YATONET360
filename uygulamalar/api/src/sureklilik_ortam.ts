@@ -85,7 +85,7 @@ export function sureklilikOrtamYollari(s: FastifyInstance, b: Baglam) {
     if (!['Test', 'Eğitim', 'Geliştirme'].includes(g.ortam ?? '') || !g.amac?.trim() || !g.veriKapsami?.trim() || !g.veriSahibiRol?.trim() || !g.maskelemeYontemi?.trim()) return y.code(400).send({ hata: 'Ortam, amaç, veri kapsamı, veri sahibi ve maskeleme yöntemi zorunludur.' });
     if (g.geriDondurulemez !== true) return y.code(400).send({ hata: 'Üretim verisi alt ortama yalnız geri döndürülemez maskelemeyle kopyalanır.' });
     if (g.disBaglantiKapali !== true) return y.code(400).send({ hata: 'Alt ortamın dış bağlantıları (e-posta, SMS, entegrasyonlar) kapalı olmalıdır.' });
-    const bitis = g.erisimBitis ?? ''; const azami = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+    const bitis = g.erisimBitis ?? ''; const azami = new Date(Date.now() + 3 * 3_600_000 + 30 * 86_400_000).toISOString().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(bitis) || bitis > azami || bitis < new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Erişim bitişi bugünden itibaren en çok 30 gün olmalıdır.' });
     if (!(await b.db.query(`SELECT 1 FROM veri_kumesi WHERE sahip_rol = $1`, [g.veriSahibiRol.trim()])).rowCount) return y.code(400).send({ hata: 'Veri sahibi, bir veri kümesinin sahibi olan rol olmalıdır.' });
     const r = (await b.db.query(`INSERT INTO alt_ortam_kopyasi (ortam, amac, veri_kapsami, veri_sahibi_rol, maskeleme, maskeleme_yontemi, dis_baglanti_kapali, erisim_bitis, talep_eden_ref) VALUES ($1,$2,$3,$4,'Geri Döndürülemez',$5,true,$6,$7) RETURNING kimlik`, [g.ortam, g.amac.trim(), g.veriKapsami.trim(), g.veriSahibiRol.trim(), g.maskelemeYontemi.trim(), bitis, o.kullanici])).rows[0].kimlik;

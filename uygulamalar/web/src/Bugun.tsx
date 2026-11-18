@@ -113,6 +113,19 @@ function IslemKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
 
 /** YG-1631: 7 günlük plan İK modülüyle dolar; o zamana kadar gün şeridi boş görünür. */
 /** YG-1631: 7 günlük planlanan konum; veri kişinin konum planından (görev, izin, saha) gelir. */
+/** YG-1579, YG-246: size devredilen ve henüz onaylanmamış nöbet; açık olaylarla birlikte acil kartların üstünde. */
+function NobetDevirKarti() {
+  const [l, setL] = useState<{ kimlik: string; devreden: string; acik_olaylar: string | null; kontrol_listesi: string[] | null }[]>([]); const [m, setM] = useState('');
+  const yk = () => istek<{ bekleyen: typeof l }>('/nobet/devir').then((r) => setL(r.bekleyen)).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (l.length === 0) return m ? <div className="not" role="status">{m}</div> : null;
+  return <><div className="bolum">Nöbet Devir Kaydı</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div key={x.kimlik} className="hata kart-sol" data-t="nobet-devir-karti"><div className="ust2"><b>{x.devreden} nöbeti size devretti</b><Rozet s="kirmizi" c="Nöbet" /></div>
+      {x.acik_olaylar && <div className="not">Açık Olaylar: {x.acik_olaylar}</div>}
+      {Array.isArray(x.kontrol_listesi) && x.kontrol_listesi.length > 0 && <div className="not">Devredilen: {x.kontrol_listesi.join(', ')}</div>}
+      <div className="dugmeler"><button className="btn evet" onClick={() => void istek(`/nobet/devir/${x.kimlik}/onayla`, {}).then(() => { setM('Nöbet devri onaylandı.'); return yk(); }).catch((e) => setM(e.message))}>Devraldım</button></div></div>)}</>;
+}
+
 function KonumSeridi() {
   const [p, setP] = useState<{ tarih: string; konum: string }[]>([]);
   useEffect(() => { void istek<{ tarih: string; konum: string }[]>('/konum-plani/ben').then(setP).catch(() => setP([])); }, []);
@@ -186,6 +199,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
         </div>
       ))}
 
+      {lgm && <NobetDevirKarti />}
       {(() => { const acil = [...veri.onay, ...veri.islem, ...veri.gorev].filter((k) => k.oncelik === 'Kritik'); return acil.length > 0 && <>{/* YG-1635: acil kartlar Süre Uyarılarının üstünde */}
         <div className="bolum">Acil</div>
         {acil.map((k) => <div key={`acil-${k.kimlik}`} className="hata kart-sol"><KartUst k={k} /></div>)}</>; })()}

@@ -12,6 +12,13 @@ import { sayac } from './sure.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
+// YG-1646: değişiklik biletinin öncesi/sonrası kanıtı bilete bağlanır; yalnız hazırlayan ve Bilgi İşlem Müdürü erişir.
+belgeBagiKaydet('Değişiklik Bileti', async (db, k, id) => {
+  if (!UUID.test(id)) return 'yok';
+  const r = (await db.query(`SELECT hazirlayan_ref FROM degisiklik_bileti WHERE kimlik = $1`, [id])).rows[0]; if (!r) return 'yok';
+  if (r.hazirlayan_ref === k) return 'tamam';
+  return (await db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = 'Bilgi İşlem Müdürü' LIMIT 1`, [k])).rowCount ? 'tamam' : 'yetkisiz';
+});
 const HUD = 'Hukuk ve Uyum Direktörü'; const BIM = 'Bilgi İşlem Müdürü'; const MPI = 'Müşteri ve Paydaş İlişkileri Müdürü'; const OPM = 'Operasyon Müdürü'; const TOD = 'Teknik ve Operasyon Direktörü';
 
 /** YG-1036: teklif onayını veren aynı işte teknik kabul veya ödeme onayı veremez. */
@@ -155,6 +162,12 @@ export function yetkiEkYollari(s: FastifyInstance, b: Baglam) {
     const zincir = [await rolId(b.db, BIM)]; if (g.kisiselVeri) zincir.push(await rolId(b.db, g.veriSahibiRol!));
     await kartAc(b.db, { tur: 'Değişiklik Bileti', baslik: `${no} · ${g.konu.trim()}`, ozet: g.gerekce.trim(), oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir, nesneTuru: 'Değişiklik Bileti', nesneKimligi: r.kimlik });
     return { kimlik: r.kimlik, biletNo: no };
+  });
+  // YG-1642, YG-1646: bilet listesi (Sistem Yöneticisi kendi biletlerini, Bilgi İşlem Müdürü tümünü görür).
+  s.get('/degisiklik-biletleri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const bim = await rolVar(o.kullanici, [BIM]);
+    if (!bim && !(await rolVar(o.kullanici, ['Sistem Yöneticisi']))) return yok(y);
+    return (await b.db.query(`SELECT kimlik, bilet_no, konu, gerekce, durum, kisisel_veri, zaman, kapanis_zamani, hazirlayan_ref = $1 benim FROM degisiklik_bileti WHERE $2 OR hazirlayan_ref = $1 ORDER BY zaman DESC LIMIT 100`, [o.kullanici, bim])).rows;
   });
   s.post('/degisiklik-bileti/:id/kapat', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { oncesi?: string; sonrasi?: string };

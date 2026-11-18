@@ -122,6 +122,15 @@ async function satirYaz(c: Db, id: string, satirlar: Satir[]) {
 }
 const num = (x: unknown) => (x === null || x === undefined ? null : Number(x));
 
+/** YG-1615: her ayın başında önceki ayın puantajı İK Sorumlusuna düşer; son: izleyen 3. iş günü 12:00 (İnsan Kaynakları Müdürü onayına gönderilir). */
+export async function puantajGorevi(db: Pool, simdi = new Date()): Promise<boolean> {
+  const b = new Date(`${istanbulAy(simdi)}-01T00:00:00Z`); const onceki = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+  if (!(await birKez(db, 'puantaj_donem', onceki))) return false;
+  const son = await isGunuSonu(db, b, 3); son.setUTCHours(9, 0, 0, 0);
+  await kartAc(db, { tur: 'Aylık Puantaj', kategori: 'gorev', baslik: `${onceki} Puantajı`, ozet: 'Puantajı tamamlayıp İnsan Kaynakları Müdürü onayına gönderiniz.', sahipRol: await rolId(db, IKS), sonZaman: son, nesneTuru: 'Puantaj Dönemi', nesneKimligi: onceki });
+  return true;
+}
+
 /** Her ayın başında bir önceki dönemin kapanışı İK Sorumlusuna düşer; son: izleyen 5. iş günü 12:00. */
 export async function karneKapanisGorevi(db: Pool, simdi = new Date()): Promise<boolean> {
   const b = new Date(`${istanbulAy(simdi)}-01T00:00:00Z`); const onceki = new Date(Date.UTC(b.getUTCFullYear(), b.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);

@@ -472,7 +472,7 @@ function DisTalepler({ id }: { id: string }) {
 
 /** YG-1081, YG-859: kartela maliyeti yalnız Ticari İşler Direktörü ve CEO; taslak sürümde girilir, CEO onayıyla yürürlüğe girer. */
 export function KartelaMaliyet() {
-  const [v, setV] = useState<{ surum: string; taslak: boolean; kalemler: { kod: string; islem: string; birim: string; maliyet_eur: string; maliyet_tarihi: string | null; kaynak_norm: string | null }[] } | null>(null); const [q, setQ] = useState(''); const [f, setF] = useState({ kod: '', maliyet: '', tarih: '', kaynak: '' }); const [m, setM] = useState('');
+  const [v, setV] = useState<{ surum: string; taslak: boolean; kalemler: { kod: string; islem: string; birim: string; maliyet_eur: string; maliyet_tarihi: string | null; kaynak_norm: string | null }[] } | null>(null); const [q, setQ] = useState(''); const [f, setF] = useState({ kod: '', maliyet: '', tarih: '', kaynak: '' }); const [kg, setKg] = useState(''); const [m, setM] = useState('');
   const yk = () => istek<NonNullable<typeof v>>(`/kartela/maliyet?q=${encodeURIComponent(q)}`).then(setV).catch(() => setV(null));
   useEffect(() => { void yk(); }, [q]);
   if (!v) return null;
@@ -486,6 +486,8 @@ export function KartelaMaliyet() {
       <label htmlFor="km-m">Maliyet (EUR)</label><input id="km-m" inputMode="decimal" value={f.maliyet} onChange={(e) => setF({ ...f, maliyet: e.target.value })} />
       <label htmlFor="km-t">Maliyet Tarihi</label><input id="km-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} />
       <label htmlFor="km-n">Kaynak Norm</label><input id="km-n" value={f.kaynak} onChange={(e) => setF({ ...f, kaynak: e.target.value })} />
+      <label htmlFor="km-g">Kaldırma Gerekçesi (kalemi kullanımdan kaldırmak için)</label><input id="km-g" value={kg} onChange={(e) => setKg(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!f.kod.trim() || !kg.trim()} onClick={() => { is('/kartela/taslak/kaldir', { kod: f.kod.trim(), gerekce: kg }, 'Kalem taslak sürümden kaldırıldı; sürüm onaylanınca yürürlükten çıkar.'); setKg(''); }}>Kalemi Kullanımdan Kaldır</button>
       <div className="dugmeler"><button className="btn2" onClick={() => is('/kartela/taslak/maliyet', { ...f, maliyet: Number(f.maliyet.replace(/\./g, '').replace(',', '.')) }, 'Maliyet kaydedildi.')}>Maliyeti Kaydet</button><button className="btn2" onClick={() => is('/kartela/taslak/onaya-gonder', {}, 'Sürüm CEO onayına gönderildi.')}>Yürürlüğe Almak İçin Onaya Gönder</button></div></>}</>;
 }
 

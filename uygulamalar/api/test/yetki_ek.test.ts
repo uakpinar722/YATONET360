@@ -70,6 +70,10 @@ describe('Kritik erişim, bilet, hasar paylaşımı (YG-1160, YG-1001, YG-1171)'
     const u = `/api/degisiklik-bileti/${r.json().kimlik}/kapat`; const d = await o.dosyaAc({}, {});
     expect((await o.ist('POST', u, sy, {})).statusCode).toBe(400);
     expect((await o.ist('POST', u, sy, { oncesi: await belge(d.kimlik), sonrasi: await belge(d.kimlik) })).statusCode).toBe(200);
+    // T-YG1646: liste; Sistem Yöneticisi kendi biletini, Bilgi İşlem Müdürü tümünü görür; diğer rol göremez
+    expect((await o.ist('GET', '/api/degisiklik-biletleri', await o.gir('bim'))).json().find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).durum).toBe('Kapalı');
+    expect((await o.ist('GET', '/api/degisiklik-biletleri', sy)).json().some((x: { benim: boolean }) => x.benim)).toBe(true);
+    expect((await o.ist('GET', '/api/degisiklik-biletleri', await o.gir('ds'))).statusCode).toBe(404);
   });
   it('hasar bilgisi paylaşımı hiyerarşik; çift onay seçilirse iki kademe', async () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); const ds = await o.gir('ds');

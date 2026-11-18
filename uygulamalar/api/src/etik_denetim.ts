@@ -79,7 +79,7 @@ export function etikDenetimYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await roller(o.kullanici)).includes(IDM)) return yok(y);
     const d = (await b.db.query(`SELECT denetim_no FROM ic_denetim WHERE kimlik = $1 AND durum = 'Açık'`, [id])).rows[0]; if (!d) return yok(y);
     const bugun = new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 10);
-    const enGec = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+    const enGec = new Date(Date.now() + 3 * 3_600_000 + 90 * 86_400_000).toISOString().slice(0, 10);
     if (!g.denetci || !/^\d{4}-\d{2}-\d{2}$/.test(g.bitis ?? '') || g.bitis! < bugun || g.bitis! > enGec || !g.amac?.trim()) return y.code(400).send({ hata: 'Denetçi, erişim bitiş tarihi (en çok 90 gün) ve denetim amacı zorunludur.' });
     if (!(await roller(g.denetci)).includes(ID)) return y.code(400).send({ hata: 'Seçilen kişi İç Denetçi değildir.' });
     await b.db.query(`UPDATE ic_denetim SET denetci_ref = $2, erisim_bitis = $3, erisim_amaci = $4, atayan_ref = $5 WHERE kimlik = $1`, [id, g.denetci, g.bitis, g.amac.trim(), o.kullanici]);

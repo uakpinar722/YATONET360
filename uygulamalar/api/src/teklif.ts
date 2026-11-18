@@ -423,6 +423,18 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kartela Maliyeti', nesneTuru: 'Kartela', nesneKimligi: `${g.kod}@${sur}`, yeni: { maliyet: Number(g.maliyet), tarih: g.tarih, kaynak: g.kaynak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-661: kalemi kullanımdan kaldırma yalnız taslak sürümde, gerekçeyle; CEO sürümü onaylayınca yürürlükten çıkar.
+  s.post('/kartela/taslak/kaldir', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; gerekce?: string };
+    if (!(await kartelaYetkili(o.kullanici))) return yok(y);
+    const sur = await taslak(); if (!sur) return y.code(409).send({ hata: 'Önce taslak sürüm açınız.' });
+    if (!g.kod || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Kalem kodu ve kaldırma gerekçesi zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Kartela Sürümü' AND nesne_kimligi = $1 AND kapanma_zamani IS NULL`, [sur])).rowCount) return y.code(409).send({ hata: 'Sürüm onaydadır.' });
+    const r = await b.db.query(`DELETE FROM kartela_kalemi WHERE kod = $1 AND surum = $2 RETURNING islem`, [g.kod, sur]);
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kalem taslak sürümde bulunamadı.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kartela Kalemi Kaldırıldı', nesneTuru: 'Kartela', nesneKimligi: `${g.kod}@${sur}`, eski: { islem: r.rows[0].islem }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/kartela/taslak/onaya-gonder', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (!(await kartelaYetkili(o.kullanici))) return yok(y);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { gostergePuani, karneKapanisGorevi, maliBirlesik, nihaiPuan } from '../src/personel_karne.js';
+import { gostergePuani, karneKapanisGorevi, maliBirlesik, nihaiPuan, puantajGorevi } from '../src/personel_karne.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', cg: 'CEO', iks: 'İnsan Kaynakları Sorumlusu', idm: 'İç Denetim Müdürü', rkd: 'Risk ve Kalite Direktörü', tm: 'Teknik Müdür', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
@@ -55,7 +55,7 @@ describe('kişisel karne (YG-960–968)', () => {
     expect((await o.kart('Personel Karne İtirazı', t)).durum).toBe('Tamamlandı');
   });
   it('dönem kapanış görevi ayda bir; ağırlık değişikliği toplamı 100 ise CEO onayıyla yürürlüğe girer', async () => {
-    const S = new Date('2026-11-02T09:00:00Z'); expect(await karneKapanisGorevi(o.db, S)).toBe(true); expect(await karneKapanisGorevi(o.db, S)).toBe(false);
+    const S = new Date('2026-11-02T09:00:00Z'); expect(await karneKapanisGorevi(o.db, S)).toBe(true); expect(await karneKapanisGorevi(o.db, S)).toBe(false); expect(await puantajGorevi(o.db, S)).toBe(true); expect(await puantajGorevi(o.db, S)).toBe(false); /* T-YG1615 */
     const gs = (await o.sup.query(`SELECT kimlik, agirlik::float a FROM karne_gosterge WHERE rol_adi = 'Dosya Sorumlusu' ORDER BY sira`)).rows; expect(gs[0].a).toBe(30);
     const d = gs.map((x, n) => ({ kimlik: x.kimlik, agirlik: n === 0 ? x.a - 5 : n === 1 ? x.a + 5 : x.a })); const opm = await o.gir('opm'); const u = '/api/personel-karne/agirlik';
     expect((await o.ist('POST', u, await o.gir('iks'), { rol: 'Dosya Sorumlusu', degerler: d, gerekce: 'G' })).statusCode).toBe(404);
