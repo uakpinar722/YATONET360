@@ -41,6 +41,16 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
 
   // YG-814–817: iş birimi iş emri; tedarik kolunda sipariş. Listeler iş emri başlangıç, kabul/teslim ve sipariş kayıtlarından oluşur.
+  // YG-1685: Kalite Kontrolörün atandığı dosyalardaki açık kontrol noktaları ve Kritik uygunsuzluklar (acil kart; kontrol noktası kapatılmaz).
+  s.get('/kalite-pano', oturumlu, async (i, y) => {
+    const o = i.oturum!; const l = await roller(b.db, o.kullanici);
+    if (!l.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)')) return yok(y);
+    const kapsam = `EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = e.dosya_ref AND a.kullanici_ref = $1 AND a.rol = 'Kalite Kontrolör' AND a.bitis_zamani IS NULL)`;
+    const noktalar = (await b.db.query(`SELECT n.kimlik, n.kontrol_noktasi_no, n.nokta_turu, n.kalem, n.kontrol_ozelligi, n.planlanan_zaman, n.sonuc, e.is_emri_no, d.dosya_no, e.kabul_sinifi
+      FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref WHERE n.serbest_birakma_zamani IS NULL AND ${kapsam} ORDER BY n.planlanan_zaman LIMIT 100`, [o.kullanici])).rows;
+    const kritik = (await b.db.query(`SELECT u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref JOIN is_emri e ON e.dosya_ref = d.kimlik WHERE u.sinif = 'Kritik' AND u.statu NOT IN ('Kapalı', 'Geçersiz') AND ${kapsam} GROUP BY u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum`, [o.kullanici])).rows;
+    return { noktalar, kritik };
+  });
   // YG-1586, YG-1587: teknik gözetim panosu. Teknik Yönetici gözetimindeki, Teknik Müdür ve Yardımcısı tüm açık dosyaları kapsar; Teknik Uzman yükü gösterilmez.
   s.get('/teknik-pano', oturumlu, async (i, y) => {
     const o = i.oturum!; const l = await roller(b.db, o.kullanici);

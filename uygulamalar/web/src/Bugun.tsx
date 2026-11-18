@@ -231,11 +231,25 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {veri.gorev.length === 0 ? <Bos m="Bugün için görev bulunmamaktadır." /> : veri.gorev.map((k) => <IslemKarti key={k.kimlik} k={k} yenile={yenile} />)}
       {ben.roller.some((r) => ['Operasyon Yöneticisi', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı'].includes(r.rol_adi)) && <OperasyonPano />}
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
+      {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
       {ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) && <TahsilatIzleme />}
       {lgm && <HaftaVeGecmis veri={veri} />}
       {lgm && <><OzelGunler /><GozdenGecirmeler /><IsListeleri /><KonumPlani /><DosyaHaritasi /></>}
     </>
   );
+}
+
+/** YG-1685: Kritik Uygunsuzluk acil kartı ve Kontrol Noktalarım (H Bekletme, W Tanıklık, R Belge İnceleme). */
+function KalitePano() {
+  const [v, setV] = useState<{ noktalar: { kimlik: string; kontrol_noktasi_no: string; nokta_turu: string; kalem: string | null; kontrol_ozelligi: string; planlanan_zaman: string; sonuc: string | null; is_emri_no: string; dosya_no: string; kabul_sinifi: string | null }[]; kritik: { kimlik: string; uygunsuzluk_no: string; dosya_no: string; gercek_durum: string }[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/kalite-pano').then(setV).catch(() => setV(null)); }, []);
+  if (!v) return null;
+  const kod: Record<string, string> = { 'Bekletme': 'H', 'Tanıklık': 'W', 'Belge İnceleme': 'R' };
+  return <>
+    {v.kritik.map((u) => <div key={u.kimlik} className="hata kart-sol"><div className="ust2"><b>Kritik Uygunsuzluk · Kontrol Noktası Açık Kalır</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.dosya_no} · {u.uygunsuzluk_no} · {u.gercek_durum}</div><div className="not">Karar seviyesi: Kalite Müdürü ve Teknik Müdür.</div></div>)}
+    <div className="bolum">Kontrol Noktalarım</div>
+    {v.noktalar.length === 0 ? <Bos m="Açık kontrol noktanız bulunmamaktadır." /> : v.noktalar.map((n) => { const kl = kalan(n.planlanan_zaman); return <div key={n.kimlik} className="ozet kart-sol"><div className="ust2"><b>{n.kontrol_noktasi_no} · {n.nokta_turu}{kod[n.nokta_turu] ? ` (${kod[n.nokta_turu]})` : ''}</b><Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} /></div><div className="not">{n.dosya_no} · {n.is_emri_no}{n.kalem ? ` · ${n.kalem}` : ''} · {n.kontrol_ozelligi}{n.kabul_sinifi ? ` · Kabul Sınıfı ${n.kabul_sinifi}` : ''}{n.sonuc ? ` · ${n.sonuc}` : ''}</div></div>; })}
+  </>;
 }
 
 /** YG-1586, YG-1587: Gözetim Uyarıları ve Gözetim / Müdürlük Dosyaları (teknik rapor durumu). */

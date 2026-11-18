@@ -532,6 +532,14 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       await bildir(b.db, { olay: `bld80:${f.kimlik}:${e.kimlik}`, kullanicilar: kisi.map((x) => x.kullanici_ref), baslik: `${e.is_emri_no} · Fatura Düzenleme Bildirimi`, ozet: metin });
       for (const x of kisi) if (x.e_posta) await disGonder(b.db, { olay: `bld80:${f.kimlik}:${e.kimlik}:${x.kullanici_ref}`, eposta: x.e_posta, konu: `${e.is_emri_no} Fatura Düzenleme Bildirimi`, metin });
     }
+    // YG-1429, BLD-97 (MTN-1, CEO 18.11.2026): dosyadaki açık siparişlerin tedarikçilerine aynı tarih ve kurla fatura düzenleme bildirimi; müşteri bilgisi yazılmaz.
+    for (const s of (await b.db.query(`SELECT s.kimlik, s.siparis_no, s.kurulus_ref, s.kdv_haric_eur FROM tedarik_siparisi s WHERE s.dosya_ref = $1 AND s.statu NOT IN ('Taslak', 'Onay Bekliyor', 'İptal')`, [f.dosya_ref])).rows) {
+      const kisi = (await b.db.query(`SELECT u.kullanici_ref, h.e_posta FROM kurulus_kullanici u JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE u.kurulus_ref = $1`, [s.kurulus_ref])).rows;
+      const eurT = Number(s.kdv_haric_eur);
+      const metin = await metinGetir(b.db, 'BLD-97', 'tr', { 'Sipariş No': s.siparis_no, tarih: gunAy(g.tarih), 'kur tarihi': gunAy(g.kurTarihi), kur: String(g.kur).replace('.', ','), tutar: tutar(eurT), 'tutar TL': tutar(Math.round(eurT * Number(g.kur) * 100) / 100), 'bağlantı': webAdresi });
+      await bildir(b.db, { olay: `bld97:${f.kimlik}:${s.kimlik}`, kullanicilar: kisi.map((x) => x.kullanici_ref), baslik: `${s.siparis_no} · Fatura Düzenleme Bildirimi`, ozet: metin });
+      for (const x of kisi) if (x.e_posta) await disGonder(b.db, { olay: `bld97:${f.kimlik}:${s.kimlik}:${x.kullanici_ref}`, eposta: x.e_posta, konu: `${s.siparis_no} Fatura Düzenleme Bildirimi`, metin });
+    }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Fatura Bilgisi Girildi', nesneTuru: 'Fatura', nesneKimligi: f.kimlik, yeni: { no: g.no, kur: g.kur, tl }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { toplamTl: tl, vade: vade.toISOString().slice(0, 10) };
   });

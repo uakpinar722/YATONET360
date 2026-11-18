@@ -90,7 +90,7 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, await o.gir('ty'), { belgeler: ['Ruhsat'] })).statusCode).not.toBe(200);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: ['Ruhsat', ' Poliçe '] })).statusCode).toBe(200);
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld17:${d.kimlik}%`])).rows[0]?.metin as string;
-    expect(m).toContain('Ruhsat, Poliçe'); expect(m).not.toContain('[');
+    expect(m).toContain('Ruhsat, Poliçe'); expect(m).not.toContain('['); expect(m).toContain('operasyon@limitglobalmarine.com.tr');
     await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = coalesce(cep_telefonu, '+905550001551') WHERE kimlik = $1`, [o.K.ds]);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { ulasilamadi: true })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld18:${d.kimlik}%`])).rows[0].n).toBeGreaterThan(0);

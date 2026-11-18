@@ -151,7 +151,8 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Barınma Gideri' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     return { tamam: true };
   });
-  // YG-551: Bilgi ve Belge Talebi (BLD-17) ve Ulaşılamama (BLD-18); Dosya Sorumlusu gönderir, e-posta ve telefon Dosya Sorumlusunun kurumsal iletişim bilgisidir.
+  // YG-551: Bilgi ve Belge Talebi (BLD-17) ve Ulaşılamama (BLD-18); Dosya Sorumlusu gönderir. Belge adresi operasyon kutusudur (CEO 18.11.2026); BLD-18 telefonu kurumsal hat bildirilene kadar Dosya Sorumlusunun telefonudur.
+  const OPERASYON_EPOSTA = 'operasyon@limitglobalmarine.com.tr';
   s.post('/dosya/:id/belge-talebi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belgeler?: string[]; ulasilamadi?: boolean };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
@@ -166,7 +167,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     } else {
       const l = (g.belgeler ?? []).map((x) => String(x).trim()).filter(Boolean);
       if (!l.length) return y.code(400).send({ hata: 'İstenen belgeleri yazınız.' });
-      await yatTarafinaYaz(b.db, { olay: `bld17:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': d.e_posta, 'e-mail': d.e_posta } });
+      await yatTarafinaYaz(b.db, { olay: `bld17:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': OPERASYON_EPOSTA, 'e-mail': OPERASYON_EPOSTA } });
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.ulasilamadi ? 'Ulaşılamama Bildirimi' : 'Belge Talebi Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

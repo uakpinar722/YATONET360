@@ -86,7 +86,8 @@ async function donemIlan(c: Db, g: { bolge: string; olay: string; ilanEden: stri
   const d = (await c.query(`INSERT INTO olaganustu_donem (ilan_eden, sebep, bolge, olay) VALUES ($1,$2,$3,$4) RETURNING kimlik, baslangic`, [g.ilanEden, `${g.bolge} · ${g.olay}`, g.bolge, g.olay])).rows[0];
   await donemBildir(c, d.kimlik, g.bolge, { olay: g.olay, tarih: gunAy(d.baslangic) }, 'bas', g.oneren, webAdresi);
   // YG-1542: web sitesi duyuru şeridi GMY onayıyla BT ve Firma Yönetimince yayımlanır.
-  await kartAc(c, { tur: 'Duyuru Şeridi', kategori: 'gorev', baslik: `Web Sitesi Duyuru Şeridi · ${g.bolge} Olağanüstü Olay Dönemi`, ozet: 'Şerit metnini (bölge, aciliyet sırası, iletişim kanalları) onaylayıp Bilgi Teknolojileri ve Firma Yönetimine yayımlatınız.', oncelik: 'Kritik', sahipRol: await rolId(c, 'Genel Müdür Yardımcısı'), nesneTuru: 'Olağanüstü Dönem', nesneKimligi: d.kimlik });
+  const serit = await metinGetir(c, 'BLD-98', 'tr', { 'Bölge': g.bolge, Region: g.bolge, telefon: (await destekHatti(c)) ?? '[telefon]', phone: (await destekHatti(c)) ?? '[phone]' }); // MTN-2, CEO 18.11.2026
+  await kartAc(c, { tur: 'Duyuru Şeridi', kategori: 'gorev', baslik: `Web Sitesi Duyuru Şeridi · ${g.bolge} Olağanüstü Olay Dönemi`, ozet: `Onaylı şerit metnini kontrol edip Bilgi Teknolojileri ve Firma Yönetimine yayımlatınız: ${serit}`.slice(0, 1000), oncelik: 'Kritik', sahipRol: await rolId(c, 'Genel Müdür Yardımcısı'), nesneTuru: 'Olağanüstü Dönem', nesneKimligi: d.kimlik });
   return d.kimlik as string;
 }
 async function donemBildir(c: Db, donem: string, bolge: string, a: { olay?: string; tarih?: string; bas?: string; bit?: string }, tur: 'bas' | 'son', sorumlu: string, _web: string) {

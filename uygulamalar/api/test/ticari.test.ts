@@ -238,6 +238,14 @@ describe('doğan görev (YG-1465)', () => {
   });
 });
 
+describe('tedarikçi fatura düzenleme metni (BLD-97, MTN-1)', () => {
+  it('onaylı metin sipariş, tarih ve kurla eksiksiz dolar (T-YG1429)', async () => {
+    const { metinGetir } = await import('../src/metin.js');
+    const m = await metinGetir(o.db, 'BLD-97', 'tr', { 'Sipariş No': 'SP-1', tarih: '10.11.2026', 'kur tarihi': '09.11.2026', kur: '40,1234', tutar: '100,00', 'tutar TL': '4.012,34', 'bağlantı': 'http://x' });
+    expect(m).toContain('SP-1 numaralı sipariş'); expect(m).toContain('4.012,34 TL'); expect(m).not.toContain('[');
+  });
+});
+
 describe('tahsilat vadesi (YG-900)', () => {
   it('sigortada şirketin ödeme günü, en çok 30 gün; yoksa 30 gün; yat sahibinde fatura günü (T-YG900)', async () => {
     const { tahsilatVadeGunu } = await import('../src/ticari.js');

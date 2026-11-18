@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { konumPlani } from '../src/is_gorunumu.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test92', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -44,6 +44,11 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     expect(v.mudur).toBe(true); expect(v.dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
     expect(v.uyarilar.some((x: { dosya: string; tur: string }) => x.dosya === d.kimlik && x.tur === 'Saha Sorumlusu Gerekiyor')).toBe(true);
     expect((await o.ist('GET', '/api/teknik-pano', await o.gir('ts'))).statusCode).toBe(404);
+  });
+  it('Kalite Kontrolör panosu kontrol noktalarını ve kritik uygunsuzlukları verir (T-YG1685)', async () => {
+    const v = (await o.ist('GET', '/api/kalite-pano', await o.gir('kk'))).json();
+    expect(Array.isArray(v.noktalar) && Array.isArray(v.kritik)).toBe(true);
+    expect((await o.ist('GET', '/api/kalite-pano', await o.gir('ts'))).statusCode).toBe(404);
   });
   it('konum planı izin, nöbet ve keşiften oluşur; izinde yalnız İzinli yazar; yetkisiz kişi başkasını görmez', async () => {
     const d = await o.dosyaAc();
