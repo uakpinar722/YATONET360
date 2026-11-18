@@ -22,7 +22,8 @@ export function ticariAtamaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolVar = async (k: string, r: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = $2 LIMIT 1`, [k, r])).rowCount);
-  const adaylar = async () => (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = $1 ORDER BY h.ad_soyad`, [TICARI])).rows as { kimlik: string; ad_soyad: string }[];
+  // YG-1610: adaylar açık dosya sayısı ve izin durumuyla listelenir.
+  const adaylar = async () => (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad, (SELECT count(*)::int FROM dosya d WHERE d.ticari_sorumlu_ref = h.kimlik AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')) acik_dosya, p.personel_durumu FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref LEFT JOIN personel_karti p ON p.kullanici_ref = h.kimlik WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = $1 ORDER BY h.ad_soyad`, [TICARI])).rows as { kimlik: string; ad_soyad: string; acik_dosya: number; personel_durumu: string | null }[];
 
   s.get('/ticari-atama', oturumlu, async (i, y) => {
     if (!(await rolVar(i.oturum!.kullanici, YONETICI))) return yok(y);

@@ -2,7 +2,7 @@ import { DurumSayilari } from './DurumSayilari';
 import { OdemeTakvimi } from './OdemeTakvimi';
 import { eur } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
-import { SigortaIhbar } from './SigortaIhbar';
+import { SigortaIhbar, SigortaMutabakat } from './SigortaIhbar';
 import { OdemeYatSahibine } from './OdemeYatSahibine';
 import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
@@ -447,7 +447,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setL([])); }, []);
   if (!l) return null;
-  const gorunen = bolum === 'isemri' ? l : l.filter((e) => e.statu === 'Kabul Bekliyor');
+  // YG-1574: Ek İş ve Garanti iş emirleri ana iş emrinin hemen altında; acil (Kritik) iş emri kırmızı satır.
+  const gorunen = (bolum === 'isemri' ? l : l.filter((e) => e.statu === 'Kabul Bekliyor')).slice().sort((x, y) => (x.anaIsEmriNo ?? x.isEmriNo).localeCompare(y.anaIsEmriNo ?? y.isEmriNo, 'tr') || Number(Boolean(x.anaIsEmriNo)) - Number(Boolean(y.anaIsEmriNo)) || x.isEmriNo.localeCompare(y.isEmriNo, 'tr'));
   if (acik) return (
     <>
       <button className="lnk" onClick={() => setAcik(null)}>← İş Emirleri</button>
@@ -503,7 +504,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       <FirmaUygunsuzluk yap={yap} /></>}
       <div className="bolum">{bolum === 'isemri' ? 'Tüm İş Emirleri' : 'Yanıt Bekleyen İş Emirleri'}</div>
       {gorunen.length === 0 && <div className="ozet bos">{bolum === 'isemri' ? 'İş emri bulunmamaktadır.' : 'Yanıt bekleyen iş emri bulunmamaktadır.'}</div>}
-      {gorunen.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>İş Emri</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{gorunen.map((e) => <tr key={e.kimlik}><td data-ad="İş Emri">{e.isEmriNo}</td><td data-ad="Yat">{e.yat}</td><td data-ad="Durum">{e.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => void istek<FirmaAyrinti>(`/firma-portal/is-emri/${e.kimlik}`).then(setAcik)}>Aç</button></td></tr>)}</tbody></table></div>}
+      {gorunen.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>İş Emri</th><th>Yat</th><th>Durum</th><th /></tr></thead><tbody>{gorunen.map((e) => <tr key={e.kimlik} className={e.oncelik === 'Kritik' ? 'hata' : undefined}><td data-ad="İş Emri">{e.anaIsEmriNo ? `↳ ${e.isEmriNo} (Ana: ${e.anaIsEmriNo})` : e.isEmriNo}</td><td data-ad="Yat">{e.yat}</td><td data-ad="Durum">{e.statu}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => void istek<FirmaAyrinti>(`/firma-portal/is-emri/${e.kimlik}`).then(setAcik)}>Aç</button></td></tr>)}</tbody></table></div>}
     </>
   );
 }
@@ -538,6 +539,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
     <>
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
       {ben.grup.startsWith('Sigorta') && <SigortaIhbar sonra={() => void yukle()} />}
+      {ben.grup.startsWith('Sigorta') && <SigortaMutabakat />}
       <div className="bolum">İşleminizi Bekleyenler</div>
       {v.bekleyen.length === 0 && <div className="ozet bos">Bekleyen işlem bulunmamaktadır.</div>}
       {v.bekleyen.map((b) => <div className="ozet" key={b.kimlik}><b>{b.teklif_turu} · {b.dosya_no}</b><div>{eur(b.genel_toplam_eur)}{b.sigorta_karar_son ? ` · Son: ${saat(b.sigorta_karar_son)}` : ''}</div><button className="btn" onClick={() => void istek<TeklifAyrinti>(`/sigorta/teklif/${b.kimlik}`).then((x) => { setT(x); setSec([]); })}>İncele</button></div>)}

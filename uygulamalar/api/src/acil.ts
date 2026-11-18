@@ -421,7 +421,9 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const h = (await c.query(`SELECT ad_soyad, cep_telefonu, e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
       const ilk = (await nobetci(c, 'Dosya Sorumlusu', simdi)) ?? (await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü')))[0] ?? o.kullanici;
-      const r = await ihbarKaydet(c, { kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: 'Yat Sahibi', telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum!, yatDurumu: g.tur!, ihtiyac: g.aciklama?.trim() || g.tur!, acil: true, yat: { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, cevaplar: {} }, o.kullanici, { ilkSorumlu: ilk }, simdi);
+      // YG-1656: bildirenin türü kullanıcı grubundan; Çözüm Ortağı listede olmadığından Diğer ve açıklama.
+      const tr = o.grup.startsWith('Broker') ? 'Sigorta Brokeri / Acentesi' : o.grup.startsWith('Tesis') ? 'Marina / Tesis' : o.grup === 'İş Birliği Firması' ? 'Diğer' : 'Yat Sahibi';
+      const r = await ihbarKaydet(c, { kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: tr, sahibiTuruAciklama: tr === 'Diğer' ? 'Çözüm Ortağı' : undefined, telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum!, yatDurumu: g.tur!, ihtiyac: g.aciklama?.trim() || g.tur!, acil: true, yat: { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, cevaplar: {} }, o.kullanici, { ilkSorumlu: ilk }, simdi);
       if ('hata' in r) throw Object.assign(new Error(r.hata), { statusCode: 400 });
       await bildir(c, { olay: `portal-acil:${r.kimlik}`, kullanicilar: [ilk], baslik: `Acil İhbar: ${r.talepNo}`, ozet: `${g.tur} · ${g.yatAdi} · ${g.konum}`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
       await c.query(`INSERT INTO acil_konum (talep_ref, kullanici_ref) VALUES ($1,$2)`, [r.kimlik, o.kullanici]); // YG-1658

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
-type V = { bekleyenler: { kimlik: string; dosya_no: string; yat_adi: string }[]; adaylar: { kimlik: string; ad_soyad: string }[] };
+type V = { bekleyenler: { kimlik: string; dosya_no: string; yat_adi: string }[]; adaylar: { kimlik: string; ad_soyad: string; acik_dosya?: number; personel_durumu?: string | null }[] };
 
 /** YG-1600: Muhasebe ve Finans Yöneticisi keşif iş emri açılan dosyalara Ticari Sorumlu atar. */
 export function TicariAtamaBekleyenler() {
@@ -13,6 +13,6 @@ export function TicariAtamaBekleyenler() {
   return <><div className="bolum">Atama Bekleyenler</div>{m && <div className="not" role="status">{m}</div>}
     {v.bekleyenler.length === 0 && <div className="not">Atama bekleyen dosya bulunmamaktadır.</div>}
     {v.bekleyenler.map((x) => <div className="soru" key={x.kimlik}><span>{x.dosya_no} · {x.yat_adi}</span>
-      <label htmlFor={`ta-${x.kimlik}`}>Ticari Sorumlu</label><select id={`ta-${x.kimlik}`} value={sec[x.kimlik] ?? ''} onChange={(e) => setSec({ ...sec, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.adaylar.map((a) => <option key={a.kimlik} value={a.kimlik}>{a.ad_soyad}</option>)}</select>
+      <label htmlFor={`ta-${x.kimlik}`}>Ticari Sorumlu</label><select id={`ta-${x.kimlik}`} value={sec[x.kimlik] ?? ''} onChange={(e) => setSec({ ...sec, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.adaylar.map((a) => <option key={a.kimlik} value={a.kimlik}>{`${a.ad_soyad} · Açık Dosya: ${a.acik_dosya ?? 0}${a.personel_durumu && a.personel_durumu !== 'Görevde' ? ` · ${a.personel_durumu}` : ''}`}</option>)}</select>
       <button className="btn2 kucuk" disabled={!sec[x.kimlik]} onClick={() => onayla(x.kimlik)}>Onayla</button></div>)}</>;
 }

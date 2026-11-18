@@ -275,6 +275,14 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const s2 = (await b.db.query(`SELECT x.kimlik, x.rapor_ref, d.dosya_no, f.fatura_no, x.onayli_tutar, x.odenen_tutar, x.acik_bakiye, x.itiraz_edildi, x.mutabik FROM sigorta_mutabakat_satiri x JOIN dosya d ON d.kimlik = x.dosya_ref JOIN musteri_faturasi f ON f.kimlik = x.fatura_ref WHERE x.rapor_ref = ANY($1::uuid[])`, [r.map((a) => a.kimlik)])).rows;
     return r.map((a) => ({ ...a, satirlar: s2.filter((x) => x.rapor_ref === a.kimlik) }));
   });
+  // YG-1571: sigorta şirketi kendi şirketine gönderilmiş aylık mutabakat raporlarını görür (firma adı içermez).
+  s.get('/sigorta/mutabakat', oturumlu, async (i, y) => {
+    const sir = (await b.db.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [i.oturum!.kullanici])).rows[0]?.sigortaci_adi as string | undefined;
+    if (!sir) return yok(y);
+    const r = (await b.db.query(`SELECT kimlik, donem, kesim_tarihi::text, itiraz_son::text, durum FROM sigorta_mutabakat_raporu WHERE lower(sigortaci_adi) = lower($1) AND durum <> 'Hazır' AND gonderim_zamani IS NOT NULL ORDER BY kesim_tarihi DESC LIMIT 24`, [sir])).rows;
+    const s2 = (await b.db.query(`SELECT x.kimlik, x.rapor_ref, d.dosya_no, f.fatura_no, x.onayli_tutar, x.odenen_tutar, x.acik_bakiye, x.itiraz_edildi, x.mutabik FROM sigorta_mutabakat_satiri x JOIN dosya d ON d.kimlik = x.dosya_ref JOIN musteri_faturasi f ON f.kimlik = x.fatura_ref WHERE x.rapor_ref = ANY($1::uuid[])`, [r.map((a) => a.kimlik)])).rows;
+    return r.map((a) => ({ ...a, satirlar: s2.filter((x) => x.rapor_ref === a.kimlik) }));
+  });
   s.post('/mutabakat/:id/gonder', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
@@ -289,7 +297,11 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/mutabakat-satiri/:id/itiraz', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const not = ((i.body ?? {}) as { not?: string }).not?.trim();
-    if (!UUID.test(id) || !(await rolVar(o.kullanici, [TID, MFM, TICARI]))) return yok(y);
+    // YG-1571: sigorta şirketi kullanıcısı yalnız kendi şirketinin raporundaki satıra itiraz eder.
+    const sir = (await b.db.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [o.kullanici])).rows[0]?.sigortaci_adi as string | undefined;
+    if (!UUID.test(id)) return yok(y);
+    if (sir) { if (!(await b.db.query(`SELECT 1 FROM sigorta_mutabakat_satiri x JOIN sigorta_mutabakat_raporu r ON r.kimlik = x.rapor_ref WHERE x.kimlik = $1 AND lower(r.sigortaci_adi) = lower($2)`, [id, sir])).rowCount) return yok(y); }
+    else if (!(await rolVar(o.kullanici, [TID, MFM, TICARI]))) return yok(y);
     if (!not) return y.code(400).send({ hata: 'İtiraz notunu yazmanızı rica ederiz.' });
     const r = await b.db.query(`UPDATE sigorta_mutabakat_satiri x SET itiraz_edildi = true, itiraz_notu = $2 FROM sigorta_mutabakat_raporu r WHERE x.kimlik = $1 AND r.kimlik = x.rapor_ref AND r.durum = 'Gönderildi' AND r.itiraz_son >= current_date`, [id, not]);
     return r.rowCount ? { tamam: true } : y.code(409).send({ hata: 'İtiraz süresi dolmuştur.' });

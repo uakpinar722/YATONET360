@@ -206,6 +206,9 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect((await o.ist('POST', '/api/portal/acil', firmaC, { tur: 'Diğer', yatAdi: 'Y', konum: 'K' })).statusCode).toBe(400);
     const r = await o.ist('POST', '/api/portal/acil', firmaC, { tur: 'Yangın', yatAdi: 'Y', konum: 'K' });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().uyari112).toContain('112');
+    // YG-1656 (T-YG1656): bildiren türü kullanıcı grubundan
+    const gr = (await o.sup.query(`SELECT h.kullanici_grubu g, t.talep_sahibi_turu tr FROM talep t JOIN kullanici_hesabi h ON h.e_posta = 'firma@deneme.yatonet.local' WHERE t.kimlik = $1`, [r.json().talep])).rows[0];
+    if (gr.g === 'İş Birliği Firması') expect(gr.tr).toBe('Diğer');
     // YG-259: nöbetçinin açmasını beklemeden Kritik dosya açılır, acil müdahale kaydı ve ihbar eden yat sahibi tarafı oluşur.
     const d = (await o.sup.query(`SELECT d.kimlik, d.oncelik, d.statu, d.asama FROM dosya d JOIN talep t ON t.dosya_ref = d.kimlik WHERE t.kimlik = $1`, [r.json().talep])).rows[0];
     expect(d).toMatchObject({ oncelik: 'Kritik', statu: 'Aktif', asama: 'Keşif' });

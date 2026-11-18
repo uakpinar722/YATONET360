@@ -68,7 +68,7 @@ const dosyaAc = async (p, no) => {
   await satir.getByRole('button').first().click();
   await p.getByRole('heading', { name: new RegExp(no) }).first().waitFor();
 };
-const hataVarsa = async (p, ne) => { const a = p.getByRole('alert'); if (await a.count()) { const t = await a.first().textContent(); if (t) throw new Error(`${ne}: ${t}`); } };
+const hataVarsa = async (p, ne) => { const a = p.locator('[role=alert]:not([data-t="uyari-112"])'); /* YG-1657: 112 uyarısı hata değildir */ if (await a.count()) { const t = await a.first().textContent(); if (t) throw new Error(`${ne}: ${t}`); } };
 const tikla = async (p, ad) => { const ist = p.waitForRequest((r) => r.url().includes('/api/') && r.method() !== 'GET', { timeout: 2000 }).catch(() => null); await p.getByRole('button', { name: ad, exact: true }).first().click(); await ist; await p.waitForTimeout(350); await p.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {}); await hataVarsa(p, ad); };
 const sayfalar = {};
 const al = async (k, E) => { if (!sayfalar[k]) sayfalar[k] = await gir(E[k], k); else { await sayfalar[k].goto(KOK); await sayfalar[k].reload(); } return sayfalar[k]; };

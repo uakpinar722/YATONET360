@@ -134,6 +134,13 @@ describe('mutabakat (YG-456)', () => {
     await o.ist('POST', `/api/sigorta-gonderim/${gr.json().gonderim}/teyit`, tid, { adim: 1 }); const g2 = await o.ist('POST', `/api/sigorta-gonderim/${gr.json().gonderim}/teyit`, tid, { adim: 2 }); expect(g2.statusCode, g2.body).toBe(200);
     expect((await o.sup.query(`SELECT durum, itiraz_son IS NOT NULL AS son FROM sigorta_mutabakat_raporu WHERE kimlik = $1`, [r[0].kimlik])).rows[0]).toEqual({ durum: 'Gönderildi', son: true });
     expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Mutabakat Raporu' AND nesne = $1`, [r[0].kimlik])).rowCount).toBe(1);
+    // YG-1571 (T-YG1571): sigorta kullanıcısı kendi raporunu görür ve satıra itiraz eder
+    await o.sup.query(`INSERT INTO sigorta_kullanici (kullanici_ref, sigortaci_adi) VALUES ($1, 'Mutabık Sigorta') ON CONFLICT (kullanici_ref) DO UPDATE SET sigortaci_adi = EXCLUDED.sigortaci_adi`, [o.K.ds]);
+    const sgc = await o.gir('ds');
+    expect((await o.ist('GET', '/api/sigorta/mutabakat', sgc)).json()[0].satirlar[0].kimlik).toBe(sat.kimlik);
+    expect((await o.ist('POST', `/api/mutabakat-satiri/${sat.kimlik}/itiraz`, sgc, { not: 'Ödeme yapıldı' })).statusCode).toBe(200);
+    await o.sup.query(`UPDATE sigorta_mutabakat_satiri SET itiraz_edildi = false, itiraz_notu = NULL WHERE kimlik = $1`, [sat.kimlik]);
+    await o.sup.query(`DELETE FROM sigorta_kullanici WHERE kullanici_ref = $1`, [o.K.ds]);
     expect(JSON.stringify((await mutabakatTanim(o.db, r[0].kimlik)).t.bolumler)).toContain('1.000,00');
     await o.sup.query(`UPDATE sigorta_mutabakat_raporu SET itiraz_son = '2026-01-01' WHERE kimlik = $1`, [r[0].kimlik]);
     await mutabakatIsle(o.db, new Date('2026-11-25T08:00:00Z'));

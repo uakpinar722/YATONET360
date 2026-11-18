@@ -52,14 +52,19 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
       <div className="bolum">Hızlı İşlemler</div>
       <div className="dugmeler"><button className="btn2" onClick={() => setForm(true)}>Hasar Bildir</button></div>
       <YetkiliAtama />
-      <div className="bolum">Acil Durum</div>
-      <div className="uyari">Yat su alıyor, sürükleniyor, yangın sonrası durum varsa veya bağlama emniyeti tehlikedeyse hemen arayınız. Acil durumlarda lütfen önce 112&apos;yi arayınız.</div>
-      <AcilDugmesi />
+      <AcilDurumBolumu />
     </>
   );
 }
 
 /** YG-1658: konum 10 dakikada bir iletilir; izin yoksa yatın kayıtlı konumu; kullanıcı her an durdurabilir. */
+/** YG-1656: A1, A2, A3, A6, A7 ve A8 ana ekranlarında her zaman görünen Acil Durum bölümü. */
+export function AcilDurumBolumu() {
+  return <><div className="bolum">Acil Durum</div>
+    <div className="uyari">Yat su alıyor, sürükleniyor, yangın sonrası durum varsa veya bağlama emniyeti tehlikedeyse hemen arayınız. Acil durumlarda lütfen önce 112&apos;yi arayınız.</div>
+    <AcilDugmesi /></>;
+}
+
 function AcilDugmesi() {
   const TUR = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
   const [f, setF] = useState({ tur: TUR[1]!, yatAdi: '', konum: '', aciklama: '' }); const [t, setT] = useState<string | null>(null); const [msg, setMsg] = useState(''); const [hata, setHata] = useState('');
