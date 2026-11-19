@@ -11,7 +11,7 @@ import { izinGerekli } from './yetki.js';
 const DIS_TEYIT_SAAT = 8; // YG-1649
 
 /** A32-3, YG-1649, YG-1699: iç kullanıcıda birim Müdürü; dış kullanıcıda kurum türüne göre teyit makamı. */
-async function teyitMakami(db: Pool | PoolClient, kullanici: string, grup: string): Promise<{ rol: string; dis: boolean } | null> {
+export async function teyitMakami(db: Pool | PoolClient, kullanici: string, grup: string): Promise<{ rol: string; dis: boolean } | null> {
   const bul = async (ad: string) => (await db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;
   if (grup === 'LGM İç Rolü') {
     const r = await db.query(
@@ -19,7 +19,12 @@ async function teyitMakami(db: Pool | PoolClient, kullanici: string, grup: strin
     return r.rows[0] ? { rol: await onayMakami(db, r.rows[0].rol_ref), dis: false } : null;
   }
   if (grup === 'İş Birliği Firması' || grup === 'Tedarikçi' || grup.startsWith('Tesis Yetkilisi')) return { rol: await bul('Sicil Sorumlusu'), dis: true };
-  if (grup === 'Kurumsal Müşteri' || grup.startsWith('Sigorta Şirketi') || grup.startsWith('Broker')) return { rol: await bul('Müşteri ve Paydaş İlişkileri Müdür Yardımcısı'), dis: true };
+  // YG-1699 (A52-S1): Müdür Yardımcısı yoksa teyit Müşteri ve Paydaş İlişkileri Müdüründe.
+  if (grup === 'Kurumsal Müşteri' || grup.startsWith('Sigorta Şirketi') || grup.startsWith('Broker') || grup.startsWith('Acente')) {
+    const my = await bul('Müşteri ve Paydaş İlişkileri Müdür Yardımcısı');
+    const var_ = (await db.query(`SELECT 1 FROM rol_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.rol_ref = $1 AND a.atama_durumu = 'Aktif' AND h.hesap_durumu = 'Aktif' LIMIT 1`, [my])).rowCount;
+    return { rol: var_ ? my : await bul('Müşteri ve Paydaş İlişkileri Müdürü'), dis: true };
+  }
   return null;
 }
 

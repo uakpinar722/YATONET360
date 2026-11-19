@@ -79,6 +79,12 @@ kapanisKaydet('Nöbet Çizelgesi', async (c, k, karar, yapan) => {
 onaySonucKaydet('ONY-29', async (c, t, karar) => {
   await c.query(`UPDATE acil_mudahale SET sinir_durumu = $2 WHERE dosya_ref = $1`, [t.dosya_ref, karar === 'Onaylandı' ? 'Onaylandı' : 'Yükseltildi']);
 });
+kapanisKaydet('Çerçevesiz Sağlayıcı Onayı', async (c, k, karar, yapan) => {
+  if (karar !== 'Onayla' || !k.nesne_kimligi) return;
+  await c.query(`INSERT INTO acil_cercevesiz_onay (dosya_ref, onaylayan_ref, gerekce) VALUES ($1,$2,'Bölgede yanıt yok; can veya çevre riski') ON CONFLICT DO NOTHING`, [k.nesne_kimligi, yapan]);
+  await cagriGonder(c, k.nesne_kimligi, new Date());
+});
+
 kapanisKaydet('Acil Tutar Onayı', async (c, k, karar) => {
   if (karar === 'Onayla') await c.query(`UPDATE acil_mudahale SET sinir_durumu = 'Onaylandı' WHERE dosya_ref = $1::uuid`, [k.nesne_kimligi]);
 });
@@ -86,16 +92,22 @@ kapanisKaydet('Acil Tutar Onayı', async (c, k, karar) => {
 async function sirakiSaglayici(c: PoolClient, dosya: string): Promise<{ kimlik: string; ticari_unvan: string } | undefined> {
   // YG-266, YG-272: aktif, onaylı, acil hizmet verir; müsait olmayan atlanır; daha önce çağrılan atlanır.
   return (await c.query(`SELECT u.kimlik, u.ticari_unvan FROM kurulus u WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.acil_hizmet_verir AND u.acil_musaitlik AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND NOT EXISTS (SELECT 1 FROM acil_gorev_cagrisi a WHERE a.dosya_ref = $1 AND a.kurulus_ref = u.kimlik)
-    AND ($2::int <> 1 OR EXISTS (SELECT 1 FROM sozlesme_kaydi s WHERE s.kurulus_ref = u.kimlik AND s.durum = 'Yürürlükte' AND s.yururluk <= current_date AND (s.bitis IS NULL OR s.bitis >= current_date))) ORDER BY u.acil_arama_sirasi NULLS LAST, u.sicil_no LIMIT 1`, [dosya, await parametre(c, 'sozlesme_kapisi')])).rows[0]; // YG-272: Çerçeve Sözleşmesi yürürlükte
+    AND ($2::int <> 1 OR EXISTS (SELECT 1 FROM sozlesme_kaydi s WHERE s.kurulus_ref = u.kimlik AND s.durum = 'Yürürlükte' AND s.yururluk <= current_date AND (s.bitis IS NULL OR s.bitis >= current_date))) ORDER BY u.acil_arama_sirasi NULLS LAST, u.sicil_no LIMIT 1`, [dosya, (await c.query(`SELECT 1 FROM acil_cercevesiz_onay WHERE dosya_ref = $1`, [dosya])).rowCount ? 0 : await parametre(c, 'sozlesme_kapisi')])).rows[0]; // YG-272: Çerçeve Sözleşmesi yürürlükte
 }
 
-async function cagriGonder(c: PoolClient, dosya: string, simdi: Date): Promise<string | null> {
+export async function cagriGonder(c: PoolClient, dosya: string, simdi: Date): Promise<string | null> {
   const f = await sirakiSaglayici(c, dosya);
   const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [dosya])).rows[0];
   if (!f) {
     // YG-271: Kaynak Bulunamadı; kırmızı uyarı yönetici nöbetçisine ve Operasyon Müdürüne.
     const al = [...await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü'))]; const y = await nobetci(c, 'Yönetici', simdi); if (y) al.push(y);
     await bildir(c, { olay: `kaynak-yok:${dosya}`, kullanicilar: al, baslik: `Kaynak Bulunamadı: ${d.dosya_no}`, ozet: 'Uygun acil sağlayıcı yanıt vermedi.', oncelik: 'Kritik', sms: true, acil: true }, simdi);
+    // YG-271, YG-1667: sözleşmeli kaynak kalmadıysa ve can/çevre riski varsa, uygun çerçevesiz sağlayıcı için Teknik ve Operasyon Direktörü onayı istenir (dosya başına bir kez).
+    if (Number(await parametre(c, 'sozlesme_kapisi')) === 1 && !(await c.query(`SELECT 1 FROM acil_cercevesiz_onay WHERE dosya_ref = $1`, [dosya])).rowCount
+      && (await c.query(`SELECT 1 FROM acil_mudahale WHERE dosya_ref = $1 AND can_cevre_riski`, [dosya])).rowCount
+      && (await c.query(`SELECT 1 FROM kurulus u WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.acil_hizmet_verir AND u.acil_musaitlik AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND NOT EXISTS (SELECT 1 FROM acil_gorev_cagrisi a WHERE a.dosya_ref = $1 AND a.kurulus_ref = u.kimlik) LIMIT 1`, [dosya])).rowCount
+      && await birKez(c, 'cercevesiz_onay', dosya))
+      await kartAc(c, { tur: 'Çerçevesiz Sağlayıcı Onayı', baslik: `${d.dosya_no} · Kaynak Bulunamadı · Çerçevesiz Sağlayıcı`, ozet: 'Bölgede çerçeve sözleşmeli sağlayıcıdan yanıt yok; can veya çevre riski nedeniyle sözleşmesiz sağlayıcı çağrılması onayınıza sunulur.', oncelik: 'Kritik', zincir: [await rolId(c, 'Teknik ve Operasyon Direktörü')], nesneTuru: 'Dosya', nesneKimligi: dosya });
     return null;
   }
   const no = await altNumara(c, d.dosya_no, 'CA');

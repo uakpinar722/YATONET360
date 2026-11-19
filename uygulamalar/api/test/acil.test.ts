@@ -1,6 +1,6 @@
 import { sahaSorumlusuGerekceleri, sahaSorumlusuIhtiyacIsle } from '../src/dosya.js';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acilIsle, acilSinir, ilkIsGunu12, nobetci } from '../src/acil.js';
+import { acilIsle, acilSinir, cagriGonder, ilkIsGunu12, nobetci } from '../src/acil.js';
 import { aydinlatmaKodu } from '../src/adimlar.js';
 import { sigortaSureIsle } from '../src/sigorta.js';
 import { musteriGostergeleri } from '../src/portal.js';
@@ -339,6 +339,22 @@ describe('Saha Sorumlusu zorunluluğu (YG-050)', () => {
     expect(await sahaSorumlusuGerekceleri(o.db, d.kimlik)).toEqual(['Aynı Sahada Birden Fazla Firma', '5.000,00 EUR Üzerinde İş']);
     await sahaSorumlusuIhtiyacIsle(o.db); await sahaSorumlusuIhtiyacIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Saha Sorumlusu Ataması' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
+});
+
+describe('çerçevesiz sağlayıcı (YG-271, YG-1667)', () => {
+  it('sözleşmeli kaynak yoksa can/çevre riskinde Teknik ve Operasyon Direktörü onayıyla çerçevesiz sağlayıcı çağrılır (T-YG271-CERCEVESIZ)', async () => {
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = 1 WHERE kod = 'sozlesme_kapisi'`);
+    try {
+      await o.sup.query(`UPDATE kurulus SET acil_musaitlik = false WHERE acil_hizmet_verir`);
+      const d = await o.dosyaAc();
+      await o.sup.query(`INSERT INTO acil_mudahale (dosya_ref, olay_turu, can_cevre_riski, tehlike, talimat_veren_ref) VALUES ($1,'Batma Riski',true,'Su alıyor',$2)`, [d.kimlik, o.K.opm]);
+      const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, ag_statusu, kayit_asamasi, acil_hizmet_verir, acil_musaitlik) VALUES ($1,'Sözleşmesiz Dalgıç','Çözüm Ortağı',$2,'Aktif','Onaylı',true,true) RETURNING kimlik`, [`S-CS${Date.now()}`, o.K.ds])).rows[0].kimlik;
+      const c = await o.db.connect(); try { expect(await cagriGonder(c, d.kimlik, new Date())).toBeNull(); } finally { c.release(); }
+      const k = await o.kart('Çerçevesiz Sağlayıcı Onayı', d.kimlik); expect(k).toBeDefined();
+      expect((await o.karar(k.kimlik, 'tod', 'Onayla')).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT 1 FROM acil_gorev_cagrisi WHERE dosya_ref = $1 AND kurulus_ref = $2`, [d.kimlik, f])).rowCount).toBe(1);
+    } finally { await o.sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sozlesme_kapisi'`); await o.sup.query(`UPDATE kurulus SET acil_musaitlik = true WHERE acil_hizmet_verir`); }
   });
 });
 

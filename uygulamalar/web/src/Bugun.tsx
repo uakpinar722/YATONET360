@@ -239,6 +239,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
       {ben.roller.some((r) => ['Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı'].includes(r.rol_adi)) && <AskiAcikIsler />}
       {ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu') && <SuresiDolmusBelgeler />}
+      {ben.roller.some((r) => r.rol_adi === 'Hukuk ve Uyum Direktörü') && <HukukGorusleri />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -289,6 +290,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Teknik Uzman') && <Raporlarim />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
+      {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Risk ve Kalite Direktörü'].includes(r.rol_adi)) && <KritikUygunsuzlukAcil />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKalitePlanlari />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Kalite Yöneticisi'].includes(r.rol_adi)) && <KalibrasyonEnvanteri />}
       {ben.roller.some((r) => ['Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikPano />}
@@ -436,6 +438,14 @@ function Raporlarim() {
     {l.length === 0 ? <Bos m="Kontrolde veya son 30 günde onaylanmış raporunuz bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.rapor_no}</b><Rozet s={x.durum === 'Onaylandı' ? 'yesil' : x.durum === 'İade Edildi' ? 'kirmizi' : 'gri'} c={x.durum} /></div><div className="not">{x.rapor_turu} · {x.dosya_no}</div></div>)}</>;
 }
 
+/** YG-1691, YG-1693: açık Kritik uygunsuzluklar (Acil, sayaçsız; karar seviyesi Kalite Müdürü ve Teknik Müdür). */
+function KritikUygunsuzlukAcil() {
+  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; dosya_no: string; gercek_durum: string | null; statu: string }[]>([]);
+  useEffect(() => { void istek<typeof l>('/kalite/kritik-uygunsuzluklar').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Acil</div>{l.map((u) => <div key={u.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>Kritik Uygunsuzluk · {u.dosya_no}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.uygunsuzluk_no} · {u.statu}{u.gercek_durum ? ` · ${u.gercek_durum}` : ''}</div></div>)}</>;
+}
+
 /** YG-1690: iş emri açılan dosyada eksik kalite planı, kabul matrisi veya muayene ve test planı; "Eksikliği Bildir". */
 function EksikKalitePlanlari() {
   const [l, setL] = useState<{ kimlik: string; dosya_no: string; yat_adi: string; plan_yok: boolean; matris_yok: boolean; itp_yok: boolean; bildirim: string | null }[] | null>(null); const [m, setM] = useState('');
@@ -446,6 +456,19 @@ function EksikKalitePlanlari() {
     {l.length === 0 ? <Bos m="İş emri açılan dosyalarda eksik kalite belgesi bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.dosya_no} · {x.yat_adi}</b>{x.bildirim && <Rozet s="gri" c={`Bildirildi ${new Date(x.bildirim).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}`} />}</div>
       <div className="not">Eksik: {[x.plan_yok && 'Kalite Planı', x.matris_yok && 'Kabul Matrisi', x.itp_yok && 'Muayene ve Test Planı'].filter(Boolean).join(', ')}</div>
       <button className="btn2 kucuk" onClick={() => void istek(`/dosya/${x.kimlik}/kalite-eksikligi-bildir`, {}).then(() => { setM('Eksiklik Teknik Uzman ve Teknik Yöneticiye bildirildi.'); return yk(); }).catch((e) => setM(e.message))}>Eksikliği Bildir</button></div>)}</>;
+}
+
+/** YG-1697: firma kararı için hukuki görüş; onay kademesi değildir, "Görüşü Gönder". */
+function HukukGorusleri() {
+  const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; oneri: string; isteyen: string }[]>([]); const [s, setS] = useState<Record<string, { gorus: string; not: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/firma-hukuk-gorusu/bekleyen').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Hukuki Görüş Talepleri</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => { const v = s[x.kimlik] ?? { gorus: '', not: '' }; return <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.ticari_unvan}</b><Rozet s="gri" c={`Öneri: ${x.oneri}`} /></div><div className="not">Talep eden: {x.isteyen}</div>
+      <label htmlFor={`hg-${x.kimlik}`}>Görüş</label><select id={`hg-${x.kimlik}`} value={v.gorus} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, gorus: e.target.value } })}><option value="">Seçiniz</option><option>Uygun</option><option>Koşullu</option><option>Uygun Değil</option></select>
+      <label htmlFor={`hn-${x.kimlik}`}>Gerekçe</label><input id={`hn-${x.kimlik}`} value={v.not} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, not: e.target.value } })} />
+      <button className="btn2 kucuk" disabled={!v.gorus || (v.gorus !== 'Uygun' && !v.not.trim())} onClick={() => void istek(`/firma-hukuk-gorusu/${x.kimlik}/gonder`, v).then(() => { setM('Görüş talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>; })}</>;
 }
 
 /** YG-1648: Süresi Dolmuş Zorunlu Belge (Acil, aktif firmada). */

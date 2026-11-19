@@ -113,6 +113,7 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     expect((await o.ist('POST', `/api/uygunsuzluk/${n}/tasarruf`, kk, { karar: 'Düzeltme' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/uygunsuzluk/${n}/tasarruf`, kk, { karar: 'Düzeltme', ihbar: '2026-11-03', mahsup: 'M1' })).statusCode).toBe(200);
     await o.sup.query(`UPDATE uygunsuzluk SET hedef_zamani = now() - interval '1 hour' WHERE kimlik = $1`, [n]);
+    expect(Array.isArray((await o.ist('GET', '/api/kalite/kritik-uygunsuzluklar', await o.gir('km'))).json())).toBe(true); expect((await o.ist('GET', '/api/kalite/kritik-uygunsuzluklar', await o.gir('ds'))).statusCode).toBe(404); // T-YG1693
     await kaliteSureIsle(o.db); await kaliteSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Uygunsuzluk Süre Aşımı' AND nesne_kimligi = $1`, [n])).rows[0].n).toBe(1);
     { // T-YG1689: haftalık uygunsuzluk süre raporu Pazartesi, haftada bir

@@ -71,7 +71,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const genel = ustAd.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı');
     const zincirde = genel || ustAd.some((r) => r.kademe === 'Direktör') ? (await b.db.query(
       `SELECT ${SECIM}, (SELECT rol_adi FROM rol WHERE kimlik = k.zincir[k.kademe + 1]) AS makam FROM is_karti k
-        WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.hazirlayan_ref IS DISTINCT FROM $2 AND NOT k.tur = ANY($3) AND NOT k.zincir[k.kademe + 1] = ANY($1) AND ($4 OR k.zincir && $1::text[]) ORDER BY k.olusturma_zamani LIMIT 50`, [roller, kullanici, [...MESLEKI], genel])).rows : undefined; // YG-1580: silsile bölümü yalnız Direktör ve üstüne
+        WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND k.hazirlayan_ref IS DISTINCT FROM $2 AND NOT k.tur = ANY($3) AND NOT k.zincir[k.kademe + 1] = ANY($1) AND ($4 OR k.zincir && $1::text[]) ORDER BY k.olusturma_zamani DESC LIMIT 100`, [roller, kullanici, [...MESLEKI], genel])).rows : undefined; // YG-1580: silsile bölümü yalnız Direktör ve üstüne
     return { zincirde, onay: onay.rows, islem: islem.rows.filter((r) => r.kategori === 'islem'), gorev: islem.rows.filter((r) => r.kategori === 'gorev'), iade: iade.rows, gonderilmis: gonderilmis.rows };
   }
 

@@ -55,6 +55,35 @@ export function eskalasyonTuru(t: { guvenlik: boolean; kritik_surec: boolean; hi
 }
 
 /** YG-1410: yanıt ve çözüm süresi aşılınca BT yönetimi bir kez uyarılır. */
+/** YG-1641: ay başında önceki ayın destek istatistiği (seviyeye göre açılan, kapanan, yanıt ve çözüm süresi uyumu, ortalama çözüm süresi) Destek Sorumlusuna görev olarak; bir kez. */
+export async function destekAylikIstatistik(db: Pool, simdi = new Date()): Promise<boolean> {
+  const ist = new Date(simdi.getTime() + 3 * 3_600_000); const bas = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() - 1, 1)); const bit = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1));
+  const donem = bas.toISOString().slice(0, 7);
+  if (!(await birKez(db, 'destek_aylik', donem))) return false;
+  const p = [`${donem}-01T00:00:00+03:00`, `${bit.toISOString().slice(0, 10)}T00:00:00+03:00`];
+  const s = (await db.query(`SELECT count(*)::int acilan, count(*) FILTER (WHERE seviye = 'D1')::int d1, count(*) FILTER (WHERE seviye = 'D2')::int d2, count(*) FILTER (WHERE seviye = 'D3')::int d3, count(*) FILTER (WHERE seviye = 'D4')::int d4,
+      count(*) FILTER (WHERE cozum_zamani IS NOT NULL)::int cozulen, count(*) FILTER (WHERE yanit_zamani IS NOT NULL AND yanit_zamani <= yanit_son)::int yanit_uyum, count(*) FILTER (WHERE yanit_zamani IS NOT NULL)::int yanitli,
+      count(*) FILTER (WHERE cozum_zamani IS NOT NULL AND cozum_son IS NOT NULL AND cozum_zamani <= cozum_son)::int cozum_uyum, round(avg(extract(epoch FROM cozum_zamani - olusturma_zamani) / 3600) FILTER (WHERE cozum_zamani IS NOT NULL)::numeric, 1)::float ort_saat,
+      count(*) FILTER (WHERE kullanici_dogrulama = 'Sorun Sürüyor')::int surdu
+    FROM destek_talebi WHERE olusturma_zamani >= $1 AND olusturma_zamani < $2`, p)).rows[0];
+  const yuzde = (a: number, b2: number) => (b2 ? `%${Math.round((100 * a) / b2)}` : '—');
+  const dsr = await rolId(db, 'Bilgi İşlem Destek Sorumlusu'); const sahip = (await rolSahipleri(db, dsr)).length ? dsr : await rolId(db, 'Bilgi İşlem Müdürü');
+  await kartAc(db, { tur: 'Aylık Destek İstatistiği', kategori: 'gorev', baslik: `${donem} · Aylık Destek İstatistiği`, ozet: `Açılan ${s.acilan} (D1 ${s.d1}, D2 ${s.d2}, D3 ${s.d3}, D4 ${s.d4}) · Çözülen ${s.cozulen} · Yanıt süresi uyumu ${yuzde(s.yanit_uyum, s.yanitli)} · Çözüm süresi uyumu ${yuzde(s.cozum_uyum, s.cozulen)} · Ortalama çözüm ${s.ort_saat ?? '—'} saat · Sorun sürüyor ${s.surdu}. Değerlendirip Bilgi İşlem Müdürüne sununuz; SSS ve Akademi içerik önerisi varsa ekleyiniz.`, sahipRol: sahip, nesneTuru: 'Destek Dönemi', nesneKimligi: donem });
+  return true;
+}
+
+/** YG-1641: üç ayda bir (Ocak, Nisan, Temmuz, Ekim) zimmetteki kurumsal cihazların kontrolü LGM-VR numaralarıyla Destek Sorumlusuna görev olarak; ay sonuna kadar. */
+export async function cihazKontrolGorevi(db: Pool, simdi = new Date()): Promise<boolean> {
+  const ist = new Date(simdi.getTime() + 3 * 3_600_000); const ay = ist.getUTCMonth(); if (ay % 3 !== 0) return false;
+  const ceyrek = `${ist.getUTCFullYear()}-Q${ay / 3 + 1}`;
+  if (!(await birKez(db, 'cihaz_kontrol', ceyrek))) return false;
+  const l = (await db.query(`SELECT varlik_no FROM varlik WHERE tur = 'Cihaz' AND durum = 'Zimmette' ORDER BY varlik_no`)).rows.map((r) => r.varlik_no as string);
+  const dsr = await rolId(db, 'Bilgi İşlem Destek Sorumlusu'); const sahip = (await rolSahipleri(db, dsr)).length ? dsr : await rolId(db, 'Bilgi İşlem Müdürü');
+  const son = new Date(`${new Date(Date.UTC(ist.getUTCFullYear(), ay + 1, 0)).toISOString().slice(0, 10)}T17:00:00+03:00`);
+  await kartAc(db, { tur: 'Üç Aylık Cihaz Kontrolü', kategori: 'gorev', baslik: `${ceyrek} · Kurumsal Cihaz Kontrolü`, ozet: `${l.length} cihaz: ${l.slice(0, 40).join(', ')}${l.length > 40 ? ' …' : ''}. Ekran kilidi, şifreleme, güncelleme ve zimmet uyumunu kontrol ediniz.`, sahipRol: sahip, sonZaman: son, nesneTuru: 'Cihaz Kontrol Dönemi', nesneKimligi: ceyrek });
+  return true;
+}
+
 export async function destekSureIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;
   for (const t of (await db.query(`SELECT kimlik, talep_no, seviye, yanit_son, yanit_zamani, cozum_son, gecici_cozum_son, gecici_cozum_zamani, durum, guvenlik, kritik_surec, hizmet FROM destek_talebi WHERE durum IN ('Açık', 'Yanıtlandı')`)).rows) {

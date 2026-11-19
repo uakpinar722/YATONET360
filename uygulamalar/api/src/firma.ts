@@ -165,6 +165,25 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-360, YG-361, YG-362: statü kararını Sicil Sorumlusu hazırlar, Firma Yönetimi Müdürü verir. Kalıcı askı ve çıkarma Direktörde.
+  // YG-1697 (A51-S1): Hukuk ve Uyum Direktörü bekleyen görüşleri görür ve "Görüşü Gönder" ile talep eden role iletir.
+  const hudMu = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = 'Hukuk ve Uyum Direktörü'`, [k])).rowCount);
+  s.get('/firma-hukuk-gorusu/bekleyen', oturumlu, async (i, y) => {
+    if (!(await hudMu(i.oturum!.kullanici))) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    return (await b.db.query(`SELECT g.kimlik, k.ticari_unvan, g.oneri, h.ad_soyad isteyen, g.olusturma_zamani FROM firma_hukuk_gorusu g JOIN kurulus k ON k.kimlik = g.kurulus_ref JOIN kullanici_hesabi h ON h.kimlik = g.isteyen_ref WHERE g.durum = 'Bekliyor' ORDER BY g.olusturma_zamani`)).rows;
+  });
+  s.post('/firma-hukuk-gorusu/:id/gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gorus?: string; not?: string };
+    if (!UUID.test(id) || !(await hudMu(o.kullanici))) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    if (!['Uygun', 'Koşullu', 'Uygun Değil'].includes(g.gorus ?? '')) return y.code(400).send({ hata: 'Görüşü (Uygun, Koşullu, Uygun Değil) seçiniz.' });
+    if (g.gorus !== 'Uygun' && !g.not?.trim()) return y.code(400).send({ hata: 'Koşullu ve Uygun Değil görüşte gerekçe zorunludur.' });
+    const r = (await b.db.query(`UPDATE firma_hukuk_gorusu SET durum = 'Verildi', gorus = $2, gorus_notu = $3, veren_ref = $4, gorus_zamani = now() WHERE kimlik = $1 AND durum = 'Bekliyor' RETURNING isteyen_ref, kurulus_ref`, [id, g.gorus, g.not?.trim() || null, o.kullanici])).rows[0];
+    if (!r) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Firma Hukuk Görüşü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    const u = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [r.kurulus_ref])).rows[0];
+    await (await import('./bildirim.js')).bildir(b.db, { olay: `hukuk-gorus:${id}`, kullanicilar: [r.isteyen_ref], baslik: `${u?.ticari_unvan ?? 'Firma'} · Hukuk ve Uyum Görüşü: ${g.gorus}`, ozet: g.not?.trim() || undefined });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Hukuk Görüşü Gönderildi', nesneTuru: 'Kuruluş', nesneKimligi: r.kurulus_ref, yeni: { gorus: g.gorus }, gerekce: g.not?.trim() || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { gorus: g.gorus };
+  });
   s.post('/firma/:id/hukuk-gorusu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { oneri } = (i.body ?? {}) as { oneri?: string };
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
@@ -176,7 +195,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const t = (await c.query(`INSERT INTO firma_hukuk_gorusu (kurulus_ref, oneri, isteyen_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [id, oneri, o.kullanici])).rows[0];
-      await kartAc(c, { tur: 'Firma Hukuk Görüşü', baslik: `${u.ticari_unvan} · Hukuk ve Uyum Görüşü`, ozet: `Öneri: ${oneri}`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Hukuk ve Uyum Direktörü')], nesneTuru: 'Firma Hukuk Görüşü', nesneKimligi: t.kimlik });
+      // YG-1697: görüş onay kademesi değildir; Direktöre "Görüşü Gönder" görevi açılır.
+      await kartAc(c, { tur: 'Firma Hukuk Görüşü', kategori: 'gorev', baslik: `${u.ticari_unvan} · Hukuk ve Uyum Görüşü`, ozet: `Öneri: ${oneri}`, sahipRol: await rolId(c, 'Hukuk ve Uyum Direktörü'), nesneTuru: 'Firma Hukuk Görüşü', nesneKimligi: t.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Hukuk Görüşü İstendi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { oneri }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { durum: 'Bekliyor' };

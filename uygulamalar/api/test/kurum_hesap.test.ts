@@ -127,8 +127,14 @@ describe('firma bilgi, banka, itiraz, cari (YG-425, YG-422, K-178)', () => {
     expect((await o.ist('POST', `/api/firma/${f2}/hukuk-gorusu`, await o.gir('fym'), { oneri: 'Reddedildi' })).statusCode).toBe(409);
     expect((await st()).statusCode).toBe(409);
     const hg = (await o.sup.query(`SELECT kimlik FROM firma_hukuk_gorusu WHERE kurulus_ref = $1`, [f2])).rows[0].kimlik;
-    await o.karar((await o.kart('Firma Hukuk Görüşü', hg)).kimlik, 'hd', 'Reddet', 'Sözleşme uygun değil');
-    expect((await o.sup.query(`SELECT gorus FROM firma_hukuk_gorusu WHERE kimlik = $1`, [hg])).rows[0].gorus).toBe('Uygun Görülmedi');
+    // YG-1697 (T-YG1697): görüş onay kademesi değil, "Görüşü Gönder"
+    expect((await o.kart('Firma Hukuk Görüşü', hg)).kategori).toBe('gorev');
+    expect((await o.ist('GET', '/api/firma-hukuk-gorusu/bekleyen', await o.gir('hd'))).json().some((x: { kimlik: string }) => x.kimlik === hg)).toBe(true);
+    expect((await o.ist('POST', `/api/firma-hukuk-gorusu/${hg}/gonder`, await o.gir('hd'), { gorus: 'Uygun Değil' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/firma-hukuk-gorusu/${hg}/gonder`, await o.gir('fym'), { gorus: 'Uygun' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/firma-hukuk-gorusu/${hg}/gonder`, await o.gir('hd'), { gorus: 'Uygun Değil', not: 'Sözleşme uygun değil' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT gorus FROM firma_hukuk_gorusu WHERE kimlik = $1`, [hg])).rows[0].gorus).toBe('Uygun Değil');
+    expect((await o.kart('Firma Hukuk Görüşü', hg)).durum).toBe('Tamamlandı');
     expect((await st()).statusCode).toBe(200); // görüş bağlayıcı değildir
     expect((await st()).statusCode).toBe(409); // her karar için yeni görüş
     expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, {})).statusCode).toBe(400);
