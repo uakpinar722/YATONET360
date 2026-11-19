@@ -26,6 +26,7 @@ export const VARYANTLAR = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı'
 const KARARLI = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı', 'İtiraz İnceleme Sonucu'];
 const HAZIRLAYAN = 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı';
 const ONAYCI = 'Müşteri ve Paydaş İlişkileri Müdürü';
+const SKGD = 'Strateji ve Kurumsal Gelişim Direktörü';
 /** Bedel yat sahibine yansıtılmayan sonuçlar. */
 const BEDELSIZ = ['Haklı – Düzeltildi', 'Garanti', 'İyi Niyet', 'Üretici Garantisi'];
 const anSaat = (z: Date | string) => `${gunAy(z)} ${new Date(z).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })}`;
@@ -108,10 +109,14 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2) LIMIT 1`, [k, r])).rowCount);
-  const kayit = async (id: string, k: string) => { if (!UUID.test(id)) return null; const g = (await b.db.query(`SELECT g.*, d.dosya_no, d.dosya_sorumlusu_ref FROM garanti_sikayet g JOIN dosya d ON d.kimlik = g.dosya_ref WHERE g.kimlik = $1`, [id])).rows[0]; return g && ((await dosyaErisimi(b.db, k, g.dosya_ref)) || (await rolVar(k, [HAZIRLAYAN, ONAYCI]))) ? g : null; }; // şikâyet yönetimi müşteri ilişkileri birimindedir
+  const kayit = async (id: string, k: string) => { if (!UUID.test(id)) return null; const g = (await b.db.query(`SELECT g.*, d.dosya_no, d.dosya_sorumlusu_ref FROM garanti_sikayet g JOIN dosya d ON d.kimlik = g.dosya_ref WHERE g.kimlik = $1`, [id])).rows[0]; return g && ((await dosyaErisimi(b.db, k, g.dosya_ref)) || (await rolVar(k, [HAZIRLAYAN, ONAYCI, SKGD]))) ? g : null; }; // şikâyet yönetimi müşteri ilişkileri birimindedir
   const hazirlayabilir = async (g: Record<string, any>, k: string) => g.dosya_sorumlusu_ref === k || await rolVar(k, [HAZIRLAYAN]);
   /** İtirazı ilk kararı vermeyen üst kademe inceler: ilk karar Teknik Müdürden değilse Teknik Müdür, değilse Genel Müdür Yardımcısı. */
-  const ustKademe = async (g: Record<string, any>) => (g.karar_veren_ref && (await rolVar(g.karar_veren_ref, ['Teknik Müdür'])) ? 'Genel Müdür Yardımcısı' : 'Teknik Müdür');
+  // YG-1484: şikâyet itirazı Strateji ve Kurumsal Gelişim Direktörüne; garanti itirazı Teknik Müdüre (ilk kararı Teknik Müdür verdiyse Genel Müdür Yardımcısına). İlk kararı Direktör verdiyse Genel Müdür Yardımcısı.
+  const sikayetMi = (g: Record<string, any>) => ((g.kayit_turu ?? []) as string[]).some((t) => /^şik/i.test(t) || /^Şik/.test(t)) && !((g.kayit_turu ?? []) as string[]).some((t) => /garanti/i.test(t));
+  const ustKademe = async (g: Record<string, any>) => sikayetMi(g)
+    ? (g.karar_veren_ref && (await rolVar(g.karar_veren_ref, [SKGD])) ? 'Genel Müdür Yardımcısı' : SKGD)
+    : (g.karar_veren_ref && (await rolVar(g.karar_veren_ref, ['Teknik Müdür'])) ? 'Genel Müdür Yardımcısı' : 'Teknik Müdür');
 
   // YG-084: geri dönüşte önceki dosya, parça (tedarik ve giriş kabulü), firma (iş emri), test, teslim ve belge kanıtları tek görünümde; aynı yatın önceki dosyaları da listelenir.
   s.get('/garanti-sikayet/:id/gecmis', oturumlu, async (i, y) => {
@@ -132,7 +137,7 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
   s.get('/garanti-sikayet/:id/yanit', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
     const yazilar = (await b.db.query(`SELECT kimlik, yazi_no, varyant, durum, olusturma_zamani FROM garanti_sikayet_yazisi WHERE kayit_ref = $1 ORDER BY olusturma_zamani`, [g.kimlik])).rows;
-    return { yazilar, hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
+    return { yazilar, kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
   });
 
   s.post('/garanti-sikayet/:id/yanit-yazisi', oturumlu, async (i, y) => {
@@ -177,6 +182,17 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
     return { makam, son };
   });
 
+  // YG-1701 (A53-S2): tekrarlayan şikâyette Müşteri ve Paydaş İlişkileri Müdürü sistemsel neden incelemesi için Kalite Müdürüne yönlendirir.
+  s.post('/garanti-sikayet/:id/kaliteye-yonlendir', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
+    const { aciklama } = (i.body ?? {}) as { aciklama?: string };
+    if (!(await rolVar(o.kullanici, [ONAYCI]))) return y.code(403).send({ hata: `Kaliteye yönlendirmeyi ${ONAYCI} yapar.` });
+    if (!aciklama?.trim()) return y.code(400).send({ hata: 'Yönlendirme gerekçesini yazınız.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Sistemsel Neden İncelemesi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.kimlik])).rowCount) return y.code(409).send({ hata: 'Kayıt Kaliteye yönlendirilmiştir.' });
+    await kartAc(b.db, { tur: 'Sistemsel Neden İncelemesi', kategori: 'gorev', baslik: `${g.kayit_no} · Tekrarlayan Şikâyet · Sistemsel Neden İncelemesi`, ozet: aciklama.trim().slice(0, 300), oncelik: 'Yüksek', sahipRol: await rolId(b.db, 'Kalite Müdürü'), nesneTuru: 'Garanti Şikâyet', nesneKimligi: g.kimlik });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kaliteye Yönlendirildi', nesneTuru: 'Dosya', nesneKimligi: g.dosya_ref, gerekce: aciklama.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/garanti-sikayet/:id/itiraz-karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
     const { sonuc, gerekce } = (i.body ?? {}) as { sonuc?: string; gerekce?: string };

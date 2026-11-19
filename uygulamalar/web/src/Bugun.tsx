@@ -237,6 +237,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
           <div className="not">{t.tpl_kod} · {t.katilimci} katılımcı · {t.kapanis_bekliyor ? 'Kararları ve tutanağı Toplantılar sayfasından kaydedip toplantıyı kapatınız.' : 'Başkanı olduğunuz toplantı.'}</div>
         </div>)}</>}
 
+      {ben.roller.some((r) => ['Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı'].includes(r.rol_adi)) && <AskiAcikIsler />}
+      {ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu') && <SuresiDolmusBelgeler />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -288,6 +290,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => r.rol_adi === 'Teknik Uzman') && <Raporlarim />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKalitePlanlari />}
+      {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Kalite Yöneticisi'].includes(r.rol_adi)) && <KalibrasyonEnvanteri />}
       {ben.roller.some((r) => ['Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Tedarik Sorumlusu') && <TedarikSorumlusuPano />}
       {ben.roller.some((r) => ['Muhasebe ve Finans Müdürü', 'Ticari İşler Direktörü'].includes(r.rol_adi)) && <MaliErkenUyarilar />}
@@ -443,6 +446,37 @@ function EksikKalitePlanlari() {
     {l.length === 0 ? <Bos m="İş emri açılan dosyalarda eksik kalite belgesi bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.dosya_no} · {x.yat_adi}</b>{x.bildirim && <Rozet s="gri" c={`Bildirildi ${new Date(x.bildirim).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}`} />}</div>
       <div className="not">Eksik: {[x.plan_yok && 'Kalite Planı', x.matris_yok && 'Kabul Matrisi', x.itp_yok && 'Muayene ve Test Planı'].filter(Boolean).join(', ')}</div>
       <button className="btn2 kucuk" onClick={() => void istek(`/dosya/${x.kimlik}/kalite-eksikligi-bildir`, {}).then(() => { setM('Eksiklik Teknik Uzman ve Teknik Yöneticiye bildirildi.'); return yk(); }).catch((e) => setM(e.message))}>Eksikliği Bildir</button></div>)}</>;
+}
+
+/** YG-1648: Süresi Dolmuş Zorunlu Belge (Acil, aktif firmada). */
+function SuresiDolmusBelgeler() {
+  const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; tur: string; gecerlilik_bitis: string; engelleyici: boolean }[]>([]);
+  useEffect(() => { void istek<typeof l>('/sicil/suresi-dolmus-belgeler').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Acil</div>{l.map((x) => <div key={x.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>Süresi Dolmuş Zorunlu Belge · {x.ticari_unvan}</b><Rozet s="kirmizi" c="Acil" /></div>
+    <div className="not">{x.tur} · Bitiş: {x.gecerlilik_bitis.split('-').reverse().join('.')}{x.engelleyici ? ' · Yeni iş emri verilmez, hakediş ödemesi bekletilir.' : ''}</div></div>)}</>;
+}
+
+/** YG-1654: Geçici Askıdaki Firmanın Açık Dosyaları (Acil, sayaçsız). */
+function AskiAcikIsler() {
+  const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; is_emri_no: string; statu: string; dosya_no: string; oneri: string; dosya_sorumlusu: string | null }[]>([]);
+  useEffect(() => { void istek<typeof l>('/aski/acik-isler').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Acil</div>{[...new Set(l.map((x) => x.ticari_unvan))].map((f) => <div key={f} className="ozet kart-sol hata"><div className="ust2"><b>Geçici Askıdaki Firmanın Açık Dosyaları · {f}</b><Rozet s="kirmizi" c="Acil" /></div>
+    {l.filter((x) => x.ticari_unvan === f).map((x) => <div key={x.kimlik} className="not">{x.dosya_no} · {x.is_emri_no} ({x.statu}) · Öneri: {x.oneri}{x.dosya_sorumlusu ? ` · Karar: ${x.dosya_sorumlusu}` : ''}</div>)}</div>)}</>;
+}
+
+/** YG-1691: Kalibrasyon Envanteri. */
+function KalibrasyonEnvanteri() {
+  const [l, setL] = useState<{ kimlik: string; ad: string; seri_no: string; gecerlilik_sonu: string; kalan_gun: number; kritik: boolean; ara_dogrulama_tarihi: string | null; durum: string; kalibrasyon_kurulusu: string | null }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>('/olcum-cihazi').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  const tr = (x: string) => x.split('-').reverse().join('.');
+  const uyari = l.filter((x) => x.durum === 'Karantina' || x.kalan_gun <= 60).length;
+  return <details><summary>Kalibrasyon Envanteri · {l.length} cihaz{uyari ? ` · ${uyari} uyarı` : ''}</summary>
+    {l.length === 0 ? <div className="ozet bos">Kayıtlı ölçüm cihazı bulunmamaktadır.</div> : <div className="tablo"><table className="kartli"><thead><tr><th>Cihaz</th><th>Seri No</th><th>Geçerlilik Sonu</th><th>Durum</th><th>Ara Doğrulama</th></tr></thead>
+      <tbody>{l.map((x) => <tr key={x.kimlik}><td data-ad="Cihaz">{x.ad}{x.kritik ? ' · Kritik' : ''}</td><td data-ad="Seri No">{x.seri_no}</td><td data-ad="Geçerlilik Sonu">{tr(x.gecerlilik_sonu)} {x.kalan_gun < 0 ? <Rozet s="kirmizi" c="Süresi Geçti" /> : x.kalan_gun <= 30 ? <Rozet s="kirmizi" c={`${x.kalan_gun} gün`} /> : x.kalan_gun <= 60 ? <Rozet s="sari" c={`${x.kalan_gun} gün`} /> : null}</td><td data-ad="Durum">{x.durum}</td><td data-ad="Ara Doğrulama">{x.kritik ? (x.ara_dogrulama_tarihi ? tr(x.ara_dogrulama_tarihi) : 'Kayıt yok') : '—'}</td></tr>)}</tbody></table></div>}
+  </details>;
 }
 
 /** YG-1610: Masraf Belge Kontrolü; fiş ayrıntısı, "Uygundur" (sonraki makama) ve "Gerekçeyle İade Et". */

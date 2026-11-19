@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cihazGecerli, gazUygun, kabulEngeli, kaliteSureIsle, ncrHedefi, sinifEngeli } from '../src/kalite.js';
+import { cihazGecerli, gazUygun, kabulEngeli, kaliteSureIsle, ncrHedefi, sinifEngeli, uygunsuzlukHaftalikRapor } from '../src/kalite.js';
 import { eslestir } from '../src/tedarik.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
@@ -69,6 +69,16 @@ describe('kalite planı (YG-288)', () => {
   });
 });
 describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
+  it('kontrolörsüz dosyada atama görevi Kalite Yöneticisi/Müdürüne 24 saat süreli açılır, atamayla kapanır (T-YG1687)', async () => {
+    const d = await dosya(); const tu = await o.gir('tu'); const G = [{ gereklilik: 'Sızdırmazlık', dogrulama: 'Basınç testi' }];
+    await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1 AND rol = 'Kalite Kontrolör'`, [d.kimlik]);
+    const p = await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'B', ozet: 'Ö', risk: 'Orta', teknikKaynak: 'ISO 12215', gereklilikler: G }); expect(p.statusCode, p.body).toBe(200);
+    const kp = await o.kart('Kalite Planı', p.json().kimlik); for (const k of ['ty', 'tm']) { if ((await o.kart('Kalite Planı', p.json().kimlik)).durum !== 'Bekliyor') break; await o.karar(kp.kimlik, k, (await o.sup.query(`SELECT kademe = cardinality(zincir) - 1 son FROM is_karti WHERE kimlik = $1`, [kp.kimlik])).rows[0].son ? 'Onayla' : 'Onaya Gönder'); }
+    const ka = await o.kart('Kalite Kontrolör Ataması', d.kimlik); expect(ka.durum).toBe('Bekliyor');
+    expect(Math.round((new Date(ka.son_zaman).getTime() - Date.now()) / 3_600_000)).toBeLessThanOrEqual(24);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Kalite Kontrolör', kullanici: o.K.kk })).statusCode).toBe(200);
+    expect((await o.kart('Kalite Kontrolör Ataması', d.kimlik)).durum).toBe('Tamamlandı');
+  });
   it('Kritik işi durdurur, Olduğu Gibi Kabul yok, son karar Kalite Müdürü; kök neden ve kanıtla kapanır; emniyet işaretliyse işi Teknik Müdür başlatır', async () => {
     const d = await dosya(); const e = await isEmri(d);
     const r = await ncr(d, { sinif: 'Kritik', emniyet: true, isEmri: e });
@@ -105,6 +115,11 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     await o.sup.query(`UPDATE uygunsuzluk SET hedef_zamani = now() - interval '1 hour' WHERE kimlik = $1`, [n]);
     await kaliteSureIsle(o.db); await kaliteSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Uygunsuzluk Süre Aşımı' AND nesne_kimligi = $1`, [n])).rows[0].n).toBe(1);
+    { // T-YG1689: haftalık uygunsuzluk süre raporu Pazartesi, haftada bir
+      expect(await uygunsuzlukHaftalikRapor(o.db, new Date('2030-01-08T06:00:00Z'))).toBe(false); // Salı
+      expect(await uygunsuzlukHaftalikRapor(o.db, new Date('2030-01-07T06:00:00Z'))).toBe(true); expect(await uygunsuzlukHaftalikRapor(o.db, new Date('2030-01-07T09:00:00Z'))).toBe(false);
+      expect((await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Haftalık Uygunsuzluk Süre Raporu' ORDER BY olusturma_zamani DESC LIMIT 1`)).rows[0].ozet).toMatch(/Süresi geçen \d+/);
+    }
     expect((await o.ist('POST', `/api/uygunsuzluk/${n}/kapat`, kk, { sonuc: 'Uygun', kanit: await o.belge(d.kimlik, 'ds') })).json().statu).toBe('Kapalı');
   });
 });
@@ -115,6 +130,8 @@ describe('test (YG-286, YG-396, YG-397)', () => {
     expect((await o.ist('POST', '/api/olcum-cihazi', await o.gir('tu'), { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01' })).statusCode).toBe(400); // T-YG402-TURKAK
     const c = (await o.ist('POST', '/api/olcum-cihazi', await o.gir('tu'), { ad: 'Termometre', seri: `S${Math.random()}`, tarih: '2020-01-01', turkak: true })).json().kimlik;
     expect((await o.ist('POST', u, tu, { ...T, cihazlar: [c] })).json().hata).toContain('kalibrasyonu');
+    { const env = (await o.ist('GET', '/api/olcum-cihazi', await o.gir('km'))).json(); expect(env.find((x: { kimlik: string }) => x.kimlik === c)).toMatchObject({ gecerlilik_sonu: '2021-01-01' }); expect(env.find((x: { kimlik: string }) => x.kimlik === c).kalan_gun).toBeLessThan(0); } // T-YG1691
+    expect((await o.ist('GET', '/api/olcum-cihazi', await o.gir('ds'))).statusCode).toBe(404);
     const t = await o.ist('POST', u, tu, T);
     expect(t.statusCode, t.body).toBe(200); expect(t.json().testNo).toBe(`${d.dosyaNo}-TS01`);
     const id = t.json().kimlik; const ham = await o.belge(d.kimlik, 'ds');

@@ -117,5 +117,33 @@ export function IkYonetimi({ yap }: { yap: Yap }) {
       {yt.isg && x.isveren !== 'LGM' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-kazasi/${x.olay_ref}/belge-iste`, {}).then(() => ({ uyari: 'Belge istendi.' })))}>Belge İste</button>}
       {yt.ik && x.isveren === 'LGM' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-kazasi/${x.olay_ref}/sgk`, { tarih: new Date().toISOString().slice(0, 10) }).then(() => { yk(yt); return { uyari: 'SGK bildirimi kaydedildi.' }; }))}>SGK Bildirimi Yapıldı</button>}
     </div></div>)}
+    <IsgKayitlari yap={yap} />
   </>);
+}
+
+/** YG-1670: sağlık gözetimi (yalnız muayene tarihi ve sonuç) ve OSGB yazışma kaydı. İK yalnız sonuçları görür. */
+function IsgKayitlari({ yap }: { yap: Yap }) {
+  const [v, setV] = useState<{ isg: boolean; personel: { kimlik: string; ad_soyad: string }[]; gozetim: { kimlik: string; ad_soyad: string; muayene_tarihi: string; sonuc: string; sonraki_muayene: string | null }[]; osgb: { kimlik: string; yon: string; konu: string; tarih: string }[] } | null>(null);
+  const [sg, setSg] = useState({ personel: '', tarih: '', sonuc: '', sonraki: '' }); const [os, setOs] = useState({ yon: "OSGB'den Gelen", konu: '', tarih: '' });
+  const yk = () => istek<NonNullable<typeof v>>('/isg/kayitlar').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const tr = (x: string) => x.split('-').reverse().join('.');
+  return <>
+    <div className="bolum">Sağlık Gözetimi</div>
+    <div className="not">Yalnız muayene tarihi ve sonuç kaydedilir; tanı veya sağlık bilgisi yazılmaz.</div>
+    {v.gozetim.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad_soyad} · {tr(x.muayene_tarihi)} · {x.sonuc}{x.sonraki_muayene ? ` · Sonraki: ${tr(x.sonraki_muayene)}` : ''}</span></div>)}
+    {v.isg && <>
+      <label htmlFor="sg-p">Personel</label><select id="sg-p" value={sg.personel} onChange={(e) => setSg({ ...sg, personel: e.target.value })}><option value="">Seçiniz</option>{v.personel.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+      <div className="iki-tarih"><div><label htmlFor="sg-t">Muayene Tarihi</label><input id="sg-t" type="date" value={sg.tarih} onChange={(e) => setSg({ ...sg, tarih: e.target.value })} /></div><div><label htmlFor="sg-s">Sonraki Muayene</label><input id="sg-s" type="date" value={sg.sonraki} onChange={(e) => setSg({ ...sg, sonraki: e.target.value })} /></div></div>
+      <label htmlFor="sg-r">Sonuç</label><select id="sg-r" value={sg.sonuc} onChange={(e) => setSg({ ...sg, sonuc: e.target.value })}><option value="">Seçiniz</option><option>Çalışmaya Uygun</option><option>Çalışmaya Uygun Değil</option></select>
+      <button className="btn2" disabled={!sg.personel || !sg.tarih || !sg.sonuc} onClick={() => void yap(() => istek('/isg/saglik-gozetimi', { ...sg, sonraki: sg.sonraki || undefined }).then(() => { setSg({ personel: '', tarih: '', sonuc: '', sonraki: '' }); void yk(); return { uyari: 'Sağlık gözetimi kaydedildi.' }; }))}>Kaydet</button>
+      <div className="bolum">OSGB Yazışmaları</div>
+      {v.osgb.map((x) => <div className="soru" key={x.kimlik}><span>{tr(x.tarih)} · {x.yon} · {x.konu}</span></div>)}
+      <label htmlFor="os-y">Yön</label><select id="os-y" value={os.yon} onChange={(e) => setOs({ ...os, yon: e.target.value })}><option>OSGB'den Gelen</option><option>OSGB'ye İletilen</option></select>
+      <label htmlFor="os-k">Konu</label><input id="os-k" value={os.konu} onChange={(e) => setOs({ ...os, konu: e.target.value })} />
+      <label htmlFor="os-t">Tarih</label><input id="os-t" type="date" value={os.tarih} onChange={(e) => setOs({ ...os, tarih: e.target.value })} />
+      <button className="btn2" disabled={!os.konu.trim() || !os.tarih} onClick={() => void yap(() => istek('/isg/osgb', os).then(() => { setOs({ ...os, konu: '', tarih: '' }); void yk(); return { uyari: 'OSGB yazışması kaydedildi.' }; }))}>Kaydet</button>
+    </>}
+  </>;
 }

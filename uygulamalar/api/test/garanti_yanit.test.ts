@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { garantiYanitTanim, sikayetHaftalikIsle } from '../src/garanti_yanit.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', mpy: 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', opm: 'Operasyon Müdürü', oy: 'Operasyon Yöneticisi', tu: 'Teknik Uzman' };
+const KADRO = { ds: 'Dosya Sorumlusu', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', mpy: 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', opm: 'Operasyon Müdürü', oy: 'Operasyon Yöneticisi', tu: 'Teknik Uzman', skg: 'Strateji ve Kurumsal Gelişim Direktörü', km: 'Kalite Müdürü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test119', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -30,11 +30,17 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     const t = (await garantiYanitTanim(o.db, r.json().kimlik)).t; const j = JSON.stringify(t);
     expect(t.matbuBas![1]).toBe('KONU: ŞİKÂYETİNİZE YANIT 25.11.2026 tarihinde ilettiğiniz şikâyetiniz kayda alınmış, incelenmiş ve sonucu aşağıda bilgilerinize sunulmuştur. Yaşadığınız olumsuzluk için üzgünüz.');
     expect(j).toContain('186.000,00 TL’ye kadar'); expect(j).toContain('05.12.2026 tarihinden itibaren yeniden 12 ay'); expect(j).toContain('Tarafınıza yansıtılmamıştır'); expect(j).toContain('Takip Kontrolü');
-    // itiraz: ilk karar Teknik Yöneticiden; üst kademe Teknik Müdür, 120 saat
+    // itiraz (YG-1484): şikâyet itirazı Strateji ve Kurumsal Gelişim Direktörüne, 120 saat
     const it = (await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz`, ds, { aciklama: 'Renk hâlâ farklı' })).json();
-    expect(it.makam).toBe('Teknik Müdür'); expect(new Date(it.son).getTime() - Date.now()).toBeGreaterThan(119 * 3_600_000);
-    expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('ty'), { sonuc: 'Ret', gerekce: 'G' })).statusCode).toBe(403);
-    expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('tm'), { sonuc: 'Kısmen Kabul', gerekce: 'Ek rötuş' })).statusCode).toBe(200);
+    expect(it.makam).toBe('Strateji ve Kurumsal Gelişim Direktörü'); expect(new Date(it.son).getTime() - Date.now()).toBeGreaterThan(119 * 3_600_000);
+    expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('tm'), { sonuc: 'Ret', gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('skg'), { sonuc: 'Kısmen Kabul', gerekce: 'Ek rötuş' })).statusCode).toBe(200);
+    { // T-YG1701: Kaliteye Yönlendir
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/kaliteye-yonlendir`, await o.gir('mpy'), { aciklama: 'X' })).statusCode).toBe(403);
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/kaliteye-yonlendir`, await o.gir('mpm'), { aciklama: 'Aynı boya şikâyeti üçüncü kez' })).statusCode).toBe(200);
+      expect(await o.kart('Sistemsel Neden İncelemesi', g)).toBeDefined();
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/kaliteye-yonlendir`, await o.gir('mpm'), { aciklama: 'Y' })).statusCode).toBe(409);
+    }
     const r2 = await o.ist('POST', `/api/garanti-sikayet/${g}/yanit-yazisi`, ds, { varyant: 'İtiraz İnceleme Sonucu', inceleme: 'Üst kademe inceledi.' });
     expect(r2.json().yaziNo).toBe(`${d.dosyaNo}-SK01-Y2`);
     expect((await garantiYanitTanim(o.db, r2.json().kimlik)).t.matbuBas![1]).toMatch(/^KONU: İTİRAZINIZIN İNCELEME SONUCU \d{2}\.\d{2}\.\d{4} tarihinde ilettiğiniz itirazınız/);

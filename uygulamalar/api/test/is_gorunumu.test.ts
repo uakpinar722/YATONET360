@@ -35,6 +35,10 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     const v = (await o.ist('GET', '/api/operasyon-pano', await o.gir('opm'))).json();
     expect(v.dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
     expect(v.mudahale.some((x: { tur: string }) => x.tur === 'Beklemede 10. Gün')).toBe(true);
+    { // T-YG1484-IZLEME: önemli şikâyet Operasyon Müdürü panosunda
+      await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, sikayet_konusu, olusturan_ref) VALUES ($1,$2,'{Şikâyet}','Telefon',now(),'Yüksek','Gecikme',$3)`, [`${d.dosyaNo}-SK99`, d.kimlik, o.K.ds]);
+      expect((await o.ist('GET', '/api/operasyon-pano', await o.gir('opm'))).json().mudahale.some((x: { tur: string }) => x.tur === 'Önemli Şikâyet')).toBe(true);
+    }
     expect(v.ekip[0]).toMatchObject({ ust: 25 }); expect(Array.isArray(v.kuyruk)).toBe(true); // YG-1584
     { // T-YG1583: Kapanış Bekleyenler (nihai kapanış özeti onayda)
       await o.sup.query(`INSERT INTO nihai_kapanis_ozeti (dosya_ref) VALUES ($1)`, [d.kimlik]);

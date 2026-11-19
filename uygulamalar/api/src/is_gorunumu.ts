@@ -151,6 +151,9 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
       ...(await b.db.query(`SELECT k.baslik, k.son_zaman, 'Gönderilmemiş İlerleme Özeti' tur FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.tur = 'İlerleme Özetini Gönder' AND k.son_zaman < now() AND k.nesne_kimligi = ANY($1::text[]) LIMIT 50`, [ids])).rows,
       ...(await b.db.query(`SELECT d.dosya_no || ' · Beklemede ' || (current_date - x.olusturma_zamani::date) || '. gün · ' || x.neden baslik, x.hedef_tarih::text son_zaman, 'Beklemede 10. Gün' tur FROM beklemede_isareti x JOIN dosya d ON d.kimlik = x.dosya_ref WHERE x.kaldirilma_zamani IS NULL AND x.olusturma_zamani <= now() - interval '10 days' AND x.dosya_ref = ANY($1::uuid[])`, [ids])).rows,
     ];
+    // YG-1484: önemli (Kritik veya Yüksek öncelikli) açık şikâyet Operasyon Müdürlüğünce izlenir.
+    if (mudur) mudahale.push(...(await b.db.query(`SELECT d.dosya_no || ' · ' || g.kayit_no || ' · ' || coalesce(g.sikayet_konusu, '') baslik, g.yanit_son::text son_zaman, 'Önemli Şikâyet' tur FROM garanti_sikayet g JOIN dosya d ON d.kimlik = g.dosya_ref
+      WHERE g.statu <> 'Kapalı' AND g.oncelik IN ('Kritik', 'Yüksek') AND EXISTS (SELECT 1 FROM unnest(g.kayit_turu) x WHERE x ILIKE 'şik%' OR x ILIKE 'Şik%') ORDER BY g.olusturma_zamani LIMIT 20`)).rows);
     const ekip = (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi = 'Dosya Sorumlusu' AND h.hesap_durumu = 'Aktif' ORDER BY h.ad_soyad`)).rows;
     const { kapasiteYuku, KAPASITE } = await import('./dosya.js'); const ust = KAPASITE['Dosya Sorumlusu'] ?? 25;
     for (const e of ekip) e.yuk = await kapasiteYuku(b.db, e.kimlik, 'Dosya Sorumlusu');

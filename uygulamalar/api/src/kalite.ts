@@ -82,8 +82,23 @@ export async function kabulEngeli(db: Db, e: { kimlik: string; dosya_ref: string
 }
 
 /** YG-287, YG-290, YG-395: süre işleyici. */
+/** YG-1689: her Pazartesi (İstanbul) haftalık uygunsuzluk süre raporu görevi; açık, süresi geçen, 48 saat içinde dolacak ve sınıf dağılımı özetlenir. Haftada bir kez. */
+export async function uygunsuzlukHaftalikRapor(db: Pool, simdi = new Date()): Promise<boolean> {
+  const ist = new Date(simdi.getTime() + 3 * 3_600_000); if (ist.getUTCDay() !== 1) return false;
+  const { birKez } = await import('./bildirim.js'); const { haftaAnahtari } = await import('./uyum_tarama.js');
+  if (!(await birKez(db, 'uygunsuzluk_haftalik', haftaAnahtari(simdi)))) return false;
+  const s = (await db.query(`SELECT count(*)::int acik, count(*) FILTER (WHERE hedef_zamani < $1)::int gecen, count(*) FILTER (WHERE hedef_zamani BETWEEN $1 AND $1::timestamptz + interval '48 hours')::int yaklasan,
+      count(*) FILTER (WHERE sinif = 'Kritik')::int kritik, count(*) FILTER (WHERE sinif = 'Majör')::int major, count(*) FILTER (WHERE sinif = 'Minör')::int minor
+    FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz')`, [simdi])).rows[0];
+  const kmy = await rolId(db, 'Kalite Müdür Yardımcısı'); const sahip = (await rolSahipleri(db, kmy)).length ? kmy : await rolId(db, KM);
+  const son = new Date(simdi.getTime() + 8 * 3_600_000);
+  await kartAc(db, { tur: 'Haftalık Uygunsuzluk Süre Raporu', kategori: 'gorev', baslik: `${haftaAnahtari(simdi)} · Haftalık Uygunsuzluk Süre Raporu`, ozet: `Açık ${s.acik} (Kritik ${s.kritik}, Majör ${s.major}, Minör ${s.minor}) · Süresi geçen ${s.gecen} · 48 saat içinde dolacak ${s.yaklasan}. Süresi geçenlerde sorumlularla görüşüp gerekirse Kalite Müdürüne iletiniz.`, oncelik: s.gecen ? 'Yüksek' : 'Normal', sahipRol: sahip, sonZaman: son, nesneTuru: 'Uygunsuzluk Haftası', nesneKimligi: haftaAnahtari(simdi) });
+  return true;
+}
+
 export async function kaliteSureIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;
+  if (await uygunsuzlukHaftalikRapor(db, simdi)) n++;
   for (const u of (await db.query(`SELECT u.kimlik, u.uygunsuzluk_no, u.sinif FROM uygunsuzluk u WHERE u.hedef_zamani < $1 AND u.statu NOT IN ('Kapalı', 'Geçersiz') AND NOT EXISTS (SELECT 1 FROM is_karti k WHERE k.tur = 'Uygunsuzluk Süre Aşımı' AND k.nesne_kimligi = u.kimlik::text)`, [simdi])).rows) {
     await kartAc(db, { tur: 'Uygunsuzluk Süre Aşımı', kategori: 'islem', baslik: `${u.uygunsuzluk_no} · Süre Aşımı`, ozet: u.sinif, oncelik: 'Yüksek', sahipRol: await rolId(db, KM), nesneTuru: 'Uygunsuzluk', nesneKimligi: u.kimlik }); n++;
   }
@@ -102,10 +117,13 @@ kapanisKaydet('Koşullu Kabul Uzatma', async (c, k, karar) => {
 
 kapanisKaydet('Kalite Planı', async (c, k, karar) => {
   if (karar === 'Onayla') {
-    const p = (await c.query(`UPDATE kalite_plani p SET durum = 'Onaylı' FROM dosya d WHERE p.kimlik = $1 AND d.kimlik = p.dosya_ref RETURNING p.dosya_ref, p.kabul_sinifi, d.dosya_no`, [k.nesne_kimligi])).rows[0];
+    const p = (await c.query(`UPDATE kalite_plani p SET durum = 'Onaylı' FROM dosya d WHERE p.kimlik = $1 AND d.kimlik = p.dosya_ref RETURNING p.dosya_ref, p.kabul_sinifi, d.dosya_no, d.oncelik`, [k.nesne_kimligi])).rows[0];
     // YG-1485: kabul sınıflı planda Kalite Kontrolör atanmamışsa Kalite Müdürüne atama görevi açılır.
-    if (p && !(await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Kalite Kontrolör' AND bitis_zamani IS NULL`, [p.dosya_ref])).rowCount)
-      await kartAc(c, { tur: 'Kalite Kontrolör Ataması', kategori: 'islem', baslik: `${p.dosya_no} · Kalite Kontrolör Ata`, ozet: `${p.kabul_sinifi} sınıfı kalite planı onaylandı`, sahipRol: await rolId(c, KM), nesneTuru: 'Dosya', nesneKimligi: p.dosya_ref });
+    // YG-1687: görev Kalite Yöneticisine (atanmamışsa Kalite Müdürüne); 24 saat, Kritik dosyada 8 saat ve Kritik öncelik.
+    if (p && !(await c.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Kalite Kontrolör' AND bitis_zamani IS NULL`, [p.dosya_ref])).rowCount) {
+      const ky = await rolId(c, 'Kalite Yöneticisi'); const kritik = p.oncelik === 'Kritik';
+      await kartAc(c, { tur: 'Kalite Kontrolör Ataması', kategori: 'islem', baslik: `${p.dosya_no} · Kalite Kontrolör Ata`, ozet: `${p.kabul_sinifi} sınıfı kalite planı onaylandı`, oncelik: kritik ? 'Kritik' : 'Yüksek', sonZaman: new Date(Date.now() + (kritik ? 8 : 24) * 3_600_000), sahipRol: (await rolSahipleri(c, ky)).length ? ky : await rolId(c, KM), nesneTuru: 'Dosya', nesneKimligi: p.dosya_ref });
+    }
   }
   else if (karar === 'Reddet') await c.query(`UPDATE kalite_plani SET durum = 'Reddedildi' WHERE kimlik = $1`, [k.nesne_kimligi]);
 });
@@ -365,6 +383,13 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (g.turkak !== true) return y.code(400).send({ hata: 'LGM ölçüm cihazının kalibrasyonu TÜRKAK akreditasyonlu kuruluşça yapılmış olmalıdır.' }); // YG-402
     // YG-402: kalibrasyon kabul kararı Hayır ise cihaz kendiliğinden Karantinadadır.
     return { kimlik: (await b.db.query(`INSERT INTO olcum_cihazi (ad, seri_no, kalibrasyon_tarihi, aralik_ay, kabul, kaydeden_ref, kritik, turkak_akredite, kalibrasyon_kurulusu, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,true,$8,$9) RETURNING kimlik`, [g.ad.trim(), g.seri.trim(), g.tarih, g.aralik ?? 12, g.kabul !== false, o.kullanici, Boolean(g.kritik), g.kurulus?.trim() || null, g.kabul === false ? 'Karantina' : 'Kullanımda'])).rows[0].kimlik };
+  });
+  // YG-1691: kalibrasyon envanteri; geçerlilik sonu = kalibrasyon tarihi + aralık; süresi geçen, 60 gün içinde dolan ve karantinadaki cihaz ayrıca işaretlenir.
+  s.get('/olcum-cihazi', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, [...TEKNIK, KK, KM, 'Kalite Müdür Yardımcısı', 'Kalite Yöneticisi']))) return yok(y);
+    return (await b.db.query(`SELECT kimlik, ad, seri_no, kalibrasyon_tarihi::text, aralik_ay, (kalibrasyon_tarihi + make_interval(months => aralik_ay))::date::text gecerlilik_sonu,
+        ((kalibrasyon_tarihi + make_interval(months => aralik_ay))::date - current_date) kalan_gun, kritik, ara_dogrulama_tarihi::text, durum, kalibrasyon_kurulusu
+      FROM olcum_cihazi ORDER BY (kalibrasyon_tarihi + make_interval(months => aralik_ay)), ad LIMIT 500`)).rows;
   });
   // YG-402: kritik cihazın ara doğrulaması kaydedilir.
   s.post('/olcum-cihazi/:id/ara-dogrulama', oturumlu, async (i, y) => {

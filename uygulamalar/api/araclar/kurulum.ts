@@ -36,7 +36,7 @@ const IZINLER: [string, string][] = [
   ['Bilgi İşlem Destek Sorumlusu', 'hesap_kurtarma.ac'], // A32-3
   // Dosya modülü: ihbarı Operasyon kadrosu kaydeder; ekip atamaları YG-047, YG-048; dosya.tum yönetim görünümü.
   ...['Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Operasyon Müdür Yardımcısı', 'Operasyon Müdürü', 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı'].map((r) => [r, 'ihbar.kaydet'] as [string, string]),
-  ['Operasyon Müdürü', 'dosya.ata.operasyon'], ['Teknik Müdür', 'dosya.ata.teknik'], ['Kalite Müdürü', 'dosya.ata.kalite'], ['Tedarik Yönetimi Müdürü', 'dosya.ata.tedarik'],
+  ['Operasyon Müdürü', 'dosya.ata.operasyon'], ['Teknik Müdür', 'dosya.ata.teknik'], ['Kalite Müdürü', 'dosya.ata.kalite'], ['Kalite Yöneticisi', 'dosya.ata.kalite'], ['Tedarik Yönetimi Müdürü', 'dosya.ata.tedarik'],
   ['Operasyon Müdürü', 'dosya.statu'], ['Operasyon Müdür Yardımcısı', 'dosya.statu'], ['Operasyon Yöneticisi', 'dosya.statu'],
   ...['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Ticari İşler Direktörü', 'Hukuk ve Uyum Direktörü', 'Risk ve Kalite Direktörü', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı', 'Teknik Müdür', 'Teknik Müdür Yardımcısı', 'Müşteri ve Paydaş İlişkileri Müdürü', 'İç Denetim Müdürü', 'İç Denetçi', 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Müdürü', 'Kalite Müdürü', 'Kalite Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü', 'Tedarik Müdür Yardımcısı'].map((r) => [r, 'dosya.tum'] as [string, string]),
   ...['Dosya Sorumlusu', 'Teknik Uzman', 'Teknik Yönetici', 'Operasyon Yöneticisi', 'Teknik Müdür', 'Operasyon Müdürü'].map((r) => [r, 'yat.duzelt'] as [string, string]),

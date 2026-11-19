@@ -469,6 +469,19 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-1660: geçici askı iş kararı; öneri öndeğerdir. Güvenli Durdurma iş emrini durdurur, Devir firma değiştirme görevi açar.
+  // YG-1648: aktif firmada süresi dolmuş ve aynı türde geçerli yenisi olmayan belge; SGK ve vergi borcu yazısında yeni iş emri verilmez, hakediş ödemesi bekletilir.
+  s.get('/sicil/suresi-dolmus-belgeler', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, SICIL_ROLLER))) return yok(y);
+    return (await b.db.query(`SELECT s.kimlik, k.kimlik firma, k.ticari_unvan, s.tur, s.gecerlilik_bitis::text, (s.tur ~* 'SGK|vergi borcu') engelleyici FROM sicil_belgesi s JOIN kurulus k ON k.kimlik = s.kurulus_ref
+      WHERE k.ag_statusu = 'Aktif' AND s.gecerlilik_bitis < current_date AND NOT EXISTS (SELECT 1 FROM sicil_belgesi x WHERE x.kurulus_ref = s.kurulus_ref AND x.tur = s.tur AND (x.gecerlilik_bitis IS NULL OR x.gecerlilik_bitis >= current_date))
+      ORDER BY s.gecerlilik_bitis LIMIT 100`)).rows;
+  });
+  // YG-1654: geçici askıdaki firmaların karar bekleyen açık işleri (dosya bazında öneri); Firma Yönetimi Müdürlüğü izler, kararı Dosya Sorumlusu veya Operasyon Müdürü verir.
+  s.get('/aski/acik-isler', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, [FYM, 'Firma Yönetimi Müdür Yardımcısı']))) return yok(y);
+    return (await b.db.query(`SELECT a.kimlik, k.ticari_unvan, e.is_emri_no, e.statu, d.dosya_no, a.oneri, h.ad_soyad dosya_sorumlusu, a.olusturma_zamani FROM aski_is_karari a JOIN kurulus k ON k.kimlik = a.kurulus_ref JOIN is_emri e ON e.kimlik = a.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref
+      WHERE a.karar IS NULL ORDER BY k.ticari_unvan, d.dosya_no LIMIT 100`)).rows;
+  });
   s.post('/aski-karari/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; gerekce?: string };
     if (!UUID.test(id)) return yok(y);

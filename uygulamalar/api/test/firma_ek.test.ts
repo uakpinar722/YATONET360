@@ -142,6 +142,8 @@ describe('firma portalı ve kapanış (YG-411, YG-423, YG-867, YG-1660, YG-416)'
     const r = await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { ag: 'Geçici Askıda', gerekce: 'Belge süresi doldu' }); expect(r.statusCode, r.body).toBe(200);
     const k = (await o.sup.query(`SELECT kimlik, is_emri_ref, oneri FROM aski_is_karari WHERE kurulus_ref = $1 ORDER BY oneri`, [f])).rows;
     expect(k.map((x) => x.oneri)).toEqual(['Devir', 'Ek Gözetim']);
+    expect((await o.ist('GET', '/api/aski/acik-isler', await o.gir('fym'))).json().filter((x: { kimlik: string }) => k.some((z) => z.kimlik === x.kimlik))).toHaveLength(2); // T-YG1654
+    expect((await o.ist('GET', '/api/aski/acik-isler', await o.gir('ds'))).statusCode).toBe(404);
     const ak = k.find((x) => x.is_emri_ref === aktif)!.kimlik; const bk = k.find((x) => x.is_emri_ref === bekl)!.kimlik;
     expect((await o.ist('POST', `/api/aski-karari/${ak}`, await o.gir('ds'), { karar: 'Güvenli Durdurma' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/aski-karari/${ak}`, await o.gir('ds'), { karar: 'Güvenli Durdurma', gerekce: 'Emniyet' })).statusCode).toBe(200);
@@ -200,6 +202,15 @@ describe('firma belge süresi izleme (YG-342, YG-420)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE 'sicil-belge-%'`, [o.K.sc])).rows[0].n).toBeGreaterThanOrEqual(2);
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Belge Süresi Etki Değerlendirmesi' AND nesne_kimligi = $1`, [f])).rows[0].n).toBe(1);
     const n2 = await sicilBelgeSureIsle(o.db); expect(n2).toBe(0);
+  });
+});
+describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
+  it('aktif firmada süresi dolmuş ve yenisi olmayan belge Sicil Sorumlusuna listelenir (T-YG1648)', async () => {
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, ag_statusu, kayit_asamasi) VALUES ($1,'Belgesi Dolan Tersane','Çözüm Ortağı',$2,'Aktif','Onaylı') RETURNING kimlik`, [`S-BD${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis) VALUES ($1,'SGK Borcu Yoktur Yazısı','2020-01-01'),($1,'Mesleki Sorumluluk Sigortası','2020-01-01'),($1,'Mesleki Sorumluluk Sigortası','2099-01-01')`, [f]);
+    const l = (await o.ist('GET', '/api/sicil/suresi-dolmus-belgeler', await o.gir('sc'))).json().filter((x: { firma: string }) => x.firma === f);
+    expect(l).toHaveLength(1); expect(l[0]).toMatchObject({ tur: 'SGK Borcu Yoktur Yazısı', engelleyici: true });
+    expect((await o.ist('GET', '/api/sicil/suresi-dolmus-belgeler', await o.gir('ds'))).statusCode).toBe(404);
   });
 });
 

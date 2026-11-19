@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 const VARYANT = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı', 'İtiraz İnceleme Sonucu', 'Ara Bilgilendirme', 'Takip Kontrolü', 'Talep Yanıtı'];
-interface Durum { yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
+interface Durum { kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
 
 /** YG-728: FR-KLT-016 yanıt yazısı (6 varyant), itiraz kaydı ve üst kademe kararı. */
 export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [v, setV] = useState<Durum | null>(null); const [f, setF] = useState({ varyant: '', inceleme: '', islemler: '', duzeltme: '' });
-  const [it, setIt] = useState(''); const [ik, setIk] = useState({ sonuc: '', gerekce: '' });
+  const [it, setIt] = useState(''); const [ky, setKy] = useState(''); const [ik, setIk] = useState({ sonuc: '', gerekce: '' });
   const yukle = () => void istek<Durum>(`/garanti-sikayet/${id}/yanit`).then(setV).catch(() => setV(null));
   useEffect(yukle, [id]);
   if (!v) return null;
@@ -27,6 +27,9 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
       {v.yanitVar && !v.itiraz.zaman && <><label htmlFor={`gy-it-${id}`}>Yat Sahibinin İtirazı</label><input id={`gy-it-${id}`} value={it} onChange={(e) => setIt(e.target.value)} />
         <button className="btn2 kucuk" disabled={!it.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/itiraz`, { aciklama: it }), 'İtiraz kaydedildi; üst kademe incelemesine gönderildi.').then(yukle)}>İtirazı Kaydet</button></>}
     </>}
+    {v.kaliteYonlendirir && <>{/* YG-1701 (A53-S2): tekrarlayan şikâyette sistemsel neden incelemesi */}
+      <label htmlFor={`gy-ky-${id}`}>Kaliteye Yönlendirme Gerekçesi</label><input id={`gy-ky-${id}`} value={ky} onChange={(e) => setKy(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!ky.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/kaliteye-yonlendir`, { aciklama: ky }), 'Kayıt sistemsel neden incelemesi için Kalite Müdürüne yönlendirildi.').then(() => setKy(''))}>Kaliteye Yönlendir</button></>}
     {v.itirazKarar && <>
       <label htmlFor={`gy-is-${id}`}>İtiraz Sonucu</label><select id={`gy-is-${id}`} value={ik.sonuc} onChange={(e) => setIk({ ...ik, sonuc: e.target.value })}><option value="">Seçiniz</option>{['Kabul', 'Kısmen Kabul', 'Ret'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor={`gy-ig-${id}`}>İtiraz Gerekçesi</label><input id={`gy-ig-${id}`} value={ik.gerekce} onChange={(e) => setIk({ ...ik, gerekce: e.target.value })} />
