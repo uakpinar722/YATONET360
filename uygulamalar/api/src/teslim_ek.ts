@@ -322,6 +322,32 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-458: portaldan garanti talebi; kayıt Dosya Sorumlusu tarafından açılır.
+  /** YG-1079: teslim sonrası arıza bildirimi; bildiren taraf özete yazılır, Dosya Sorumlusuna Garanti Talebi görevi açılır. */
+  const arizaBildir = async (id: string, belirti: string, bildiren: string, o: { kullanici: string; oturum: string }, ip: string, iliski: string) => {
+    const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref, teslim_tarihi FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    if (!d) return { kod: 404, hata: 'Dosya bulunamadı.' };
+    if (!d.teslim_tarihi) return { kod: 409, hata: 'Arıza bildirimi teslimden sonra açılır; devam eden işler için Dosya Sorumlusuyla iletişime geçiniz.' };
+    await kartAc(b.db, { tur: 'Garanti Talebi', kategori: 'islem', baslik: `${d.dosya_no} · ${bildiren} Arıza Bildirimi`, ozet: belirti, oncelik: 'Yüksek', ...(d.dosya_sorumlusu_ref ? { sahipKullanici: d.dosya_sorumlusu_ref } : { sahipRol: await rolId(b.db, 'Operasyon Müdürü') }), nesneTuru: 'Dosya', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Arıza Bildirimi', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: belirti, sonuc: 'Başarılı', adres: ip, iliski, kanal: 'Portal' });
+    return null;
+  };
+  s.post('/sigorta/dosya/:id/ariza-bildirimi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const belirti = ((i.body ?? {}) as { belirti?: string }).belirti?.trim();
+    const sir = (await b.db.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [o.kullanici])).rows[0]?.sigortaci_adi as string | undefined;
+    if (!UUID.test(id) || (!sir && !o.grup.startsWith('Sigorta'))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM dosya d LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE d.kimlik = $3 AND (lower(s.sigortaci_adi) = lower($1) OR EXISTS (SELECT 1 FROM dosya_tarafi e WHERE e.dosya_ref = d.kimlik AND e.taraf_rolu = 'Eksper' AND e.kullanici_ref = $2 AND e.aktif))`, [sir ?? '', o.kullanici, id])).rowCount) return yok(y);
+    if (!belirti) return y.code(400).send({ hata: 'Arızayı kısaca yazmanızı rica ederiz.' });
+    const h = await arizaBildir(id, belirti, 'Sigorta Şirketinden', o, i.ip, i.id); if (h) return y.code(h.kod).send({ hata: h.hata });
+    return { durum: 'İletildi' };
+  });
+  s.post('/broker/dosya/:id/ariza-bildirimi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const belirti = ((i.body ?? {}) as { belirti?: string }).belirti?.trim();
+    // Broker/acente yalnız geçerli yetki kaydı olan dosyada bildirir.
+    if (!UUID.test(id) || !(await b.db.query(`SELECT 1 FROM dosya_tarafi t JOIN yetki_kaydi k ON k.dosya_tarafi_ref = t.kimlik WHERE t.dosya_ref = $1 AND t.kullanici_ref = $2 AND t.aktif AND k.yetki_durumu = 'Geçerli' AND (k.gecerlilik_bitisi IS NULL OR k.gecerlilik_bitisi >= current_date)`, [id, o.kullanici])).rowCount) return yok(y);
+    if (!belirti) return y.code(400).send({ hata: 'Arızayı kısaca yazmanızı rica ederiz.' });
+    const h = await arizaBildir(id, belirti, 'Broker/Acenteden', o, i.ip, i.id); if (h) return y.code(h.kod).send({ hata: h.hata });
+    return { durum: 'İletildi' };
+  });
   s.post('/portal/dosya/:id/garanti-talebi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const belirti = ((i.body ?? {}) as { belirti?: string }).belirti?.trim();
     if (!UUID.test(id) || !(await musteriMi(id, o.kullanici))) return yok(y);

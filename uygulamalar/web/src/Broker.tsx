@@ -6,11 +6,19 @@ import { BelgeSec } from './Kalite';
 type D = { kimlik: string; dosya_no: string; statu: string; yat_adi: string; yat_sahibi: string | null; yetki: string; bitis: string | null };
 const tarih = (s: string | null) => (s ? s.slice(0, 10).split('-').reverse().join('.') : '—');
 /** YG-1573: acente ve broker ana ekranı (A6). */
+/** YG-1079: teslim sonrası arıza bildirimi; Dosya Sorumlusuna iletilir. */
+export function ArizaBildir({ url }: { url: string }) {
+  const [ac, setAc] = useState(false); const [b, setB] = useState(''); const [m, setM] = useState('');
+  if (m) return <div className="not" role="status">{m}</div>;
+  if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Arıza Bildir</button>;
+  return <div><label htmlFor={`ab-${url}`}>Arızayı Kısaca Yazınız</label><input id={`ab-${url}`} value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => void istek(url, { belirti: b }).then(() => setM('Arıza bildiriminiz Dosya Sorumlusuna iletildi.')).catch((x) => setM(x.message))}>Gönder</button></div>;
+}
+
 export function BrokerAna() {
   const [v, setV] = useState<{ dosyalar: D[]; bekleyen: D[]; dolan: D[] } | null>(null);
   useEffect(() => { void istek<NonNullable<typeof v>>('/broker/ana').then(setV).catch(() => setV(null)); }, []);
   if (!v) return null;
-  const sat = (x: D) => <div className={x.yetki === 'Geçerli' ? 'soru' : 'soru hata'} key={x.kimlik}><span>{x.dosya_no} · {x.yat_adi}{x.yat_sahibi ? ` · ${x.yat_sahibi}` : ''} · {x.statu} · Yetki: {x.yetki}{x.bitis ? ` (${tarih(x.bitis)})` : ''}</span></div>;
+  const sat = (x: D) => <div className={x.yetki === 'Geçerli' ? 'soru' : 'soru hata'} key={x.kimlik}><span>{x.dosya_no} · {x.yat_adi}{x.yat_sahibi ? ` · ${x.yat_sahibi}` : ''} · {x.statu} · Yetki: {x.yetki}{x.bitis ? ` (${tarih(x.bitis)})` : ''}</span>{x.yetki === 'Geçerli' && ['Teknik Kapalı', 'Kapalı'].includes(x.statu) && <ArizaBildir url={`/broker/dosya/${x.kimlik}/ariza-bildirimi`} />}</div>;
   return <section><DurumSayilari ogeler={[['Yetkili Dosya', v.dosyalar.length], ['Yetki Belgesi Bekleyen', v.bekleyen.length], ['Süresi Dolan Yetki', v.dolan.length]]} /><div className="bolum">Yetki Belgesi Bekleyen Dosyalar</div>{v.bekleyen.length ? v.bekleyen.map(sat) : <div className="ozet bos">Yetki belgesi bekleyen dosya bulunmamaktadır.</div>}
     <div className="bolum">Süresi Dolmak Üzere Olan Yetki Belgeleri</div>{v.dolan.length ? v.dolan.map(sat) : <div className="ozet bos">Süresi dolmak üzere olan yetki belgesi bulunmamaktadır.</div>}
     <div className="bolum">Dosyalarım</div>{v.dosyalar.length ? v.dosyalar.map(sat) : <div className="ozet bos">Dosya bulunmamaktadır.</div>}</section>;

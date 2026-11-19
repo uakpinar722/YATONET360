@@ -137,8 +137,9 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
   s.get('/garanti-sikayet/:id/yanit', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
     const yazilar = (await b.db.query(`SELECT kimlik, yazi_no, varyant, durum, olusturma_zamani FROM garanti_sikayet_yazisi WHERE kayit_ref = $1 ORDER BY olusturma_zamani`, [g.kimlik])).rows;
+    const teknikGorusler = (await b.db.query(`SELECT t.kimlik, t.soru, t.gorus, t.istem_zamani, t.gorus_zamani, h.ad_soyad veren FROM sikayet_teknik_gorus t LEFT JOIN kullanici_hesabi h ON h.kimlik = t.veren_ref WHERE t.kayit_ref = $1 ORDER BY t.istem_zamani`, [g.kimlik])).rows; // YG-1701
     const sorveyorler = (await b.db.query(`SELECT kimlik, sorveyor_adi, kurum, iletisim, gerekce, zaman, rapor_tarihi::text rapor_tarihi, sonuc FROM garanti_sikayet_sorveyor WHERE kayit_ref = $1 ORDER BY zaman`, [g.kimlik])).rows; // YG-1424
-    return { yazilar, sorveyorler, sorveyorYetkili: Boolean(g.itiraz_zamani) && await sorveyorYetkili(g, o.kullanici), kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
+    return { yazilar, teknikGorusler, gorusIster: await rolVar(o.kullanici, [ONAYCI]), sorveyorler, sorveyorYetkili: Boolean(g.itiraz_zamani) && await sorveyorYetkili(g, o.kullanici), kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
   });
 
   s.post('/garanti-sikayet/:id/yanit-yazisi', oturumlu, async (i, y) => {
@@ -181,6 +182,36 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE garanti_sikayet SET itiraz_zamani = now(), itiraz_son = $2, itiraz_aciklamasi = $3, itiraz_makami = $4 WHERE kimlik = $1`, [g.kimlik, son, aciklama.trim(), makam]);
     await kartAc(b.db, { tur: 'Şikâyet İtirazı', kategori: 'islem', baslik: `${g.kayit_no} · İtiraz İncelemesi`, ozet: aciklama.trim().slice(0, 200), sahipRol: await rolId(b.db, makam), sonZaman: son, oncelik: 'Yüksek', nesneTuru: 'Garanti Şikâyet', nesneKimligi: g.kimlik });
     return { makam, son };
+  });
+
+  // YG-1701 (A53-Z1): Müşteri ve Paydaş İlişkileri Müdürü "Görüş İste"; dosyanın Teknik Yöneticisi (atanmamışsa Teknik Yönetici rolü) "Görüşü Gönder".
+  s.post('/garanti-sikayet/:id/teknik-gorus-iste', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
+    const { soru } = (i.body ?? {}) as { soru?: string };
+    if (!(await rolVar(o.kullanici, [ONAYCI]))) return y.code(403).send({ hata: `Teknik görüşü ${ONAYCI} ister.` });
+    if (!soru?.trim()) return y.code(400).send({ hata: 'Görüş istenen konuyu yazınız.' });
+    if ((await b.db.query(`SELECT 1 FROM sikayet_teknik_gorus WHERE kayit_ref = $1 AND gorus IS NULL`, [g.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu kayıtta yanıt bekleyen teknik görüş talebi vardır.' });
+    const ty = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Yönetici' AND bitis_zamani IS NULL LIMIT 1`, [g.dosya_ref])).rows[0]?.kullanici_ref as string | undefined;
+    const r = (await b.db.query(`INSERT INTO sikayet_teknik_gorus (kayit_ref, soru, isteyen_ref, atanan_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.kimlik, soru.trim(), o.kullanici, ty ?? null])).rows[0];
+    await kartAc(b.db, { tur: 'Şikâyet Teknik Görüş Talebi', kategori: 'gorev', baslik: `${g.kayit_no} · Şikâyet · Teknik Görüş Talebi`, ozet: `${soru.trim().slice(0, 200)} · Bugün sayfasındaki "Şikâyet Teknik Görüş Talepleri" bölümünden "Görüşü Gönder" ile yanıtlayınız.`, ...(ty ? { sahipKullanici: ty } : { sahipRol: await rolId(b.db, 'Teknik Yönetici') }), hazirlayan: o.kullanici, nesneTuru: 'Şikâyet Teknik Görüş', nesneKimligi: r.kimlik });
+    return { kimlik: r.kimlik };
+  });
+  s.get('/sikayet-teknik-gorus/bekleyen', oturumlu, async (i) => {
+    const o = i.oturum!; const ty = await rolVar(o.kullanici, ['Teknik Yönetici']);
+    return (await b.db.query(`SELECT t.kimlik, t.soru, g.kayit_no, d.dosya_no, coalesce(g.sikayet_konusu, g.belirti) konu, h.ad_soyad isteyen FROM sikayet_teknik_gorus t JOIN garanti_sikayet g ON g.kimlik = t.kayit_ref JOIN dosya d ON d.kimlik = g.dosya_ref JOIN kullanici_hesabi h ON h.kimlik = t.isteyen_ref
+      WHERE t.gorus IS NULL AND (t.atanan_ref = $1 OR (t.atanan_ref IS NULL AND $2)) ORDER BY t.istem_zamani`, [o.kullanici, ty])).rows;
+  });
+  s.post('/sikayet-teknik-gorus/:id/gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { gorus } = (i.body ?? {}) as { gorus?: string };
+    if (!UUID.test(id)) return yok(y);
+    const t = (await b.db.query(`SELECT t.*, g.kayit_no, g.dosya_ref FROM sikayet_teknik_gorus t JOIN garanti_sikayet g ON g.kimlik = t.kayit_ref WHERE t.kimlik = $1 AND t.gorus IS NULL`, [id])).rows[0];
+    if (!t || !(t.atanan_ref ? t.atanan_ref === o.kullanici : await rolVar(o.kullanici, ['Teknik Yönetici']))) return yok(y);
+    if (!gorus?.trim()) return y.code(400).send({ hata: 'Görüşünüzü yazınız.' });
+    await b.db.query(`UPDATE sikayet_teknik_gorus SET gorus = $2, veren_ref = $3, gorus_zamani = now() WHERE kimlik = $1`, [id, gorus.trim(), o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Şikâyet Teknik Görüş Talebi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    await bildir(b.db, { olay: `sikayet-gorus:${id}`, kullanicilar: [t.isteyen_ref], baslik: `${t.kayit_no} · Teknik Görüş Geldi`, ozet: gorus.trim().slice(0, 200) });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Şikâyet Teknik Görüşü Gönderildi', nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-1424: itirazda gerekirse bağımsız sörveyör kaydı; Dosya Sorumlusu, hazırlayan birim veya itirazı inceleyen makam açar.

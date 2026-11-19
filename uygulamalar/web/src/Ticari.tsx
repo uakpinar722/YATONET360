@@ -1,4 +1,5 @@
 import { DurumSayilari } from './DurumSayilari';
+import { ArizaBildir } from './Broker';
 import { OdemeTakvimi } from './OdemeTakvimi';
 import { eur } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
@@ -443,7 +444,9 @@ function YetkiBelgeleri() {
 
 export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'isemri' }) {
   const [l, setL] = useState<IsEmri[] | null>(null); const [ac, setAc] = useState<AcilCagri[]>([]); const [acik, setAcik] = useState<FirmaAyrinti | null>(null); const [kod, setKod] = useState(''); const [not_, setNot_] = useState(''); const [tahmini, setTahmini] = useState(''); const [brut, setBrut] = useState(''); const [fat, setFat] = useState(''); const [fatT, setFatT] = useState(''); const [fatK, setFatK] = useState(''); const [kalem, setKalem] = useState(''); const [miktar, setMiktar] = useState(''); const [belge, setBelge] = useState('');
-  const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
+  const [bek, setBek] = useState<{ tur: string; baslik: string; isEmri: string | null; son: string | null; acil: boolean }[]>([]); // YG-1574
+  const [foto, setFoto] = useState('');
+  const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setBek(await istek<typeof bek>('/firma-portal/bekleyenler').catch(() => [])); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setL([])); }, []);
   if (!l) return null;
@@ -472,6 +475,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
         {acik.tur === 'AC' && <><label htmlFor="f-th">Tahmini Tutar (EUR)</label><input id="f-th" inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} /><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/acil-tutar`, { tahmini: Number(tahmini.replace(',', '.')) }))}>Tutarı Güncelle</button></>}
         <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/tamamlandi`, {}))}>İş Tamamlandı</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/durdur`, { neden: not_ }))}>İşi Durdur ve Bildir</button></div>
       </Blok>}
+      {['Başlangıç Kontrolünde', 'Aktif', 'Tamamlandı'].includes(acik.statu) && <Blok baslik="Fotoğraf Yükle">{/* YG-1574 */}<BelgeSec ad="Saha Fotoğrafı" bagTuru="İş Emri" bagKimligi={acik.kimlik} deger={foto} sec={setFoto} />{foto && <div className="not">Fotoğraf iş emrine eklendi; günlük kayıtta ve ilerlemede kanıt olarak seçebilirsiniz.</div>}</Blok>}
       {acik.statu === 'Aktif' && <GunlukKayit isEmri={acik.kimlik} yap={yap} />}
       {['Aktif', 'Tamamlandı'].includes(acik.statu) && <ParcaVeTeslim isEmri={acik.kimlik} yap={yap} />}
       {acik.tur === 'KN' && !['Kabul Bekliyor', 'Çekinceli'].includes(acik.statu) && <FirmaRapor isEmri={acik.kimlik} yap={yap} />}
@@ -497,7 +501,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       {bolum === 'ana' && <FirmaAcilIslemleri yap={yap} />}
       {bolum === 'ana' && <KurtarmaSonucFirma />}
       {bolum === 'ana' && <><div className="bolum">İşleminizi Bekleyenler</div>
-      {ac.length === 0 && <div className="ozet bos">Acil çağrı bulunmamaktadır.</div>}
+      {bek.length === 0 && ac.length === 0 && <div className="ozet bos">Bekleyen işleminiz bulunmamaktadır.</div>}
+      {bek.map((x, n) => <div key={`bk-${n}`} className={x.acil ? 'hata kart-sol' : 'ozet kart-sol'}><b>{x.tur}</b> · {x.baslik}{x.son ? ` · Son: ${saat(x.son)}` : ''}{x.isEmri && <> <button className="lnk" onClick={() => void istek<FirmaAyrinti>(`/firma-portal/is-emri/${x.isEmri}`).then(setAcik)}>Aç</button></>}</div>)}
       {ac.map((c) => <div className="ood" role="alert" key={c.kimlik}><b>Acil Görev Çağrısı · {c.cagri_no}</b><div>{c.olay_turu} · {c.hizmet_turu ?? '—'} · {c.konum} · {c.yat_tipi ?? '—'}</div><div>{c.tehlike}</div>{(c.erisim || c.erisim_konumu) && <div>Erişim: {[c.erisim, c.erisim_konumu].filter(Boolean).join(' · ')}</div>}<div>Yanıt Son: {saat(c.son_zaman)}</div>
         <label htmlFor={`c-${c.kimlik}`}>Tahmini Tutar (EUR)</label><input id={`c-${c.kimlik}`} inputMode="decimal" value={tahmini} onChange={(e) => setTahmini(e.target.value)} />
         <div className="dugmeler"><button className="btn" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Kabul', tahmini: Number(tahmini.replace(',', '.') || 0) }))}>Kabul Ediyorum, Yola Çıkıyorum</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/acil-cagri/${c.kimlik}/yanit`, { yanit: 'Müsait Değil' }))}>Müsait Değilim</button></div></div>)}
@@ -546,7 +551,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       {(v.ihbarlar ?? []).length > 0 && <><div className="bolum">İhbarlar</div>{v.ihbarlar!.map((x) => <div className="ozet" key={x.kimlik}><b>{x.talepNo} · {x.yat}</b><div>{x.hasarNo ? `Hasar Dosya No: ${x.hasarNo} · ` : ''}{x.durum}</div></div>)}</>}
       <div className="bolum">Dosyalar</div>
       {v.dosyalar.length === 0 && <div className="ozet bos">Dosya bulunmamaktadır.</div>}
-      {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>İlerleme</th><th>Garanti</th><th>Tahmini Teslim Tarihi</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="İlerleme">%{d.ilerleme ?? 0}<div><a href={`/api/sigorta/dosya/${d.kimlik}/ilerleme-raporu`}>İlerleme Raporu (PDF)</a></div>{(d.fotograflar ?? []).map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a></div>)}{(d.raporlar ?? []).map((x) => <div key={x.kimlik}><a href={`/api/sigorta/rapor/${x.kimlik}`}>Teknik Rapor {x.rapor_no}</a></div>)}</td><td data-ad="Garanti">{d.garanti ?? '—'}</td><td data-ad="Tahmini Teslim Tarihi">{d.tahminiTeslim ? d.tahminiTeslim.split('-').reverse().join('.') : '—'}</td></tr>)}</tbody></table></div>}
+      {v.dosyalar.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Hasar Dosya No</th><th>LGM Dosya No</th><th>Yat</th><th>Durum</th><th>İlerleme</th><th>Garanti</th><th>Tahmini Teslim Tarihi</th></tr></thead><tbody>{v.dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Hasar Dosya No">{d.hasarNo ?? '—'}</td><td data-ad="LGM Dosya No">{d.dosyaNo}</td><td data-ad="Yat">{d.yat}</td><td data-ad="Durum">{d.durum}</td><td data-ad="İlerleme">%{d.ilerleme ?? 0}<div><a href={`/api/sigorta/dosya/${d.kimlik}/ilerleme-raporu`}>İlerleme Raporu (PDF)</a></div>{(d.fotograflar ?? []).map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a></div>)}{(d.raporlar ?? []).map((x) => <div key={x.kimlik}><a href={`/api/sigorta/rapor/${x.kimlik}`}>Teknik Rapor {x.rapor_no}</a></div>)}</td><td data-ad="Garanti">{d.garanti ?? '—'}{d.garanti && <ArizaBildir url={`/sigorta/dosya/${d.kimlik}/ariza-bildirimi`} />}</td><td data-ad="Tahmini Teslim Tarihi">{d.tahminiTeslim ? d.tahminiTeslim.split('-').reverse().join('.') : '—'}</td></tr>)}</tbody></table></div>}
     </>
   );
 }

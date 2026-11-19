@@ -532,6 +532,12 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const bel = await o.belge(d.kimlik, 'ds');
     expect((await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/ilerleme`, firmaC, { kalem: 'İnceleme', miktar: 5 })).statusCode).toBe(400);
     const il = await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/ilerleme`, firmaC, { kalem: 'İnceleme', miktar: 5, belge: bel });
+    { // T-YG1574-BEKLEYEN: kapatılmamış dünkü günlük kayıt İşleminizi Bekleyenler'de
+      await o.sup.query(`INSERT INTO firma_gunluk_kaydi (is_emri_ref, kurulus_ref, tarih, durum, giren_ref) SELECT kimlik, kurulus_ref, (now() AT TIME ZONE 'Europe/Istanbul')::date - 1, 'Açık', $2 FROM is_emri WHERE kimlik = $1 ON CONFLICT DO NOTHING`, [e.kimlik, o.K.ds]);
+      const bk = await o.ist('GET', '/api/firma-portal/bekleyenler', firmaC); expect(bk.statusCode, bk.body).toBe(200);
+      expect(bk.json().some((x: any) => x.tur === 'Kapatılmamış Günlük Kayıt' && x.isEmri === e.kimlik)).toBe(true);
+      expect((await o.ist('GET', '/api/firma-portal/bekleyenler', await o.gir('ds'))).statusCode).toBe(403);
+    }
     expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/ilerleme/${il.json().kimlik}/dogrula`, await o.gir('tu'))).json().ilerleme).toBe(50);
     await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/tamamlandi`, firmaC);
     expect((await o.sup.query(`SELECT teknik_kabul_sonucu FROM is_emri WHERE kimlik = $1`, [e.kimlik])).rows[0].teknik_kabul_sonucu).toBeNull();

@@ -65,6 +65,18 @@ describe('sosyal medya izleme kaydı (YG-586)', () => {
     expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/degerlendir`, m, { degerlendirme: 'Müşteriyle görüşülecek', sonuc: 'Sözcüye İletildi' })).statusCode).toBe(200);
     expect((await o.kart('Sosyal Medya Değerlendirmesi', r.kimlik)).durum).toBe('Tamamlandı');
     expect(await sosyalMedyaIsle(o.db, new Date('2027-01-11T10:00:00'))).toBe(1);
+    { // T-YG1466-SOZCU: sözcüye anlık bildirim, dosya eşleşmesi, onaylı şablonla yanıt ve Dosyalı'da DS araması
+      expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.cg, `sosyal-olumsuz:${r.kimlik}`])).rows[0].n).toBe(1);
+      const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+      const cg = await o.gir('cg');
+      expect((await o.ist('GET', `/api/sosyal-medya/${r.kimlik}/yanit-metni?varyant=Dosyalı&dil=tr`, cg)).statusCode).toBe(409);
+      expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/dosya`, m, { dosyaNo: d.dosyaNo })).statusCode).toBe(200);
+      expect((await o.ist('GET', `/api/sosyal-medya/${r.kimlik}/yanit-metni?varyant=Dosyalı&dil=tr`, m)).statusCode).toBe(404);
+      expect((await o.ist('GET', `/api/sosyal-medya/${r.kimlik}/yanit-metni?varyant=Dosyalı&dil=en`, cg)).json().metin).toContain('File Manager');
+      expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/yanitlandi`, cg, { varyant: 'Dosyalı', dil: 'tr' })).statusCode).toBe(200);
+      expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/yanitlandi`, cg, { varyant: 'Olumlu', dil: 'tr' })).statusCode).toBe(409);
+      expect((await o.kart('Sosyal Medya Dosya Araması', d.kimlik)).sahip_kullanici_ref).toBe(o.K.ds);
+    }
   });
 });
 

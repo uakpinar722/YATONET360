@@ -449,6 +449,27 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     return { isEmirleri: rows.map(firmaGorunum) };
   });
 
+  // YG-1574: İşleminizi Bekleyenler; acil iş emri, rapor/fiyat son zamanı, uygunsuzluk yanıtı ve kapatılmamış günlük kayıt; en yakın son zaman önce.
+  s.get('/firma-portal/bekleyenler', oturumlu, async (i, y) => {
+    const o = i.oturum!; const f = await firmam(o.kullanici);
+    if (!f) return y.code(403).send({ hata: 'Bu sayfa Çözüm Ortağı kullanıcılarına açıktır.' });
+    const l: { tur: string; baslik: string; isEmri: string | null; son: string | null; acil: boolean }[] = [];
+    for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.statu, e.yanit_son FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kurulus_ref = $1 AND d.oncelik = 'Kritik' AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli')`, [f])).rows)
+      l.push({ tur: 'Acil İş Emri', baslik: `${e.is_emri_no} · ${e.statu}`, isEmri: e.kimlik, son: e.statu === 'Kabul Bekliyor' ? e.yanit_son : null, acil: true });
+    for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.firma_kabul_zamani, d.oncelik, EXISTS (SELECT 1 FROM firma_teknik_raporu r WHERE r.is_emri_ref = e.kimlik) rapor, EXISTS (SELECT 1 FROM firma_fiyat_teklifi x WHERE x.dosya_ref = e.dosya_ref AND x.kurulus_ref = e.kurulus_ref) fiyat
+      FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kurulus_ref = $1 AND e.is_emri_turu = 'KN' AND e.firma_kabul_zamani IS NOT NULL AND e.statu NOT IN ('İptal', 'Kapalı', 'Yerine Geçti') AND d.statu <> 'Kapalı'`, [f])).rows) {
+      if (e.rapor && e.fiyat) continue;
+      const son = (await raporSonZamani(b.db, e.oncelik, new Date(e.firma_kabul_zamani))).toISOString();
+      if (!e.rapor) l.push({ tur: 'Firma Teknik Raporu', baslik: e.is_emri_no, isEmri: e.kimlik, son, acil: e.oncelik === 'Kritik' });
+      if (!e.fiyat) l.push({ tur: 'Firma Fiyat Teklifi', baslik: e.is_emri_no, isEmri: e.kimlik, son, acil: e.oncelik === 'Kritik' });
+    }
+    for (const u of (await b.db.query(`SELECT u.uygunsuzluk_no, u.sinif, u.hedef_zamani, u.is_emri_ref FROM uygunsuzluk u WHERE u.sorumlu_firma_ref = $1 AND u.firma_yaniti IS NULL AND u.statu NOT IN ('Kapalı', 'Geçersiz')`, [f])).rows)
+      l.push({ tur: 'Uygunsuzluk Yanıtı', baslik: `${u.uygunsuzluk_no} · ${u.sinif}`, isEmri: u.is_emri_ref, son: u.hedef_zamani, acil: u.sinif === 'Kritik' });
+    for (const g of (await b.db.query(`SELECT k.tarih::text tarih, e.kimlik, e.is_emri_no FROM firma_gunluk_kaydi k JOIN is_emri e ON e.kimlik = k.is_emri_ref WHERE k.kurulus_ref = $1 AND k.durum = 'Açık' AND k.tarih < (now() AT TIME ZONE 'Europe/Istanbul')::date ORDER BY k.tarih`, [f])).rows)
+      l.push({ tur: 'Kapatılmamış Günlük Kayıt', baslik: `${g.is_emri_no} · ${g.tarih.split('-').reverse().join('.')}`, isEmri: g.kimlik, son: null, acil: false });
+    return l.sort((a, c) => Number(c.acil) - Number(a.acil) || (a.son ? new Date(a.son).getTime() : Infinity) - (c.son ? new Date(c.son).getTime() : Infinity));
+  });
+
   s.get('/firma-portal/is-emri/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const e = await firmaIsEmri((i.params as { id: string }).id, o.kullanici);
     if (!e) return yok(y);

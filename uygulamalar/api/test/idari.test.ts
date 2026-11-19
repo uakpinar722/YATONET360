@@ -93,6 +93,15 @@ describe('acente ve broker ana ekranı A6 (YG-1573)', () => {
     const be = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Yetki','Yetki Belgesi','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
     expect((await o.ist('POST', `/api/broker/yetki/${y}/yenile`, brk, { belge: be, bitis: '2027-12-31' })).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/broker/ana', await o.gir('ds'))).statusCode).toBe(404);
+    { // T-YG1079-ARIZA: yetkili broker teslimden sonra arıza bildirir
+      await o.sup.query(`UPDATE yetki_kaydi SET gecerlilik_bitisi = current_date + 400 WHERE kimlik = $1`, [y]);
+      { const r0 = await o.ist('POST', `/api/broker/dosya/${d.kimlik}/ariza-bildirimi`, brk, { belirti: 'Pompa çalışmıyor' }); expect(r0.statusCode, r0.body).toBe(409); }
+      await o.sup.query(`UPDATE dosya SET teslim_tarihi = current_date - 10 WHERE kimlik = $1`, [d.kimlik]);
+      expect((await o.ist('POST', `/api/broker/dosya/${d.kimlik}/ariza-bildirimi`, await o.gir('ds'), { belirti: 'X' })).statusCode).toBe(404);
+      expect((await o.ist('POST', `/api/broker/dosya/${d.kimlik}/ariza-bildirimi`, brk, { belirti: 'Pompa çalışmıyor' })).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Garanti Talebi' AND nesne_kimligi = $1 AND baslik LIKE '%Broker/Acenteden Arıza Bildirimi'`, [d.kimlik])).rows[0].n).toBe(1);
+      expect((await o.ist('POST', `/api/sigorta/dosya/${d.kimlik}/ariza-bildirimi`, brk, { belirti: 'X' })).statusCode).toBe(404);
+    }
   });
 });
 

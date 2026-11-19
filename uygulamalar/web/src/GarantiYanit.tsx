@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 const VARYANT = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı', 'İtiraz İnceleme Sonucu', 'Ara Bilgilendirme', 'Takip Kontrolü', 'Talep Yanıtı'];
-interface Durum { sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
+interface Durum { teknikGorusler?: { kimlik: string; soru: string; gorus: string | null; veren: string | null }[]; gorusIster?: boolean; sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
 
 /** YG-728: FR-KLT-016 yanıt yazısı (6 varyant), itiraz kaydı ve üst kademe kararı. */
 export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [v, setV] = useState<Durum | null>(null); const [f, setF] = useState({ varyant: '', inceleme: '', islemler: '', duzeltme: '' });
   const [sv, setSv] = useState({ ad: '', kurum: '', iletisim: '', gerekce: '', raporTarihi: '', sonuc: '' });
+  const [tg, setTg] = useState('');
   const [it, setIt] = useState(''); const [ky, setKy] = useState(''); const [ik, setIk] = useState({ sonuc: '', gerekce: '' });
   const yukle = () => void istek<Durum>(`/garanti-sikayet/${id}/yanit`).then(setV).catch(() => setV(null));
   useEffect(yukle, [id]);
@@ -19,6 +20,10 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
     {v.yazilar.map((x) => <div key={x.kimlik}>{x.yazi_no} · {x.varyant} · {x.durum}</div>)}
     {v.itiraz.zaman && <div className="not">İtiraz: {tarih(v.itiraz.zaman)} · İnceleyen: {v.itiraz.makam} · Son: {tarih(v.itiraz.son)}{v.itiraz.sonuc ? ` · Sonuç: ${v.itiraz.sonuc}` : ''}</div>}
     {v.takipSon && <div className="not">Takip Kontrolü: {tarih(v.takipSon)}</div>}
+    {v.teknikGorusler?.map((x) => <div key={x.kimlik} className="not">Teknik Görüş Talebi: {x.soru} · {x.gorus ? `Görüş (${x.veren}): ${x.gorus}` : 'Teknik Yönetici görüşü bekleniyor'}</div>)}
+    {v.gorusIster && !v.teknikGorusler?.some((x) => !x.gorus) && <>{/* YG-1701 (A53-Z1) */}
+      <label htmlFor={`gy-tg-${id}`}>Teknik Yöneticiden İstenen Görüş</label><input id={`gy-tg-${id}`} value={tg} onChange={(e) => setTg(e.target.value)} />
+      <button className="btn2 kucuk" disabled={!tg.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/teknik-gorus-iste`, { soru: tg }), 'Teknik görüş talebi Teknik Yöneticiye gönderildi.').then(() => { setTg(''); yukle(); })}>Görüş İste</button></>}
     {v.sorveyorler?.map((x) => <div key={x.kimlik} className="not">Bağımsız Sörveyör: {x.sorveyor_adi}{x.kurum ? ` (${x.kurum})` : ''} · {x.gerekce}{x.sonuc ? ` · Rapor: ${x.rapor_tarihi?.split('-').reverse().join('.')} · Sonuç: ${x.sonuc}` : ' · Sonuç bekleniyor'}</div>)}
     {v.sorveyorYetkili && (v.sorveyorler?.some((x) => !x.sonuc) ? <>{/* YG-1424 */}
       <label htmlFor={`gs-rt-${id}`}>Sörveyör Rapor Tarihi</label><input id={`gs-rt-${id}`} type="date" value={sv.raporTarihi} onChange={(e) => setSv({ ...sv, raporTarihi: e.target.value })} />

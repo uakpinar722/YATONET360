@@ -242,6 +242,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => r.rol_adi === 'Hukuk ve Uyum Direktörü') && <HukukGorusleri />}
       {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
       {ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu') && <IsgIsiDurdur />}
+      {lgm && <SikayetTeknikGorusleri />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -471,6 +472,18 @@ function BirimGorusleri() {
       <label htmlFor={`bg-${x.kimlik}`}>Görüş</label><select id={`bg-${x.kimlik}`} value={v.sonuc} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, sonuc: e.target.value } })}><option value="">Seçiniz</option><option>Uygun</option><option>Koşullu</option><option>Uygun Değil</option></select>
       <label htmlFor={`bn-${x.kimlik}`}>Gerekçe</label><input id={`bn-${x.kimlik}`} value={v.not} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, not: e.target.value } })} />
       <button className="btn2 kucuk" disabled={!v.sonuc || (v.sonuc !== 'Uygun' && !v.not.trim())} onClick={() => void istek(`/firma-birim-gorusu/${x.kimlik}/gonder`, v).then(() => { setM('Görüş talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>; })}</>;
+}
+
+/** YG-1701 (A53-Z1): şikâyette Teknik Yöneticiden istenen teknik görüş; onay kademesi değildir, "Görüşü Gönder". */
+function SikayetTeknikGorusleri() {
+  const [l, setL] = useState<{ kimlik: string; soru: string; kayit_no: string; dosya_no: string; konu: string | null; isteyen: string }[]>([]); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/sikayet-teknik-gorus/bekleyen').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Şikâyet Teknik Görüş Talepleri</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.kayit_no} · {x.dosya_no}</b><Rozet s="gri" c="Teknik Görüş" /></div><div className="not">{x.konu ? `${x.konu} · ` : ''}İstenen: {x.soru} · Talep eden: {x.isteyen}</div>
+      <label htmlFor={`stg-${x.kimlik}`}>Görüşünüz</label><textarea id={`stg-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!g[x.kimlik]?.trim()} onClick={() => void istek(`/sikayet-teknik-gorus/${x.kimlik}/gonder`, { gorus: g[x.kimlik] }).then(() => { setM('Görüş şikâyet kaydına bağlandı ve talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>)}</>;
 }
 
 /** YG-1670: İSG Sorumlusu "İşi Durdur": ciddi ve yakın tehlikede sahadaki aktif işi durdurur; yeniden başlatma izni Teknik Müdürde. */

@@ -42,6 +42,15 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     }
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('tm'), { sonuc: 'Ret', gerekce: 'G' })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('skg'), { sonuc: 'Kısmen Kabul', gerekce: 'Ek rötuş' })).statusCode).toBe(200);
+    { // T-YG1701-TEKNIK-GORUS: Müdür görüş ister, Teknik Yönetici gönderir
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/teknik-gorus-iste`, ds, { soru: 'X' })).statusCode).toBe(403);
+      const tg = await o.ist('POST', `/api/garanti-sikayet/${g}/teknik-gorus-iste`, await o.gir('mpm'), { soru: 'Renk farkı boya kaynaklı mı?' }); expect(tg.statusCode, tg.body).toBe(200);
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/teknik-gorus-iste`, await o.gir('mpm'), { soru: 'İkinci' })).statusCode).toBe(409);
+      const ty = await o.gir('ty'); const bk = (await o.ist('GET', '/api/sikayet-teknik-gorus/bekleyen', ty)).json();
+      expect(bk.some((x: any) => x.kimlik === tg.json().kimlik)).toBe(true);
+      expect((await o.ist('POST', `/api/sikayet-teknik-gorus/${tg.json().kimlik}/gonder`, ty, { gorus: 'Boya partisi farklı; yeniden boya önerilir' })).statusCode).toBe(200);
+      expect((await o.ist('GET', `/api/garanti-sikayet/${g}/yanit`, await o.gir('mpm'))).json().teknikGorusler[0].gorus).toBe('Boya partisi farklı; yeniden boya önerilir');
+    }
     { // T-YG1701: Kaliteye Yönlendir
       expect((await o.ist('POST', `/api/garanti-sikayet/${g}/kaliteye-yonlendir`, await o.gir('mpy'), { aciklama: 'X' })).statusCode).toBe(403);
       expect((await o.ist('POST', `/api/garanti-sikayet/${g}/kaliteye-yonlendir`, await o.gir('mpm'), { aciklama: 'Aynı boya şikâyeti üçüncü kez' })).statusCode).toBe(200);
