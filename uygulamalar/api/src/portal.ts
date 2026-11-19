@@ -254,6 +254,13 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     return { yetkili, onaylar, dosyalar: await Promise.all(dosyalar.map(kart)), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
   });
 
+  // YG-460: RP-RAP-001 İlerleme Raporu (PDF) yat sahibinin kendi dosyası için.
+  s.get('/portal/dosya/:id/ilerleme-raporu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const red = musteri(o.grup, y); if (red) return red;
+    if (!UUID.test(id) || !(await b.db.query(`SELECT 1 FROM dosya d WHERE d.kimlik = $2 AND (${benimDosyalarim})`, [o.kullanici, id])).rowCount) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    const r = await (await import('./ilerleme_rapor.js')).ilerlemeRaporuPdf(b.db, id); if (!r) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    return y.header('content-type', 'application/pdf').header('content-disposition', `attachment; filename="${r.dosyaAdi}"`).header('x-content-type-options', 'nosniff').send(r.pdf);
+  });
   s.get('/portal/dosya/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const red = musteri(o.grup, y); if (red) return red;
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Dosya bulunamadı.' });

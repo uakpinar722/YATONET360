@@ -106,6 +106,15 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-440: onaylı teknik rapor PDF'i yalnız dosyası görünen sigorta kullanıcısına ve eksperine; indirme denetim izine yazılır.
+  // YG-460: RP-RAP-001 İlerleme Raporu (PDF) sigorta şirketinin dosyası için.
+  s.get('/sigorta/dosya/:id/ilerleme-raporu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const sir = await sirketim(o.kullanici);
+    if (!UUID.test(id) || (!sir && !o.grup.startsWith('Sigorta'))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM dosya d LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE d.kimlik = $3 AND ${dosyaKosul}`, [sir ?? '', o.kullanici, id])).rowCount) return yok(y);
+    const r = await (await import('./ilerleme_rapor.js')).ilerlemeRaporuPdf(b.db, id); if (!r) return yok(y);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İndirildi', nesneTuru: 'İlerleme Raporu', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Sigorta Portalı' });
+    return y.header('content-type', 'application/pdf').header('content-disposition', `attachment; filename="${r.dosyaAdi}"`).header('x-content-type-options', 'nosniff').send(r.pdf);
+  });
   s.get('/sigorta/rapor/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const sir = await sirketim(o.kullanici);
     if (!UUID.test(id)) return yok(y);

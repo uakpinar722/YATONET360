@@ -240,6 +240,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı'].includes(r.rol_adi)) && <AskiAcikIsler />}
       {ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu') && <SuresiDolmusBelgeler />}
       {ben.roller.some((r) => r.rol_adi === 'Hukuk ve Uyum Direktörü') && <HukukGorusleri />}
+      {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -456,6 +457,19 @@ function EksikKalitePlanlari() {
     {l.length === 0 ? <Bos m="İş emri açılan dosyalarda eksik kalite belgesi bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.dosya_no} · {x.yat_adi}</b>{x.bildirim && <Rozet s="gri" c={`Bildirildi ${new Date(x.bildirim).toLocaleDateString('tr-TR', { timeZone: 'Europe/Istanbul' })}`} />}</div>
       <div className="not">Eksik: {[x.plan_yok && 'Kalite Planı', x.matris_yok && 'Kabul Matrisi', x.itp_yok && 'Muayene ve Test Planı'].filter(Boolean).join(', ')}</div>
       <button className="btn2 kucuk" onClick={() => void istek(`/dosya/${x.kimlik}/kalite-eksikligi-bildir`, {}).then(() => { setM('Eksiklik Teknik Uzman ve Teknik Yöneticiye bildirildi.'); return yk(); }).catch((e) => setM(e.message))}>Eksikliği Bildir</button></div>)}</>;
+}
+
+/** YG-1651: firma başvurusu ön incelemesinde birim görüşü (Teknik Müdürlük, İSG); "Görüşü Gönder". */
+function BirimGorusleri() {
+  const [l, setL] = useState<{ kimlik: string; birim: string; ticari_unvan: string; kayit_rolu: string; isteyen: string }[]>([]); const [s, setS] = useState<Record<string, { sonuc: string; not: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/firma-birim-gorusu/bekleyen').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Firma Başvurusu Görüş Talepleri</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => { const v = s[x.kimlik] ?? { sonuc: '', not: '' }; return <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.ticari_unvan}</b><Rozet s="gri" c={`${x.birim} · ${x.kayit_rolu}`} /></div><div className="not">Talep eden: {x.isteyen}</div>
+      <label htmlFor={`bg-${x.kimlik}`}>Görüş</label><select id={`bg-${x.kimlik}`} value={v.sonuc} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, sonuc: e.target.value } })}><option value="">Seçiniz</option><option>Uygun</option><option>Koşullu</option><option>Uygun Değil</option></select>
+      <label htmlFor={`bn-${x.kimlik}`}>Gerekçe</label><input id={`bn-${x.kimlik}`} value={v.not} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, not: e.target.value } })} />
+      <button className="btn2 kucuk" disabled={!v.sonuc || (v.sonuc !== 'Uygun' && !v.not.trim())} onClick={() => void istek(`/firma-birim-gorusu/${x.kimlik}/gonder`, v).then(() => { setM('Görüş talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>; })}</>;
 }
 
 /** YG-1697: firma kararı için hukuki görüş; onay kademesi değildir, "Görüşü Gönder". */

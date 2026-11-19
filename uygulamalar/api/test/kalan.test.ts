@@ -77,6 +77,8 @@ describe('yat sahibi cayma düğmesi (YG-1450)', () => {
     const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3) RETURNING kimlik`, [`T-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
     const k = (await o.sup.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis) VALUES ($1,$2,now(),now(),now() + interval '14 days') RETURNING kimlik`, [t, d.kimlik])).rows[0].kimlik;
     expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().cayma).toBe(true);
+    { const ir = await o.ist('GET', `/api/portal/dosya/${d.kimlik}/ilerleme-raporu`, c); expect(ir.statusCode).toBe(200); expect(ir.headers['content-type']).toContain('application/pdf'); } // T-YG460
+    expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}/ilerleme-raporu`, await o.gir('ds'))).statusCode).not.toBe(200);
     const r = await o.ist('POST', u, c, {}); expect(r.statusCode, r.body).toBe(200);
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${r.json().kimlik}`])).rows[0].metin; const bel = m.match(/#onay=([\w-]+)/)[1];
     await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];

@@ -165,6 +165,55 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-360, YG-361, YG-362: statü kararını Sicil Sorumlusu hazırlar, Firma Yönetimi Müdürü verir. Kalıcı askı ve çıkarma Direktörde.
+  // YG-1651: başvuru ön incelemesinde Teknik Müdürlük ve İSG görüşü istenir; görüş Uygun / Koşullu / Uygun Değil, onay kademesi değildir.
+  const BIRIM_ROL: Record<string, string> = { 'Teknik Müdürlük': 'Teknik Müdür', 'İSG': 'İSG Sorumlusu' };
+  const rolde = async (k: string, r: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = $2`, [k, r])).rowCount);
+  s.post('/firma/:id/birim-gorusu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { birim } = (i.body ?? {}) as { birim?: string };
+    if (!UUID.test(id)) return yok(y);
+    if (!BIRIM_ROL[birim ?? '']) return y.code(400).send({ hata: 'Görüş istenecek birimi seçiniz: Teknik Müdürlük veya İSG.' });
+    const u = (await b.db.query(`SELECT ticari_unvan, kayit_asamasi FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!u) return yok(y);
+    if (!['Başvuru', 'İncelemede'].includes(u.kayit_asamasi)) return y.code(409).send({ hata: 'Birim görüşü başvuru ön incelemesinde istenir.' });
+    if ((await b.db.query(`SELECT 1 FROM firma_birim_gorusu WHERE kurulus_ref = $1 AND birim = $2 AND sonuc IS NULL`, [id, birim])).rowCount) return y.code(409).send({ hata: 'Bu birimden bekleyen görüş vardır.' });
+    const r = (await b.db.query(`INSERT INTO firma_birim_gorusu (kurulus_ref, birim, isteyen_ref) VALUES ($1,$2,$3) RETURNING kimlik`, [id, birim, o.kullanici])).rows[0];
+    await kartAc(b.db, { tur: 'Firma Başvurusu Birim Görüşü', kategori: 'gorev', baslik: `${u.ticari_unvan} · ${birim} Görüşü`, ozet: birim === 'İSG' ? 'İSG ve çevre yönünden görüşünüzü gönderiniz.' : 'Teknik yetkinlik, personel, tesis ve ekipman yönünden görüşünüzü gönderiniz.', sahipRol: await rolId(b.db, BIRIM_ROL[birim!]!), nesneTuru: 'Firma Birim Görüşü', nesneKimligi: r.kimlik });
+    return { kimlik: r.kimlik };
+  });
+  s.get('/firma-birim-gorusu/bekleyen', oturumlu, async (i) => {
+    const o = i.oturum!; const birimler = []; for (const [bi, ro] of Object.entries(BIRIM_ROL)) if (await rolde(o.kullanici, ro)) birimler.push(bi);
+    if (!birimler.length) return [];
+    return (await b.db.query(`SELECT g.kimlik, g.birim, k.ticari_unvan, k.kayit_rolu, h.ad_soyad isteyen FROM firma_birim_gorusu g JOIN kurulus k ON k.kimlik = g.kurulus_ref JOIN kullanici_hesabi h ON h.kimlik = g.isteyen_ref WHERE g.sonuc IS NULL AND g.birim = ANY($1) ORDER BY g.istem_zamani`, [birimler])).rows;
+  });
+  s.post('/firma-birim-gorusu/:id/gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; not?: string };
+    if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT g.*, u.ticari_unvan FROM firma_birim_gorusu g JOIN kurulus u ON u.kimlik = g.kurulus_ref WHERE g.kimlik = $1 AND g.sonuc IS NULL`, [id])).rows[0];
+    if (!k || !(await rolde(o.kullanici, BIRIM_ROL[k.birim]!))) return yok(y);
+    if (!['Uygun', 'Koşullu', 'Uygun Değil'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Görüşü (Uygun, Koşullu, Uygun Değil) seçiniz.' });
+    if (g.sonuc !== 'Uygun' && !g.not?.trim()) return y.code(400).send({ hata: 'Koşullu ve Uygun Değil görüşte gerekçe zorunludur.' });
+    await b.db.query(`UPDATE firma_birim_gorusu SET sonuc = $2, gorus_notu = $3, veren_ref = $4, gorus_zamani = now() WHERE kimlik = $1`, [id, g.sonuc, g.not?.trim() || null, o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Firma Başvurusu Birim Görüşü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    await (await import('./bildirim.js')).bildir(b.db, { olay: `birim-gorus:${id}`, kullanicilar: [k.isteyen_ref], baslik: `${k.ticari_unvan} · ${k.birim} Görüşü: ${g.sonuc}`, ozet: g.not?.trim() || undefined });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Birim Görüşü Gönderildi', nesneTuru: 'Kuruluş', nesneKimligi: k.kurulus_ref, yeni: { birim: k.birim, sonuc: g.sonuc }, gerekce: g.not?.trim() || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { sonuc: g.sonuc };
+  });
+  s.get('/firma/:id/birim-gorusleri', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
+    const { id } = i.params as { id: string }; if (!UUID.test(id)) return yok(y);
+    return (await b.db.query(`SELECT birim, sonuc, gorus_notu, istem_zamani, gorus_zamani FROM firma_birim_gorusu WHERE kurulus_ref = $1 ORDER BY istem_zamani DESC`, [id])).rows;
+  });
+  // YG-1650, YG-1651: Sahte Belge veya Yanıltıcı Beyan Şüphesi; Firma Yönetimi Müdür Yardımcısı ve Müdürüne Kritik (acil, sayaçsız) kart; başvuru Reddedildi önerisiyle üst kademeye arz edilir.
+  s.post('/firma/:id/sahte-belge-suphesi', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { aciklama } = (i.body ?? {}) as { aciklama?: string };
+    if (!UUID.test(id)) return yok(y);
+    if (!aciklama?.trim()) return y.code(400).send({ hata: 'Şüphenin nedenini yazmanızı rica ederiz.' });
+    const u = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!u) return yok(y);
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Sahte Belge Şüphesi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id])).rowCount) return y.code(409).send({ hata: 'Bu firma için açık şüphe kaydı vardır.' });
+    const my = await rolId(b.db, 'Firma Yönetimi Müdür Yardımcısı'); const { rolSahipleri: rs } = await import('./makam.js');
+    const hedef = (await rs(b.db, my)).length ? my : await rolId(b.db, 'Firma Yönetimi Müdürü');
+    await kartAc(b.db, { tur: 'Sahte Belge Şüphesi', kategori: 'islem', oncelik: 'Kritik', baslik: `${u.ticari_unvan} · Sahte Belge veya Yanıltıcı Beyan Şüphesi`, ozet: `${aciklama.trim().slice(0, 250)} · Başvuru Reddedildi önerisiyle üst kademeye arz edilir.`, sahipRol: hedef, nesneTuru: 'Kuruluş', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sahte Belge Şüphesi', nesneTuru: 'Kuruluş', nesneKimligi: id, gerekce: aciklama.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   // YG-1697 (A51-S1): Hukuk ve Uyum Direktörü bekleyen görüşleri görür ve "Görüşü Gönder" ile talep eden role iletir.
   const hudMu = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = 'Hukuk ve Uyum Direktörü'`, [k])).rowCount);
   s.get('/firma-hukuk-gorusu/bekleyen', oturumlu, async (i, y) => {

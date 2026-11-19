@@ -48,6 +48,8 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce }), 'Firma onaylandı.')}>Onayla ve Aktif Yap</button>
             <label htmlFor="fs-o">Olumsuz Öneri</label><select id="fs-o" value={oneri} onChange={(e) => setOneri(e.target.value)}><option>Koşullu Onaylı</option><option>Reddedildi</option></select>
             <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/hukuk-gorusu`, { oneri }), 'Hukuk ve Uyum görüşü istendi.')}>Hukuk Görüşü İste</button>
+            <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/birim-gorusu`, { birim: 'Teknik Müdürlük' }), 'Teknik Müdürlük görüşü istendi.')}>Teknik Görüş İste</button>
+            <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/birim-gorusu`, { birim: 'İSG' }), 'İSG görüşü istendi.')}>İSG Görüşü İste</button>
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: oneri, gerekce }), 'Karar kaydedildi.')}>Öneriyi Karara Bağla</button>
           </>}
           <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" list="fs-bl" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} /><datalist id="fs-bl"><option value="Sorumluluk Sigortası" /><option value="Gözetimdeki Yat Sigortası" /><option value="SGK Borcu Yoktur Yazısı" /><option value="Vergi Borcu Yoktur Yazısı" /></datalist>

@@ -127,6 +127,15 @@ describe('firma bilgi, banka, itiraz, cari (YG-425, YG-422, K-178)', () => {
     expect((await o.ist('POST', `/api/firma/${f2}/hukuk-gorusu`, await o.gir('fym'), { oneri: 'Reddedildi' })).statusCode).toBe(409);
     expect((await st()).statusCode).toBe(409);
     const hg = (await o.sup.query(`SELECT kimlik FROM firma_hukuk_gorusu WHERE kurulus_ref = $1`, [f2])).rows[0].kimlik;
+    { // T-YG1651: Teknik Müdürlük ve İSG birim görüşü; sahte belge şüphesi acil kartı
+      await o.sup.query(`UPDATE kurulus SET kayit_asamasi = 'Başvuru' WHERE kimlik = $1`, [f2]);
+      const r = await o.ist('POST', `/api/firma/${f2}/birim-gorusu`, await o.gir('fym'), { birim: 'Teknik Müdürlük' }); expect(r.statusCode, r.body).toBe(200);
+      expect((await o.ist('POST', `/api/firma/${f2}/birim-gorusu`, await o.gir('fym'), { birim: 'Teknik Müdürlük' })).statusCode).toBe(409);
+      expect((await o.kart('Firma Başvurusu Birim Görüşü', r.json().kimlik)).durum).toBe('Bekliyor');
+      expect((await o.ist('POST', `/api/firma-birim-gorusu/${r.json().kimlik}/gonder`, await o.gir('fym'), { sonuc: 'Uygun' })).statusCode).toBe(404);
+      const sh = await o.ist('POST', `/api/firma/${f2}/sahte-belge-suphesi`, await o.gir('fym'), { aciklama: 'Ticaret sicil gazetesi tarihi tutarsız' }); expect(sh.statusCode, sh.body).toBe(200);
+      expect((await o.kart('Sahte Belge Şüphesi', f2)).oncelik).toBe('Kritik');
+    }
     // YG-1697 (T-YG1697): görüş onay kademesi değil, "Görüşü Gönder"
     expect((await o.kart('Firma Hukuk Görüşü', hg)).kategori).toBe('gorev');
     expect((await o.ist('GET', '/api/firma-hukuk-gorusu/bekleyen', await o.gir('hd'))).json().some((x: { kimlik: string }) => x.kimlik === hg)).toBe(true);
