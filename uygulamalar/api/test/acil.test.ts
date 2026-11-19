@@ -70,6 +70,16 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     expect((await o.ist('POST', '/api/nobet/cizelge', await o.gir('ds'), { donem: '2099-01', vardiyalar: [v('ds', 'Dosya Sorumlusu')] })).statusCode).toBe(403);
     const buAy = new Date().toISOString().slice(0, 7);
     expect((await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, vardiyalar: [v('ds', 'Dosya Sorumlusu')] })).statusCode).toBe(409);
+    { // T-YG244-TEKNIK: teknik taraf Teknik Müdür Yardımcısı veya Teknik Müdürce hazırlanır, Operasyon Müdür Yardımcısına görev açılır; geç iletim işaretlenir
+      const tm = await o.gir('tm');
+      expect((await o.ist('POST', '/api/nobet/teknik-taraf', await o.gir('ds'), { donem: '2099-01', vardiyalar: [v('tu', 'Teknik Uzman')] })).statusCode).toBe(404);
+      expect((await o.ist('POST', '/api/nobet/teknik-taraf', tm, { donem: '2099-01', vardiyalar: [v('ds', 'Teknik Uzman')] })).statusCode).toBe(400);
+      const r = await o.ist('POST', '/api/nobet/teknik-taraf', tm, { donem: '2099-01', vardiyalar: [{ ...v('tu', 'Teknik Uzman'), brans: 'Makine' }, v('ty', 'Yönetici')] });
+      expect(r.statusCode, r.body).toBe(200); expect(r.json().gec).toBe(false);
+      expect(await o.kart('Nöbet Çizelgesi Teknik Taraf', r.json().kimlik)).toBeDefined();
+      expect((await o.ist('GET', '/api/nobet/teknik-taraf?donem=2099-01', c)).json().vardiyalar).toHaveLength(2);
+      expect((await o.ist('POST', '/api/nobet/teknik-taraf', tm, { donem: buAy, vardiyalar: [v('tu', 'Teknik Uzman')] })).json().gec).toBe(true);
+    }
     { // YG-241: katmana uymayan kişi alınmaz; adaylar katman bilgisiyle gelir
       const r0 = await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, degisiklik: true, vardiyalar: [v('ds', 'Teknik Uzman')] }); expect(r0.statusCode).toBe(400);
       const ad = (await o.ist('GET', '/api/nobet/adaylar', c)).json() as { kimlik: string; katmanlar: string[] }[];
@@ -92,6 +102,11 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     const r2 = await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, degisiklik: true, vardiyalar: [v('ds', 'Dosya Sorumlusu'), v('tu', 'Teknik Uzman'), v('oy', 'Yönetici')] });
     await o.karar((await o.kart('Nöbet Çizelgesi', r2.json().kimlik)).kimlik, 'opm', 'Onayla');
     expect((await o.sup.query(`SELECT count(*)::int n FROM nobet_cizelgesi WHERE donem = $1 AND durum = 'Yürürlükte'`, [buAy])).rows[0].n).toBe(1);
+    { // T-YG244-TAKVIM: günlük nöbet takvimi ayın her gününü kapsar
+      const tk = (await o.ist('GET', `/api/nobet/takvim?donem=${buAy}`, await o.gir('ds'))).json();
+      expect(tk.length).toBeGreaterThanOrEqual(28); expect(tk[0].gun).toBe(`${buAy}-01`);
+      expect((await o.ist('GET', '/api/nobet/takvim?donem=2026-13', await o.gir('ds'))).statusCode).toBe(400);
+    }
   });
   it('devir kontrol listesi eksiksiz olmalı; devralan onaylar', async () => {
     const c = await o.gir('ds');

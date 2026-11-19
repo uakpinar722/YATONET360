@@ -249,6 +249,12 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ kdvHaric: 200, toplam: 240 });
     const id = r.json().kimlik; const k = await o.kart('Tedarik Siparişi', id);
     expect(k.zincir).toHaveLength(3);
+    { // T-YG1592: sipariş onay kartında beş sistem kontrolü ve son onay makamı
+      const sk = (await o.ist('GET', `/api/is/${k.kimlik}/siparis-kontrolleri`, await o.gir('tym'))).json();
+      expect(sk.kontroller.map((x: { ad: string }) => x.ad)).toEqual(['Aynı Şartla Karşılaştırma', 'Seçim Gerekçesi', 'Onaylı Kaynak', 'Eşik Altına Bölünmeme', 'Görev Ayrılığı']);
+      expect(sk.kontroller.find((x: { ad: string }) => x.ad === 'Onaylı Kaynak').sonuc).toBe(true); expect(sk.sonMakam).toBeTruthy();
+      expect((await o.ist('GET', `/api/is/${k.kimlik}/siparis-kontrolleri`, await o.gir('ds'))).statusCode).toBe(404);
+    }
     const G = { satir: 1, miktar: 2, lot: 'L1', irsaliye: 'İ1', bekletmeYeri: firma };
     expect((await o.ist('POST', `/api/siparis/${id}/giris`, c, G)).statusCode).toBe(409);
     await o.karar(k.kimlik, 'tym', 'Onaya Gönder'); await o.karar(k.kimlik, 'to', 'Onaya Gönder'); expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);

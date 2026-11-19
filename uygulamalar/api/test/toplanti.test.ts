@@ -7,7 +7,7 @@ import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { DenemeKutusu } from '../src/sms.js';
 import { sunucuKur } from '../src/sunucu.js';
-import { periyodikIsle, toplantiHatirlat } from '../src/toplanti.js';
+import { gundemUret, periyodikIsle, toplantiHatirlat } from '../src/toplanti.js';
 
 const VT = 'yatonet360_test10'; const PAROLA = 'Sinama-Parolasi-2026!'; const D = '@deneme.yatonet.local';
 const CEO = 'ceo' + D, BIM = 'bimuduru' + D, DES = 'destek' + D, DEN = 'denetci' + D, YAT = 'yatsahibi' + D;
@@ -107,6 +107,7 @@ describe('planlama yetkisi ve başkan (YG-579, YG-583)', () => {
     expect(t.katilimcilar.map((k: any) => k.kimlik).sort()).toEqual([K[BIM], K[DEN], K[DES], K[CEO]].sort());
     expect(t.katilimcilar.find((k: any) => k.kimlik === K[CEO]).katilim).toBe('Yalnız Bilgi');
     expect(t.gundem).toMatch(/Süresi Aşan Onay: \d+/); expect(t.gundem).toMatch(/Açık Uygunsuzluk: \d+/); expect(t.gundem).toContain('Kritik Öncelikli Açık Dosyalar'); // T-YG584
+    expect(await gundemUret(db, 'TPL-04')).toMatch(/^Uyum Panosu Özeti: Gecikti \d+ · Süresi Yaklaşıyor \d+ · Süresi Var \d+/); // T-YG1550
     await al(DES, 'Operasyon Müdürü'); await al(DEN, 'Teknik Müdür'); await al(BIM, 'Teknik ve Operasyon Direktörü');
   });
   it('takvim çakışması bildirilir, engellemez', async () => {
@@ -185,6 +186,7 @@ describe('karar ve tutanak (YG-576, YG-584)', () => {
     }
     const g = (await ist('GET', '/api/bugun', b)).json();
     expect(JSON.stringify(g)).toContain('Toplantı Kararı');
+    expect(g.baskanlik.some((x: { kimlik: string }) => x.kimlik === id)).toBe(true); // T-YG1586: başkanlık kartı
     // Düzenleyen Destek, başkan Bilgi İşlem Müdürü: kapanış başkanda.
     expect((await ist('POST', `/api/toplanti/${id}/kapat`, b)).statusCode).toBe(400); // tutanak yok
     expect((await ist('POST', `/api/toplanti/${id}/tutanak`, d, { tutanak: ' ' })).statusCode).toBe(400);

@@ -53,6 +53,12 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     const kritik = (await b.db.query(`SELECT u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref JOIN is_emri e ON e.dosya_ref = d.kimlik WHERE u.sinif = 'Kritik' AND u.statu NOT IN ('Kapalı', 'Geçersiz') AND ${kapsam} GROUP BY u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum`, [o.kullanici])).rows;
     return { noktalar, kritik };
   });
+  // YG-1585: Raporlarım; hazırlanan teknik raporların durumu yalnız "[Makam] Kontrolünde", "Onaylandı" (son 30 gün) veya "İade Edildi" olarak gösterilir; ara onaylar ayrıca bildirilmez.
+  s.get('/raporlarim', oturumlu, async (i) => {
+    const o = i.oturum!;
+    return (await b.db.query(`SELECT r.kimlik, r.rapor_no, r.rapor_turu, d.dosya_no, CASE r.durum WHEN 'Onaylı' THEN 'Onaylandı' WHEN 'Kontrolde' THEN coalesce((SELECT x.rol_adi FROM is_karti k JOIN rol x ON x.kimlik = k.zincir[k.kademe + 1] WHERE k.tur = 'Teknik Rapor' AND k.nesne_kimligi = r.kimlik::text AND k.durum = 'Bekliyor' ORDER BY k.olusturma_zamani DESC LIMIT 1), 'Onay Makamı') || ' Kontrolünde' ELSE r.durum END durum
+      FROM teknik_rapor r JOIN dosya d ON d.kimlik = r.dosya_ref WHERE r.hazirlayan_ref = $1 AND (r.durum IN ('Kontrolde', 'İade Edildi') OR (r.durum = 'Onaylı' AND r.olusturma_zamani > now() - interval '30 days')) ORDER BY r.olusturma_zamani DESC LIMIT 30`, [o.kullanici])).rows;
+  });
   // YG-1586, YG-1587: teknik gözetim panosu. Teknik Yönetici gözetimindeki, Teknik Müdür ve Yardımcısı tüm açık dosyaları kapsar; Teknik Uzman yükü gösterilmez.
   s.get('/teknik-pano', oturumlu, async (i, y) => {
     const o = i.oturum!; const l = await roller(b.db, o.kullanici);
@@ -130,7 +136,12 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
         ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
     const onerilen = ekip.filter((e) => e.yuk < ust).sort((a, c) => a.yuk - c.yuk)[0]?.ad_soyad ?? null;
     await notEkle(dosyalar, 'Operasyon Yöneticisi');
-    return { dosyalar, mudur, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk.map((k) => ({ ...k, onerilen })) };
+    // YG-1583: Kapanış Bekleyenler (yalnız Müdürlük); nihai kapanış özeti onayda/iadede veya koşullu kabulde açık iş kalemi bulunan dosyalar, en yakın koşul bitişi önce.
+    const kapanis = !mudur ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi, n.durum ozet_durumu, k.kosul_bitis::text kosul_bitis, (k.kosul_bitis - current_date) kalan_gun, k.acik
+      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN nihai_kapanis_ozeti n ON n.dosya_ref = d.kimlik AND n.durum IN ('Onayda', 'İade')
+      LEFT JOIN LATERAL (SELECT a.kosul_bitis, (SELECT count(*)::int FROM acik_is_kalemi p WHERE p.kabul_ref = a.kimlik AND p.kapanis_zamani IS NULL) acik FROM kabul_kaydi a WHERE a.dosya_ref = d.kimlik AND a.kabul_turu = 'Koşullu Kabul' AND EXISTS (SELECT 1 FROM acik_is_kalemi p WHERE p.kabul_ref = a.kimlik AND p.kapanis_zamani IS NULL) ORDER BY a.kosul_bitis LIMIT 1) k ON true
+      WHERE d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND (n.dosya_ref IS NOT NULL OR k.kosul_bitis IS NOT NULL) ORDER BY k.kosul_bitis NULLS LAST, d.dosya_no LIMIT 50`)).rows;
+    return { dosyalar, mudur, kapanis, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk.map((k) => ({ ...k, onerilen })) };
   });
   s.get('/is-listeleri', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);

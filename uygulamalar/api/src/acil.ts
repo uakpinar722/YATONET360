@@ -179,6 +179,45 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   const KATMAN_ROL: Record<string, string[]> = { 'Dosya Sorumlusu': ['Dosya Sorumlusu'], 'Teknik Uzman': ['Teknik Uzman'], 'Yönetici': ['Operasyon Müdür Yardımcısı', 'Teknik Müdür Yardımcısı', 'Operasyon Yöneticisi', 'Teknik Yönetici'] };
   const katmanAdaylari = async () => (await b.db.query(`SELECT u.kimlik, u.ad_soyad, array_agg(DISTINCT k.katman) katmanlar FROM kullanici_hesabi u JOIN rol_atamasi a ON a.kullanici_ref = u.kimlik AND a.atama_durumu = 'Aktif' JOIN rol r ON r.kimlik = a.rol_ref JOIN jsonb_each($1::jsonb) k(katman, roller) ON r.rol_adi IN (SELECT jsonb_array_elements_text(k.roller)) WHERE u.kullanici_grubu = 'LGM İç Rolü' GROUP BY u.kimlik, u.ad_soyad ORDER BY u.ad_soyad`, [JSON.stringify(KATMAN_ROL)])).rows as { kimlik: string; ad_soyad: string; katmanlar: string[] }[];
   s.get('/nobet/adaylar', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async () => katmanAdaylari());
+  // YG-244, YG-1587: teknik taraf (branş nöbeti Teknik Uzman, teknik yönetici nöbeti Teknik Yönetici/Teknik Müdür Yardımcısı) Teknik Müdür Yardımcısınca (veya Teknik Müdürce) hazırlanır;
+  // yayımdan (dönem başından 10 gün önce) en az 15 gün önce, yani dönem başından 25 gün önce Operasyon Müdür Yardımcısına iletilir. Geç iletim kaydedilir ve işaretlenir.
+  const TEKNIK_YON = ['Teknik Müdür Yardımcısı', 'Teknik Yönetici'];
+  const teknikHazirlayan = async (k: string) => {
+    const r = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [k])).rows.map((z) => z.rol_adi as string);
+    return r.includes('Teknik Müdür Yardımcısı') || r.includes('Teknik Müdür');
+  };
+  const teknikAdaylar = async () => {
+    const tek = new Set((await b.db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($1)`, [TEKNIK_YON])).rows.map((z) => z.kullanici_ref as string));
+    return (await katmanAdaylari()).map((x) => ({ ...x, katmanlar: x.katmanlar.filter((k) => k === 'Teknik Uzman' || (k === 'Yönetici' && tek.has(x.kimlik))) })).filter((x) => x.katmanlar.length);
+  };
+  s.get('/nobet/teknik-adaylar', oturumlu, async (i, y) => (await teknikHazirlayan(i.oturum!.kullanici)) ? teknikAdaylar() : yok(y));
+  s.post('/nobet/teknik-taraf', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[] };
+    if (!(await teknikHazirlayan(o.kullanici))) return yok(y);
+    if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });
+    if (!g.vardiyalar?.length) return y.code(400).send({ hata: 'Vardiya giriniz.' });
+    const ad = new Map((await teknikAdaylar()).map((x) => [x.kimlik, x.katmanlar]));
+    for (const v of g.vardiyalar) {
+      if (!['Teknik Uzman', 'Yönetici'].includes(v.katman ?? '') || !v.kullanici || !v.baslangic || !v.bitis || new Date(v.bitis) <= new Date(v.baslangic)) return y.code(400).send({ hata: 'Vardiya katman, kişi ve zaman içermelidir.' });
+      if (!ad.get(v.kullanici)?.includes(v.katman!)) return y.code(400).send({ hata: v.katman === 'Yönetici' ? 'Teknik yönetici nöbetine Teknik Yönetici veya Teknik Müdür Yardımcısı yazılır.' : 'Branş nöbetine Teknik Uzman yazılır.' });
+    }
+    const son = new Date(new Date(`${g.donem}-01T00:00:00+03:00`).getTime() - 25 * 86_400_000); const gec = Date.now() > son.getTime();
+    const vardiyalar = g.vardiyalar.map((v) => ({ katman: v.katman, kullanici: v.kullanici, baslangic: v.baslangic, bitis: v.bitis, brans: v.brans?.trim() || null }));
+    return islem(async (c) => {
+      const r = (await c.query(`INSERT INTO nobet_teknik_taraf (donem, vardiyalar, gec, hazirlayan_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.donem, JSON.stringify(vardiyalar), gec, o.kullanici])).rows[0];
+      const omy = await rolId(c, 'Operasyon Müdür Yardımcısı'); const hedef = (await rolSahipleri(c, omy)).length ? omy : await rolId(c, 'Operasyon Müdürü');
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Nöbet Çizelgesi Teknik Taraf' AND baslik LIKE $1 AND durum = 'Bekliyor'`, [`${g.donem} %`]);
+      await kartAc(c, { tur: 'Nöbet Çizelgesi Teknik Taraf', kategori: 'gorev', baslik: `${g.donem} · Nöbet Çizelgesi Teknik Taraf`, ozet: `${vardiyalar.length} vardiya${gec ? ' · süresinden sonra iletildi' : ''}. Nöbet Çizelgesi bölümünde "Teknik Tarafı Ekle" ile çizelgeye alınız.`, sahipRol: hedef, sonZaman: new Date(new Date(`${g.donem}-01T00:00:00+03:00`).getTime() - 10 * 86_400_000), nesneTuru: 'Nöbet Teknik Taraf', nesneKimligi: r.kimlik });
+      return { kimlik: r.kimlik, gec };
+    });
+  });
+  s.get('/nobet/teknik-taraf', oturumlu, async (i, y) => {
+    const o = i.oturum!; const donem = String((i.query as { donem?: string }).donem ?? '');
+    const izin = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2)`, [o.kullanici, ['Operasyon Müdür Yardımcısı', 'Operasyon Müdürü', 'Teknik Müdür Yardımcısı', 'Teknik Müdür']])).rowCount;
+    if (!izin || !/^\d{4}-\d{2}$/.test(donem)) return yok(y);
+    const r = (await b.db.query(`SELECT t.kimlik, t.vardiyalar, t.gec, t.iletim_zamani, h.ad_soyad hazirlayan FROM nobet_teknik_taraf t JOIN kullanici_hesabi h ON h.kimlik = t.hazirlayan_ref WHERE t.donem = $1 ORDER BY t.iletim_zamani DESC LIMIT 1`, [donem])).rows[0];
+    return r ?? null;
+  });
   s.post('/nobet/cizelge', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[]; degisiklik?: boolean };
     if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });
@@ -203,6 +242,16 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     const ad = async (k: string | null) => (k ? (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [k])).rows[0]?.ad_soyad : null);
     return { mesaiIcinde: mesaiIcinde(new Date()), dosyaSorumlusu: await ad(await nobetci(b.db, 'Dosya Sorumlusu')), teknikUzman: await ad(await nobetci(b.db, 'Teknik Uzman')), yonetici: await ad(await nobetci(b.db, 'Yönetici')) };
+  });
+  // YG-244: günlük nöbet takvimi; yürürlükteki çizelgenin vardiyaları İstanbul gününe göre (bir vardiya birden çok güne yayılabilir).
+  s.get('/nobet/takvim', oturumlu, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
+    const donem = String((i.query as { donem?: string }).donem ?? '');
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(donem)) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });
+    return (await b.db.query(`SELECT g::date::text gun, v.katman, v.brans, h.ad_soyad, to_char(v.baslangic AT TIME ZONE 'Europe/Istanbul', 'DD.MM HH24:MI') baslangic, to_char(v.bitis AT TIME ZONE 'Europe/Istanbul', 'DD.MM HH24:MI') bitis
+      FROM nobet_cizelgesi c JOIN nobet_vardiyasi v ON v.cizelge_ref = c.kimlik JOIN kullanici_hesabi h ON h.kimlik = v.kullanici_ref
+      CROSS JOIN LATERAL generate_series(greatest((v.baslangic AT TIME ZONE 'Europe/Istanbul')::date, ($1 || '-01')::date), least(((v.bitis - interval '1 second') AT TIME ZONE 'Europe/Istanbul')::date, (($1 || '-01')::date + interval '1 month' - interval '1 day')::date), interval '1 day') g
+      WHERE c.durum = 'Yürürlükte' AND c.donem = $1 ORDER BY g, CASE v.katman WHEN 'Dosya Sorumlusu' THEN 0 WHEN 'Teknik Uzman' THEN 1 ELSE 2 END, v.baslangic`, [donem])).rows;
   });
   // YG-246, YG-247: dijital devir; kontrol listesi tamamlanmadan olmaz; devralan onaylar.
   s.post('/nobet/devir', oturumlu, async (i, y) => {

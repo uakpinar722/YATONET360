@@ -109,6 +109,28 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  // YG-1592, YG-1593: sipariş onay kartında sistem kontrolleri; kartın sıradaki makamı veya Tedarik Müdürlüğü görür. Kontroller karar vermez, makama bilgi verir.
+  s.get('/is/:id/siparis-kontrolleri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT k.nesne_kimligi, k.zincir, k.kademe, (SELECT x.rol_adi FROM rol x WHERE x.kimlik = k.zincir[array_length(k.zincir, 1)]) son_makam FROM is_karti k WHERE k.kimlik = $1 AND k.tur = 'Tedarik Siparişi'`, [id])).rows[0];
+    if (!k) return yok(y);
+    const yetkili = (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (a.rol_ref = ANY($2::text[]) OR x.rol_adi IN ('Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'))`, [o.kullanici, k.zincir])).rowCount;
+    if (!yetkili) return yok(y);
+    const s = (await b.db.query(`SELECT s.*, ku.ticari_unvan, ku.kayit_asamasi, ku.ag_statusu FROM tedarik_siparisi s JOIN kurulus ku ON ku.kimlik = s.kurulus_ref WHERE s.kimlik = $1`, [k.nesne_kimligi])).rows[0];
+    if (!s) return yok(y);
+    const yanit = (await b.db.query(`SELECT count(DISTINCT kurulus_ref)::int n FROM tedarikci_teklif_talebi WHERE dosya_ref = $1 AND durum = 'Yanıtlandı'`, [s.dosya_ref])).rows[0].n as number;
+    const diger = (await b.db.query(`SELECT count(*)::int n, coalesce(sum(kdv_haric_eur), 0)::float t FROM tedarik_siparisi WHERE dosya_ref = $1 AND kurulus_ref = $2 AND kimlik <> $3 AND statu <> 'İptal'`, [s.dosya_ref, s.kurulus_ref, s.kimlik])).rows[0];
+    const onaylayan = (await b.db.query(`SELECT 1 FROM is_karti_adim WHERE is_ref = $1 AND yapan_ref = $2`, [id, s.hazirlayan_ref])).rowCount;
+    const kontroller = [
+      { ad: 'Aynı Şartla Karşılaştırma', sonuc: yanit >= 2, aciklama: yanit >= 2 ? `${yanit} tedarikçiden yanıtlı teklif var.` : `Dosyada ${yanit} tedarikçiden yanıtlı teklif var; tek kaynak seçiminde gerekçeyi kontrol ediniz.` },
+      { ad: 'Seçim Gerekçesi', sonuc: String(s.secim_gerekcesi ?? '').trim().length > 0, aciklama: String(s.secim_gerekcesi ?? '').trim() || 'Gerekçe yazılmamıştır.' },
+      { ad: 'Onaylı Kaynak', sonuc: s.ag_statusu === 'Aktif' && ['Onaylı', 'Koşullu Onaylı'].includes(s.kayit_asamasi), aciklama: `${s.ticari_unvan} · ${s.kayit_asamasi} · ${s.ag_statusu}` },
+      { ad: 'Eşik Altına Bölünmeme', sonuc: diger.n === 0, aciklama: diger.n === 0 ? 'Aynı dosyada bu tedarikçiye başka sipariş yoktur.' : `Aynı dosyada bu tedarikçiye ${diger.n} sipariş daha var (${tutar(diger.t)} EUR); onay makamı kümülatif tutarla belirlenmiştir.` },
+      { ad: 'Görev Ayrılığı', sonuc: s.hazirlayan_ref !== o.kullanici && !onaylayan, aciklama: s.hazirlayan_ref === o.kullanici ? 'Siparişi siz hazırladınız; karar veremezsiniz.' : 'Hazırlayan onay zincirinde karar vermemiştir.' },
+    ];
+    return { siparisNo: s.siparis_no, kdvHaric: Number(s.kdv_haric_eur), sonMakam: k.son_makam, kontroller };
+  });
   s.get('/dosya/:id/siparisler', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
@@ -118,7 +140,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-404, YG-405, YG-1589: lotsuz kabul yok; bekletme yeri firma veya tedarikçi (LGM deposu yok); kontrol Saha Sorumlusu, yoksa Teknik Uzman.
   s.post('/siparis/:id/giris', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { satir?: number; miktar?: number; lot?: string; irsaliye?: string; bekletmeYeri?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { satir?: number; miktar?: number; lot?: string; irsaliye?: string; bekletmeYeri?: string; sonKullanma?: string };
     if (!UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT s.*, d.dosya_no FROM tedarik_siparisi s JOIN dosya d ON d.kimlik = s.dosya_ref WHERE s.kimlik = $1`, [id])).rows[0];
     if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
@@ -128,6 +150,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (t.tedarikci_kabul !== 'Kabul' && (await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kurulus_ref = $1 LIMIT 1`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: t.tedarikci_kabul === 'Ret' ? 'Tedarikçi siparişi kabul etmemiştir.' : 'Tedarikçinin sipariş kabulü bekleniyor.' });
     if (!g.lot?.trim()) return y.code(400).send({ hata: 'Kabul için malzemenin kaynağını ve lot numarasını yazmanızı rica ederiz.' });
     if (!g.irsaliye?.trim() || !g.bekletmeYeri || !UUID.test(g.bekletmeYeri) || !(Number(g.miktar) > 0)) return y.code(400).send({ hata: 'İrsaliye, miktar ve bekletme yeri zorunludur.' });
+    if (g.sonKullanma && !/^\d{4}-\d{2}-\d{2}$/.test(g.sonKullanma)) return y.code(400).send({ hata: 'Son kullanma tarihi geçersizdir.' }); // YG-1590
     const k = (await b.db.query(`SELECT miktar, teslim_alinan FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 AND satir_no = $2`, [id, g.satir])).rows[0];
     if (!k) return y.code(400).send({ hata: 'Satır bulunamadı.' });
     if (Number(k.teslim_alinan) + Number(g.miktar) > Number(k.miktar)) return y.code(409).send({ hata: 'Fazla teslim yetkili değişiklik gerektirir.' });
@@ -135,7 +158,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (!saha) return y.code(409).send({ hata: 'Dosyada teknik kontrol sorumlusu yoktur.' });
     return islem(async (c) => {
       const no = await altNumara(c, t.dosya_no, 'MG');
-      const r = (await c.query(`INSERT INTO malzeme_giris_kabulu (kayit_no, siparis_ref, satir_no, miktar, lot_no, irsaliye_no, bekletme_yeri_ref, kontrol_eden_ref, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [no, id, g.satir, g.miktar, g.lot!.trim(), g.irsaliye!.trim(), g.bekletmeYeri, saha.kullanici_ref, o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO malzeme_giris_kabulu (kayit_no, siparis_ref, satir_no, miktar, lot_no, irsaliye_no, bekletme_yeri_ref, kontrol_eden_ref, hazirlayan_ref, son_kullanma) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [no, id, g.satir, g.miktar, g.lot!.trim(), g.irsaliye!.trim(), g.bekletmeYeri, saha.kullanici_ref, o.kullanici, g.sonKullanma || null])).rows[0];
       await kartAc(c, { tur: 'Malzeme Kontrolü', kategori: 'islem', baslik: `${no} · Malzeme Teknik Kontrolü`, sahipKullanici: saha.kullanici_ref, nesneTuru: 'Malzeme', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, kayitNo: no, gonderilen: saha.rol };
     });

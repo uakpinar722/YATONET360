@@ -89,6 +89,7 @@ describe('teknik rapor (YG-200, YG-280, YG-428, YG-1518)', () => {
     expect(await raporEngeli(o.db, d.kimlik)).toContain('Teknik Rapor');
     const k = await o.kart('Teknik Rapor', r.json().kimlik);
     expect(k.zincir).toHaveLength(3);
+    expect((await o.ist('GET', '/api/raporlarim', tu)).json().find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).durum).toBe('Teknik Yönetici Kontrolünde'); // T-YG1585
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(403);
     await o.karar(k.kimlik, 'ty', 'Onaya Gönder');
     expect(await raporEngeli(o.db, d.kimlik)).toBeNull();

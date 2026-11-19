@@ -9,10 +9,11 @@ const gun = (s: string) => s.split('-').reverse().join('.');
 /** YG-1056, YG-1478: vekili birim amiri atar; vekâlet süreli ve en fazla 30 gündür. */
 export function VekaletSayfasi() {
   const [v, setV] = useState<{ secenek: Secenek[]; kayitlar: Kayit[] } | null>(null);
+  const [tb, setTb] = useState<{ tur: string; asil: string; vekil: string; kapsam: string; baslangic: string; bitis: string }[]>([]);
   const [sec, setSec] = useState(''); const [vekil, setVekil] = useState(''); const [neden, setNeden] = useState('İzin'); const [kapsam, setKapsam] = useState('');
   const [bas, setBas] = useState(''); const [bit, setBit] = useState(''); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const yukle = () => istek<{ secenek: Secenek[]; kayitlar: Kayit[] }>('/vekalet').then(setV).catch((e) => setHata(e.message));
-  useEffect(() => { void yukle(); }, []);
+  useEffect(() => { void yukle(); void istek<typeof tb>('/vekalet/tablo').then(setTb).catch(() => setTb([])); }, []);
   const asil = v?.secenek.find((s) => `${s.kimlik}|${s.rol}` === sec);
   const gonder = async (e: FormEvent) => {
     e.preventDefault(); setHata(''); setNot('');
@@ -48,6 +49,11 @@ export function VekaletSayfasi() {
         </form>
       )}
       {v && v.secenek.length === 0 && <div className="ozet bos">Vekil atayabileceğiniz bağlı personel bulunmamaktadır.</div>}
+      <div className="bolum">Vekâlet Tablosu</div>{/* YG-1057: kim kime vekâlet ediyor */}
+      {tb.length === 0 ? <div className="ozet bos">Yürürlükte vekâlet bulunmamaktadır.</div> : <div className="tablo"><table className="kartli">
+        <thead><tr><th>Asıl Görevli</th><th>Vekil</th><th>Tür</th><th>Kapsam</th><th>Tarih</th></tr></thead>
+        <tbody>{tb.map((k, n) => <tr key={n}><td data-ad="Asıl Görevli">{k.asil}</td><td data-ad="Vekil">{k.vekil}</td><td data-ad="Tür">{k.tur}</td><td data-ad="Kapsam">{k.kapsam}</td><td data-ad="Tarih">{gun(k.baslangic)} – {gun(k.bitis)}</td></tr>)}</tbody>
+      </table></div>}
       <div className="bolum">Vekâlet Kayıtları</div>
       {v?.kayitlar.length === 0 && <div className="ozet bos">Vekâlet kaydı bulunmamaktadır.</div>}
       {v && v.kayitlar.length > 0 && (

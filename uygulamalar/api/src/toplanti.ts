@@ -30,7 +30,13 @@ async function baskanBul(db: Db, rol: string | null, kisiler: string[], duzenley
 }
 
 /** YG-584: gündem kayıtlardan dolar. Dosya, uygunsuzluk ve KPI kaynakları kendi modülleri açıldıkça eklenir. */
-async function gundemUret(db: Db, kod: string): Promise<string | null> {
+export async function gundemUret(db: Db, kod: string): Promise<string | null> {
+  if (kod === 'TPL-04') {
+    // YG-1550: uyum panosu özeti (kırmızı gecikti, sarı 7 gün ve daha az, yeşil süresi var) üç aylık stratejik gözden geçirme gündemine girer.
+    const u = (await db.query(`SELECT count(*) FILTER (WHERE son_tarih < current_date)::int k, count(*) FILTER (WHERE son_tarih BETWEEN current_date AND current_date + 7)::int s, count(*) FILTER (WHERE son_tarih > current_date + 7)::int y,
+        string_agg(ad, ', ' ORDER BY son_tarih) FILTER (WHERE son_tarih < current_date) gecikenler FROM uyum_gorevi WHERE durum <> 'Kapalı'`)).rows[0];
+    return [`Uyum Panosu Özeti: Gecikti ${u.k} · Süresi Yaklaşıyor ${u.s} · Süresi Var ${u.y}`, ...(u.gecikenler ? [`Geciken Yükümlülükler: ${String(u.gecikenler).slice(0, 500)}`] : [])].join('\n');
+  }
   if (kod !== 'TPL-02' && kod !== 'TPL-03') return null;
   const { rows } = await db.query(`SELECT count(*)::int n FROM is_karti WHERE durum = 'Bekliyor' AND kategori = 'onay' AND son_zaman < now()`);
   // YG-584: süre aşımları, açık uygunsuzluklar ve Kritik dosyalar gündeme kendiliğinden girer.

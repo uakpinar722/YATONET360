@@ -191,7 +191,7 @@ function KosulUzatma({ id, ds }: { id: string; ds: boolean }) {
 export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [f, setF] = useState({ dil: 'Türkçe', tedarikci: '', teklifRef: '', kullanim: '', teslimTarihi: '', teslimYeri: '', olcut: '', gerekce: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', bedel: '' });
   const [v, setV] = useState<Siparisler | null>(null); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [yer, setYer] = useState<{ kimlik: string; ticari_unvan: string }[]>([]);
-  const [g, setG] = useState({ lot: '', irsaliye: '', miktar: '', bekletmeYeri: '' }); const [fa, setFa] = useState({ no: '', tarih: '', tutar: '' });
+  const [g, setG] = useState({ lot: '', irsaliye: '', miktar: '', bekletmeYeri: '', sonKullanma: '' }); const [fa, setFa] = useState({ no: '', tarih: '', tutar: '' });
   const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   const ts = roller.includes('Tedarik Sorumlusu');
   const yukle = () => istek<Siparisler>(`/dosya/${id}/siparisler`).then(setV);
@@ -211,7 +211,8 @@ export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) 
             <label htmlFor={`g-i-${s.kimlik}`}>İrsaliye No</label><input id={`g-i-${s.kimlik}`} value={g.irsaliye} onChange={(e) => setG({ ...g, irsaliye: e.target.value })} />
             <label htmlFor={`g-m-${s.kimlik}`}>Teslim Miktarı</label><input id={`g-m-${s.kimlik}`} inputMode="decimal" value={g.miktar} onChange={(e) => setG({ ...g, miktar: e.target.value })} />
             <label htmlFor={`g-y-${s.kimlik}`}>Bekletme Yeri</label><select id={`g-y-${s.kimlik}`} value={g.bekletmeYeri} onChange={(e) => setG({ ...g, bekletmeYeri: e.target.value })}><option value="">Seçiniz</option>{[...yer, ...ted].map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
-            <button className="btn2 kucuk" onClick={() => yap(istek(`/siparis/${s.kimlik}/giris`, { satir: 1, lot: g.lot, irsaliye: g.irsaliye, miktar: sayi(g.miktar), bekletmeYeri: g.bekletmeYeri }), 'Giriş kaydı teknik kontrole gönderildi.')}>Teknik Kontrole Gönder</button>
+            <label htmlFor={`g-sk-${s.kimlik}`}>Son Kullanma Tarihi (raf ömrü varsa)</label><input id={`g-sk-${s.kimlik}`} type="date" value={g.sonKullanma} onChange={(e) => setG({ ...g, sonKullanma: e.target.value })} />
+            <button className="btn2 kucuk" onClick={() => yap(istek(`/siparis/${s.kimlik}/giris`, { satir: 1, lot: g.lot, irsaliye: g.irsaliye, miktar: sayi(g.miktar), bekletmeYeri: g.bekletmeYeri, sonKullanma: g.sonKullanma || undefined }), 'Giriş kaydı teknik kontrole gönderildi.')}>Teknik Kontrole Gönder</button>
           </>}
           {ts && ['Kısmi Teslim', 'Teslim Alındı'].includes(s.statu) && <>
             <div className="iki-tarih"><div><label htmlFor={`fa-n-${s.kimlik}`}>Tedarikçi Fatura No</label><input id={`fa-n-${s.kimlik}`} value={fa.no} onChange={(e) => setFa({ ...fa, no: e.target.value })} /></div><div><label htmlFor={`fa-t-${s.kimlik}`}>Fatura Tarihi</label><input id={`fa-t-${s.kimlik}`} type="date" value={fa.tarih} onChange={(e) => setFa({ ...fa, tarih: e.target.value })} /></div></div>
@@ -220,7 +221,8 @@ export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) 
           </>}
         </div>
       ))}
-      {v.girisler.map((m) => <div className="soru" key={m.kimlik}><span>{m.kayit_no} · Lot {m.lot_no} · {m.miktar} · {m.kabul_karari ?? 'Kontrol Bekliyor'}</span>{m.benim && !m.kabul_karari && <div className="dugmeler">{['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => yap(istek(`/malzeme-giris/${m.kimlik}/karar`, { karar: k }), 'Karar kaydedildi.')}>{k}</button>)}</div>}</div>)}
+      {v.girisler.map((m) => <div className="soru" key={m.kimlik}><span>{m.kayit_no} · Lot {m.lot_no} · {m.miktar} · {m.kabul_karari ?? 'Kontrol Bekliyor'}</span>{m.benim && !m.kabul_karari && <div className="dugmeler">{['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => yap(istek(`/malzeme-giris/${m.kimlik}/karar`, { karar: k }), 'Karar kaydedildi.')}>{k}</button>)}</div>}
+        {(m.kabul_karari === 'Kabul' || m.kabul_karari === 'Koşullu Kabul') && <SupheliBildir id={m.kimlik} yap={yap} />}</div>)}
       {ts && <>
         <label htmlFor="sp-ted">Tedarikçi</label><select id="sp-ted" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })}><option value="">Seçiniz</option>{ted.map((x) => <option key={x.kimlik} value={x.kimlik} disabled={Boolean(x.engel)}>{x.ticari_unvan}{x.engel ? ` · ${x.engel}` : ''}</option>)}</select>
         <label htmlFor="sp-dil">Sipariş Dili</label><select id="sp-dil" value={f.dil} onChange={(e) => setF({ ...f, dil: e.target.value })}>{['Türkçe', 'İngilizce'].map((x) => <option key={x}>{x}</option>)}</select>
@@ -335,4 +337,12 @@ export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }
       </>}
     </Blok>
   );
+}
+
+/** YG-1594: kabul edilmiş üründe şüphe bildirimi (Tedarik Yönetimi Müdürüne acil kart). */
+function SupheliBildir({ id, yap }: { id: string; yap: (f: Promise<unknown>, m: string) => unknown }) {
+  const [g, setG] = useState(''); const [ac, setAc] = useState(false);
+  if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>Şüpheli Ürün Bildir</button>;
+  return <div className="tam"><label htmlFor={`sp-${id}`}>Şüphenin Nedeni</label><input id={`sp-${id}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!g.trim()} onClick={() => { yap(istek(`/malzeme-giris/${id}/supheli`, { gerekce: g }), 'Şüpheli ürün Tedarik Yönetimi Müdürüne bildirildi.'); setAc(false); setG(''); }}>Bildir</button></div>;
 }

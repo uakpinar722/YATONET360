@@ -131,6 +131,7 @@ export function NobetCizelge() {
         <label htmlFor="nb-u">Kişi</label><select id="nb-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
         <div className="iki-tarih"><div><label htmlFor="nb-b">Başlangıç</label><input id="nb-b" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nb-s">Bitiş</label><input id="nb-s" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
         <button className="btn2" disabled={!v.kullanici || !v.baslangic || !v.bitis} onClick={() => setL([...l, v])}>Vardiya Ekle</button>
+        {/^\d{4}-\d{2}$/.test(donem) && <button className="btn2" onClick={() => { setHata(''); void istek<{ vardiyalar: { katman: string; kullanici: string; baslangic: string; bitis: string }[]; gec: boolean; hazirlayan: string } | null>(`/nobet/teknik-taraf?donem=${donem}`).then((t) => { if (!t) { setNot('Bu dönem için teknik taraf iletilmemiştir.'); return; } const yerel = (z: string) => new Date(new Date(z).getTime() + 3 * 3_600_000).toISOString().slice(0, 16); setL([...l, ...t.vardiyalar.map((x) => ({ katman: x.katman, kullanici: x.kullanici, baslangic: yerel(x.baslangic), bitis: yerel(x.bitis) }))]); setNot(`Teknik taraf eklendi (${t.vardiyalar.length} vardiya · ${t.hazirlayan}${t.gec ? ' · süresinden sonra iletildi' : ''}).`); }).catch((x) => setHata((x as Error).message)); }}>Teknik Tarafı Ekle</button>}
         {l.map((x, n) => <div key={n}>{x.katman} · {ad.find((a) => a.kimlik === x.kullanici)?.ad_soyad} · {x.baslangic.replace('T', ' ')} – {x.bitis.replace('T', ' ')}</div>)}
         <label className="kutu"><input type="checkbox" checked={deg} onChange={(e) => setDeg(e.target.checked)} /><span>Yayımlanmış Çizelgede Değişiklik</span></label>
         <button className="btn2" disabled={!l.length} onClick={() => { setHata(''); setNot(''); void istek('/nobet/cizelge', { donem, degisiklik: deg, vardiyalar: l.map((x) => ({ ...x, baslangic: new Date(x.baslangic).toISOString(), bitis: new Date(x.bitis).toISOString() })) }).then(() => { setNot('Çizelge onaya gönderildi.'); setL([]); }).catch((x) => setHata((x as Error).message)); }}>Çizelgeyi Onaya Gönder</button>
@@ -220,4 +221,29 @@ function FirmaKapasite({ id, yap }: { id: string; yap: (f: () => Promise<unknown
     <label htmlFor="fk-t">Tesis</label><select id="fk-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Tüm yerler</option>{ts.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad}</option>)}</select>
     <label htmlFor="fk-a">Eş Zamanlı İş Sayısı</label><input id="fk-a" inputMode="numeric" value={f.adet} onChange={(e) => setF({ ...f, adet: e.target.value })} />
     <button className="btn2" disabled={!f.brans.trim() || !(Number(f.adet) > 0)} onClick={() => void yap(() => istek(`/firma/${id}/kapasite`, { brans: f.brans, sinif: f.sinif || undefined, tesis: f.tesis || undefined, adet: Number(f.adet) }).then(() => { setF({ brans: '', sinif: '', tesis: '', adet: '' }); return yk(); }), 'Kapasite kaydedildi.')}>Kapasiteyi Kaydet</button></>;
+}
+
+/** YG-244, YG-1587: nöbet çizelgesinin teknik tarafı (branş ve teknik yönetici nöbetleri); Teknik Müdür Yardımcısı hazırlar, dönem başından en az 25 gün önce Operasyon Müdür Yardımcısına iletir. */
+export function NobetTeknikTaraf() {
+  const [ad, setAd] = useState<{ kimlik: string; ad_soyad: string; katmanlar: string[] }[] | null>(null); const [donem, setDonem] = useState('');
+  const [v, setV] = useState({ katman: 'Teknik Uzman', kullanici: '', baslangic: '', bitis: '', brans: '' }); const [l, setL] = useState<(typeof v)[]>([]); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
+  useEffect(() => { void istek<NonNullable<typeof ad>>('/nobet/teknik-adaylar').then(setAd).catch(() => setAd(null)); }, []);
+  if (!ad) return null;
+  return (
+    <>
+      <div className="bolum">Nöbet Çizelgesi · Teknik Taraf</div>
+      <div className="ozet">
+        {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
+        <div className="not">Branş ve teknik yönetici nöbetleri, dönem başından en az 25 gün önce Operasyon Müdür Yardımcısına iletilir.</div>
+        <label htmlFor="nt-d">Dönem (YYYY-AA)</label><input id="nt-d" value={donem} onChange={(e) => setDonem(e.target.value)} />
+        <label htmlFor="nt-k">Nöbet</label><select id="nt-k" value={v.katman} onChange={(e) => setV({ ...v, katman: e.target.value, kullanici: '' })}><option value="Teknik Uzman">Branş Nöbeti (Teknik Uzman)</option><option value="Yönetici">Teknik Yönetici Nöbeti</option></select>
+        <label htmlFor="nt-u">Kişi</label><select id="nt-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+        {v.katman === 'Teknik Uzman' && <><label htmlFor="nt-b">Branş</label><input id="nt-b" value={v.brans} onChange={(e) => setV({ ...v, brans: e.target.value })} /></>}
+        <div className="iki-tarih"><div><label htmlFor="nt-bs">Başlangıç</label><input id="nt-bs" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nt-bt">Bitiş</label><input id="nt-bt" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
+        <button className="btn2" disabled={!v.kullanici || !v.baslangic || !v.bitis} onClick={() => setL([...l, v])}>Vardiya Ekle</button>
+        {l.map((x, n) => <div key={n}>{x.katman === 'Yönetici' ? 'Teknik Yönetici Nöbeti' : `Branş Nöbeti${x.brans ? ` (${x.brans})` : ''}`} · {ad.find((a) => a.kimlik === x.kullanici)?.ad_soyad} · {x.baslangic.replace('T', ' ')} – {x.bitis.replace('T', ' ')}</div>)}
+        <button className="btn2" disabled={!l.length} onClick={() => { setHata(''); setNot(''); void istek<{ gec: boolean }>('/nobet/teknik-taraf', { donem, vardiyalar: l.map((x) => ({ ...x, baslangic: new Date(x.baslangic).toISOString(), bitis: new Date(x.bitis).toISOString() })) }).then((r) => { setNot(r.gec ? 'Teknik taraf iletildi; süresinden sonra iletildiği kayda geçti.' : 'Teknik taraf Operasyon Müdür Yardımcısına iletildi.'); setL([]); }).catch((x) => setHata((x as Error).message)); }}>Operasyon Müdür Yardımcısına İlet</button>
+      </div>
+    </>
+  );
 }

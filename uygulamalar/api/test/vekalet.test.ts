@@ -53,6 +53,7 @@ describe('vekâlet (YG-1056, YG-1478)', () => {
     expect(a.vekiller.map((v: any) => v.rol)).toContain('Bilgi İşlem Müdürü');
     const r = await ata(bim, { asil: K[DES], rol: R['Bilgi İşlem Destek Sorumlusu'], vekil: K[BIM] });
     expect(r.statusCode).toBe(200); expect(r.json().kimlik).toMatch(/^VKL-\d{4}-0001$/);
+    expect((await ist('GET', '/api/vekalet/tablo', des)).json().some((x: { tur: string; kapsam: string }) => x.tur === 'Rol Vekâleti' && x.kapsam === 'Bilgi İşlem Destek Sorumlusu')).toBe(true); // T-YG1057
     const id = await kartAc(db, { tur: 'Deneme', baslik: 'Vekâlet Kartı', hazirlayan: K[CEO], zincir: [R['Bilgi İşlem Destek Sorumlusu']!] });
     const b = (await ist('GET', '/api/bugun', bim)).json();
     expect(b.vekaletler[0].rol).toBe('Bilgi İşlem Destek Sorumlusu');

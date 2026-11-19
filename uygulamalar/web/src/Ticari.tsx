@@ -64,7 +64,7 @@ import { ProsesFirma } from './Proses';
 import { GenelForm } from './GenelForm';
 import { YontemRaporuFirma } from './YontemRaporu';
 import { DosyaEkIslemler, FirmaAcilIslemleri, ButceDonemi, FirmaKapsamaRaporu, KartelaMaliyet, KurumBelgeleri, YurtDisiFirmaTalebi, MaliParametreler, MutabakatRaporlari, TatilTakvimi, YasalAyipRaporu } from './DosyaEk';
-import { IbanTeyit, NobetCizelge } from './Sicil';
+import { IbanTeyit, NobetCizelge, NobetTeknikTaraf } from './Sicil';
 import { EkipKarti, GunlukKayit, ParcaVeTeslim, SahaKayitlari } from './Portallar';
 
 /** YG-202: gerçekleşen teslimlerden ortalama tedarik süresi. */
@@ -615,6 +615,18 @@ function MasrafTakvimi({ tarih }: { tarih: string }) {
   return <div className="not" data-t="masraf-takvim">Kalan giriş günü: {Math.max(0, kalan)} · Son teslim: {yaz(teslim)} 12:00 · Onay: {yaz(onay)} · Ödeme: {yaz(odeme)}</div>;
 }
 
+/** YG-244: günlük nöbet takvimi (yürürlükteki çizelge). */
+function NobetTakvimi() {
+  const bugun = new Date(Date.now() + 3 * 3_600_000).toISOString();
+  const [donem, setDonem] = useState(bugun.slice(0, 7)); const [l, setL] = useState<{ gun: string; katman: string; brans: string | null; ad_soyad: string; baslangic: string; bitis: string }[]>([]); const [h, setH] = useState('');
+  useEffect(() => { if (!/^\d{4}-\d{2}$/.test(donem)) return; setH(''); void istek<typeof l>(`/nobet/takvim?donem=${donem}`).then(setL).catch((e) => { setL([]); setH((e as Error).message); }); }, [donem]);
+  const gunler = [...new Set(l.map((x) => x.gun))];
+  return <details><summary>Nöbet Takvimi</summary>
+    <label htmlFor="ntk-d">Dönem (YYYY-AA)</label><input id="ntk-d" value={donem} onChange={(e) => setDonem(e.target.value)} />{h && <div className="hata" role="alert">{h}</div>}
+    {gunler.length === 0 ? <div className="ozet bos">Bu dönem için yürürlükte çizelge bulunmamaktadır.</div> : <div className="tablo"><table className="kartli"><thead><tr><th>Gün</th><th>Nöbetçiler</th></tr></thead><tbody>{gunler.map((g) => <tr key={g} className={g === bugun.slice(0, 10) ? 'secili' : undefined}><td data-ad="Gün">{g.split('-').reverse().join('.')}</td><td data-ad="Nöbetçiler">{l.filter((x) => x.gun === g).map((x, i) => <div key={i}>{x.katman}{x.brans ? ` (${x.brans})` : ''}: {x.ad_soyad} · {x.baslangic}–{x.bitis}</div>)}</td></tr>)}</tbody></table></div>}
+  </details>;
+}
+
 export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
   const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null } | null>(null);
   const { yap, Mesaj } = useYap(() => istek<NonNullable<typeof n>>('/nobet/simdi').then(setN));
@@ -625,6 +637,8 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
       <h1>Nöbet ve Acil</h1><Mesaj />
       <div className="not">Nöbet, çağrı üzerine hazır bekleme niteliğindedir; gece fiilen çalışılırsa ertesi günün çalışma düzenini (geç başlama veya serbest zaman) birim amiri belirler.</div>
       {cizelge && <NobetCizelge />}
+      <NobetTeknikTaraf />
+      <NobetTakvimi />
       {n && <div className="ozet"><div>{n.mesaiIcinde ? 'Mesai İçi' : 'Mesai Dışı'}</div><div>Nöbetçi Dosya Sorumlusu: {n.dosyaSorumlusu ?? '—'}</div><div>Nöbetçi Teknik Uzman: {n.teknikUzman ?? '—'}</div><div>Yönetici Nöbetçisi: {n.yonetici ?? '—'}</div></div>}
       <NobetCagrilari />
       <NobetDevri />
@@ -979,7 +993,7 @@ export function IdariIslemler() {
       {izId && <Blok baslik="İzin Belgesi"><BelgeSec ad="Rapor veya Belge" bagTuru="İzin" bagKimligi={izId} deger={izB} sec={(k) => { setIzB(k); void yap(() => istek(`/izin/${izId}/belge`, { belge: k }).then(() => ({ uyari: 'Belge izin talebinize eklendi.' }))); }} /></Blok>}
       <OzelAracOnayi />
       <Blok baslik="Masraf Fişi">
-        <label htmlFor="ms-t">Masraf Türü</label><select id="ms-t" value={m.tur} onChange={(e) => setM({ ...m, tur: e.target.value })}>{['Yemek', 'Konaklama', 'Km', 'Ulaşım', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="ms-t">Masraf Türü</label><select id="ms-t" value={m.tur} onChange={(e) => setM({ ...m, tur: e.target.value })}>{['Yemek', 'Konaklama', 'Km', 'Ulaşım', 'Otopark', 'Köprü / Otoyol', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
         <label htmlFor="ms-bt">Belge Türü</label><select id="ms-bt" value={m.belgeTuru} onChange={(e) => setM({ ...m, belgeTuru: e.target.value })}><option>Kağıt Fiş</option><option>e-Fatura</option><option>e-Arşiv</option></select>
         <div className="iki-tarih"><div><label htmlFor="ms-d">Fiş Tarihi</label><input id="ms-d" type="date" value={m.tarih} onChange={(e) => setM({ ...m, tarih: e.target.value })} /></div><div><label htmlFor="ms-n">Belge No</label><input id="ms-n" value={m.belgeOzeti} onChange={(e) => setM({ ...m, belgeOzeti: e.target.value })} /></div></div>
         <div className="iki-tarih"><div><label htmlFor="ms-a">Tutar (TL)</label><input id="ms-a" inputMode="decimal" value={m.tutarTl} onChange={(e) => setM({ ...m, tutarTl: e.target.value })} /></div><div><label htmlFor="ms-k">TCMB Kuru</label><input id="ms-k" inputMode="decimal" value={m.kur} onChange={(e) => setM({ ...m, kur: e.target.value })} /></div></div>

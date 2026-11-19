@@ -70,6 +70,16 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
     return { alt, kadro };
   }
 
+  // YG-1057: genel vekâlet tablosu; yürürlükteki rol vekâletleri ve izindeki personelin dosya/görev vekilleri. Neden (izin türü, hastalık) gösterilmez.
+  s.get('/vekalet/tablo', oturumlu, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
+    return (await b.db.query(`SELECT 'Rol Vekâleti' tur, a.ad_soyad asil, w.ad_soyad vekil, r.rol_adi kapsam, v.baslangic_tarihi::text baslangic, v.bitis_tarihi::text bitis
+        FROM vekalet v JOIN kullanici_hesabi a ON a.kimlik = v.asil_ref JOIN kullanici_hesabi w ON w.kimlik = v.vekil_ref JOIN rol r ON r.kimlik = v.rol_ref WHERE v.durum = 'Aktif' AND v.baslangic_tarihi <= current_date
+      UNION ALL
+      SELECT 'Dosya ve Görev Vekâleti', a.ad_soyad, w.ad_soyad, (SELECT count(*) FILTER (WHERE d.tur = 'Dosya') || ' dosya · ' || count(*) FILTER (WHERE d.tur = 'Görev') || ' görev' FROM izin_devri d WHERE d.izin_ref = t.kimlik), t.baslangic::text, t.bitis::text
+        FROM izin_talebi t JOIN kullanici_hesabi a ON a.kimlik = t.personel_ref JOIN kullanici_hesabi w ON w.kimlik = t.vekil_ref WHERE t.devir_zamani IS NOT NULL AND t.geri_zamani IS NULL
+      ORDER BY 1 DESC, 2 LIMIT 200`)).rows;
+  });
   s.get('/vekalet', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
