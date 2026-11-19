@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { konumPlani } from '../src/is_gorunumu.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', oy: 'Operasyon Yöneticisi', ty: 'Teknik Yönetici' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', ts: 'Tedarik Sorumlusu', ide: 'İç Denetçi', mfm: 'Muhasebe ve Finans Müdürü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', oy: 'Operasyon Yöneticisi', ty: 'Teknik Yönetici', kmy: 'Kalite Müdür Yardımcısı' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test92', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -64,6 +64,17 @@ describe('iş listeleri, konum planı ve dosya haritası (YG-810–818)', () => 
     const v = (await o.ist('GET', '/api/kalite-pano', await o.gir('kk'))).json();
     expect(Array.isArray(v.noktalar) && Array.isArray(v.kritik)).toBe(true);
     expect((await o.ist('GET', '/api/kalite-pano', await o.gir('ts'))).statusCode).toBe(404);
+  });
+  it('Kalite Müdür Yardımcısı iş emri açılan dosyadaki eksik kalite belgesini bildirir (T-YG1690)', async () => {
+    const d = await o.dosyaAc(); const k = (await o.sup.query(`SELECT kimlik FROM kurulus LIMIT 1`)).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ('IE-KE1','ON',$1,$2,'Marina','Kapsam','Aktif',$3)`, [d.kimlik, k, o.K.opm]);
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Teknik Yönetici',$2) ON CONFLICT DO NOTHING`, [d.kimlik, o.K.ty]);
+    const kmy = await o.gir('kmy');
+    { const ep = await o.ist('GET', '/api/kalite/eksik-planlar', kmy); expect(ep.statusCode, ep.body).toBe(200); }
+    expect((await o.ist('GET', '/api/kalite/eksik-planlar', kmy)).json().find((x: { kimlik: string }) => x.kimlik === d.kimlik)).toMatchObject({ plan_yok: true, itp_yok: true });
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-eksikligi-bildir`, await o.gir('kk'), {})).statusCode).toBe(404);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-eksikligi-bildir`, kmy, {}); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.ty, `kalite-eksik:${d.kimlik}%`])).rowCount).toBe(1);
   });
   it('konum planı izin, nöbet ve keşiften oluşur; izinde yalnız İzinli yazar; yetkisiz kişi başkasını görmez', async () => {
     const d = await o.dosyaAc();

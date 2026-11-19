@@ -49,6 +49,16 @@ export function saklamaGrubu(tur: string): string {
 }
 
 /** YG-1230, YG-1231, YG-1223: süresi dolan kayıtlar listeye girer; hukuki koruma veya açık garanti süreci olanlar girmez. */
+/** YG-1695: imha listesi dönemi (Ocak, Temmuz) başlamadan, Aralık ve Haziran'ın 15'inden itibaren Hukuk ve Uyum Uzmanına dönem başına bir hazırlık görevi açılır; son zaman dönemin ilk günüdür. */
+export async function imhaHazirlikGorevi(db: Pool, simdi = new Date()): Promise<boolean> {
+  const ist = new Date(simdi.getTime() + 3 * 3_600_000); const ay = ist.getUTCMonth();
+  if ((ay !== 11 && ay !== 5) || ist.getUTCDate() < 15) return false;
+  const yil = ay === 11 ? ist.getUTCFullYear() + 1 : ist.getUTCFullYear(); const donem = ay === 11 ? 'Ocak' : 'Temmuz';
+  if (!(await birKez(db, 'imha_hazirlik', `${yil}-${donem}`))) return false;
+  await kartAc(db, { tur: 'İmha Dönemi Hazırlığı', kategori: 'gorev', baslik: `${yil} ${donem} · İmha Listesi Dönemi Hazırlığı`, ozet: 'İmha listesi dönem başında sistemce üretilir; öncesinde hukuki koruma (dava, inceleme, saklama talebi) kayıtlarının güncel olduğunu kontrol ediniz.', sahipRol: await rolId(db, HUU), sonZaman: new Date(`${yil}-${donem === 'Ocak' ? '01' : '07'}-01T00:00:00+03:00`), nesneTuru: 'İmha Dönemi', nesneKimligi: `${yil}-${donem}` });
+  return true;
+}
+
 export async function imhaListesiUret(db: Pool, simdi = new Date()): Promise<string | null> {
   const ay = simdi.getUTCMonth(); if (ay !== 0 && ay !== 6) return null;
   const yil = simdi.getUTCFullYear(); const donem = ay === 0 ? 'Ocak' : 'Temmuz';
@@ -156,6 +166,7 @@ export async function kvkkIsle(db: Pool, simdi = new Date()): Promise<number> {
     await db.query(`UPDATE belge SET saklama_grubu = $3, saklama_bitis = $2 WHERE kimlik = $1`, [g.kimlik, ayEkle(grup === 'MAL-10' ? new Date(Date.UTC(k.getUTCFullYear(), 11, 31)) : k, ay), grup]);
   }
   if (await imhaListesiUret(db, simdi)) n++;
+  if (await imhaHazirlikGorevi(db, simdi)) n++;
   n += await imhaYenidenUygula(db);
   return n;
 }
@@ -254,6 +265,8 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     const yil = g.alinma.slice(0, 4); const no = `KVB-${yil}-${String(await sayac(b.db, `kvkk_basvuru:${yil}`)).padStart(4, '0')}`;
     const son = new Date(new Date(g.alinma).getTime() + 30 * 86_400_000).toISOString().slice(0, 10);
     const r = await b.db.query(`INSERT INTO ilgili_kisi_basvurusu (basvuru_no, basvuran_ad_soyad, iletisim, basvuru_kanali, yanit_kanali, talep_turleri, kapsam, alinma_tarihi, son_yanit_tarihi, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [no, g.ad.trim(), g.iletisim.trim(), g.kanal, g.yanitKanali.trim(), g.talepler, g.kapsam?.trim() || null, g.alinma, son, o.kullanici]);
+    // YG-1695: karar taslağı alınmadan itibaren 20 gün içinde hazırlanır (yasal 30 günlük yanıt süresinin içinde); süreli görev kaydı hazırlayana açılır.
+    await kartAc(b.db, { tur: 'KVKK Karar Taslağı', kategori: 'gorev', baslik: `${no} · KVKK Başvurusu Karar Taslağı`, ozet: `Yasal son yanıt: ${son.split('-').reverse().join('.')}`, oncelik: 'Yüksek', sahipKullanici: o.kullanici, sonZaman: new Date(new Date(`${g.alinma}T12:00:00+03:00`).getTime() + 20 * 86_400_000), nesneTuru: 'KVKK Başvurusu', nesneKimligi: r.rows[0].kimlik });
     return { kimlik: r.rows[0].kimlik, basvuruNo: no, sonYanit: son };
   });
   s.get('/kvkk-basvuru', oturumlu, async (i, y) => {
@@ -295,6 +308,7 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     if (!['Kabul', 'Kısmi Kabul', 'Ret'].includes(g.karar ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar ve gerekçe zorunludur.' });
     if (a.durum !== 'İncelemede') return y.code(409).send({ hata: 'Karar onaya gönderilmiştir.' });
     await b.db.query(`UPDATE ilgili_kisi_basvurusu SET karar = $2, karar_gerekcesi = $3, durum = 'Onayda' WHERE kimlik = $1`, [a.kimlik, g.karar, g.gerekce.trim()]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'KVKK Karar Taslağı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [String(a.kimlik)]); // YG-1695
     await kartAc(b.db, { tur: 'KVKK Başvuru Kararı', baslik: `${a.basvuru_no} · ${g.karar}`, ozet: `Son yanıt: ${a.son_yanit_tarihi.toISOString?.().slice(0, 10) ?? a.son_yanit_tarihi}`, oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, HUD)], nesneTuru: 'KVKK Başvurusu', nesneKimligi: a.kimlik });
     return { durum: 'Onayda' };
   });

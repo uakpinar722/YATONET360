@@ -21,9 +21,10 @@ export const EMNIYET_ALICILAR = ['Teknik Müdür', 'Operasyon Müdürü', 'Tekni
 type Db = Pool | PoolClient;
 
 /** YG-1437: işi durdurma ayrı olaydır, DS, TU ve OY'ye sistem içi ve e-posta. YG-262: emniyet durdurmasında üst alıcılara SMS ile. */
-export async function isDurduBildir(c: Db, e: { kimlik: string; is_emri_no: string; dosya_ref: string }, neden: string, emniyet: boolean): Promise<void> {
+export async function isDurduBildir(c: Db, e: { kimlik: string; is_emri_no: string; dosya_ref: string }, neden: string, emniyet: boolean, kaliteMudurune = false): Promise<void> {
   const ekip = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Teknik Uzman', 'Operasyon Yöneticisi')`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
   const al = [...ekip]; if (emniyet) for (const r of EMNIYET_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, r)));
+  if (kaliteMudurune) al.push(...await rolSahipleri(c, await rolId(c, 'Kalite Müdürü'))); // A42-S1: Kalite Kontrolörün durdurması Kalite Müdürüne de gider
   await bildir(c, { olay: `is-emri-durdu:${e.kimlik}:${Date.now()}`, kullanicilar: [...new Set(al)], baslik: `${emniyet ? 'Emniyet Olayı · ' : ''}İş Durduruldu: ${e.is_emri_no}`, ozet: neden.slice(0, 200), oncelik: emniyet ? 'Kritik' : 'Yüksek', eposta: true, sms: emniyet, acil: true });
 }
 
@@ -224,7 +225,7 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const r = (await c.query(`INSERT INTO sapma_kaydi (is_emri_ref, dosya_ref, tur, aciklama, karar, firma_kaynakli, isg_ihlali, onaysiz_ek_is, giren_ref, hedef_tarih, sorumlu_ref, ek_test_ref, zarf_genisledi, bulgu_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING kimlik`, [e.kimlik, e.dosya_ref, g.tur, g.aciklama.trim(), g.karar, g.firmaKaynakli !== false, Boolean(g.isgIhlali), Boolean(g.onaysizEkIs), o.kullanici, g.hedef || null, (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].r, g.ekTest ?? null, Boolean(g.zarfGenisledi), g.zarfGenisledi ? g.bulgu : null])).rows[0];
-      if (g.karar === 'İşi Durdur' && e.statu === 'Aktif') { await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, g.aciklama.trim()]); await isDurduBildir(c, e, g.aciklama.trim(), g.tur === 'Güvenlik' || Boolean(g.isgIhlali)); if (g.bulgu) await ekBulguBildir(c, e.dosya_ref, e.kimlik); }
+      if (g.karar === 'İşi Durdur' && e.statu === 'Aktif') { await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, g.aciklama.trim()]); await isDurduBildir(c, e, g.aciklama.trim(), g.tur === 'Güvenlik' || Boolean(g.isgIhlali), await rolVar(o.kullanici, ['Kalite Uzmanı (Kalite Kontrolör)'])); if (g.bulgu) await ekBulguBildir(c, e.dosya_ref, e.kimlik); }
       const ds = (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].r;
       if (ds) await kartAc(c, { tur: 'Sapma Kaydı', kategori: 'gorev', baslik: `${e.is_emri_no} · ${g.tur} Sapması · ${g.karar}`, ozet: g.aciklama.trim().slice(0, 200), oncelik: g.karar === 'İşi Durdur' || g.isgIhlali ? 'Yüksek' : 'Normal', sahipKullanici: ds, sonZaman: g.hedef ? new Date(`${g.hedef}T18:00:00+03:00`) : undefined, nesneTuru: 'Sapma', nesneKimligi: r.kimlik });
       if (g.zarfGenisledi) { const oy = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Operasyon Yöneticisi' AND bitis_zamani IS NULL LIMIT 1`, [e.dosya_ref])).rows[0]?.kullanici_ref ?? ds; if (oy) await kartAc(c, { tur: 'Ek İş İş Emri Gerekli', kategori: 'gorev', baslik: `${e.is_emri_no} · Onarım Zarfı Genişledi`, ozet: g.aciklama.trim().slice(0, 200), oncelik: 'Yüksek', sahipKullanici: oy, nesneTuru: 'Sapma', nesneKimligi: r.kimlik }); }

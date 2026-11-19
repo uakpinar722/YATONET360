@@ -6,7 +6,7 @@ import { sahaSureIsle } from '../src/saha_kayit.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', kk: 'Kalite Uzmanı (Kalite Kontrolör)', ik: 'İnsan Kaynakları Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü', kk: 'Kalite Uzmanı (Kalite Kontrolör)', ik: 'İnsan Kaynakları Sorumlusu', km: 'Kalite Müdürü' };
 let o: Ortam; let f: string; let fC: string; let fK: string; let f2C: string;
 const disGir = async (ad: string, kurulus: string) => {
   const oz = await parolaOzetle('Sinama-Parolasi-2026!'); const ep = `${ad}@deneme.yatonet.local`;
@@ -119,6 +119,15 @@ describe('düzeltme, yeniden başlatma, toplantı, eskalasyon (YG-380, YG-262, Y
     const { e } = await isEmri();
     expect((await o.ist('POST', `/api/is-emri/${e}/sapma`, await o.gir('tu'), { tur: 'Güvenlik', aciklama: 'Gaz', karar: 'İşi Durdur' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.tm, `is-emri-durdu:${e}%`])).rowCount).toBe(1);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.km, `is-emri-durdu:${e}%`])).rowCount).toBe(0); // Teknik Uzman durdurdu
+  });
+  it('Kalite Kontrolörün İşi Durdur kararı Kalite Müdürüne de gider (T-YG1686)', async () => {
+    const { e } = await isEmri();
+    const d = (await o.sup.query(`SELECT dosya_ref FROM is_emri WHERE kimlik = $1`, [e])).rows[0].dosya_ref;
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Kalite Kontrolör',$2) ON CONFLICT DO NOTHING`, [d, o.K.kk]);
+    const r = await o.ist('POST', `/api/is-emri/${e}/sapma`, await o.gir('kk'), { tur: 'Yöntem', aciklama: 'Kaynak dikişi şartnameye aykırı', karar: 'İşi Durdur' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.km, `is-emri-durdu:${e}%`])).rowCount).toBe(1);
   });
   it('TPL-07 kaydı olmadan onarım başlamaz; keşif ve acil muaf; yalnız Dosya Sorumlusu kaydeder; firma görür; bir kez', async () => {
     const { e } = await isEmri('Başlangıç Kontrolünde'); const u = `/api/is-emri/${e}/baslangic-toplantisi`;

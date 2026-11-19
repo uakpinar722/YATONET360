@@ -48,6 +48,22 @@ export async function gundemUret(db: Db, kod: string): Promise<string | null> {
   return [`Süresi Aşan Onay: ${rows[0].n}`, `Süresi Aşan Görev ve İşlem: ${s.gorev}`, `Hedef Süresi Aşan Dosya Süresi: ${s.sure}`, `Açık Uygunsuzluk: ${s.uyg} (Kritik/Majör: ${s.agir}; hedef süresi geçen: ${s.gecen})`, `Kritik Öncelikli Açık Dosyalar: ${s.kritik ?? 'Yok'}`].join('\n');
 }
 
+/** YG-1599: Kapsam Hazırlık Toplantısı (TPL-06) kapanınca dosyada "Fiyat Teklifi Hazırla" görevi Ticari Sorumluya açılır; açık görev varsa toplantı kararı özete eklenir. Hazırlanan teklif varsa görev açılmaz. */
+export async function kapsamToplantisiGorevi(db: Db, toplanti: string): Promise<boolean> {
+  const t = (await db.query(`SELECT t.tpl_kod, t.dosya_ref, t.tutanak, d.dosya_no, d.ticari_sorumlu_ref FROM toplanti t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [toplanti])).rows[0];
+  if (!t || t.tpl_kod !== 'TPL-06') return false;
+  const kararlar = (await db.query(`SELECT metin FROM toplanti_karar WHERE toplanti_ref = $1 ORDER BY zaman`, [toplanti])).rows.map((r) => r.metin as string);
+  const ozet = `Kapsam Hazırlık Toplantısı kararı: ${(kararlar.length ? kararlar.join('; ') : String(t.tutanak ?? '')).slice(0, 250)}`;
+  const cetvel = (await db.query(`SELECT kimlik FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum <> 'Yerine Geçti' ORDER BY surum DESC LIMIT 1`, [t.dosya_ref])).rows[0]?.kimlik as string | undefined;
+  const nesne = cetvel ?? String(t.dosya_ref);
+  const acik = await db.query(`UPDATE is_karti SET ozet = left(coalesce(ozet, '') || ' ' || $2, 400) WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = ANY($1::text[]) AND durum = 'Bekliyor'`, [[nesne, String(t.dosya_ref)], ozet]);
+  if (acik.rowCount) return true;
+  if ((await db.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu IN ('Taslak', 'İç Onayda') LIMIT 1`, [t.dosya_ref])).rowCount) return false;
+  const { kartAc } = await import('./is_motoru.js'); const { rolId } = await import('./ihbar.js');
+  await kartAc(db, { tur: 'Fiyat Teklifi Hazırla', kategori: 'islem', baslik: `${t.dosya_no} · Fiyat Teklifi Hazırla`, ozet, ...(t.ticari_sorumlu_ref ? { sahipKullanici: t.ticari_sorumlu_ref } : { sahipRol: await rolId(db, 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)') }), nesneTuru: cetvel ? 'Kapsam Cetveli' : 'Dosya', nesneKimligi: nesne });
+  return true;
+}
+
 /** Ek II §1.8: vekil üst makamın onayıyla geçerlidir; süre geçtiyse katılımcı mazeretli sayılır. */
 kapanisKaydet('Toplantı Vekili', async (c, k, karar) => {
   const r = (await c.query(`SELECT p.kimlik, p.toplanti_ref, p.vekil_ref, t.baslangic, t.konu FROM toplanti_katilimci p JOIN toplanti t ON t.kimlik = p.toplanti_ref WHERE p.kimlik = $1`, [k.nesne_kimligi])).rows[0];
@@ -228,6 +244,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!t.tutanak) return y.code(400).send({ hata: 'Önce tutanak yazılmalıdır.' });
     if (new Date(t.baslangic).getTime() > Date.now()) return y.code(400).send({ hata: 'Kapanış toplantı başladıktan sonra yapılır.' });
     await b.db.query(`UPDATE toplanti SET durum = 'Tamamlandı', kapanis_zamani = now() WHERE kimlik = $1`, [id]);
+    await kapsamToplantisiGorevi(b.db, id); // YG-1599
     await b.db.query(`UPDATE toplanti_katilimci SET vekil_durumu = 'Mazeretli' WHERE toplanti_ref = $1 AND vekil_durumu = 'Onay Bekliyor'`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Toplantı Kapandı', nesneTuru: 'toplanti', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

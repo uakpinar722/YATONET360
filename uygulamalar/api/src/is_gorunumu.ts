@@ -86,6 +86,32 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     await notEkle(dosyalar, 'Teknik Yönetici');
     return { dosyalar, uyarilar, mudur, durdurulan, kuyruk };
   });
+  // YG-1690: aktif iş emri olan dosyada eksik kalite planı (onaylı), kabul matrisi (gereklilik satırı) veya muayene ve test planı (kontrol noktası).
+  const KALITE_MD = ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'];
+  s.get('/kalite/eksik-planlar', oturumlu, async (i, y) => {
+    if (!(await roller(b.db, i.oturum!.kullanici)).some((r) => KALITE_MD.includes(r.rol_adi))) return yok(y);
+    return (await b.db.query(`SELECT * FROM (SELECT d.kimlik, d.dosya_no, y.yat_adi,
+        NOT EXISTS (SELECT 1 FROM kalite_plani p WHERE p.dosya_ref = d.kimlik AND p.durum = 'Onaylı') plan_yok,
+        NOT EXISTS (SELECT 1 FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = d.kimlik) matris_yok,
+        NOT EXISTS (SELECT 1 FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE e.dosya_ref = d.kimlik) itp_yok,
+        (SELECT max(z.olay_zamani) FROM denetim_izi z WHERE z.eylem = 'Kalite Eksikliği Bildirildi' AND z.nesne_kimligi = d.kimlik::text) bildirim
+      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND EXISTS (SELECT 1 FROM is_emri e WHERE e.dosya_ref = d.kimlik AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Tamamlandı'))) x
+      WHERE plan_yok OR matris_yok OR itp_yok ORDER BY dosya_no LIMIT 100`)).rows;
+  });
+  s.post('/dosya/:id/kalite-eksikligi-bildir', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await roller(b.db, o.kullanici)).some((r) => KALITE_MD.includes(r.rol_adi))) return yok(y);
+    const d = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (!d) return yok(y);
+    const e = (await b.db.query(`SELECT NOT EXISTS (SELECT 1 FROM kalite_plani p WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı') plan_yok, NOT EXISTS (SELECT 1 FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1) matris_yok, NOT EXISTS (SELECT 1 FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE e.dosya_ref = $1) itp_yok`, [id])).rows[0];
+    const eksik = [e.plan_yok && 'kalite planı', e.matris_yok && 'kabul matrisi', e.itp_yok && 'muayene ve test planı'].filter(Boolean) as string[];
+    if (!eksik.length) return y.code(409).send({ hata: 'Dosyada eksik kalite belgesi yoktur.' });
+    const alici = (await b.db.query(`SELECT DISTINCT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND rol IN ('Teknik Uzman', 'Teknik Yönetici')`, [id])).rows.map((r) => r.kullanici_ref as string);
+    if (!alici.length) return y.code(409).send({ hata: 'Dosyada Teknik Uzman veya Teknik Yönetici ataması yoktur.' });
+    const { bildir } = await import('./bildirim.js'); const { izYaz } = await import('./denetim.js');
+    await bildir(b.db, { olay: `kalite-eksik:${id}:${Date.now()}`, kullanicilar: alici, baslik: `${d.dosya_no} · Kalite Belgesi Eksik`, ozet: `İş emri açılan dosyada ${eksik.join(', ')} eksiktir; tamamlamanızı rica ederiz.`, oncelik: 'Yüksek' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kalite Eksikliği Bildirildi', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: eksik.join(', '), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { eksik };
+  });
   // YG-1586: Teknik Yönetici Saha Sorumlusu ihtiyacını Teknik Müdüre bildirir; atama ayrı onay aranmadan Teknik Müdürdedir.
   s.post('/dosya/:id/saha-sorumlusu-bildir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };

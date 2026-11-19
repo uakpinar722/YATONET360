@@ -73,6 +73,12 @@ describe('Kritik erişim, bilet, hasar paylaşımı (YG-1160, YG-1001, YG-1171)'
     // T-YG1646: liste; Sistem Yöneticisi kendi biletini, Bilgi İşlem Müdürü tümünü görür; diğer rol göremez
     expect((await o.ist('GET', '/api/degisiklik-biletleri', await o.gir('bim'))).json().find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).durum).toBe('Kapalı');
     expect((await o.ist('GET', '/api/degisiklik-biletleri', sy)).json().some((x: { benim: boolean }) => x.benim)).toBe(true);
+    { // T-YG1055: Erişim Kapatma ekranı ayrılan personelin kapanış durumunu verir
+      await o.sup.query(`INSERT INTO personel_ayrilisi (personel_ref, tur, bildirim_tarihi, son_is_gunu, kaydeden_ref) VALUES ($1,'İstifa',current_date,current_date + 5,$2)`, [o.K.huu, o.K.bim]);
+      const ek = (await o.ist('GET', '/api/erisim-kapatma', await o.gir('bim'))).json();
+      expect(ek.find((x: { ayrilis_durumu: string; aktif_rol: number }) => x.ayrilis_durumu === 'Açık')).toMatchObject({ hesap_durumu: 'Aktif', sistem_disi: null });
+      expect((await o.ist('GET', '/api/erisim-kapatma', await o.gir('ds'))).statusCode).toBe(404);
+    }
     expect((await o.ist('GET', '/api/degisiklik-biletleri', await o.gir('ds'))).statusCode).toBe(404);
   });
   it('hasar bilgisi paylaşımı hiyerarşik; çift onay seçilirse iki kademe', async () => {

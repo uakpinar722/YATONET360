@@ -12,7 +12,7 @@ const HUD = 'Hukuk ve Uyum Direktörü'; const MFY = 'Muhasebe ve Finans Yöneti
 /** YG-1622: kâğıt fiş aslı ayda bir teslim edilir; önceki aydan teslim edilmemiş fişi olan personele ayda bir hatırlatma. Ödeme aslı beklemez. */
 export async function fisAsliHatirlat(db: Pool, simdi = new Date()): Promise<number> {
   const ay = simdi.toISOString().slice(0, 7); let n = 0;
-  for (const p of (await db.query(`SELECT personel_ref, count(*)::int adet FROM personel_masraf_fisi WHERE belge_turu = 'Kağıt Fiş' AND asil_teslim_zamani IS NULL AND to_char(fis_tarihi, 'YYYY-MM') < $1 GROUP BY personel_ref`, [ay])).rows) {
+  for (const p of (await db.query(`SELECT personel_ref, count(*)::int adet FROM personel_masraf_fisi WHERE belge_turu = 'Kağıt Fiş' AND asil_teslim_zamani IS NULL AND durum <> 'Taslak' AND to_char(fis_tarihi, 'YYYY-MM') < $1 GROUP BY personel_ref`, [ay])).rows) {
     if (!(await birKez(db, 'fis_asli', `${p.personel_ref}:${ay}`))) continue;
     await bildir(db, { olay: `fis-asli:${p.personel_ref}:${ay}`, kullanicilar: [p.personel_ref], baslik: `Teslim Edilecek Fiş Aslı: ${p.adet}` }); n++;
   }
@@ -50,7 +50,7 @@ export function menfaatMasrafYollari(s: FastifyInstance, b: Baglam) {
   // YG-1622: Muhasebe ve Finans Yöneticisi kâğıt fişin aslını teslim aldığını kaydeder.
   s.get('/masraf/asil-bekleyen', oturumlu, async (i, y) => {
     if (!(await rolVar(i.oturum!.kullanici, MFY))) return yok(y);
-    return (await b.db.query(`SELECT f.kimlik, f.masraf_turu, f.fis_tarihi::text, f.belge_ozeti, h.ad_soyad FROM personel_masraf_fisi f JOIN kullanici_hesabi h ON h.kimlik = f.personel_ref WHERE f.belge_turu = 'Kağıt Fiş' AND f.asil_teslim_zamani IS NULL ORDER BY f.fis_tarihi LIMIT 300`)).rows;
+    return (await b.db.query(`SELECT f.kimlik, f.masraf_turu, f.fis_tarihi::text, f.belge_ozeti, h.ad_soyad FROM personel_masraf_fisi f JOIN kullanici_hesabi h ON h.kimlik = f.personel_ref WHERE f.belge_turu = 'Kağıt Fiş' AND f.asil_teslim_zamani IS NULL AND f.durum <> 'Taslak' ORDER BY f.fis_tarihi LIMIT 300`)).rows;
   });
   s.post('/masraf/:id/asil-teslim', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };

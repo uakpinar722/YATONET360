@@ -29,9 +29,9 @@ export function tedarikDagitimYollari(s: FastifyInstance, b: Baglam) {
   // YG-1592, YG-1593: Dağıtım Bekleyen Talepler (öncelik → kalan süre → geliş) ve Ekip Uyarıları (48 saati aşan tedarikçi kabulü, geciken teslim).
   s.get('/tedarik-pano', oturumlu, async (i, y) => {
     const r = await roller(i.oturum!.kullanici); if (!r.some((x) => GORUR.includes(x))) return yok(y);
-    const bekleyen = (await b.db.query(`SELECT f.kimlik, f.kayit_no, d.dosya_no, coalesce(d.oncelik, 'Normal') oncelik, f.onay_zamani, k.son_zaman FROM form_kaydi f LEFT JOIN dosya d ON d.kimlik = f.dosya_ref
+    const bekleyen = (await b.db.query(`SELECT f.kimlik, f.kayit_no, d.dosya_no, coalesce(d.oncelik, 'Normal') oncelik, f.onay_zamani, k.son_zaman, (SELECT t.cikar_beyani FROM tedarik_dagitim t WHERE t.form_ref = f.kimlik) cikar FROM form_kaydi f LEFT JOIN dosya d ON d.kimlik = f.dosya_ref
         LEFT JOIN is_karti k ON k.tur = 'Talep Dağıtımı' AND k.nesne_kimligi = f.kimlik::text AND k.durum = 'Bekliyor'
-      WHERE f.form_kodu = 'FR-MLZ-001' AND f.durum = 'Onaylı' AND NOT EXISTS (SELECT 1 FROM tedarik_dagitim t WHERE t.form_ref = f.kimlik)
+      WHERE f.form_kodu = 'FR-MLZ-001' AND f.durum = 'Onaylı' AND NOT EXISTS (SELECT 1 FROM tedarik_dagitim t WHERE t.form_ref = f.kimlik AND t.cikar_beyani IS NULL)
       ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, k.son_zaman NULLS LAST, f.onay_zamani LIMIT 100`)).rows;
     const uyarilar = [
       ...(await b.db.query(`SELECT siparis_no, 'Tedarikçi Kabulü 48 Saati Aştı' tur FROM tedarik_siparisi WHERE statu = 'Verildi' AND tedarikci_kabul IS NULL AND verilme_zamani < now() - interval '48 hours'`)).rows,
@@ -109,10 +109,25 @@ export function tedarikDagitimYollari(s: FastifyInstance, b: Baglam) {
     ];
     return { talepler, siparisler, uyarilar };
   });
+  // YG-1592: atanan Tedarik Sorumlusu çıkar çatışmasını gerekçeyle bildirir; görevi kapanır, Tedarik Yöneticisine yeniden atama görevi açılır.
+  s.post('/tedarik/dagitim/:id/cikar-catismasi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const aciklama = String(((i.body ?? {}) as { aciklama?: string }).aciklama ?? '').trim();
+    if (!UUID.test(id)) return yok(y);
+    const t = (await b.db.query(`SELECT t.form_ref, f.kayit_no, d.oncelik FROM tedarik_dagitim t JOIN form_kaydi f ON f.kimlik = t.form_ref LEFT JOIN dosya d ON d.kimlik = f.dosya_ref WHERE t.form_ref = $1 AND t.sorumlu_ref = $2 AND t.cikar_beyani IS NULL`, [id, o.kullanici])).rows[0];
+    if (!t) return yok(y);
+    if (!aciklama) return y.code(400).send({ hata: 'Çıkar çatışmasını kısaca açıklamanızı rica ederiz.' });
+    if ((await b.db.query(`SELECT 1 FROM tedarik_siparisi s JOIN form_kaydi f ON f.dosya_ref = s.dosya_ref WHERE f.kimlik = $1 AND s.hazirlayan_ref = $2 AND s.statu <> 'İptal'`, [id, o.kullanici])).rowCount) return y.code(409).send({ hata: 'Bu dosyada hazırladığınız sipariş vardır; çıkar çatışmasını birim amirinize bildiriniz.' });
+    await b.db.query(`UPDATE tedarik_dagitim SET cikar_beyani = $2, beyan_zamani = now() WHERE form_ref = $1`, [id, aciklama]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Malzeme Talebi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    const saat = t.oncelik === 'Kritik' ? 2 : 8;
+    await kartAc(b.db, { tur: 'Talep Dağıtımı', kategori: 'gorev', baslik: `${t.kayit_no} · Malzeme Talebini Yeniden Dağıt`, ozet: 'Atanan Tedarik Sorumlusu çıkar çatışması bildirdi; talebi başka bir Tedarik Sorumlusuna atayınız.', oncelik: t.oncelik === 'Kritik' ? 'Kritik' : 'Yüksek', sahipRol: await rolId(b.db, TY), sonZaman: new Date(Date.now() + saat * 3_600_000), nesneTuru: 'Form Kaydı', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Çıkar Çatışması Bildirildi', nesneTuru: 'Form Kaydı', nesneKimligi: id, gerekce: aciklama, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/tedarik/dagitim/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sorumlu?: string; iadeGerekcesi?: string };
     if (!UUID.test(id) || !(await roller(o.kullanici)).includes(TY)) return yok(y);
-    const f = (await b.db.query(`SELECT kimlik, kayit_no, hazirlayan_ref FROM form_kaydi WHERE kimlik = $1 AND form_kodu = 'FR-MLZ-001' AND durum = 'Onaylı' AND NOT EXISTS (SELECT 1 FROM tedarik_dagitim t WHERE t.form_ref = form_kaydi.kimlik)`, [id])).rows[0];
+    const f = (await b.db.query(`SELECT kimlik, kayit_no, hazirlayan_ref FROM form_kaydi WHERE kimlik = $1 AND form_kodu = 'FR-MLZ-001' AND durum = 'Onaylı' AND NOT EXISTS (SELECT 1 FROM tedarik_dagitim t WHERE t.form_ref = form_kaydi.kimlik AND t.cikar_beyani IS NULL)`, [id])).rows[0];
     if (!f) return yok(y);
     const kapat = () => b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Talep Dağıtımı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     if (g.iadeGerekcesi !== undefined) {
@@ -124,7 +139,9 @@ export function tedarikDagitimYollari(s: FastifyInstance, b: Baglam) {
       return { durum: 'İade Edildi' };
     }
     if (!g.sorumlu || !(await rolSahipleri(b.db, await rolId(b.db, TS))).includes(g.sorumlu)) return y.code(400).send({ hata: 'Tedarik Sorumlusunu seçiniz.' });
-    await b.db.query(`INSERT INTO tedarik_dagitim (form_ref, sorumlu_ref, atayan_ref) VALUES ($1,$2,$3)`, [id, g.sorumlu, o.kullanici]);
+    // YG-1592: çıkar çatışması bildiren sorumluya talep yeniden atanamaz.
+    if ((await b.db.query(`SELECT 1 FROM tedarik_dagitim WHERE form_ref = $1 AND sorumlu_ref = $2 AND cikar_beyani IS NOT NULL`, [id, g.sorumlu])).rowCount) return y.code(409).send({ hata: 'Bu Tedarik Sorumlusu talep için çıkar çatışması bildirmiştir; başka birini seçiniz.' });
+    await b.db.query(`INSERT INTO tedarik_dagitim (form_ref, sorumlu_ref, atayan_ref) VALUES ($1,$2,$3) ON CONFLICT (form_ref) DO UPDATE SET onceki_sorumlu_ref = tedarik_dagitim.sorumlu_ref, sorumlu_ref = EXCLUDED.sorumlu_ref, atayan_ref = EXCLUDED.atayan_ref, zaman = now(), cikar_beyani = NULL, beyan_zamani = NULL`, [id, g.sorumlu, o.kullanici]);
     await kapat();
     await kartAc(b.db, { tur: 'Malzeme Talebi', kategori: 'gorev', baslik: `${f.kayit_no} · Malzeme Talebi`, ozet: 'Teklif toplayıp sipariş hazırlayınız.', sahipKullanici: g.sorumlu, nesneTuru: 'Form Kaydı', nesneKimligi: id });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Malzeme Talebi Dağıtıldı', nesneTuru: 'Form Kaydı', nesneKimligi: id, yeni: { sorumlu: g.sorumlu }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

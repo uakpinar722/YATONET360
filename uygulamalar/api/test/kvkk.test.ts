@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ihlalAc, imhaListesiUret, imhaYenidenUygula, kvkkIsle } from '../src/kvkk.js';
+import { ihlalAc, imhaHazirlikGorevi, imhaListesiUret, imhaYenidenUygula, kvkkIsle } from '../src/kvkk.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', hud: 'Hukuk ve Uyum Direktörü', huu: 'Hukuk ve Uyum Uzmanı', bim: 'Bilgi İşlem Müdürü', gmy: 'Genel Müdür Yardımcısı' };
@@ -53,7 +53,12 @@ describe('ilgili kişi başvurusu (YG-1218–1220)', () => {
     // YG-1220: yedek/arşiv ve kayıtlı dış hizmetler elle kontrol edilmeden karar hazırlanmaz.
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'Uygun' })).json().eksik).toContain('Yedek ve Arşiv');
     await o.ist('POST', `${a}/arama`, u, { terim: 'Dosya', elleKontrol: ar.json().elleGerekli });
+    expect((await o.kart('KVKK Karar Taslağı', r.json().kimlik)).durum).toBe('Bekliyor'); // T-YG1695
     expect((await o.ist('POST', `${a}/karar`, u, { karar: 'Kabul', gerekce: 'Uygun' })).json().durum).toBe('Onayda');
+    expect((await o.kart('KVKK Karar Taslağı', r.json().kimlik)).durum).toBe('Tamamlandı');
+    expect(await imhaHazirlikGorevi(o.db, new Date('2030-12-10T09:00:00Z'))).toBe(false);
+    expect(await imhaHazirlikGorevi(o.db, new Date('2030-12-16T09:00:00Z'))).toBe(true); expect(await imhaHazirlikGorevi(o.db, new Date('2030-12-20T09:00:00Z'))).toBe(false);
+    expect(await o.kart('İmha Dönemi Hazırlığı', '2031-Ocak')).toBeDefined();
     const k = await o.kart('KVKK Başvuru Kararı', r.json().kimlik); expect((await o.karar(k.kimlik, 'hud', 'Onayla')).statusCode).toBe(200);
     const d = await o.dosyaAc({}, {}); expect((await o.ist('POST', `${a}/yanit`, u, { tarih: '2026-11-10', kanit: await belge(d.kimlik) })).statusCode).toBe(200);
   });

@@ -163,6 +163,16 @@ export function yetkiEkYollari(s: FastifyInstance, b: Baglam) {
     await kartAc(b.db, { tur: 'Değişiklik Bileti', baslik: `${no} · ${g.konu.trim()}`, ozet: g.gerekce.trim(), oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir, nesneTuru: 'Değişiklik Bileti', nesneKimligi: r.kimlik });
     return { kimlik: r.kimlik, biletNo: no };
   });
+  // YG-1055: Erişim Kapatma; son 90 günde ayrılan veya ayrılışı süren personelin hesap, açık oturum, aktif rol, mobil cihaz ve sistem dışı erişim (Hesap Kapanış Kontrolü) durumu.
+  s.get('/erisim-kapatma', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, [BIM, 'Sistem Yöneticisi', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Bilgi İşlem Müdür Yardımcısı']))) return yok(y);
+    return (await b.db.query(`SELECT a.kimlik, h.ad_soyad, a.son_is_gunu::text son_is_gunu, a.durum ayrilis_durumu, h.hesap_durumu,
+        (SELECT count(*)::int FROM oturum t WHERE t.kullanici_ref = h.kimlik AND t.bitis_zamani IS NULL AND t.azami_bitis_zamani > now()) acik_oturum,
+        (SELECT count(*)::int FROM rol_atamasi r WHERE r.kullanici_ref = h.kimlik AND r.atama_durumu = 'Aktif') aktif_rol,
+        (SELECT count(*)::int FROM mobil_cihaz m WHERE m.kullanici_ref = h.kimlik AND m.durum = 'Aktif') aktif_cihaz,
+        (SELECT k.durum FROM is_karti k WHERE k.tur = 'Hesap Kapanış Kontrolü' AND k.nesne_kimligi = a.kimlik::text ORDER BY k.olusturma_zamani DESC LIMIT 1) sistem_disi
+      FROM personel_ayrilisi a JOIN kullanici_hesabi h ON h.kimlik = a.personel_ref WHERE a.durum = 'Açık' OR a.son_is_gunu >= current_date - 90 ORDER BY a.son_is_gunu DESC LIMIT 100`)).rows;
+  });
   // YG-1642, YG-1646: bilet listesi (Sistem Yöneticisi kendi biletlerini, Bilgi İşlem Müdürü tümünü görür).
   s.get('/degisiklik-biletleri', oturumlu, async (i, y) => {
     const o = i.oturum!; const bim = await rolVar(o.kullanici, [BIM]);

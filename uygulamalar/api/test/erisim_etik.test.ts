@@ -58,6 +58,7 @@ describe('iç denetim (YG-1673–1675, YG-1681, YG-1682)', () => {
     expect(await z(a)).toEqual(['İç Denetim Müdürü', 'CEO']);
     const idm = await o.gir('idm'); const b = (await o.ist('POST', '/api/ic-denetim', idm, G)).json().kimlik as string; expect((await o.ist('POST', `/api/ic-denetim/${b}/rapor`, idm, { ozet: 'Ö' })).statusCode).toBe(200); expect(await z(b)).toEqual(['CEO']);
     expect((await o.ist('GET', '/api/ic-denetim', await o.gir('rkd'))).statusCode).toBe(404); expect((await o.ist('GET', '/api/ic-denetim', await o.gir('gmy'))).statusCode).toBe(404);
+    { const sz = (await o.kart('İç Denetim Raporu', a)).son_zaman; expect(Math.round((new Date(sz).getTime() - Date.now()) / 3_600_000)).toBe(120); } // T-YG1672
     const k = (await o.kart('İç Denetim Raporu', a)).kimlik; expect((await o.karar(k, 'idm', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(k, 'cg', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM ic_denetim WHERE kimlik = $1`, [a])).rows[0].durum).toBe('Sonuçlandı');
   });

@@ -152,11 +152,25 @@ describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
     expect(l.some((x: { tur: string }) => x.tur === 'Müşteri Limiti %80')).toBe(true);
     expect((await o.ist('GET', '/api/mali-erken-uyarilar', await o.gir('ds'))).statusCode).toBe(404);
   });
+  it('Kapsam Hazırlık Toplantısı kapanınca Fiyat Teklifi Hazırla görevi açılır (T-YG1599)', async () => {
+    const d = await dosya(); const { kapsamToplantisiGorevi } = await import('../src/toplanti.js');
+    const tp = (await o.sup.query(`INSERT INTO toplanti (tpl_kod, konu, baslangic, sure_dk, duzenleyen_ref, baskan_ref, dosya_ref, tutanak, durum) VALUES ('TPL-06','Kapsam',now() - interval '2 hours',60,$1,$1,$2,'Teklif iki seçenekli hazırlanacak','Tamamlandı') RETURNING kimlik`, [o.K.ds, d.kimlik])).rows[0].kimlik;
+    expect(await kapsamToplantisiGorevi(o.db, tp)).toBe(true);
+    const k = await o.kart('Fiyat Teklifi Hazırla', d.kimlik); expect(k.ozet).toContain('iki seçenekli');
+    expect(await kapsamToplantisiGorevi(o.db, tp)).toBe(true); expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
   it('ekip süre uyarıları proforma ve fatura bilgisi sürelerini verir (T-YG1610)', async () => {
     const d = await dosya(); await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref) VALUES ($1,'Nihai Kabul',$2)`, [d.kimlik, o.K.ty]);
     const l = (await o.ist('GET', '/api/muhasebe-ekip-sureleri', await o.gir('my'))).json();
     expect(l.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
     expect((await o.ist('GET', '/api/muhasebe-ekip-sureleri', await o.gir('ds'))).statusCode).toBe(404);
+    { // T-YG1610-BELGE: belge kontrolü kademesindeki masraf fişi Muhasebe ve Finans Yöneticisinin listesinde
+      const r = await o.ist('POST', '/api/masraf', await o.gir('ds'), { tur: 'Yemek', tarih: new Date().toISOString().slice(0, 10), tutarTl: 400, kur: 40, belgeOzeti: 'F1610' });
+      const k = await o.kart('Masraf Fişi', r.json().kimlik); const myR = (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Muhasebe ve Finans Yöneticisi'`)).rows[0].kimlik;
+      await o.sup.query(`UPDATE is_karti SET kademe = array_position(zincir, $2) - 1 WHERE kimlik = $1`, [k.kimlik, myR]);
+      expect((await o.ist('GET', '/api/masraf/belge-kontrol', await o.gir('my'))).json().find((x: { kimlik: string }) => x.kimlik === k.kimlik)).toMatchObject({ masraf_turu: 'Yemek', gorsel_var: false });
+      expect((await o.ist('GET', '/api/masraf/belge-kontrol', await o.gir('ds'))).statusCode).toBe(404);
+    }
   });
   it('muhasebeye iletilen proformada 48 saatte fatura no yoksa Ticari Sorumluya görev (T-YG546)', async () => {
     const d = await dosya(); const t = await teklifVer(d, 'Yat Sahibi', 1000, 'Taslak', null as never);
@@ -442,6 +456,17 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
     const r = await o.ist('POST', '/api/masraf', c, M);
     expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ odenecek: 25, kesilen: 25 });
     expect((await o.ist('POST', '/api/masraf', c, M)).statusCode).toBe(409);
+    { // T-YG920-TASLAK: taslak fiş onaya düşmez, gönderilince kart açılır; hatırlatma 14'ünde
+      const ts = await o.ist('POST', '/api/masraf', c, { ...M, belgeOzeti: 'F920T', taslak: true });
+      expect(ts.json().durum).toBe('Taslak'); expect(await o.kart('Masraf Fişi', ts.json().kimlik)).toBeUndefined();
+      expect((await o.ist('GET', '/api/masraf/taslaklarim', c)).json().map((x: { kimlik: string }) => x.kimlik)).toContain(ts.json().kimlik);
+      const { masrafTaslakHatirlat } = await import('../src/ticari.js');
+      expect(await masrafTaslakHatirlat(o.db, new Date('2026-11-14T09:00:00Z'))).toBeGreaterThanOrEqual(1);
+      expect(await masrafTaslakHatirlat(o.db, new Date('2026-11-13T09:00:00Z'))).toBe(0);
+      expect((await o.ist('POST', `/api/masraf/${ts.json().kimlik}/gonder`, await o.gir('tid'))).statusCode).toBe(404);
+      expect((await o.ist('POST', `/api/masraf/${ts.json().kimlik}/gonder`, c)).statusCode).toBe(200);
+      expect(await o.kart('Masraf Fişi', ts.json().kimlik)).toBeDefined();
+    }
     // YG-921 (T-YG921): konaklama sınır aşımı gerekçeyle TİD onayına gider ve tamamı ödenecek olur; reddedilen belge yeniden girilir
     const ks = await o.ist('POST', '/api/masraf', c, { ...M, tur: 'Konaklama', tutarTl: 6000, belgeOzeti: 'F921', istisna: 'Bölgede uygun otel yok' });
     expect(ks.json()).toMatchObject({ odenecek: 150, kesilen: 0 });

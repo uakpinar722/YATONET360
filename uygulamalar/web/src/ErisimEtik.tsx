@@ -94,3 +94,15 @@ export function OzDenetim() {
     {tur === 'Sürüm Öncesi' && <><label htmlFor="od-y">Yayın Seti</label><select id="od-y" value={ys} onChange={(e) => setYs(e.target.value)}><option value="">Seçiniz</option>{v.setler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.surum} · {x.ortam}</option>)}</select></>}
     <button className="btn2 kucuk" disabled={!tur || (tur === 'Sürüm Öncesi' && !ys)} onClick={() => void istek<{ calismaNo: string }>('/oz-denetim', { tur, yayin: ys || undefined }).then((r) => { setM(`${r.calismaNo} başlatıldı; sonuç birkaç dakika içinde listelenir.`); return yk(); }).catch((e) => setM(e.message))}>Öz Denetimi Başlat</button></details>;
 }
+
+/** YG-1055: Erişim Kapatma; ayrılan personelin hesap, oturum, rol, cihaz ve sistem dışı erişim kapanışı. */
+export function ErisimKapatma() {
+  const [l, setL] = useState<{ kimlik: string; ad_soyad: string; son_is_gunu: string; ayrilis_durumu: string; hesap_durumu: string; acik_oturum: number; aktif_rol: number; aktif_cihaz: number; sistem_disi: string | null }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>('/erisim-kapatma').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  const tamam = (x: (typeof l)[number]) => x.hesap_durumu === 'Kapalı' && x.acik_oturum === 0 && x.aktif_cihaz === 0 && x.sistem_disi === 'Tamamlandı';
+  return <details><summary>Erişim Kapatma{l.some((x) => !tamam(x)) ? ` · ${l.filter((x) => !tamam(x)).length} bekleyen` : ''}</summary>
+    {l.length === 0 ? <div className="ozet bos">Son 90 günde ayrılan personel bulunmamaktadır.</div> : <div className="tablo"><table className="kartli"><thead><tr><th>Personel</th><th>Son İş Günü</th><th>Hesap</th><th>Açık Oturum</th><th>Aktif Rol</th><th>Mobil Cihaz</th><th>Sistem Dışı Erişim</th></tr></thead>
+      <tbody>{l.map((x) => <tr key={x.kimlik}><td data-ad="Personel">{x.ad_soyad}{tamam(x) ? ' ✓' : ''}</td><td data-ad="Son İş Günü">{x.son_is_gunu.split('-').reverse().join('.')}</td><td data-ad="Hesap">{x.hesap_durumu}</td><td data-ad="Açık Oturum">{x.acik_oturum}</td><td data-ad="Aktif Rol">{x.aktif_rol}</td><td data-ad="Mobil Cihaz">{x.aktif_cihaz}</td><td data-ad="Sistem Dışı Erişim">{x.sistem_disi === 'Tamamlandı' ? 'Kapatıldı' : x.sistem_disi ? 'Hesap Kapanış Kontrolü bekliyor' : 'Son iş gününde açılır'}</td></tr>)}</tbody></table></div>}
+  </details>;
+}

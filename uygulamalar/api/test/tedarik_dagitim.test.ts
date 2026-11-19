@@ -24,6 +24,16 @@ describe('Talep Dağıtımı (YG-1592, YG-1593)', () => {
     // YG-1590 (T-YG1590): Tedarik Sorumlusu kendi talebini görür
     expect((await o.ist('GET', '/api/tedarik-sorumlusu-pano', await o.gir('tso'))).json().talepler.map((x: { kimlik: string }) => x.kimlik)).toContain(f1);
     expect((await o.ist('GET', '/api/tedarik-sorumlusu-pano', await o.gir('tyo'))).statusCode).toBe(404);
+    { // T-YG1592-CIKAR: çıkar çatışması bildirimi talebi yeniden atamaya döndürür; aynı kişiye atanamaz
+      const ts = await o.gir('tso');
+      expect((await o.ist('POST', `/api/tedarik/dagitim/${f1}/cikar-catismasi`, ts, { aciklama: ' ' })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/tedarik/dagitim/${f1}/cikar-catismasi`, await o.gir('ds'), { aciklama: 'X' })).statusCode).toBe(404);
+      expect((await o.ist('POST', `/api/tedarik/dagitim/${f1}/cikar-catismasi`, ts, { aciklama: 'Tedarikçi akrabam' })).statusCode).toBe(200);
+      expect((await o.kart('Malzeme Talebi', f1)).durum).toBe('Tamamlandı');
+      const pn = (await o.ist('GET', '/api/tedarik-pano', await o.gir('tyo'))).json();
+      expect(pn.bekleyen.find((x: { kimlik: string }) => x.kimlik === f1).cikar).toBe('Tedarikçi akrabam');
+      expect((await o.ist('POST', `/api/tedarik/dagitim/${f1}`, await o.gir('tyo'), { sorumlu: o.K.tso })).statusCode).toBe(409);
+    }
     { // T-YG1590-UYARI: banka hesabı değişikliği, eksik sertifika, raf ömrü
       const ted = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Uyarı Tedarikçi','Tedarikçi',$2) RETURNING kimlik`, [`S-TU${Date.now()}`, o.K.ds])).rows[0].kimlik;
       const s = (await o.sup.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, statu) VALUES ('SP-UYARI-01',$1,$2,'T','Y',1,0,1,'2099-01-01','Y','K','G',$3,'Verildi') RETURNING kimlik`, [d.kimlik, ted, o.K.tso])).rows[0].kimlik;

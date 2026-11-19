@@ -22,7 +22,7 @@ import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { Akademi, DenemeDegerlendirme } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
-import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, IcDenetim, OzDenetim } from './ErisimEtik';
+import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, ErisimKapatma, IcDenetim, OzDenetim } from './ErisimEtik';
 import { KurumTalepleri, GelenTalepler } from './KurumTalebi';
 import { UcretBandi } from './UcretBandi';
 import { KilitRoller } from './KilitRol';
@@ -896,7 +896,7 @@ export function SigortaEk2() {
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
   const [izId, setIzId] = useState(''); const [izB, setIzB] = useState('');
-  const [msId, setMsId] = useState(''); const [msB, setMsB] = useState(''); // YG-920
+  const [msId, setMsId] = useState(''); const [msB, setMsB] = useState(''); const [tk, setTk] = useState(0); // YG-920
   const [bl, setBl] = useState(false); const [iz, setIz] = useState({ tur: 'Yıllık', baslangic: '', bitis: '' }); const [m, setM] = useState({ tur: 'Yemek', tarih: '', tutarTl: '', kur: '', miktar: '1', belgeOzeti: '', belgeTuru: 'Kağıt Fiş', istisna: '' });
   return (
     <>
@@ -927,6 +927,7 @@ export function IdariIslemler() {
       <ErisimInceleme />
       <DegisiklikBiletleri />
       <OzDenetim />
+      <ErisimKapatma />
       <EtikBildirim />
       <IcDenetim />
       <KurumTalepleri />
@@ -1001,9 +1002,20 @@ export function IdariIslemler() {
         <MasrafTakvimi tarih={m.tarih} />
         <button className="btn2" onClick={() => void yap(() => istek<{ odenecek: number; kesilen: number; kimlik?: string }>('/masraf', { ...m, tutarTl: Number(m.tutarTl.replace(',', '.')), kur: Number(m.kur.replace(',', '.')), miktar: Number(m.miktar) }).then((r) => { if (r.kimlik) setMsId(r.kimlik); return { uyari: `Ödenecek: ${eur(r.odenecek)}${r.kesilen > 0 ? ` · Limit Aşımı: ${eur(r.kesilen)}` : ''}${m.belgeTuru === 'Kağıt Fiş' ? ' · Fiş görselini yükleyiniz.' : ''}` }; }))}>Masraf Gönder</button>
         {msId && <BelgeSec ad="Fiş Görseli" bagTuru="Masraf" bagKimligi={msId} deger={msB} sec={(k) => { setMsB(k); void yap(() => istek(`/masraf/${msId}/belge`, { belge: k }).then(() => ({ uyari: 'Fiş görseli eklendi.' }))); }} />}
+        <button className="btn2" onClick={() => void yap(() => istek<{ kimlik: string }>('/masraf', { ...m, taslak: true, tutarTl: Number(m.tutarTl.replace(',', '.')), kur: Number(m.kur.replace(',', '.')), miktar: Number(m.miktar) }).then((r) => { setMsId(r.kimlik); setTk(tk + 1); return { uyari: 'Fiş taslak olarak kaydedildi; onaya göndermeyi unutmayınız.' }; }))}>Taslak Olarak Kaydet</button>
+        <MasrafTaslaklari yenile={tk} yap={yap} />
       </Blok>
     </>
   );
+}
+
+/** YG-920: taslak masraf fişleri; kalan giriş günü ve "Onaya Gönder". */
+function MasrafTaslaklari({ yenile, yap }: { yenile: number; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
+  const [l, setL] = useState<{ kimlik: string; masraf_turu: string; fis_tarihi: string; belge_ozeti: string; odenecek_eur: string; kalan_gun: number }[]>([]); const [n, setN] = useState(0);
+  useEffect(() => { void istek<typeof l>('/masraf/taslaklarim').then(setL).catch(() => setL([])); }, [yenile, n]);
+  if (!l.length) return null;
+  return <><div className="bolum">Taslak Fişlerim</div>{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.masraf_turu} · {x.fis_tarihi.split('-').reverse().join('.')} · {x.belge_ozeti} · {eur(Number(x.odenecek_eur))} · {x.kalan_gun >= 0 ? `Girişe ${x.kalan_gun} gün kaldı` : 'Giriş süresi doldu'}</span>
+    <button className="btn2 kucuk" disabled={x.kalan_gun < 0} onClick={() => void yap(() => istek(`/masraf/${x.kimlik}/gonder`, {}).then(() => { setN(n + 1); return { uyari: 'Fiş onaya gönderildi.' }; }))}>Onaya Gönder</button></div>)}</>;
 }
 
 /** YG-234: bant dışı kalemde gerekçeli Ticari İşler Direktörü onayı. */

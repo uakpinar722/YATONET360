@@ -114,7 +114,8 @@ export function etikDenetimYollari(s: FastifyInstance, b: Baglam) {
       const idm = await rolId(c, IDM); const cg = await rolId(c, CEO); const mudurYok = !(await rolSahipleri(c, idm)).some((k) => k !== o.kullanici);
       const zincir = d.vekaleten || mudurYok ? [cg] : [idm, cg];
       await c.query(`UPDATE ic_denetim SET durum = 'Raporda', rapor_ozeti = $2 WHERE kimlik = $1`, [id, g.ozet.trim()]);
-      await kartAc(c, { tur: 'İç Denetim Raporu', baslik: `${d.denetim_no} · İç Denetim Raporu`, ozet: d.vekaleten ? 'Vekâleten Yürütüldü' : undefined, hazirlayan: o.kullanici, zincir, nesneTuru: 'İç Denetim', nesneKimligi: id });
+      // YG-1672: denetim bitimi raporun sunulduğu andır; rapor 120 saat içinde CEO'ya sunulur (Süre Uyarılarında sayaçla görünür).
+      await kartAc(c, { tur: 'İç Denetim Raporu', baslik: `${d.denetim_no} · İç Denetim Raporu`, ozet: d.vekaleten ? 'Vekâleten Yürütüldü' : undefined, hazirlayan: o.kullanici, zincir, sonZaman: new Date(Date.now() + 120 * 3_600_000), nesneTuru: 'İç Denetim', nesneKimligi: id });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İç Denetim Raporu', nesneTuru: 'İç Denetim', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { tamam: true };
