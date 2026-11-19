@@ -101,7 +101,7 @@ kapanisKaydet('Dosya Yeniden Açma', async (c, k, karar, yapan) => {
   await c.query(`UPDATE dosya_yeniden_acma SET durum = 'Onaylandı', karar_zamani = now() WHERE kimlik = $1`, [t.kimlik]);
   // YG-080: yeni çevrim; önceki kararlar, teslim ve mali etkiler korunur, kapanış nedeni geçmişte kalır.
   await statuYaz(c, { kimlik: t.dosya_ref, statu: t.statu, asama: t.asama }, { statu: 'Aktif', asama: t.asama ?? 'Keşif' }, `Yeniden açıldı (${t.gerekce_turu}): ${t.gerekce}`, yapan, 'Dosya Sorumlusu');
-  await c.query(`UPDATE dosya SET yeniden_acma_gerekcesi = $2, kapanma_nedeni = NULL, kapanis_zamani = NULL WHERE kimlik = $1`, [t.dosya_ref, t.gerekce]);
+  await c.query(`UPDATE dosya SET yeniden_acma_gerekcesi = $2, kapanma_nedeni = NULL, ilk_kapanis_zamani = coalesce(ilk_kapanis_zamani, kapanis_zamani), cevrim = cevrim + 1, kapanis_zamani = NULL WHERE kimlik = $1`, [t.dosya_ref, t.gerekce]); // YG-080: çevrim sayacı
 });
 
 kapiKaydet('Teklif', async (db, d) => ((await db.query(`SELECT 1 FROM kesif WHERE dosya_ref = $1 AND durum = 'Tamamlandı' LIMIT 1`, [d.kimlik])).rowCount || d.oncelik === 'Kritik' ? null : 'Keşif tamamlanmadan teklif aşamasına geçilemez.'));

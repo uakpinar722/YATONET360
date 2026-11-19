@@ -218,6 +218,7 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
     await o.karar((await o.kart('Dosya Yeniden Açma', ta.kimlik)).kimlik, 'opm', 'Onayla');
     const v = (await o.sup.query(`SELECT statu, kapanma_nedeni FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0];
     expect(v).toEqual({ statu: 'Aktif', kapanma_nedeni: null });
+    { const cv = (await o.sup.query(`SELECT cevrim, ilk_kapanis_zamani FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]; expect(cv.cevrim).toBe(2); expect(cv.ilk_kapanis_zamani).not.toBeNull(); } // T-YG080-CEVRIM
     const g = (await o.sup.query(`SELECT gerekce FROM dosya_statu_gecmisi WHERE dosya_ref = $1 ORDER BY kimlik`, [d.kimlik])).rows.map((x) => x.gerekce);
     expect(g.at(-1)).toContain('Yeniden açıldı'); expect(g.join()).toContain('G');
   });
