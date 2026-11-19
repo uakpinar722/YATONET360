@@ -21,6 +21,10 @@ const totp = (g) => {
 const sup = new pg.Client({ host: 'localhost', user: 'postgres', password: env.POSTGRES_SUPER_PAROLA, database: 'yatonet360' });
 await sup.connect(); await sup.query(`UPDATE sistem_parametresi SET deger = 0 WHERE kod = 'sozlesme_kapisi'`); await sup.query(`UPDATE sistem_parametresi SET deger = NULL WHERE kod = 'onay_kod_esik_eur'`); // Deneme ortamı: sözleşme kapısı api sınamasında
 const tek = randomBytes(3).toString('hex');
+// Birikim önlemi: önceki turların deneme hesapları ve açık kartları kapatılır; rol sahibine giden bildirimler her turda çoğalmaz, kuyruklar dolmaz.
+await sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE atama_durumu <> 'Kapalı' AND kullanici_ref IN (SELECT kimlik FROM kullanici_hesabi WHERE e_posta LIKE 'e2e-%@deneme.yatonet.local')`);
+await sup.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE hesap_durumu <> 'Kapalı' AND e_posta LIKE 'e2e-%@deneme.yatonet.local'`);
+await sup.query(`UPDATE is_karti SET durum = 'Geri Çekildi', kapanma_zamani = now() WHERE durum IN ('Bekliyor', 'İade Edildi')`);
 const tarayici = await chromium.launch({ channel: 'msedge', headless: true });
 const sonuc = []; const hatalar = [];
 const kontrol = (ad, k) => { sonuc.push(`${k ? 'GEÇTİ' : 'KALDI'}  ${ad}`); };
