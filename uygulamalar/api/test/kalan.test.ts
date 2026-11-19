@@ -587,6 +587,13 @@ describe('garanti çekek mahsubu (YG-1418)', () => {
     expect((await o.kart('Hakediş Mahsubu', m[0].kimlik)).durum).toBe('Bekliyor');
     await o.ist('POST', `/api/garanti-sikayet/${gs}/karar`, await o.gir('ty'), { karar: 'Garanti', gerekce: 'Tekrar' });
     expect((await o.sup.query(`SELECT count(*) n FROM hakedis_mahsubu WHERE dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe('1');
+    { // T-YG1685-DOGRULAMA: garanti kararı Kalite Kontrolör yeniden doğrulama görevini açar; sonuç garanti kaydına bağlanır
+      expect(await o.kart('Garanti Yeniden Doğrulama', gs)).toBeDefined();
+      expect((await o.ist('POST', `/api/garanti-sikayet/${gs}/yeniden-dogrulama`, await o.gir('ds'), { sonuc: 'Doğrulandı' })).statusCode).toBe(403);
+      await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Kalite Kontrolör',$2)`, [d.kimlik, o.K.ty]);
+      expect((await o.ist('POST', `/api/garanti-sikayet/${gs}/yeniden-dogrulama`, await o.gir('ty'), { sonuc: 'Doğrulandı' })).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT yeniden_dogrulama_sonucu s FROM garanti_sikayet WHERE kimlik = $1`, [gs])).rows[0].s).toBe('Doğrulandı');
+    }
   });
 });
 

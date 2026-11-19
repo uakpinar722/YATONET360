@@ -688,7 +688,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.statu !== 'Taslak') return y.code(409).send({ hata: 'Teklif taslak değildir.' });
     { const ist = (await b.db.query(`SELECT yurt_disi_istisna FROM dosya WHERE kimlik = $1`, [t.dosya_ref])).rows[0]?.yurt_disi_istisna; // YG-028
       if (ist === 'Bekliyor') return y.code(409).send({ hata: 'Türkiye dışındaki yat talebi CEO istisna onayı beklemektedir.' });
-      if (ist === 'Reddedildi') return y.code(409).send({ hata: 'Türkiye dışındaki yat talebi için CEO istisna onayı verilmemiştir.' }); }
+      if (ist === 'Reddedildi') return y.code(409).send({ hata: 'Türkiye dışındaki yat talebi için CEO istisna onayı verilmemiştir.' });
+      // YG-1697 (A51-S6): yurt dışı dosyada Hukuk ve Uyumun uygunluk kontrolü "Uygun" olmadan teklif gönderilmez.
+      if ((await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND yurt_disi`, [t.dosya_ref])).rowCount && (await b.db.query(`SELECT sonuc FROM yurt_disi_uygunluk WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0]?.sonuc !== 'Uygun') return y.code(409).send({ hata: 'Yurt dışı dosyada Hukuk ve Uyum Yurt Dışı Uygunluk Kontrolü sonucu bekleniyor.' }); }
     { const sb = await sigortaBildirimEngeli(b.db, t.dosya_ref); if (sb) return y.code(409).send({ hata: sb }); } // YG-454
     if ((await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND bant_disi LIMIT 1`, [t.kimlik])).rowCount && !t.bant_disi_onay_ref) return y.code(409).send({ hata: 'Bant dışı kalem için Ticari İşler Direktörünün gerekçeli onayı gereklidir.' });
     if ((await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND gecici_kayit`, [t.yat_ref])).rowCount) return y.code(409).send({ hata: 'Teklif için önce Geçici yat kaydını doğrulamanızı rica ederiz.' });

@@ -31,7 +31,7 @@ export const rizaBicimi = (grup: string) => (grup === 'LGM İç Rolü' ? 'ozel_g
 export const dilKodu = (tercih: string) => (tercih === 'İngilizce' ? 'en' : 'tr');
 
 export async function sonSurum(db: Pool, kod: string): Promise<string> {
-  const { rows } = await db.query(`SELECT surum FROM hukuki_metin WHERE kod = $1 ORDER BY surum DESC LIMIT 1`, [kod]);
+  const { rows } = await db.query(`SELECT surum FROM hukuki_metin WHERE kod = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1 /* YG-1697: onaydaki sürüm yürürlükte sayılmaz */`, [kod]);
   if (!rows[0]) throw new Error(`Hukuki metin yüklü değil: ${kod}`);
   return rows[0].surum;
 }

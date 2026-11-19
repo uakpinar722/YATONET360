@@ -88,6 +88,9 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     const r = await o.ist('POST', '/api/nobet/cizelge', c, { donem: buAy, degisiklik: true, vardiyalar: [v('ds', 'Dosya Sorumlusu'), v('tu', 'Teknik Uzman'), v('oy', 'Yönetici')] });
     expect(r.statusCode, r.body).toBe(200);
     expect(await nobetci(o.db, 'Dosya Sorumlusu')).toBeNull();
+    { const nk = (await o.kart('Nöbet Çizelgesi', r.json().kimlik)).kimlik; // T-YG1584-NOBET
+      const ay = (await o.ist('GET', `/api/is/${nk}/nobet-cizelgesi`, await o.gir('opm'))).json(); expect(ay.vardiyalar).toHaveLength(3); expect(ay.kontroller[0].sonuc).toBe(true);
+      expect((await o.ist('GET', `/api/is/${nk}/nobet-cizelgesi`, await o.gir('ds'))).statusCode).toBe(404); }
     await o.karar((await o.kart('Nöbet Çizelgesi', r.json().kimlik)).kimlik, 'opm', 'Onayla');
     expect(await nobetci(o.db, 'Dosya Sorumlusu')).toBe(o.K.ds);
     expect(await nobetci(o.db, 'Teknik Uzman')).toBe(o.K.tu);

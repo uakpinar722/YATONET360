@@ -108,6 +108,13 @@ describe('kesin teslim, protokol, yurt dışı, 6502', () => {
     { const ik = await o.kart('Yurt Dışı Talep İstisnası', d.kimlik); expect((await o.karar(ik.kimlik, 'ceo', 'Onayla')).statusCode).toBe(200); // YG-028
       expect((await o.sup.query(`SELECT yurt_disi_istisna FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yurt_disi_istisna).toBe('Onaylandı'); }
     const t = await teklif(d, { muhatap: 'Yat Sahibi', kalem: [['Masraf', 200, 'Onaylandı'], ['İşçilik', 800, 'Onaylandı']] }); expect(await yurtDisiAvans(o.db, t, 1000, 50)).toBe(600);
+    { // T-YG1697-YURTDISI: uygunluk kontrolü
+      const hud = await o.gir('hud'); expect((await o.ist('GET', '/api/yurt-disi-uygunluk/bekleyen', hud)).json().some((x: any) => x.kimlik === d.kimlik)).toBe(true);
+      expect((await o.ist('POST', `/api/dosya/${d.kimlik}/yurt-disi-uygunluk`, hud, { sonuc: 'Uygun', liman: true })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/dosya/${d.kimlik}/yurt-disi-uygunluk`, await o.gir('ds'), { sonuc: 'Uygun', liman: true, calisma: true, gumruk: true })).statusCode).toBe(404);
+      expect((await o.ist('POST', `/api/dosya/${d.kimlik}/yurt-disi-uygunluk`, hud, { sonuc: 'Uygun', liman: true, calisma: true, gumruk: true })).statusCode).toBe(200);
+      expect((await o.kart('Yurt Dışı İzin Kontrolü', d.kimlik)).durum).toBe('Tamamlandı');
+    }
   });
   it('YG-027: 6502 yalnız ticari olmayan gerçek kişi', () => {
     expect(kapsam6502('Bireysel Müşteri', 'Gerçek kişi', 'Özel')).toBe(true);

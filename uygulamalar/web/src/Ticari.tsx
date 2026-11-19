@@ -1,4 +1,5 @@
 import { DurumSayilari } from './DurumSayilari';
+import { SigortaPanel } from './SigortaPanel';
 import { ArizaBildir } from './Broker';
 import { OdemeTakvimi } from './OdemeTakvimi';
 import { eur } from './bicim';
@@ -27,7 +28,7 @@ import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, ErisimKapatma, IcDen
 import { KurumTalepleri, GelenTalepler } from './KurumTalebi';
 import { UcretBandi } from './UcretBandi';
 import { KilitRoller } from './KilitRol';
-import { DenetimPlani, ResmiGazete, SosyalMedya } from './DenetimUyum';
+import { DenetimPlani, ResmiGazete, SosyalMedya, HukukiMetinler } from './DenetimUyum';
 import { DisaAktarim } from './DisaAktarim';
 import { GeriYukleme } from './GeriYukleme';
 import { Varliklar } from './Varlik';
@@ -943,6 +944,8 @@ export function IdariIslemler() {
       <DenetimPlani />
       <ResmiGazete />
       <SosyalMedya />
+      <HukukiMetinler />
+      <SigortaPanel />
       <DisaAktarim />
       <GeriYukleme />
       <Varliklar />

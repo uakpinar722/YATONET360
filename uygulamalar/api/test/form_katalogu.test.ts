@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formSecilebilir, gorevFormlari, type Blok } from '../src/form_katalogu.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { tod: 'Teknik ve Operasyon Direktörü', ds: 'Dosya Sorumlusu' };
+const KADRO = { tod: 'Teknik ve Operasyon Direktörü', ds: 'Dosya Sorumlusu', km: 'Kalite Müdürü', rkd: 'Risk ve Kalite Direktörü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test112', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -48,5 +48,14 @@ describe('belge kataloğu (YG-601, YG-632, YG-633, YG-1513)', () => {
     expect((await kodlar('Teknik Uzman')).some((x) => x.startsWith('KL-TEK-015'))).toBe(true);
     const om = await kodlar('Operasyon Müdürü'); for (const k of ['FR-OPS-018', 'FR-OPS-019']) expect(om.some((x) => x.startsWith(k))).toBe(true);
     expect((await kodlar('Müşteri ve Paydaş İlişkileri Müdürü')).find((x) => x.startsWith('FR-KLT-016'))).toMatch(/onaylar/);
+  });
+  it('Ek II Değişiklik Talebi Risk ve Kalite Direktörü onayıyla yeni sürüm açar; aylık kalite göstergeleri (T-YG1691)', async () => {
+    const kod = (await o.sup.query(`SELECT kod, surum FROM form_katalogu WHERE durum = 'Yürürlükte' AND kod LIKE 'FR-KLT-%' ORDER BY kod LIMIT 1`)).rows[0];
+    expect((await o.ist('POST', `/api/form-katalogu/${kod.kod}/degisiklik-talebi`, await o.gir('ds'), { degisiklik: 'X', gerekce: 'Y' })).statusCode).toBe(404);
+    const r = await o.ist('POST', `/api/form-katalogu/${kod.kod}/degisiklik-talebi`, await o.gir('km'), { degisiklik: 'Ölçüm alanı eklenmesi', gerekce: 'Saha geri bildirimi' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.karar((await o.kart('Ek II Değişiklik Talebi', r.json().kimlik)).kimlik, 'rkd', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum, surum FROM form_katalogu WHERE kod = $1`, [kod.kod])).rows[0]).toEqual({ durum: 'Taslak', surum: kod.surum + 1 });
+    const { aylikKaliteGostergeleri } = await import('../src/kalite_disiplin.js');
+    expect(await aylikKaliteGostergeleri(o.db, new Date('2031-09-01T09:00:00+03:00'))).toBe(true); expect((await o.kart('Aylık Kalite Göstergeleri', '2031-08')).zincir).toHaveLength(2);
   });
 });

@@ -567,6 +567,23 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  // YG-1685: Garanti Yeniden Doğrulama sonucu (Kalite Kontrolör veya Kalite Uzmanı); garanti kaydına bağlanır, Dosya Sorumlusu bilgilendirilir.
+  s.post('/garanti-sikayet/:id/yeniden-dogrulama', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; aciklama?: string };
+    if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT g.*, d.dosya_no, d.dosya_sorumlusu_ref FROM garanti_sikayet g JOIN dosya d ON d.kimlik = g.dosya_ref WHERE g.kimlik = $1`, [id])).rows[0];
+    if (!k || k.karar !== 'Garanti') return yok(y);
+    const yetkili = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Kalite Kontrolör', 'Yedek Kalite Kontrolör') AND bitis_zamani IS NULL UNION SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $2 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)'`, [k.dosya_ref, o.kullanici])).rowCount;
+    if (!yetkili) return y.code(403).send({ hata: 'Garanti yeniden doğrulamasını Kalite Kontrolör yapar.' });
+    if (!['Doğrulandı', 'Doğrulanmadı'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (g.sonuc === 'Doğrulanmadı' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Doğrulanmadı sonucunda açıklama zorunludur.' });
+    await b.db.query(`UPDATE garanti_sikayet SET yeniden_dogrulama_sonucu = $2, yeniden_dogrulama_notu = $3, yeniden_dogrulayan_ref = $4, yeniden_dogrulama_zamani = now() WHERE kimlik = $1`, [id, g.sonuc, g.aciklama?.trim() || null, o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Garanti Yeniden Doğrulama' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    if (k.dosya_sorumlusu_ref) await bildir(b.db, { olay: `garanti-dogrulama:${id}:${Date.now()}`, kullanicilar: [k.dosya_sorumlusu_ref], baslik: `${k.kayit_no} · Garanti Yeniden Doğrulama: ${g.sonuc}`, ozet: g.aciklama?.trim() || undefined, oncelik: g.sonuc === 'Doğrulanmadı' ? 'Yüksek' : 'Normal' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Garanti Yeniden Doğrulama', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, yeni: { sonuc: g.sonuc }, gerekce: g.aciklama?.trim() || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { sonuc: g.sonuc };
+  });
+
   // YG-1416, YG-1420: kapsam kararı Teknik Yönetici; kök neden olmadan kapanmaz. Düzeltme maliyeti 5.000,00 EUR üstünde Teknik Müdür onayına gider. YG-1425: şikâyet sonucu listesi.
   s.post('/garanti-sikayet/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
@@ -617,6 +634,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       [id, g.karar ?? null, g.sikayetSonucu ?? null, g.gerekce.trim(), o.kullanici, g.maliyet ?? null, Boolean(g.kokNeden), g.kapat ? 'Kapalı' : 'Karar']);
     if (g.karar === 'Garanti') {
       await garantiKarneIsle(b.db, k.dosya_ref); // Ek I §7.5
+      // YG-1685: garanti düzeltmesi tamamlanınca Kalite Kontrolör yeniden doğrular; görev dosyanın Kalite Kontrolörüne, yoksa role.
+      if (await birKez(b.db, 'garanti_yeniden_dogrulama', id)) { const kk = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Kalite Kontrolör' AND bitis_zamani IS NULL LIMIT 1`, [k.dosya_ref])).rows[0]?.kullanici_ref as string | undefined;
+        await kartAc(b.db, { tur: 'Garanti Yeniden Doğrulama', kategori: 'gorev', baslik: `${k.kayit_no} · Garanti Yeniden Doğrulama`, ozet: 'Garanti düzeltmesi tamamlandığında yerinde doğrulayıp sonucu garanti kaydına işleyiniz.', ...(kk ? { sahipKullanici: kk } : { sahipRol: await rolId(b.db, 'Kalite Uzmanı (Kalite Kontrolör)') }), nesneTuru: 'Garanti Şikâyet', nesneKimligi: id }); }
       const gm = Number((await b.db.query(`SELECT coalesce(sum(f.tutar_eur), 0) t FROM tesis_faturasi f JOIN tesis_talebi s ON s.kimlik = f.talep_ref WHERE s.dosya_ref = $1 AND f.kalem = 'Çekek'`, [k.dosya_ref])).rows[0].t);
       // YG-1418: LGM'nin ödediği çekek tutarı firma hakedişinden mahsup önerisi olarak kendiliğinden açılır; onay zinciri elle açılan mahsupla aynıdır.
       const firma = k.kurulus_ref ?? (await b.db.query(`SELECT DISTINCT kurulus_ref FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK')`, [k.dosya_ref])).rows.map((r) => r.kurulus_ref as string).find((_, n, l) => l.length === 1);

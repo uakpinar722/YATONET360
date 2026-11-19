@@ -7,6 +7,16 @@ import { izYaz } from './denetim.js';
 import { gunAy } from './metin.js';
 import type { Bolum } from './pdf.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
+import { kapanisKaydet } from './kapanis.js';
+import { kartAc } from './is_motoru.js';
+import { rolId } from './ihbar.js';
+
+// YG-1691: Ek II Değişiklik Talebi onayı; onaylanınca yürürlükteki aracın yeni sürümü taslak açılır (doldurulmuş kayıtlar geriye dönük değişmez).
+kapanisKaydet('Ek II Değişiklik Talebi', async (c, k, karar) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
+  const t = (await c.query(`UPDATE ek2_degisiklik_talebi SET durum = $2 WHERE kimlik = $1 AND durum = 'Onayda' RETURNING arac_kodu`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : karar === 'Reddet' ? 'Reddedildi' : 'İade Edildi'])).rows[0];
+  if (t && karar === 'Onayla') await c.query(`UPDATE form_katalogu SET durum = 'Taslak', surum = surum + 1, yururluk_tarihi = NULL, zaman = now() WHERE kod = $1 AND durum = 'Yürürlükte'`, [t.arac_kodu]);
+});
 
 type Db = Pool | PoolClient;
 const KOK = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -89,7 +99,8 @@ export function formKataloguYollari(s: FastifyInstance, b: Baglam) {
     const q = i.query as { secim?: string; ara?: string };
     const { rows } = await b.db.query(`SELECT kod, ad, sinif, bicim, bolum, dolduran, goren, onaylayan, kanal, dil, dayanak, ek2_notu, sistem_karsiligi, yerine, surum, yururluk_tarihi, durum, iptal_zamani, iptal_gerekcesi
       FROM form_katalogu WHERE ($1::boolean IS NOT TRUE OR durum = 'Yürürlükte') AND ($2::text IS NULL OR kod ILIKE '%' || $2 || '%' OR ad ILIKE '%' || $2 || '%') ORDER BY kod`, [q.secim === '1', q.ara?.trim() || null]);
-    return { yonetir: await yonetir(o.kullanici), kalemler: rows };
+    const km = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = 'Kalite Müdürü'`, [o.kullanici])).rowCount);
+    return { yonetir: await yonetir(o.kullanici), degisiklikTalebi: km, kalemler: rows };
   });
   s.get('/form-katalogu/:kod/alanlar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { kod } = i.params as { kod: string };
@@ -114,6 +125,19 @@ export function formKataloguYollari(s: FastifyInstance, b: Baglam) {
     ];
     const { pdfUret } = await import('./pdf.js');
     return y.type('application/pdf').header('Content-Disposition', `inline; filename="${kod}_R${k.surum}_bos.pdf"`).send(await pdfUret({ ad: k.ad, kod, no: `${kod} R${k.surum}`, tarih: gunAy(new Date()), surum: `R${k.surum}`, dil: 'tr', bolumler }));
+  });
+  // YG-1691: Kalite Müdürü Ek II Değişiklik Talebini hazırlar, "Onaya Gönder" → Risk ve Kalite Direktörü.
+  s.post('/form-katalogu/:kod/degisiklik-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { kod } = i.params as { kod: string }; const g = (i.body ?? {}) as { degisiklik?: string; gerekce?: string };
+    if (!KOD.test(kod) || !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = 'Kalite Müdürü'`, [o.kullanici])).rowCount) return yok(y);
+    const k = (await b.db.query(`SELECT ad, durum FROM form_katalogu WHERE kod = $1`, [kod])).rows[0]; if (!k) return yok(y);
+    if (k.durum !== 'Yürürlükte') return y.code(409).send({ hata: 'Değişiklik talebi yürürlükteki araç için açılır.' });
+    if (!g.degisiklik?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Değişiklik ve gerekçe zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM ek2_degisiklik_talebi WHERE arac_kodu = $1 AND durum = 'Onayda'`, [kod])).rowCount) return y.code(409).send({ hata: 'Bu araç için onayda bekleyen değişiklik talebi vardır.' });
+    const r = (await b.db.query(`INSERT INTO ek2_degisiklik_talebi (arac_kodu, degisiklik, gerekce, hazirlayan_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [kod, g.degisiklik.trim(), g.gerekce.trim(), o.kullanici])).rows[0];
+    await kartAc(b.db, { tur: 'Ek II Değişiklik Talebi', baslik: `${kod} · Ek II Değişiklik Talebi`, ozet: `${g.degisiklik.trim()} · Gerekçe: ${g.gerekce.trim()}`.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Risk ve Kalite Direktörü')], nesneTuru: 'Ek II Değişiklik Talebi', nesneKimligi: r.kimlik });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ek II Değişiklik Talebi', nesneTuru: 'Form Kataloğu', nesneKimligi: kod, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
   });
   // Yeni araç Taslak doğar; kod tekildir ve iptal edilmiş kod yeniden verilemez (birincil anahtar, silme yasağı).
   s.post('/form-katalogu', oturumlu, async (i, y) => {

@@ -254,8 +254,27 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const no = (await b.db.query(`UPDATE dosya SET yurt_disi = true WHERE kimlik = $1 RETURNING dosya_no`, [id])).rows[0].dosya_no;
     // YG-028: Türkiye dışındaki yat talebi kural dışıdır; istisna CEO onayına düşer, onaylanmadan teklif onaya gönderilmez.
     if (await birKez(b.db, 'yurt_disi_istisna', id)) { await b.db.query(`UPDATE dosya SET yurt_disi_istisna = 'Bekliyor' WHERE kimlik = $1`, [id]); await kartAc(b.db, { tur: 'Yurt Dışı Talep İstisnası', baslik: `${no} · Türkiye Dışındaki Yat Talebi İstisnası`, ozet: 'Türkiye dışındaki yat talebinin kabulü CEO onayındadır.', oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Dosya', nesneKimligi: id }); }
-    if (await birKez(b.db, 'yurt_disi', id)) await kartAc(b.db, { tur: 'Yurt Dışı İzin Kontrolü', kategori: 'islem', baslik: `${no} · Yurt Dışı İzin Kontrolü`, oncelik: 'Yüksek', sahipRol: await rolId(b.db, HUD), nesneTuru: 'Dosya', nesneKimligi: id });
+    if (await birKez(b.db, 'yurt_disi', id)) await kartAc(b.db, { tur: 'Yurt Dışı İzin Kontrolü', kategori: 'islem', baslik: `${no} · Yurt Dışı Uygunluk Kontrolü`, ozet: 'Liman ve marina izni, çalışma ve giriş izni, gümrük ve geçici kabul kontrolü; sonuç teklif gönderimini açar.', oncelik: 'Yüksek', sahipRol: await rolId(b.db, HUD), sonZaman: new Date(Date.now() + 24 * 3_600_000), nesneTuru: 'Dosya', nesneKimligi: id }); // K-200: 24 saat
     return { uyari: 'Yurt dışı yat: teklif Genel Müdür Yardımcısı onayına gider.' };
+  });
+
+  // YG-1697 (A51-S6): Yurt Dışı Uygunluk Kontrolü; Hukuk ve Uyum Direktörü veya Uzmanı kaydeder.
+  const hukukMu = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, [HUD, 'Hukuk ve Uyum Uzmanı']])).rowCount);
+  s.get('/yurt-disi-uygunluk/bekleyen', oturumlu, async (i) => (await hukukMu(i.oturum!.kullanici)) ? (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.konum, y.yat_adi, k.son_zaman FROM is_karti k JOIN dosya d ON d.kimlik::text = k.nesne_kimligi JOIN yat y ON y.kimlik = d.yat_ref WHERE k.tur = 'Yurt Dışı İzin Kontrolü' AND k.durum = 'Bekliyor' ORDER BY k.son_zaman NULLS LAST`)).rows : []);
+  s.post('/dosya/:id/yurt-disi-uygunluk', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { liman?: boolean; calisma?: boolean; gumruk?: boolean; aciklama?: string; sonuc?: string };
+    if (!UUID.test(id) || !(await hukukMu(o.kullanici))) return yok(y);
+    if (!(await yurtDisiMi(b.db, id))) return y.code(409).send({ hata: 'Dosya yurt dışı işaretli değildir.' });
+    if (!['Uygun', 'Uygun Değil'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (g.sonuc === 'Uygun' && !(g.liman && g.calisma && g.gumruk)) return y.code(400).send({ hata: 'Uygun sonucu için üç izin kontrolünün de tamamlanması gerekir.' });
+    if (g.sonuc === 'Uygun Değil' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Uygun Değil sonucunda açıklama zorunludur.' });
+    await b.db.query(`INSERT INTO yurt_disi_uygunluk (dosya_ref, liman_marina_izni, calisma_giris_izni, gumruk_gecici_kabul, aciklama, sonuc, karar_veren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (dosya_ref) DO UPDATE SET liman_marina_izni = EXCLUDED.liman_marina_izni, calisma_giris_izni = EXCLUDED.calisma_giris_izni, gumruk_gecici_kabul = EXCLUDED.gumruk_gecici_kabul, aciklama = EXCLUDED.aciklama, sonuc = EXCLUDED.sonuc, karar_veren_ref = EXCLUDED.karar_veren_ref, zaman = now()`, [id, Boolean(g.liman), Boolean(g.calisma), Boolean(g.gumruk), g.aciklama?.trim() || null, g.sonuc, o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Yurt Dışı İzin Kontrolü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    if (d?.dosya_sorumlusu_ref) await bildir(b.db, { olay: `yurt-disi-uygunluk:${id}:${Date.now()}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Yurt Dışı Uygunluk: ${g.sonuc}`, ozet: g.sonuc === 'Uygun' ? 'Teklif onaya gönderilebilir.' : g.aciklama!.trim().slice(0, 200), oncelik: 'Yüksek' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yurt Dışı Uygunluk Kontrolü', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { sonuc: g.sonuc }, gerekce: g.aciklama?.trim() || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { sonuc: g.sonuc };
   });
 
   // YG-454: bildirim yapıldığında zaman kaydedilir.

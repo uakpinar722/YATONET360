@@ -7,7 +7,7 @@ type A = { kod: string; ad: string; dolduran: string | null; onaylayan: string |
 const BOS = { kod: '', ad: '', sinif: 'İç', bicim: 'Ekran adımı', dolduran: '', onaylayan: '', goren: '' };
 /** YG-601, YG-632, YG-633: Ek II belge kataloğu (FR-RAP-002'nin yerini alan sistem tablosu). */
 export function FormKatalogu() {
-  const [v, setV] = useState<{ yonetir: boolean; kalemler: K[] } | null>(null); const [ara, setAra] = useState(''); const [a, setA] = useState<A | null>(null);
+  const [v, setV] = useState<{ yonetir: boolean; degisiklikTalebi?: boolean; kalemler: K[] } | null>(null); const [ara, setAra] = useState(''); const [a, setA] = useState<A | null>(null);
   const [f, setF] = useState(BOS); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
   const yk = () => void istek<NonNullable<typeof v>>(`/form-katalogu?ara=${encodeURIComponent(ara)}`).then(setV).catch(() => setV(null));
   useEffect(() => { const t = setTimeout(yk, 250); return () => clearTimeout(t); }, [ara]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -26,7 +26,9 @@ export function FormKatalogu() {
         {v.yonetir && x.durum !== 'İptal' && <><label htmlFor={`fk-g-${x.kod}`}>Gerekçe</label><input id={`fk-g-${x.kod}`} value={g[x.kod] ?? ''} onChange={(e) => setG({ ...g, [x.kod]: e.target.value })} />
           {x.durum === 'Taslak' && <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'Yürürlükte' }), 'Yürürlüğe alındı.')}>Yürürlüğe Al</button>}
           {x.durum === 'Yürürlükte' && <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'Yeni Sürüm', gerekce: g[x.kod] }), 'Yeni sürüm taslak olarak açıldı.')}>Yeni Sürüm</button>}
-          <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'İptal', gerekce: g[x.kod] }), 'İptal edildi; kod yeniden verilmez.')}>İptal Et</button></>}</div>
+          <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'İptal', gerekce: g[x.kod] }), 'İptal edildi; kod yeniden verilmez.')}>İptal Et</button></>}
+        {v.degisiklikTalebi && x.durum === 'Yürürlükte' && <>{/* YG-1691: Ek II Değişiklik Talebi */}<label htmlFor={`fk-d-${x.kod}`}>Değişiklik</label><input id={`fk-d-${x.kod}`} value={g[`d${x.kod}`] ?? ''} onChange={(e) => setG({ ...g, [`d${x.kod}`]: e.target.value })} /><label htmlFor={`fk-dg-${x.kod}`}>Gerekçe</label><input id={`fk-dg-${x.kod}`} value={g[`dg${x.kod}`] ?? ''} onChange={(e) => setG({ ...g, [`dg${x.kod}`]: e.target.value })} />
+          <button className="btn2 kucuk" disabled={!g[`d${x.kod}`]?.trim() || !g[`dg${x.kod}`]?.trim()} onClick={() => is(istek(`/form-katalogu/${x.kod}/degisiklik-talebi`, { degisiklik: g[`d${x.kod}`], gerekce: g[`dg${x.kod}`] }), 'Ek II Değişiklik Talebi Risk ve Kalite Direktörü onayına gönderildi.')}>Ek II Değişiklik Talebi · Onaya Gönder</button></>}</div>
       {a?.kod === x.kod && <div className="tam">{a.alanlar.length ? a.alanlar.map((l) => <div className="not" key={l.alan}>{l.alan} · {l.tur}{l.bicim ? ` · ${l.bicim}` : ''} · {l.zorunlu}{l.liste ? ` · ${l.liste}` : ''}</div>) : <div className="not">Alan sözlüğünde bu araca bağlı alan yok.</div>}</div>}</div>)}
     <GenelForm />
     {v.yonetir && <div className="izgara"><b>Yeni Araç (taslak doğar)</b>

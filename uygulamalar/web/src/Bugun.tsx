@@ -54,6 +54,17 @@ function KartUst({ k, sayac = true }: { k: Kart; sayac?: boolean }) {
 }
 
 /** YG-1592, YG-1593: sipariş onayında sistem kontrolleri ve tutara göre son onay makamı. */
+/** YG-1584: nöbet çizelgesi onay ekranı; vardiyalar ve kontroller. */
+function NobetCizelgesiAyrinti({ id }: { id: string }) {
+  const [v, setV] = useState<{ donem: string; surum: number; vardiyalar: { katman: string; ad_soyad: string; baslangic: string; bitis: string }[]; kontroller: { ad: string; sonuc: boolean; aciklama: string }[] } | null>(null); const [ac, setAc] = useState(false);
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/is/${id}/nobet-cizelgesi`).then(setV).catch(() => setV(null)); }, [id]);
+  if (!v) return null;
+  const z = (x: string) => new Date(x).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+  return <div className="tam">{v.kontroller.map((x) => <div key={x.ad} className={x.sonuc ? 'not' : 'hata'}>{x.sonuc ? '✓' : '✗'} {x.ad} · {x.aciklama}</div>)}
+    <button className="lnk" onClick={() => setAc(!ac)}>{ac ? 'Vardiyaları Gizle' : `Vardiyaları Göster (${v.vardiyalar.length})`}</button>
+    {ac && v.vardiyalar.map((x, n) => <div key={n} className="not">{x.katman} · {x.ad_soyad} · {z(x.baslangic)} – {z(x.bitis)}</div>)}</div>;
+}
+
 function SiparisKontrolleri({ id }: { id: string }) {
   const [v, setV] = useState<{ kdvHaric: number; sonMakam: string | null; kontroller: { ad: string; sonuc: boolean; aciklama: string }[] } | null>(null);
   useEffect(() => { void istek<NonNullable<typeof v>>(`/is/${id}/siparis-kontrolleri`).then(setV).catch(() => setV(null)); }, [id]);
@@ -80,6 +91,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
       <div className="not">Kademe {k.kademe + 1} / {k.kademe_sayisi}{k.hazirlayan_adi ? ` · Hazırlayan: ${k.hazirlayan_adi}` : ''}</div>
       {k.arz_notlari && <div className="not">Önceki Kademe Notları: {k.arz_notlari}</div>}
       {k.tur === 'Tedarik Siparişi' && <SiparisKontrolleri id={k.kimlik} />}
+      {k.tur === 'Nöbet Çizelgesi' && <NobetCizelgesiAyrinti id={k.kimlik} />}
       {hata && <div className="hata" role="alert">{hata}</div>}
       {kodIste && <><label htmlFor={`kd-${k.kimlik}`}>Doğrulama Kodu</label><input id={`kd-${k.kimlik}`} inputMode="numeric" autoComplete="one-time-code" value={kod} onChange={(e) => setKod(e.target.value)} /></>}
       {acik ? (
@@ -245,8 +257,12 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
       {ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu') && <IsgIsiDurdur />}
       {lgm && <SikayetTeknikGorusleri />}
+      {ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı'].includes(r.rol_adi)) && <YurtDisiUygunluk />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikGostergeleri />}
+      {ben.roller.some((r) => r.rol_adi === 'Operasyon Müdürü') && <MudurlukGostergeleri />}
       {ben.roller.some((r) => ['Kalite Yöneticisi', 'Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKontrolKayitlari />}
+      {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <KaliteVeriDogrulama />}
+      {ben.roller.some((r) => ['Risk ve Kalite Direktörü', 'Kalite Müdürü'].includes(r.rol_adi)) && <OlayIzleme rkd={ben.roller.some((r) => r.rol_adi === 'Risk ve Kalite Direktörü')} km={ben.roller.some((r) => r.rol_adi === 'Kalite Müdürü')} />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -297,6 +313,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Teknik Uzman') && <Raporlarim />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
+      {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KaliteTakvim />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Risk ve Kalite Direktörü'].includes(r.rol_adi)) && <KritikUygunsuzlukAcil rkd={ben.roller.some((r) => r.rol_adi === 'Risk ve Kalite Direktörü')} />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKalitePlanlari />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Kalite Yöneticisi'].includes(r.rol_adi)) && <KalibrasyonEnvanteri />}
@@ -481,12 +498,80 @@ function BirimGorusleri() {
       <button className="btn2 kucuk" disabled={!v.sonuc || (v.sonuc !== 'Uygun' && !v.not.trim())} onClick={() => void istek(`/firma-birim-gorusu/${x.kimlik}/gonder`, v).then(() => { setM('Görüş talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>; })}</>;
 }
 
+/** YG-1697 (A51-S6): Yurt Dışı Uygunluk Kontrolü (24 saat); sonuç teklif gönderimini açar. */
+function YurtDisiUygunluk() {
+  const [l, setL] = useState<{ kimlik: string; dosya_no: string; konum: string; yat_adi: string; son_zaman: string | null }[]>([]); const [f, setF] = useState<Record<string, { liman: boolean; calisma: boolean; gumruk: boolean; aciklama: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/yurt-disi-uygunluk/bekleyen').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Yurt Dışı Uygunluk Kontrolü</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => { const v = f[x.kimlik] ?? { liman: false, calisma: false, gumruk: false, aciklama: '' }; const s = (p: Partial<typeof v>) => setF({ ...f, [x.kimlik]: { ...v, ...p } }); const gonder = (sonuc: string) => void istek(`/dosya/${x.kimlik}/yurt-disi-uygunluk`, { ...v, sonuc }).then(() => { setM(`${x.dosya_no}: ${sonuc} kaydedildi; Dosya Sorumlusu bilgilendirildi.`); return yk(); }).catch((e) => setM(e.message));
+      return <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.dosya_no} · {x.yat_adi}</b>{x.son_zaman && <Rozet s="sari" c={`Son: ${new Date(x.son_zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}`} />}</div><div className="not">{x.konum}</div>
+        <label><input type="checkbox" checked={v.liman} onChange={(e) => s({ liman: e.target.checked })} /> Liman ve Marina İzni</label>
+        <label><input type="checkbox" checked={v.calisma} onChange={(e) => s({ calisma: e.target.checked })} /> Çalışma ve Giriş İzni</label>
+        <label><input type="checkbox" checked={v.gumruk} onChange={(e) => s({ gumruk: e.target.checked })} /> Gümrük ve Geçici Kabul</label>
+        <label htmlFor={`yu-a-${x.kimlik}`}>Açıklama</label><input id={`yu-a-${x.kimlik}`} value={v.aciklama} onChange={(e) => s({ aciklama: e.target.value })} />
+        <div className="dugmeler"><button className="btn2 kucuk" disabled={!(v.liman && v.calisma && v.gumruk)} onClick={() => gonder('Uygun')}>Uygun</button><button className="btn2 kucuk" disabled={!v.aciklama.trim()} onClick={() => gonder('Uygun Değil')}>Uygun Değil</button></div></div>; })}</>;
+}
+
+/** YG-1584: Operasyon Müdürü müdürlük göstergeleri (Cilt I §9; yönetim panosundaki birim göstergeleri). */
+function MudurlukGostergeleri() {
+  const [l, setL] = useState<{ kod: string; ad: string; deger: number | null; birim: string; durum: string; renk: string | null }[]>([]);
+  useEffect(() => { void istek<{ cilt1: typeof l }>('/yonetim-panosu').then((r) => setL(r.cilt1)).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Müdürlük Göstergeleri</div>{l.map((x) => <div key={x.kod} className={x.renk === 'kirmizi' ? 'soru hata' : 'soru'}><span>{x.ad}: {x.deger === null ? 'Veri yok' : `${String(x.deger).replace('.', ',')} ${x.birim}`} · {x.durum}</span></div>)}</>;
+}
+
 /** YG-1593: tedarik müdürlük göstergeleri (son 90 gün). */
 function TedarikGostergeleri() {
   const [l, setL] = useState<{ ad: string; deger: number | null; pay: number; payda: number; hedef: string }[]>([]);
   useEffect(() => { void istek<typeof l>('/tedarik/mudurluk-gostergeleri').then(setL).catch(() => setL([])); }, []);
   if (!l.length) return null;
   return <><div className="bolum">Müdürlük Göstergeleri (Son 90 Gün)</div>{l.map((x) => <div key={x.ad} className="soru"><span>{x.ad}: {x.deger === null ? 'Veri yok' : `%${String(x.deger).replace('.', ',')} (${x.pay}/${x.payda})`} · Hedef {x.hedef}</span></div>)}</>;
+}
+
+/** YG-1685: Kalite Uzmanı takvimi (7 gün) ve Garanti Yeniden Doğrulama. */
+function KaliteTakvim() {
+  const [v, setV] = useState<{ olaylar: { kimlik: string; no: string; tur: string; zaman: string; dosya_no: string | null }[]; garanti: { kimlik: string; kayit_no: string; dosya_no: string }[] } | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/kalite/takvim').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const z = (x: string) => new Date(x).toLocaleString('tr-TR', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' });
+  const dog = (id: string, sonuc: string) => void istek(`/garanti-sikayet/${id}/yeniden-dogrulama`, { sonuc, aciklama: g[id] }).then(() => { setM(`Garanti yeniden doğrulama: ${sonuc}.`); return yk(); }).catch((e) => setM(e.message));
+  return <>{m && <div className="not" role="status">{m}</div>}
+    {v.garanti.length > 0 && <><div className="bolum">Garanti Yeniden Doğrulama</div>{v.garanti.map((x) => <div key={x.kimlik} className="ozet kart-sol"><b>{x.kayit_no} · {x.dosya_no}</b><label htmlFor={`gd-${x.kimlik}`}>Açıklama</label><input id={`gd-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} /><div className="dugmeler"><button className="btn2 kucuk" onClick={() => dog(x.kimlik, 'Doğrulandı')}>Doğrulandı</button><button className="btn2 kucuk" disabled={!g[x.kimlik]?.trim()} onClick={() => dog(x.kimlik, 'Doğrulanmadı')}>Doğrulanmadı</button></div></div>)}</>}
+    <div className="bolum">Takvim · 7 Gün</div>{v.olaylar.length === 0 ? <Bos m="Önümüzdeki 7 günde kontrol noktası veya toplantı bulunmamaktadır." /> : v.olaylar.map((x) => <div key={x.kimlik} className="soru"><span>{z(x.zaman)} · {x.tur} · {x.no}{x.dosya_no ? ` · ${x.dosya_no}` : ''}</span></div>)}</>;
+}
+
+/** YG-1693: Olay İzleme · Günlük; Kalite Müdürünün kapsamlı kök neden önerisi; Risk ve Kalite Direktörünün yıllık Yönetim Gözden Geçirmesi. */
+function OlayIzleme({ rkd, km }: { rkd: boolean; km: boolean }) {
+  const [v, setV] = useState<{ uygunsuzluk: { kimlik: string; no: string; dosya_no: string; sinif: string; emniyet_isareti: boolean; statu: string }[]; durdurma: { kimlik: string; dosya_no: string; yat_adi: string; konum: string }[]; cevre: { kimlik: string; dosya_no: string; olay_turu: string }[] } | null>(null);
+  const [f, setF] = useState<Record<string, string>>({}); const [se, setSe] = useState<Record<string, string[]>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/kalite/olay-izleme').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const SE = ['Firma', 'Yöntem', 'Malzeme', 'Eğitim', 'Prosedür', 'Kontrol Planı'];
+  return <details><summary>Olay İzleme · Günlük ({v.uygunsuzluk.length + v.durdurma.length + v.cevre.length})</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.durdurma.map((x) => <div key={x.kimlik} className="hata kart-sol">Emniyet Olayı · İş Durduruldu · {x.dosya_no} · {x.yat_adi} · {x.konum}</div>)}
+    {v.cevre.map((x) => <div key={x.kimlik} className="soru"><span>Çevresel Olay · {x.dosya_no} · {x.olay_turu}</span></div>)}
+    {v.uygunsuzluk.map((x) => <div key={x.kimlik} className="soru"><span>{x.sinif}{x.emniyet_isareti ? ' · Emniyet İşaretli' : ''} · {x.no} · {x.dosya_no} · {x.statu}</span>
+      {km && <div className="tam"><div className="not">Kapsamlı Kök Neden Önerisi (tekrarda veya etkisiz düzeltici faaliyette)</div>{SE.map((s) => <label key={s}><input type="checkbox" checked={(se[x.kimlik] ?? []).includes(s)} onChange={(e) => setSe({ ...se, [x.kimlik]: e.target.checked ? [...(se[x.kimlik] ?? []), s] : (se[x.kimlik] ?? []).filter((z) => z !== s) })} /> {s}</label>)}
+        <label htmlFor={`kk-o-${x.kimlik}`}>Öneri</label><input id={`kk-o-${x.kimlik}`} value={f[`o${x.kimlik}`] ?? ''} onChange={(e) => setF({ ...f, [`o${x.kimlik}`]: e.target.value })} /><label htmlFor={`kk-b-${x.kimlik}`}>Sorumlu Birim</label><input id={`kk-b-${x.kimlik}`} value={f[`b${x.kimlik}`] ?? ''} onChange={(e) => setF({ ...f, [`b${x.kimlik}`]: e.target.value })} /><label htmlFor={`kk-h-${x.kimlik}`}>Hedef Tarih</label><input id={`kk-h-${x.kimlik}`} type="date" value={f[`h${x.kimlik}`] ?? ''} onChange={(e) => setF({ ...f, [`h${x.kimlik}`]: e.target.value })} />
+        <button className="btn2 kucuk" onClick={() => void istek(`/uygunsuzluk/${x.kimlik}/kapsamli-kok-neden`, { sistemEtkisi: se[x.kimlik] ?? [], oneri: f[`o${x.kimlik}`], birim: f[`b${x.kimlik}`], hedef: f[`h${x.kimlik}`] }).then(() => setM('Öneri Risk ve Kalite Direktörü kararına gönderildi.')).catch((e) => setM(e.message))}>Onaya Gönder</button></div>}</div>)}
+    {rkd && <><div className="bolum">Kalite ve İSG Yönetim Gözden Geçirmesi · Yıllık</div>
+      <label htmlFor="ygg-y">Yıl</label><input id="ygg-y" inputMode="numeric" value={f.yil ?? String(new Date().getFullYear())} onChange={(e) => setF({ ...f, yil: e.target.value })} />
+      <label htmlFor="ygg-g">Girdiler</label><textarea id="ygg-g" value={f.girdiler ?? ''} onChange={(e) => setF({ ...f, girdiler: e.target.value })} /><label htmlFor="ygg-k">Kararlar</label><textarea id="ygg-k" value={f.kararlar ?? ''} onChange={(e) => setF({ ...f, kararlar: e.target.value })} /><label htmlFor="ygg-e">Eylemler</label><textarea id="ygg-e" value={f.eylemler ?? ''} onChange={(e) => setF({ ...f, eylemler: e.target.value })} />
+      <button className="btn2 kucuk" onClick={() => void istek('/kalite/yonetim-gozden-gecirme', { yil: Number(f.yil ?? new Date().getFullYear()), girdiler: f.girdiler, kararlar: f.kararlar, eylemler: f.eylemler }).then(() => setM('Gözden geçirme kaydedildi.')).catch((e) => setM(e.message))}>Gözden Geçirmeyi Kaydet</button></>}</details>;
+}
+
+/** YG-1689: Kalite Verisi Doğrulama (tamlık, tutarlılık, tekillik); gri sonuçlarda "Tamamlatma İste". */
+function KaliteVeriDogrulama() {
+  const [l, setL] = useState<{ kimlik: string; boyut: string; no: string; dosya_no: string; sorun: string; sorumlu_adi: string | null; istendi: boolean }[]>([]); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/kalite/veri-dogrulama').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Kalite Verisi Doğrulama</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div key={`${x.boyut}-${x.kimlik}`} className="soru"><span>{x.boyut} · {x.no} · {x.dosya_no} · {x.sorun}{x.sorumlu_adi ? ` · ${x.sorumlu_adi}` : ''}</span>{x.istendi ? <Rozet s="gri" c="Tamamlatma İstendi" /> : x.sorumlu_adi && <button className="btn2 kucuk" onClick={() => void istek(`/kalite/veri-dogrulama/${x.kimlik}/tamamlatma-iste`, {}).then(() => { setM('Tamamlatma istendi.'); return yk(); }).catch((e) => setM(e.message))}>Tamamlatma İste</button>}</div>)}</>;
 }
 
 /** YG-1687: Kayıt Disiplini · Eksik Kontrol Kayıtları; kontrolörden "Düzeltme İste". */

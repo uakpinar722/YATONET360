@@ -256,6 +256,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!(await rolVar(o.kullanici, [KK, KM]))) return y.code(403).send({ hata: 'Etkinliği Kalite birimi doğrular.' });
     if (!['Etkili', 'Etkisiz'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
     if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Tamamlanma kanıtı zorunludur.' });
+    if (g.sonuc === 'Etkisiz') { const u = (await b.db.query(`SELECT a.uygunsuzluk_ref FROM duzeltici_faaliyet f JOIN kok_neden_analizi a ON a.kimlik = f.kok_neden_ref WHERE f.kimlik = $1`, [id])).rows[0]?.uygunsuzluk_ref; if (u) await (await import('./risk_kalite.js')).kapsamliKokNedenGorevi(b.db, u, 'Düzeltici faaliyet etkisiz bulundu'); } // YG-1693
     const r = await b.db.query(`UPDATE duzeltici_faaliyet SET etkinlik_sonucu = $2, tamamlanma_kaniti_ref = $3, tamamlanma_tarihi = CASE WHEN $2::text = 'Etkili' THEN current_date END, statu = CASE WHEN $2::text = 'Etkili' THEN 'Kapalı' ELSE 'Açık' END, yeniden_acilma = yeniden_acilma + CASE WHEN $2::text = 'Etkisiz' THEN 1 ELSE 0 END WHERE kimlik = $1 RETURNING statu`, [id, g.sonuc, g.kanit]);
     if (!r.rowCount) return yok(y);
     return { statu: r.rows[0].statu };

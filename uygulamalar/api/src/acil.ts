@@ -230,6 +230,27 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const r = (await b.db.query(`SELECT t.kimlik, t.vardiyalar, t.gec, t.iletim_zamani, h.ad_soyad hazirlayan FROM nobet_teknik_taraf t JOIN kullanici_hesabi h ON h.kimlik = t.hazirlayan_ref WHERE t.donem = $1 ORDER BY t.iletim_zamani DESC LIMIT 1`, [donem])).rows[0];
     return r ?? null;
   });
+  // YG-1584: nöbet çizelgesi onay ekranı; vardiyalar ve kontroller (her gün her katmanda kapsama, aynı kişide çakışan vardiya, onaylı izindeki kişiye vardiya).
+  s.get('/is/:id/nobet-cizelgesi', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string }; if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT nesne_kimligi, zincir, kademe FROM is_karti WHERE kimlik = $1 AND tur = 'Nöbet Çizelgesi'`, [id])).rows[0]; if (!k) return yok(y);
+    if (!(await rolSahipleri(b.db, k.zincir[k.kademe])).includes(i.oturum!.kullanici)) return yok(y);
+    const c = (await b.db.query(`SELECT donem, surum FROM nobet_cizelgesi WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0]; if (!c) return yok(y);
+    const v = (await b.db.query(`SELECT v.katman, h.ad_soyad, v.kullanici_ref, v.baslangic, v.bitis FROM nobet_vardiyasi v JOIN kullanici_hesabi h ON h.kimlik = v.kullanici_ref WHERE v.cizelge_ref = $1 ORDER BY v.baslangic, v.katman`, [k.nesne_kimligi])).rows;
+    const [yil, ay] = c.donem.split('-').map(Number); const gunSay = new Date(Date.UTC(yil, ay, 0)).getUTCDate();
+    const bosluk: string[] = [];
+    for (let g = 1; g <= gunSay; g++) for (const kt of ['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici']) {
+      const t = new Date(`${c.donem}-${String(g).padStart(2, '0')}T12:00:00+03:00`).getTime();
+      if (!v.some((x) => x.katman === kt && new Date(x.baslangic).getTime() <= t && new Date(x.bitis).getTime() > t)) bosluk.push(`${String(g).padStart(2, '0')}.${String(ay).padStart(2, '0')} ${kt}`);
+    }
+    const cakisma = v.filter((x, n) => v.some((z, m) => m !== n && z.kullanici_ref === x.kullanici_ref && new Date(z.baslangic) < new Date(x.bitis) && new Date(x.baslangic) < new Date(z.bitis))).map((x) => x.ad_soyad);
+    const izinli = (await b.db.query(`SELECT DISTINCT h.ad_soyad FROM nobet_vardiyasi v JOIN izin_talebi z ON z.personel_ref = v.kullanici_ref AND z.durum = 'Onaylandı' AND z.baslangic <= (v.bitis AT TIME ZONE 'Europe/Istanbul')::date AND z.bitis >= (v.baslangic AT TIME ZONE 'Europe/Istanbul')::date JOIN kullanici_hesabi h ON h.kimlik = v.kullanici_ref WHERE v.cizelge_ref = $1`, [k.nesne_kimligi])).rows.map((r) => r.ad_soyad as string);
+    return { donem: c.donem, surum: c.surum, vardiyalar: v.map(({ kullanici_ref: _k, ...x }) => x), kontroller: [
+      { ad: 'Her gün her katmanda nöbetçi', sonuc: !bosluk.length, aciklama: bosluk.length ? `Boş: ${bosluk.slice(0, 12).join(', ')}${bosluk.length > 12 ? ' …' : ''}` : 'Tüm günler kapsanıyor.' },
+      { ad: 'Aynı kişide çakışan vardiya yok', sonuc: !cakisma.length, aciklama: cakisma.length ? [...new Set(cakisma)].join(', ') : 'Çakışma yok.' },
+      { ad: 'İzinli kişiye vardiya yok', sonuc: !izinli.length, aciklama: izinli.length ? izinli.join(', ') : 'İzinle çakışma yok.' },
+    ] };
+  });
   s.post('/nobet/cizelge', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[]; degisiklik?: boolean };
     if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });

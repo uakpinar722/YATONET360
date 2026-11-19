@@ -83,6 +83,42 @@ describe('sosyal medya izleme kaydı (YG-586)', () => {
   });
 });
 
+describe('Sigorta ve Panel (YG-1702)', () => {
+  it('panel başvurusu, denetim talebi Hukuk görüşüyle yanıt, itibar riski CEO\'ya (T-YG1702)', async () => {
+    const tsb = (await o.sup.query(`SELECT tsb_kodu FROM sigorta_sirketi WHERE durum = 'Aktif' LIMIT 1`)).rows[0]?.tsb_kodu as string;
+    const sk = await o.gir('skd'); const hud = await o.gir('hud');
+    expect((await o.ist('GET', '/api/sigorta-panel', await o.gir('ds'))).statusCode).toBe(404);
+    const p = (await o.ist('POST', '/api/sigorta-panel/basvuru', sk, { tsbKodu: tsb, belgeler: ['Referanslar'] })).json().kimlik;
+    expect((await o.ist('POST', `/api/sigorta-panel/basvuru/${p}`, sk, { islem: 'Başvuruyu Gönder' })).statusCode).toBe(409);
+    const { PANEL_BELGELERI } = await import('../src/sigorta_panel.js');
+    await o.ist('POST', `/api/sigorta-panel/basvuru/${p}`, sk, { islem: 'Belgeler', belgeler: PANEL_BELGELERI });
+    expect((await o.ist('POST', `/api/sigorta-panel/basvuru/${p}`, sk, { islem: 'Başvuruyu Gönder' })).statusCode).toBe(200);
+    const dt = (await o.ist('POST', '/api/sigorta-denetim-talebi', sk, { tsbKodu: tsb, konu: 'Hasar süreci denetimi', sonTarih: '2031-02-01' })).json().kimlik;
+    expect((await o.ist('POST', `/api/sigorta-denetim-talebi/${dt}`, sk, { islem: 'Hukuk ve Uyum Görüşü İste' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/sigorta-denetim-talebi/${dt}`, hud, { islem: 'Görüşü Gönder', metin: 'Gizlilik sınırları içinde yanıtlanabilir' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/sigorta-denetim-talebi/${dt}`, sk, { islem: 'Yanıtı Gönder', metin: 'Denetim tarihi teyit edildi' })).statusCode).toBe(200);
+    expect((await o.kart('Sigorta Denetim Talebi', dt)).durum).toBe('Tamamlandı');
+    const ir = (await o.ist('POST', '/api/kurumsal-itibar-riski', await o.gir('mpm'), { konu: 'Basında yer alan uyuşmazlık' })).json().kimlik;
+    expect((await o.kart('Kurumsal İtibar Riski', ir)).oncelik).toBe('Kritik');
+    expect((await o.ist('POST', `/api/kurumsal-itibar-riski/${ir}/ceoya-ilet`, sk, {})).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.cg, `itibar-ceo:${ir}`])).rows[0].n).toBe(1);
+  });
+});
+
+describe('Sabit Hukuki Metinler (YG-1697)', () => {
+  it('Hukuk ve Uyum yeni sürümü TR/EN birlikte CEO onayına gönderir; onayla yürürlüğe girer (T-YG1697-METIN)', async () => {
+    const hud = await o.gir('hud');
+    const l = (await o.ist('GET', '/api/hukuki-metinler', hud)).json(); expect(l.hazirlar).toBe(true);
+    const tr = l.metinler.find((x: any) => x.kod === 'PRT-01' && x.dil === 'tr' && x.durum === 'Yürürlükte'); const en = l.metinler.find((x: any) => x.kod === 'PRT-01' && x.dil === 'en' && x.durum === 'Yürürlükte');
+    expect((await o.ist('GET', '/api/hukuki-metinler', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/hukuki-metin/PRT-01', hud, { tr: tr.govde, gerekce: 'G' })).statusCode).toBe(400);
+    const r = await o.ist('POST', '/api/hukuki-metin/PRT-01', hud, { tr: `${tr.govde}\nEk madde`, en: `${en.govde}\nAdditional clause`, gerekce: 'Ek madde' }); expect(r.statusCode, r.body).toBe(200);
+    const { sonSurum } = await import('../src/adimlar.js'); expect(await sonSurum(o.db, 'PRT-01')).toBe(tr.surum);
+    const k = await o.kart('Hukuki Metin Onayı', `PRT-01|*|${r.json().surum}`); expect((await o.karar(k.kimlik, 'cg', 'Onayla')).statusCode).toBe(200);
+    expect(await sonSurum(o.db, 'PRT-01')).toBe(r.json().surum);
+  });
+});
+
 describe('denetçi ataması ve sınırlı erişim (YG-1679)', () => {
   it('Müdür atar; denetçi süre içinde salt okunur izleri görür; süre dolunca erişim kapanır', async () => {
     const ide = await o.gir('ide'); const idm = await o.gir('idm');

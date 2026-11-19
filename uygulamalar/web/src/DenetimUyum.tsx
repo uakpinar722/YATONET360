@@ -55,3 +55,21 @@ export function SosyalMedya() {
     <button className="btn2 kucuk" disabled={!f.platform.trim() || (!f.ozet.trim() && !f.baglanti.trim())} onClick={() => is(istek('/sosyal-medya', { ...f, tarama: l !== null }), 'Bildiriminiz Müşteri ve Paydaş İlişkileri Müdürlüğüne iletildi.')}>Paylaşımı Bildir</button>
     {l?.map((x) => <div className={x.gecikti || (x.olumsuz && !x.sonuc) ? 'soru hata' : 'soru'} key={x.kimlik}><span>{x.kayit_no} · {x.kaynak} · {x.platform} · {x.ozet}{x.sonuc ? ` · ${x.sonuc}` : x.gecikti ? ' · 2 Saat Aşıldı' : ''}{x.dosya_no ? ` · Dosya: ${x.dosya_no}` : ''}{x.yanit_zamani ? ` · Yanıtlandı (${x.yanit_varyant})` : ''}{x.sikayet_no ? ` · Şikâyet ${x.sikayet_no}` : ''}</span>{x.dosya_no && !x.sikayet_no && l !== null && <button className="btn2 kucuk" onClick={() => is(istek(`/sosyal-medya/${x.kimlik}/sikayet`, {}), 'Şikâyet kaydı açıldı.')}>Şikâyet Kaydı Aç</button>}{!x.dosya_no && <div className="tam"><label htmlFor={`sm-dn-${x.kimlik}`}>Dosya No</label><input id={`sm-dn-${x.kimlik}`} value={g[`dn${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`dn${x.kimlik}`]: e.target.value })} /><button className="btn2 kucuk" disabled={!g[`dn${x.kimlik}`]?.trim()} onClick={() => is(istek(`/sosyal-medya/${x.kimlik}/dosya`, { dosyaNo: g[`dn${x.kimlik}`] }), 'Paylaşım dosyayla eşleştirildi; Dosya Sorumlusu bilgilendirildi.')}>Dosyayla Eşleştir</button></div>}{x.yanitlar && !x.yanit_zamani && <SozcuYanit id={x.kimlik} dosyali={Boolean(x.dosya_no)} bitti={(t) => is(Promise.resolve(), t)} />}{!x.sonuc && <div className="tam"><label htmlFor={`sm-d-${x.kimlik}`}>Değerlendirme</label><input id={`sm-d-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />{['İşlem Gerekmez', 'Sözcüye İletildi', 'Hukuka İletildi', 'Kapatıldı'].map((s) => <button key={s} className="btn2 kucuk" onClick={() => is(istek(`/sosyal-medya/${x.kimlik}/degerlendir`, { degerlendirme: g[x.kimlik], sonuc: s }), 'Değerlendirme kaydedildi.')}>{s}</button>)}</div>}</div>)}</details>;
 }
+
+type HM = { kod: string; dil: string; surum: string; baslik: string; durum: string; govde: string };
+/** YG-1697 (A51-S8): Sabit Hukuki Metinler; metin değişikliği ve İngilizce sürüm "Onaya Gönder" ile CEO'ya; onaylı sürüm yürürlüğe girer. */
+export function HukukiMetinler() {
+  const [v, setV] = useState<{ hazirlar: boolean; metinler: HM[] } | null>(null); const [ac, setAc] = useState(''); const [f, setF] = useState<{ tr: string; en: string; gerekce: string }>({ tr: '', en: '', gerekce: '' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/hukuki-metinler').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const kodlar = [...new Set(v.metinler.map((x) => x.kod))];
+  const yurur = (kod: string, dil: string) => v.metinler.find((x) => x.kod === kod && x.dil === dil && x.durum === 'Yürürlükte');
+  return <details><summary>Sabit Hukuki Metinler</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.metinler.map((x) => <div className="soru" key={`${x.kod}-${x.dil}-${x.surum}`}><span>{x.kod} · {x.dil.toUpperCase()} · {x.surum} · {x.durum}</span></div>)}
+    {v.hazirlar && <><label htmlFor="hm-k">Metin</label><select id="hm-k" value={ac} onChange={(e) => { const k = e.target.value; setAc(k); setF({ tr: yurur(k, 'tr')?.govde ?? '', en: yurur(k, 'en')?.govde ?? '', gerekce: '' }); }}><option value="">Seçiniz</option>{kodlar.map((k) => <option key={k}>{k}</option>)}</select>
+      {ac && <>{yurur(ac, 'tr') && <><label htmlFor="hm-tr">Türkçe Metin</label><textarea id="hm-tr" rows={8} value={f.tr} onChange={(e) => setF({ ...f, tr: e.target.value })} /></>}
+        {yurur(ac, 'en') && <><label htmlFor="hm-en">İngilizce Metin</label><textarea id="hm-en" rows={8} value={f.en} onChange={(e) => setF({ ...f, en: e.target.value })} /></>}
+        <label htmlFor="hm-g">Değişiklik Gerekçesi</label><input id="hm-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+        <button className="btn2 kucuk" disabled={!f.gerekce.trim()} onClick={() => void istek<{ surum: string }>(`/hukuki-metin/${encodeURIComponent(ac)}`, f).then((r) => { setM(`${ac} ${r.surum} CEO onayına gönderildi.`); setAc(''); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></>}</>}</details>;
+}

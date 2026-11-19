@@ -87,6 +87,18 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Yedek Kalite Kontrolör', kullanici: o.K.kk })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Yedek Kalite Kontrolör', kullanici: o.K.kk2 })).statusCode).toBe(200);
   });
+  it('kapsamlı kök neden kararı, olay izleme, yönetim gözden geçirmesi (T-YG1693)', async () => {
+    const d = await dosya(); const e = await isEmri(d);
+    const n = (await ncr(d, { sinif: 'Kritik', emniyet: true, isEmri: e })).json().kimlik as string;
+    expect((await o.ist('POST', `/api/uygunsuzluk/${n}/kapsamli-kok-neden`, await o.gir('km'), { sistemEtkisi: ['Yöntem'] })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/uygunsuzluk/${n}/kapsamli-kok-neden`, await o.gir('km'), { sistemEtkisi: ['Yöntem', 'Eğitim'], oneri: 'Kaynak prosedürü ve eğitim', birim: 'Teknik Müdürlük', hedef: '2031-03-01' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.karar((await o.kart('Kapsamlı Kök Neden Kararı', r.json().kimlik)).kimlik, 'rkd', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM kapsamli_kok_neden WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Karar Verildi');
+    const iz = (await o.ist('GET', '/api/kalite/olay-izleme', await o.gir('rkd'))).json(); expect(iz.uygunsuzluk.some((x: any) => x.kimlik === n)).toBe(true);
+    expect((await o.ist('GET', '/api/kalite/olay-izleme', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/kalite/yonetim-gozden-gecirme', await o.gir('rkd'), { yil: 2031, girdiler: 'Göstergeler', kararlar: 'Eğitim planı', eylemler: 'Q1 eğitim' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/kalite/yonetim-gozden-gecirme', await o.gir('km'))).json()[0].yil).toBe(2031);
+  });
   it('Kritik uygunsuzlukta Direktör Kararı Kaydet ve İncelendi Olarak Kaydet (T-YG1694)', async () => {
     const d = await dosya(); const e = await isEmri(d);
     const r = await ncr(d, { sinif: 'Kritik', emniyet: true, isEmri: e }); expect(r.statusCode, r.body).toBe(200); const n = r.json().kimlik as string;
@@ -118,6 +130,12 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     expect(await sahaGeriBildirimiYillik(o.db, new Date('2031-02-10T09:00:00+03:00'))).toBe(false);
     expect(await sahaGeriBildirimiYillik(o.db, new Date('2031-01-05T09:00:00+03:00'))).toBe(true);
     expect((await o.kart('Saha Geri Bildirimi', '2030')).zincir).toHaveLength(2);
+    { const { kaliteVeriDogrulamaAylik, kritikCihazAraDogrulamaTakvimi } = await import('../src/kalite_disiplin.js'); // T-YG1689
+      expect(await kaliteVeriDogrulamaAylik(o.db, new Date('2031-07-01T09:00:00+03:00'))).toBe(true); expect(await o.kart('Kalite Verisi Doğrulama', '2031-06')).toBeDefined();
+      expect(await kritikCihazAraDogrulamaTakvimi(o.db, new Date('2031-08-01T09:00:00+03:00'))).toBe(false); expect(await kritikCihazAraDogrulamaTakvimi(o.db, new Date('2031-07-02T09:00:00+03:00'))).toBe(true);
+      expect((await o.kart('Kritik Cihaz Ara Doğrulama Takvimi', '2031-Q3')).zincir).toHaveLength(2);
+      expect((await o.ist('GET', '/api/kalite/veri-dogrulama', await o.gir('kmy'))).statusCode).toBe(200); }
+    const { teknikOrneklemAylik } = await import('../src/kalite_disiplin.js'); expect(await teknikOrneklemAylik(o.db, new Date('2031-06-01T09:00:00+03:00'))).toBe(true); expect(await o.kart('Aylık Örneklem Öz Kontrolü', '2031-05')).toBeDefined(); // T-YG1587
   });
   it('Kritik işi durdurur, Olduğu Gibi Kabul yok, son karar Kalite Müdürü; kök neden ve kanıtla kapanır; emniyet işaretliyse işi Teknik Müdür başlatır', async () => {
     const d = await dosya(); const e = await isEmri(d);
