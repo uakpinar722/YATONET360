@@ -440,10 +440,10 @@ function Raporlarim() {
 
 /** YG-1691, YG-1693: açık Kritik uygunsuzluklar (Acil, sayaçsız; karar seviyesi Kalite Müdürü ve Teknik Müdür). */
 function KritikUygunsuzlukAcil() {
-  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; dosya_no: string; gercek_durum: string | null; statu: string }[]>([]);
+  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; dosya_no: string; gercek_durum: string | null; statu: string; sinif: string; emniyet_isareti: boolean }[]>([]);
   useEffect(() => { void istek<typeof l>('/kalite/kritik-uygunsuzluklar').then(setL).catch(() => setL([])); }, []);
   if (!l.length) return null;
-  return <><div className="bolum">Acil</div>{l.map((u) => <div key={u.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>Kritik Uygunsuzluk · {u.dosya_no}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.uygunsuzluk_no} · {u.statu}{u.gercek_durum ? ` · ${u.gercek_durum}` : ''}</div></div>)}</>;
+  return <><div className="bolum">Acil</div>{l.map((u) => <div key={u.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>{u.sinif === 'Kritik' ? 'Kritik Uygunsuzluk' : `${u.sinif} Uygunsuzluk`}{u.emniyet_isareti ? ' · Emniyet İşaretli' : ''} · {u.dosya_no}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.uygunsuzluk_no} · {u.statu}{u.gercek_durum ? ` · ${u.gercek_durum}` : ''}</div></div>)}</>;
 }
 
 /** YG-1690: iş emri açılan dosyada eksik kalite planı, kabul matrisi veya muayene ve test planı; "Eksikliği Bildir". */

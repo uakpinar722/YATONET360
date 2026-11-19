@@ -78,7 +78,8 @@ beforeAll(async () => {
   const f = await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Deneme Tersane A.Ş.', rol: 'Çözüm Ortağı' });
   firma = f.json().kimlik;
   const fy = await o.gir('fym');
-  await o.ist('POST', `/api/firma/${firma}/statu`, fy, { asama: 'Onaylı', ag: 'Aktif', risk: 'Standart', gerekce: 'Belgeler tamam' });
+  expect((await o.ist('POST', `/api/firma/${firma}/statu`, fy, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'Erken' })).statusCode).toBe(409); // T-YG361-INCELEME
+  await o.ist('POST', `/api/firma/${firma}/statu`, fy, { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${firma}/statu`, fy, { asama: 'Onaylı', ag: 'Aktif', risk: 'Standart', gerekce: 'Belgeler tamam' });
   const k = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE e_posta = $1`, [FIRMA_EP])).rows[0].kimlik;
   expect((await o.ist('POST', `/api/firma/${firma}/kullanici`, fy, { kullanici: k })).statusCode).toBe(200);
 }, 120_000);
@@ -488,7 +489,7 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
   it('askıdaki veya belgesi dolmuş firma seçilemez', async () => {
     const f = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: `Başka ${Math.random()}`, rol: 'Çözüm Ortağı' })).json().kimlik;
     expect(await firmaUygunlugu(o.db, f)).toContain('onaylı değildir');
-    await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' });
+    await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' });
     expect(await firmaUygunlugu(o.db, f)).toBeNull();
     await o.ist('POST', `/api/firma/${f}/belge`, await o.gir('sc'), { tur: 'Vergi Levhası', bitis: '2020-01-01' });
     expect(await firmaUygunlugu(o.db, f)).toContain('Vergi Levhası');

@@ -13,7 +13,7 @@ const ncr = async (d: { kimlik: string }, x: object, kim = 'kk') => o.ist('POST'
 
 beforeAll(async () => {
   o = await ortamKur('yatonet360_test17', KADRO);
-  const fir = async (u: string, r: string) => { const id = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: u, rol: r })).json().kimlik; await o.ist('POST', `/api/firma/${id}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' }); return id as string; };
+  const fir = async (u: string, r: string) => { const id = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: u, rol: r })).json().kimlik; await o.ist('POST', `/api/firma/${id}/statu`, await o.gir('fym'), { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${id}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' }); return id as string; };
   firma = await fir('Kalite Firma', 'Çözüm Ortağı'); tedarikci = await fir('Parça AŞ', 'Tedarikçi');
 }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -49,6 +49,11 @@ describe('kalite planı (YG-288)', () => {
     const d = await dosya(); const on = await isEmri(d, 'Başlangıç Kontrolünde'); const kn = await isEmri(d, 'Başlangıç Kontrolünde', 'KN'); const tu = await o.gir('tu');
     expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'] })).json().hata).toContain('kalite planı');
     expect((await o.ist('POST', `/api/is-emri/${on}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı'] })).json().eksikler).toEqual(['Absorban ve Bariyer Mevcut']); // YG-370
+    { // T-YG402-BASLANGIC: kalibrasyonu geçmiş kullanılabilir ekipman başlamayı engeller; kullanım dışı işaretlenince engel kalkar
+      const ek = (await o.sup.query(`INSERT INTO firma_ekipmani (kurulus_ref, ad, seri_no, kalibrasyon_bitis, kaydeden_ref) VALUES ($1,'Kalınlık Ölçer',$2,current_date - 1,$3) RETURNING kimlik`, [firma, `KO-${Date.now()}`, o.K.ds])).rows[0].kimlik;
+      expect((await o.ist('POST', `/api/is-emri/${kn}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı'] })).json().eksikler.join(' ')).toContain('Ekipman Kalibrasyonu (Kalınlık Ölçer');
+      await o.sup.query(`UPDATE firma_ekipmani SET kullanilabilir = false WHERE kimlik = $1`, [ek]);
+    }
     expect((await o.ist('POST', `/api/is-emri/${kn}/baslangic`, tu, { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı'] })).statusCode).toBe(200);
     const G = [{ gereklilik: 'Sızdırmazlık', dogrulama: 'Basınç testi' }];
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, await o.gir('ds'), { sinif: 'A', ozet: 'Ö', risk: 'Orta', teknikKaynak: 'ISO 12215', gereklilikler: G })).statusCode).toBe(403);

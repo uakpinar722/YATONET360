@@ -98,7 +98,7 @@ try {
   await sup.query(`INSERT INTO sigorta_kullanici VALUES ($1,$2)`, [kimlikler.sg, sgAd]);
   const pSc = await al('sc', E); const pFym = await al('fym', E);
   const firma = (await pSc.api('/firma', { unvan: `E2E Firma ${tek}`, rol: 'Çözüm Ortağı' })).kimlik;
-  await pFym.api(`/firma/${firma}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
+  await pFym.api(`/firma/${firma}/statu`, { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await pFym.api(`/firma/${firma}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
   await pFym.api(`/firma/${firma}/kullanici`, { kullanici: kimlikler.fir });
 
   // Dosya ve ekip (Adım 4 ekranları tarayici_testi.mjs içinde sınanır)
@@ -472,7 +472,7 @@ try {
   await yokla('Teknik Uzman koşullu kabulü ekrandan verir', async () => (await sup.query(`SELECT teknik_kabul_sonucu s FROM is_emri WHERE kimlik = $1`, [ie2.kimlik])).rows[0].s === 'Koşullu Kabul');
   // Tedarik
   const ted = (await pSc.api('/firma', { unvan: `E2E Tedarikçi ${tek}`, rol: 'Tedarikçi' })).kimlik;
-  await pFym.api(`/firma/${ted}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
+  await pFym.api(`/firma/${ted}/statu`, { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await pFym.api(`/firma/${ted}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
   const pTd = await al('tds', E); await dosyaAc(pTd, d2.dosyaNo);
   await pTd.locator('#sp-ted').selectOption(ted);
   for (const [i, v] of [['teklifRef', 'T1'], ['kullanim', 'Ana makine'], ['teslimTarihi', new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 10)], ['teslimYeri', 'Marina'], ['olcut', 'Sertifikalı'], ['gerekce', 'Tek kaynak'], ['tanim', 'Pompa'], ['parcaNo', 'P-1'], ['miktar', '2'], ['bedel', '100']]) await pTd.locator(`#sp-${i}`).fill(v);
@@ -508,7 +508,7 @@ try {
   kontrol('nöbet çizelgesi ekrandan onaya gönderilir', true);
   // A8 Tesis
   const marina = (await pSc.api('/firma', { unvan: `E2E Marina ${tek}`, rol: 'Tesis' })).kimlik;
-  await pFym.api(`/firma/${marina}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
+  await pFym.api(`/firma/${marina}/statu`, { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await pFym.api(`/firma/${marina}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce: 'E2E' });
   E.mar = await hesap('mar', 'Tesis Yetkilisi', 'Tesis Yetkilisi (Marina, Tersane, Çekek Sahası)');
   await pFym.api(`/firma/${marina}/kullanici`, { kullanici: kimlikler.mar });
   await dosyaAc(pDs, d2.dosyaNo);

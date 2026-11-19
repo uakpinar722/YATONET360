@@ -24,7 +24,7 @@ const dosya = async (m = 'Bireysel Müşteri') => { await o.sup.query(`UPDATE do
 beforeAll(async () => {
   o = await ortamKur('yatonet360_test16', KADRO);
   firma = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: 'Hakediş Firma', rol: 'Çözüm Ortağı' })).json().kimlik;
-  await o.ist('POST', `/api/firma/${firma}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' });
+  await o.ist('POST', `/api/firma/${firma}/statu`, await o.gir('fym'), { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${firma}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' });
   const fk = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE e_posta = 'firma@deneme.yatonet.local'`)).rows[0].kimlik;
   await o.ist('POST', `/api/firma/${firma}/kullanici`, await o.gir('fym'), { kullanici: fk });
   const c = ana.ckr(await o.s.inject({ method: 'POST', url: '/api/kimlik/giris', headers: ana.H, payload: { kimlik: 'firma@deneme.yatonet.local', parola: 'Sinama-Parolasi-2026!' } }));

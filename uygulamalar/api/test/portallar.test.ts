@@ -23,7 +23,7 @@ const yukle = async (kurulus: string, c: string) => { const r = await o.s.inject
 
 beforeAll(async () => {
   o = await ortamKur('yatonet360_test20', KADRO);
-  const fir = async (u: string, r: string) => { const id = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: u, rol: r })).json().kimlik; await o.ist('POST', `/api/firma/${id}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' }); return id as string; };
+  const fir = async (u: string, r: string) => { const id = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan: u, rol: r })).json().kimlik; await o.ist('POST', `/api/firma/${id}/statu`, await o.gir('fym'), { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${id}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' }); return id as string; };
   tesis = await fir('Marina A', 'Tesis'); tesis2 = await fir('Marina B', 'Tesis'); ted = await fir('Parça AŞ', 'Tedarikçi');
   tesisC = (await disGir('tesis1', 'Tesis Yetkilisi (Marina, Tersane, Çekek Sahası)', 'Tesis Yetkilisi', tesis)).c;
   tesis2C = (await disGir('tesis2', 'Tesis Yetkilisi (Marina, Tersane, Çekek Sahası)', 'Tesis Yetkilisi', tesis2)).c;

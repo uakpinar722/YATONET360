@@ -26,7 +26,7 @@ const disHesap = async (ad: string, grup: string, rol: string) => {
 };
 const firmaKur = async (unvan: string, sira: number) => {
   const f = (await o.ist('POST', '/api/firma', await o.gir('sc'), { unvan, rol: 'Çözüm Ortağı' })).json().kimlik as string;
-  await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' });
+  await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' });
   await o.sup.query(`UPDATE kurulus SET acil_hizmet_verir = true, acil_arama_sirasi = $2 WHERE kimlik = $1`, [f, sira]);
   return f;
 };

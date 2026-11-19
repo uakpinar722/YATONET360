@@ -219,6 +219,11 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
         if (!g.kanit || !UUID.test(g.kanit) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Kuruluş' AND bag_kimligi = $2`, [g.kanit, id])).rowCount) return y.code(409).send({ hata: 'Statü yükseltmesi için firmaya yüklenmiş ve doğrulanmış iyileştirme kanıtını seçiniz.' });
       }
     }
+    // YG-361: kayıt aşaması doğrulanmadan (İncelemede) Onaylı veya Koşullu Onaylı yapılamaz.
+    if ((g.asama === 'Onaylı' || g.asama === 'Koşullu Onaylı')) {
+      const as = (await b.db.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.kayit_asamasi as string | undefined;
+      if (as && !['İncelemede', 'Onaylı', 'Koşullu Onaylı'].includes(as)) return y.code(409).send({ hata: 'Firma belgeleri doğrulanıp kayıt İncelemede aşamasına alınmadan onaylanamaz.' });
+    }
     // YG-361: açık Emniyet işaretli uygunsuzluğu olan firmaya Tercihli risk derecesi verilmez.
     if (g.risk === 'Tercihli' && (await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND emniyet_isareti AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık emniyet uygunsuzluğu bulunan firmaya Tercihli risk derecesi verilemez.' });
     // YG-1659, K-178: Koşullu Onaylı ve Reddedildi önerisinde Hukuk ve Uyum görüşü alınır; bağlayıcı değildir, kademe sayılmaz.
@@ -553,6 +558,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     // YG-368: eksik ön koşulla başlama ancak Koşullu ve gerekçeyle; Başlanabilir yalnız tamamı işaretliyse.
     // YG-370: absorban ve bariyer onarım işlerinde aranır; keşifte aranmaz.
     const eksikOn = ON_KOSULLAR.filter((x) => !(e.is_emri_turu === 'KN' && x === 'Absorban ve Bariyer Mevcut') && !(onKosul ?? []).includes(x));
+    // YG-402: firmanın kullanılabilir işaretli ekipmanında kalibrasyon belgesi süresi geçmişse başlama ön koşulu eksiktir (ekipman kullanım dışı işaretlenir ya da Koşullu ve gerekçeyle başlanır).
+    { const kal = (await b.db.query(`SELECT ad, seri_no FROM firma_ekipmani WHERE kurulus_ref = $1 AND kullanilabilir AND kalibrasyon_bitis < current_date ORDER BY ad`, [e.kurulus_ref])).rows;
+      if (kal.length) eksikOn.push(`Ekipman Kalibrasyonu (${kal.map((x) => `${x.ad} ${x.seri_no}`).join(', ')})`); }
     if (sonuc === 'Başlanabilir' && eksikOn.length) return y.code(409).send({ hata: `Başlama ön koşulu eksiktir: ${eksikOn.join(', ')}. Sapma gerekçesiyle Koşullu Başlanabilir seçmenizi rica ederiz.`, eksikler: eksikOn });
     if (sonuc === 'Koşullu Başlanabilir' && eksikOn.length && !gerekce?.trim()) return y.code(400).send({ hata: 'Eksik ön koşul için sapma gerekçesini yazmanızı rica ederiz.' });
     if (sonuc !== 'Bekletilir' && altYuklenici?.trim()) { const { altYukleniciEngeli } = await import('./kalan.js'); const ae = await altYukleniciEngeli(b.db, e.kimlik, altYuklenici.split(',')); if (ae) return y.code(409).send({ hata: ae }); } // YG-411

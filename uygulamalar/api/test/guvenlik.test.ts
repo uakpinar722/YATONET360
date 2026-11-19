@@ -31,7 +31,7 @@ describe('kayıt izi (YG-1183, YG-1185, LOG-1)', () => {
   it('istek üzerinden yapılan değişiklikte kullanıcı izde görünür', async () => {
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-GV','Gv','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdürü'`, [o.K.tm]);
-    const r = await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('tm'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' }); expect(r.statusCode, r.body).toBe(200);
+    const r = await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('tm'), { asama: 'İncelemede', gerekce: 'Belge doğrulaması' }); await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('tm'), { asama: 'Onaylı', ag: 'Aktif', gerekce: 'G' }); expect(r.statusCode, r.body).toBe(200);
     const iz = (await o.sup.query(`SELECT aktor FROM kayit_degisikligi WHERE tablo = 'kurulus' AND nesne = $1 ORDER BY kimlik DESC LIMIT 1`, [f])).rows[0]; expect(iz.aktor).toBe(o.K.tm);
   });
   it('işlem izinde kişisel veri ve gizli değer maskelenir', async () => {

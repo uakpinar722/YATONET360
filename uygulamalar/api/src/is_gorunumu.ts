@@ -56,7 +56,7 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
   // YG-1691, YG-1693: Kalite Müdürü, Müdür Yardımcısı ve Risk ve Kalite Direktörüne tüm açık Kritik uygunsuzluklar acil kart olarak (karar seviyesi; günlük izleme).
   s.get('/kalite/kritik-uygunsuzluklar', oturumlu, async (i, y) => {
     if (!(await roller(b.db, i.oturum!.kullanici)).some((r) => ['Kalite Müdürü', 'Kalite Müdür Yardımcısı', 'Risk ve Kalite Direktörü'].includes(r.rol_adi))) return yok(y);
-    return (await b.db.query(`SELECT u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum, u.statu, u.olusturma_zamani FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref WHERE u.sinif = 'Kritik' AND u.statu NOT IN ('Kapalı', 'Geçersiz') ORDER BY u.olusturma_zamani LIMIT 50`)).rows;
+    return (await b.db.query(`SELECT u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum, u.statu, u.sinif, u.emniyet_isareti, u.olusturma_zamani FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref WHERE (u.sinif = 'Kritik' OR u.emniyet_isareti) AND u.statu NOT IN ('Kapalı', 'Geçersiz') ORDER BY u.olusturma_zamani LIMIT 50`)).rows;
   });
   // YG-1585: Raporlarım; hazırlanan teknik raporların durumu yalnız "[Makam] Kontrolünde", "Onaylandı" (son 30 gün) veya "İade Edildi" olarak gösterilir; ara onaylar ayrıca bildirilmez.
   s.get('/raporlarim', oturumlu, async (i) => {
