@@ -76,6 +76,19 @@ export function AcilDurumBolumu() {
 function AcilDugmesi() {
   const TUR = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
   const [f, setF] = useState({ tur: TUR[1]!, yatAdi: '', konum: '', aciklama: '' }); const [t, setT] = useState<string | null>(null); const [msg, setMsg] = useState(''); const [hata, setHata] = useState('');
+  const [foto, setFoto] = useState<File | null>(null); // YG-1656: isteğe bağlı fotoğraf
+  const gonder = async () => {
+    setHata('');
+    try {
+      const r = await istek<{ talep: string; talepNo: string; uyari112: string }>('/portal/acil', f);
+      setMsg(`${r.talepNo} · ${r.uyari112}`); setT(r.talep);
+      if (foto) {
+        const q = new URLSearchParams({ ad: foto.name, tur: 'Hasar Fotoğrafı', bagTuru: 'Talep', bagKimligi: r.talep, kaynak: 'Sistem', dosya: foto.name });
+        const y = await fetch(`/api/belge/yukle?${q}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Yatonet': '1' }, body: foto, credentials: 'same-origin' });
+        if (!y.ok) setMsg(`${r.talepNo} · ${r.uyari112} · Fotoğraf eklenemedi; nöbetçimiz sizi arayacaktır.`);
+      }
+    } catch (e) { setHata((e as Error).message); }
+  };
   useEffect(() => {
     if (!t) return;
     const gonder = () => {
@@ -93,9 +106,10 @@ function AcilDugmesi() {
       <label htmlFor="pa-t">Acil Durum Türü</label><select id="pa-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{TUR.map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="pa-y">Yat</label><input id="pa-y" value={f.yatAdi} onChange={(e) => setF({ ...f, yatAdi: e.target.value })} />
       <label htmlFor="pa-k">Konum</label><input id="pa-k" value={f.konum} onChange={(e) => setF({ ...f, konum: e.target.value })} />
-      <label htmlFor="pa-a">Açıklama</label><input id="pa-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <label htmlFor="pa-a">{f.tur === 'Diğer' ? 'Kısaca Belirtiniz' : 'Açıklama'}</label><input id="pa-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <label htmlFor="pa-f">Fotoğraf (isteğe bağlı)</label><input id="pa-f" type="file" accept="image/jpeg,image/png,image/heic" capture="environment" onChange={(e) => setFoto(e.target.files?.[0] ?? null)} />
       <div className="not">Acil Durum düğmesini kullandığınızda cihazınızın konumu Aydınlatma Metnimizde açıklandığı şekilde işlenir; konum izni vermezseniz yatın kayıtlı konumu iletilir.</div>
-      <button className="btn hayir" disabled={!f.yatAdi.trim() || !f.konum.trim()} onClick={() => { setHata(''); void istek<{ talep: string; talepNo: string; uyari112: string }>('/portal/acil', f).then((r) => { setMsg(`${r.talepNo} · ${r.uyari112}`); setT(r.talep); }).catch((e) => setHata(e.message)); }}>Acil Durum</button>
+      <button className="btn hayir" disabled={!f.yatAdi.trim() || !f.konum.trim() || (f.tur === 'Diğer' && !f.aciklama.trim())} onClick={() => void gonder()}>Acil Durum</button>
     </div>
   );
 }

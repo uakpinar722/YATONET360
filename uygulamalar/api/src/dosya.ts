@@ -26,6 +26,7 @@ const EKIP: Record<string, { rol: string; izin: string; tekil: boolean }> = {
   'Teknik Yönetici': { rol: 'Teknik Yönetici', izin: 'dosya.ata.teknik', tekil: true },
   'Saha Sorumlusu': { rol: 'Saha Sorumlusu', izin: 'dosya.ata.teknik', tekil: true },
   'Kalite Kontrolör': { rol: 'Kalite Uzmanı (Kalite Kontrolör)', izin: 'dosya.ata.kalite', tekil: true },
+  'Yedek Kalite Kontrolör': { rol: 'Kalite Uzmanı (Kalite Kontrolör)', izin: 'dosya.ata.kalite', tekil: true }, // YG-1687
   'Tedarik Sorumlusu': { rol: 'Tedarik Sorumlusu', izin: 'dosya.ata.tedarik', tekil: true },
 };
 /** YG-146, YG-958: kapasite eşikleri; Saha Sorumlusunda dosya sayısı, diğerlerinde zorluk katsayıları toplamı. */
@@ -466,6 +467,11 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         if (pd && ['İzinli', 'Raporlu', 'Ayrılıyor', 'Ayrıldı'].includes(pd)) return dur(409, `Seçilen kişi şu an ${pd}; vekilini veya başka birini seçiniz.`); }
       if (g.rol === 'Yedek Sorumlu' && d.dosya_sorumlusu_ref === g.kullanici) return dur(400, 'Yedek sorumlu Dosya Sorumlusundan farklı olmalıdır.');
       if (g.rol === 'Dosya Sorumlusu' && d.yedek_sorumlu_ref === g.kullanici) return dur(400, 'Dosya Sorumlusu yedek sorumluyla aynı olamaz.');
+      if (g.rol === 'Yedek Kalite Kontrolör' || g.rol === 'Kalite Kontrolör') { // YG-1687: yedek kontrolör asıl kontrolörden farklıdır
+        const diger = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = $2 AND bitis_zamani IS NULL`, [id, g.rol === 'Kalite Kontrolör' ? 'Yedek Kalite Kontrolör' : 'Kalite Kontrolör'])).rows[0]?.kullanici_ref;
+        if (g.rol === 'Yedek Kalite Kontrolör' && !diger) return dur(409, 'Önce dosyanın Kalite Kontrolörünü atayınız.');
+        if (diger === g.kullanici) return dur(400, 'Yedek Kalite Kontrolör asıl Kalite Kontrolörden farklı olmalıdır.');
+      }
       if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') if (await boyGovdeEksik(c, id)) return dur(409, 'Boy ve gövde malzemesi dolmadan Teknik Uzman atanamaz. Eksik bilgiyi tamamlayınız.');
       const sinir = KAPASITE[g.rol!]; let uyari: string | null = null;
       if (sinir) {

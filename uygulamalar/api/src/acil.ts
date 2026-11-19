@@ -446,9 +446,17 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-262: emniyet olayı veya iş durdurma tüm alıcılara; yeniden başlatma izni Teknik Müdürde.
+  // YG-1670: İSG Sorumlusu ana ekranından sahadaki aktif işleri görür ve dosya ekibinde olmasa da işi durdurabilir.
+  const isgMi = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'İSG Sorumlusu' LIMIT 1`, [k])).rowCount);
+  s.get('/isg/sahadaki-isler', oturumlu, async (i, y) => {
+    if (!(await isgMi(i.oturum!.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi, d.konum, count(e.kimlik)::int aktif, string_agg(DISTINCT k.ticari_unvan, ', ') firmalar
+      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref JOIN is_emri e ON e.dosya_ref = d.kimlik AND e.statu = 'Aktif' LEFT JOIN kurulus k ON k.kimlik = e.kurulus_ref
+      WHERE NOT d.calisma_durduruldu AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı') GROUP BY d.kimlik, y.yat_adi ORDER BY d.dosya_no LIMIT 100`)).rows;
+  });
   s.post('/dosya/:id/is-durdur', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { neden } = (i.body ?? {}) as { neden?: string };
-    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!UUID.test(id) || !((await dosyaErisimi(b.db, o.kullanici, id)) || ((await isgMi(o.kullanici)) && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1`, [id])).rowCount))) return yok(y);
     if (!neden?.trim()) return y.code(400).send({ hata: 'Neden zorunludur.' });
     return islem(async (c) => {
       await c.query(`UPDATE dosya SET calisma_durduruldu = true WHERE kimlik = $1`, [id]);

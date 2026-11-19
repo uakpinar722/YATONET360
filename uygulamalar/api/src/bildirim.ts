@@ -75,6 +75,12 @@ export async function bildir(db: Db, b: Bildirimi, simdi = new Date()): Promise<
   }
 }
 
+/** YG-513: sistem içi bildirim okununca aynı olaya ait gönderilmiş dış iletiler (alternatif kanal dahil) Okundu olarak işlenir. */
+export async function gonderimOkundu(db: Db, kullanici: string): Promise<void> {
+  await db.query(`UPDATE gonderim g SET durum = 'Okundu' FROM bildirim b WHERE b.kullanici_ref = $1 AND b.okunma_zamani IS NOT NULL AND b.olay_anahtari IS NOT NULL AND g.kullanici_ref = $1
+    AND g.olay_anahtari IN (b.olay_anahtari, b.olay_anahtari || ':alternatif') AND g.durum IN ('Gönderildi', 'Teslim Edildi')`, [kullanici]);
+}
+
 /** MSJ-3: otomatik WhatsApp iletisinde doğrulama kodu ve fiyat yer almaz; tutar ve kod biçimli sayı ayıklanır. Serbest yazışma bu süzgeçten geçmez. */
 export function whatsappMetni(m: string): string {
   return m.replace(/\d[\d.]*(,\d+)?\s*(EUR|TL|€|₺)/gi, '').replace(/(EUR|TL|€|₺)\s*\d[\d.,]*/gi, '').replace(/(?<![\w-])\d{6}(?![\w-])/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([:·,.])/g, '$1').trim();
@@ -165,6 +171,16 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
           const alt = g.kanal === 'E-posta' ? (h?.cep_telefonu ? ['SMS', h.cep_telefonu] : null) : (h?.e_posta ? ['E-posta', h.e_posta] : null);
           if (alt) await kuyruk(c, g.olay_anahtari + ':alternatif', g.kullanici_ref, alt[0], alt[1], g.konu, g.metin, g.oncelik, simdi);
           else if (g.kullanici_ref) await c.query(`INSERT INTO bildirim (kullanici_ref, baslik, ozet) VALUES ($1,$2,$3)`, [g.kullanici_ref, 'İletişim Bilginizi Kontrol Ediniz', `"${g.konu}" bildirimi ulaştırılamadı.`]);
+          // YG-513: Kritik iletinin teslim edilememesi görünür kalır: Bilgi İşlem Destek Sorumlusuna kanal doğrulama görevi, Bilgi İşlem Müdürüne eskalasyon.
+          if (g.oncelik === 'Kritik') {
+            const { kartAc } = await import('./is_motoru.js');
+            const rol = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Bilgi İşlem Destek Sorumlusu'`)).rows[0]?.kimlik as string | undefined;
+            const alici = g.kullanici_ref ? (await c.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [g.kullanici_ref])).rows[0]?.ad_soyad : null;
+            const ozet = `${g.kanal} · ${alici ?? g.hedef} · "${g.konu}" · ${alt ? `${alt[0]} kanalından yeniden gönderiliyor` : 'alternatif kanal yok'}. Alıcının iletişim bilgisini doğrulayınız; gerekirse telefonla ulaşınız.`;
+            if (rol) await kartAc(c, { tur: 'Kritik Bildirim Teslim Hatası', kategori: 'gorev', baslik: `Kritik Bildirim Ulaştırılamadı · ${g.konu}`.slice(0, 200), ozet, oncelik: 'Kritik', sahipRol: rol, nesneTuru: 'Gönderim', nesneKimligi: g.kimlik, simdi });
+            const bimRol = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Bilgi İşlem Müdürü'`)).rows[0]?.kimlik as string | undefined; const bim = bimRol ? await rolSahipleri(c, bimRol) : [];
+            await bildir(c, { olay: `kritik-teslim-hatasi:${g.kimlik}`, kullanicilar: bim, baslik: `Eskalasyon: Kritik Bildirim Ulaştırılamadı · ${g.konu}`.slice(0, 200), ozet, oncelik: 'Kritik' }, simdi);
+          }
         } else await c.query(`UPDATE gonderim SET deneme = $2, son_hata = $3, plan_zamani = $4 WHERE kimlik = $1`, [g.kimlik, d, (e as Error).message.slice(0, 200), new Date(simdi.getTime() + SONRAKI_DAKIKA[d - 1]! * 60_000)]);
       }
     }

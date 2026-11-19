@@ -241,6 +241,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu') && <SuresiDolmusBelgeler />}
       {ben.roller.some((r) => r.rol_adi === 'Hukuk ve Uyum Direktörü') && <HukukGorusleri />}
       {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
+      {ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu') && <IsgIsiDurdur />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -470,6 +471,17 @@ function BirimGorusleri() {
       <label htmlFor={`bg-${x.kimlik}`}>Görüş</label><select id={`bg-${x.kimlik}`} value={v.sonuc} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, sonuc: e.target.value } })}><option value="">Seçiniz</option><option>Uygun</option><option>Koşullu</option><option>Uygun Değil</option></select>
       <label htmlFor={`bn-${x.kimlik}`}>Gerekçe</label><input id={`bn-${x.kimlik}`} value={v.not} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, not: e.target.value } })} />
       <button className="btn2 kucuk" disabled={!v.sonuc || (v.sonuc !== 'Uygun' && !v.not.trim())} onClick={() => void istek(`/firma-birim-gorusu/${x.kimlik}/gonder`, v).then(() => { setM('Görüş talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>; })}</>;
+}
+
+/** YG-1670: İSG Sorumlusu "İşi Durdur": ciddi ve yakın tehlikede sahadaki aktif işi durdurur; yeniden başlatma izni Teknik Müdürde. */
+function IsgIsiDurdur() {
+  const [l, setL] = useState<{ kimlik: string; dosya_no: string; yat_adi: string; konum: string; aktif: number; firmalar: string | null }[]>([]); const [n, setN] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/isg/sahadaki-isler').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  return <><div className="bolum">İşi Durdur</div>{m && <div className="not" role="status">{m}</div>}{l.length === 0 && <Bos m="Sahada aktif iş bulunmamaktadır." />}
+    {l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.dosya_no} · {x.yat_adi}</b><Rozet s="gri" c={`${x.aktif} aktif iş emri`} /></div><div className="not">{x.konum}{x.firmalar ? ` · ${x.firmalar}` : ''}</div>
+      <label htmlFor={`isd-${x.kimlik}`}>Durdurma Nedeni (ciddi ve yakın tehlike)</label><input id={`isd-${x.kimlik}`} value={n[x.kimlik] ?? ''} onChange={(e) => setN({ ...n, [x.kimlik]: e.target.value })} />
+      <button className="btn hayir kucuk" disabled={!n[x.kimlik]?.trim()} onClick={() => void istek(`/dosya/${x.kimlik}/is-durdur`, { neden: n[x.kimlik] }).then(() => { setM(`${x.dosya_no}: iş durduruldu; ilgililere anlık bildirim gönderildi. Yeniden başlatma izni Teknik Müdürdedir.`); return yk(); }).catch((e) => setM(e.message))}>İşi Durdur</button></div>)}</>;
 }
 
 /** YG-1697: firma kararı için hukuki görüş; onay kademesi değildir, "Görüşü Gönder". */

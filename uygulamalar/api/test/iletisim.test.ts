@@ -98,6 +98,21 @@ describe('bildirim kuyruğu (YG-507…YG-513)', () => {
     await kuyrukIsle(b2, t);
     expect(sms.gidenler.length).toBe(once + 1);
   });
+  it('okundu ve işlem yapıldı izlenir; Kritik teslim hatası görev olur (T-YG513-DURUM)', async () => {
+    const id = await kartAc(db, { tur: 'Deneme', kategori: 'gorev', baslik: 'Okuma Denemesi', sahipKullanici: K[CEO]! });
+    await kuyrukIsle(bag, new Date(Date.now() + 5 * 86_400_000), 1000);
+    const durum = async () => (await sup.query(`SELECT durum FROM gonderim WHERE olay_anahtari = $1`, [`kart-ac:${id}`])).rows[0].durum;
+    expect(await durum()).toBe('Gönderildi');
+    expect((await ist('POST', '/api/bildirimler/okundu', await gir(CEO))).statusCode).toBe(200);
+    expect(await durum()).toBe('Okundu');
+    await sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [id]);
+    expect(await durum()).toBe('İşlem Yapıldı');
+    const bozuk = { gonder: async () => { throw new Error('invalid recipient'); } };
+    await bildir(db, { olay: 'kritik-hata1', kullanicilar: [K[SIS]!], baslik: 'Acil Deneme', oncelik: 'Kritik', eposta: true }, SALI);
+    await kuyrukIsle({ ...bag, eposta: bozuk, sms: bozuk }, SALI, 1000);
+    const kt = (await sup.query(`SELECT k.oncelik, k.kategori FROM is_karti k JOIN gonderim g ON g.kimlik::text = k.nesne_kimligi::text WHERE k.tur = 'Kritik Bildirim Teslim Hatası' AND g.olay_anahtari = 'kritik-hata1'`)).rows[0];
+    expect(kt).toEqual({ oncelik: 'Kritik', kategori: 'gorev' });
+  });
   it('dış kullanıcı seçtiği kanaldan alır; LGM personeli seçemez (YG-519)', async () => {
     const y = await gir(YAT);
     expect((await ist('POST', '/api/profil/kanal', y, { kanal: 'Güvercin' })).statusCode).toBe(400);

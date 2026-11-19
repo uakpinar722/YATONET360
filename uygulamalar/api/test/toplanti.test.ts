@@ -106,7 +106,7 @@ describe('planlama yetkisi ve başkan (YG-579, YG-583)', () => {
     expect(t.baskan_ref).toBe(K[BIM]);
     expect(t.katilimcilar.map((k: any) => k.kimlik).sort()).toEqual([K[BIM], K[DEN], K[DES], K[CEO]].sort());
     expect(t.katilimcilar.find((k: any) => k.kimlik === K[CEO]).katilim).toBe('Yalnız Bilgi');
-    expect(t.gundem).toMatch(/Süresi Aşan Onay: \d+/); expect(t.gundem).toMatch(/Açık Uygunsuzluk: \d+/); expect(t.gundem).toContain('Kritik Öncelikli Açık Dosyalar'); // T-YG584
+    expect(t.gundem).toMatch(/Süresi Aşan Onay: \d+/); expect(t.gundem).toMatch(/Açık Uygunsuzluk: \d+/); expect(t.gundem).toContain('Kritik Öncelikli Açık Dosyalar'); expect(t.gundem).toMatch(/Gösterge · |Göstergeler: Hesaplanabilir veri yok/); // T-YG584
     expect(await gundemUret(db, 'TPL-04')).toMatch(/^Uyum Panosu Özeti: Gecikti \d+ · Süresi Yaklaşıyor \d+ · Süresi Var \d+/); // T-YG1550
     await al(DES, 'Operasyon Müdürü'); await al(DEN, 'Teknik Müdür'); await al(BIM, 'Teknik ve Operasyon Direktörü');
   });

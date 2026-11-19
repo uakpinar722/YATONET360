@@ -8,7 +8,7 @@ import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { parolaOzetle } from '../src/parola.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', omy: 'Operasyon Müdür Yardımcısı', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', omy: 'Operasyon Müdür Yardımcısı', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', tod: 'Teknik ve Operasyon Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', tid: 'Ticari İşler Direktörü', isg: 'İSG Sorumlusu' };
 let o: Ortam; let f1: string; let f2: string; let firmaC: string; let sigortaC: string; let baskaSigortaC: string;
 const PAROLA = 'Sinama-Parolasi-2026!';
 const disGir = async (ep: string) => {
@@ -206,6 +206,14 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect((await o.ist('POST', `/api/acil/${r.kimlik}/kapat`, c, { sonuc: 'Sızıntı kesildi', risk: 'Kontrol altında' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`bld55:${r.kimlik}`])).rows[0].metin).not.toContain('EUR');
     expect((await o.ist('POST', `/api/acil/${r.kimlik}/kapat`, c, { sonuc: 'x', risk: 'y' })).statusCode).toBe(409);
+  });
+  it('İSG Sorumlusu ana ekrandan işi durdurur (T-YG1670-DURDUR)', async () => {
+    const r = await cagri(); const isg = await o.gir('isg');
+    expect((await o.ist('GET', '/api/isg/sahadaki-isler', isg)).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/isg/sahadaki-isler', await o.gir('sc'))).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/dosya/${r.kimlik}/is-durdur`, await o.gir('sc'), { neden: 'Gaz' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/dosya/${r.kimlik}/is-durdur`, isg, { neden: 'Kaynak işi sırasında yakıt buharı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT calisma_durduruldu d FROM dosya WHERE kimlik = $1`, [r.kimlik])).rows[0].d).toBe(true);
   });
   it('emniyet durdurması işi durdurur, tüm makamlara gider; yeniden başlatma yalnız Teknik Müdür', async () => {
     const r = await cagri(); const c = await o.gir('ds');

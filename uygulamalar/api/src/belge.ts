@@ -177,6 +177,11 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, degisiklik_gerekcesi, yukleyen_ref, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, $11) RETURNING kimlik`,
         [e.kimlik, no, dosya.trim(), uzanti, al.boyut, al.ozet, anahtar, karantina ? 'Bekliyor' : tarayici.ad, gerekce?.trim() || null, o.kullanici, karantina ? 'Karantina' : 'Taslak'])).rows[0];
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Yüklendi', nesneTuru: 'belge', nesneKimligi: e.kimlik, yeni: { surum: no, ozet: al.ozet, boyut: al.boyut }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      // YG-1656: acil talebe eklenen fotoğraf nöbetçiye (ilk sorumlu ve dosya sorumlusu) anında Kritik bildirimle gider.
+      if (bildirimFoto) {
+        const tl = (await c.query(`SELECT t.talep_no, t.acil_durum, t.ilk_sorumlu_ref, d.dosya_no, d.dosya_sorumlusu_ref FROM talep t LEFT JOIN dosya d ON d.talep_ref = t.kimlik WHERE t.kimlik::text = $1`, [bagKimligi])).rows[0];
+        if (tl?.acil_durum) await (await import('./bildirim.js')).bildir(c, { olay: `acil-foto:${r.kimlik}`, kullanicilar: [tl.ilk_sorumlu_ref, tl.dosya_sorumlusu_ref].filter((x): x is string => Boolean(x) && x !== o.kullanici), baslik: `Acil İhbara Fotoğraf Eklendi: ${tl.dosya_no ?? tl.talep_no}`, ozet: dosya.trim(), oncelik: 'Kritik', acil: true });
+      }
       await c.query('COMMIT');
       return { belge: e.kimlik, surum: no, surumKimligi: r.kimlik, ...(karantina ? { karantina: true, uyari: 'Dosya karantinaya alındı; tarama tamamlanınca kullanılabilir.' } : {}) };
     } catch (x) { await c.query('ROLLBACK').catch(() => {}); depo.vazgec(al.yol); throw x; } finally { c.release(); }

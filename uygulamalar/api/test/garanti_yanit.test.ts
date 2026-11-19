@@ -33,6 +33,13 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     // itiraz (YG-1484): şikâyet itirazı Strateji ve Kurumsal Gelişim Direktörüne, 120 saat
     const it = (await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz`, ds, { aciklama: 'Renk hâlâ farklı' })).json();
     expect(it.makam).toBe('Strateji ve Kurumsal Gelişim Direktörü'); expect(new Date(it.son).getTime() - Date.now()).toBeGreaterThan(119 * 3_600_000);
+    { // T-YG1424-SORVEYOR
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/bagimsiz-sorveyor`, ds, { ad: 'Bağımsız Sörveyör', gerekce: '' })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/bagimsiz-sorveyor`, ds, { ad: 'Deneme Sörveyör', kurum: 'Deneme Ekspertiz', gerekce: 'Renk farkının bağımsız ölçümü' })).statusCode).toBe(200);
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/bagimsiz-sorveyor`, ds, { ad: 'İkinci', gerekce: 'G' })).statusCode).toBe(409);
+      expect((await o.ist('POST', `/api/garanti-sikayet/${g}/bagimsiz-sorveyor/sonuc`, ds, { raporTarihi: '2026-11-20', sonuc: 'Renk farkı ölçüm toleransı içinde' })).statusCode).toBe(200);
+      expect((await o.ist('GET', `/api/garanti-sikayet/${g}/yanit`, ds)).json().sorveyorler[0].sonuc).toBe('Renk farkı ölçüm toleransı içinde');
+    }
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('tm'), { sonuc: 'Ret', gerekce: 'G' })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz-karar`, await o.gir('skg'), { sonuc: 'Kısmen Kabul', gerekce: 'Ek rötuş' })).statusCode).toBe(200);
     { // T-YG1701: Kaliteye Yönlendir

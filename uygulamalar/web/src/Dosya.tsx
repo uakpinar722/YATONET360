@@ -34,7 +34,7 @@ interface DosyaAyrinti extends DosyaSatir {
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
 const gun = (s: string) => s.split('-').reverse().join('.');
 const ASAMALAR = ['Keşif', 'Teklif', 'Onay', 'Uygulama', 'Kontrol', 'Teslim'];
-const EKIP_ROLLERI = ['Dosya Sorumlusu', 'Yedek Sorumlu', 'Operasyon Yöneticisi', 'Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Yönetici', 'Saha Sorumlusu', 'Kalite Kontrolör', 'Tedarik Sorumlusu'];
+const EKIP_ROLLERI = ['Dosya Sorumlusu', 'Yedek Sorumlu', 'Operasyon Yöneticisi', 'Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Yönetici', 'Saha Sorumlusu', 'Kalite Kontrolör', 'Yedek Kalite Kontrolör', 'Tedarik Sorumlusu'];
 const BEKLEME = ['Bilgi', 'Uzman Görüşü', 'Eksper', 'Sigorta Onayı', 'Müşteri Kararı', 'Parça', 'Hava', 'Erişim', 'Ödeme', 'Sigorta Kararı', 'Muvafakat'];
 
 /** YG-034, YG-035: renk risk düzeyine göre. YG-1579: Kritik kırmızı, Yüksek sarı, Normal ve Planlı gri. */
@@ -254,7 +254,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
   const ds = d.rollerim.includes('Dosya Sorumlusu');
   const sonraki = d.asama ? ASAMALAR[ASAMALAR.indexOf(d.asama) + 1] : undefined;
   const acikBekleme = d.bekleme.filter((b) => !b.kaldirilma_zamani);
-  const izinliRoller = EKIP_ROLLERI.filter((r) => (['Dosya Sorumlusu', 'Yedek Sorumlu', 'Operasyon Yöneticisi'].includes(r) && d.izinler.includes('dosya.ata.operasyon')) || (['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Yönetici', 'Saha Sorumlusu'].includes(r) && d.izinler.includes('dosya.ata.teknik')) || (r === 'Kalite Kontrolör' && d.izinler.includes('dosya.ata.kalite')) || (r === 'Tedarik Sorumlusu' && d.izinler.includes('dosya.ata.tedarik')));
+  const izinliRoller = EKIP_ROLLERI.filter((r) => (['Dosya Sorumlusu', 'Yedek Sorumlu', 'Operasyon Yöneticisi'].includes(r) && d.izinler.includes('dosya.ata.operasyon')) || (['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Yönetici', 'Saha Sorumlusu'].includes(r) && d.izinler.includes('dosya.ata.teknik')) || ((r === 'Kalite Kontrolör' || r === 'Yedek Kalite Kontrolör') && d.izinler.includes('dosya.ata.kalite')) || (r === 'Tedarik Sorumlusu' && d.izinler.includes('dosya.ata.tedarik')));
   return (
     <>
       <button className="lnk" onClick={geri}>← Dosyalar</button>

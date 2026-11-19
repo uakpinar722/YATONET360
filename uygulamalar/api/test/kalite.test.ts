@@ -4,7 +4,7 @@ import { cihazGecerli, gazUygun, kabulEngeli, kaliteSureIsle, ncrHedefi, sinifEn
 import { eslestir } from '../src/tedarik.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', km: 'Kalite Müdürü', ts: 'Tedarik Sorumlusu', tym: 'Tedarik Yönetimi Müdürü', to: 'Teknik ve Operasyon Direktörü', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', kk2: 'Kalite Uzmanı (Kalite Kontrolör)', km: 'Kalite Müdürü', ts: 'Tedarik Sorumlusu', tym: 'Tedarik Yönetimi Müdürü', to: 'Teknik ve Operasyon Direktörü', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü' };
 let o: Ortam; let firma: string; let tedarikci: string;
 const ileri = (g: number) => new Date(Date.now() + 180 * 60_000 + g * 86_400_000).toISOString().slice(0, 10);
 const dosya = async () => { await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); for (const [k, r] of [['kk', 'Kalite Kontrolör'], ['ts', 'Tedarik Sorumlusu']]) await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,$3,$4)`, [d.kimlik, o.K[k!], r, o.K.oy]); return d; };
@@ -83,6 +83,9 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     expect(Math.round((new Date(ka.son_zaman).getTime() - Date.now()) / 3_600_000)).toBeLessThanOrEqual(24);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Kalite Kontrolör', kullanici: o.K.kk })).statusCode).toBe(200);
     expect((await o.kart('Kalite Kontrolör Ataması', d.kimlik)).durum).toBe('Tamamlandı');
+    // T-YG1687-YEDEK: yedek kontrolör asıl kontrolörden farklı
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Yedek Kalite Kontrolör', kullanici: o.K.kk })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Yedek Kalite Kontrolör', kullanici: o.K.kk2 })).statusCode).toBe(200);
   });
   it('Kritik işi durdurur, Olduğu Gibi Kabul yok, son karar Kalite Müdürü; kök neden ve kanıtla kapanır; emniyet işaretliyse işi Teknik Müdür başlatır', async () => {
     const d = await dosya(); const e = await isEmri(d);

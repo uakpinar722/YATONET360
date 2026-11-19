@@ -45,7 +45,14 @@ export async function gundemUret(db: Db, kod: string): Promise<string | null> {
       (SELECT count(*)::int FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz')) uyg, (SELECT count(*)::int FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz') AND sinif IN ('Kritik', 'Majör')) agir,
       (SELECT count(*)::int FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz') AND hedef_zamani < now()) gecen,
       (SELECT string_agg(dosya_no, ', ' ORDER BY dosya_no) FROM (SELECT dosya_no FROM dosya WHERE oncelik = 'Kritik' AND statu NOT IN ('Kapalı', 'Teknik Kapalı') ORDER BY dosya_no LIMIT 10) x) kritik`)).rows[0];
-  return [`Süresi Aşan Onay: ${rows[0].n}`, `Süresi Aşan Görev ve İşlem: ${s.gorev}`, `Hedef Süresi Aşan Dosya Süresi: ${s.sure}`, `Açık Uygunsuzluk: ${s.uyg} (Kritik/Majör: ${s.agir}; hedef süresi geçen: ${s.gecen})`, `Kritik Öncelikli Açık Dosyalar: ${s.kritik ?? 'Yok'}`].join('\n');
+  // YG-584: performans göstergeleri (Cilt I §9) gündeme girer; haftalık operasyonda Operasyon, Teknik ve Kalite göstergeleri, aylık yönetimde tümü. Kritik sapma ve inceleme gerekenler önce.
+  const { gostergeleriHesapla } = await import('./gosterge.js');
+  const birimler = kod === 'TPL-02' ? new Set(['Operasyon Müdürlüğü', 'Teknik Müdürlük', 'Kalite Müdürlüğü']) : null;
+  const sira = { kirmizi: 0, sari: 1, yesil: 2 } as const;
+  const kpi = (await gostergeleriHesapla(db, (x) => !birimler || birimler.has(x))).filter((g) => g.deger !== null)
+    .sort((a, c) => (a.renk ? sira[a.renk] : 3) - (c.renk ? sira[c.renk] : 3))
+    .map((g) => `Gösterge · ${g.ad}: ${String(g.deger).replace('.', ',')} ${g.birim}${g.hedef !== null ? ` (hedef ${String(g.hedef).replace('.', ',')})` : ''} · ${g.durum}`);
+  return [`Süresi Aşan Onay: ${rows[0].n}`, `Süresi Aşan Görev ve İşlem: ${s.gorev}`, `Hedef Süresi Aşan Dosya Süresi: ${s.sure}`, `Açık Uygunsuzluk: ${s.uyg} (Kritik/Majör: ${s.agir}; hedef süresi geçen: ${s.gecen})`, `Kritik Öncelikli Açık Dosyalar: ${s.kritik ?? 'Yok'}`, ...(kpi.length ? kpi : ['Göstergeler: Hesaplanabilir veri yok'])].join('\n');
 }
 
 /** YG-1599: Kapsam Hazırlık Toplantısı (TPL-06) kapanınca dosyada "Fiyat Teklifi Hazırla" görevi Ticari Sorumluya açılır; açık görev varsa toplantı kararı özete eklenir. Hazırlanan teklif varsa görev açılmaz. */

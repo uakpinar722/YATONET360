@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 const VARYANT = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı', 'İtiraz İnceleme Sonucu', 'Ara Bilgilendirme', 'Takip Kontrolü', 'Talep Yanıtı'];
-interface Durum { kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
+interface Durum { sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
 
 /** YG-728: FR-KLT-016 yanıt yazısı (6 varyant), itiraz kaydı ve üst kademe kararı. */
 export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [v, setV] = useState<Durum | null>(null); const [f, setF] = useState({ varyant: '', inceleme: '', islemler: '', duzeltme: '' });
+  const [sv, setSv] = useState({ ad: '', kurum: '', iletisim: '', gerekce: '', raporTarihi: '', sonuc: '' });
   const [it, setIt] = useState(''); const [ky, setKy] = useState(''); const [ik, setIk] = useState({ sonuc: '', gerekce: '' });
   const yukle = () => void istek<Durum>(`/garanti-sikayet/${id}/yanit`).then(setV).catch(() => setV(null));
   useEffect(yukle, [id]);
@@ -18,6 +19,16 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
     {v.yazilar.map((x) => <div key={x.kimlik}>{x.yazi_no} · {x.varyant} · {x.durum}</div>)}
     {v.itiraz.zaman && <div className="not">İtiraz: {tarih(v.itiraz.zaman)} · İnceleyen: {v.itiraz.makam} · Son: {tarih(v.itiraz.son)}{v.itiraz.sonuc ? ` · Sonuç: ${v.itiraz.sonuc}` : ''}</div>}
     {v.takipSon && <div className="not">Takip Kontrolü: {tarih(v.takipSon)}</div>}
+    {v.sorveyorler?.map((x) => <div key={x.kimlik} className="not">Bağımsız Sörveyör: {x.sorveyor_adi}{x.kurum ? ` (${x.kurum})` : ''} · {x.gerekce}{x.sonuc ? ` · Rapor: ${x.rapor_tarihi?.split('-').reverse().join('.')} · Sonuç: ${x.sonuc}` : ' · Sonuç bekleniyor'}</div>)}
+    {v.sorveyorYetkili && (v.sorveyorler?.some((x) => !x.sonuc) ? <>{/* YG-1424 */}
+      <label htmlFor={`gs-rt-${id}`}>Sörveyör Rapor Tarihi</label><input id={`gs-rt-${id}`} type="date" value={sv.raporTarihi} onChange={(e) => setSv({ ...sv, raporTarihi: e.target.value })} />
+      <label htmlFor={`gs-so-${id}`}>Sörveyör Sonucu</label><input id={`gs-so-${id}`} value={sv.sonuc} onChange={(e) => setSv({ ...sv, sonuc: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!sv.raporTarihi || !sv.sonuc.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/bagimsiz-sorveyor/sonuc`, { raporTarihi: sv.raporTarihi, sonuc: sv.sonuc }), 'Sörveyör sonucu kaydedildi.').then(yukle)}>Sörveyör Sonucunu Kaydet</button></> : <>
+      <label htmlFor={`gs-ad-${id}`}>Bağımsız Sörveyör Adı</label><input id={`gs-ad-${id}`} value={sv.ad} onChange={(e) => setSv({ ...sv, ad: e.target.value })} />
+      <label htmlFor={`gs-ku-${id}`}>Kurumu</label><input id={`gs-ku-${id}`} value={sv.kurum} onChange={(e) => setSv({ ...sv, kurum: e.target.value })} />
+      <label htmlFor={`gs-il-${id}`}>İletişim</label><input id={`gs-il-${id}`} value={sv.iletisim} onChange={(e) => setSv({ ...sv, iletisim: e.target.value })} />
+      <label htmlFor={`gs-ge-${id}`}>Gerekçe</label><input id={`gs-ge-${id}`} value={sv.gerekce} onChange={(e) => setSv({ ...sv, gerekce: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!sv.ad.trim() || !sv.gerekce.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/bagimsiz-sorveyor`, { ad: sv.ad, kurum: sv.kurum, iletisim: sv.iletisim, gerekce: sv.gerekce }), 'Bağımsız sörveyör kaydı açıldı.').then(yukle)}>Bağımsız Sörveyör Kaydı Aç</button></>)}
     {v.hazirlar && <>
       <label htmlFor={`gy-v-${id}`}>Yanıt Yazısı Varyantı</label><select id={`gy-v-${id}`} value={f.varyant} onChange={(e) => setF({ ...f, varyant: e.target.value })}><option value="">Seçiniz</option>{VARYANT.map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor={`gy-i-${id}`}>İnceleme</label><textarea id={`gy-i-${id}`} value={f.inceleme} onChange={(e) => setF({ ...f, inceleme: e.target.value })} />

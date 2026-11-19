@@ -137,7 +137,8 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
   s.get('/garanti-sikayet/:id/yanit', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
     const yazilar = (await b.db.query(`SELECT kimlik, yazi_no, varyant, durum, olusturma_zamani FROM garanti_sikayet_yazisi WHERE kayit_ref = $1 ORDER BY olusturma_zamani`, [g.kimlik])).rows;
-    return { yazilar, kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
+    const sorveyorler = (await b.db.query(`SELECT kimlik, sorveyor_adi, kurum, iletisim, gerekce, zaman, rapor_tarihi::text rapor_tarihi, sonuc FROM garanti_sikayet_sorveyor WHERE kayit_ref = $1 ORDER BY zaman`, [g.kimlik])).rows; // YG-1424
+    return { yazilar, sorveyorler, sorveyorYetkili: Boolean(g.itiraz_zamani) && await sorveyorYetkili(g, o.kullanici), kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
   });
 
   s.post('/garanti-sikayet/:id/yanit-yazisi', oturumlu, async (i, y) => {
@@ -180,6 +181,28 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE garanti_sikayet SET itiraz_zamani = now(), itiraz_son = $2, itiraz_aciklamasi = $3, itiraz_makami = $4 WHERE kimlik = $1`, [g.kimlik, son, aciklama.trim(), makam]);
     await kartAc(b.db, { tur: 'Şikâyet İtirazı', kategori: 'islem', baslik: `${g.kayit_no} · İtiraz İncelemesi`, ozet: aciklama.trim().slice(0, 200), sahipRol: await rolId(b.db, makam), sonZaman: son, oncelik: 'Yüksek', nesneTuru: 'Garanti Şikâyet', nesneKimligi: g.kimlik });
     return { makam, son };
+  });
+
+  // YG-1424: itirazda gerekirse bağımsız sörveyör kaydı; Dosya Sorumlusu, hazırlayan birim veya itirazı inceleyen makam açar.
+  const sorveyorYetkili = async (g: Record<string, any>, k: string) => (await hazirlayabilir(g, k)) || (g.itiraz_makami ? await rolVar(k, [g.itiraz_makami]) : false);
+  s.post('/garanti-sikayet/:id/bagimsiz-sorveyor', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
+    const v = (i.body ?? {}) as { ad?: string; kurum?: string; iletisim?: string; gerekce?: string };
+    if (!(await sorveyorYetkili(g, o.kullanici))) return y.code(403).send({ hata: `Bağımsız sörveyör kaydını Dosya Sorumlusu, ${HAZIRLAYAN} veya itirazı inceleyen makam açar.` });
+    if (!g.itiraz_zamani) return y.code(409).send({ hata: 'Bağımsız sörveyör kaydı itiraz kaydedildikten sonra açılır.' });
+    if (!v.ad?.trim() || !v.gerekce?.trim()) return y.code(400).send({ hata: 'Sörveyör adı ve gerekçe zorunludur.' });
+    if ((await b.db.query(`SELECT 1 FROM garanti_sikayet_sorveyor WHERE kayit_ref = $1 AND sonuc IS NULL`, [g.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu kayıtta sonucu girilmemiş bağımsız sörveyör kaydı vardır.' });
+    const r = (await b.db.query(`INSERT INTO garanti_sikayet_sorveyor (kayit_ref, sorveyor_adi, kurum, iletisim, gerekce, atayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.kimlik, v.ad.trim(), v.kurum?.trim() || null, v.iletisim?.trim() || null, v.gerekce.trim(), o.kullanici])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Bağımsız Sörveyör Kaydı', nesneTuru: 'Dosya', nesneKimligi: g.dosya_ref, gerekce: v.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
+  s.post('/garanti-sikayet/:id/bagimsiz-sorveyor/sonuc', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = await kayit((i.params as { id: string }).id, o.kullanici); if (!g) return yok(y);
+    const v = (i.body ?? {}) as { raporTarihi?: string; sonuc?: string };
+    if (!(await sorveyorYetkili(g, o.kullanici))) return y.code(403).send({ hata: 'Sörveyör sonucunu kaydı açan birim veya itirazı inceleyen makam girer.' });
+    if (!v.sonuc?.trim() || !v.raporTarihi || !/^\d{4}-\d{2}-\d{2}$/.test(v.raporTarihi)) return y.code(400).send({ hata: 'Rapor tarihi ve sörveyör sonucu zorunludur.' });
+    const r = await b.db.query(`UPDATE garanti_sikayet_sorveyor SET rapor_tarihi = $2, sonuc = $3, sonuc_giren_ref = $4 WHERE kayit_ref = $1 AND sonuc IS NULL`, [g.kimlik, v.raporTarihi, v.sonuc.trim(), o.kullanici]);
+    return r.rowCount ? { tamam: true } : y.code(409).send({ hata: 'Sonuç bekleyen bağımsız sörveyör kaydı yoktur.' });
   });
 
   // YG-1701 (A53-S2): tekrarlayan şikâyette Müşteri ve Paydaş İlişkileri Müdürü sistemsel neden incelemesi için Kalite Müdürüne yönlendirir.

@@ -217,6 +217,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/bildirimler/okundu', oturumlu, async (i) => {
     await b.db.query(`UPDATE bildirim SET okunma_zamani = now() WHERE kullanici_ref = $1 AND okunma_zamani IS NULL`, [i.oturum!.kullanici]);
+    await (await import('./bildirim.js')).gonderimOkundu(b.db, i.oturum!.kullanici); // YG-513
     return { tamam: true };
   });
 

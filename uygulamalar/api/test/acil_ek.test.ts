@@ -164,6 +164,11 @@ describe('konum (YG-1658)', () => {
     await o.sup.query(`INSERT INTO kullanim_kosullari_kabulu (kullanici_ref, prt_surumu, dil) VALUES ($1,'R00','Türkçe')`, [p]);
     const c = (await giris('p@konum.local')).c;
     const r = await o.ist('POST', '/api/portal/acil', c, { tur: 'Yangın', yatAdi: 'Y', konum: 'Göcek' }); expect(r.statusCode, r.body).toBe(200); const t = r.json().talep as string; expect(t).toBeTruthy();
+    { // T-YG1656-FOTO: acil bildirime fotoğraf eklenir, nöbetçiye Kritik bildirim gider
+      const y = await o.s.inject({ method: 'POST', url: `/api/belge/yukle?${new URLSearchParams({ ad: 'yangin.jpg', tur: 'Hasar Fotoğrafı', bagTuru: 'Talep', bagKimligi: t, kaynak: 'Sistem', dosya: 'yangin.jpg' })}`, headers: { 'x-yatonet': '1', 'content-type': 'application/octet-stream' }, cookies: { [COOKIE_ADI]: c }, payload: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1]) });
+      expect(y.statusCode, y.body).toBe(200);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim b JOIN talep q ON q.ilk_sorumlu_ref = b.kullanici_ref WHERE q.kimlik = $1 AND b.baslik LIKE 'Acil İhbara Fotoğraf Eklendi%'`, [t])).rows[0].n).toBe(1);
+    }
     // YG-259: müşteri kendi açtığı acil dosyaya yat sahibi olarak bağlanır; dosya portalında görünür.
     expect((await o.sup.query(`SELECT x.taraf_rolu FROM dosya_tarafi x JOIN talep q ON q.dosya_ref = x.dosya_ref WHERE q.kimlik = $1 AND x.kullanici_ref = $2`, [t, p])).rows[0].taraf_rolu).toBe('Yat Sahibi');
     expect((await o.ist('POST', `/api/portal/acil/${t}/konum`, await o.gir('ds'), { enlem: 36, boylam: 28 })).statusCode).toBe(404);
