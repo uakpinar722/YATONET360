@@ -248,3 +248,14 @@ describe('bakiye kontrolü bekleyen izinler (YG-1615)', () => {
     await o.sup.query(`DELETE FROM izin_talebi WHERE kimlik = $1`, [iz]);
   });
 });
+
+describe('İSG ikiz görev (YG-1690)', () => {
+  it('ikiz görevli personelin izni asıl rolünün amirine gider (T-YG1690-IKIZ)', async () => {
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'İSG Sorumlusu' ON CONFLICT DO NOTHING`, [o.K.hud]);
+    await o.sup.query(`INSERT INTO izin_bakiyesi (personel_ref, yil, hak) VALUES ($1,2028,20) ON CONFLICT DO NOTHING`, [o.K.hud]);
+    await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [o.K.hud]);
+    const r = await o.ist('POST', '/api/izin', await o.gir('hud'), { tur: 'Yıllık', baslangic: '2028-03-06', bitis: '2028-03-17', bolunmus: true }); expect(r.statusCode, r.body).toBe(200);
+    const k = (await o.sup.query(`SELECT (SELECT rol_adi FROM rol WHERE kimlik = c.zincir[1]) ilk FROM is_karti c WHERE c.tur = 'İzin Talebi' AND c.hazirlayan_ref = $1 ORDER BY c.olusturma_zamani DESC LIMIT 1`, [o.K.hud])).rows[0];
+    expect(k.ilk).not.toMatch(/Kalite/);
+  });
+});

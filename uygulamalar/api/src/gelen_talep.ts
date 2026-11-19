@@ -43,6 +43,9 @@ export function gelenTalepYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const mpi = async (k: string) => (await rolSahipleri(b.db, await rolId(b.db, MPM))).includes(k) || (await rolSahipleri(b.db, await rolId(b.db, MPY))).includes(k);
+  // YG-1699 (A52-S2): yönlendirme Müdürde; rolSahipleri vekâleti de kapsadığından Müdür Yardımcısı yalnız vekâlette yönlendirir.
+  const yonlendirir = async (k: string) => (await rolSahipleri(b.db, await rolId(b.db, MPM))).includes(k);
+  const HASAR = ['Yat / hasar / bakım', 'Garanti veya şikâyet bildirimi', 'Diğer'];
 
   s.get('/iletisim/gelen-talep-konulari', async () => Object.keys(KONU_ROL));
   // Herkese açık (web sitesi formu); saatte 5'ten fazla talep aynı adresten kabul edilmez.
@@ -67,12 +70,26 @@ export function gelenTalepYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/gelen-talepler', oturumlu, async (i, y) => {
     if (!(await mpi(i.oturum!.kullanici))) return yok(y);
-    return { roller: YONLENDIRILEBILIR, talepler: (await b.db.query(`SELECT kimlik, talep_no, kanal, konu, ad_soyad, e_posta, telefon, mesaj, dosya_no, durum, yonlenen_rol, olusturma_zamani FROM gelen_talep ORDER BY olusturma_zamani DESC LIMIT 100`)).rows };
+    return { roller: YONLENDIRILEBILIR, yonlendirir: await yonlendirir(i.oturum!.kullanici), hasarKonulari: HASAR, talepler: (await b.db.query(`SELECT kimlik, talep_no, kanal, konu, ad_soyad, e_posta, telefon, mesaj, dosya_no, durum, yonlenen_rol, olusturma_zamani FROM gelen_talep ORDER BY olusturma_zamani DESC LIMIT 100`)).rows };
+  });
+  // YG-1699 (A52-S2): Müdür Yardımcısı hasar içerikli talebi Operasyon Müdürüne aktarır.
+  s.post('/gelen-talep/:id/operasyona-aktar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await mpi(o.kullanici))) return yok(y);
+    const t = (await b.db.query(`SELECT kimlik, talep_no, konu, mesaj, yonlenen_rol FROM gelen_talep WHERE kimlik = $1`, [id])).rows[0]; if (!t) return yok(y);
+    if (!HASAR.includes(t.konu)) return y.code(409).send({ hata: 'Operasyona Aktar yalnız hasar içerikli talepte kullanılır.' });
+    if (t.yonlenen_rol === 'Operasyon Müdürü') return y.code(409).send({ hata: 'Talep Operasyon Müdürüne aktarılmıştır.' });
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [TUR, id]);
+    await hedefeGorevAc(b.db, { kimlik: id, talep_no: t.talep_no, konu: t.konu, ozet: t.mesaj }, 'Operasyon Müdürü');
+    await b.db.query(`UPDATE gelen_talep SET durum = 'Yönlendirildi', yonlendiren_ref = $2 WHERE kimlik = $1`, [id, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Gelen Talep Operasyona Aktarıldı', nesneTuru: TUR, nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
   // "Diğer" veya yanlış konudaki talep Müşteri ve Paydaş İlişkileri Müdürlüğünce seçilen role yönlendirilir.
   s.post('/gelen-talep/:id/yonlendir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { rol } = (i.body ?? {}) as { rol?: string };
     if (!UUID.test(id) || !(await mpi(o.kullanici))) return yok(y);
+    if (!(await yonlendirir(o.kullanici))) return y.code(403).send({ hata: 'Gelen talebi Müşteri ve Paydaş İlişkileri Müdürü yönlendirir; hasar içerikli talepte "Operasyona Aktar"ı kullanınız.' });
     if (!YONLENDIRILEBILIR.includes(rol ?? '')) return y.code(400).send({ hata: 'Yönlendirilecek birimi seçiniz.' });
     const t = (await b.db.query(`SELECT kimlik, talep_no, konu, mesaj FROM gelen_talep WHERE kimlik = $1`, [id])).rows[0];
     if (!t) return yok(y);

@@ -237,7 +237,9 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     // YG-1694: İç Denetim personelinin 7 günlük konum planı Direktör ekranında gösterilmez; yalnız izin durumu görünür (bağımsızlık).
     const gizli = l.some((r) => r.rol_adi === 'Risk ve Kalite Direktörü') && !genel ? new Set((await b.db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_sahibi_birim = 'İç Denetim Müdürlüğü' AND a.kullanici_ref <> $1`, [o.kullanici])).rows.map((r) => r.kullanici_ref as string)) : new Set<string>();
     const plan = await konumPlani(b.db, kisiler.length ? kisiler : [o.kullanici]);
-    return { kisiler: plan.map((p) => gizli.has(p.kimlik) ? { ...p, gizli: true, gunler: p.gunler.map((x) => ({ tarih: x.tarih, konum: x.konum === 'İzinli' ? 'İzinli' : 'Görevde' })) } : p) };
+    // YG-1690: İSG Sorumlusu görevini asıl rolüyle birlikte taşıyan kişi ekip sayfasında "İkiz Görev" etiketiyle gösterilir.
+    const ikiz = new Set((await b.db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi = 'İSG Sorumlusu' AND a.kullanici_ref = ANY($1) AND EXISTS (SELECT 1 FROM rol_atamasi b2 JOIN rol r2 ON r2.kimlik = b2.rol_ref WHERE b2.kullanici_ref = a.kullanici_ref AND b2.atama_durumu = 'Aktif' AND r2.rol_adi <> 'İSG Sorumlusu')`, [plan.map((p) => p.kimlik)])).rows.map((r) => r.kullanici_ref as string));
+    return { kisiler: plan.map((p) => ({ ...p, ikiz: ikiz.has(p.kimlik) })).map((p) => gizli.has(p.kimlik) ? { ...p, gizli: true, gunler: p.gunler.map((x) => ({ tarih: x.tarih, konum: x.konum === 'İzinli' ? 'İzinli' : 'Görevde' })) } : p) };
   });
 
   // YG-810, YG-811: dosya haritası; konum bağlama noktasıyla eşleşir, bölge özetleri ve dosya özet kartı. Sigorta kullanıcısı yalnız kendi dosyalarını görür.

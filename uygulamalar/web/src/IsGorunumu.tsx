@@ -23,12 +23,12 @@ export function IsListeleri() {
 
 /** YG-812: 7 günlük planlanan konum tablosu. */
 export function KonumPlani() {
-  const [v, setV] = useState<{ kisiler: { kimlik: string; ad: string; gunler: { tarih: string; konum: string }[] }[] } | null>(null);
+  const [v, setV] = useState<{ kisiler: { kimlik: string; ad: string; ikiz?: boolean; gunler: { tarih: string; konum: string }[] }[] } | null>(null);
   useEffect(() => { void istek<NonNullable<typeof v>>('/konum-plani').then(setV).catch(() => setV(null)); }, []);
   if (!v?.kisiler.length) return null;
   const gun = v.kisiler[0]!.gunler.map((g) => new Date(`${g.tarih}T12:00:00`).toLocaleDateString('tr-TR', { weekday: 'short', day: 'numeric', month: 'numeric' }));
   return <details><summary>7 Günlük Konum Planı</summary><div style={{ overflowX: 'auto' }}><table><thead><tr><th>Personel</th>{gun.map((g) => <th key={g}>{g}</th>)}</tr></thead>
-    <tbody>{v.kisiler.map((k) => <tr key={k.kimlik}><td>{k.ad}</td>{k.gunler.map((g) => <td key={g.tarih}>{g.konum}</td>)}</tr>)}</tbody></table></div></details>;
+    <tbody>{v.kisiler.map((k) => <tr key={k.kimlik}><td>{k.ad}{k.ikiz ? ' · İkiz Görev' : ''}</td>{k.gunler.map((g) => <td key={g.tarih}>{g.konum}</td>)}</tr>)}</tbody></table></div></details>;
 }
 
 type H = { bolgeler: { bolge: string; devamEden: number; beklemede: number; oncelik: Record<string, number> }[]; dosyalar: { kimlik: string; dosyaNo: string; statu: string; oncelik: string; sorumlu: string | null; sonIslem: string; hedef: string | null; bolge: string | null; enlem: number; boylam: number }[] };

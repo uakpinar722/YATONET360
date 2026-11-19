@@ -3,7 +3,7 @@ import { kartAc } from '../src/is_motoru.js';
 import { gorevUstKademe } from '../src/gorev_erteleme.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', cg: 'CEO', gmy: 'Genel Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', fym: 'Firma Yönetimi Müdürü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', cg: 'CEO', gmy: 'Genel Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', ikm: 'İnsan Kaynakları Müdürü', iks: 'İnsan Kaynakları Sorumlusu', fym: 'Firma Yönetimi Müdürü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', mpy: 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test83', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -96,5 +96,12 @@ describe('gelen talep (YG-1543, YG-1554)', () => {
     const dk = (await o.sup.query(`SELECT g.kimlik, g.durum, g.konu FROM gelen_talep g WHERE g.talep_no = $1`, [d.talepNo])).rows[0];
     expect(dk).toMatchObject({ durum: 'Yönlendirme bekliyor', konu: 'Diğer' });
     expect((await o.ist('POST', `/api/gelen-talep/${dk.kimlik}/yonlendir`, await o.gir('btd'), { rol: 'Teknik Müdür' })).statusCode).toBe(404);
+    { // T-YG1699: Müdür Yardımcısı yönlendiremez, hasar içerikli talebi Operasyona Aktarır
+      const mpy = await o.gir('mpy');
+      expect((await o.ist('POST', `/api/gelen-talep/${dk.kimlik}/yonlendir`, mpy, { rol: 'Teknik Müdür' })).statusCode).toBe(403);
+      expect((await o.ist('POST', `/api/gelen-talep/${dk.kimlik}/operasyona-aktar`, mpy, {})).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT yonlenen_rol FROM gelen_talep WHERE kimlik = $1`, [dk.kimlik])).rows[0].yonlenen_rol).toBe('Operasyon Müdürü');
+      expect((await o.ist('POST', `/api/gelen-talep/${dk.kimlik}/yonlendir`, await o.gir('mpm'), { rol: 'Teknik Müdür' })).statusCode).toBe(200);
+    }
   });
 });

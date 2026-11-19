@@ -83,6 +83,26 @@ describe('sosyal medya izleme kaydı (YG-586)', () => {
   });
 });
 
+describe('İç Denetçi kanıt ve örneklem (YG-1671)', () => {
+  it('kanıt kaydı, kanıt talebi ve yanıtı, örneklem incelemesi bulgu alanıyla, üç aylık mali kontrol (T-YG1671)', async () => {
+    const ide = await o.gir('ide'); const idm = await o.gir('idm');
+    const d = (await o.ist('POST', '/api/ic-denetim', ide, { surec: 'Tedarik', kapsam: 'Siparişler', cikarYok: true, sonOnIkiAyGorevYok: true })).json().kimlik as string;
+    expect((await o.ist('POST', `/api/ic-denetim/${d}/kanit`, ide, { tur: 'Tahmin', aciklama: 'X' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/ic-denetim/${d}/kanit`, ide, { tur: 'Kayıt', aciklama: 'Sipariş onay izleri incelendi' })).statusCode).toBe(200);
+    const ep = (await o.sup.query(`SELECT e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.K.ds])).rows[0].e_posta;
+    const kt = (await o.ist('POST', `/api/ic-denetim/${d}/kanit-talebi`, ide, { eposta: ep, konu: 'Sipariş onay e-postaları', sonTarih: '2031-01-10' })).json().kimlik;
+    const ds = await o.gir('ds'); expect((await o.ist('GET', '/api/ic-denetim-kanit-talebi/bana', ds)).json().some((x: any) => x.kimlik === kt)).toBe(true);
+    expect((await o.ist('POST', `/api/ic-denetim-kanit-talebi/${kt}/yanit`, ds, { yanit: 'Dosya belgelerine yüklendi' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/ic-denetim/${d}/kanitlar`, idm)).json().kanitlar).toHaveLength(2);
+    const dsy = await o.dosyaAc();
+    await o.sup.query(`INSERT INTO ic_denetim_orneklemi (donem, dosya_ref, havuz, denetci_ref) VALUES ('2031-01', $1, 10, $2)`, [dsy.kimlik, o.K.ide]);
+    expect((await o.ist('POST', `/api/ic-denetim/orneklem/2031-01/${dsy.kimlik}/inceleme`, ide, { sonuc: 'Bulgulu', sinif: 'Minör' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/ic-denetim/orneklem/2031-01/${dsy.kimlik}/inceleme`, ide, { sonuc: 'Bulgulu', sinif: 'Minör', kanit: 'Onay kaydı sonradan girilmiş', sorumlu: 'Operasyon Müdürü', hedef: '2031-02-01' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT bulgu_sinif FROM ic_denetim_orneklemi WHERE donem = '2031-01' AND dosya_ref = $1`, [dsy.kimlik])).rows[0].bulgu_sinif).toBe('Minör');
+    const { ucAylikMaliKontrol } = await import('../src/ic_denetci.js'); expect(await ucAylikMaliKontrol(o.db, new Date('2031-04-02T09:00:00+03:00'))).toBe(true); expect(await o.kart('Üç Aylık Mali Kontrol Testi', '2031-Q2')).toBeDefined();
+  });
+});
+
 describe('Sigorta ve Panel (YG-1702)', () => {
   it('panel başvurusu, denetim talebi Hukuk görüşüyle yanıt, itibar riski CEO\'ya (T-YG1702)', async () => {
     const tsb = (await o.sup.query(`SELECT tsb_kodu FROM sigorta_sirketi WHERE durum = 'Aktif' LIMIT 1`)).rows[0]?.tsb_kodu as string;

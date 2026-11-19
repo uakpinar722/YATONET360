@@ -50,6 +50,7 @@ function DenetciAtama({ d, v }: { d: D; v: { atayabilir?: boolean; denetciler?: 
       <label htmlFor={`da-a-${d.kimlik}`}>Denetim Amacı</label><input id={`da-a-${d.kimlik}`} value={f.amac} onChange={(e) => setF({ ...f, amac: e.target.value })} />
       <button className="btn2 kucuk" disabled={!f.denetci || !f.bitis || !f.amac.trim()} onClick={() => void istek(`/ic-denetim/${d.kimlik}/ata`, f).then(() => setM('Denetçi atandı; erişim açıldı.')).catch((e) => setM(e.message))}>Denetçi Ata</button></>}
     {d.denetci_ref === v.ben && <button className="btn2 kucuk" onClick={() => void istek<NonNullable<typeof iz>>(`/ic-denetim/${d.kimlik}/izler`).then(setIz).catch((e) => setM(e.message))}>İşlem İzlerini Gör</button>}
+    {d.denetci_ref === v.ben && <DenetimKanit id={d.kimlik} />}
     {iz && <div className="ozet">{iz.length === 0 ? <div className="not">Kayıt bulunmamaktadır.</div> : iz.map((x, n) => <div key={n}>{new Date(x.olay_zamani).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })} · {x.eylem} · {x.sonuc}{x.aktor ? ` · ${x.aktor}` : ''}</div>)}</div>}</div>;
 }
 
@@ -105,4 +106,22 @@ export function ErisimKapatma() {
     {l.length === 0 ? <div className="ozet bos">Son 90 günde ayrılan personel bulunmamaktadır.</div> : <div className="tablo"><table className="kartli"><thead><tr><th>Personel</th><th>Son İş Günü</th><th>Hesap</th><th>Açık Oturum</th><th>Aktif Rol</th><th>Mobil Cihaz</th><th>Sistem Dışı Erişim</th></tr></thead>
       <tbody>{l.map((x) => <tr key={x.kimlik}><td data-ad="Personel">{x.ad_soyad}{tamam(x) ? ' ✓' : ''}</td><td data-ad="Son İş Günü">{x.son_is_gunu.split('-').reverse().join('.')}</td><td data-ad="Hesap">{x.hesap_durumu}</td><td data-ad="Açık Oturum">{x.acik_oturum}</td><td data-ad="Aktif Rol">{x.aktif_rol}</td><td data-ad="Mobil Cihaz">{x.aktif_cihaz}</td><td data-ad="Sistem Dışı Erişim">{x.sistem_disi === 'Tamamlandı' ? 'Kapatıldı' : x.sistem_disi ? 'Hesap Kapanış Kontrolü bekliyor' : 'Son iş gününde açılır'}</td></tr>)}</tbody></table></div>}
   </details>;
+}
+
+/** YG-1671 (A47): kanıt toplama (belge, kayıt, gözlem, ölçüm, yetkili görüşme) ve kanıt talebi. */
+function DenetimKanit({ id }: { id: string }) {
+  const [v, setV] = useState<{ kanitlar: { tur: string; aciklama: string }[]; talepler: { kimlik: string; konu: string; son_tarih: string; yanit: string | null; istenen: string }[] } | null>(null); const [f, setF] = useState<Record<string, string>>({ tur: 'Belge' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>(`/ic-denetim/${id}/kanitlar`).then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, [id]);
+  const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); setF({ tur: 'Belge' }); return yk(); }).catch((e) => setM(e.message));
+  return <div className="tam">{m && <div className="not" role="status">{m}</div>}
+    {v?.kanitlar.map((k, n) => <div key={n} className="not">Kanıt · {k.tur}: {k.aciklama}</div>)}
+    {v?.talepler.map((k) => <div key={k.kimlik} className="not">Kanıt Talebi · {k.istenen} · {k.konu} · Son: {k.son_tarih.split('-').reverse().join('.')}{k.yanit ? ` · Yanıt: ${k.yanit}` : ' · Bekleniyor'}</div>)}
+    <label htmlFor={`dk-t-${id}`}>Kanıt Türü</label><select id={`dk-t-${id}`} value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Belge', 'Kayıt', 'Gözlem', 'Ölçüm', 'Yetkili Görüşme'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor={`dk-a-${id}`}>Kanıt Açıklaması</label><input id={`dk-a-${id}`} value={f.aciklama ?? ''} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.aciklama?.trim()} onClick={() => is(istek(`/ic-denetim/${id}/kanit`, { tur: f.tur, aciklama: f.aciklama }), 'Kanıt kaydedildi.')}>Kanıtı Kaydet</button>
+    <label htmlFor={`dk-e-${id}`}>Kanıt İstenecek Personel (kurumsal e-posta)</label><input id={`dk-e-${id}`} value={f.eposta ?? ''} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
+    <label htmlFor={`dk-k-${id}`}>Talep Konusu</label><input id={`dk-k-${id}`} value={f.konu ?? ''} onChange={(e) => setF({ ...f, konu: e.target.value })} />
+    <label htmlFor={`dk-s-${id}`}>Yanıt Son Tarihi</label><input id={`dk-s-${id}`} type="date" value={f.son ?? ''} onChange={(e) => setF({ ...f, son: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.eposta?.trim() || !f.konu?.trim() || !f.son} onClick={() => is(istek(`/ic-denetim/${id}/kanit-talebi`, { eposta: f.eposta, konu: f.konu, sonTarih: f.son }), 'Kanıt talebi gönderildi.')}>Kanıt İste</button></div>;
 }

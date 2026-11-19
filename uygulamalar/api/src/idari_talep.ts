@@ -14,7 +14,7 @@ const IHTIYAC = 'İdari Talep'; const SIPARIS = 'İdari Sipariş'; const SORUMLU
 
 /** YG-1619: personelin ilk amiri (varsa birim Müdür Yardımcısı) ve son karar makamı; İç Denetçide Müdür hem ilk amir hem son makamdır (YG-1683). */
 export async function ihtiyacZinciri(c: PoolClient, kullanici: string): Promise<string[]> {
-  const r = (await c.query(`SELECT x.kimlik, x.kademe, x.rol_sahibi_birim birim FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [kullanici])).rows[0];
+  const r = (await c.query(`SELECT x.kimlik, x.kademe, x.rol_sahibi_birim birim FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' ORDER BY (a.rol_ref IN (SELECT kimlik FROM rol WHERE rol_adi = 'İSG Sorumlusu')), a.baslangic_tarihi LIMIT 1 /* YG-1690: ikiz görev asıl rol değildir */`, [kullanici])).rows[0];
   if (!r) throw Object.assign(new Error('Aktif rol bulunamadı.'), { statusCode: 409 });
   const son = await onayMakami(c, r.kimlik); const z: string[] = [];
   if (!['Müdür', 'Müdür Yardımcısı', 'Direktör'].includes(r.kademe)) {

@@ -32,7 +32,8 @@ describe('Garanti ve Şikâyet Yanıt Yazısı (YG-728)', () => {
     expect(j).toContain('186.000,00 TL’ye kadar'); expect(j).toContain('05.12.2026 tarihinden itibaren yeniden 12 ay'); expect(j).toContain('Tarafınıza yansıtılmamıştır'); expect(j).toContain('Takip Kontrolü');
     // itiraz (YG-1484): şikâyet itirazı Strateji ve Kurumsal Gelişim Direktörüne, 120 saat
     const it = (await o.ist('POST', `/api/garanti-sikayet/${g}/itiraz`, ds, { aciklama: 'Renk hâlâ farklı' })).json();
-    expect(it.makam).toBe('Strateji ve Kurumsal Gelişim Direktörü'); expect(it.itirazNo).toMatch(/-IT$/); // T-YG1423-ITIRAZ expect(new Date(it.son).getTime() - Date.now()).toBeGreaterThan(119 * 3_600_000);
+    expect(it.makam).toBe('Strateji ve Kurumsal Gelişim Direktörü'); expect(it.itirazNo).toMatch(/-IT$/); // T-YG1423-ITIRAZ
+    { const gn = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1`, [`itiraz-alindi:${g}`])).rows; const kt = (await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'İtiraz Alındı Bilgisi' AND nesne_kimligi = $1`, [g])).rowCount; expect(gn.length + Number(kt)).toBeGreaterThan(0); if (gn.length) { expect(gn[0].metin).toContain(it.itirazNo); expect(kt).toBe(0); } } expect(new Date(it.son).getTime() - Date.now()).toBeGreaterThan(119 * 3_600_000);
     { // T-YG1424-SORVEYOR
       expect((await o.ist('POST', `/api/garanti-sikayet/${g}/bagimsiz-sorveyor`, ds, { ad: 'Bağımsız Sörveyör', gerekce: '' })).statusCode).toBe(400);
       expect((await o.ist('POST', `/api/garanti-sikayet/${g}/bagimsiz-sorveyor`, ds, { ad: 'Deneme Sörveyör', kurum: 'Deneme Ekspertiz', gerekce: 'Renk farkının bağımsız ölçümü' })).statusCode).toBe(200);

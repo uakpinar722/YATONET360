@@ -257,6 +257,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
       {ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu') && <IsgIsiDurdur />}
       {lgm && <SikayetTeknikGorusleri />}
+      {lgm && <KanitTaleplerim />}
+      {ben.roller.some((r) => ['İç Denetçi', 'İç Denetim Müdürü'].includes(r.rol_adi)) && <OrneklemIncelemelerim />}
       {ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı'].includes(r.rol_adi)) && <YurtDisiUygunluk />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikGostergeleri />}
       {ben.roller.some((r) => r.rol_adi === 'Operasyon Müdürü') && <MudurlukGostergeleri />}
@@ -520,6 +522,34 @@ function MudurlukGostergeleri() {
   useEffect(() => { void istek<{ cilt1: typeof l }>('/yonetim-panosu').then((r) => setL(r.cilt1)).catch(() => setL([])); }, []);
   if (!l.length) return null;
   return <><div className="bolum">Müdürlük Göstergeleri</div>{l.map((x) => <div key={x.kod} className={x.renk === 'kirmizi' ? 'soru hata' : 'soru'}><span>{x.ad}: {x.deger === null ? 'Veri yok' : `${String(x.deger).replace('.', ',')} ${x.birim}`} · {x.durum}</span></div>)}</>;
+}
+
+/** YG-1671: İç Denetçinin kanıt talepleri (yanıtlayan LGM personeli). */
+function KanitTaleplerim() {
+  const [l, setL] = useState<{ kimlik: string; konu: string; son_tarih: string; denetim_no: string }[]>([]); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/ic-denetim-kanit-talebi/bana').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Kanıt Talepleri</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.denetim_no}</b><Rozet s="sari" c={`Son: ${x.son_tarih.split('-').reverse().join('.')}`} /></div><div className="not">{x.konu}</div>
+      <label htmlFor={`kt-${x.kimlik}`}>Yanıtınız</label><textarea id={`kt-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!g[x.kimlik]?.trim()} onClick={() => void istek(`/ic-denetim-kanit-talebi/${x.kimlik}/yanit`, { yanit: g[x.kimlik] }).then(() => { setM('Yanıt İç Denetçiye iletildi.'); return yk(); }).catch((e) => setM(e.message))}>Yanıtla</button></div>)}</>;
+}
+
+/** YG-1671 (YG-808, ¶2218): atanmış örneklem dosyalarının incelemesi; FR-KLT-011 denetim bulguları alanı. */
+function OrneklemIncelemelerim() {
+  const [l, setL] = useState<{ donem: string; kimlik: string; dosya_no: string }[]>([]); const [f, setF] = useState<Record<string, Record<string, string>>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/ic-denetim/orneklemim').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Dosya Örneklemi İncelemelerim</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => { const v = f[x.kimlik] ?? {}; const s = (k: string, d: string) => setF({ ...f, [x.kimlik]: { ...v, [k]: d } }); const gonder = (sonuc: string) => void istek(`/ic-denetim/orneklem/${x.donem}/${x.kimlik}/inceleme`, { sonuc, ...v }).then(() => { setM(`${x.dosya_no}: ${sonuc} kaydedildi.`); return yk(); }).catch((e) => setM(e.message));
+      return <div key={`${x.donem}-${x.kimlik}`} className="ozet kart-sol"><b>{x.donem} · {x.dosya_no}</b><div className="not">Kayıt geçerli sürüme, doğru iş paketine, yetkili kullanıcıya ve kaynak kanıta bağlı mı; sonradan tamamlanan kayıt işlem zamanından ayrılıyor mu.</div>
+        <label htmlFor={`oi-s-${x.kimlik}`}>Bulgu Sınıfı</label><select id={`oi-s-${x.kimlik}`} value={v.sinif ?? ''} onChange={(e) => s('sinif', e.target.value)}><option value="">Seçiniz</option>{['Gözlem', 'Minör', 'Majör', 'Kritik'].map((z) => <option key={z}>{z}</option>)}</select>
+        <label htmlFor={`oi-k-${x.kimlik}`}>Kanıt</label><input id={`oi-k-${x.kimlik}`} value={v.kanit ?? ''} onChange={(e) => s('kanit', e.target.value)} />
+        <label htmlFor={`oi-r-${x.kimlik}`}>Sorumlu</label><input id={`oi-r-${x.kimlik}`} value={v.sorumlu ?? ''} onChange={(e) => s('sorumlu', e.target.value)} />
+        <label htmlFor={`oi-h-${x.kimlik}`}>Hedef Tarih</label><input id={`oi-h-${x.kimlik}`} type="date" value={v.hedef ?? ''} onChange={(e) => s('hedef', e.target.value)} />
+        <div className="dugmeler"><button className="btn2 kucuk" onClick={() => gonder('Uygun')}>Uygun</button><button className="btn2 kucuk" disabled={!v.sinif || !v.kanit?.trim() || !v.sorumlu?.trim() || !v.hedef} onClick={() => gonder('Bulgulu')}>Bulguyla Kaydet</button></div></div>; })}</>;
 }
 
 /** YG-1593: tedarik müdürlük göstergeleri (son 90 gün). */

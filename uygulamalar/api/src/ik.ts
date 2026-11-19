@@ -71,7 +71,7 @@ export async function ek3Engeli(db: Db, kullanicilar: string[], yil: number): Pr
 }
 
 async function birimAmiri(c: Db, k: string): Promise<string | null> {
-  const r = (await c.query(`SELECT a.rol_ref FROM rol_atamasi a WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [k])).rows[0];
+  const r = (await c.query(`SELECT a.rol_ref FROM rol_atamasi a WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' ORDER BY (a.rol_ref IN (SELECT kimlik FROM rol WHERE rol_adi = 'İSG Sorumlusu')), a.baslangic_tarihi LIMIT 1 /* YG-1690: ikiz görev asıl rol değildir */`, [k])).rows[0];
   if (!r) return null;
   return (await rolSahipleri(c, await onayMakami(c, r.rol_ref))).find((x) => x !== k) ?? null;
 }

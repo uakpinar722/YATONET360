@@ -848,7 +848,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi a JOIN dosya d ON d.kimlik = a.dosya_ref WHERE a.kullanici_ref = $1 AND a.bitis_zamani IS NULL AND d.statu IN ('Açılış Kontrolünde', 'Aktif', 'Kontrollü Askıda') LIMIT 1`, [o.kullanici])).rowCount && !g.vekil) return y.code(400).send({ hata: 'Açık dosyanız var; vekil belirleyiniz.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO izin_talebi (personel_ref, izin_turu, baslangic, bitis, gun, vekil_ref, bolunmus, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,'Birim Amirinde') RETURNING kimlik`, [o.kullanici, g.tur, g.baslangic, g.bitis, n, g.vekil ?? null, Boolean(g.bolunmus)])).rows[0];
-      const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
+      const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' ORDER BY (a.rol_ref IN (SELECT kimlik FROM rol WHERE rol_adi = 'İSG Sorumlusu')), a.baslangic_tarihi LIMIT 1 /* YG-1690: ikiz görev asıl rol değildir */`, [o.kullanici])).rows[0];
       const amir = await onayMakami(c, rl.kimlik);
       const ik = await rolId(c, 'İnsan Kaynakları Sorumlusu');
       const zincir = (await rolSahipleri(c, ik)).length ? [amir, ik] : [amir]; // KT-1: önce birim amiri, sonra İnsan Kaynakları
@@ -866,7 +866,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (g.tarih! < new Date().toISOString().slice(0, 10)) return y.code(409).send({ hata: 'Özel araç kullanımı yolculuktan önce onaya sunulur.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO ozel_arac_onayi (personel_ref, tarih, guzergah, gerekce) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [o.kullanici, g.tarih, g.guzergah!.trim(), g.gerekce!.trim()])).rows[0];
-      const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [o.kullanici])).rows[0];
+      const rl = (await c.query(`SELECT r.kimlik FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' ORDER BY (a.rol_ref IN (SELECT kimlik FROM rol WHERE rol_adi = 'İSG Sorumlusu')), a.baslangic_tarihi LIMIT 1 /* YG-1690: ikiz görev asıl rol değildir */`, [o.kullanici])).rows[0];
       await kartAc(c, { tur: 'Özel Araç Kullanımı', baslik: `Özel Araç Kullanımı · ${g.tarih!.split('-').reverse().join('.')}`, ozet: `${g.guzergah!.trim()} · ${g.gerekce!.trim()}`, hazirlayan: o.kullanici, zincir: [await onayMakami(c, rl.kimlik)], nesneTuru: 'Özel Araç Onayı', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, durum: 'Onayda' };
     });

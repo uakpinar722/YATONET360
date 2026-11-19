@@ -34,7 +34,7 @@ export async function denemeIsle(db: Pool, simdi = new Date()): Promise<number> 
   const { rows } = await db.query(`SELECT k.kullanici_ref, (k.ise_giris_tarihi + interval '2 months')::date bitis, h.ad_soyad FROM personel_karti k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.personel_durumu <> 'Ayrıldı' AND (k.ise_giris_tarihi + interval '2 months')::date BETWEEN $1::date AND $1::date + 14 AND NOT EXISTS (SELECT 1 FROM deneme_degerlendirme d WHERE d.personel_ref = k.kullanici_ref)`, [simdi]);
   let n = 0;
   for (const p of rows) {
-    const rol = (await db.query(`SELECT a.rol_ref FROM rol_atamasi a WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' LIMIT 1`, [p.kullanici_ref])).rows[0]?.rol_ref as string | undefined;
+    const rol = (await db.query(`SELECT a.rol_ref FROM rol_atamasi a WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' ORDER BY (a.rol_ref IN (SELECT kimlik FROM rol WHERE rol_adi = 'İSG Sorumlusu')), a.baslangic_tarihi LIMIT 1 /* YG-1690: ikiz görev asıl rol değildir */`, [p.kullanici_ref])).rows[0]?.rol_ref as string | undefined;
     if (!rol) continue;
     const z = await denemeZinciri(db, rol); if (!z.length) continue;
     if (!(await birKez(db, 'deneme_degerlendirme', p.kullanici_ref))) continue;
