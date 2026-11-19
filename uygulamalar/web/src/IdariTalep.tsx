@@ -11,6 +11,7 @@ export function IdariTalep() {
   if (!v) return null;
   const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">İdari Talepler</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="not">İhtiyaç onayı silsilenizde verilir; parasal onay sipariş aşamasında tutara göre verilir: 5.000,00 EUR'ya kadar Ticari İşler Direktörü, 10.000,00 EUR'ya kadar Genel Müdür Yardımcısı, üzeri CEO.</div>
     {v.talepler.map((x) => { return <div className="soru" key={x.kimlik}><span>{x.talep_no} · {x.konu} · {x.durum}</span>
       </div>; })}
     <label htmlFor="it-k">Talep Konusu</label><input id="it-k" value={f.konu} onChange={(e) => setF({ ...f, konu: e.target.value })} />

@@ -56,7 +56,7 @@ export function sosyalMedyaYollari(s: FastifyInstance, b: Baglam) {
   });
   s.get('/sosyal-medya', oturumlu, async (i, y) => {
     if (!(await gorur(i.oturum!.kullanici))) return yok(y);
-    return (await b.db.query(`SELECT k.kimlik, k.kayit_no, k.kaynak, k.platform, k.baglanti, k.ozet, k.tespit_zamani, k.olumsuz, k.degerlendirme, k.sonuc, k.degerlendirme_zamani, (SELECT dosya_no FROM dosya WHERE kimlik = k.dosya_ref) dosya_no, k.yanit_varyant, k.yanit_zamani, ${await sozcuMu(i.oturum!.kullanici)} AS yanitlar, (k.olumsuz AND k.degerlendirme_zamani IS NULL AND k.tespit_zamani < now() - interval '2 hours') AS gecikti FROM sosyal_medya_kaydi k ORDER BY k.degerlendirme_zamani IS NULL DESC, k.tespit_zamani DESC LIMIT 200`)).rows;
+    return (await b.db.query(`SELECT k.kimlik, k.kayit_no, k.kaynak, k.platform, k.baglanti, k.ozet, k.tespit_zamani, k.olumsuz, k.degerlendirme, k.sonuc, k.degerlendirme_zamani, (SELECT dosya_no FROM dosya WHERE kimlik = k.dosya_ref) dosya_no, (SELECT kayit_no FROM garanti_sikayet WHERE kimlik = k.sikayet_ref) sikayet_no, k.yanit_varyant, k.yanit_zamani, ${await sozcuMu(i.oturum!.kullanici)} AS yanitlar, (k.olumsuz AND k.degerlendirme_zamani IS NULL AND k.tespit_zamani < now() - interval '2 hours') AS gecikti FROM sosyal_medya_kaydi k ORDER BY k.degerlendirme_zamani IS NULL DESC, k.tespit_zamani DESC LIMIT 200`)).rows;
   });
   const sozcuMu = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2 LIMIT 1`, [k, SOZCU])).rowCount);
   // YG-1466: Müşteri ve Paydaş İlişkileri Müdürü paylaşımı dosyayla eşleştirir; Dosya Sorumlusu bilgilendirilir.
@@ -74,7 +74,8 @@ export function sosyalMedyaYollari(s: FastifyInstance, b: Baglam) {
     const { metinGetir } = await import('./metin.js');
     if (varyant !== 'Genel') return metinGetir(b.db, VARYANT[varyant]!, dil);
     const sb = Object.fromEntries((await b.db.query(`SELECT anahtar, deger FROM sirket_bilgisi WHERE anahtar IN ('genel_telefon', 'genel_eposta')`)).rows.map((r) => [r.anahtar, r.deger]));
-    if (!sb.genel_telefon || !sb.genel_eposta) throw Object.assign(new Error('Genel yanıt için şirketin genel telefon ve e-posta bilgisi girilmemiştir.'), { statusCode: 409 });
+    const eksik = [!sb.genel_telefon && 'genel telefon', !sb.genel_eposta && 'genel e-posta'].filter(Boolean);
+    if (eksik.length) throw Object.assign(new Error(`Genel yanıt için şirketin ${eksik.join(' ve ')} bilgisi girilmemiştir; Dosyalı veya Olumlu şablonu kullanabilirsiniz.`), { statusCode: 409 });
     return metinGetir(b.db, VARYANT.Genel!, dil, { 'e-posta': sb.genel_eposta, 'e-mail': sb.genel_eposta, telefon: sb.genel_telefon, phone: sb.genel_telefon });
   };
   s.get('/sosyal-medya/:id/yanit-metni', oturumlu, async (i, y) => {
@@ -99,6 +100,30 @@ export function sosyalMedyaYollari(s: FastifyInstance, b: Baglam) {
     await bildir(b.db, { olay: `sosyal-yanit:${id}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, MPM)), baslik: `Sosyal Medya Paylaşımı Yanıtlandı: ${k.kayit_no}`, ozet: `${g.varyant} şablon (${g.dil === 'tr' ? 'Türkçe' : 'İngilizce'})` });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sosyal Medya Yanıtlandı', nesneTuru: 'Sosyal Medya Kaydı', nesneKimligi: id, yeni: { varyant: g.varyant, dil: g.dil }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { metin };
+  });
+  // YG-1466: dosyayla eşleşen paylaşım şikâyetse SKnn kaydı kendiliğinden açılır (kanal Sosyal Medya; 10 iş günü yanıt; Şikâyet Takibi). Yanıt platformda sözcünün onaylı şablonuyla verilir.
+  s.post('/sosyal-medya/:id/sikayet', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2`, [o.kullanici, MPM])).rowCount) return yok(y);
+    const k = (await b.db.query(`SELECT s.*, d.dosya_no, d.konum FROM sosyal_medya_kaydi s LEFT JOIN dosya d ON d.kimlik = s.dosya_ref WHERE s.kimlik = $1`, [id])).rows[0]; if (!k) return yok(y);
+    if (!k.dosya_ref) return y.code(409).send({ hata: 'Şikâyet kaydı için önce paylaşımı dosyayla eşleştiriniz.' });
+    if (k.sikayet_ref) return y.code(409).send({ hata: 'Bu paylaşım için şikâyet kaydı açılmıştır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const { altNumara } = await import('./sure.js'); const { isGunuSonu } = await import('./teklif.js');
+      const no = await altNumara(c, k.dosya_no, 'SK'); const simdi = new Date(); const yanitSon = await isGunuSonu(c, simdi, 10);
+      const takip = (await rolSahipleri(c, await rolId(c, 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı')))[0] ?? null;
+      const sonuc = (await rolSahipleri(c, await rolId(c, MPM)))[0] ?? null;
+      const konu = `${k.platform} paylaşımı (${k.kayit_no}): ${String(k.ozet).slice(0, 300)}`;
+      const r = (await c.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, konum, oncelik, tekrarlayan, sikayet_konusu, yanit_son, sikayet_takip_ref, sikayet_sonuc_ref, olusturan_ref) VALUES ($1,$2,ARRAY['Şikâyet'],'Sosyal Medya',$3,$4,'Normal',false,$5,$6,$7,$8,$9) RETURNING kimlik`,
+        [no, k.dosya_ref, k.tespit_zamani, k.konum, konu, yanitSon, takip, sonuc, o.kullanici])).rows[0];
+      await c.query(`UPDATE sosyal_medya_kaydi SET sikayet_ref = $2 WHERE kimlik = $1`, [id, r.kimlik]);
+      if (takip) await kartAc(c, { tur: 'Şikâyet Takibi', kategori: 'islem', baslik: `${no} · Şikâyet Kaydı ve İlk Teyit`, ozet: konu.slice(0, 200), sahipKullanici: takip, sonZaman: yanitSon, nesneTuru: 'Garanti Şikâyet', nesneKimligi: r.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sosyal Medya Şikâyet Kaydı', nesneTuru: 'Sosyal Medya Kaydı', nesneKimligi: id, yeni: { kayitNo: no }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { kayitNo: no };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   s.post('/sosyal-medya/:id/degerlendir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { degerlendirme?: string; sonuc?: string };

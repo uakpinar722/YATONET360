@@ -11,7 +11,10 @@ import { etkinRoller } from './yetki.js';
 import { MESLEKI } from './onay_sure.js';
 
 /** Buton standardı YG-1637: ara kademede Onaya Gönder, son makamda Onayla / Reddet, her kademede Gerekçeyle İade Et. */
-export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade Et' | 'Yeniden Gönder' | 'Tamamlandı' | 'Geri Çek' | 'Kademe Atla';
+export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade Et' | 'Yeniden Gönder' | 'Tamamlandı' | 'Geri Çek' | 'Kademe Atla' | 'İncelendi';
+/** YG-1694, A46-S5, A53-S4: bilgi amaçlı raporlar "İncelendi Olarak Kaydet" ile kapanır; gönderen bilgilendirilir (hazırlayan yoksa raporu hazırlayan rol). */
+export const INCELEME_TURLERI: Record<string, string | null> = { 'Aylık İSG Göstergeleri': 'İSG Sorumlusu', 'Aylık Destek İstatistiği': null, 'Haftalık Uygunsuzluk Süre Raporu': null };
+export const INCELENDI_METNI = 'İncelediğiniz kayda geçer; gönderen kişiye bilgi gider.';
 
 export interface KartGirdisi {
   tur: string; baslik: string; ozet?: string; oncelik?: string; hazirlayan?: string | null; zincir?: string[];
@@ -159,6 +162,10 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
         if (k.durum !== 'İade Edildi' || k.hazirlayan_ref !== o.kullanici) return dur(403, 'Bu işlem için yetkiniz bulunmamaktadır.');
         yeni = { durum: 'Bekliyor', kademe: 0, kapanir: false };
         hedef = await rolSahipleri(c, k.zincir[0]); baslik = `Yeniden Gönderildi: ${k.baslik}`;
+      } else if (karar === 'İncelendi') { // YG-1694
+        if (!(k.tur in INCELEME_TURLERI) || k.kategori === 'onay' || k.durum !== 'Bekliyor' || !(k.sahip_kullanici_ref === o.kullanici || roller.includes(k.sahip_rol_ref) || roller.includes(k.ust_rol_ref))) return dur(403, 'Bu işlem için yetkiniz bulunmamaktadır.');
+        yeni = { durum: 'Tamamlandı', kademe: k.kademe, kapanir: true }; baslik = `İncelendi: ${k.baslik}`;
+        const gr = INCELEME_TURLERI[k.tur]; hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : gr ? await rolSahipleri(c, (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [gr])).rows[0]?.kimlik ?? '') : [];
       } else if (karar === 'Tamamlandı') {
         if (k.kategori === 'onay' || k.durum !== 'Bekliyor' || !(k.sahip_kullanici_ref === o.kullanici || roller.includes(k.sahip_rol_ref) || roller.includes(k.ust_rol_ref))) return dur(403, 'Bu işlem için yetkiniz bulunmamaktadır.');
         yeni = { durum: 'Tamamlandı', kademe: k.kademe, kapanir: true };

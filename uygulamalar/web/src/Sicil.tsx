@@ -54,6 +54,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           </>}
           <label htmlFor="fs-b">Belge Türü</label><input id="fs-b" list="fs-bl" value={belge.tur} onChange={(e) => setBelge({ ...belge, tur: e.target.value })} /><datalist id="fs-bl"><option value="Sorumluluk Sigortası" /><option value="Gözetimdeki Yat Sigortası" /><option value="SGK Borcu Yoktur Yazısı" /><option value="Vergi Borcu Yoktur Yazısı" /></datalist>
           <AdayTemas id={secili} />
+          <AcilBirimFiyat id={secili} yap={yap} />
           <OnKayit id={secili} yap={yap} />
           <label htmlFor="fs-t">Geçerlilik Bitişi</label><input id="fs-t" type="date" value={belge.bitis} onChange={(e) => setBelge({ ...belge, bitis: e.target.value })} />
           {/sigorta/i.test(belge.tur) && <><label htmlFor="fs-l">Poliçe Limiti (EUR)</label><input id="fs-l" inputMode="decimal" value={belge.limit} onChange={(e) => setBelge({ ...belge, limit: e.target.value })} /><label><input type="checkbox" checked={belge.gozetim} onChange={(e) => setBelge({ ...belge, gozetim: e.target.checked })} /> Gözetim ve Muhafazadaki Yat Dahil</label></>}
@@ -248,4 +249,21 @@ export function NobetTeknikTaraf() {
       </div>
     </>
   );
+}
+
+/** YG-1473: Çözüm Ortağının acil birim fiyatları (çıkış, ekip-saat, ekipman); ekip-saat kartela bandı dışındaysa gerekçe. Müşteriye ve kartelaya gösterilmez. */
+function AcilBirimFiyat({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [v, setV] = useState<{ fiyat: { cikis_eur: string; ekip_saat_eur: string; ekipman_eur: string } | null; ekipSaatBandi: { alt: number; ust: number } | null } | null>(null);
+  const [f, setF] = useState({ cikis: '', ekipSaat: '', ekipman: '', gerekce: '' });
+  const yk = () => istek<NonNullable<typeof v>>(`/firma/${id}/acil-birim-fiyat`).then((r) => { setV(r); if (r.fiyat) setF({ cikis: r.fiyat.cikis_eur, ekipSaat: r.fiyat.ekip_saat_eur, ekipman: r.fiyat.ekipman_eur, gerekce: '' }); }).catch(() => setV(null));
+  useEffect(() => { void yk(); }, [id]);
+  if (!v) return null;
+  const n = (x: string) => Number(x.replace(/\./g, '').replace(',', '.'));
+  return <details><summary>Acil Birim Fiyatları</summary>
+    {v.ekipSaatBandi && <div className="not">Ekip-saat kartela bandı: {v.ekipSaatBandi.alt.toLocaleString('tr-TR', { minimumFractionDigits: 2 })}–{v.ekipSaatBandi.ust.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR</div>}
+    <label htmlFor="af-c">Çıkış (EUR)</label><input id="af-c" inputMode="decimal" value={f.cikis} onChange={(e) => setF({ ...f, cikis: e.target.value })} />
+    <label htmlFor="af-e">Ekip-Saat (EUR)</label><input id="af-e" inputMode="decimal" value={f.ekipSaat} onChange={(e) => setF({ ...f, ekipSaat: e.target.value })} />
+    <label htmlFor="af-k">Ekipman (EUR)</label><input id="af-k" inputMode="decimal" value={f.ekipman} onChange={(e) => setF({ ...f, ekipman: e.target.value })} />
+    <label htmlFor="af-g">Bant Dışı Gerekçe</label><input id="af-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/firma/${id}/acil-birim-fiyat`, { cikis: n(f.cikis), ekipSaat: n(f.ekipSaat), ekipman: f.ekipman ? n(f.ekipman) : 0, gerekce: f.gerekce || undefined }).then(yk), 'Acil birim fiyatları kaydedildi.')}>Kaydet</button></details>;
 }

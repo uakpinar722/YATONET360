@@ -139,7 +139,7 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
     const yazilar = (await b.db.query(`SELECT kimlik, yazi_no, varyant, durum, olusturma_zamani FROM garanti_sikayet_yazisi WHERE kayit_ref = $1 ORDER BY olusturma_zamani`, [g.kimlik])).rows;
     const teknikGorusler = (await b.db.query(`SELECT t.kimlik, t.soru, t.gorus, t.istem_zamani, t.gorus_zamani, h.ad_soyad veren FROM sikayet_teknik_gorus t LEFT JOIN kullanici_hesabi h ON h.kimlik = t.veren_ref WHERE t.kayit_ref = $1 ORDER BY t.istem_zamani`, [g.kimlik])).rows; // YG-1701
     const sorveyorler = (await b.db.query(`SELECT kimlik, sorveyor_adi, kurum, iletisim, gerekce, zaman, rapor_tarihi::text rapor_tarihi, sonuc FROM garanti_sikayet_sorveyor WHERE kayit_ref = $1 ORDER BY zaman`, [g.kimlik])).rows; // YG-1424
-    return { yazilar, teknikGorusler, gorusIster: await rolVar(o.kullanici, [ONAYCI]), sorveyorler, sorveyorYetkili: Boolean(g.itiraz_zamani) && await sorveyorYetkili(g, o.kullanici), kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
+    return { yazilar, teknikGorusler, gorusIster: await rolVar(o.kullanici, [ONAYCI]), sorveyorler, sorveyorYetkili: Boolean(g.itiraz_zamani) && await sorveyorYetkili(g, o.kullanici), kaliteYonlendirir: await rolVar(o.kullanici, [ONAYCI]), hazirlar: await hazirlayabilir(g, o.kullanici), itiraz: { zaman: g.itiraz_zamani, son: g.itiraz_son, makam: g.itiraz_makami, sonuc: g.itiraz_sonucu, no: g.itiraz_no }, itirazKarar: Boolean(g.itiraz_zamani && !g.itiraz_sonucu && g.itiraz_makami && g.karar_veren_ref !== o.kullanici && (await rolVar(o.kullanici, [g.itiraz_makami]))), yanitVar: Boolean(g.yanit_zamani), takipSon: g.takip_son };
   });
 
   s.post('/garanti-sikayet/:id/yanit-yazisi', oturumlu, async (i, y) => {
@@ -179,9 +179,17 @@ export function garantiYanitYollari(s: FastifyInstance, b: Baglam) {
     if (g.itiraz_zamani) return y.code(409).send({ hata: 'Bu kayıtta itiraz zaten kaydedilmiştir.' });
     if (Date.now() - new Date(g.yanit_zamani).getTime() > 15 * 86_400_000) return y.code(409).send({ hata: 'İtiraz süresi (yanıttan sonra 15 gün) geçmiştir.' });
     const makam = await ustKademe(g); const son = new Date(Date.now() + 120 * 3_600_000);
-    await b.db.query(`UPDATE garanti_sikayet SET itiraz_zamani = now(), itiraz_son = $2, itiraz_aciklamasi = $3, itiraz_makami = $4 WHERE kimlik = $1`, [g.kimlik, son, aciklama.trim(), makam]);
+    const itirazNo = `${g.kayit_no}-IT`; // YG-1423: itiraz ayrı kayıt numarasıyla
+    await b.db.query(`UPDATE garanti_sikayet SET itiraz_zamani = now(), itiraz_son = $2, itiraz_aciklamasi = $3, itiraz_makami = $4, itiraz_no = $5 WHERE kimlik = $1`, [g.kimlik, son, aciklama.trim(), makam, itirazNo]);
+    // YG-1423: alındı bildirimi onaylı BLD-63-IT metniyle; metin yürürlükte değilse gönderilmez, Dosya Sorumlusuna iletme görevi açılır.
+    { const d = (await b.db.query(`SELECT d.yazisma_dili, d.vefat_isareti, t.telefon, t.eposta FROM dosya d LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [g.dosya_ref])).rows[0];
+      const dil = (await import('./ihbar.js')).dilKod(d?.yazisma_dili);
+      const metinVar = (await b.db.query(`SELECT 1 FROM sablon_metni WHERE kod = 'BLD-63-IT' AND dil = $1 AND durum = 'Yürürlükte'`, [dil])).rowCount;
+      const zmn = new Date().toLocaleString(dil === 'en' ? 'en-GB' : 'tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+      if (metinVar && d && !d.vefat_isareti && (d.telefon || d.eposta)) await (await import('./ihbar.js')).yatTarafinaYaz(b.db, { olay: `itiraz-alindi:${g.kimlik}`, kod: 'BLD-63-IT', dil, konu: `${itirazNo} İtirazınız Alındı`, telefon: d.telefon, eposta: d.eposta, alanlar: { ITnn: itirazNo, SKnn: g.kayit_no, 'Kayıt No': g.kayit_no, 'Record No': g.kayit_no, 'Dosya No': g.dosya_no, 'File No': g.dosya_no, 'tarih saat': zmn, 'date time': zmn, 'ilgili makam': makam, 'reviewing authority': makam, süre: '120 saat', period: '120 hours' } });
+      else if (g.dosya_sorumlusu_ref) await kartAc(b.db, { tur: 'İtiraz Alındı Bilgisi', kategori: 'gorev', baslik: `${itirazNo} · İtiraz Alındı Bilgisi`, ozet: `Yat sahibine itirazın ${itirazNo} numarasıyla alındığını, ${makam} tarafından inceleneceğini ve sonucun 120 saat içinde bildirileceğini iletiniz.`, sahipKullanici: g.dosya_sorumlusu_ref, nesneTuru: 'Garanti Şikâyet', nesneKimligi: g.kimlik }); }
     await kartAc(b.db, { tur: 'Şikâyet İtirazı', kategori: 'islem', baslik: `${g.kayit_no} · İtiraz İncelemesi`, ozet: aciklama.trim().slice(0, 200), sahipRol: await rolId(b.db, makam), sonZaman: son, oncelik: 'Yüksek', nesneTuru: 'Garanti Şikâyet', nesneKimligi: g.kimlik });
-    return { makam, son };
+    return { makam, son, itirazNo };
   });
 
   // YG-1701 (A53-Z1): Müşteri ve Paydaş İlişkileri Müdürü "Görüş İste"; dosyanın Teknik Yöneticisi (atanmamışsa Teknik Yönetici rolü) "Görüşü Gönder".

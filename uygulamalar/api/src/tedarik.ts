@@ -82,6 +82,8 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (!(await tedarikSorumlusu(o.kullanici))) return y.code(403).send({ hata: 'Siparişi Tedarik Sorumlusu hazırlar.' });
     if (!g.tedarikci || !UUID.test(g.tedarikci) || !g.teklifRef?.trim() || !g.kullanim?.trim() || !g.teslimTarihi || !g.teslimYeri?.trim() || !g.olcut?.trim() || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Tedarikçi, teklif, kullanım yeri, teslim, kabul ölçütü ve seçim gerekçesi zorunludur.' });
     const kl = g.kalemler ?? [];
+    const ks = (i.body as { kritikSinif?: string; belgeSartlari?: string }).kritikSinif || null; const bs = (i.body as { belgeSartlari?: string }).belgeSartlari?.trim() || null; // YG-1593
+    if (ks && !['K1', 'K2', 'K3', 'K4'].includes(ks)) return y.code(400).send({ hata: 'Kritik sınıfı K1–K4 arasından seçiniz.' });
     if (!kl.length || kl.some((k) => !k.tanim?.trim() || !k.parcaNo?.trim() || !(Number(k.miktar) > 0) || !k.birim?.trim() || !(Number(k.bedel) >= 0))) return y.code(400).send({ hata: 'Kalem bilgileri eksiktir.' });
     const f = (await b.db.query(`SELECT kayit_rolu, kayit_asamasi, ag_statusu FROM kurulus WHERE kimlik = $1`, [g.tedarikci])).rows[0];
     if (!f || f.kayit_rolu !== 'Tedarikçi') return y.code(400).send({ hata: 'Kayıt tedarikçi değildir.' });
@@ -95,7 +97,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
       if (bt.guncelButce > 0 && R2(bt.bitisTahmini + matrah) > R2(bt.guncelButce + bt.rezervKalan)) return y.code(409).send({ hata: `Sipariş dosya bütçesini aşıyor (bütçe ${tutar(bt.guncelButce)} EUR, tahmini bitiş ${tutar(R2(bt.bitisTahmini + matrah))} EUR); değişiklik kaydı veya risk rezervi kullanım talebi gerekir.` }); }
     return islem(async (c) => {
       const no = await disNumara(c, 'SP'); // YG-298: dosya kimliği tedarikçiye görünmez
-      const r = (await c.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kismi_teslim_izni, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, dil) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`, [no, id, g.tedarikci, g.teklifRef!.trim(), g.kullanim!.trim(), matrah, kdv, R2(matrah + kdv), g.teslimTarihi, g.teslimYeri!.trim(), Boolean(g.kismi), g.olcut!.trim(), g.gerekce!.trim(), o.kullanici, g.dil === 'İngilizce' ? 'İngilizce' : 'Türkçe'])).rows[0];
+      const r = (await c.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kismi_teslim_izni, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, dil, kritik_sinif, belge_giris_sartlari) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`, [no, id, g.tedarikci, g.teklifRef!.trim(), g.kullanim!.trim(), matrah, kdv, R2(matrah + kdv), g.teslimTarihi, g.teslimYeri!.trim(), Boolean(g.kismi), g.olcut!.trim(), g.gerekce!.trim(), o.kullanici, g.dil === 'İngilizce' ? 'İngilizce' : 'Türkçe', ks, bs])).rows[0];
       let n = 0;
       for (const k of kl) await c.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur, muadil_orijinal_no) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [r.kimlik, ++n, k.tanim!.trim(), k.parcaNo!.trim(), k.miktar, k.birim!.trim(), k.bedel, R2(Number(k.miktar) * Number(k.bedel)), k.muadilOrijinal?.trim() || null]);
       // YG-868: teslim süresi 14 günü aşan parça uzun terminlidir; onay zincirinin sonuna GMY eklenir.
@@ -128,8 +130,10 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
       { ad: 'Onaylı Kaynak', sonuc: s.ag_statusu === 'Aktif' && ['Onaylı', 'Koşullu Onaylı'].includes(s.kayit_asamasi), aciklama: `${s.ticari_unvan} · ${s.kayit_asamasi} · ${s.ag_statusu}` },
       { ad: 'Eşik Altına Bölünmeme', sonuc: diger.n === 0, aciklama: diger.n === 0 ? 'Aynı dosyada bu tedarikçiye başka sipariş yoktur.' : `Aynı dosyada bu tedarikçiye ${diger.n} sipariş daha var (${tutar(diger.t)} EUR); onay makamı kümülatif tutarla belirlenmiştir.` },
       { ad: 'Görev Ayrılığı', sonuc: s.hazirlayan_ref !== o.kullanici && !onaylayan, aciklama: s.hazirlayan_ref === o.kullanici ? 'Siparişi siz hazırladınız; karar veremezsiniz.' : 'Hazırlayan onay zincirinde karar vermemiştir.' },
+      // YG-1593: K3/K4 kritik kalemde belge (sertifika, uygunluk belgesi) ve giriş kontrolü şartları siparişte yazılı olmalıdır.
+      { ad: 'K3/K4 Belge ve Giriş Kontrolü Şartı', sonuc: Boolean(s.kritik_sinif) && (!['K3', 'K4'].includes(s.kritik_sinif) || String(s.belge_giris_sartlari ?? '').trim().length > 0), aciklama: !s.kritik_sinif ? 'Kritik sınıf girilmemiştir.' : ['K3', 'K4'].includes(s.kritik_sinif) ? (String(s.belge_giris_sartlari ?? '').trim() ? `${s.kritik_sinif}: ${s.belge_giris_sartlari}` : `${s.kritik_sinif} kalemde belge ve giriş kontrolü şartları siparişte yazılı değildir.`) : `${s.kritik_sinif}: ek belge şartı aranmaz.` },
     ];
-    return { siparisNo: s.siparis_no, kdvHaric: Number(s.kdv_haric_eur), sonMakam: k.son_makam, kontroller };
+    return { siparisNo: s.siparis_no, kdvHaric: Number(s.kdv_haric_eur), kritikSinif: s.kritik_sinif, sonMakam: k.son_makam, kontroller };
   });
   s.get('/dosya/:id/siparisler', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };

@@ -72,7 +72,14 @@ describe('kurumsal iletişim talebi (YG-1556)', () => {
     expect((await o.kart('Kurumsal İletişim Talebi', t)).durum).toBe('Tamamlandı');
     const m = await o.gir('mpm'); expect((await o.ist('GET', '/api/kurum-talebi', m)).json().talepler.length).toBe(1);
     expect((await o.ist('POST', `/api/kurum-talebi/${t}/sonuc`, m, { durum: 'Kapatıldı' })).statusCode).toBe(400);
-    expect((await o.ist('POST', `/api/kurum-talebi/${t}/sonuc`, m, { durum: 'Davet Edildi' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/kurum-talebi/${t}/sonuc`, m, { durum: 'Davet Edildi' })).statusCode).toBe(409);
+    // T-YG1701-KARAR: Kararı Kaydet → davet kendiliğinden, Firma Yönetimi Müdürüne sonuç
+    expect((await o.ist('POST', `/api/kurum-talebi/${t}/karar`, m, { karar: 'Hesap Açılsın' })).statusCode).toBe(400);
+    const kr = await o.ist('POST', `/api/kurum-talebi/${t}/karar`, m, { karar: 'Hesap Açılsın', gorusme: 'Çerçeve görüşme yapıldı; broker portalı açılacak' }); expect(kr.statusCode, kr.body).toBe(200);
+    expect((await o.sup.query(`SELECT kullanici_grubu FROM kullanici_hesabi WHERE kimlik = $1`, [kr.json().kullanici])).rows[0].kullanici_grubu).toBe('Broker, Acente, Yat Brokeri, Kaptan');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari = $1`, [`kurum-talebi-davet:${t}`])).rows[0].n).toBe(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.fym, `kurum-karar:${t}`])).rows[0].n).toBe(1);
+    expect((await o.ist('POST', `/api/kurum-talebi/${t}/karar`, m, { karar: 'Hesap Açılmasın', gorusme: 'X' })).statusCode).toBe(409);
     expect((await o.kart('Kurumsal Talep Görüşmesi', t)).durum).toBe('Tamamlandı');
   });
 });

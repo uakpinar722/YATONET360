@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 const VARYANT = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı', 'İtiraz İnceleme Sonucu', 'Ara Bilgilendirme', 'Takip Kontrolü', 'Talep Yanıtı'];
-interface Durum { teknikGorusler?: { kimlik: string; soru: string; gorus: string | null; veren: string | null }[]; gorusIster?: boolean; sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
+interface Durum { teknikGorusler?: { kimlik: string; soru: string; gorus: string | null; veren: string | null }[]; gorusIster?: boolean; sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null; no?: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
 
 /** YG-728: FR-KLT-016 yanıt yazısı (6 varyant), itiraz kaydı ve üst kademe kararı. */
 export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
@@ -18,7 +18,7 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
   return <div className="tam">
     <GarantiGecmis id={id} />
     {v.yazilar.map((x) => <div key={x.kimlik}>{x.yazi_no} · {x.varyant} · {x.durum}</div>)}
-    {v.itiraz.zaman && <div className="not">İtiraz: {tarih(v.itiraz.zaman)} · İnceleyen: {v.itiraz.makam} · Son: {tarih(v.itiraz.son)}{v.itiraz.sonuc ? ` · Sonuç: ${v.itiraz.sonuc}` : ''}</div>}
+    {v.itiraz.zaman && <div className="not">İtiraz{v.itiraz.no ? ` ${v.itiraz.no}` : ''}: {tarih(v.itiraz.zaman)} · İnceleyen: {v.itiraz.makam} · Son: {tarih(v.itiraz.son)}{v.itiraz.sonuc ? ` · Sonuç: ${v.itiraz.sonuc}` : ''}</div>}
     {v.takipSon && <div className="not">Takip Kontrolü: {tarih(v.takipSon)}</div>}
     {v.teknikGorusler?.map((x) => <div key={x.kimlik} className="not">Teknik Görüş Talebi: {x.soru} · {x.gorus ? `Görüş (${x.veren}): ${x.gorus}` : 'Teknik Yönetici görüşü bekleniyor'}</div>)}
     {v.gorusIster && !v.teknikGorusler?.some((x) => !x.gorus) && <>{/* YG-1701 (A53-Z1) */}

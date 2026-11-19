@@ -108,13 +108,15 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   );
 }
 
+const INCELEME = ['Aylık İSG Göstergeleri', 'Aylık Destek İstatistiği', 'Haftalık Uygunsuzluk Süre Raporu']; // YG-1694: is_motoru.ts INCELEME_TURLERI
 function IslemKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   const [hata, setHata] = useState(''); const [er, setEr] = useState<{ yeniSon: string; gerekce: string } | null>(null);
   return (
     <div className="ozet kart-sol">
       <KartUst k={k} />
       {hata && <div className="hata" role="alert">{hata}</div>}
-      <div className="dugmeler"><button className="btn2" onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Tamamlandı' }).then(yenile).catch((e) => setHata(e.message))}>Tamamlandı</button><button className="btn2" onClick={() => setEr(er ? null : { yeniSon: '', gerekce: '' })}>Ertele</button></div>
+      {INCELEME.includes(k.tur) && <div className="not">İncelediğiniz kayda geçer; gönderen kişiye bilgi gider.</div>}
+      <div className="dugmeler">{INCELEME.includes(k.tur) ? <button className="btn2" title="İncelediğiniz kayda geçer; gönderen kişiye bilgi gider." onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'İncelendi' }).then(yenile).catch((e) => setHata(e.message))}>İncelendi Olarak Kaydet</button> : <button className="btn2" onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Tamamlandı' }).then(yenile).catch((e) => setHata(e.message))}>Tamamlandı</button>}<button className="btn2" onClick={() => setEr(er ? null : { yeniSon: '', gerekce: '' })}>Ertele</button></div>
       {er && <div className="tam"><label htmlFor={`er-s-${k.kimlik}`}>Yeni Son Tarih</label><input id={`er-s-${k.kimlik}`} type="datetime-local" value={er.yeniSon} onChange={(e) => setEr({ ...er, yeniSon: e.target.value })} /><label htmlFor={`er-g-${k.kimlik}`}>Gerekçe</label><input id={`er-g-${k.kimlik}`} value={er.gerekce} onChange={(e) => setEr({ ...er, gerekce: e.target.value })} /><button className="btn2 kucuk" disabled={!er.yeniSon || !er.gerekce.trim()} onClick={() => void istek(`/is/${k.kimlik}/ertele`, { yeniSon: new Date(er.yeniSon).toISOString(), gerekce: er.gerekce }).then(yenile).catch((e) => setHata(e.message))}>Ertelemeyi Kaydet</button></div>}
     </div>
   );
@@ -243,6 +245,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
       {ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu') && <IsgIsiDurdur />}
       {lgm && <SikayetTeknikGorusleri />}
+      {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikGostergeleri />}
+      {ben.roller.some((r) => ['Kalite Yöneticisi', 'Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKontrolKayitlari />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
       {lgm && <YukselenCagri />}
@@ -293,7 +297,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Teknik Uzman') && <Raporlarim />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
-      {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Risk ve Kalite Direktörü'].includes(r.rol_adi)) && <KritikUygunsuzlukAcil />}
+      {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Risk ve Kalite Direktörü'].includes(r.rol_adi)) && <KritikUygunsuzlukAcil rkd={ben.roller.some((r) => r.rol_adi === 'Risk ve Kalite Direktörü')} />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKalitePlanlari />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü', 'Kalite Yöneticisi'].includes(r.rol_adi)) && <KalibrasyonEnvanteri />}
       {ben.roller.some((r) => ['Tedarik Yöneticisi', 'Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikPano />}
@@ -442,11 +446,14 @@ function Raporlarim() {
 }
 
 /** YG-1691, YG-1693: açık Kritik uygunsuzluklar (Acil, sayaçsız; karar seviyesi Kalite Müdürü ve Teknik Müdür). */
-function KritikUygunsuzlukAcil() {
-  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; dosya_no: string; gercek_durum: string | null; statu: string; sinif: string; emniyet_isareti: boolean }[]>([]);
-  useEffect(() => { void istek<typeof l>('/kalite/kritik-uygunsuzluklar').then(setL).catch(() => setL([])); }, []);
+function KritikUygunsuzlukAcil({ rkd = false }: { rkd?: boolean }) {
+  const [l, setL] = useState<{ kimlik: string; uygunsuzluk_no: string; dosya_no: string; gercek_durum: string | null; statu: string; sinif: string; emniyet_isareti: boolean; direktor_sorumlu_birim?: string | null; direktor_hedef?: string | null }[]>([]);
+  const [kr, setKr] = useState<Record<string, { birim: string; hedef: string; not: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/kalite/kritik-uygunsuzluklar').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  const direktor = rkd; // YG-1694: Kararı Kaydet yalnız Risk ve Kalite Direktörü
   if (!l.length) return null;
-  return <><div className="bolum">Acil</div>{l.map((u) => <div key={u.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>{u.sinif === 'Kritik' ? 'Kritik Uygunsuzluk' : `${u.sinif} Uygunsuzluk`}{u.emniyet_isareti ? ' · Emniyet İşaretli' : ''} · {u.dosya_no}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.uygunsuzluk_no} · {u.statu}{u.gercek_durum ? ` · ${u.gercek_durum}` : ''}</div></div>)}</>;
+  return <><div className="bolum">Acil</div>{l.map((u) => <div key={u.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>{u.sinif === 'Kritik' ? 'Kritik Uygunsuzluk' : `${u.sinif} Uygunsuzluk`}{u.emniyet_isareti ? ' · Emniyet İşaretli' : ''} · {u.dosya_no}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.uygunsuzluk_no} · {u.statu}{u.gercek_durum ? ` · ${u.gercek_durum}` : ''}</div>{direktor && <div className="tam">{u.direktor_sorumlu_birim && <div className="not">Karar: {u.direktor_sorumlu_birim} · Hedef {u.direktor_hedef?.split('-').reverse().join('.')}</div>}<label htmlFor={`rk-b-${u.kimlik}`}>Sorumlu Birim</label><input id={`rk-b-${u.kimlik}`} value={kr[u.kimlik]?.birim ?? ''} onChange={(e) => setKr({ ...kr, [u.kimlik]: { ...(kr[u.kimlik] ?? { birim: '', hedef: '', not: '' }), birim: e.target.value } })} /><label htmlFor={`rk-h-${u.kimlik}`}>Hedef Tarih</label><input id={`rk-h-${u.kimlik}`} type="date" value={kr[u.kimlik]?.hedef ?? ''} onChange={(e) => setKr({ ...kr, [u.kimlik]: { ...(kr[u.kimlik] ?? { birim: '', hedef: '', not: '' }), hedef: e.target.value } })} /><label htmlFor={`rk-n-${u.kimlik}`}>Not</label><input id={`rk-n-${u.kimlik}`} value={kr[u.kimlik]?.not ?? ''} onChange={(e) => setKr({ ...kr, [u.kimlik]: { ...(kr[u.kimlik] ?? { birim: '', hedef: '', not: '' }), not: e.target.value } })} /><button className="btn2 kucuk" disabled={!kr[u.kimlik]?.birim?.trim() || !kr[u.kimlik]?.hedef} onClick={() => void istek(`/uygunsuzluk/${u.kimlik}/direktor-karar`, kr[u.kimlik]).then(() => { setM('Karar kaydedildi; Kalite Müdürü ve Teknik Müdür bilgilendirildi.'); return yk(); }).catch((e) => setM(e.message))}>Kararı Kaydet</button></div>}</div>)}{m && <div className="not" role="status">{m}</div>}</>;
 }
 
 /** YG-1690: iş emri açılan dosyada eksik kalite planı, kabul matrisi veya muayene ve test planı; "Eksikliği Bildir". */
@@ -472,6 +479,25 @@ function BirimGorusleri() {
       <label htmlFor={`bg-${x.kimlik}`}>Görüş</label><select id={`bg-${x.kimlik}`} value={v.sonuc} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, sonuc: e.target.value } })}><option value="">Seçiniz</option><option>Uygun</option><option>Koşullu</option><option>Uygun Değil</option></select>
       <label htmlFor={`bn-${x.kimlik}`}>Gerekçe</label><input id={`bn-${x.kimlik}`} value={v.not} onChange={(e) => setS({ ...s, [x.kimlik]: { ...v, not: e.target.value } })} />
       <button className="btn2 kucuk" disabled={!v.sonuc || (v.sonuc !== 'Uygun' && !v.not.trim())} onClick={() => void istek(`/firma-birim-gorusu/${x.kimlik}/gonder`, v).then(() => { setM('Görüş talep edene gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Görüşü Gönder</button></div>; })}</>;
+}
+
+/** YG-1593: tedarik müdürlük göstergeleri (son 90 gün). */
+function TedarikGostergeleri() {
+  const [l, setL] = useState<{ ad: string; deger: number | null; pay: number; payda: number; hedef: string }[]>([]);
+  useEffect(() => { void istek<typeof l>('/tedarik/mudurluk-gostergeleri').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  return <><div className="bolum">Müdürlük Göstergeleri (Son 90 Gün)</div>{l.map((x) => <div key={x.ad} className="soru"><span>{x.ad}: {x.deger === null ? 'Veri yok' : `%${String(x.deger).replace('.', ',')} (${x.pay}/${x.payda})`} · Hedef {x.hedef}</span></div>)}</>;
+}
+
+/** YG-1687: Kayıt Disiplini · Eksik Kontrol Kayıtları; kontrolörden "Düzeltme İste". */
+function EksikKontrolKayitlari() {
+  const [l, setL] = useState<{ kimlik: string; tur: string; no: string; dosya_no: string; eksik: string; kontrolor_adi: string | null; istendi: boolean }[]>([]); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/kalite/eksik-kontrol-kayitlari').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  return <><div className="bolum">Eksik Kontrol Kayıtları</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.no} · {x.dosya_no}</b><Rozet s={x.istendi ? 'gri' : 'sari'} c={x.istendi ? 'Düzeltme İstendi' : x.tur} /></div><div className="not">{x.eksik} · Kontrolör: {x.kontrolor_adi ?? 'Atanmamış'}</div>
+      {!x.istendi && x.kontrolor_adi && <button className="btn2 kucuk" onClick={() => void istek(`/kalite/eksik-kontrol-kaydi/${x.kimlik}/duzeltme-iste`, {}).then(() => { setM('Düzeltme kontrolörden istendi.'); return yk(); }).catch((e) => setM(e.message))}>Düzeltme İste</button>}</div>)}</>;
 }
 
 /** YG-1701 (A53-Z1): şikâyette Teknik Yöneticiden istenen teknik görüş; onay kademesi değildir, "Görüşü Gönder". */

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
-import { bildir } from './bildirim.js';
+import { bildir, disGonder } from './bildirim.js';
+import { davetOlustur } from './ilk_giris.js';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
@@ -13,6 +14,7 @@ export const KURUM_TURLERI = ['Sigorta Şirketi', 'Sigorta Brokeri', 'Sigorta Ac
 const EPOSTA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const FYM = 'Firma Yönetimi Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü';
 const TUR = 'Kurumsal İletişim Talebi'; const YON = 'Kurumsal Talep Görüşmesi';
+const MPM = 'Müşteri ve Paydaş İlişkileri Müdürü'; const MPM_TURLERI = ['Sigorta Şirketi', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Kurumsal Müşteri']; // A53-S1
 
 /**
  * YG-1556: "Hesap Oluştur" kurumsal iletişim talebi Firma Yönetimi Müdürüne görev, BT ve Firma Yönetimi Direktörüne bilgi olarak düşer;
@@ -43,7 +45,8 @@ export function kurumTalebiYollari(s: FastifyInstance, b: Baglam) {
     const ust = await rolVar(k, [FYM, BTD]);
     if (!ust && !(await b.db.query(`SELECT 1 FROM kurum_talebi WHERE yonlenen_birim = ANY($1) LIMIT 1`, [yon])).rowCount) return yok(y);
     return {
-      yonlendirir: await rolVar(k, [FYM]), turler: KURUM_TURLERI,
+      yonlendirir: await rolVar(k, [FYM]), turler: KURUM_TURLERI, karar: await rolVar(k, [MPM]), mpmTurleri: MPM_TURLERI,
+      sigortaSirketleri: (await rolVar(k, [MPM])) ? (await b.db.query(`SELECT tsb_kodu, tam_unvan FROM sigorta_sirketi WHERE durum = 'Aktif' ORDER BY tam_unvan`)).rows : [],
       roller: ust ? (await b.db.query(`SELECT kimlik, rol_adi FROM rol WHERE kullanici_gruplari = 'LGM İç Rolü' AND kademe IN ('Müdür', 'Direktör') ORDER BY rol_adi`)).rows : [],
       talepler: (await b.db.query(`SELECT t.kimlik, t.talep_no, t.kurum_turu, t.kurum_adi, t.ad_soyad, t.e_posta, t.telefon, t.mesaj, t.durum, r.rol_adi AS yonlenen, t.not_metni, t.olusturma_zamani FROM kurum_talebi t LEFT JOIN rol r ON r.kimlik = t.yonlenen_birim WHERE ($1 OR t.yonlenen_birim = ANY($2)) ORDER BY t.durum IN ('Davet Edildi', 'Kapatıldı'), t.olusturma_zamani DESC LIMIT 200`, [ust, yon])).rows,
     };
@@ -62,6 +65,58 @@ export function kurumTalebiYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Talep Yönlendirildi', nesneTuru: TUR, nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-1701 (A53-S1): sigorta şirketi, broker, acente ve kurumsal müşteri talebinde Müşteri ve Paydaş İlişkileri Müdürü "Kararı Kaydet"; hesap açılacaksa davet kendiliğinden gider.
+  s.post('/kurum-talebi/:id/karar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const g = (i.body ?? {}) as { karar?: string; gorusme?: string; tsbKodu?: string; dayanak?: string; tarafNo?: string; ek2Siniri?: number };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, [MPM]))) return yok(y);
+    const t = (await b.db.query(`SELECT * FROM kurum_talebi WHERE kimlik = $1`, [id])).rows[0]; if (!t) return yok(y);
+    if (!MPM_TURLERI.includes(t.kurum_turu)) return y.code(409).send({ hata: 'Bu kurum türünde karar ilgili birimin kayıt akışıyla verilir.' });
+    if (t.durum === 'Davet Edildi' || t.durum === 'Kapatıldı') return y.code(409).send({ hata: 'Bu talep sonuçlanmıştır.' });
+    if (!['Hesap Açılsın', 'Hesap Açılmasın'].includes(g.karar ?? '') || !g.gorusme?.trim()) return y.code(400).send({ hata: 'Kararı ve görüşme sonucunu yazınız.' });
+    const fym = await rolSahipleri(b.db, await rolId(b.db, FYM));
+    const kapat = async (c: { query: typeof b.db.query }, durum: string) => {
+      await c.query(`UPDATE kurum_talebi SET durum = $2, not_metni = $3, isleyen_ref = $4, islem_zamani = now() WHERE kimlik = $1`, [id, durum, g.gorusme!.trim(), o.kullanici]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = ANY($1) AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [[TUR, YON], id]);
+    };
+    if (g.karar === 'Hesap Açılmasın') {
+      await kapat(b.db, 'Kapatıldı');
+      await bildir(b.db, { olay: `kurum-karar:${id}`, kullanicilar: fym, baslik: `${t.talep_no} · Hesap Açılmadı`, ozet: `${t.kurum_turu} · ${t.kurum_adi} · ${g.gorusme.trim().slice(0, 150)}` });
+      await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Talep Kararı', nesneTuru: TUR, nesneKimligi: id, yeni: { karar: g.karar }, gerekce: g.gorusme.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { durum: 'Kapatıldı' };
+    }
+    if ((await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta COLLATE "C") = lower($1::text COLLATE "C") LIMIT 1`, [t.e_posta])).rowCount) return y.code(409).send({ hata: 'Bu e-posta adresiyle kayıtlı hesap bulunmaktadır.' });
+    let unvan = t.kurum_adi as string; let sg: { tsb_kodu: string; tam_unvan: string } | undefined; let taraf: { kimlik: string; unvan_ad_soyad: string } | undefined;
+    if (t.kurum_turu === 'Sigorta Şirketi') {
+      sg = (await b.db.query(`SELECT tsb_kodu, tam_unvan FROM sigorta_sirketi WHERE tsb_kodu = $1 AND durum = 'Aktif'`, [g.tsbKodu ?? ''])).rows[0];
+      if (!sg || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Sigorta şirketini listeden seçiniz ve yetkilendirme yazısının tarih ve sayısını yazınız.' });
+      unvan = sg.tam_unvan;
+    }
+    if (t.kurum_turu === 'Kurumsal Müşteri') {
+      if (!g.tarafNo?.trim() || !(Number(g.ek2Siniri) >= 0)) return y.code(400).send({ hata: 'Kurumsal müşterinin taraf numarasını ve Ek-2 onay sınırını giriniz.' });
+      taraf = (await b.db.query(`SELECT kimlik, unvan_ad_soyad FROM taraf WHERE taraf_no = $1 AND musteri_turu = 'Kurumsal Müşteri'`, [g.tarafNo.trim()])).rows[0];
+      if (!taraf) return y.code(404).send({ hata: 'Bu numarada kurumsal müşteri kaydı bulunamadı.' });
+      if ((await b.db.query(`SELECT 1 FROM kurumsal_kurum WHERE taraf_ref = $1`, [taraf.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu kurum tanımlıdır; kullanıcıyı kurum yetkilisi ekler.' });
+      unvan = taraf.unvan_ad_soyad;
+    }
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const [grup, rol] = t.kurum_turu === 'Sigorta Şirketi' ? ['Sigorta Şirketi / Eksper', 'Sigorta Şirketi Kullanıcısı'] : t.kurum_turu === 'Kurumsal Müşteri' ? ['Kurumsal Müşteri', 'Kurumsal Müşteri Kullanıcısı'] : ['Broker, Acente, Yat Brokeri, Kaptan', 'Broker, Acente, Yat Brokeri, Kaptan'];
+      const { kimlik, belirtec } = await davetOlustur(c, { adSoyad: t.ad_soyad, eposta: t.e_posta, telefon: t.telefon ?? undefined, grup, rol, olusturan: o.kullanici });
+      if (sg) await c.query(`INSERT INTO sigorta_kullanici (kullanici_ref, sigortaci_adi, tsb_kodu) VALUES ($1,$2,$3)`, [kimlik, sg.tam_unvan, sg.tsb_kodu]);
+      if (taraf) {
+        const k = (await c.query(`INSERT INTO kurumsal_kurum (taraf_ref, unvan, ek2_onay_siniri, kaydeden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [taraf.kimlik, taraf.unvan_ad_soyad, g.ek2Siniri, o.kullanici])).rows[0];
+        await c.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, yetkili, ekleyen_ref) VALUES ($1,$2,'Onaylayan',$3,true,$4)`, [kimlik, k.kimlik, g.ek2Siniri, o.kullanici]);
+      }
+      await disGonder(c, { olay: `kurum-talebi-davet:${id}`, eposta: t.e_posta, konu: 'YATONET 360 Hesabınız', metin: `LİMİT GLOBAL MARINE: ${unvan} adına YATONET 360 hesabınız açılmıştır. İlk girişinizi 7 gün içinde aşağıdaki bağlantıdan yapmanızı rica ederiz. ${b.webAdresi}/#davet=${belirtec}`, acil: true });
+      await kapat(c, 'Davet Edildi');
+      await bildir(c, { olay: `kurum-karar:${id}`, kullanicilar: fym, baslik: `${t.talep_no} · Hesap Açıldı, Davet Gönderildi`, ozet: `${t.kurum_turu} · ${unvan} · ${g.gorusme.trim().slice(0, 150)}` });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kurumsal Talep Kararı', nesneTuru: TUR, nesneKimligi: id, yeni: { karar: g.karar, kullanici: kimlik }, gerekce: g.dayanak?.trim() || g.gorusme.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { durum: 'Davet Edildi', kullanici: kimlik };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
   s.post('/kurum-talebi/:id/sonuc', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { durum?: string; not?: string };
     if (!UUID.test(id)) return yok(y);
@@ -69,6 +124,7 @@ export function kurumTalebiYollari(s: FastifyInstance, b: Baglam) {
     if (!t || !(await erisir(o.kullanici, t))) return yok(y);
     if (g.durum !== 'Davet Edildi' && g.durum !== 'Kapatıldı') return y.code(400).send({ hata: 'Sonucu seçiniz.' });
     if (g.durum === 'Kapatıldı' && !g.not?.trim()) return y.code(400).send({ hata: 'Kapatma gerekçesi yazınız.' });
+    if (MPM_TURLERI.includes((await b.db.query(`SELECT kurum_turu FROM kurum_talebi WHERE kimlik = $1`, [id])).rows[0]?.kurum_turu)) return y.code(409).send({ hata: 'Bu talepte sonuç Müşteri ve Paydaş İlişkileri Müdürünün "Kararı Kaydet" adımıyla verilir.' });
     if (t.durum === 'Davet Edildi' || t.durum === 'Kapatıldı') return y.code(409).send({ hata: 'Bu talep sonuçlanmıştır.' });
     await b.db.query(`UPDATE kurum_talebi SET durum = $2, not_metni = coalesce($3, not_metni), isleyen_ref = $4, islem_zamani = now() WHERE kimlik = $1`, [id, g.durum, g.not?.trim() || null, o.kullanici]);
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = ANY($1) AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [[TUR, YON], id]);

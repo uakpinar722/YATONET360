@@ -4,7 +4,7 @@ import { cihazGecerli, gazUygun, kabulEngeli, kaliteSureIsle, ncrHedefi, sinifEn
 import { eslestir } from '../src/tedarik.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', kk2: 'Kalite Uzmanı (Kalite Kontrolör)', km: 'Kalite Müdürü', ts: 'Tedarik Sorumlusu', tym: 'Tedarik Yönetimi Müdürü', to: 'Teknik ve Operasyon Direktörü', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', kk: 'Kalite Uzmanı (Kalite Kontrolör)', kk2: 'Kalite Uzmanı (Kalite Kontrolör)', ky: 'Kalite Yöneticisi', kmy: 'Kalite Müdür Yardımcısı', rkd: 'Risk ve Kalite Direktörü', km: 'Kalite Müdürü', ts: 'Tedarik Sorumlusu', tym: 'Tedarik Yönetimi Müdürü', to: 'Teknik ve Operasyon Direktörü', tid: 'Ticari İşler Direktörü', sc: 'Sicil Sorumlusu', fym: 'Firma Yönetimi Müdürü' };
 let o: Ortam; let firma: string; let tedarikci: string;
 const ileri = (g: number) => new Date(Date.now() + 180 * 60_000 + g * 86_400_000).toISOString().slice(0, 10);
 const dosya = async () => { await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); for (const [k, r] of [['kk', 'Kalite Kontrolör'], ['ts', 'Tedarik Sorumlusu']]) await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,$3,$4)`, [d.kimlik, o.K[k!], r, o.K.oy]); return d; };
@@ -86,6 +86,38 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     // T-YG1687-YEDEK: yedek kontrolör asıl kontrolörden farklı
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Yedek Kalite Kontrolör', kullanici: o.K.kk })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekip`, await o.gir('km'), { rol: 'Yedek Kalite Kontrolör', kullanici: o.K.kk2 })).statusCode).toBe(200);
+  });
+  it('Kritik uygunsuzlukta Direktör Kararı Kaydet ve İncelendi Olarak Kaydet (T-YG1694)', async () => {
+    const d = await dosya(); const e = await isEmri(d);
+    const r = await ncr(d, { sinif: 'Kritik', emniyet: true, isEmri: e }); expect(r.statusCode, r.body).toBe(200); const n = r.json().kimlik as string;
+    expect((await o.ist('POST', `/api/uygunsuzluk/${n}/direktor-karar`, await o.gir('km'), { birim: 'Teknik Müdürlük', hedef: '2031-01-10' })).statusCode).toBe(404);
+    const rk = await o.gir('rkd');
+    expect((await o.ist('POST', `/api/uygunsuzluk/${n}/direktor-karar`, rk, { birim: 'Teknik Müdürlük' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/uygunsuzluk/${n}/direktor-karar`, rk, { birim: 'Teknik Müdürlük', hedef: '2031-01-10', not: 'Kaynak prosedürü yenilenecek' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/kalite/kritik-uygunsuzluklar', rk)).json().find((x: any) => x.kimlik === n).direktor_hedef).toBe('2031-01-10');
+    const { kartAc } = await import('../src/is_motoru.js');
+    const kid = await kartAc(o.db, { tur: 'Aylık İSG Göstergeleri', kategori: 'gorev', baslik: 'Deneme · Aylık İSG Göstergeleri', sahipRol: (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Kalite Müdür Yardımcısı'`)).rows[0].kimlik });
+    expect((await o.ist('POST', `/api/is/${kid}/karar`, await o.gir('kmy'), { karar: 'İncelendi' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE kimlik = $1`, [kid])).rows[0].durum).toBe('Tamamlandı');
+  });
+  it('kayıt disiplini: eksik kontrol kayıtları, Düzeltme İste ve aylık Kalite Kontrolör Raporu (T-YG1687-DISIPLIN)', async () => {
+    const { eksikKontrolKayitlari, kaliteKontrolorAylikRapor } = await import('../src/kalite_disiplin.js');
+    const d = await dosya(); const e = await isEmri(d);
+    const kn = (await o.sup.query(`INSERT INTO kontrol_noktasi (kontrol_noktasi_no, is_emri_ref, nokta_turu, kontrol_ozelligi, kabul_olcutu, planlanan_zaman, olusturan_ref) VALUES ($1,$2,'Gözetim','Kaynak dikişi','Görsel kusursuz', now() - interval '3 days', $3) RETURNING kimlik`, [`${d.dosyaNo}-KPX1`, e, o.K.tu])).rows[0].kimlik;
+    expect(await eksikKontrolKayitlari(o.db, new Date('2031-03-03T09:00:00+03:00'))).toBe(true);
+    expect(await eksikKontrolKayitlari(o.db, new Date('2031-03-03T10:00:00+03:00'))).toBe(false);
+    const ky = await o.gir('ky'); const l = (await o.ist('GET', '/api/kalite/eksik-kontrol-kayitlari', ky)).json();
+    expect(l.some((x: any) => x.kimlik === kn && x.kontrolor === o.K.kk)).toBe(true);
+    expect((await o.ist('GET', '/api/kalite/eksik-kontrol-kayitlari', await o.gir('kk'))).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/kalite/eksik-kontrol-kaydi/${kn}/duzeltme-iste`, ky, {})).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/kalite/eksik-kontrol-kaydi/${kn}/duzeltme-iste`, ky, {})).statusCode).toBe(409);
+    expect((await o.kart('Kontrol Kaydı Düzeltme', kn)).sahip_kullanici_ref).toBe(o.K.kk);
+    expect(await kaliteKontrolorAylikRapor(o.db, new Date('2031-04-01T09:00:00+03:00'))).toBe(true);
+    const r = await o.kart('Kalite Kontrolör Raporu', '2031-03'); expect(r.kategori).toBe('onay');
+    const { sahaGeriBildirimiYillik } = await import('../src/kalite_disiplin.js'); // T-YG1687-SAHA
+    expect(await sahaGeriBildirimiYillik(o.db, new Date('2031-02-10T09:00:00+03:00'))).toBe(false);
+    expect(await sahaGeriBildirimiYillik(o.db, new Date('2031-01-05T09:00:00+03:00'))).toBe(true);
+    expect((await o.kart('Saha Geri Bildirimi', '2030')).zincir).toHaveLength(2);
   });
   it('Kritik işi durdurur, Olduğu Gibi Kabul yok, son karar Kalite Müdürü; kök neden ve kanıtla kapanır; emniyet işaretliyse işi Teknik Müdür başlatır', async () => {
     const d = await dosya(); const e = await isEmri(d);
@@ -263,7 +295,7 @@ describe('kontrol noktası (YG-383, YG-389)', () => {
   });
 });
 describe('tedarik (YG-823, YG-404, YG-1589)', () => {
-  const S = () => ({ tedarikci, teklifRef: 'T1', kullanim: 'Ana makine', teslimTarihi: ileri(10), teslimYeri: 'Depo', olcut: 'Ö', gerekce: 'G', kalemler: [{ tanim: 'Pompa', parcaNo: 'P1', miktar: 2, birim: 'adet', bedel: 100 }] });
+  const S = () => ({ tedarikci, teklifRef: 'T1', kullanim: 'Ana makine', teslimTarihi: ileri(10), teslimYeri: 'Depo', olcut: 'Ö', gerekce: 'G', kritikSinif: 'K3', belgeSartlari: 'Üretici sertifikası ve uygunluk belgesi; girişte seri no ve görsel kontrol', kalemler: [{ tanim: 'Pompa', parcaNo: 'P1', miktar: 2, birim: 'adet', bedel: 100 }] });
   it('avans alınmadan sipariş yok; zincir; lotsuz giriş yok; fazla teslim yok; eşleştirme mükerrer değil', async () => {
     const d = await dosya();
     const c = await o.gir('ts'); const u = `/api/dosya/${d.kimlik}/siparis`;
@@ -277,7 +309,12 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
     expect(k.zincir).toHaveLength(3);
     { // T-YG1592: sipariş onay kartında beş sistem kontrolü ve son onay makamı
       const sk = (await o.ist('GET', `/api/is/${k.kimlik}/siparis-kontrolleri`, await o.gir('tym'))).json();
-      expect(sk.kontroller.map((x: { ad: string }) => x.ad)).toEqual(['Aynı Şartla Karşılaştırma', 'Seçim Gerekçesi', 'Onaylı Kaynak', 'Eşik Altına Bölünmeme', 'Görev Ayrılığı']);
+      expect(sk.kontroller.map((x: { ad: string }) => x.ad)).toEqual(['Aynı Şartla Karşılaştırma', 'Seçim Gerekçesi', 'Onaylı Kaynak', 'Eşik Altına Bölünmeme', 'Görev Ayrılığı', 'K3/K4 Belge ve Giriş Kontrolü Şartı']);
+      expect(sk.kontroller[5].sonuc).toBe(true); expect(sk.kritikSinif).toBe('K3'); // T-YG1593-K3
+      const gs = (await o.ist('GET', '/api/tedarik/mudurluk-gostergeleri', await o.gir('tym'))).json(); expect(gs.map((x: any) => x.ad)).toContain('Kritik kalem izlenebilirliği (K3–K4)'); // T-YG1593-GOSTERGE
+      expect((await o.ist('GET', '/api/tedarik/mudurluk-gostergeleri', await o.gir('ds'))).statusCode).toBe(404);
+      const { tedarikciAylikPerformans } = await import('../src/tedarik_gosterge.js');
+      expect(await tedarikciAylikPerformans(o.db, new Date('2031-05-02T09:00:00+03:00'))).toBe(true); expect(await tedarikciAylikPerformans(o.db, new Date('2031-05-03T09:00:00+03:00'))).toBe(false);
       expect(sk.kontroller.find((x: { ad: string }) => x.ad === 'Onaylı Kaynak').sonuc).toBe(true); expect(sk.sonMakam).toBeTruthy();
       expect((await o.ist('GET', `/api/is/${k.kimlik}/siparis-kontrolleri`, await o.gir('ds'))).statusCode).toBe(404);
     }

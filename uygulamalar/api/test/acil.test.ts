@@ -207,6 +207,15 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`bld55:${r.kimlik}`])).rows[0].metin).not.toContain('EUR');
     expect((await o.ist('POST', `/api/acil/${r.kimlik}/kapat`, c, { sonuc: 'x', risk: 'y' })).statusCode).toBe(409);
   });
+  it('acil birim fiyatı, kartela bandı ve ön değer (T-YG1473-ONDEGER)', async () => {
+    const sc = await o.gir('sc');
+    const { ekipSaatReferansi } = await import('../src/acil_fiyat.js'); const ref = await ekipSaatReferansi(o.db);
+    if (ref !== null) expect((await o.ist('POST', `/api/firma/${f1}/acil-birim-fiyat`, sc, { cikis: 150, ekipSaat: ref * 3, ekipman: 50 })).statusCode).toBe(409);
+    const r = await o.ist('POST', `/api/firma/${f1}/acil-birim-fiyat`, sc, { cikis: 150, ekipSaat: ref ?? 40, ekipman: 50 }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().onDeger).toBe(Math.round((200 + (ref ?? 40)) * 100) / 100);
+    expect((await o.ist('GET', '/api/firma-portal/acil-on-deger', firmaC)).json().onDeger).toBe(r.json().onDeger);
+    expect((await o.ist('GET', `/api/firma/${f1}/acil-birim-fiyat`, await o.gir('ds'))).statusCode).toBe(403);
+  });
   it('İSG Sorumlusu ana ekrandan işi durdurur (T-YG1670-DURDUR)', async () => {
     const r = await cagri(); const isg = await o.gir('isg');
     expect((await o.ist('GET', '/api/isg/sahadaki-isler', isg)).statusCode).toBe(200);

@@ -446,6 +446,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   const [l, setL] = useState<IsEmri[] | null>(null); const [ac, setAc] = useState<AcilCagri[]>([]); const [acik, setAcik] = useState<FirmaAyrinti | null>(null); const [kod, setKod] = useState(''); const [not_, setNot_] = useState(''); const [tahmini, setTahmini] = useState(''); const [brut, setBrut] = useState(''); const [fat, setFat] = useState(''); const [fatT, setFatT] = useState(''); const [fatK, setFatK] = useState(''); const [kalem, setKalem] = useState(''); const [miktar, setMiktar] = useState(''); const [belge, setBelge] = useState('');
   const [bek, setBek] = useState<{ tur: string; baslik: string; isEmri: string | null; son: string | null; acil: boolean }[]>([]); // YG-1574
   const [foto, setFoto] = useState('');
+  useEffect(() => { void istek<{ onDeger: number | null }>('/firma-portal/acil-on-deger').then((r) => { if (r.onDeger !== null) setTahmini((t) => t || String(r.onDeger).replace('.', ',')); }).catch(() => {}); }, []); // YG-1473: acil birim fiyatlarından ön değer
   const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setBek(await istek<typeof bek>('/firma-portal/bekleyenler').catch(() => [])); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setL([])); }, []);

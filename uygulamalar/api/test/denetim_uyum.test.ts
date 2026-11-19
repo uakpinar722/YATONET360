@@ -76,6 +76,9 @@ describe('sosyal medya izleme kaydı (YG-586)', () => {
       expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/yanitlandi`, cg, { varyant: 'Dosyalı', dil: 'tr' })).statusCode).toBe(200);
       expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/yanitlandi`, cg, { varyant: 'Olumlu', dil: 'tr' })).statusCode).toBe(409);
       expect((await o.kart('Sosyal Medya Dosya Araması', d.kimlik)).sahip_kullanici_ref).toBe(o.K.ds);
+      const sk = await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/sikayet`, m, {}); expect(sk.statusCode, sk.body).toBe(200); expect(sk.json().kayitNo).toMatch(/-SK\d+$/); // T-YG1466-SKNN
+      expect((await o.ist('POST', `/api/sosyal-medya/${r.kimlik}/sikayet`, m, {})).statusCode).toBe(409);
+      expect((await o.sup.query(`SELECT kanal FROM garanti_sikayet WHERE kayit_no = $1`, [sk.json().kayitNo])).rows[0].kanal).toBe('Sosyal Medya');
     }
   });
 });

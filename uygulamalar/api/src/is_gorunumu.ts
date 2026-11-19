@@ -1,3 +1,4 @@
+import { izYaz } from './denetim.js';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool } from 'pg';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
@@ -56,7 +57,22 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
   // YG-1691, YG-1693: Kalite Müdürü, Müdür Yardımcısı ve Risk ve Kalite Direktörüne tüm açık Kritik uygunsuzluklar acil kart olarak (karar seviyesi; günlük izleme).
   s.get('/kalite/kritik-uygunsuzluklar', oturumlu, async (i, y) => {
     if (!(await roller(b.db, i.oturum!.kullanici)).some((r) => ['Kalite Müdürü', 'Kalite Müdür Yardımcısı', 'Risk ve Kalite Direktörü'].includes(r.rol_adi))) return yok(y);
-    return (await b.db.query(`SELECT u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum, u.statu, u.sinif, u.emniyet_isareti, u.olusturma_zamani FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref WHERE (u.sinif = 'Kritik' OR u.emniyet_isareti) AND u.statu NOT IN ('Kapalı', 'Geçersiz') ORDER BY u.olusturma_zamani LIMIT 50`)).rows;
+    return (await b.db.query(`SELECT u.kimlik, u.uygunsuzluk_no, d.dosya_no, u.gercek_durum, u.statu, u.sinif, u.emniyet_isareti, u.olusturma_zamani, u.direktor_sorumlu_birim, u.direktor_hedef_tarihi::text direktor_hedef FROM uygunsuzluk u JOIN dosya d ON d.kimlik = u.dosya_ref WHERE (u.sinif = 'Kritik' OR u.emniyet_isareti) AND u.statu NOT IN ('Kapalı', 'Geçersiz') ORDER BY u.olusturma_zamani LIMIT 50`)).rows;
+  });
+  // YG-1694: Kritik ve emniyet işaretli uygunsuzlukta Risk ve Kalite Direktörü kapanış için sorumlu birimi ve hedef tarihi "Kararı Kaydet" ile tanımlar.
+  s.post('/uygunsuzluk/:id/direktor-karar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { birim?: string; hedef?: string; not?: string };
+    if (!/^[0-9a-f-]{36}$/i.test(id) || !(await roller(b.db, o.kullanici)).some((r) => r.rol_adi === 'Risk ve Kalite Direktörü')) return yok(y);
+    if (!g.birim?.trim() || !g.hedef || !/^\d{4}-\d{2}-\d{2}$/.test(g.hedef)) return y.code(400).send({ hata: 'Sorumlu birimi ve hedef tarihi giriniz.' });
+    const u = (await b.db.query(`UPDATE uygunsuzluk SET direktor_sorumlu_birim = $2, direktor_hedef_tarihi = $3, direktor_karar_notu = $4, direktor_karar_ref = $5, direktor_karar_zamani = now(), hedef_zamani = ($3::date + time '18:00') AT TIME ZONE 'Europe/Istanbul'
+      WHERE kimlik = $1 AND (sinif = 'Kritik' OR emniyet_isareti) AND statu NOT IN ('Kapalı', 'Geçersiz') RETURNING uygunsuzluk_no, dosya_ref`, [id, g.birim.trim(), g.hedef, g.not?.trim() || null, o.kullanici])).rows[0];
+    if (!u) return y.code(409).send({ hata: 'Karar yalnız açık Kritik veya emniyet işaretli uygunsuzlukta kaydedilir.' });
+    const { bildir } = await import('./bildirim.js'); const { rolSahipleri } = await import('./makam.js');
+    const km = (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = ANY($1::text[])`, [['Kalite Müdürü', 'Teknik Müdür']])).rows.map((r) => r.kimlik as string);
+    const al: string[] = []; for (const r of km) al.push(...await rolSahipleri(b.db, r));
+    await bildir(b.db, { olay: `rkd-karar:${id}:${Date.now()}`, kullanicilar: al, baslik: `Direktör Kararı: ${u.uygunsuzluk_no}`, ozet: `Sorumlu: ${g.birim.trim()} · Hedef: ${g.hedef.split('-').reverse().join('.')}${g.not?.trim() ? ` · ${g.not.trim()}` : ''}`, oncelik: 'Yüksek' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kritik Uygunsuzluk Direktör Kararı', nesneTuru: 'Uygunsuzluk', nesneKimligi: id, yeni: { birim: g.birim.trim(), hedef: g.hedef }, gerekce: g.not?.trim() || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
   // YG-1585: Raporlarım; hazırlanan teknik raporların durumu yalnız "[Makam] Kontrolünde", "Onaylandı" (son 30 gün) veya "İade Edildi" olarak gösterilir; ara onaylar ayrıca bildirilmez.
   s.get('/raporlarim', oturumlu, async (i) => {
@@ -218,7 +234,10 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     const genel = l.some((r) => ['Operasyon Müdürlüğü', 'Teknik Müdürlük'].includes(r.birim) || r.rol_adi === 'Genel Müdür Yardımcısı' || r.rol_adi === 'CEO');
     const amirBirim = l.filter((r) => ['Müdür', 'Direktör'].includes(r.kademe)).map((r) => r.birim);
     const kisiler = (await b.db.query(`SELECT DISTINCT h.kimlik FROM kullanici_hesabi h JOIN rol_atamasi a ON a.kullanici_ref = h.kimlik AND a.atama_durumu = 'Aktif' JOIN rol r ON r.kimlik = a.rol_ref WHERE h.kullanici_grubu = 'LGM İç Rolü' AND h.hesap_durumu = 'Aktif' AND ($1 OR h.kimlik = $2 OR r.rol_sahibi_birim = ANY($3::text[]))`, [genel, o.kullanici, amirBirim])).rows.map((r) => r.kimlik as string);
-    return { kisiler: await konumPlani(b.db, kisiler.length ? kisiler : [o.kullanici]) };
+    // YG-1694: İç Denetim personelinin 7 günlük konum planı Direktör ekranında gösterilmez; yalnız izin durumu görünür (bağımsızlık).
+    const gizli = l.some((r) => r.rol_adi === 'Risk ve Kalite Direktörü') && !genel ? new Set((await b.db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_sahibi_birim = 'İç Denetim Müdürlüğü' AND a.kullanici_ref <> $1`, [o.kullanici])).rows.map((r) => r.kullanici_ref as string)) : new Set<string>();
+    const plan = await konumPlani(b.db, kisiler.length ? kisiler : [o.kullanici]);
+    return { kisiler: plan.map((p) => gizli.has(p.kimlik) ? { ...p, gizli: true, gunler: p.gunler.map((x) => ({ tarih: x.tarih, konum: x.konum === 'İzinli' ? 'İzinli' : 'Görevde' })) } : p) };
   });
 
   // YG-810, YG-811: dosya haritası; konum bağlama noktasıyla eşleşir, bölge özetleri ve dosya özet kartı. Sigorta kullanıcısı yalnız kendi dosyalarını görür.
