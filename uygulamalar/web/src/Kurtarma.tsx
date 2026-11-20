@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek } from './api';
 
-interface Hesap { kimlik: string; ad_soyad: string; kullanici_grubu: string; hesap_durumu: string }
+interface Hesap { kimlik: string; ad_soyad: string; kullanici_grubu: string; hesap_durumu: string; yol?: string | null }
 interface Kayit { kimlik: string; durum: string; kullanici: string; makam: string | null }
 
 /** A32-3 Hesap Kurtarma: kimlik teyidi yapılır, onay makama gider; rol veya yetki burada tanımlanmaz. */
@@ -42,7 +42,8 @@ export function HesapKurtarma() {
           <label htmlFor="hk-n">Neden</label>
           <textarea id="hk-n" rows={2} value={neden} onChange={(e) => setNeden(e.target.value)} placeholder="Ör. Telefon kayboldu" />
           <div className="not">Onaylanınca kullanıcının doğrulama uygulaması sıfırlanır ve açık oturumları kapanır.</div>
-          <div className="dugmeler"><button className="btn" disabled={!teyit.trim() || !neden.trim()}>Onaya Gönder</button></div>
+          {h.yol === null && <div className="hata">Bu kullanıcı grubu için teyit makamı tanımlı değildir.</div>}
+          <div className="dugmeler"><button className="btn" disabled={!teyit.trim() || !neden.trim() || h.yol === null}>{h.yol ?? 'Onaya Gönder'}</button></div>
         </form>
       )}
       <div className="bolum">Açtığım Kayıtlar</div>

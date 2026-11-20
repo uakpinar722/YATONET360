@@ -4,22 +4,23 @@ import { bildir, birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
+import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
 import { isGunuSonu } from './teklif.js';
 import { UUID } from './yat.js';
 
 type Db = Pool | PoolClient;
-const BTM = 'Bilgi İşlem Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'; const KART = 'Erişim İncelemesi';
+const BTM = 'Bilgi İşlem Müdürü'; const BIMY = 'Bilgi İşlem Müdür Yardımcısı'; const PAKET = 'Erişim İnceleme Paketi'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'; const KART = 'Erişim İncelemesi';
 const BIRIM_MUDUR = ['Operasyon Müdürü', 'Teknik Müdür', 'Tedarik Yönetimi Müdürü', 'Muhasebe ve Finans Müdürü', 'İnsan Kaynakları Müdürü', 'İdari İşler Müdürü'];
 const YONETICI = [BTM, BTD, 'İnsan Kaynakları Müdürü'];
 const KARARLAR = ['Koru', 'Daralt', 'Süre Uzat', 'Askıya Al', 'Kapat'];
 const KALEM = `SELECT a.kimlik atama, a.kullanici_ref, a.rol_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND h.hesap_durumu = 'Aktif'`;
 
-async function incelemeAc(db: Db, baslik: string, makam: string, kapsam: string, donem: string, sql: string, prm: unknown[], simdi: Date) {
+async function incelemeAc(db: Db, baslik: string, makam: string, kapsam: string, donem: string, sql: string, prm: unknown[], simdi: Date, paket = false) {
   const atamalar = (await db.query(sql, prm)).rows; if (!atamalar.length) return;
   const son = await isGunuSonu(db, simdi, 10);
-  const i = (await db.query(`INSERT INTO erisim_inceleme (donem, kapsam, rol_ref, son_zaman) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [donem, kapsam, makam, son])).rows[0].kimlik;
+  const i = (await db.query(`INSERT INTO erisim_inceleme (donem, kapsam, rol_ref, son_zaman, paket) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [donem, kapsam, makam, son, paket])).rows[0].kimlik;
   for (const a of atamalar) await db.query(`INSERT INTO erisim_inceleme_kalemi (inceleme_ref, atama_ref, kullanici_ref, rol_ref) VALUES ($1,$2,$3,$4)`, [i, a.atama, a.kullanici_ref, a.rol_ref]);
   await kartAc(db, { tur: KART, kategori: 'gorev', baslik: `${donem} · ${baslik}`, ozet: `${atamalar.length} erişim`, sahipRol: makam, sonZaman: son, nesneTuru: 'Erişim İncelemesi', nesneKimligi: i });
 }
@@ -27,7 +28,9 @@ async function incelemeAc(db: Db, baslik: string, makam: string, kapsam: string,
 /** YG-1046, YG-1639: ayrıcalıklı hesaplar 3 ayda bir, diğerleri 6 ayda bir; birim müdürleri kendi birimini inceler. */
 export async function erisimIncelemeAc(db: Pool, simdi = new Date()): Promise<void> {
   const y = simdi.getUTCFullYear(); const c = Math.floor(simdi.getUTCMonth() / 3) + 1; const btm = await rolId(db, BTM);
-  if (await birKez(db, 'erisim_inceleme_ayricalikli', `${y}-Q${c}`)) await incelemeAc(db, 'Ayrıcalıklı Hesap İncelemesi', btm, 'Ayrıcalıklı', `${y}-Q${c}`, `${KALEM} AND r.ayricalikli_rol`, [], simdi);
+  // YG-1645 (A34): Müdür Yardımcısı görevdeyse paketi o hazırlar ve Bilgi İşlem Müdürü onayına gönderir; yoksa Müdür doğrudan karar verir.
+  const bimy = await rolId(db, BIMY); const paket = (await rolSahipleri(db, bimy)).length > 0;
+  if (await birKez(db, 'erisim_inceleme_ayricalikli', `${y}-Q${c}`)) await incelemeAc(db, paket ? 'Üç Aylık Ayrıcalıklı Hesap Erişim İnceleme Paketi' : 'Ayrıcalıklı Hesap İncelemesi', paket ? bimy : btm, 'Ayrıcalıklı', `${y}-Q${c}`, `${KALEM} AND r.ayricalikli_rol`, [], simdi, paket);
   const donem = `${y}-H${simdi.getUTCMonth() < 6 ? 1 : 2}`;
   if (!(await birKez(db, 'erisim_inceleme', donem))) return;
   const birimler: string[] = [];
@@ -50,6 +53,24 @@ async function kapanisKontrol(c: Db, inceleme: string) {
   await c.query(`UPDATE erisim_inceleme SET durum = 'Tamamlandı' WHERE kimlik = $1`, [inceleme]);
   await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [KART, inceleme]);
 }
+
+/** YG-1645: paket onaylanınca öneriler karar olarak uygulanır; iade veya retle paket Müdür Yardımcısına döner. */
+kapanisKaydet(PAKET, async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
+  const e = (await c.query(`SELECT kimlik, donem, rol_ref FROM erisim_inceleme WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi])).rows[0]; if (!e) return;
+  if (karar !== 'Onayla') {
+    await c.query(`UPDATE erisim_inceleme SET durum = 'Açık' WHERE kimlik = $1`, [e.kimlik]);
+    await kartAc(c, { tur: KART, kategori: 'gorev', baslik: `${e.donem} · ${PAKET} · İade Edildi`, ozet: 'Bilgi İşlem Müdürü paketi geri gönderdi; önerileri gözden geçirip yeniden gönderiniz.', sahipRol: e.rol_ref, nesneTuru: 'Erişim İncelemesi', nesneKimligi: e.kimlik });
+    return;
+  }
+  for (const x of (await c.query(`SELECT * FROM erisim_inceleme_kalemi WHERE inceleme_ref = $1 AND karar IS NULL`, [e.kimlik])).rows) {
+    const daralt = x.oneri === 'Daralt';
+    await c.query(`UPDATE erisim_inceleme_kalemi SET karar = oneri, gerekce = oneri_gerekce, karar_ref = $2, karar_zamani = now(), uygulandi = $3 WHERE kimlik = $1`, [x.kimlik, yapan, !daralt]);
+    await kararUygula(c, x, x.oneri, x.oneri_bitis ? new Date(x.oneri_bitis).toISOString().slice(0, 10) : null);
+    if (daralt) await kartAc(c, { tur: 'Erişim Daraltma', kategori: 'islem', baslik: 'Erişim Daraltma Uygulaması', ozet: String(x.oneri_gerekce ?? '').slice(0, 200), sahipRol: await rolId(c, 'Sistem Yöneticisi'), nesneTuru: 'Erişim Kalemi', nesneKimligi: x.kimlik });
+  }
+  await kapanisKontrol(c, e.kimlik);
+});
 
 /** YG-1047: süresinde yanıtlanmayan inceleme Direktöre yükselir; 14 gün daha yanıt gelmezse güvenli varsayılan Askıya Al uygulanır. */
 export async function erisimEskalasyon(db: Pool, simdi = new Date()): Promise<number> {
@@ -81,22 +102,27 @@ export function erisimIncelemeYollari(s: FastifyInstance, b: Baglam) {
   // YG-1045: rol açıklaması, görev, son giriş ve önceki karar görünür.
   s.get('/erisim-inceleme', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
-    const acik = (await b.db.query(`SELECT kimlik, donem, kapsam, rol_ref, son_zaman FROM erisim_inceleme WHERE durum = 'Açık' ORDER BY olusturma_zamani`)).rows;
+    const acik = (await b.db.query(`SELECT kimlik, donem, kapsam, rol_ref, son_zaman, paket FROM erisim_inceleme WHERE durum = 'Açık' ORDER BY olusturma_zamani`)).rows;
     const r = [];
     for (const x of acik) {
       if (!(await rolSahipleri(b.db, x.rol_ref)).includes(o.kullanici)) continue;
-      const kalemler = (await b.db.query(`SELECT k.kimlik, h.ad_soyad, h.son_giris_zamani, r.rol_adi, r.kademe, r.ayricalikli_rol, k.karar, (SELECT p.karar FROM erisim_inceleme_kalemi p WHERE p.atama_ref = k.atama_ref AND p.karar IS NOT NULL AND p.kimlik <> k.kimlik ORDER BY p.karar_zamani DESC LIMIT 1) onceki FROM erisim_inceleme_kalemi k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref JOIN rol r ON r.kimlik = k.rol_ref WHERE k.inceleme_ref = $1 ORDER BY h.ad_soyad`, [x.kimlik])).rows;
-      r.push({ kimlik: x.kimlik, donem: x.donem, kapsam: x.kapsam, son: x.son_zaman, kalemler });
+      const kalemler = (await b.db.query(`SELECT k.kimlik, h.ad_soyad, h.son_giris_zamani, r.rol_adi, r.kademe, r.ayricalikli_rol, k.karar, k.oneri, k.oneri_gerekce, (SELECT string_agg(z.izin, ', ' ORDER BY z.izin) FROM rol_izni z WHERE z.rol_ref = k.rol_ref) izinler, (SELECT p.karar FROM erisim_inceleme_kalemi p WHERE p.atama_ref = k.atama_ref AND p.karar IS NOT NULL AND p.kimlik <> k.kimlik ORDER BY p.karar_zamani DESC LIMIT 1) onceki FROM erisim_inceleme_kalemi k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref JOIN rol r ON r.kimlik = k.rol_ref WHERE k.inceleme_ref = $1 ORDER BY h.ad_soyad`, [x.kimlik])).rows;
+      r.push({ kimlik: x.kimlik, donem: x.donem, kapsam: x.kapsam, son: x.son_zaman, paket: x.paket, kalemler });
     }
     return r;
   });
   s.post('/erisim-inceleme/kalem/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; gerekce?: string; yeniBitis?: string };
     if (!UUID.test(id)) return yok(y);
-    const k = (await b.db.query(`SELECT k.*, e.rol_ref makam, e.kimlik inceleme FROM erisim_inceleme_kalemi k JOIN erisim_inceleme e ON e.kimlik = k.inceleme_ref WHERE k.kimlik = $1 AND e.durum = 'Açık'`, [id])).rows[0];
+    const k = (await b.db.query(`SELECT k.*, e.rol_ref makam, e.kimlik inceleme, e.paket FROM erisim_inceleme_kalemi k JOIN erisim_inceleme e ON e.kimlik = k.inceleme_ref WHERE k.kimlik = $1 AND e.durum = 'Açık'`, [id])).rows[0];
     if (!k || !(await rolSahipleri(b.db, k.makam)).includes(o.kullanici)) return yok(y);
     if (k.kullanici_ref === o.kullanici) return y.code(403).send({ hata: 'Kendi erişiminiz için karar veremezsiniz.' });
     if (!KARARLAR.includes(g.karar ?? '') || (g.karar !== 'Koru' && !g.gerekce?.trim()) || (g.karar === 'Süre Uzat' && !/^\d{4}-\d{2}-\d{2}$/.test(g.yeniBitis ?? ''))) return y.code(400).send({ hata: 'Karar geçersizdir; Koru dışında gerekçe, süre uzatmada yeni bitiş zorunludur.' });
+    // YG-1645: pakette Müdür Yardımcısı öneri yazar; karar Bilgi İşlem Müdürü onayıyla uygulanır.
+    if (k.paket) {
+      await b.db.query(`UPDATE erisim_inceleme_kalemi SET oneri = $2, oneri_gerekce = $3, oneri_bitis = $4 WHERE kimlik = $1`, [id, g.karar, g.gerekce?.trim() || null, g.karar === 'Süre Uzat' ? g.yeniBitis : null]);
+      return { oneri: true };
+    }
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -111,6 +137,26 @@ export function erisimIncelemeYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       return { tamam: true };
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
+  });
+  s.post('/erisim-inceleme/:id/onaya-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id)) return yok(y);
+    const e = (await b.db.query(`SELECT * FROM erisim_inceleme WHERE kimlik = $1 AND paket AND durum = 'Açık'`, [id])).rows[0];
+    if (!e || !(await rolSahipleri(b.db, e.rol_ref)).includes(o.kullanici)) return yok(y);
+    const l = (await b.db.query(`SELECT kullanici_ref, oneri FROM erisim_inceleme_kalemi WHERE inceleme_ref = $1 AND karar IS NULL`, [id])).rows;
+    if (l.some((x) => !x.oneri)) return y.code(409).send({ hata: 'Paketteki tüm kalemlere öneri yazınız.' });
+    const ist = l.filter((x) => x.oneri !== 'Koru').length;
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE erisim_inceleme SET durum = 'Onayda', hazirlayan_ref = $2 WHERE kimlik = $1`, [id, o.kullanici]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [KART, id]);
+      // Paketteki kişi kendi erişimini onaylayamaz (ayrik): makam bir üste çıkar.
+      await kartAc(c, { tur: PAKET, baslik: `${e.donem} · ${PAKET}`, ozet: `${l.length} ayrıcalıklı erişim · ${ist} istisna`, hazirlayan: o.kullanici, ayrik: l.map((x) => x.kullanici_ref as string), zincir: [await rolId(c, BTM)], nesneTuru: 'Erişim İncelemesi', nesneKimligi: id });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Erişim İnceleme Paketi Onaya Gönderildi', nesneTuru: 'Erişim İncelemesi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+    } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
+    return { durum: 'Onayda', makam: BTM };
   });
   // YG-1644: daraltma Sistem Yöneticisince uygulanır, kararı verene "Uygulandı" gider.
   s.post('/erisim-inceleme/kalem/:id/uygulandi', oturumlu, async (i, y) => {

@@ -11,11 +11,55 @@ import { dogrulamaKodu } from './belge.js';
 import QRCode from 'qrcode';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
+import { isGunuSonu } from './teklif.js';
 
 type Db = Pool | PoolClient;
 const FYM = 'Firma Yönetimi Müdürü'; const TM = 'Teknik Müdür'; const HUD = 'Hukuk ve Uyum Direktörü'; const OPM = 'Operasyon Müdürü'; const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'; const TID = 'Ticari İşler Direktörü'; const TIC = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)';
 export const ON_KOSULLAR = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'];
 const SICIL_ROLLER = ['Sicil Sorumlusu', FYM, 'Firma Yönetimi Müdür Yardımcısı'];
+const YILDONUMU = 'Kayıt Yıldönümü Gözden Geçirme'; const YILDONUMU_PAKET = 'Kayıt Yıldönümü Paketi';
+
+/** YG-1648 (A36): ayın ilk günü sicil veri kalitesi görevi; Ocak, Nisan, Temmuz, Ekim'de koşullu kuruluş koşul belgeleri; kayıt yıldönümü gelen firmaya gözden geçirme görevi. */
+export async function sicilKaliteAylik(db: Pool, simdi = new Date()): Promise<number> {
+  const ist = new Date(simdi.getTime() + 3 * 3_600_000); const donem = ist.toISOString().slice(0, 7); const ay = ist.getUTCMonth(); const yil = ist.getUTCFullYear();
+  const sc = await rolId(db, 'Sicil Sorumlusu'); let n = 0;
+  if (await birKez(db, 'sicil-veri-kalitesi', donem)) {
+    const l = (await db.query(`SELECT h.boyut, count(*)::int n FROM veri_hatasi h JOIN kalite_kurali k ON k.kod = h.kural_kod AND k.durum = 'Yürürlükte' WHERE k.kume_ref = 'FIRMA' AND h.durum = 'Açık' GROUP BY h.boyut ORDER BY h.boyut`)).rows;
+    await kartAc(db, { tur: 'Sicil Veri Kalitesi', kategori: 'gorev', baslik: `${donem} · Sicil Veri Kalitesi · Aylık`, ozet: l.length ? `${l.map((x) => `${x.boyut} ${x.n}`).join(' · ')}. Veri Kalitesi listesindeki firma hatalarını düzeltiniz.` : 'Tamlık, doğruluk, güncellik ve tekillik kontrollerinde açık hata yok.', sahipRol: sc, sonZaman: await isGunuSonu(db, simdi, 10), nesneTuru: 'Sicil Veri Kalitesi', nesneKimligi: donem, simdi }); n++;
+  }
+  if (ay % 3 === 0 && await birKez(db, 'sicil-kosullu-belge', donem)) {
+    const l = (await db.query(`SELECT ticari_unvan, sicil_no FROM kurulus WHERE kayit_asamasi = 'Koşullu Onaylı' AND ag_statusu NOT IN ('Çıkarıldı', 'Pasif') ORDER BY ticari_unvan`)).rows;
+    if (l.length) { await kartAc(db, { tur: 'Koşullu Kuruluş Koşul Belgeleri', kategori: 'gorev', baslik: `${yil}-Q${ay / 3 + 1} · Koşullu Kuruluş Koşul Belgeleri`, ozet: l.map((x) => `${x.sicil_no} ${x.ticari_unvan}`).join(' · ').slice(0, 1500), sahipRol: sc, sonZaman: await isGunuSonu(db, simdi, 10), nesneTuru: 'Sicil Veri Kalitesi', nesneKimligi: `${donem}-KK`, simdi }); n++; }
+  }
+  for (const f of (await db.query(`SELECT kimlik, ticari_unvan, sicil_no FROM kurulus WHERE kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND ag_statusu NOT IN ('Çıkarıldı', 'Pasif') AND extract(month FROM coalesce(kabul_karar_zamani, olusturma_zamani) AT TIME ZONE 'Europe/Istanbul') = $1 AND extract(year FROM coalesce(kabul_karar_zamani, olusturma_zamani) AT TIME ZONE 'Europe/Istanbul') < $2`, [ay + 1, yil])).rows) {
+    if (!(await birKez(db, 'sicil-yildonumu', `${f.kimlik}:${yil}`))) continue;
+    await kartAc(db, { tur: YILDONUMU, kategori: 'gorev', baslik: `${f.sicil_no} · ${f.ticari_unvan} · ${YILDONUMU}`, ozet: 'Belge, personel, tesis ve ekipman kayıtlarını gözden geçirip paketi "Onaya Gönder" ile Firma Yönetimi Yöneticisine gönderiniz.', sahipRol: sc, sonZaman: await isGunuSonu(db, simdi, 10), nesneTuru: 'Firma', nesneKimligi: f.kimlik, simdi }); n++;
+  }
+  return n;
+}
+const FYY = 'Firma Yönetimi Yöneticisi'; const FYMY = 'Firma Yönetimi Müdür Yardımcısı'; const KARAR_ONERI = 'Firma Karar Önerisi';
+const ONERILER = ['Onaylı', 'Koşullu Onaylı', 'İncelemede', 'Reddedildi']; const KAPSAMA = ['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal'];
+/** YG-1650: karar önerisi son makamda (Firma Yönetimi Müdürü) onaylanınca firmanın kayıt aşaması öneriye göre yazılır. */
+kapanisKaydet(KARAR_ONERI, async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
+  const durum = karar === 'Onayla' ? 'Onaylandı' : karar === 'Reddet' ? 'Reddedildi' : 'İade Edildi';
+  const o = (await c.query(`UPDATE firma_karar_onerisi SET durum = $2, karar_veren_ref = $3, karar_zamani = now() WHERE kimlik = $1::uuid AND durum = 'Onayda' RETURNING kurulus_ref, oneri`, [k.nesne_kimligi, durum, yapan])).rows[0];
+  if (!o || karar !== 'Onayla' || o.oneri === 'İncelemede') return;
+  await c.query(`UPDATE kurulus SET kayit_asamasi = $2, kabul_karar_zamani = now(), son_statu_karar_zamani = now(), sonraki_gozden_gecirme_tarihi = NULL, on_inceleme_son = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [o.kurulus_ref, o.oneri]);
+  if (o.oneri === 'Koşullu Onaylı' || o.oneri === 'Reddedildi') await c.query(`UPDATE firma_hukuk_gorusu SET durum = 'Kullanıldı' WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi'`, [o.kurulus_ref, o.oneri]);
+  if (o.oneri !== 'Reddedildi') await (await import('./uyum.js')).uyumOlay(c, 'firma_kabulu', 'Kuruluş', o.kurulus_ref); // YG-1546
+});
+
+// Paket son makamda onaylanınca sicil gözden geçirilmiş sayılır; sonraki gözden geçirme bir yıl sonradır.
+kapanisKaydet(YILDONUMU_PAKET, async (c, k, karar) => {
+  if (karar === 'Onayla') await c.query(`UPDATE kurulus SET guncelleme_zamani = now(), sonraki_gozden_gecirme_tarihi = (current_date + interval '1 year')::date WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
+});
+async function yildonumuPaketi(db: Db, firma: string) {
+  return (await db.query(`SELECT (SELECT count(*)::int FROM sicil_belgesi WHERE kurulus_ref = $1 AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date)) gecerli_belge,
+      (SELECT count(*)::int FROM sicil_belgesi s WHERE s.kurulus_ref = $1 AND s.gecerlilik_bitis < current_date AND NOT EXISTS (SELECT 1 FROM sicil_belgesi x WHERE x.kurulus_ref = s.kurulus_ref AND x.tur = s.tur AND (x.gecerlilik_bitis IS NULL OR x.gecerlilik_bitis >= current_date))) dolan_belge,
+      (SELECT count(*)::int FROM firma_personeli WHERE kurulus_ref = $1 AND aktif) personel, (SELECT count(*)::int FROM firma_tesisi WHERE kurulus_ref = $1 AND aktif) tesis,
+      (SELECT count(*)::int FROM firma_ekipmani WHERE kurulus_ref = $1) ekipman, (SELECT count(*)::int FROM firma_ekipmani WHERE kurulus_ref = $1 AND NOT kullanilabilir) kullanilamaz_ekipman`, [firma])).rows[0];
+}
 
 /** YG-307: görev sınıfı ve asgari yetkinlik. */
 export function gorevSinifi(g: { tutar?: number | null; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean }): { sinif: 'G1' | 'G2' | 'G3' | 'G4'; asgari: 'Y1' | 'Y2' | 'Y3' | 'Y4' } {
@@ -475,6 +519,157 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT s.kimlik, k.kimlik firma, k.ticari_unvan, s.tur, s.gecerlilik_bitis::text, (s.tur ~* 'SGK|vergi borcu') engelleyici FROM sicil_belgesi s JOIN kurulus k ON k.kimlik = s.kurulus_ref
       WHERE k.ag_statusu = 'Aktif' AND s.gecerlilik_bitis < current_date AND NOT EXISTS (SELECT 1 FROM sicil_belgesi x WHERE x.kurulus_ref = s.kurulus_ref AND x.tur = s.tur AND (x.gecerlilik_bitis IS NULL OR x.gecerlilik_bitis >= current_date))
       ORDER BY s.gecerlilik_bitis LIMIT 100`)).rows;
+  });
+  // YG-1654 (A38): Dönem Performans Kartları; risk derecesi yalnız öneridir. Son üç dönem puanı kesintisiz düşen firma "Kademeli Düşüş" işaretlenir.
+  const FY_YONETIM = [FYM, FYMY, FYY, BTD];
+  s.get('/firma/donem-kartlari', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, FY_YONETIM))) return yok(y);
+    const l = (await b.db.query(`SELECT k.kimlik, k.sicil_no, k.ticari_unvan, k.risk_derecesi, k.kapasite_is, p.donem_sonu::text, p.donem_puani, p.agirlikli_ortalama, p.uygunsuzluk_kesintisi, p.kapanan_dosya_sayisi, p.yetersiz_veri, p.acik_emniyet_uygunsuzlugu, p.risk_derecesi_onerisi,
+        (SELECT count(*)::int FROM uygunsuzluk u WHERE u.sorumlu_firma_ref = k.kimlik AND u.statu NOT IN ('Kapalı', 'Geçersiz')) acik_duzeltici,
+        (SELECT count(*)::int FROM firma_denetim_plani d WHERE d.kurulus_ref = k.kimlik AND d.durum = 'Tamamlandı' AND d.tamamlanma_zamani > p.donem_sonu - interval '6 months') denetim,
+        (SELECT array_agg(x.donem_puani ORDER BY x.donem_sonu DESC) FROM (SELECT donem_puani, donem_sonu FROM performans_donem_puani WHERE kurulus_ref = k.kimlik ORDER BY donem_sonu DESC LIMIT 3) x) son_uc
+      FROM kurulus k JOIN LATERAL (SELECT * FROM performans_donem_puani WHERE kurulus_ref = k.kimlik ORDER BY donem_sonu DESC LIMIT 1) p ON true
+      WHERE k.ag_statusu NOT IN ('Çıkarıldı', 'Pasif') ORDER BY p.donem_puani NULLS FIRST LIMIT 200`)).rows;
+    for (const x of l) {
+      const s = ((x.son_uc ?? []) as (string | null)[]).map((v) => (v === null ? null : Number(v)));
+      x.kademeli_dusus = s.length === 3 && s.every((v) => v !== null) && s[0]! < s[1]! && s[1]! < s[2]!;
+      x.son = await isGunuSonu(b.db, new Date(`${x.donem_sonu}T12:00:00Z`), 10);
+      x.oneri_bekliyor = Boolean((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Kademeli Düşüş Önerisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor' LIMIT 1`, [x.kimlik])).rowCount);
+    }
+    return { kartlar: l, oneriVerir: await rolVar(i.oturum!.kullanici, [FYMY, FYY]) };
+  });
+  s.post('/firma/:id/kademeli-dusus-onerisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { oneri?: string; gerekce?: string };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, [FYMY, FYY]))) return yok(y);
+    if (!['Erken Denetim', 'Gelişim Görüşmesi'].includes(g.oneri ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Öneriyi (Erken Denetim veya Gelişim Görüşmesi) ve gerekçeyi yazınız.' });
+    const p = (await b.db.query(`SELECT donem_puani FROM performans_donem_puani WHERE kurulus_ref = $1 ORDER BY donem_sonu DESC LIMIT 3`, [id])).rows.map((r) => (r.donem_puani === null ? null : Number(r.donem_puani)));
+    if (!(p.length === 3 && p.every((v) => v !== null) && p[0]! < p[1]! && p[1]! < p[2]!)) return y.code(409).send({ hata: 'Firmanın son üç dönem puanında kademeli düşüş yoktur.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Kademeli Düşüş Önerisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Bu firma için onay bekleyen öneri vardır.' });
+    const f = (await b.db.query(`SELECT sicil_no, ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    await kartAc(b.db, { tur: 'Kademeli Düşüş Önerisi', baslik: `${f.sicil_no} · ${f.ticari_unvan} · Üç Dönem Kademeli Düşüş: ${g.oneri}`, ozet: `Dönem puanları: ${p.map((v) => String(v).replace('.', ',')).join(' ← ')} · ${g.gerekce.trim()}`, hazirlayan: o.kullanici, zincir: [await rolId(b.db, FYM)], nesneTuru: 'Kuruluş', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kademeli Düşüş Önerisi Onaya Gönderildi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { oneri: g.oneri }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { gonderilecek: FYM };
+  });
+  // YG-1654 (A38): Risk Esaslı Denetim Planı; ertelemede gerekçe ve yeni tarih zorunlu; denetçi LGM personelidir ve çıkar çatışması olmadığını beyan eder.
+  const DENETIM_TURLERI = ['Belge ve Sicil', 'Uzaktan Dosya', 'Saha ve Tesis', 'Olay Sonrası', 'Takip', 'Yeniden Kabul'];
+  s.get('/firma-denetim-plani', oturumlu, async (i, y) => {
+    const o = i.oturum!; const yon = await rolVar(o.kullanici, FY_YONETIM);
+    const l = (await b.db.query(`SELECT d.kimlik, d.tur, d.planlanan_tarih::text, d.durum, d.risk_gerekcesi, d.erteleme_sayisi, d.son_erteleme_gerekcesi, d.sonuc, k.sicil_no, k.ticari_unvan, h.ad_soyad denetci, d.denetci_ref = $1 benim FROM firma_denetim_plani d JOIN kurulus k ON k.kimlik = d.kurulus_ref JOIN kullanici_hesabi h ON h.kimlik = d.denetci_ref WHERE $2 OR d.denetci_ref = $1 ORDER BY d.durum = 'Tamamlandı', d.planlanan_tarih LIMIT 200`, [o.kullanici, yon])).rows;
+    if (!yon && !l.length) return yok(y);
+    const riskli = yon ? (await b.db.query(`SELECT k.kimlik, k.sicil_no, k.ticari_unvan, concat_ws(', ', CASE WHEN k.risk_derecesi = 'Yakın İzleme' THEN 'Yakın İzleme' END, CASE WHEN p.acik_emniyet_uygunsuzlugu THEN 'Açık emniyet uygunsuzluğu' END, CASE WHEN p.risk_derecesi_onerisi = 'Yakın İzleme' THEN 'Dönem önerisi Yakın İzleme' END) neden
+        FROM kurulus k LEFT JOIN LATERAL (SELECT * FROM performans_donem_puani WHERE kurulus_ref = k.kimlik ORDER BY donem_sonu DESC LIMIT 1) p ON true
+        WHERE k.ag_statusu IN ('Aktif', 'Kısıtlı', 'Geçici Askıda') AND (k.risk_derecesi = 'Yakın İzleme' OR p.acik_emniyet_uygunsuzlugu OR p.risk_derecesi_onerisi = 'Yakın İzleme')
+          AND NOT EXISTS (SELECT 1 FROM firma_denetim_plani d WHERE d.kurulus_ref = k.kimlik AND d.durum = 'Planlandı') ORDER BY k.ticari_unvan LIMIT 100`)).rows : [];
+    return { planlar: l, riskli, turler: DENETIM_TURLERI, planlar_mi: await rolVar(o.kullanici, [FYMY, FYY]) };
+  });
+  s.post('/firma/:id/denetim-plani', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; tarih?: string; denetci?: string; riskGerekcesi?: string; cikarYok?: boolean };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, [FYMY, FYY]))) return yok(y);
+    if (!DENETIM_TURLERI.includes(g.tur ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.denetci || !g.riskGerekcesi?.trim()) return y.code(400).send({ hata: 'Denetim türü, tarih, denetçi ve risk gerekçesi zorunludur.' });
+    const d = (await b.db.query(`SELECT kullanici_grubu, hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [g.denetci])).rows[0];
+    if (d?.kullanici_grubu !== 'LGM İç Rolü' || d.hesap_durumu !== 'Aktif') return y.code(400).send({ hata: 'Denetçi aktif LGM personeli olmalıdır.' });
+    if (!g.cikarYok) return y.code(409).send({ hata: 'Denetçinin firmayla çıkar çatışması olmadığı beyan edilmeden denetim planlanmaz.' });
+    // Başvuru kabulünü yapan veya firmanın karar önerisini hazırlayan kişi aynı firmanın denetçisi olmaz.
+    if ((await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND olusturan_ref = $2 UNION SELECT 1 FROM firma_karar_onerisi WHERE kurulus_ref = $1 AND hazirlayan_ref = $2 AND durum <> 'Reddedildi' LIMIT 1`, [id, g.denetci])).rowCount) return y.code(409).send({ hata: 'Firmanın başvurusunu kabul eden veya karar önerisini hazırlayan kişi denetçi olamaz.' });
+    const f = (await b.db.query(`SELECT sicil_no, ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    const r = (await b.db.query(`INSERT INTO firma_denetim_plani (kurulus_ref, tur, planlanan_tarih, denetci_ref, risk_gerekcesi, planlayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [id, g.tur, g.tarih, g.denetci, g.riskGerekcesi.trim(), o.kullanici])).rows[0].kimlik;
+    await kartAc(b.db, { tur: 'Firma Denetimi', kategori: 'gorev', baslik: `${f.sicil_no} · ${f.ticari_unvan} · ${g.tur} Denetimi`, ozet: g.riskGerekcesi.trim().slice(0, 200), sahipKullanici: g.denetci, sonZaman: new Date(`${g.tarih}T17:00:00+03:00`), nesneTuru: 'Firma Denetimi', nesneKimligi: r });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Denetimi Planlandı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { tur: g.tur, tarih: g.tarih }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r };
+  });
+  s.post('/firma-denetim/:id/ertele', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerekce?: string; yeniTarih?: string };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, [FYMY, FYY]))) return yok(y);
+    if (!g.gerekce?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.yeniTarih ?? '')) return y.code(400).send({ hata: 'Erteleme gerekçesi ve yeni tarih zorunludur.' });
+    const r = await b.db.query(`UPDATE firma_denetim_plani SET planlanan_tarih = $2, son_erteleme_gerekcesi = $3, erteleme_sayisi = erteleme_sayisi + 1 WHERE kimlik = $1 AND durum = 'Planlandı' AND $2::date > planlanan_tarih RETURNING kimlik`, [id, g.yeniTarih, g.gerekce.trim()]);
+    if (!r.rowCount) return y.code(409).send({ hata: 'Yeni tarih planlanan tarihten sonra olmalı; tamamlanan denetim ertelenmez.' });
+    await b.db.query(`UPDATE is_karti SET son_zaman = $2 WHERE tur = 'Firma Denetimi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id, new Date(`${g.yeniTarih}T17:00:00+03:00`)]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Denetimi Ertelendi', nesneTuru: 'Firma Denetimi', nesneKimligi: id, gerekce: g.gerekce.trim(), yeni: { tarih: g.yeniTarih }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  s.post('/firma-denetim/:id/sonuc', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { sonuc } = (i.body ?? {}) as { sonuc?: string };
+    if (!UUID.test(id)) return yok(y);
+    if (!sonuc?.trim()) return y.code(400).send({ hata: 'Denetim sonucunu yazınız.' });
+    const r = await b.db.query(`UPDATE firma_denetim_plani SET durum = 'Tamamlandı', sonuc = $3, tamamlanma_zamani = now() WHERE kimlik = $1 AND denetci_ref = $2 AND durum = 'Planlandı' RETURNING kimlik`, [id, o.kullanici, sonuc.trim()]);
+    if (!r.rowCount) return yok(y);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Firma Denetimi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Denetimi Tamamlandı', nesneTuru: 'Firma Denetimi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  // YG-1650 (A37): Sicil Sorumlusu belge kontrolünü bitirip başvuruyu ön incelemeye gönderir; karara sunma süresi 15 iş günü.
+  s.post('/firma/:id/on-incelemeye-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, ['Sicil Sorumlusu']))) return yok(y);
+    const f = (await b.db.query(`SELECT ticari_unvan, sicil_no, kayit_asamasi FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    if (f.kayit_asamasi !== 'Başvuru') return y.code(409).send({ hata: 'Yalnız Başvuru aşamasındaki kayıt ön incelemeye gönderilir.' });
+    const son = await isGunuSonu(b.db, new Date(), 15);
+    await b.db.query(`UPDATE kurulus SET kayit_asamasi = 'İncelemede', on_inceleme_son = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, son]);
+    await kartAc(b.db, { tur: 'Başvuru Ön İnceleme', kategori: 'gorev', baslik: `${f.sicil_no} · ${f.ticari_unvan} · Ön İnceleme`, ozet: 'Dosya tamlığını, görüşleri ve puanlamayı tamamlayıp karar önerisini 15 iş günü içinde Onaya Gönder ile sununuz.', sahipRol: await rolId(b.db, FYY), sonZaman: son, nesneTuru: 'Kuruluş', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Başvuru Ön İncelemeye Gönderildi', nesneTuru: 'Kuruluş', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { son };
+  });
+  s.get('/firma/:id/karar-onerisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, [...SICIL_ROLLER, FYY]))) return yok(y);
+    const f = (await b.db.query(`SELECT kayit_asamasi, on_inceleme_son FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    const l = (await b.db.query(`SELECT r.kimlik, r.oneri, r.kapsama, r.puanlar, r.gerekce, r.durum, r.olusturma_zamani, h.ad_soyad hazirlayan, (SELECT x.rol_adi FROM is_karti c JOIN rol x ON x.kimlik = c.zincir[c.kademe + 1] WHERE c.tur = $2 AND c.nesne_kimligi = r.kimlik::text AND c.durum = 'Bekliyor' LIMIT 1) makam FROM firma_karar_onerisi r JOIN kullanici_hesabi h ON h.kimlik = r.hazirlayan_ref WHERE r.kurulus_ref = $1 ORDER BY r.olusturma_zamani DESC`, [id, KARAR_ONERI])).rows;
+    return { asama: f.kayit_asamasi, son: f.on_inceleme_son, oneriler: l, hazirlar: (await rolSahipleri(b.db, await rolId(b.db, FYY))).includes(o.kullanici), oneriTurleri: ONERILER, kapsamalar: KAPSAMA };
+  });
+  s.post('/firma/:id/karar-onerisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const g = (i.body ?? {}) as { oneri?: string; kapsama?: string; gerekce?: string; puanlar?: { baslik?: string; puan?: number; kanit?: string }[] };
+    if (!UUID.test(id) || !(await rolSahipleri(b.db, await rolId(b.db, FYY))).includes(o.kullanici)) return yok(y);
+    const f = (await b.db.query(`SELECT ticari_unvan, sicil_no, kayit_asamasi, olusturan_ref FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    if (f.kayit_asamasi !== 'İncelemede') return y.code(409).send({ hata: 'Karar önerisi ön incelemedeki (İncelemede) başvuru için hazırlanır.' });
+    if (!ONERILER.includes(g.oneri ?? '')) return y.code(400).send({ hata: 'Öneriyi seçiniz.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Öneri gerekçesi zorunludur.' });
+    const kabul = g.oneri === 'Onaylı' || g.oneri === 'Koşullu Onaylı';
+    if (kabul && !KAPSAMA.includes(g.kapsama ?? '')) return y.code(400).send({ hata: 'Kapsama türünü seçiniz: Bölge, Komşu, Mobil Ekip veya Ulusal.' });
+    // Puan kanıta bağlıdır; aynı gözlem (kanıt) iki başlıkta puanlanmaz.
+    const puanlar = (g.puanlar ?? []).map((x) => ({ baslik: String(x.baslik ?? '').trim(), puan: Number(x.puan), kanit: String(x.kanit ?? '').trim() })).filter((x) => x.baslik);
+    if (kabul && !puanlar.length) return y.code(400).send({ hata: 'Kabul önerisinde puanlama zorunludur.' });
+    if (puanlar.some((x) => !Number.isInteger(x.puan) || x.puan < 1 || x.puan > 5 || !x.kanit)) return y.code(400).send({ hata: 'Her başlık için 1–5 puan ve dayandığı kanıt zorunludur.' });
+    const kanitlar = puanlar.map((x) => x.kanit.toLocaleLowerCase('tr-TR'));
+    if (new Set(kanitlar).size !== kanitlar.length) return y.code(409).send({ hata: 'Aynı gözlem iki başlıkta puanlanmaz; her başlığa ayrı kanıt yazınız.' });
+    if (new Set(puanlar.map((x) => x.baslik)).size !== puanlar.length) return y.code(409).send({ hata: 'Aynı başlık iki kez puanlanmaz.' });
+    // Görev ayrılığı: başvuru kabulü ve belge kontrolü yapan karar önerisini hazırlamaz.
+    if (f.olusturan_ref === o.kullanici || (await b.db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND kontrol_eden_ref = $2 LIMIT 1`, [id, o.kullanici])).rowCount) return y.code(409).send({ hata: 'Başvuru kabulü veya belge kontrolünü yaptığınız firmanın karar önerisini hazırlayamazsınız (görev ayrılığı).' });
+    if ((g.oneri === 'Koşullu Onaylı' || g.oneri === 'Reddedildi') && !(await b.db.query(`SELECT 1 FROM firma_hukuk_gorusu WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi'`, [id, g.oneri])).rowCount) return y.code(409).send({ hata: 'Hukuk ve Uyum görüşü bekleniyor.' });
+    if ((await b.db.query(`SELECT 1 FROM firma_karar_onerisi WHERE kurulus_ref = $1 AND durum = 'Onayda'`, [id])).rowCount) return y.code(409).send({ hata: 'Onayda bekleyen karar önerisi vardır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const r = (await c.query(`INSERT INTO firma_karar_onerisi (kurulus_ref, oneri, kapsama, puanlar, gerekce, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [id, g.oneri, kabul ? g.kapsama : null, JSON.stringify(puanlar), g.gerekce.trim(), o.kullanici])).rows[0].kimlik;
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Başvuru Ön İnceleme' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+      const ort = puanlar.length ? ` · Ortalama Puan ${(puanlar.reduce((a, x) => a + x.puan, 0) / puanlar.length).toFixed(1).replace('.', ',')}` : '';
+      await kartAc(c, { tur: KARAR_ONERI, baslik: `${f.sicil_no} · ${f.ticari_unvan} · Karar Önerisi: ${g.oneri}`, ozet: `${kabul ? `Kapsama: ${g.kapsama}` : g.oneri}${ort} · ${g.gerekce.trim()}`.slice(0, 1500), hazirlayan: o.kullanici, zincir: [await rolId(c, FYMY), await rolId(c, FYM)], nesneTuru: 'Firma Karar Önerisi', nesneKimligi: r });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Karar Önerisi Onaya Gönderildi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { oneri: g.oneri, kapsama: g.kapsama }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { kimlik: r, gonderilecek: FYMY };
+    } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
+  });
+  // YG-1648 (A36): Sicil Kalitesi — yıldönümü paketi bekleyen firmalar ve 12 aydır güncellenmeyen kayıtlar.
+  s.get('/sicil/kalite', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, SICIL_ROLLER))) return yok(y);
+    const yd = (await b.db.query(`SELECT c.nesne_kimligi firma, k.ticari_unvan, k.sicil_no, c.son_zaman FROM is_karti c JOIN kurulus k ON k.kimlik::text = c.nesne_kimligi WHERE c.tur = $1 AND c.durum = 'Bekliyor' ORDER BY c.son_zaman NULLS LAST LIMIT 50`, [YILDONUMU])).rows;
+    for (const x of yd) Object.assign(x, await yildonumuPaketi(b.db, x.firma));
+    const eski = (await b.db.query(`SELECT kimlik, ticari_unvan, sicil_no, guncelleme_zamani FROM kurulus WHERE kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND guncelleme_zamani < now() - interval '12 months' ORDER BY guncelleme_zamani LIMIT 100`)).rows;
+    return { yildonumu: yd, guncellenmeyen: eski, hazirlar: await rolVar(i.oturum!.kullanici, ['Sicil Sorumlusu']) };
+  });
+  s.post('/sicil/yildonumu/:id/onaya-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { degerlendirme } = (i.body ?? {}) as { degerlendirme?: string };
+    if (!UUID.test(id) || !(await rolVar(o.kullanici, ['Sicil Sorumlusu']))) return yok(y);
+    const g = (await b.db.query(`SELECT c.kimlik, k.ticari_unvan, k.sicil_no FROM is_karti c JOIN kurulus k ON k.kimlik::text = c.nesne_kimligi WHERE c.tur = $1 AND c.durum = 'Bekliyor' AND c.nesne_kimligi = $2 LIMIT 1`, [YILDONUMU, id])).rows[0];
+    if (!g) return y.code(409).send({ hata: 'Bu firma için bekleyen yıldönümü gözden geçirmesi yoktur.' });
+    if (!degerlendirme?.trim()) return y.code(400).send({ hata: 'Gözden geçirme değerlendirmesini yazınız.' });
+    const p = await yildonumuPaketi(b.db, id);
+    const ozet = `Belge: ${p.gecerli_belge} geçerli, ${p.dolan_belge} süresi dolmuş · Personel: ${p.personel} · Tesis: ${p.tesis} · Ekipman: ${p.ekipman} (${p.kullanilamaz_ekipman} kullanılamaz) · ${degerlendirme.trim()}`;
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [g.kimlik]);
+    const zincir = [await rolId(b.db, 'Firma Yönetimi Yöneticisi'), await rolId(b.db, 'Firma Yönetimi Müdür Yardımcısı'), await rolId(b.db, FYM)];
+    await kartAc(b.db, { tur: YILDONUMU_PAKET, baslik: `${g.sicil_no} · ${g.ticari_unvan} · ${YILDONUMU_PAKET}`, ozet: ozet.slice(0, 1500), hazirlayan: o.kullanici, zincir, nesneTuru: 'Firma', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kayıt Yıldönümü Paketi Onaya Gönderildi', nesneTuru: 'Firma', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { gonderilecek: 'Firma Yönetimi Yöneticisi', paket: p };
   });
   // YG-1654: geçici askıdaki firmaların karar bekleyen açık işleri (dosya bazında öneri); Firma Yönetimi Müdürlüğü izler, kararı Dosya Sorumlusu veya Operasyon Müdürü verir.
   s.get('/aski/acik-isler', oturumlu, async (i, y) => {

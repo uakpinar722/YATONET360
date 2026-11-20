@@ -47,6 +47,13 @@ kapanisKaydet('Garanti Kapsam Onayı', async (c, k, karar, yapan) => {
   } else await c.query(`UPDATE garanti_sikayet SET statu = 'Açık', onay_bekleyen_karar = NULL, onay_bekleyen_maliyet = NULL WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
 });
 
+// YG-1699 (A52-S3): vekilin kendi hazırladığı şikâyet sonucu Direktör onayıyla yazılır.
+kapanisKaydet('Şikâyet Sonuç Kararı', async (c, k, karar, yapan) => {
+  if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
+  if (karar === 'Onayla') await c.query(`UPDATE garanti_sikayet SET sikayet_sonucu = onay_bekleyen_karar, karar_veren_ref = $2, statu = 'Karar', karar_zamani = coalesce(karar_zamani, now()), onay_bekleyen_karar = NULL WHERE kimlik = $1::uuid AND onay_bekleyen_karar IS NOT NULL`, [k.nesne_kimligi, yapan]);
+  else await c.query(`UPDATE garanti_sikayet SET statu = 'Açık', onay_bekleyen_karar = NULL WHERE kimlik = $1::uuid`, [k.nesne_kimligi]);
+});
+
 kapanisKaydet('İyi Niyet Kararı', async (c, k, karar, yapan) => {
   if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return; // ara kademe geçişi kaydı değiştirmez
   if (karar === 'Onayla') await c.query(`UPDATE garanti_sikayet SET karar = 'İyi Niyet', statu = 'Karar', karar_veren_ref = $2, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`, [k.nesne_kimligi, yapan]);
@@ -590,7 +597,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const g = (i.body ?? {}) as { karar?: string; sikayetSonucu?: string; gerekce?: string; maliyet?: number; kokNeden?: boolean; kapat?: boolean; nedenArastirmasi?: string };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT * FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0];
-    if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
+    // YG-1699 (A52-Z1): şikâyet sonucu Müşteri ve Paydaş İlişkileri Müdüründe (vekâlet dahil); dosya ekibinde olması gerekmez.
+    const sonucMakami = Boolean(k && g.sikayetSonucu && k.kayit_turu.includes('Şikâyet') && (await rolSahipleri(b.db, await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'))).includes(o.kullanici));
+    if (!k || (!sonucMakami && !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref)))) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
     const garanti = k.kayit_turu.includes('Garanti bildirimi');
     if (garanti) {
@@ -629,6 +638,18 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       return { durum: 'Onay Bekleniyor', makam };
     }
     if (k.kayit_turu.includes('Şikâyet') && g.sikayetSonucu && !['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].includes(g.sikayetSonucu)) return y.code(400).send({ hata: 'Şikâyet sonucunu seçiniz.' });
+    if (g.sikayetSonucu) {
+      if (!sonucMakami) return y.code(403).send({ hata: 'Şikâyet sonucunu Müşteri ve Paydaş İlişkileri Müdürü verir.' });
+      if (k.onay_bekleyen_karar) return y.code(409).send({ hata: 'Bu kayıt için şikâyet sonucu onayı bekleniyor.' });
+      // YG-1699 (A52-S3, Cilt II ¶1272): şikâyeti kendisi takip edip sonucu hazırlayan (vekâlette) kendi önerisini karara bağlayamaz; Direktöre gider.
+      if (k.sikayet_takip_ref === o.kullanici) {
+        const SKGD = 'Strateji ve Kurumsal Gelişim Direktörü';
+        await b.db.query(`UPDATE garanti_sikayet SET onay_bekleyen_karar = $2, karar_gerekcesi = $3, statu = 'İncelemede' WHERE kimlik = $1`, [id, g.sikayetSonucu, g.gerekce.trim()]);
+        await kartAc(b.db, { tur: 'Şikâyet Sonuç Kararı', baslik: `${k.kayit_no} · Şikâyet Sonucu (${g.sikayetSonucu})`, ozet: g.gerekce.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(b.db, SKGD)], nesneTuru: 'Garanti Şikâyet', nesneKimligi: id });
+        await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Şikâyet Sonucu Onaya Gönderildi', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+        return { durum: 'Onay Bekleniyor', makam: SKGD };
+      }
+    }
     await b.db.query(`UPDATE garanti_sikayet SET karar_zamani = coalesce(karar_zamani, now()) WHERE kimlik = $1`, [id]);
     await b.db.query(`UPDATE garanti_sikayet SET karar = coalesce($2, karar), sikayet_sonucu = coalesce($3, sikayet_sonucu), karar_gerekcesi = $4, karar_veren_ref = $5, duzeltme_maliyeti = coalesce($6, duzeltme_maliyeti), kok_neden_tamam = kok_neden_tamam OR $7, statu = $8, yanit_zamani = coalesce(yanit_zamani, now()) WHERE kimlik = $1`,
       [id, g.karar ?? null, g.sikayetSonucu ?? null, g.gerekce.trim(), o.kullanici, g.maliyet ?? null, Boolean(g.kokNeden), g.kapat ? 'Kapalı' : 'Karar']);

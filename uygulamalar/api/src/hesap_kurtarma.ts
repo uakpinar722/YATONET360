@@ -53,7 +53,11 @@ export function hesapKurtarmaYollari(s: FastifyInstance, b: Baglam) {
     if (!n.eposta && !n.telefon) return y.code(400).send({ hata: 'E-posta veya cep telefonu giriniz.' });
     const { rows } = await b.db.query(`SELECT kimlik, ad_soyad, kullanici_grubu, hesap_durumu FROM kullanici_hesabi WHERE ${n.eposta ? 'lower(e_posta COLLATE "C") = $1' : 'cep_telefonu = $1'}`, [n.eposta ?? n.telefon]);
     if (!rows[0]) return y.code(404).send({ hata: 'Bu bilgiyle kayıtlı hesap bulunamadı.' });
-    return rows[0];
+    // YG-1699 (A52-Z1): dış kullanıcıda yol kurum türüne göre; düğme teyit makamının birimini gösterir.
+    const g = rows[0].kullanici_grubu as string;
+    const yol = g === 'LGM İç Rolü' ? 'Onaya Gönder' : g === 'İş Birliği Firması' || g === 'Tedarikçi' || g.startsWith('Tesis Yetkilisi') ? 'Sicil Sorumlusuna Gönder'
+      : g === 'Kurumsal Müşteri' || g.startsWith('Sigorta Şirketi') || g.startsWith('Broker') || g.startsWith('Acente') ? 'Müşteri ve Paydaş İlişkileri Müdürlüğüne Gönder' : null;
+    return { ...rows[0], yol };
   });
 
   s.post('/hesap-kurtarma', yetkili, async (i, y) => {

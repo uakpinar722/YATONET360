@@ -386,7 +386,7 @@ interface Saha {
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
   kontrolListeleri: { kimlik: string; kayit_no: string; kontrol_listesi: string; statu: string }[];
   fotoEksik: string[];
-  garantiKayitlari: { kimlik: string; kayit_no: string; statu: string; oncelik: string; yanit_son: string | null; karar: string | null; sikayet_sonucu: string | null }[];
+  garantiKayitlari: { kimlik: string; kayit_no: string; kayit_turu: string[]; statu: string; oncelik: string; yanit_son: string | null; karar: string | null; sikayet_sonucu: string | null }[];
 }
 const KALEMLER = ['Genel – Baş', 'Genel – Kıç', 'Genel – Sancak', 'Genel – İskele', 'Genel – Güverte', 'Bölge – Geniş Plan', 'Bölge – Yakın Plan (Ölçekli)', 'Kimlik – Yat Adı', 'Kimlik – Sicil', 'Kimlik – HIN'];
 const CEKILEMEDI = ['Denize bakıyor / bağlı taraf', 'Yat suda, su altı görülemiyor', 'Erişim yok', 'Güvenlik riski', 'Diğer'];
@@ -496,7 +496,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       </>}
       <Blok baslik="Kontrol Listeleri"><KontrolListeleri dosya={id} kayitlar={v.kontrolListeleri} yap={yap} /></Blok>
       <Blok baslik="Garanti ve Şikâyet">
-        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}{!g.karar && g.statu !== 'Kapalı' && <GarantiKarar id={g.kimlik} yap={yap} />}<GarantiYanit id={g.kimlik} yap={yap} /></div>)}
+        {v.garantiKayitlari.map((g) => <div key={g.kimlik}>{g.kayit_no} · {g.statu} · <Oncelik o={g.oncelik} />{g.yanit_son ? ` · Yanıt Son: ${saat(g.yanit_son)}` : ''}{g.karar ? ` · ${g.karar}` : ''}{g.sikayet_sonucu ? ` · ${g.sikayet_sonucu}` : ''}{!g.karar && g.statu !== 'Kapalı' && g.kayit_turu.includes('Garanti bildirimi') && <GarantiKarar id={g.kimlik} yap={yap} />}<GarantiYanit id={g.kimlik} yap={yap} /></div>)}
         <label htmlFor="gs-t">Kayıt Türü</label><select id="gs-t" value={gsTur} onChange={(e) => setGsTur(e.target.value)}><option>Garanti bildirimi</option><option>Şikâyet</option></select>
         <label htmlFor="gs-a">{gsTur === 'Şikâyet' ? 'Şikâyet Konusu' : 'Belirti'}</label><input id="gs-a" value={gsAcik} onChange={(e) => setGsAcik(e.target.value)} />
         {gsTur !== 'Şikâyet' && <><label><input type="checkbox" checked={gsYd} onChange={(e) => setGsYd(e.target.checked)} /> Yat Yurt Dışında</label>{gsYd && <label><input type="checkbox" checked={gsYer} onChange={(e) => setGsYer(e.target.checked)} /> Yerinde Müdahale İsteniyor (Ayrı Teklif)</label>}</>}

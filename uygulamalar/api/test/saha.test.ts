@@ -283,7 +283,17 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
     expect([k.sikayet_takip_ref, k.sikayet_sonuc_ref]).toEqual([o.K.mpd, o.K.mpm]);
     expect((await o.kart('Şikâyet Takibi', r.json().kimlik)).sahip_kullanici_ref).toBe(o.K.mpd);
     expect((await o.ist('POST', `/api/garanti-sikayet/${r.json().kimlik}/karar`, c, { gerekce: 'G', sikayetSonucu: 'Yanlış' })).statusCode).toBe(400);
-    expect((await o.ist('POST', `/api/garanti-sikayet/${r.json().kimlik}/karar`, c, { gerekce: 'G', sikayetSonucu: 'Kısmen Haklı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/garanti-sikayet/${r.json().kimlik}/karar`, c, { gerekce: 'G', sikayetSonucu: 'Kısmen Haklı' })).statusCode).toBe(403); // YG-1699: sonuç Müdürde
+    expect((await o.ist('POST', `/api/garanti-sikayet/${r.json().kimlik}/karar`, await o.gir('mpm'), { gerekce: 'G', sikayetSonucu: 'Kısmen Haklı' })).statusCode).toBe(200);
+    { // T-YG1699-VEKIL: şikâyeti kendisi takip eden sonucu Direktör onayına gönderir
+      const r2 = await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Şikâyet'], kanal: 'E-posta', oncelik: 'Normal', konu: 'Ses' });
+      await o.sup.query(`UPDATE garanti_sikayet SET sikayet_takip_ref = $2 WHERE kimlik = $1`, [r2.json().kimlik, o.K.mpm]);
+      const x = await o.ist('POST', `/api/garanti-sikayet/${r2.json().kimlik}/karar`, await o.gir('mpm'), { gerekce: 'G', sikayetSonucu: 'Haklı Değil' });
+      expect(x.json()).toMatchObject({ durum: 'Onay Bekleniyor', makam: 'Strateji ve Kurumsal Gelişim Direktörü' });
+      expect((await o.sup.query(`SELECT sikayet_sonucu, onay_bekleyen_karar FROM garanti_sikayet WHERE kimlik = $1`, [r2.json().kimlik])).rows[0]).toEqual({ sikayet_sonucu: null, onay_bekleyen_karar: 'Haklı Değil' });
+      expect((await o.kart('Şikâyet Sonuç Kararı', r2.json().kimlik))).toBeTruthy();
+      expect((await o.ist('POST', `/api/garanti-sikayet/${r2.json().kimlik}/karar`, await o.gir('mpm'), { gerekce: 'G', sikayetSonucu: 'Haklı Değil' })).statusCode).toBe(409);
+    }
   });
   it('kapsam kararı Teknik Yönetici; 5.000 EUR üstü Teknik Müdür; kök neden olmadan kapanmaz', async () => {
     const d = await hazir(); const c = await o.gir('ds');

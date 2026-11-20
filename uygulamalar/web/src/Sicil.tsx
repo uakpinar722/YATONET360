@@ -43,6 +43,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
         <FirmaOzet id={secili} />
         <div className="ozet">
           <SicilKarne id={secili} onay={onay} gerekce={gerekce} yap={yap} />
+          <KararOnerisi id={secili} yap={yap} sicil={ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu')} asama={l.find((f) => f.kimlik === secili)?.kayit_asamasi} />
           {onay && <>
             <label htmlFor="fs-g">Statü Gerekçesi</label><input id="fs-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce }), 'Firma onaylandı.')}>Onayla ve Aktif Yap</button>
@@ -71,6 +72,29 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
       </>}
     </>
   );
+}
+
+/** YG-1650 (A37): ön inceleme, kanıta bağlı puanlama ve karar önerisi (Firma Yönetimi Yöneticisi → Müdür Yardımcısı → Müdür). */
+function KararOnerisi({ id, yap, sicil, asama }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void>; sicil: boolean; asama?: string }) {
+  type O = { kimlik: string; oneri: string; kapsama: string | null; puanlar: { baslik: string; puan: number; kanit: string }[]; gerekce: string; durum: string; hazirlayan: string; makam: string | null };
+  const [v, setV] = useState<{ asama: string; son: string | null; oneriler: O[]; hazirlar: boolean; oneriTurleri: string[]; kapsamalar: string[] } | null>(null);
+  const [f, setF] = useState({ oneri: '', kapsama: '', gerekce: '', puanlar: '' });
+  const yk = () => void istek<NonNullable<typeof v>>(`/firma/${id}/karar-onerisi`).then(setV).catch(() => setV(null));
+  useEffect(yk, [id]);
+  const puanlar = f.puanlar.split('\n').map((s) => s.split('|').map((x) => x.trim())).filter((x) => x[0]).map(([baslik, puan, kanit]) => ({ baslik, puan: Number(puan), kanit }));
+  return <>
+    {sicil && asama === 'Başvuru' && <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/on-incelemeye-gonder`, {}), 'Başvuru Firma Yönetimi Yöneticisine ön incelemeye gönderildi.').then(yk)}>Ön İncelemeye Gönder</button>}
+    {v && <>
+      {v.son && v.asama === 'İncelemede' && <div className="not">Karara sunma son tarihi: {new Date(v.son).toLocaleDateString('tr-TR')}</div>}
+      {v.oneriler.map((x) => <div key={x.kimlik} className="not">Karar Önerisi: {x.oneri}{x.kapsama ? ` · ${x.kapsama}` : ''} · {x.durum === 'Onayda' && x.makam ? `${x.makam} Kontrolünde` : x.durum} · Hazırlayan: {x.hazirlayan}{x.puanlar.length ? ` · ${x.puanlar.map((p) => `${p.baslik} ${p.puan}`).join(', ')}` : ''}</div>)}
+      {v.hazirlar && v.asama === 'İncelemede' && !v.oneriler.some((x) => x.durum === 'Onayda') && <>
+        <label htmlFor={`ko-o-${id}`}>Karar Önerisi</label><select id={`ko-o-${id}`} value={f.oneri} onChange={(e) => setF({ ...f, oneri: e.target.value })}><option value="">Seçiniz</option>{v.oneriTurleri.map((x) => <option key={x}>{x}</option>)}</select>
+        {(f.oneri === 'Onaylı' || f.oneri === 'Koşullu Onaylı') && <><label htmlFor={`ko-k-${id}`}>Kapsama Türü</label><select id={`ko-k-${id}`} value={f.kapsama} onChange={(e) => setF({ ...f, kapsama: e.target.value })}><option value="">Seçiniz</option>{v.kapsamalar.map((x) => <option key={x}>{x}</option>)}</select></>}
+        <label htmlFor={`ko-p-${id}`}>Puanlama (her satır: Başlık | Puan 1–5 | Kanıt)</label><textarea id={`ko-p-${id}`} rows={3} value={f.puanlar} onChange={(e) => setF({ ...f, puanlar: e.target.value })} />
+        <label htmlFor={`ko-g-${id}`}>Öneri Gerekçesi</label><input id={`ko-g-${id}`} value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+        <button className="btn2" disabled={!f.oneri || !f.gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${id}/karar-onerisi`, { oneri: f.oneri, kapsama: f.kapsama || undefined, gerekce: f.gerekce, puanlar }), 'Karar önerisi Firma Yönetimi Müdür Yardımcısına gönderildi.').then(() => { setF({ oneri: '', kapsama: '', gerekce: '', puanlar: '' }); yk(); })}>Onaya Gönder</button></>}
+    </>}
+  </>;
 }
 
 /** YG-928: giren kişi teyit edemez; e-posta teyit sayılmaz. Yetkisiz kullanıcıya bölüm görünmez. */

@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { istek } from './api';
 
 const VARYANT = ['Garanti Değerlendirme Sonucu', 'Şikâyet Yanıtı', 'İtiraz İnceleme Sonucu', 'Ara Bilgilendirme', 'Takip Kontrolü', 'Talep Yanıtı'];
-interface Durum { teknikGorusler?: { kimlik: string; soru: string; gorus: string | null; veren: string | null }[]; gorusIster?: boolean; sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null; no?: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
+interface Durum { sonucVerir?: boolean; sonucOnaya?: boolean; sonucOnayda?: string | null; teknikGorusler?: { kimlik: string; soru: string; gorus: string | null; veren: string | null }[]; gorusIster?: boolean; sorveyorler?: { kimlik: string; sorveyor_adi: string; kurum: string | null; gerekce: string; rapor_tarihi: string | null; sonuc: string | null }[]; sorveyorYetkili?: boolean; kaliteYonlendirir?: boolean; yazilar: { kimlik: string; yazi_no: string; varyant: string; durum: string }[]; hazirlar: boolean; itiraz: { zaman: string | null; son: string | null; makam: string | null; sonuc: string | null; no?: string | null }; itirazKarar: boolean; yanitVar: boolean; takipSon: string | null }
 
 /** YG-728: FR-KLT-016 yanıt yazısı (6 varyant), itiraz kaydı ve üst kademe kararı. */
 export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [v, setV] = useState<Durum | null>(null); const [f, setF] = useState({ varyant: '', inceleme: '', islemler: '', duzeltme: '' });
   const [sv, setSv] = useState({ ad: '', kurum: '', iletisim: '', gerekce: '', raporTarihi: '', sonuc: '' });
-  const [tg, setTg] = useState('');
+  const [tg, setTg] = useState(''); const [so, setSo] = useState({ sonuc: '', gerekce: '' });
   const [it, setIt] = useState(''); const [ky, setKy] = useState(''); const [ik, setIk] = useState({ sonuc: '', gerekce: '' });
   const yukle = () => void istek<Durum>(`/garanti-sikayet/${id}/yanit`).then(setV).catch(() => setV(null));
   useEffect(yukle, [id]);
@@ -20,6 +20,12 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
     {v.yazilar.map((x) => <div key={x.kimlik}>{x.yazi_no} · {x.varyant} · {x.durum}</div>)}
     {v.itiraz.zaman && <div className="not">İtiraz{v.itiraz.no ? ` ${v.itiraz.no}` : ''}: {tarih(v.itiraz.zaman)} · İnceleyen: {v.itiraz.makam} · Son: {tarih(v.itiraz.son)}{v.itiraz.sonuc ? ` · Sonuç: ${v.itiraz.sonuc}` : ''}</div>}
     {v.takipSon && <div className="not">Takip Kontrolü: {tarih(v.takipSon)}</div>}
+    {v.sonucOnayda && <div className="not">Şikâyet Sonucu ({v.sonucOnayda}) Strateji ve Kurumsal Gelişim Direktörü Kontrolünde</div>}
+    {v.sonucVerir && <>{/* YG-1699 (A52-S3) */}
+      <label htmlFor={`gy-so-${id}`}>Şikâyet Sonucu</label><select id={`gy-so-${id}`} value={so.sonuc} onChange={(e) => setSo({ ...so, sonuc: e.target.value })}><option value="">Seçiniz</option>{['Haklı – Düzeltildi', 'Kısmen Haklı', 'Haklı Değil', 'Bilgilendirme'].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor={`gy-sg-${id}`}>Sonuç Gerekçesi</label><input id={`gy-sg-${id}`} value={so.gerekce} onChange={(e) => setSo({ ...so, gerekce: e.target.value })} />
+      {v.sonucOnaya && <div className="not">Şikâyeti siz takip ettiğiniz için sonuç Strateji ve Kurumsal Gelişim Direktörü onayına gider.</div>}
+      <button className="btn2 kucuk" disabled={!so.sonuc || !so.gerekce.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/karar`, { sikayetSonucu: so.sonuc, gerekce: so.gerekce }), v.sonucOnaya ? 'Şikâyet sonucu Direktör onayına gönderildi.' : 'Şikâyet sonucu kaydedildi.').then(yukle)}>{v.sonucOnaya ? 'Onaya Gönder' : 'Kararı Kaydet'}</button></>}
     {v.teknikGorusler?.map((x) => <div key={x.kimlik} className="not">Teknik Görüş Talebi: {x.soru} · {x.gorus ? `Görüş (${x.veren}): ${x.gorus}` : 'Teknik Yönetici görüşü bekleniyor'}</div>)}
     {v.gorusIster && !v.teknikGorusler?.some((x) => !x.gorus) && <>{/* YG-1701 (A53-Z1) */}
       <label htmlFor={`gy-tg-${id}`}>Teknik Yöneticiden İstenen Görüş</label><input id={`gy-tg-${id}`} value={tg} onChange={(e) => setTg(e.target.value)} />

@@ -253,6 +253,9 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
       {ben.roller.some((r) => ['Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı'].includes(r.rol_adi)) && <AskiAcikIsler />}
       {ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu') && <SuresiDolmusBelgeler />}
+      {ben.roller.some((r) => ['Sicil Sorumlusu', 'Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı'].includes(r.rol_adi)) && <SicilKalitesi />}
+      <DonemKartlari />
+      <FirmaDenetimPlani />
       {ben.roller.some((r) => r.rol_adi === 'Hukuk ve Uyum Direktörü') && <HukukGorusleri />}
       {ben.roller.some((r) => ['Teknik Müdür', 'İSG Sorumlusu'].includes(r.rol_adi)) && <BirimGorusleri />}
       {ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu') && <IsgIsiDurdur />}
@@ -658,6 +661,65 @@ function SuresiDolmusBelgeler() {
   if (!l.length) return null;
   return <><div className="bolum">Acil</div>{l.map((x) => <div key={x.kimlik} className="ozet kart-sol hata"><div className="ust2"><b>Süresi Dolmuş Zorunlu Belge · {x.ticari_unvan}</b><Rozet s="kirmizi" c="Acil" /></div>
     <div className="not">{x.tur} · Bitiş: {x.gecerlilik_bitis.split('-').reverse().join('.')}{x.engelleyici ? ' · Yeni iş emri verilmez, hakediş ödemesi bekletilir.' : ''}</div></div>)}</>;
+}
+
+/** YG-1648 (A36): Sicil Kalitesi — kayıt yıldönümü gözden geçirme paketi ve 12 aydır güncellenmeyen kayıtlar. */
+function SicilKalitesi() {
+  type P = { firma: string; ticari_unvan: string; sicil_no: string; son_zaman: string | null; gecerli_belge: number; dolan_belge: number; personel: number; tesis: number; ekipman: number; kullanilamaz_ekipman: number };
+  const [v, setV] = useState<{ yildonumu: P[]; guncellenmeyen: { kimlik: string; ticari_unvan: string; sicil_no: string; guncelleme_zamani: string }[]; hazirlar: boolean } | null>(null);
+  const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => void istek<NonNullable<typeof v>>('/sicil/kalite').then(setV).catch(() => setV(null));
+  useEffect(yk, []);
+  if (!v || (!v.yildonumu.length && !v.guncellenmeyen.length)) return null;
+  return <details><summary>Sicil Kalitesi · {v.yildonumu.length} yıldönümü · {v.guncellenmeyen.length} güncellenmeyen kayıt</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.yildonumu.map((x) => <div key={x.firma} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan} · Kayıt Yıldönümü</b>{x.son_zaman && <span className="not">Son: {new Date(x.son_zaman).toLocaleDateString('tr-TR')}</span>}</div>
+      <div className="not">Belge: {x.gecerli_belge} geçerli, {x.dolan_belge} süresi dolmuş · Personel: {x.personel} · Tesis: {x.tesis} · Ekipman: {x.ekipman} ({x.kullanilamaz_ekipman} kullanılamaz)</div>
+      {v.hazirlar && <><label htmlFor={`yd-${x.firma}`}>Gözden Geçirme Değerlendirmesi</label><textarea id={`yd-${x.firma}`} rows={2} value={g[x.firma] ?? ''} onChange={(e) => setG({ ...g, [x.firma]: e.target.value })} />
+        <div className="dugmeler"><button className="btn2 kucuk" disabled={!g[x.firma]?.trim()} onClick={() => void istek(`/sicil/yildonumu/${x.firma}/onaya-gonder`, { degerlendirme: g[x.firma] }).then(() => { setM('Paket Firma Yönetimi Yöneticisine gönderildi.'); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>}</div>)}
+    {v.guncellenmeyen.length > 0 && <><div className="bolum">12 Aydır Güncellenmeyen Kayıtlar</div>{v.guncellenmeyen.map((x) => <div key={x.kimlik} className="not">{x.sicil_no} · {x.ticari_unvan} · Son güncelleme: {new Date(x.guncelleme_zamani).toLocaleDateString('tr-TR')}</div>)}</>}
+  </details>;
+}
+
+/** YG-1654 (A38): Dönem Performans Kartları; risk derecesi yalnız öneri; üç dönem kademeli düşüşte öneri Firma Yönetimi Müdürüne. */
+function DonemKartlari() {
+  type K = { kimlik: string; sicil_no: string; ticari_unvan: string; risk_derecesi: string | null; kapasite_is: number | null; donem_sonu: string; donem_puani: string | null; agirlikli_ortalama: string | null; uygunsuzluk_kesintisi: string; kapanan_dosya_sayisi: number; yetersiz_veri: boolean; acik_emniyet_uygunsuzlugu: boolean; risk_derecesi_onerisi: string; acik_duzeltici: number; denetim: number; kademeli_dusus: boolean; son: string; oneri_bekliyor: boolean };
+  const [v, setV] = useState<{ kartlar: K[]; oneriVerir: boolean } | null>(null); const [g, setG] = useState<Record<string, { oneri: string; gerekce: string }>>({}); const [m, setM] = useState('');
+  const yk = () => void istek<NonNullable<typeof v>>('/firma/donem-kartlari').then(setV).catch(() => setV(null));
+  useEffect(yk, []);
+  if (!v || !v.kartlar.length) return null;
+  const s = (x: string | null) => (x === null ? '---' : Number(x).toLocaleString('tr-TR', { maximumFractionDigits: 2 }));
+  return <details><summary>Dönem Performans Kartları · {v.kartlar.length} firma{v.kartlar.some((x) => x.kademeli_dusus) ? ` · ${v.kartlar.filter((x) => x.kademeli_dusus).length} kademeli düşüş` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.kartlar.map((x) => { const f = g[x.kimlik] ?? { oneri: '', gerekce: '' }; return <div key={x.kimlik} className={x.acik_emniyet_uygunsuzlugu || x.kademeli_dusus ? 'ozet kart-sol hata' : 'ozet kart-sol'}>
+      <div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">Dönem: {x.donem_sonu.split('-').reverse().join('.')} · Son: {new Date(x.son).toLocaleDateString('tr-TR')}</span></div>
+      <div className="not">Dönem Puanı: {x.yetersiz_veri ? 'Yetersiz Veri' : s(x.donem_puani)} · Dosya Performansı: {s(x.agirlikli_ortalama)} ({x.kapanan_dosya_sayisi} dosya) · Denetim: {x.denetim} · Açık Düzeltici Faaliyet: {x.acik_duzeltici} · Kapasite: {x.kapasite_is ?? '---'}{x.acik_emniyet_uygunsuzlugu ? ' · Açık emniyet riski' : ''} · Risk Derecesi Önerisi: {x.risk_derecesi_onerisi} (mevcut: {x.risk_derecesi ?? '---'})</div>
+      {x.kademeli_dusus && <div className="not">Üç dönem kademeli düşüş{x.oneri_bekliyor ? ' · Öneri Firma Yönetimi Müdürü Kontrolünde' : ''}</div>}
+      {x.kademeli_dusus && v.oneriVerir && !x.oneri_bekliyor && <><label htmlFor={`kd-o-${x.kimlik}`}>Öneri</label><select id={`kd-o-${x.kimlik}`} value={f.oneri} onChange={(e) => setG({ ...g, [x.kimlik]: { ...f, oneri: e.target.value } })}><option value="">Seçiniz</option><option>Erken Denetim</option><option>Gelişim Görüşmesi</option></select>
+        <label htmlFor={`kd-g-${x.kimlik}`}>Gerekçe</label><input id={`kd-g-${x.kimlik}`} value={f.gerekce} onChange={(e) => setG({ ...g, [x.kimlik]: { ...f, gerekce: e.target.value } })} />
+        <button className="btn2 kucuk" disabled={!f.oneri || !f.gerekce.trim()} onClick={() => void istek(`/firma/${x.kimlik}/kademeli-dusus-onerisi`, f).then(() => { setM('Öneri Firma Yönetimi Müdürüne gönderildi.'); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></>}
+    </div>; })}
+  </details>;
+}
+
+/** YG-1654 (A38): Risk Esaslı Denetim Planı; ertelemede gerekçe ve yeni tarih; denetçi sonucu kaydeder. */
+function FirmaDenetimPlani() {
+  type P = { kimlik: string; tur: string; planlanan_tarih: string; durum: string; risk_gerekcesi: string; erteleme_sayisi: number; son_erteleme_gerekcesi: string | null; sonuc: string | null; sicil_no: string; ticari_unvan: string; denetci: string; benim: boolean };
+  const [v, setV] = useState<{ planlar: P[]; riskli: { kimlik: string; sicil_no: string; ticari_unvan: string; neden: string }[]; turler: string[]; planlar_mi: boolean } | null>(null);
+  const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => void istek<NonNullable<typeof v>>('/firma-denetim-plani').then(setV).catch(() => setV(null));
+  useEffect(yk, []);
+  if (!v || (!v.planlar.length && !v.riskli.length)) return null;
+  const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); setG({}); yk(); }).catch((e) => setM(e.message));
+  return <details><summary>Risk Esaslı Denetim Planı · {v.planlar.filter((x) => x.durum === 'Planlandı').length} planlı{v.riskli.length ? ` · ${v.riskli.length} denetim önerilen firma` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.riskli.map((x) => <div key={x.kimlik} className="not">Denetim önerilen: {x.sicil_no} · {x.ticari_unvan} · {x.neden}</div>)}
+    {v.planlar.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan} · {x.tur}</b><span className="not">{x.planlanan_tarih.split('-').reverse().join('.')} · {x.durum}</span></div>
+      <div className="not">Denetçi: {x.denetci} · {x.risk_gerekcesi}{x.erteleme_sayisi ? ` · ${x.erteleme_sayisi} kez ertelendi: ${x.son_erteleme_gerekcesi}` : ''}{x.sonuc ? ` · Sonuç: ${x.sonuc}` : ''}</div>
+      {x.durum === 'Planlandı' && v.planlar_mi && <><label htmlFor={`fd-e-${x.kimlik}`}>Erteleme Gerekçesi</label><input id={`fd-e-${x.kimlik}`} value={g[`e${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`e${x.kimlik}`]: e.target.value })} />
+        <label htmlFor={`fd-t-${x.kimlik}`}>Yeni Tarih</label><input id={`fd-t-${x.kimlik}`} type="date" value={g[`t${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`t${x.kimlik}`]: e.target.value })} />
+        <button className="btn2 kucuk" disabled={!g[`e${x.kimlik}`]?.trim() || !g[`t${x.kimlik}`]} onClick={() => is(istek(`/firma-denetim/${x.kimlik}/ertele`, { gerekce: g[`e${x.kimlik}`], yeniTarih: g[`t${x.kimlik}`] }), 'Denetim ertelendi.')}>Ertele</button></>}
+      {x.durum === 'Planlandı' && x.benim && <><label htmlFor={`fd-s-${x.kimlik}`}>Denetim Sonucu</label><input id={`fd-s-${x.kimlik}`} value={g[`s${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`s${x.kimlik}`]: e.target.value })} />
+        <button className="btn2 kucuk" disabled={!g[`s${x.kimlik}`]?.trim()} onClick={() => is(istek(`/firma-denetim/${x.kimlik}/sonuc`, { sonuc: g[`s${x.kimlik}`] }), 'Denetim sonucu kaydedildi.')}>Sonucu Kaydet</button></>}
+    </div>)}
+  </details>;
 }
 
 /** YG-1654: Geçici Askıdaki Firmanın Açık Dosyaları (Acil, sayaçsız). */

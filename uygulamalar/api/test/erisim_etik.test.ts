@@ -25,6 +25,33 @@ describe('erişim incelemesi (YG-1044–1047, YG-1639, YG-1644)', () => {
     expect((await o.sup.query(`SELECT karar, gerekce FROM erisim_inceleme_kalemi WHERE kimlik = $1`, [k[1]!.kimlik])).rows[0]).toMatchObject({ karar: 'Askıya Al' });
     await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Aktif' WHERE atama_durumu = 'Askıda'`);
   });
+  it('T-YG1645: ayrıcalıklı paket Müdür Yardımcısında hazırlanır, Bilgi İşlem Müdürü onayıyla uygulanır', async () => {
+    const my = (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi) VALUES ('İç','LGM İç Rolü','BİMY Test','bimy1645','bimy1645@limitglobalmarine.com.tr','x','SMS kodu') RETURNING kimlik`)).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref, atama_durumu, baslangic_tarihi) SELECT $1, kimlik, 'Aktif', current_date - 1 FROM rol WHERE rol_adi = 'Bilgi İşlem Müdür Yardımcısı'`, [my]);
+    await o.sup.query(`UPDATE rol SET ayricalikli_rol = true WHERE rol_adi = 'Dosya Sorumlusu'`);
+    await erisimIncelemeAc(o.db, new Date('2026-10-05T09:00:00Z'));
+    await o.sup.query(`UPDATE rol SET ayricalikli_rol = false WHERE rol_adi = 'Dosya Sorumlusu'`);
+    const e = (await o.sup.query(`SELECT kimlik, paket, rol_ref FROM erisim_inceleme WHERE donem = '2026-Q4'`)).rows[0];
+    expect(e.paket).toBe(true);
+    const l = (await o.sup.query(`SELECT k.kimlik FROM erisim_inceleme_kalemi k JOIN rol r ON r.kimlik = k.rol_ref WHERE k.inceleme_ref = $1 AND r.rol_adi = 'Dosya Sorumlusu' ORDER BY k.kimlik`, [e.kimlik])).rows.map((x) => x.kimlik as string);
+    expect(l.length).toBe(2);
+    // Müdür Yardımcısı oturumu doğrudan açılamadığından paket yolu servis katmanında sınanır.
+    await o.sup.query(`UPDATE erisim_inceleme_kalemi SET oneri = 'Koru' WHERE inceleme_ref = $1`, [e.kimlik]);
+    await o.sup.query(`UPDATE erisim_inceleme_kalemi SET oneri = 'Askıya Al', oneri_gerekce = 'Görev değişti' WHERE kimlik = $1`, [l[0]]);
+    expect((await o.ist('POST', `/api/erisim-inceleme/${e.kimlik}/onaya-gonder`, await o.gir('btm'), {})).statusCode).toBe(404);
+    await o.sup.query(`UPDATE erisim_inceleme SET rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Operasyon Müdürü') WHERE kimlik = $1`, [e.kimlik]);
+    const op = await o.gir('opm');
+    expect((await o.ist('POST', `/api/erisim-inceleme/kalem/${l[1]}`, op, { karar: 'Koru' })).json()).toEqual({ oneri: true });
+    expect((await o.ist('POST', `/api/erisim-inceleme/${e.kimlik}/onaya-gonder`, op, {})).json()).toMatchObject({ durum: 'Onayda' });
+    const kart = await o.kart('Erişim İnceleme Paketi', e.kimlik); expect(kart).toBeTruthy();
+    expect((await o.sup.query(`SELECT karar FROM erisim_inceleme_kalemi WHERE kimlik = $1`, [l[0]])).rows[0].karar).toBeNull();
+    const r = await o.ist('POST', `/api/is/${kart.kimlik}/karar`, await o.gir('btm'), { karar: 'Onayla' });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT k.karar, a.atama_durumu FROM erisim_inceleme_kalemi k JOIN rol_atamasi a ON a.kimlik = k.atama_ref WHERE k.kimlik = $1`, [l[0]])).rows[0]).toEqual({ karar: 'Askıya Al', atama_durumu: 'Askıda' });
+    expect((await o.sup.query(`SELECT durum FROM erisim_inceleme WHERE kimlik = $1`, [e.kimlik])).rows[0].durum).toBe('Tamamlandı');
+    await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Aktif' WHERE atama_durumu = 'Askıda'`);
+    await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kullanici_ref = $1`, [my]);
+  });
   it('dış hesap 90 günde askıya, 180 günde kapanır; askıya alma ayrı ve gerekçeli işlemdir', async () => {
     const yeni = async (ad: string, gun: number) => (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani, son_giris_zamani) VALUES ('Dış','İş Birliği Firması',$1,$2,$3,'x','Doğrulama uygulaması (6 haneli kod)',now(),now() - make_interval(days => $4)) RETURNING kimlik`, [ad, `${ad}@p.local`, `${ad}@p.local`, gun])).rows[0].kimlik as string;
     const a = await yeni('dis100', 100); const c = await yeni('dis200', 200); const t = await yeni('dis10', 10);
