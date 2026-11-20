@@ -20,6 +20,7 @@ export const ON_KOSULLAR = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 
 const SICIL_ROLLER = ['Sicil Sorumlusu', FYM, 'Firma Yönetimi Müdür Yardımcısı'];
 const YILDONUMU = 'Kayıt Yıldönümü Gözden Geçirme'; const YILDONUMU_PAKET = 'Kayıt Yıldönümü Paketi';
 const KARNE_OZETI = 'Üç Aylık Karne Özeti'; const KARNE_OZETI_GOREV = 'Üç Aylık Karne Özeti Hazırlığı'; const DENETIM_PROGRAMI = 'Yıllık Firma Denetim Programı';
+const KABUL_AYLIK = 'Aylık Kabul Göstergeleri'; const KABUL_AYLIK_PAKET = 'Aylık Kabul Göstergeleri Paketi';
 const KABUL_YILLIK = 'Kabul Sistemi Yıllık Gözden Geçirme'; const KABUL_IYILESTIRME = 'Kabul Sistemi İyileştirme Önerisi'; const BELGE_KONTROL = 'Başvuru Belge Kontrolü';
 /** YG-1650 (A37): kabul sistemi aylık göstergeleri (son 12 ay): başvuru, ön inceleme, karar, ortalama karar süresi, 15 iş günü aşımı. */
 export async function kabulGostergeleri(db: Pool | PoolClient) {
@@ -52,6 +53,8 @@ export async function sicilKaliteAylik(db: Pool, simdi = new Date()): Promise<nu
   }
   // YG-1654: Ocak, Nisan, Temmuz ve Ekim'de biten dönemin karne özeti gözden geçirme görevi Firma Yönetimi Müdür Yardımcısına.
   if (ay % 3 === 0 && await birKez(db, 'karne-ozeti', donem)) { await kartAc(db, { tur: KARNE_OZETI_GOREV, kategori: 'gorev', baslik: `${donem} · ${KARNE_OZETI_GOREV}`, ozet: 'Biten dönemin karne puanlarını gözden geçirip özet paketini Dönem Performans Kartlarından "Onaya Gönder" ile Firma Yönetimi Müdürüne sununuz.', sahipRol: await rolId(db, 'Firma Yönetimi Müdür Yardımcısı'), sonZaman: await isGunuSonu(db, simdi, 10), nesneTuru: 'Karne Dönemi', nesneKimligi: donem, simdi }); n++; }
+  // YG-1651: her ay geçen ayın kabul göstergeleri görevi Firma Yönetimi Yöneticisine; paket Müdür Yardımcısı ve Müdür onayına gider.
+  if (await birKez(db, 'kabul-aylik', donem)) { const once = new Date(Date.UTC(yil, ay - 1, 1)).toISOString().slice(0, 7); await kartAc(db, { tur: KABUL_AYLIK, kategori: 'gorev', baslik: `${once} · ${KABUL_AYLIK}`, ozet: 'Geçen ayın kabul göstergelerini değerlendirip paketi Kabul Sistemi bölümünden "Onaya Gönder" ile sununuz.', sahipRol: await rolId(db, 'Firma Yönetimi Yöneticisi'), sonZaman: await isGunuSonu(db, simdi, 5), nesneTuru: 'Kabul Sistemi', nesneKimligi: once, simdi }); n++; }
   // YG-1650: her Ocak geçen yılın kabul sistemi gözden geçirmesi Firma Yönetimi Yöneticisine; iyileştirme önerisi Müdür Yardımcısı ve Müdür onayına gider.
   if (ay === 0 && await birKez(db, 'kabul-yillik', String(yil - 1))) { await kartAc(db, { tur: KABUL_YILLIK, kategori: 'gorev', baslik: `${yil - 1} · ${KABUL_YILLIK}`, ozet: 'Geçen yılın kabul göstergelerini (başvuru, karar, ortalama süre, süre aşımı) değerlendirip iyileştirme önerisini "Onaya Gönder" ile sununuz.', sahipRol: await rolId(db, 'Firma Yönetimi Yöneticisi'), sonZaman: await isGunuSonu(db, simdi, 15), nesneTuru: 'Kabul Sistemi', nesneKimligi: String(yil - 1), simdi }); n++; }
   return n;
@@ -562,7 +565,22 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
       FROM kurulus k WHERE k.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND k.ag_statusu IN ('Aktif', 'Kısıtlı') AND k.kabul_karar_zamani IS NOT NULL AND NOT EXISTS (SELECT 1 FROM performans_donem_puani p WHERE p.kurulus_ref = k.kimlik) ORDER BY k.kabul_karar_zamani LIMIT 100`)).rows;
     const donem = l.reduce<string | null>((a, x) => (!a || x.donem_sonu > a ? x.donem_sonu : a), null);
     const ozetBekliyor = donem ? Boolean((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor' LIMIT 1`, [KARNE_OZETI, donem])).rowCount) : false;
-    return { kartlar: l, ilkDonem, donem, ozetBekliyor, oneriVerir: await rolVar(i.oturum!.kullanici, [FYMY, FYY]) };
+    const kayit = donem ? (await b.db.query(`SELECT r.zaman, h.ad_soyad FROM firma_donem_karti_kaydi r JOIN kullanici_hesabi h ON h.kimlik = r.kaydeden_ref WHERE r.donem_sonu = $1::date`, [donem])).rows[0] ?? null : null;
+    return { kartlar: l, ilkDonem, donem, ozetBekliyor, kayit, kaydeder: await rolVar(i.oturum!.kullanici, [FYMY]), oneriVerir: await rolVar(i.oturum!.kullanici, [FYMY, FYY]) };
+  });
+  // YG-1655: dönem kartı puanı sistemce hesaplanır; Müdür Yardımcısı "Dönem Kartlarını Kaydet" ile dönemi kaydeder, ayrı onay adımı yoktur.
+  s.post('/firma/donem-kartlari/kaydet', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { donem } = (i.body ?? {}) as { donem?: string };
+    if (!(await rolVar(o.kullanici, [FYMY]))) return yok(y);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(donem ?? '')) return y.code(400).send({ hata: 'Dönemi seçiniz.' });
+    const p = (await b.db.query(`SELECT kurulus_ref, donem_puani FROM performans_donem_puani WHERE donem_sonu = $1::date`, [donem])).rows;
+    if (!p.length) return y.code(409).send({ hata: 'Bu dönem için hesaplanmış kart yoktur.' });
+    let dusus = 0;
+    for (const x of p) { const s3 = (await b.db.query(`SELECT donem_puani FROM performans_donem_puani WHERE kurulus_ref = $1 AND donem_sonu <= $2::date ORDER BY donem_sonu DESC LIMIT 3`, [x.kurulus_ref, donem])).rows.map((r) => (r.donem_puani === null ? null : Number(r.donem_puani))); if (s3.length === 3 && s3.every((v) => v !== null) && s3[0]! < s3[1]! && s3[1]! < s3[2]!) dusus++; }
+    const r = await b.db.query(`INSERT INTO firma_donem_karti_kaydi (donem_sonu, firma_sayisi, kademeli_dusus, kaydeden_ref) VALUES ($1::date, $2, $3, $4) ON CONFLICT (donem_sonu) DO NOTHING RETURNING donem_sonu`, [donem, p.length, dusus, o.kullanici]);
+    if (!r.rowCount) return y.code(409).send({ hata: 'Bu dönemin kartları kaydedilmiştir.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dönem Kartları Kaydedildi', nesneTuru: 'Karne Dönemi', nesneKimligi: donem!, yeni: { firma: p.length, kademeliDusus: dusus }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { firma: p.length, kademeliDusus: dusus };
   });
   // YG-1654: üç aylık karne özeti gözden geçirme paketi; Firma Yönetimi Müdür Yardımcısı veya Yöneticisi hazırlar, Firma Yönetimi Müdürü onaylar.
   s.post('/firma/karne-ozeti', oturumlu, async (i, y) => {
@@ -756,7 +774,8 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     const dagitim = (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, olusturma_zamani, basvuru_kanali, beyan_teyidi, mukerrer_karari FROM kurulus WHERE kayit_asamasi = 'Başvuru' AND atanan_sicil_ref IS NULL ORDER BY olusturma_zamani LIMIT 100`)).rows;
     const sorumlular = (await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kimlik = ANY($1::text[]) ORDER BY ad_soyad`, [await rolSahipleri(b.db, await rolId(b.db, 'Sicil Sorumlusu'))])).rows;
     const yillik = (await b.db.query(`SELECT nesne_kimligi yil, son_zaman FROM is_karti WHERE tur = $1 AND durum = 'Bekliyor' ORDER BY olusturma_zamani DESC LIMIT 1`, [KABUL_YILLIK])).rows[0] ?? null;
-    return { dagitim, sorumlular, gostergeler: await kabulGostergeleri(b.db), yillik, atar: await rolVar(o.kullanici, [FYY, FYMY]), hazirlar: (await rolSahipleri(b.db, await rolId(b.db, FYY))).includes(o.kullanici) };
+    const aylik = (await b.db.query(`SELECT nesne_kimligi ay, son_zaman FROM is_karti WHERE tur = $1 AND durum = 'Bekliyor' ORDER BY olusturma_zamani DESC LIMIT 1`, [KABUL_AYLIK])).rows[0] ?? null;
+    return { dagitim, sorumlular, gostergeler: await kabulGostergeleri(b.db), yillik, aylik, atar: await rolVar(o.kullanici, [FYY, FYMY]), hazirlar: (await rolSahipleri(b.db, await rolId(b.db, FYY))).includes(o.kullanici) };
   });
   s.post('/firma/:id/sicil-ata', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { kullanici } = (i.body ?? {}) as { kullanici?: string };
@@ -768,6 +787,19 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     await kartAc(b.db, { tur: BELGE_KONTROL, kategori: 'gorev', baslik: `${f.sicil_no} · ${f.ticari_unvan} · ${BELGE_KONTROL}`, ozet: 'Başvuru belgelerini kontrol edip kaydı "Ön İncelemeye Gönder" ile Firma Yönetimi Yöneticisine gönderiniz.', sahipKullanici: kullanici, nesneTuru: 'Kuruluş', nesneKimligi: id });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Başvuru Sicil Sorumlusuna Atandı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { atanan: kullanici }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
+  });
+  s.post('/firma/kabul-gostergeleri/onaya-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { degerlendirme } = (i.body ?? {}) as { degerlendirme?: string };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, FYY))).includes(o.kullanici)) return yok(y);
+    const g = (await b.db.query(`SELECT kimlik, nesne_kimligi ay FROM is_karti WHERE tur = $1 AND durum = 'Bekliyor' ORDER BY olusturma_zamani DESC LIMIT 1`, [KABUL_AYLIK])).rows[0];
+    if (!g) return y.code(409).send({ hata: 'Bekleyen aylık kabul göstergeleri görevi yoktur.' });
+    if (!degerlendirme?.trim()) return y.code(400).send({ hata: 'Değerlendirmeyi yazınız.' });
+    const x = (await kabulGostergeleri(b.db)).find((r) => r.ay === g.ay);
+    const ozet = x ? `Başvuru: ${x.basvuru} · Ön İnceleme: ${x.on_inceleme} · Karar: ${x.karar} (Onaylı ${x.onayli}, Koşullu Onaylı ${x.kosullu}, Reddedildi ${x.reddedildi}) · Ortalama Süre: ${x.ort_gun === null ? '---' : String(x.ort_gun).replace('.', ',')} gün · Süre Aşımı: ${x.sure_asimi}` : 'Gösterge yok';
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [g.kimlik]);
+    await kartAc(b.db, { tur: KABUL_AYLIK_PAKET, baslik: `${g.ay} · ${KABUL_AYLIK_PAKET}`, ozet: `${ozet} · ${degerlendirme.trim()}`.slice(0, 1500), hazirlayan: o.kullanici, zincir: [await rolId(b.db, FYMY), await rolId(b.db, FYM)], nesneTuru: 'Kabul Sistemi', nesneKimligi: g.ay });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Aylık Kabul Göstergeleri Onaya Gönderildi', nesneTuru: 'Kabul Sistemi', nesneKimligi: g.ay, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { gonderilecek: FYMY };
   });
   s.post('/firma/kabul-iyilestirme', oturumlu, async (i, y) => {
     const o = i.oturum!; const { oneri } = (i.body ?? {}) as { oneri?: string };

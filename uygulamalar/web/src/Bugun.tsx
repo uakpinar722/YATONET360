@@ -684,8 +684,8 @@ function SicilKalitesi() {
 /** YG-1650 (A37): Dağıtım Bekleyen Başvurular ("Sicil Sorumlusuna Ata"), kabul sistemi aylık göstergeleri, yıllık iyileştirme önerisi. */
 function KabulSistemi() {
   type G = { ay: string; basvuru: number; on_inceleme: number; karar: number; onayli: number; kosullu: number; reddedildi: number; ort_gun: string | null; sure_asimi: number };
-  const [v, setV] = useState<{ dagitim: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; olusturma_zamani: string; basvuru_kanali: string | null; beyan_teyidi: string | null; mukerrer_karari: string | null }[]; sorumlular: { kimlik: string; ad_soyad: string }[]; gostergeler: G[]; yillik: { yil: string; son_zaman: string | null } | null; atar: boolean; hazirlar: boolean } | null>(null);
-  const [s, setS] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState(''); const [m, setM] = useState('');
+  const [v, setV] = useState<{ dagitim: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; olusturma_zamani: string; basvuru_kanali: string | null; beyan_teyidi: string | null; mukerrer_karari: string | null }[]; sorumlular: { kimlik: string; ad_soyad: string }[]; gostergeler: G[]; yillik: { yil: string; son_zaman: string | null } | null; aylik: { ay: string; son_zaman: string | null } | null; atar: boolean; hazirlar: boolean } | null>(null);
+  const [s, setS] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState(''); const [ad, setAd] = useState(''); const [m, setM] = useState('');
   const yk = () => void istek<NonNullable<typeof v>>('/firma/kabul-sistemi').then(setV).catch(() => setV(null));
   useEffect(yk, []);
   if (!v) return null;
@@ -696,6 +696,9 @@ function KabulSistemi() {
     <div className="bolum">Aylık Göstergeler · Son 12 Ay</div>
     <div className="tablo"><table className="kartli"><thead><tr><th>Ay</th><th>Başvuru</th><th>Ön İnceleme</th><th>Karar</th><th>Onaylı</th><th>Koşullu Onaylı</th><th>Reddedildi</th><th>Ortalama Süre (Gün)</th><th>Süre Aşımı</th></tr></thead>
       <tbody>{v.gostergeler.map((x) => <tr key={x.ay}><td data-ad="Ay">{x.ay.split('-').reverse().join('.')}</td><td data-ad="Başvuru">{x.basvuru}</td><td data-ad="Ön İnceleme">{x.on_inceleme}</td><td data-ad="Karar">{x.karar}</td><td data-ad="Onaylı">{x.onayli}</td><td data-ad="Koşullu Onaylı">{x.kosullu}</td><td data-ad="Reddedildi">{x.reddedildi}</td><td data-ad="Ortalama Süre (Gün)">{x.ort_gun === null ? '---' : Number(x.ort_gun).toLocaleString('tr-TR')}</td><td data-ad="Süre Aşımı">{x.sure_asimi}</td></tr>)}</tbody></table></div>
+    {v.aylik && v.hazirlar && <><div className="bolum">{v.aylik.ay.split('-').reverse().join('.')} · Aylık Kabul Göstergeleri{v.aylik.son_zaman ? ` · Son: ${new Date(v.aylik.son_zaman).toLocaleDateString('tr-TR')}` : ''}</div>
+      <label htmlFor="kabul-aylik">Değerlendirme</label><textarea id="kabul-aylik" rows={2} value={ad} onChange={(e) => setAd(e.target.value)} />
+      <div className="dugmeler"><button className="btn2 kucuk" disabled={!ad.trim()} onClick={() => void istek('/firma/kabul-gostergeleri/onaya-gonder', { degerlendirme: ad }).then(() => { setM('Göstergeler Firma Yönetimi Müdür Yardımcısına gönderildi.'); setAd(''); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>}
     {v.yillik && <><div className="bolum">{v.yillik.yil} · Yıllık İyileştirme Önerisi{v.yillik.son_zaman ? ` · Son: ${new Date(v.yillik.son_zaman).toLocaleDateString('tr-TR')}` : ''}</div>
       {v.hazirlar ? <><label htmlFor="kabul-oneri">İyileştirme Önerisi</label><textarea id="kabul-oneri" rows={3} value={oneri} onChange={(e) => setOneri(e.target.value)} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!oneri.trim()} onClick={() => void istek('/firma/kabul-iyilestirme', { oneri }).then(() => { setM('Öneri Firma Yönetimi Müdür Yardımcısına gönderildi.'); setOneri(''); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>
@@ -707,7 +710,7 @@ function KabulSistemi() {
 function DonemKartlari() {
   type K = { kimlik: string; sicil_no: string; ticari_unvan: string; risk_derecesi: string | null; kapasite_is: number | null; donem_sonu: string; donem_puani: string | null; agirlikli_ortalama: string | null; uygunsuzluk_kesintisi: string; kapanan_dosya_sayisi: number; yetersiz_veri: boolean; acik_emniyet_uygunsuzlugu: boolean; risk_derecesi_onerisi: string; acik_duzeltici: number; denetim: number; kademeli_dusus: boolean; son: string; oneri_bekliyor: boolean };
   type I = { kimlik: string; sicil_no: string; ticari_unvan: string; kabul_karar_zamani: string; gun: number; is_emri: number; tamamlanan: number; acik_uygunsuzluk: number };
-  const [v, setV] = useState<{ kartlar: K[]; ilkDonem: I[]; donem: string | null; ozetBekliyor: boolean; oneriVerir: boolean } | null>(null); const [g, setG] = useState<Record<string, { oneri: string; gerekce: string }>>({}); const [m, setM] = useState(''); const [oz, setOz] = useState('');
+  const [v, setV] = useState<{ kartlar: K[]; ilkDonem: I[]; donem: string | null; ozetBekliyor: boolean; kayit: { zaman: string; ad_soyad: string } | null; kaydeder: boolean; oneriVerir: boolean } | null>(null); const [g, setG] = useState<Record<string, { oneri: string; gerekce: string }>>({}); const [m, setM] = useState(''); const [oz, setOz] = useState('');
   const yk = () => void istek<NonNullable<typeof v>>('/firma/donem-kartlari').then(setV).catch(() => setV(null));
   useEffect(yk, []);
   if (!v || (!v.kartlar.length && !v.ilkDonem.length)) return null;
@@ -721,6 +724,8 @@ function DonemKartlari() {
         <label htmlFor={`kd-g-${x.kimlik}`}>Gerekçe</label><input id={`kd-g-${x.kimlik}`} value={f.gerekce} onChange={(e) => setG({ ...g, [x.kimlik]: { ...f, gerekce: e.target.value } })} />
         <button className="btn2 kucuk" disabled={!f.oneri || !f.gerekce.trim()} onClick={() => void istek(`/firma/${x.kimlik}/kademeli-dusus-onerisi`, f).then(() => { setM('Öneri Firma Yönetimi Müdürüne gönderildi.'); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></>}
     </div>; })}
+    {v.donem && (v.kayit ? <div className="not">Dönem kartları kaydedildi: {v.kayit.ad_soyad} · {new Date(v.kayit.zaman).toLocaleDateString('tr-TR')}</div>
+      : v.kaydeder && <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void istek('/firma/donem-kartlari/kaydet', { donem: v.donem }).then(() => { setM('Dönem kartları kaydedildi.'); yk(); }).catch((e) => setM(e.message))}>Dönem Kartlarını Kaydet</button></div>)}
     {v.donem && v.oneriVerir && <><div className="bolum">Üç Aylık Karne Özeti · {v.donem.split('-').reverse().join('.')}</div>
       {v.ozetBekliyor ? <div className="not">Özet Firma Yönetimi Müdürü Kontrolünde</div> : <><label htmlFor="karne-oz">Gözden Geçirme Değerlendirmesi</label><textarea id="karne-oz" rows={2} value={oz} onChange={(e) => setOz(e.target.value)} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!oz.trim()} onClick={() => void istek('/firma/karne-ozeti', { donem: v.donem, degerlendirme: oz }).then(() => { setM('Karne özeti Firma Yönetimi Müdürüne gönderildi.'); setOz(''); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>}</>}

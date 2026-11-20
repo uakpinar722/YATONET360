@@ -163,24 +163,26 @@ function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; g
 
 /** YG-1357: periyodik işler; tanımı Direktör, Genel Müdür Yardımcısı veya CEO girer. Tarih yaklaşınca sahibi role görev düşer. */
 function PeriyodikIsler() {
-  type P = { kimlik: string; ad: string; sahip_rol: string; periyot_ay: number; sonraki_tarih: string; aktif: boolean; sahibim: boolean; son_karar: string | null };
-  const [v, setV] = useState<{ isler: P[]; tanimlar: boolean; kontroller: string[]; roller: string[] } | null>(null); const [acik, setAcik] = useState(''); const [m, setM] = useState('');
-  const [f, setF] = useState({ ad: '', sahipRol: '', periyotAy: '', sonrakiTarih: '' }); const [gr, setGr] = useState('');
+  type P = { kimlik: string; ad: string; sahip_rol: string; periyot_ay: number; periyot_turu: string; sonraki_tarih: string | null; aktif: boolean; sahibim: boolean; son_karar: string | null };
+  const [v, setV] = useState<{ isler: P[]; tanimlar: boolean; periyotTurleri: string[]; kontroller: string[]; roller: string[] } | null>(null); const [acik, setAcik] = useState(''); const [m, setM] = useState('');
+  const [f, setF] = useState({ ad: '', sahipRol: '', periyotTuru: 'Aylık', periyotAy: '1', sonrakiTarih: '' }); const [gr, setGr] = useState(''); const [ol, setOl] = useState<Record<string, string>>({});
   const yk = () => istek<NonNullable<typeof v>>('/periyodik-isler').then(setV).catch(() => setV(null));
   useEffect(() => { void yk(); }, []);
   if (!v) return null;
   const tr = (x: string) => x.split('-').reverse().join('.');
   return <><div className="bolum">Periyodik İşler</div>{m && <div className="not" role="status">{m}</div>}
-    <div className="ozet">{v.isler.length === 0 ? <div className="not">Tanımlı periyodik iş bulunmamaktadır.</div> : v.isler.map((x) => <div key={x.kimlik}>{x.ad} · {x.sahip_rol} · {x.periyot_ay} ayda bir · Sonraki: {tr(x.sonraki_tarih)}{x.son_karar ? ` · Son karar: ${x.son_karar}` : ''}{x.aktif ? '' : ' · Pasif'}
-      {x.aktif && (x.sahibim || v.tanimlar) && <button className="btn2 kucuk" onClick={() => setAcik(acik === x.kimlik ? '' : x.kimlik)}>Gözden Geçirme Sonucu</button>}
+    <div className="ozet">{v.isler.length === 0 ? <div className="not">Tanımlı periyodik iş bulunmamaktadır.</div> : v.isler.map((x) => <div key={x.kimlik}>{x.ad} · {x.sahip_rol} · {x.periyot_turu === 'Aylık' && x.periyot_ay > 1 ? `${x.periyot_ay} ayda bir` : x.periyot_turu}{x.sonraki_tarih ? ` · Sonraki: ${tr(x.sonraki_tarih)}` : ''}{x.son_karar ? ` · Son karar: ${x.son_karar}` : ''}{x.aktif ? '' : ' · Pasif'}
+      {x.aktif && (x.sahibim || v.tanimlar) && x.periyot_turu === 'Olaya Bağlı' && <><label htmlFor={`pi-o-${x.kimlik}`}>Olay</label><input id={`pi-o-${x.kimlik}`} value={ol[x.kimlik] ?? ''} onChange={(e) => setOl({ ...ol, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!ol[x.kimlik]?.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/olay`, { olay: ol[x.kimlik] }).then(() => { setOl({}); setM('Görev açıldı.'); }).catch((e) => setM(e.message))}>Olayı Kaydet</button></>}
+      {x.aktif && (x.sahibim || v.tanimlar) && !['Günlük', 'Haftalık', 'Olaya Bağlı'].includes(x.periyot_turu) && <button className="btn2 kucuk" onClick={() => setAcik(acik === x.kimlik ? '' : x.kimlik)}>Gözden Geçirme Sonucu</button>}
       {acik === x.kimlik && <GozdenGecirmeSonucu id={x.kimlik} kontroller={v.kontroller} bitti={() => { setAcik(''); setM('Gözden geçirme sonucu kaydedildi.'); void yk(); }} />}
       {v.tanimlar && <button className="btn2 kucuk" disabled={!gr.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/durum`, { aktif: !x.aktif, gerekce: gr }).then(() => { setGr(''); return yk(); }).catch((e) => setM(e.message))}>{x.aktif ? 'Pasife Al' : 'Etkinleştir'}</button>}</div>)}</div>
     {v.tanimlar && <><label htmlFor="pi-g">Durum Değişikliği Gerekçesi</label><input id="pi-g" value={gr} onChange={(e) => setGr(e.target.value)} />
       <label htmlFor="pi-a">İş Adı</label><input id="pi-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
       <label htmlFor="pi-r">Sahibi Rol</label><select id="pi-r" value={f.sahipRol} onChange={(e) => setF({ ...f, sahipRol: e.target.value })}><option value="">Seçiniz</option>{v.roller.map((x) => <option key={x}>{x}</option>)}</select>
-      <label htmlFor="pi-p">Periyot (Ay)</label><input id="pi-p" inputMode="numeric" value={f.periyotAy} onChange={(e) => setF({ ...f, periyotAy: e.target.value })} />
-      <label htmlFor="pi-t">İlk Tarih</label><input id="pi-t" type="date" value={f.sonrakiTarih} onChange={(e) => setF({ ...f, sonrakiTarih: e.target.value })} />
-      <button className="btn2" disabled={!f.ad.trim() || !f.sahipRol || !(Number(f.periyotAy) > 0) || !f.sonrakiTarih} onClick={() => void istek('/periyodik-is', { ...f, periyotAy: Number(f.periyotAy) }).then(() => { setF({ ad: '', sahipRol: '', periyotAy: '', sonrakiTarih: '' }); setM('Periyodik iş tanımlandı.'); return yk(); }).catch((e) => setM(e.message))}>Periyodik İş Tanımla</button></>}</>;
+      <label htmlFor="pi-pt">Periyot</label><select id="pi-pt" value={f.periyotTuru} onChange={(e) => setF({ ...f, periyotTuru: e.target.value })}>{v.periyotTurleri.map((x) => <option key={x}>{x}</option>)}</select>
+      {f.periyotTuru === 'Aylık' && <><label htmlFor="pi-p">Kaç Ayda Bir</label><input id="pi-p" inputMode="numeric" value={f.periyotAy} onChange={(e) => setF({ ...f, periyotAy: e.target.value })} /></>}
+      {f.periyotTuru !== 'Olaya Bağlı' && <><label htmlFor="pi-t">İlk Tarih</label><input id="pi-t" type="date" value={f.sonrakiTarih} onChange={(e) => setF({ ...f, sonrakiTarih: e.target.value })} /></>}
+      <button className="btn2" disabled={!f.ad.trim() || !f.sahipRol || (f.periyotTuru === 'Aylık' && !(Number(f.periyotAy) > 0)) || (f.periyotTuru !== 'Olaya Bağlı' && !f.sonrakiTarih)} onClick={() => void istek('/periyodik-is', { ...f, periyotAy: Number(f.periyotAy), sonrakiTarih: f.sonrakiTarih || undefined }).then(() => { setF({ ad: '', sahipRol: '', periyotTuru: 'Aylık', periyotAy: '1', sonrakiTarih: '' }); setM('Periyodik iş tanımlandı.'); return yk(); }).catch((e) => setM(e.message))}>Periyodik İş Tanımla</button></>}</>;
 }
 
 /** YG-1363: kontrol listesi ve sabit karar seçenekleri. */

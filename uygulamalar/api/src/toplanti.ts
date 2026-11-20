@@ -272,17 +272,19 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   const tanimlayan = async (k: string) => (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.kademe IN ('Direktör', 'Genel Müdür Yardımcısı', 'CEO')`, [k])).rowCount;
   s.get('/periyodik-isler', oturumlu, async (i, y) => {
     const o = i.oturum!; const e = lgmDegil(o.grup, y); if (e) return e;
-    const isler = (await b.db.query(`SELECT p.kimlik, p.ad, r.rol_adi sahip_rol, p.periyot_ay, p.sonraki_tarih::text sonraki_tarih, p.aktif, EXISTS (SELECT 1 FROM rol_atamasi a WHERE a.rol_ref = p.sahip_rol_ref AND a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif') sahibim, (SELECT karar FROM periyodik_sonuc s WHERE s.periyodik_ref = p.kimlik ORDER BY s.zaman DESC LIMIT 1) son_karar FROM periyodik_is p JOIN rol r ON r.kimlik = p.sahip_rol_ref ORDER BY p.aktif DESC, p.sonraki_tarih`, [o.kullanici])).rows;
+    const isler = (await b.db.query(`SELECT p.kimlik, p.ad, r.rol_adi sahip_rol, p.periyot_ay, p.periyot_turu, p.sonraki_tarih::text sonraki_tarih, p.aktif, EXISTS (SELECT 1 FROM rol_atamasi a WHERE a.rol_ref = p.sahip_rol_ref AND a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif') sahibim, (SELECT karar FROM periyodik_sonuc s WHERE s.periyodik_ref = p.kimlik ORDER BY s.zaman DESC LIMIT 1) son_karar FROM periyodik_is p JOIN rol r ON r.kimlik = p.sahip_rol_ref ORDER BY p.aktif DESC, p.sonraki_tarih`, [o.kullanici])).rows;
     const tanimlar = Boolean(await tanimlayan(o.kullanici));
-    return { isler, tanimlar, kontroller: KONTROL, roller: tanimlar ? (await b.db.query(`SELECT rol_adi FROM rol WHERE rol_durumu = 'Aktif' AND kullanici_gruplari LIKE '%LGM%' ORDER BY rol_adi`)).rows.map((r) => r.rol_adi) : [] };
+    return { isler, tanimlar, periyotTurleri: PERIYOT_TURLERI, kontroller: KONTROL, roller: tanimlar ? (await b.db.query(`SELECT rol_adi FROM rol WHERE rol_durumu = 'Aktif' AND kullanici_gruplari LIKE '%LGM%' ORDER BY rol_adi`)).rows.map((r) => r.rol_adi) : [] };
   });
   s.post('/periyodik-is', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; sahipRol?: string; periyotAy?: number; sonrakiTarih?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { ad?: string; sahipRol?: string; periyotTuru?: string; periyotAy?: number; sonrakiTarih?: string };
     if (!(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Periyodik iş tanımını Direktör, Genel Müdür Yardımcısı veya CEO girer.' });
     const rol = (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = $1 AND rol_durumu = 'Aktif'`, [g.sahipRol ?? ''])).rows[0];
-    if (!g.ad?.trim() || !rol || !(Number.isInteger(Number(g.periyotAy)) && Number(g.periyotAy) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(g.sonrakiTarih ?? '')) return y.code(400).send({ hata: 'İş adı, sahibi rol, periyot (ay) ve ilk tarih zorunludur.' });
+    // YG-969: periyot türü; "Aylık" n ayda birdir (periyot ay), diğer ay bazlı türler sabittir, olaya bağlı işin tarihi yoktur.
+    const tur = g.periyotTuru ?? 'Aylık'; const ay = PERIYOT_AY[tur] ?? (tur === 'Aylık' ? Number(g.periyotAy ?? 1) : 1); const olay = tur === 'Olaya Bağlı';
+    if (!g.ad?.trim() || !rol || !PERIYOT_TURLERI.includes(tur) || !(Number.isInteger(ay) && ay > 0) || (!olay && !/^\d{4}-\d{2}-\d{2}$/.test(g.sonrakiTarih ?? ''))) return y.code(400).send({ hata: 'İş adı, sahibi rol, periyot ve (olaya bağlı değilse) ilk tarih zorunludur.' });
     if ((await b.db.query(`SELECT 1 FROM periyodik_is WHERE lower(ad) = lower($1)`, [g.ad.trim()])).rowCount) return y.code(409).send({ hata: 'Bu adla periyodik iş tanımlıdır.' });
-    const r = (await b.db.query(`INSERT INTO periyodik_is (ad, sahip_rol_ref, periyot_ay, sonraki_tarih) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [g.ad.trim(), rol.kimlik, Number(g.periyotAy), g.sonrakiTarih])).rows[0];
+    const r = (await b.db.query(`INSERT INTO periyodik_is (ad, sahip_rol_ref, periyot_ay, periyot_turu, sonraki_tarih) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [g.ad.trim(), rol.kimlik, ay, tur, olay ? null : g.sonrakiTarih])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik İş Tanımı', nesneTuru: 'Periyodik İş', nesneKimligi: r.kimlik, yeni: g, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.kimlik };
   });
@@ -302,12 +304,23 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
       await c.query('BEGIN');
       await c.query(`INSERT INTO periyodik_sonuc (periyodik_ref, donem_tarihi, karar, kontroller, aciklama, kosul, yeni_periyot_ay, karar_veren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, p.sonraki_tarih, g.karar, JSON.stringify(g.kontroller), g.aciklama.trim(), g.kosul?.trim() || null, g.karar === 'Değiştir' ? Number(g.yeniPeriyotAy) : null, o.kullanici]);
       if (g.karar === 'Askıya Al') await c.query(`UPDATE periyodik_is SET aktif = false WHERE kimlik = $1`, [id]);
-      else await c.query(`UPDATE periyodik_is SET periyot_ay = coalesce($2, periyot_ay), sonraki_tarih = (sonraki_tarih + make_interval(months => coalesce($2, periyot_ay)))::date WHERE kimlik = $1`, [id, g.karar === 'Değiştir' ? Number(g.yeniPeriyotAy) : null]);
+      else await c.query(`UPDATE periyodik_is SET periyot_ay = coalesce($2, periyot_ay), sonraki_tarih = periyodik_sonraki(sonraki_tarih, periyot_turu, coalesce($2, periyot_ay)) WHERE kimlik = $1`, [id, g.karar === 'Değiştir' ? Number(g.yeniPeriyotAy) : null]);
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Periyodik Gözden Geçirme' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik Gözden Geçirme Sonucu', nesneTuru: 'Periyodik İş', nesneKimligi: id, yeni: { karar: g.karar, kosul: g.kosul }, gerekce: g.aciklama.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
     return { tamam: true };
+  });
+  // YG-969: olaya bağlı periyodik iş, olay gerçekleşince sahibi rol veya tanımlama yetkilisi tarafından kaydedilir ve görev açılır.
+  s.post('/periyodik-is/:id/olay', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { olay } = (i.body ?? {}) as { olay?: string };
+    const p = UUID.test(id) ? (await b.db.query(`SELECT * FROM periyodik_is WHERE kimlik = $1 AND aktif AND periyot_turu = 'Olaya Bağlı'`, [id])).rows[0] : undefined;
+    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!(await rolSahipleri(b.db, p.sahip_rol_ref)).includes(o.kullanici) && !(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Olayı işin sahibi rol veya Direktör kademesi kaydeder.' });
+    if (!olay?.trim()) return y.code(400).send({ hata: 'Olayı yazınız.' });
+    const k = await kartAc(b.db, { tur: 'Periyodik İş', kategori: 'gorev', baslik: `Olaya Bağlı · ${p.ad}`, ozet: olay.trim().slice(0, 300), sahipRol: p.sahip_rol_ref, nesneTuru: 'periyodik_is', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Olaya Bağlı Periyodik İş Açıldı', nesneTuru: 'Periyodik İş', nesneKimligi: id, gerekce: olay.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kart: k };
   });
   s.post('/periyodik-is/:id/durum', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { aktif?: boolean; gerekce?: string };
@@ -356,8 +369,14 @@ async function direktorBul(db: Db, rol: string): Promise<string | null> {
 
 /** YG-534: Tamamlanınca sonraki tarih kendiliğinden kurulur. */
 kapanisKaydet('Periyodik Gözden Geçirme', async (c, k, karar) => {
-  if (karar === 'Tamamlandı') await c.query(`UPDATE periyodik_is SET sonraki_tarih = (sonraki_tarih + make_interval(months => periyot_ay))::date WHERE kimlik = $1`, [k.nesne_kimligi]);
+  if (karar === 'Tamamlandı') await c.query(`UPDATE periyodik_is SET sonraki_tarih = periyodik_sonraki(sonraki_tarih, periyot_turu, periyot_ay) WHERE kimlik = $1`, [k.nesne_kimligi]);
 });
+/** YG-969: günlük, haftalık ve olaya bağlı periyodik iş görevi Tamamlandı ile kapanır; tarihli işte sonraki tarih kendiliğinden kurulur. */
+kapanisKaydet('Periyodik İş', async (c, k, karar) => {
+  if (karar === 'Tamamlandı') await c.query(`UPDATE periyodik_is SET sonraki_tarih = periyodik_sonraki(sonraki_tarih, periyot_turu, periyot_ay) WHERE kimlik = $1 AND periyot_turu <> 'Olaya Bağlı'`, [k.nesne_kimligi]);
+});
+export const PERIYOT_TURLERI = ['Günlük', 'Haftalık', 'Aylık', '3 Aylık', '6 Aylık', 'Yıllık', 'Sezonluk', 'Olaya Bağlı'];
+const PERIYOT_AY: Record<string, number> = { '3 Aylık': 3, '6 Aylık': 6, Yıllık: 12, Sezonluk: 12 };
 
 /**
  * YG-534: 30 gün önce sahibine bilgi, 14 gün önce hazırlık görevi, 7 gün ve 24 saat önce hatırlatma; tarih geçerse 72 saat sonra Direktöre, 10 gün sonra GMY'ye.
@@ -365,9 +384,16 @@ kapanisKaydet('Periyodik Gözden Geçirme', async (c, k, karar) => {
  */
 export async function periyodikIsle(db: Pool, simdi = new Date()): Promise<number> {
   const bugun = new Date(simdi.getTime() + 180 * 60_000).toISOString().slice(0, 10);
-  const { rows } = await db.query(`SELECT p.kimlik, p.ad, p.sahip_rol_ref, p.sonraki_tarih::text AS tarih, (p.sonraki_tarih - $1::date) AS kalan FROM periyodik_is p WHERE p.aktif AND p.sonraki_tarih - $1::date <= 30`, [bugun]);
+  const { rows } = await db.query(`SELECT p.kimlik, p.ad, p.sahip_rol_ref, p.periyot_turu, p.sonraki_tarih::text AS tarih, (p.sonraki_tarih - $1::date) AS kalan FROM periyodik_is p WHERE p.aktif AND p.sonraki_tarih IS NOT NULL AND p.sonraki_tarih - $1::date <= 30`, [bugun]);
   let n = 0;
   for (const p of rows) {
+    // YG-969: günlük ve haftalık iş hatırlatma beklemeden günü gelince görev olarak açılır; görev açıkken yenisi açılmaz.
+    if (p.periyot_turu === 'Günlük' || p.periyot_turu === 'Haftalık') {
+      if (p.kalan <= 0 && !(await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Periyodik İş' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [p.kimlik])).rowCount && await birKez(db, 'periyodik', `${p.kimlik}:${p.tarih}:gorev`)) {
+        await kartAc(db, { tur: 'Periyodik İş', kategori: 'gorev', baslik: `${p.periyot_turu} · ${p.ad}`, ozet: `Tarih: ${p.tarih.split('-').reverse().join('.')}`, sahipRol: p.sahip_rol_ref, sonZaman: new Date(`${p.tarih}T20:59:59Z`), nesneTuru: 'periyodik_is', nesneKimligi: p.kimlik }); n++;
+      }
+      continue;
+    }
     const anahtar = (e: string) => `${p.kimlik}:${p.tarih}:${e}`;
     const sahip = await rolSahipleri(db, p.sahip_rol_ref);
     const tarihYaz = p.tarih.split('-').reverse().join('.');

@@ -245,6 +245,14 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, sahip_rol_ref, nesne_turu, nesne_kimligi) SELECT 'Kabul Sistemi Yıllık Gözden Geçirme', 'gorev', 'T', kimlik, 'Kabul Sistemi', '2025' FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi'`);
     expect((await o.ist('POST', '/api/firma/kabul-iyilestirme', fym, { oneri: 'Ön inceleme kontrol listesi sadeleştirilsin' })).json().gonderilecek).toBe('Firma Yönetimi Müdür Yardımcısı');
     expect((await o.kart('Kabul Sistemi İyileştirme Önerisi', '2025')).zincir).toHaveLength(2);
+    // YG-1651: aylık kabul göstergeleri paketi Müdür Yardımcısı → Müdür.
+    await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı' WHERE tur = 'Aylık Kabul Göstergeleri' AND durum = 'Bekliyor'`);
+    expect((await o.ist('POST', '/api/firma/kabul-gostergeleri/onaya-gonder', fym, { degerlendirme: 'X' })).statusCode).toBe(409);
+    const ay = new Date().toISOString().slice(0, 7);
+    await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, sahip_rol_ref, nesne_turu, nesne_kimligi) SELECT 'Aylık Kabul Göstergeleri', 'gorev', 'T', kimlik, 'Kabul Sistemi', $1 FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi'`, [ay]);
+    expect((await o.ist('GET', '/api/firma/kabul-sistemi', fym)).json().aylik.ay).toBe(ay);
+    expect((await o.ist('POST', '/api/firma/kabul-gostergeleri/onaya-gonder', fym, { degerlendirme: 'Süreler hedefte' })).json().gonderilecek).toBe('Firma Yönetimi Müdür Yardımcısı');
+    expect((await o.kart('Aylık Kabul Göstergeleri Paketi', ay)).ozet).toContain('Başvuru:');
     await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kullanici_ref = $1 AND rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi')`, [o.K.oy]);
   });
   it('T-YG1648-C1: herkese açık başvuru sihirbazı sicil numarasıyla Başvuru açar, dağıtıma düşer; aynı VKN yeni kayıt açmaz', async () => {
@@ -294,6 +302,10 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     const pr = (await o.ist('POST', '/api/firma-denetim-programi', my, { yil: 2026, aciklama: 'Risk esaslı program' })).json();
     expect(pr.gonderilecek).toBe('Firma Yönetimi Müdürü'); expect(Array.isArray(pr.cakisma)).toBe(true);
     expect((await o.ist('POST', '/api/firma-denetim-programi', my, { yil: 2026, aciklama: 'Tekrar' })).statusCode).toBe(409);
+    // YG-1655: Dönem Kartlarını Kaydet — yalnız Müdür Yardımcısı, dönem başına bir kez.
+    expect((await o.ist('POST', '/api/firma/donem-kartlari/kaydet', fym, { donem: '2026-09-30' })).statusCode).toBe(404);
+    const dk = await o.ist('POST', '/api/firma/donem-kartlari/kaydet', my, { donem: '2026-09-30' });
+    if (dk.statusCode === 200) { expect(dk.json().kademeliDusus).toBeGreaterThan(0); expect((await o.ist('POST', '/api/firma/donem-kartlari/kaydet', my, { donem: '2026-09-30' })).statusCode).toBe(409); } else expect(dk.statusCode).toBe(409);
     // İlk dönem izlemesi: dönem puanı oluşmamış yeni aktif firma listelenir.
     const yeni = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, ag_statusu, kayit_asamasi, kabul_karar_zamani) VALUES ($1,'Yeni Tersane','Çözüm Ortağı',$2,'Aktif','Onaylı', now() - interval '20 days') RETURNING kimlik`, [`S-YN${Date.now()}`, o.K.ds])).rows[0].kimlik;
     expect((await o.ist('GET', '/api/firma/donem-kartlari', fym)).json().ilkDonem.some((x: { kimlik: string; gun: number }) => x.kimlik === yeni && x.gun >= 19 && x.gun <= 21)).toBe(true);

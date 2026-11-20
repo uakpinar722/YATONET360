@@ -823,6 +823,10 @@ describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
     expect((await o.ist('POST', `/api/ilerleme-fotografi/${r.json().kimlik}/kaldir`, await o.gir('ds'), {})).statusCode).toBe(200);
     expect((await o.ist('GET', `/api/portal/fotograf/${r.json().kimlik}`, c)).statusCode).toBe(404);
     expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().fotograflar).toEqual([]);
+    // YG-462: video kanıtı da yayımlanır; indirilen adda firma adı yoktur.
+    const vid = await o.belge(d.kimlik, 'ds', 'Firma X Deniz Denemesi', 'mp4');
+    const rv = await o.ist('POST', u, await o.gir('ds'), { belge: vid, aciklama: 'Deniz denemesi' }); expect(rv.statusCode, rv.body).toBe(200);
+    const iv = await o.ist('GET', `/api/portal/fotograf/${rv.json().kimlik}`, c); expect(iv.headers['content-disposition']).toMatch(/ilerleme-.*\.mp4/);
   });
 });
 
@@ -1491,6 +1495,16 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const l = (await o.ist('GET', '/api/periyodik-isler', c)).json(); expect(l.tanimlar).toBe(true); expect(l.isler.some((x: { ad: string }) => x.ad === ad)).toBe(true);
     expect((await o.ist('POST', `/api/periyodik-is/${r.json().kimlik}/durum`, c, { aktif: false, gerekce: 'Deneme' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT aktif FROM periyodik_is WHERE kimlik = $1`, [r.json().kimlik])).rows[0].aktif).toBe(false);
+    // YG-969: günlük iş günü gelince görev açar, Tamamlandı ile kapanınca ertesi güne geçer; olaya bağlı iş olayla açılır.
+    const gun = (await o.ist('POST', '/api/periyodik-is', c, { ad: `Günlük ${Date.now()}`, sahipRol: 'Dosya Sorumlusu', periyotTuru: 'Günlük', sonrakiTarih: '2026-01-05' })).json().kimlik;
+    const { periyodikIsle } = await import('../src/toplanti.js'); await periyodikIsle(o.db, new Date('2026-01-05T08:00:00Z'));
+    const gk = (await o.sup.query(`SELECT kimlik FROM is_karti WHERE tur = 'Periyodik İş' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [gun])).rows[0].kimlik;
+    expect((await o.karar(gk, 'ds', 'Tamamlandı')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT sonraki_tarih::text t FROM periyodik_is WHERE kimlik = $1`, [gun])).rows[0].t).toBe('2026-01-06');
+    expect((await o.ist('POST', '/api/periyodik-is', c, { ad: 'Eksik Tarih', sahipRol: 'Dosya Sorumlusu', periyotTuru: 'Haftalık' })).statusCode).toBe(400);
+    const ob = (await o.ist('POST', '/api/periyodik-is', c, { ad: `Olay ${Date.now()}`, sahipRol: 'Dosya Sorumlusu', periyotTuru: 'Olaya Bağlı' })).json().kimlik;
+    expect((await o.ist('POST', `/api/periyodik-is/${ob}/olay`, await o.gir('ds'), { olay: 'Fırtına uyarısı' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Periyodik İş' AND nesne_kimligi = $1`, [ob])).rows[0].n).toBe(1);
   });
   it('veri düzeltme talebi taraf ve firma kaydında da açılır (YG-1246 taraf)', async () => {
     const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
