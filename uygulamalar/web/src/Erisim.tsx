@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek } from './api';
 
-interface Secenekler { kullanicilar: { kimlik: string; ad_soyad: string }[]; roller: { kimlik: string; rol_adi: string; rol_sahibi_birim: string }[] }
+interface Secenekler { kullanicilar: { kimlik: string; ad_soyad: string }[]; roller: { kimlik: string; rol_adi: string; rol_sahibi_birim: string; ayricalikli_rol: boolean; veri_sahibi: boolean }[] }
 interface Talep { kimlik: string; talep_asamasi: string; sure_sonu: string; kullanici: string; rol: string }
 interface Uygulanacak { kimlik: string; sure_sonu: string; kapsam: string; is_gerekcesi: string; kullanici: string; rol: string; onaylayan: string; kendi: boolean; cakisma: string | null }
 
@@ -12,16 +12,16 @@ const ASAMA: Record<string, string> = { 'İş Onayı': 'Birim Onayında', 'Tekni
 export function ErisimTalebi() {
   const [s, setS] = useState<Secenekler | null>(null);
   const [l, setL] = useState<Talep[]>([]);
-  const [f, setF] = useState({ kullanici: '', rol: '', gerekce: '', kapsam: '', sureSonu: '' });
+  const [f, setF] = useState({ kullanici: '', rol: '', gerekce: '', kapsam: '', sureSonu: '', veriSahibi: '' }); const [kisisel, setKisisel] = useState(false);
   const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const yukle = () => istek<Talep[]>('/erisim/taleplerim').then(setL);
   useEffect(() => { istek<Secenekler>('/erisim/secenekler').then(setS).catch((e) => setHata(e.message)); void yukle(); }, []);
   const gonder = async (e: FormEvent) => {
     e.preventDefault(); setHata(''); setNot('');
     try {
-      const r = await istek<{ kimlik: string }>('/erisim/talep', f);
+      const r = await istek<{ kimlik: string }>('/erisim/talep', { ...f, kisiselVeri: kisisel, veriSahibi: kisisel ? f.veriSahibi : undefined });
       setNot(`${r.kimlik} numaralı talebiniz birim onayına gönderilmiştir.`);
-      setF({ kullanici: '', rol: '', gerekce: '', kapsam: '', sureSonu: '' }); void yukle();
+      setF({ kullanici: '', rol: '', gerekce: '', kapsam: '', sureSonu: '', veriSahibi: '' }); setKisisel(false); void yukle();
     } catch (x) { setHata((x as Error).message); }
   };
   const d = (a: keyof typeof f, v: string) => setF({ ...f, [a]: v });
@@ -41,9 +41,12 @@ export function ErisimTalebi() {
           <textarea id="et-c" rows={2} value={f.kapsam} onChange={(e) => d('kapsam', e.target.value)} />
           <label htmlFor="et-s">Talep Edilen Süre Sonu</label>
           <input id="et-s" type="date" value={f.sureSonu} onChange={(e) => d('sureSonu', e.target.value)} />
+          {s.roller.find((r) => r.kimlik === f.rol)?.ayricalikli_rol && <div className="not">Ayrıcalıklı (yönetim) rolü: yalnız kişinin yönetim hesabına verilir.</div>}
+          <label><input type="checkbox" checked={kisisel} onChange={(e) => setKisisel(e.target.checked)} /> Erişim kişisel veri içerir</label>
+          {kisisel && <><label htmlFor="et-v">Veri Sahibi Birim</label><select id="et-v" value={f.veriSahibi} onChange={(e) => d('veriSahibi', e.target.value)}><option value="">Seçiniz</option>{s.roller.filter((r) => r.veri_sahibi).map((r) => <option key={r.kimlik} value={r.kimlik}>{r.rol_adi}</option>)}</select></>}
           {hata && <div className="hata" role="alert">{hata}</div>}
           {not && <div className="basari">{not}</div>}
-          <button className="btn" disabled={!f.kullanici || !f.rol || !f.gerekce.trim() || !f.kapsam.trim() || !f.sureSonu}>Talebi Gönder</button>
+          <button className="btn" disabled={!f.kullanici || !f.rol || !f.gerekce.trim() || !f.kapsam.trim() || !f.sureSonu || (kisisel && !f.veriSahibi)}>Talebi Gönder</button>
         </form>
       )}
       <div className="bolum">Taleplerim</div>

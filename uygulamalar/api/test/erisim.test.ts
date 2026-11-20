@@ -137,6 +137,15 @@ describe('form kuralları (YG-1005, YG-1040)', () => {
     expect((await ist('GET', '/api/erisim/secenekler', y)).statusCode).toBe(403);
     expect((await talep(y)).statusCode).toBe(403);
   });
+  it('T-YG1645: kişisel veri içeren erişimde veri sahibi onayı; erişimi kullanacak kişi onay kartında görev ayrılığıyla engellidir', async () => {
+    const ceo = await gir(CEO); const B = { kullanici: K[DEN], rol: RD, gerekce: 'Kayıt incelemesi', kapsam: 'Müşteri kayıtları', sureSonu: gelecek, kisiselVeri: true };
+    expect((await ist('POST', '/api/erisim/talep', ceo, B)).statusCode).toBe(400);
+    const hud = (await sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Hukuk ve Uyum Direktörü'`)).rows[0].kimlik;
+    const id = (await ist('POST', '/api/erisim/talep', ceo, { ...B, veriSahibi: hud })).json().kimlik as string;
+    const k = (await sup.query(`SELECT zincir, ayrik_kullanicilar FROM is_karti WHERE kimlik = $1`, [await kartBul(id)])).rows[0];
+    expect(k.zincir).toHaveLength(2); expect(k.zincir[1]).toBe(hud); expect(k.ayrik_kullanicilar).toContain(K[DEN]);
+    expect((await sup.query(`SELECT kisisel_veri, veri_sahibi_rol_ref FROM erisim_talebi WHERE kimlik = $1`, [id])).rows[0]).toEqual({ kisisel_veri: true, veri_sahibi_rol_ref: hud });
+  });
   it('numara yıl içinde sıralı artar', async () => {
     const ceo = await gir(CEO);
     const a = (await talep(ceo)).json().kimlik as string, b = (await talep(ceo)).json().kimlik as string;

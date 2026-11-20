@@ -216,7 +216,15 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
   it('T-YG1650: ön inceleme 15 iş günü, kanıta bağlı puan, görev ayrılığı; öneri Müdür Yardımcısı ve Müdür onayıyla uygulanır', async () => {
     await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref, atama_durumu, baslangic_tarihi) SELECT $1, kimlik, 'Aktif', current_date - 1 FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi'`, [o.K.oy]);
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, kayit_asamasi) VALUES ($1,'Başvuru Tersanesi','Çözüm Ortağı',$2,'Başvuru') RETURNING kimlik`, [`S-KO${Date.now()}`, o.K.ds])).rows[0].kimlik;
-    const sc = await o.gir('sc');
+    const sc = await o.gir('sc'); const fy = await o.gir('oy');
+    // Dağıtım Bekleyen Başvurular: Firma Yönetimi Yöneticisi Sicil Sorumlusuna atar; ön incelemeye atanan gönderir.
+    const ks = (await o.ist('GET', '/api/firma/kabul-sistemi', fy)).json();
+    expect(ks.dagitim.some((x: { kimlik: string }) => x.kimlik === f)).toBe(true); expect(ks.gostergeler).toHaveLength(12);
+    expect((await o.ist('GET', '/api/firma/kabul-sistemi', sc)).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/firma/${f}/sicil-ata`, fy, { kullanici: o.K.ds })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/firma/${f}/sicil-ata`, fy, { kullanici: o.K.sc })).statusCode).toBe(200);
+    expect((await o.kart('Başvuru Belge Kontrolü', f)).sahip_kullanici_ref).toBe(o.K.sc);
+    expect((await o.ist('POST', `/api/firma/${f}/sicil-ata`, fy, { kullanici: o.K.sc })).statusCode).toBe(409);
     expect((await o.ist('POST', `/api/firma/${f}/on-incelemeye-gonder`, await o.gir('ds'), {})).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/firma/${f}/on-incelemeye-gonder`, sc, {})).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [f])).rows[0].kayit_asamasi).toBe('İncelemede');
@@ -231,6 +239,12 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     const k = await o.kart('Firma Karar Önerisi', r.json().kimlik);
     expect(k.zincir).toEqual([(await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdür Yardımcısı'`)).rows[0].kimlik, (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdürü'`)).rows[0].kimlik]);
     expect((await o.ist('POST', U, fym, { oneri: 'Onaylı', gerekce: 'G', kapsama: 'Bölge', puanlar: [{ baslik: 'A', puan: 4, kanit: 'B' }] })).statusCode).toBe(409);
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Başvuru Belge Kontrolü' AND nesne_kimligi = $1`, [f])).rows[0].durum).toBe('Tamamlandı');
+    // Yıllık iyileştirme önerisi: Ocak görevi üzerinden Müdür Yardımcısı → Müdür onayına.
+    expect((await o.ist('POST', '/api/firma/kabul-iyilestirme', fym, { oneri: 'X' })).statusCode).toBe(409);
+    await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, sahip_rol_ref, nesne_turu, nesne_kimligi) SELECT 'Kabul Sistemi Yıllık Gözden Geçirme', 'gorev', 'T', kimlik, 'Kabul Sistemi', '2025' FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi'`);
+    expect((await o.ist('POST', '/api/firma/kabul-iyilestirme', fym, { oneri: 'Ön inceleme kontrol listesi sadeleştirilsin' })).json().gonderilecek).toBe('Firma Yönetimi Müdür Yardımcısı');
+    expect((await o.kart('Kabul Sistemi İyileştirme Önerisi', '2025')).zincir).toHaveLength(2);
     await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kullanici_ref = $1 AND rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi')`, [o.K.oy]);
   });
   it('T-YG1654: dönem kartı, üç dönem kademeli düşüş önerisi; denetim planı erteleme ve çıkar çatışması', async () => {
@@ -257,6 +271,19 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     expect((await o.ist('POST', `/api/firma-denetim/${d}/sonuc`, my, { sonuc: 'Uygun' })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/firma-denetim/${d}/sonuc`, await o.gir('tm'), { sonuc: 'Uygun' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum, erteleme_sayisi, planlanan_tarih::text t FROM firma_denetim_plani WHERE kimlik = $1`, [d])).rows[0]).toEqual({ durum: 'Tamamlandı', erteleme_sayisi: 1, t: '2026-12-20' });
+    // Üç aylık karne özeti ve yıllık denetim programı Firma Yönetimi Müdürü onayına gider; programda İç Denetim çakışması bildirilir.
+    await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı' WHERE tur IN ('Üç Aylık Karne Özeti', 'Yıllık Firma Denetim Programı') AND durum = 'Bekliyor'`);
+    expect((await o.ist('POST', '/api/firma/karne-ozeti', my, { donem: '2026-09-30' })).statusCode).toBe(400);
+    const kz = (await o.ist('POST', '/api/firma/karne-ozeti', my, { donem: '2026-09-30', degerlendirme: 'Düşüş eğilimi izlenecek' })).json();
+    expect(kz.gonderilecek).toBe('Firma Yönetimi Müdürü'); expect(kz.ozet.firma).toBeGreaterThan(0);
+    expect((await o.ist('POST', '/api/firma/karne-ozeti', my, { donem: '2026-09-30', degerlendirme: 'x' })).statusCode).toBe(409);
+    expect((await o.ist('POST', '/api/firma-denetim-programi', fym, { yil: 2026, aciklama: 'P' })).statusCode).toBe(404);
+    const pr = (await o.ist('POST', '/api/firma-denetim-programi', my, { yil: 2026, aciklama: 'Risk esaslı program' })).json();
+    expect(pr.gonderilecek).toBe('Firma Yönetimi Müdürü'); expect(Array.isArray(pr.cakisma)).toBe(true);
+    expect((await o.ist('POST', '/api/firma-denetim-programi', my, { yil: 2026, aciklama: 'Tekrar' })).statusCode).toBe(409);
+    // İlk dönem izlemesi: dönem puanı oluşmamış yeni aktif firma listelenir.
+    const yeni = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, ag_statusu, kayit_asamasi, kabul_karar_zamani) VALUES ($1,'Yeni Tersane','Çözüm Ortağı',$2,'Aktif','Onaylı', now() - interval '20 days') RETURNING kimlik`, [`S-YN${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('GET', '/api/firma/donem-kartlari', fym)).json().ilkDonem.some((x: { kimlik: string; gun: number }) => x.kimlik === yeni && x.gun >= 19 && x.gun <= 21)).toBe(true);
     await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kullanici_ref = $1 AND rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdür Yardımcısı')`, [o.K.tu]);
   });
   it('T-YG1648-KALITE: aylık sicil veri kalitesi, yıldönümü paketi silsileyle onaya gider', async () => {

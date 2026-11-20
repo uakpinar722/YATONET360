@@ -47,15 +47,17 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
   s.get('/erisim/secenekler', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
     const k = await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif' ORDER BY ad_soyad`);
-    const r = await b.db.query(`SELECT kimlik, rol_adi, rol_sahibi_birim FROM rol WHERE kullanici_gruplari = 'LGM İç Rolü' AND rol_durumu = 'Aktif' ORDER BY rol_adi`);
+    const r = await b.db.query(`SELECT kimlik, rol_adi, rol_sahibi_birim, ayricalikli_rol, kademe IN ('Müdür', 'Direktör') veri_sahibi FROM rol WHERE kullanici_gruplari = 'LGM İç Rolü' AND rol_durumu = 'Aktif' ORDER BY rol_adi`);
     return { kullanicilar: k.rows, roller: r.rows };
   });
 
   s.post('/erisim/talep', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
-    const { kullanici, rol, gerekce, kapsam, sureSonu } = (i.body ?? {}) as Record<string, string | undefined>;
+    const { kullanici, rol, gerekce, kapsam, sureSonu, veriSahibi } = (i.body ?? {}) as Record<string, string | undefined>; const kisisel = (i.body as { kisiselVeri?: boolean } | undefined)?.kisiselVeri === true;
     if (!kullanici || !rol || !gerekce?.trim() || !kapsam?.trim() || !sureSonu) return y.code(400).send({ hata: 'Kullanıcı, rol, gerekçe, kapsam ve süre sonu zorunludur.' });
+    // YG-1645: kişisel veri içeren erişimde verinin sahibi birimin (Müdür veya Direktör) onayı ayrıca alınır.
+    if (kisisel && !(veriSahibi && (await b.db.query(`SELECT 1 FROM rol WHERE kimlik = $1 AND kademe IN ('Müdür', 'Direktör') AND kullanici_gruplari = 'LGM İç Rolü' AND rol_durumu = 'Aktif'`, [veriSahibi])).rowCount)) return y.code(400).send({ hata: 'Kişisel veri içeren erişimde veri sahibi birimi seçiniz.' });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(sureSonu) || new Date(sureSonu) <= new Date()) return y.code(400).send({ hata: 'Süre sonu ileri bir tarih olmalıdır.' });
     const c = await b.db.connect();
     try {
@@ -64,8 +66,10 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
       const ro = await c.query(`SELECT rol_adi FROM rol WHERE kimlik = $1 AND kullanici_gruplari = 'LGM İç Rolü' AND rol_durumu = 'Aktif'`, [rol]);
       if (!ku.rowCount || !ro.rowCount) { await c.query('ROLLBACK'); return y.code(400).send({ hata: 'Kullanıcı veya rol geçersizdir.' }); }
       const id = await kayitNo(c, 'ERS');
-      await c.query(`INSERT INTO erisim_talebi (kimlik, talep_eden_ref, kullanici_ref, rol_ref, is_gerekcesi, kapsam, sure_sonu) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, o.kullanici, kullanici, rol, gerekce.trim(), kapsam.trim(), sureSonu]);
-      const kart = await kartAc(c, { tur: 'Erişim Talebi', baslik: `Erişim Talebi · ${id}`, ozet: `${ku.rows[0].ad_soyad} · ${ro.rows[0].rol_adi} · Bitiş: ${sureSonu.split('-').reverse().join('.')} · ${gerekce.trim()}`, hazirlayan: o.kullanici, zincir: [await onayMakami(c, rol)], nesneTuru: 'erisim_talebi', nesneKimligi: id });
+      await c.query(`INSERT INTO erisim_talebi (kimlik, talep_eden_ref, kullanici_ref, rol_ref, is_gerekcesi, kapsam, sure_sonu, kisisel_veri, veri_sahibi_rol_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id, o.kullanici, kullanici, rol, gerekce.trim(), kapsam.trim(), sureSonu, kisisel, kisisel ? veriSahibi : null]);
+      const zincir = [await onayMakami(c, rol)]; if (kisisel && !zincir.includes(veriSahibi!)) zincir.push(veriSahibi!);
+      // Erişimi kullanacak kişi, vekâleten de olsa, kendi erişimini onaylayamaz; tek makam sahibiyse onay bir üst makama gider.
+      const kart = await kartAc(c, { tur: 'Erişim Talebi', baslik: `Erişim Talebi · ${id}`, ozet: `${ku.rows[0].ad_soyad} · ${ro.rows[0].rol_adi} · Bitiş: ${sureSonu.split('-').reverse().join('.')}${kisisel ? ' · Kişisel veri içerir' : ''} · ${gerekce.trim()}`, hazirlayan: o.kullanici, zincir, ayrik: [kullanici], nesneTuru: 'erisim_talebi', nesneKimligi: id });
       await c.query(`UPDATE erisim_talebi SET is_karti_ref = $2 WHERE kimlik = $1`, [id, kart]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Erişim Talebi Açıldı', nesneTuru: 'erisim_talebi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

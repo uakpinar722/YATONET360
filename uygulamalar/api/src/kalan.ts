@@ -108,9 +108,28 @@ export async function gorevAyriligiRaporu(db: Db, gun = 31) {
   return { cokluRol: coklu, ayniKisiAdimlari: ayniKisi };
 }
 
+/** YG-313: aynı kişinin birden çok onay kademesinde karar verdiği veya kendi hazırladığı işi onayladığı kayıtlar ile hazırlayanı teknik kabulü de veren iş emirleri için
+ *  telafi kontrolü: kayıt başına "Görev Ayrılığı Telafi İncelemesi" (sonradan bağımsız inceleme) İç Denetim Müdürüne açılır; ayda en çok 10 kayıt rastgele örneklenir. */
+export async function gorevAyriligiTelafi(db: Pool, donem: string): Promise<number> {
+  const l = (await db.query(`SELECT * FROM (
+      SELECT 'is_karti' tur, k.kimlik::text kimlik, k.baslik, h.ad_soyad FROM is_karti_adim a JOIN is_karti k ON k.kimlik = a.is_ref JOIN kullanici_hesabi h ON h.kimlik = a.yapan_ref
+        WHERE a.karar = 'Onayla' AND a.zaman > now() - interval '31 days' GROUP BY k.kimlik, k.baslik, h.ad_soyad HAVING count(DISTINCT a.kademe) > 1 OR bool_or(a.yapan_ref = k.hazirlayan_ref)
+      UNION ALL
+      SELECT 'is_emri', e.kimlik::text, e.is_emri_no || ' · Teknik Kabul', h.ad_soyad FROM is_emri e JOIN kullanici_hesabi h ON h.kimlik = e.hazirlayan_ref
+        WHERE e.teknik_kabul_eden_ref = e.hazirlayan_ref AND e.guncelleme_zamani > now() - interval '31 days') x
+    WHERE NOT EXISTS (SELECT 1 FROM is_karti c WHERE c.tur = 'Görev Ayrılığı Telafi İncelemesi' AND c.nesne_kimligi = x.kimlik) ORDER BY random() LIMIT 10`)).rows;
+  let n = 0;
+  for (const x of l) {
+    if (!(await birKez(db, 'gorev_ayriligi_telafi', `${donem}:${x.kimlik}`))) continue;
+    await kartAc(db, { tur: 'Görev Ayrılığı Telafi İncelemesi', kategori: 'gorev', baslik: `${x.baslik} · Bağımsız İnceleme`, ozet: `${x.ad_soyad} aynı işte birden çok adımı (uygulama, kontrol, onay) yürütmüştür. Kaydı sonradan bağımsız olarak inceleyip sonucu not ediniz.`, sahipRol: await rolId(db, 'İç Denetim Müdürü'), nesneTuru: x.tur === 'is_emri' ? 'İş Emri' : 'İş Kartı', nesneKimligi: x.kimlik }); n++;
+  }
+  return n;
+}
+
 /** YG-990: ayda bir İç Denetim Müdürüne gözetim görevi; bulgu yoksa görev açılmaz. */
 export async function gorevAyriligiIsle(db: Pool, simdi = new Date()): Promise<number> {
   const donem = simdi.toISOString().slice(0, 7);
+  await gorevAyriligiTelafi(db, donem);
   const r = await gorevAyriligiRaporu(db);
   if (!r.ayniKisiAdimlari.length && !r.cokluRol.length) return 0;
   if (!(await birKez(db, 'gorev_ayriligi', donem))) return 0;

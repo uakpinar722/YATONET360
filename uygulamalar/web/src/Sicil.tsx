@@ -36,8 +36,9 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
         <button className="btn2" onClick={() => void yap(async () => { const r = await istek<{ benzerKayit: number }>('/firma', { ...yeni, mersis: yeni.mersis || undefined, telefon: yeni.telefon || undefined }); if (r.benzerKayit) setTimeout(() => setNot(`Kayıt açıldı. Benzer ${r.benzerKayit} kayıt bulundu; mükerrer kararı bekliyor.`)); }, 'Kayıt açıldı.')}>Kayıt Aç</button>
       </div>
       <div className="bolum">Kayıtlar</div>
+      {aday && !arsiv && <div className="not">Aday havuzundaki kayıtlar doğrulanmamıştır ("Doğrulanmadı"); firmayla son temastan 1 yıl sonra imha listesine alınır. Aday bilgisi yalnız sicil işleri için kullanılır, dışarıya verilmez.</div>}
       {l.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
-      {l.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Sicil No</th><th>Unvan</th><th>Rol</th><th>Durum</th><th /></tr></thead><tbody>{l.map((f) => <tr key={f.kimlik}><td data-ad="Sicil No">{f.sicil_no}</td><td data-ad="Unvan">{f.ticari_unvan}</td><td data-ad="Rol">{f.kayit_rolu}</td><td data-ad="Durum">{f.kayit_asamasi} · {f.ag_statusu}{f.uzun_sure_guncellenmemis ? ' · ⚠ Uzun Süre Güncellenmemiş' : ''}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setSecili(f.kimlik)}>Seç</button></td></tr>)}</tbody></table></div>}
+      {l.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Sicil No</th><th>Unvan</th><th>Rol</th><th>Durum</th><th /></tr></thead><tbody>{l.map((f) => <tr key={f.kimlik}><td data-ad="Sicil No">{f.sicil_no}</td><td data-ad="Unvan">{f.ticari_unvan}</td><td data-ad="Rol">{f.kayit_rolu}</td><td data-ad="Durum">{f.kayit_asamasi === 'Aday' ? 'Aday · Doğrulanmadı' : `${f.kayit_asamasi} · ${f.ag_statusu}`}{f.uzun_sure_guncellenmemis ? ' · ⚠ Uzun Süre Güncellenmemiş' : ''}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setSecili(f.kimlik)}>Seç</button></td></tr>)}</tbody></table></div>}
       {secili && <>
         <div className="bolum">{l.find((f) => f.kimlik === secili)?.ticari_unvan}</div>
         <FirmaOzet id={secili} />

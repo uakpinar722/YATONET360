@@ -23,4 +23,14 @@ describe('görev ayrılığı (YG-990)', () => {
     expect((await o.ist('GET', '/api/rapor/gorev-ayriligi', await o.gir('ds'))).statusCode).toBe(404);
     expect((await o.ist('GET', '/api/rapor/gorev-ayriligi', await o.gir('id'))).json().cokluRol.length).toBeGreaterThan(0);
   });
+  it('YG-313: aynı kişi iki kademede onay verdiyse kayda sonradan bağımsız inceleme görevi açılır; ikinci kez açılmaz', async () => {
+    const { gorevAyriligiTelafi } = await import('../src/kalan.js');
+    const k = (await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, hazirlayan_ref, zincir) SELECT 'Deneme Onayı', 'onay', 'Telafi Denemesi', $1, ARRAY[kimlik, kimlik] FROM rol WHERE rol_adi = 'Operasyon Müdürü' RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    for (const kd of [0, 1]) await o.sup.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, yapan_ref) VALUES ($1, $2, 'Onayla', $3)`, [k, kd, o.K.opm]);
+    expect(await gorevAyriligiTelafi(o.db, '2027-02')).toBeGreaterThan(0);
+    const t = (await o.sup.query(`SELECT c.sahip_rol_ref, r.rol_adi FROM is_karti c JOIN rol r ON r.kimlik = c.sahip_rol_ref WHERE c.tur = 'Görev Ayrılığı Telafi İncelemesi' AND c.nesne_kimligi = $1`, [k])).rows;
+    expect(t).toHaveLength(1); expect(t[0].rol_adi).toBe('İç Denetim Müdürü');
+    await gorevAyriligiTelafi(o.db, '2027-03');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Görev Ayrılığı Telafi İncelemesi' AND nesne_kimligi = $1`, [k])).rows[0].n).toBe(1);
+  });
 });
