@@ -802,6 +802,25 @@ describe('firma işi bıraktı (YG-1660)', () => {
   });
 });
 
+describe('bekleme ve muhafaza (YG-895)', () => {
+  it('teklif iletildiği günden serbest süresiz günlük kalem; teklif sonuçlanınca durur; yalnız Dosya Sorumlusu girer', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const tesis = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu) VALUES ($1, 'Deneme Marina', 'Tesis') RETURNING kimlik`, [`S-BM${Date.now()}`])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO tesis_talebi (dosya_ref, kurulus_ref, tur, hedef_tarih, olusturan_ref) VALUES ($1,$2,'Çekek Randevusu', current_date, $3)`, [d.kimlik, tesis, o.K.ds]);
+    const U = `/api/dosya/${d.kimlik}/bekleme-muhafaza`;
+    expect((await o.ist('POST', U, await o.gir('ds'), { tesis, gunlukEur: 40 })).statusCode).toBe(409);
+    const f = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, hazirlayan_ref, statu, gonderim_zamani) VALUES ($1,$2,'Yat Sahibi',20,$3,'Gönderildi', now() - interval '9 days') RETURNING kimlik`, [`T-BM${Date.now()}`, d.kimlik, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', U, await o.gir('oy'), { tesis, gunlukEur: 40 })).statusCode).toBe(403);
+    expect((await o.ist('POST', U, await o.gir('ds'), { tesis, gunlukEur: 40 })).statusCode).toBe(200);
+    const v = (await o.ist('GET', U, await o.gir('ds'))).json().kayitlar[0];
+    expect(v.gun).toBe(10); expect(Number(v.toplam)).toBe(400); expect(v.haftalar.reduce((a: number, h: { gun: number }) => a + h.gun, 0)).toBe(10);
+    await o.sup.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Onaylandı', karar_zamani = now() WHERE kimlik = $1`, [f]);
+    const v2 = (await o.ist('GET', U, await o.gir('ds'))).json().kayitlar[0];
+    expect(v2.bitis).toBeTruthy(); expect(v2.gun).toBe(10); // karar günü dahil, sonrası işlenmez
+    await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [d.kimlik]); // ekip kapasitesini sonraki testlere bırak
+  });
+});
+
 describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
   it('teknik ekip onaylar; yat sahibi yalnız onaylıyı görür, dosya adı gizli; kaldırılınca kapanır', async () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
@@ -1495,6 +1514,8 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const l = (await o.ist('GET', '/api/periyodik-isler', c)).json(); expect(l.tanimlar).toBe(true); expect(l.isler.some((x: { ad: string }) => x.ad === ad)).toBe(true);
     expect((await o.ist('POST', `/api/periyodik-is/${r.json().kimlik}/durum`, c, { aktif: false, gerekce: 'Deneme' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT aktif FROM periyodik_is WHERE kimlik = $1`, [r.json().kimlik])).rows[0].aktif).toBe(false);
+    // YG-969: katalogdan yüklenen rol bazlı tanımlar kurulumla gelir; ilk tarih geçmişte kalmaz.
+    expect((await o.sup.query(`SELECT count(*)::int n, bool_and(sonraki_tarih >= current_date) g FROM periyodik_is WHERE ad IN ('Haftalık Ödeme Planı', 'Sezon Kadro ve Kapasite Planı', 'Muadil Liste Gözden Geçirmesi')`)).rows[0]).toEqual({ n: 3, g: true });
     // YG-969: günlük iş günü gelince görev açar, Tamamlandı ile kapanınca ertesi güne geçer; olaya bağlı iş olayla açılır.
     const gun = (await o.ist('POST', '/api/periyodik-is', c, { ad: `Günlük ${Date.now()}`, sahipRol: 'Dosya Sorumlusu', periyotTuru: 'Günlük', sonrakiTarih: '2026-01-05' })).json().kimlik;
     const { periyodikIsle } = await import('../src/toplanti.js'); await periyodikIsle(o.db, new Date('2026-01-05T08:00:00Z'));

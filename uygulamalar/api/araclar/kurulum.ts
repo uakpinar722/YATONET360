@@ -140,6 +140,10 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
     await metin(r[0]!, 'tr', 'Onay', r[3] ?? null, r[4]); await metin(r[0]!, 'en', 'Onay', r[5] ?? null, r[6]);
     for (const [dil, d] of [['tr', r[7]], ['en', r[8]]] as const) await c.query(`UPDATE sablon_metni SET dugme = $3, dogan_gorev = $4 WHERE kod = $1 AND dil = $2`, [r[0], dil, d && d !== '—' ? d : null, r[9] && r[9] !== '—' ? r[9] : null]);
   }
+  // YG-969: katalogdan çıkarılan rol bazlı periyodik iş tanımları (veri/sablon/periyodik_isler.tsv); var olan tanıma dokunulmaz, geçmişte kalan ilk tarih bugünden sonraki ilk döneme ilerletilir.
+  const pis = tsv('periyodik_isler.tsv');
+  for (const [ad, rol, tur, ilk] of pis) await c.query(`INSERT INTO periyodik_is (ad, sahip_rol_ref, periyot_turu, periyot_ay, sonraki_tarih) SELECT $1, r.kimlik, $3, CASE $3 WHEN '3 Aylık' THEN 3 WHEN '6 Aylık' THEN 6 WHEN 'Yıllık' THEN 12 WHEN 'Sezonluk' THEN 12 ELSE 1 END, $4::date FROM rol r WHERE r.rol_adi = $2 ON CONFLICT (ad) DO NOTHING`, [ad, rol, tur, ilk]);
+  for (let i = 0; i < 4000; i++) if (!(await c.query(`UPDATE periyodik_is SET sonraki_tarih = periyodik_sonraki(sonraki_tarih, periyot_turu, periyot_ay) WHERE ad = ANY($1) AND sonraki_tarih < current_date`, [pis.map((x) => x[0])])).rowCount) break;
   // YG-1037: teknik kabulü yapan kalite kontrolünü doğrulayamaz.
   await c.query(`INSERT INTO rol_cakisma SELECT a.kimlik, b.kimlik, 'Teknik kabul ile kalite doğrulaması aynı kişide olamaz' FROM rol a, rol b WHERE a.rol_adi = 'Teknik Uzman' AND b.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)' ON CONFLICT DO NOTHING`);
   const tt = (await c.query(`SELECT durum_gecis_tetikleyicileri_kur() n`)).rows[0].n; // YG-060

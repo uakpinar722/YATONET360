@@ -446,6 +446,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       <BelgeListesi dosya={id} />
       <SahaTalebi dosya={id} />
       <KapanisAsamalari dosya={id} />
+      <BeklemeMuhafaza dosya={id} />
       <ToplantiKararlari dosya={id} />
       <Blok baslik="Bulgular">
         {v.bulgular.filter((b) => b.teyit_bekliyor).map((b) => { const x = bTy[b.kimlik] ?? { tur: 'Beyan', ger: '' }; return <div className="uyari" key={`t-${b.kimlik}`}>Teyit Bekliyor: {b.bulgu_no} · {b.aciklama}
@@ -578,6 +579,26 @@ function KapanisAsamalari({ dosya }: { dosya: string }) {
   useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/kapanis-asamalari`).then(setL).catch(() => setL([])); }, [dosya]);
   if (!l.length) return null;
   return <Blok baslik="Kapanış Aşamaları">{l.map((x) => <div key={x.asama}>{x.asama} · {x.durum} · {x.kosul}</div>)}</Blok>;
+}
+
+/** YG-895: onay beklerken tesisin fiilî bekleme ve muhafaza gideri; günlük kalem ve haftalık özet (LGM bekleme ücreti yok). */
+function BeklemeMuhafaza({ dosya }: { dosya: string }) {
+  type K = { kimlik: string; tesis: string; teklif_no: string; surum_no: number; gunluk_eur: string; baslangic: string; bitis: string | null; gun: number; toplam: string; haftalar: { hafta: string; gun: number; toplam: string }[] };
+  const [v, setV] = useState<{ kayitlar: K[]; girer: boolean; teklif: { kimlik: string; teklif_no: string; surum_no: number } | null; tesisler: { kimlik: string; ticari_unvan: string }[] } | null>(null);
+  const [f, setF] = useState({ tesis: '', gunlukEur: '' }); const [m, setM] = useState('');
+  const yk = () => void istek<NonNullable<typeof v>>(`/dosya/${dosya}/bekleme-muhafaza`).then(setV).catch(() => setV(null));
+  useEffect(yk, [dosya]);
+  if (!v || (!v.kayitlar.length && !(v.girer && v.teklif && v.tesisler.length))) return null;
+  const eur = (x: string | number) => `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
+  const t = (x: string) => new Date(x).toLocaleDateString('tr-TR');
+  return <Blok baslik="Bekleme ve Muhafaza (Tesis Gideri)">{m && <div className="not" role="status">{m}</div>}
+    {v.kayitlar.map((x) => <div key={x.kimlik} className="ozet"><div>{x.tesis} · {x.teklif_no}-{x.surum_no} · Günlük {eur(x.gunluk_eur)} · Başlangıç: {t(x.baslangic)}{x.bitis ? ` · Bitiş: ${t(x.bitis)}` : ' · Sürüyor'} · {x.gun} gün · Toplam {eur(x.toplam)}</div>
+      {x.haftalar.map((h) => <div key={h.hafta} className="not">Hafta {h.hafta.split('-').reverse().join('.')}: {h.gun} gün · {eur(h.toplam)}</div>)}</div>)}
+    {v.girer && v.teklif && !v.kayitlar.some((x) => !x.bitis) && v.tesisler.length > 0 && <>
+      <label htmlFor="bm-t">Tesis</label><select id="bm-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Seçiniz</option>{v.tesisler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
+      <label htmlFor="bm-g">Günlük Fiilî Gider (EUR, tesis tarifesinden)</label><input id="bm-g" inputMode="decimal" value={f.gunlukEur} onChange={(e) => setF({ ...f, gunlukEur: e.target.value })} />
+      <div className="dugmeler"><button className="btn2 kucuk" disabled={!f.tesis || !(Number(f.gunlukEur.replace(',', '.')) > 0)} onClick={() => void istek(`/dosya/${dosya}/bekleme-muhafaza`, { tesis: f.tesis, gunlukEur: Number(f.gunlukEur.replace(',', '.')) }).then(() => { setM('Kayıt açıldı; günlük kalemler teklifin iletildiği günden işlenir.'); setF({ tesis: '', gunlukEur: '' }); yk(); }).catch((e) => setM(e.message))}>Kaydet ({v.teklif.teklif_no}-{v.teklif.surum_no})</button></div></>}
+  </Blok>;
 }
 
 /** YG-1408: dosyaya bağlı toplantı kararları ve görev durumu. */
