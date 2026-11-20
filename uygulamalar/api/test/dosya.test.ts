@@ -145,6 +145,10 @@ describe('ihbar kaydı (YG-006, YG-020, YG-033)', () => {
     expect((await ilk({ olayTarihi: '2026-11-01', olayYeri: 'Marmaris', yetkiDurumu: 'Doğrulandı' })).ilk_siniflandirma).toBe('Yeni');
     expect((await ilk({ acil: true })).ilk_siniflandirma).toBe('Acil');
   });
+  it('T-YG032: yat programı ve mali sonuç soruları önceliği Yüksek önerir (YG032-S1, S2)', async () => {
+    for (const s of ['Yatın yakın tarihli programı (sefer, kiralama, teslim veya etkinlik) aksıyor ya da aksayacak mı?', 'Gecikme önemli bir mali kayba yol açar mı (kira kaybı, sözleşme cezası, ek barınma veya hasarın büyümesi)?'])
+      expect((await sup.query(`SELECT onerilen_oncelik FROM talep WHERE kimlik = $1`, [(await ihbar({ cevaplar: { [s]: 'Evet' }, oncelik: 'Yüksek' })).kimlik])).rows[0].onerilen_oncelik).toBe('Yüksek');
+  });
   it('yalnız yetkili rol kaydeder', async () => {
     expect((await ist('POST', '/api/ihbar', await gir('tu'), ihbarGovde())).statusCode).toBe(403);
   });

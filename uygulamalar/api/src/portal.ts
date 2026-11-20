@@ -14,6 +14,7 @@ import { onayFormKaydet, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { tarafNo, UUID } from './yat.js';
 import { onayEngeli, talepEngeli } from './kurumsal.js';
 import { metinGetir } from './metin.js';
+import { beklemeNotu } from './bekleme_muhafaza.js';
 
 type Db = Pool | PoolClient;
 export const GRUP_YAT = 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)';
@@ -280,7 +281,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     // YG-477: yat sahibi kendi yatının mülkiyet türünü, takyidatını ve lehtarını görür.
     const mulkiyet = (await b.db.query(`SELECT y.mulkiyet_turu, y.takyidat, coalesce(y.lehtar_adi, (SELECT unvan_ad_soyad FROM taraf WHERE kimlik = y.lehtar_ref)) lehtar FROM dosya x JOIN yat y ON y.kimlik = x.yat_ref WHERE x.kimlik = $1`, [d.kimlik])).rows[0] ?? null;
     for (const x of teklifler) if (x.karar === 'Süre Dolumu Kabulü') x.karar = null; // SGT-1: sigorta onayı olarak gösterilmez
-    return { ...(await kart(d)), mulkiyet, cayma, belgeler, fotograflar, kurtarma, faturalar, teslim, teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
+    return { ...(await kart(d)), mulkiyet, cayma, belgeler, fotograflar, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

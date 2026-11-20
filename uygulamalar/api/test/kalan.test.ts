@@ -815,6 +815,13 @@ describe('bekleme ve muhafaza (YG-895)', () => {
     const v = (await o.ist('GET', U, await o.gir('ds'))).json().kayitlar[0];
     expect(v.gun).toBe(10); expect(Number(v.toplam)).toBe(400); expect(v.haftalar.reduce((a: number, h: { gun: number }) => a + h.gun, 0)).toBe(10);
     await o.sup.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Onaylandı', karar_zamani = now() WHERE kimlik = $1`, [f]);
+    // BM-1 (portal notu) ve BM-2 (haftalık özet) onaylı metinleri.
+    const bm = await import('../src/bekleme_muhafaza.js');
+    expect(await bm.beklemeNotu(o.db, d.kimlik)).toMatch(/günlük 40,00 EUR.*10 gün, 400,00 EUR/);
+    const pzt = new Date(); pzt.setUTCDate(pzt.getUTCDate() - ((pzt.getUTCDay() + 6) % 7)); pzt.setUTCHours(8, 0, 0, 0);
+    await bm.beklemeMuhafazaIsle(o.db, pzt, 'http://x'); await bm.beklemeMuhafazaIsle(o.db, pzt, 'http://x');
+    const gi = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE 'bm2:%' AND metin LIKE $1`, [`%${(await o.sup.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].dosya_no}%`])).rows;
+    expect(gi.length).toBeGreaterThan(0); expect(gi[0].metin).toMatch(/bu hafta [1-7] gün, [0-9.]+,00 EUR; toplamda [0-9]+ gün/);
     const v2 = (await o.ist('GET', U, await o.gir('ds'))).json().kayitlar[0];
     expect(v2.bitis).toBeTruthy(); expect(v2.gun).toBe(10); // karar günü dahil, sonrası işlenmez
     await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [d.kimlik]); // ekip kapasitesini sonraki testlere bırak

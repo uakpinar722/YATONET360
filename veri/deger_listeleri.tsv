@@ -1026,8 +1026,10 @@ LST_IHBAR_ONCELIK_SORUSU	Denizde kontrol kaybı var mı?	Evet ise Kritik	Cilt II
 LST_IHBAR_ONCELIK_SORUSU	Elektrik çarpması riski var mı?	Evet ise Kritik	Cilt III ¶529	7
 LST_IHBAR_ONCELIK_SORUSU	Yat kullanılamıyor mu (ana makine, dümen, şaft/pervane veya elektrik yok)?	Evet ise Yüksek	Cilt III ¶530	8
 LST_IHBAR_ONCELIK_SORUSU	Hasar ilerleyebilir mi (sintine pompası sürekli çalışıyor, güverteden su giriyor)?	Evet ise Yüksek	Cilt III ¶530	9
-LST_IHBAR_ONCELIK_SORUSU	Bir işlev kısıtlı ancak yat güvenle kullanılabiliyor ve hasar yayılmıyor mu?	Evet ise Normal	Cilt III ¶531	10
-LST_IHBAR_ONCELIK_SORUSU	Kozmetik hasar, bakım veya sezon dışı iş mi?	Evet ise Planlı; tarihi müşteri seçer	Cilt III ¶531	11
+LST_IHBAR_ONCELIK_SORUSU	Yatın yakın tarihli programı (sefer, kiralama, teslim veya etkinlik) aksıyor ya da aksayacak mı?	Evet ise Yüksek	YG032-S1, CEO 21.11.2026	10
+LST_IHBAR_ONCELIK_SORUSU	Gecikme önemli bir mali kayba yol açar mı (kira kaybı, sözleşme cezası, ek barınma veya hasarın büyümesi)?	Evet ise Yüksek	YG032-S2, CEO 21.11.2026	11
+LST_IHBAR_ONCELIK_SORUSU	Bir işlev kısıtlı ancak yat güvenle kullanılabiliyor ve hasar yayılmıyor mu?	Evet ise Normal	Cilt III ¶531	12
+LST_IHBAR_ONCELIK_SORUSU	Kozmetik hasar, bakım veya sezon dışı iş mi?	Evet ise Planlı; tarihi müşteri seçer	Cilt III ¶531	13
 LST_IHBAR_YAT_SORUSU	1. Tekne türü	LST_TEKNE_TURU	K-218 GÜNCELLEME; K-205 (p152 (K-218 uygulaması))	1
 LST_IHBAR_YAT_SORUSU	2. Yat adı	Serbest metin	K-218 GÜNCELLEME; K-205 (p152 (K-218 uygulaması))	2
 LST_IHBAR_YAT_SORUSU	3. Marka / model	Yat Marka-Model Ana Verisinden açılır liste + yazarak arama; bulunamazsa “Diğer” serbest metin	K-218 GÜNCELLEME; K-205 (p152 (K-218 uygulaması))	3
