@@ -684,13 +684,13 @@ function SicilKalitesi() {
 /** YG-1650 (A37): Dağıtım Bekleyen Başvurular ("Sicil Sorumlusuna Ata"), kabul sistemi aylık göstergeleri, yıllık iyileştirme önerisi. */
 function KabulSistemi() {
   type G = { ay: string; basvuru: number; on_inceleme: number; karar: number; onayli: number; kosullu: number; reddedildi: number; ort_gun: string | null; sure_asimi: number };
-  const [v, setV] = useState<{ dagitim: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; olusturma_zamani: string }[]; sorumlular: { kimlik: string; ad_soyad: string }[]; gostergeler: G[]; yillik: { yil: string; son_zaman: string | null } | null; atar: boolean; hazirlar: boolean } | null>(null);
+  const [v, setV] = useState<{ dagitim: { kimlik: string; sicil_no: string; ticari_unvan: string; kayit_rolu: string; olusturma_zamani: string; basvuru_kanali: string | null; beyan_teyidi: string | null; mukerrer_karari: string | null }[]; sorumlular: { kimlik: string; ad_soyad: string }[]; gostergeler: G[]; yillik: { yil: string; son_zaman: string | null } | null; atar: boolean; hazirlar: boolean } | null>(null);
   const [s, setS] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState(''); const [m, setM] = useState('');
   const yk = () => void istek<NonNullable<typeof v>>('/firma/kabul-sistemi').then(setV).catch(() => setV(null));
   useEffect(yk, []);
   if (!v) return null;
   return <details><summary>Kabul Sistemi · {v.dagitim.length} dağıtım bekleyen başvuru</summary>{m && <div className="not" role="status">{m}</div>}
-    {v.dagitim.length > 0 && <><div className="bolum">Dağıtım Bekleyen Başvurular</div>{v.dagitim.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">{x.kayit_rolu} · {new Date(x.olusturma_zamani).toLocaleDateString('tr-TR')}</span></div>
+    {v.dagitim.length > 0 && <><div className="bolum">Dağıtım Bekleyen Başvurular</div>{v.dagitim.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">{x.kayit_rolu} · {new Date(x.olusturma_zamani).toLocaleDateString('tr-TR')}{x.basvuru_kanali ? ` · ${x.basvuru_kanali}` : ''}{x.beyan_teyidi ? ` · Beyan: ${x.beyan_teyidi}` : ''}{x.mukerrer_karari === 'Karar bekliyor' ? ' · Benzer kayıt: mükerrer kararı bekliyor' : ''}</span></div>
       {v.atar && <><label htmlFor={`da-${x.kimlik}`}>Sicil Sorumlusu</label><select id={`da-${x.kimlik}`} value={s[x.kimlik] ?? ''} onChange={(e) => setS({ ...s, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.sorumlular.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!s[x.kimlik]} onClick={() => void istek(`/firma/${x.kimlik}/sicil-ata`, { kullanici: s[x.kimlik] }).then(() => { setM('Başvuru Sicil Sorumlusuna atandı.'); yk(); }).catch((e) => setM(e.message))}>Sicil Sorumlusuna Ata</button></div></>}</div>)}</>}
     <div className="bolum">Aylık Göstergeler · Son 12 Ay</div>

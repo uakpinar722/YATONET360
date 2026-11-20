@@ -10,7 +10,8 @@ import { rolSahipleri } from './makam.js';
 import { dogrulamaKodu } from './belge.js';
 import QRCode from 'qrcode';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { UUID } from './yat.js';
+import { UUID, vergiNoGecerli } from './yat.js';
+import { sayac } from './sure.js';
 import { isGunuSonu } from './teklif.js';
 
 type Db = Pool | PoolClient;
@@ -710,11 +711,49 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
       return { kimlik: r, gonderilecek: FYMY };
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
   });
+  // YG-1648 (A36): C-1 Çözüm Ortağı Başvurusu sihirbazı (herkese açık). Başvuru ayrı numara almaz; açıldığı anda verilen sicil numarasıyla "Başvuru" aşamasında izlenir.
+  s.get('/iletisim/cozum-ortagi-basvurusu', async () => ({
+    branslar: (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_ANA_BRANS' ORDER BY sira`)).rows.map((x) => x.deger as string),
+    konumTurleri: (await import('./kalan.js')).KONUM_TURLERI,
+  }));
+  s.post('/iletisim/cozum-ortagi-basvurusu', async (i, y) => {
+    const g = (i.body ?? {}) as { rol?: string; unvan?: string; vergiNo?: string; vergiDairesi?: string; mersis?: string; il?: string; ilce?: string; adres?: string; konumTuru?: string; yetkili?: string; eposta?: string; telefon?: string; anaBrans?: string; bolgeler?: string; calisan?: number };
+    const s_ = (x?: string, n = 200) => (x ?? '').trim().slice(0, n);
+    const unvan = s_(g.unvan); const vkn = s_(g.vergiNo, 11); const mersis = (g.mersis ?? '').replace(/\s/g, '') || null; const tel = (g.telefon ?? '').replace(/[\s()-]/g, '').slice(0, 20);
+    if (!['Çözüm Ortağı', 'Tedarikçi'].includes(g.rol ?? '')) return y.code(400).send({ hata: 'Başvuru türünü seçiniz.' });
+    if (!unvan || !vergiNoGecerli(vkn) || !s_(g.vergiDairesi)) return y.code(400).send({ hata: 'Unvan, geçerli vergi numarası ve vergi dairesi zorunludur.' });
+    if (mersis && !/^\d{16}$/.test(mersis)) return y.code(400).send({ hata: 'MERSİS numarası 16 haneli olmalıdır.' });
+    if (!s_(g.il) || !s_(g.ilce) || !s_(g.adres, 500)) return y.code(400).send({ hata: 'İl, ilçe ve adres zorunludur.' });
+    if (!(await import('./kalan.js')).KONUM_TURLERI.includes(g.konumTuru ?? '')) return y.code(400).send({ hata: 'Konum türünü seçiniz.' });
+    if (!s_(g.yetkili) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s_(g.eposta)) || tel.length < 10) return y.code(400).send({ hata: 'Firma Yetkilisinin adı, e-postası ve telefonu zorunludur.' });
+    if (!(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_ANA_BRANS' AND deger = $1`, [g.anaBrans ?? ''])).rowCount) return y.code(400).send({ hata: 'Ana branşı seçiniz.' });
+    if (Number((await b.db.query(`SELECT count(*) n FROM kurulus WHERE basvuru_adresi = $1 AND olusturma_zamani > now() - interval '1 hour'`, [i.ip])).rows[0].n) >= 3) return y.code(429).send({ hata: 'Çok sayıda başvuru gönderildi; lütfen daha sonra tekrar deneyiniz.' });
+    const sicil = await rolSahipleri(b.db, await rolId(b.db, 'Sicil Sorumlusu'));
+    // Mükerrer: aynı VKN veya MERSİS'le kayıt varsa yeni kayıt açılmaz; yanıt aynıdır, Sicil birimi bilgilendirilir.
+    const var_ = (await b.db.query(`SELECT sicil_no FROM kurulus WHERE vergi_no = $1 OR ($2::text IS NOT NULL AND mersis_no = $2) LIMIT 1`, [vkn, mersis])).rows[0];
+    if (var_) { await bildir(b.db, { olay: `basvuru-mukerrer:${vkn}:${new Date().toISOString().slice(0, 10)}`, kullanicilar: sicil, baslik: `Mükerrer Başvuru · ${var_.sicil_no}`, ozet: `${unvan.slice(0, 120)} aynı vergi veya MERSİS numarasıyla yeniden başvurdu.` }); return { tamam: true }; }
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const no = `LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`;
+      const k = (await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, vergi_no, kayit_rolu, kurumsal_eposta, kurumsal_telefon, il, ilce, adres, mersis_no, vergi_dairesi, konum_turu, yetkili_kisi, hizmet_bolgeleri, calisan_sayisi, beyan_teyidi, basvuru_kanali, basvuru_adresi, son_temas_tarihi)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'Teyit Bekliyor','C-1 Başvuru Sihirbazı',$16, current_date) RETURNING kimlik`,
+        [no, unvan, vkn, g.rol, s_(g.eposta), tel, s_(g.il, 60), s_(g.ilce, 60), s_(g.adres, 500), mersis, s_(g.vergiDairesi, 100), g.konumTuru, s_(g.yetkili, 120), s_(g.bolgeler, 300).split(',').map((x) => x.trim()).filter(Boolean), Number.isInteger(Number(g.calisan)) && Number(g.calisan) > 0 ? Number(g.calisan) : null, i.ip])).rows[0].kimlik as string;
+      await c.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, durum) VALUES ($1,$2,'Doğrulama Bekliyor')`, [k, g.anaBrans]);
+      // YG-345: unvan veya telefon benzerliği otomatik birleştirilmez; mükerrer kararına düşer.
+      const benzer = (await c.query(`SELECT kimlik FROM kurulus WHERE kimlik <> $1 AND (regexp_replace(kurumsal_telefon, '[\s()-]', '', 'g') = $2 OR regexp_replace(lower(ticari_unvan), '[^a-z0-9çğıöşü]', '', 'g') = regexp_replace(lower($3), '[^a-z0-9çğıöşü]', '', 'g'))`, [k, tel, unvan])).rows.map((x) => x.kimlik as string);
+      if (benzer.length) { const grup = (await c.query(`SELECT mukerrer_grubu FROM kurulus WHERE kimlik = ANY($1::uuid[]) AND mukerrer_grubu IS NOT NULL LIMIT 1`, [benzer])).rows[0]?.mukerrer_grubu ?? `Kayıt ${no}`; await c.query(`UPDATE kurulus SET mukerrer_grubu = $2, mukerrer_karari = 'Karar bekliyor' WHERE kimlik = ANY($1::uuid[]) AND coalesce(mukerrer_karari, '') <> 'Ayrı Kayıt'`, [[k, ...benzer], grup]); }
+      await bildir(c, { olay: `basvuru-c1:${k}`, kullanicilar: await rolSahipleri(c, await rolId(c, FYY)), baslik: `Dağıtım Bekleyen Başvuru · ${no}`, ozet: `${g.rol} · ${unvan.slice(0, 120)} · Sicil Sorumlusuna atayınız.` });
+      await izYaz(c, { aktor: null, eylem: 'C-1 Başvurusu Alındı', nesneTuru: 'Kuruluş', nesneKimligi: k, yeni: { sicilNo: no, rol: g.rol }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { tamam: true };
+    } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
+  });
   // YG-1650 (A37): Dağıtım Bekleyen Başvurular, aylık kabul göstergeleri ve yıllık iyileştirme önerisi.
   s.get('/firma/kabul-sistemi', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (!(await rolVar(o.kullanici, [FYY, FYMY, FYM]))) return yok(y);
-    const dagitim = (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, olusturma_zamani FROM kurulus WHERE kayit_asamasi = 'Başvuru' AND atanan_sicil_ref IS NULL ORDER BY olusturma_zamani LIMIT 100`)).rows;
+    const dagitim = (await b.db.query(`SELECT kimlik, sicil_no, ticari_unvan, kayit_rolu, olusturma_zamani, basvuru_kanali, beyan_teyidi, mukerrer_karari FROM kurulus WHERE kayit_asamasi = 'Başvuru' AND atanan_sicil_ref IS NULL ORDER BY olusturma_zamani LIMIT 100`)).rows;
     const sorumlular = (await b.db.query(`SELECT kimlik, ad_soyad FROM kullanici_hesabi WHERE kimlik = ANY($1::text[]) ORDER BY ad_soyad`, [await rolSahipleri(b.db, await rolId(b.db, 'Sicil Sorumlusu'))])).rows;
     const yillik = (await b.db.query(`SELECT nesne_kimligi yil, son_zaman FROM is_karti WHERE tur = $1 AND durum = 'Bekliyor' ORDER BY olusturma_zamani DESC LIMIT 1`, [KABUL_YILLIK])).rows[0] ?? null;
     return { dagitim, sorumlular, gostergeler: await kabulGostergeleri(b.db), yillik, atar: await rolVar(o.kullanici, [FYY, FYMY]), hazirlar: (await rolSahipleri(b.db, await rolId(b.db, FYY))).includes(o.kullanici) };

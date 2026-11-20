@@ -138,6 +138,13 @@ describe('marka-model (YG-1527, YG-1529)', () => {
 });
 
 describe('ihbar kaydı (YG-006, YG-020, YG-033)', () => {
+  it('T-YG002: ilk durum Eksik / İncelemede / Yeni / Acil ve eksik bilgi listesi', async () => {
+    const ilk = async (e: object) => (await sup.query(`SELECT ilk_siniflandirma, eksik_bilgiler FROM talep WHERE kimlik = $1`, [(await ihbar(e)).kimlik])).rows[0];
+    expect(await ilk({})).toEqual({ ilk_siniflandirma: 'Eksik', eksik_bilgiler: ['Olay tarihi', 'Olay yeri'] });
+    expect((await ilk({ olayTarihi: '2026-11-01', olayYeri: 'Marmaris' })).ilk_siniflandirma).toBe('İncelemede');
+    expect((await ilk({ olayTarihi: '2026-11-01', olayYeri: 'Marmaris', yetkiDurumu: 'Doğrulandı' })).ilk_siniflandirma).toBe('Yeni');
+    expect((await ilk({ acil: true })).ilk_siniflandirma).toBe('Acil');
+  });
   it('yalnız yetkili rol kaydeder', async () => {
     expect((await ist('POST', '/api/ihbar', await gir('tu'), ihbarGovde())).statusCode).toBe(403);
   });

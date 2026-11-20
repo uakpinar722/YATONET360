@@ -32,6 +32,8 @@ export function durumSozluguYollari(s: FastifyInstance, b: Baglam) {
       turler, yetkili: await yetkili(i.oturum!.kullanici),
       ozet: { tur: kaynak.length, durum: kaynak.reduce((a, k) => a + k.durumlar.length, 0), tanimli: kayit.length },
       cakisma: [...anlam].filter(([, v]) => v.size > 1).map(([d, v]) => ({ durum: d, anlamlar: [...v] })),
+      // YG-060: son 90 günde sözlükteki izinli geçişler dışında yapılan durum değişiklikleri.
+      ihlaller: (await b.db.query(`SELECT kayit_turu, eski, yeni, count(*)::int sayi, max(zaman) son FROM durum_gecis_ihlali WHERE zaman > now() - interval '90 days' GROUP BY kayit_turu, eski, yeni ORDER BY count(*) DESC LIMIT 100`)).rows,
     };
   });
   // Aynı durum adı başka bir kayıt türünde farklı anlamla tanımlıysa kayıt reddedilir.

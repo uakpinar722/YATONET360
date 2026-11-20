@@ -15,7 +15,7 @@ import { SahipDevri } from './SahipDevri';
 import { IsDurdur } from './IsDurdur';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
-interface IhbarSatir { kimlik: string; talep_no: string; statu: string; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
+interface IhbarSatir { kimlik: string; talep_no: string; statu: string; ilk_siniflandirma?: string | null; eksik_bilgiler?: string[]; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
 interface DosyaSatir { kimlik: string; dosya_no: string; statu: string; asama: string | null; oncelik: string; konum: string; yat_adi: string; dosya_sorumlusu: string | null; beklemede: string | null; sonraki_son: string | null }
 interface Sure { tur: string; baslangic: string; bitis: string; kaydirma_notu: string | null; tamamlanma: string | null; renk: 'yeşil' | 'sarı' | 'kırmızı' | null; baslangic_olayi?: string | null; sure_birimi?: string; sozlesme?: string | null }
 interface Ekip { kimlik: string; rol: string; ad_soyad: string; kullanici: string }
@@ -66,7 +66,7 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
         <div className="bolum">Açılış Bekleyen İhbarlar</div>
         {ihbarlar.length === 0 ? <div className="ozet bos">Bekleyen ihbar bulunmamaktadır.</div> : (
           <div className="tablo"><table className="kartli"><thead><tr><th>Numara</th><th>Yat</th><th>Öncelik</th><th>Durum</th><th>İlk Yanıt</th><th /></tr></thead>
-            <tbody>{ihbarlar.map((t) => <tr key={t.kimlik}><td data-ad="Numara">{t.talep_no}</td><td data-ad="Yat">{t.yat_adi}</td><td data-ad="Öncelik"><Oncelik o={t.oncelik} /></td><td data-ad="Durum">{t.statu}</td><td data-ad="İlk Yanıt">{t.ilk_yanit_zamani ? saat(t.ilk_yanit_zamani) : t.ilk_yanit_son ? `Son: ${saat(t.ilk_yanit_son)}` : '—'}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setIhbarId(t.kimlik)}>Aç</button></td></tr>)}</tbody>
+            <tbody>{ihbarlar.map((t) => <tr key={t.kimlik}><td data-ad="Numara">{t.talep_no}</td><td data-ad="Yat">{t.yat_adi}</td><td data-ad="Öncelik"><Oncelik o={t.oncelik} /></td><td data-ad="Durum">{t.statu}{t.ilk_siniflandirma ? ` · İlk: ${t.ilk_siniflandirma}` : ''}{t.eksik_bilgiler?.length ? ` (eksik: ${t.eksik_bilgiler.join(', ')})` : ''}</td><td data-ad="İlk Yanıt">{t.ilk_yanit_zamani ? saat(t.ilk_yanit_zamani) : t.ilk_yanit_son ? `Son: ${saat(t.ilk_yanit_son)}` : '—'}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setIhbarId(t.kimlik)}>Aç</button></td></tr>)}</tbody>
           </table></div>
         )}
       </>}

@@ -2,7 +2,7 @@ import { KurulumRehberi } from './KurulumRehberi';
 import { useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { istek, type GirisYaniti } from './api';
 import { YatSahibiKayit } from './Portal';
-import { KurumTalebiFormu } from './KurumTalebi';
+import { BasvuruSihirbazi, KurumTalebiFormu } from './KurumTalebi';
 
 // Metinler onaylı G-1 ekranından (G1_giris_B) alınmıştır.
 const T = {
@@ -166,7 +166,7 @@ export function Giris({ girdi }: { girdi: () => void }) {
         {adim === 'yatsahibi' && <YatSahibiKayit bitti={girdi} geri={() => setAdim('hesap')} />}
         {adim === 'yatyetkili' && <YatSahibiKayit yetkili bitti={girdi} geri={() => setAdim('hesap')} />}
         {adim === 'kurum' && <KurumTalebiFormu dil={dil} geri={() => setAdim('hesap')} />}
-        {adim === 'basvuru' && <KurumTalebiFormu dil={dil} basvuru geri={() => setAdim('hesap')} />}
+        {adim === 'basvuru' && <BasvuruSihirbazi dil={dil} geri={() => setAdim('hesap')} />}
 
         {rehber && <KurulumRehberi dil={dil} kapat={() => setRehber(false)} />}
         <div className="alt">

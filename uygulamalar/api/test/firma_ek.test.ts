@@ -247,6 +247,19 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     expect((await o.kart('Kabul Sistemi İyileştirme Önerisi', '2025')).zincir).toHaveLength(2);
     await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kullanici_ref = $1 AND rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Yöneticisi')`, [o.K.oy]);
   });
+  it('T-YG1648-C1: herkese açık başvuru sihirbazı sicil numarasıyla Başvuru açar, dağıtıma düşer; aynı VKN yeni kayıt açmaz', async () => {
+    const sec = (await o.ist('GET', '/api/iletisim/cozum-ortagi-basvurusu', undefined)).json(); expect(sec.branslar.length).toBeGreaterThan(0);
+    const vkn = String(Date.now()).slice(-10); const tc = (await import('../src/yat.js')).vergiNoGecerli;
+    let v = vkn; for (let d = 0; !tc(v) && d < 10; d++) v = vkn.slice(0, 9) + d; expect(tc(v)).toBe(true);
+    const B = { rol: 'Çözüm Ortağı', unvan: `Sihirbaz Tersanesi ${v}`, vergiNo: v, vergiDairesi: 'Bodrum', il: 'Muğla', ilce: 'Bodrum', adres: 'Liman Cd. 1', konumTuru: sec.konumTurleri[0], yetkili: 'Firma Yetkilisi', eposta: 'c1@deneme.local', telefon: '0252 000 00 01', anaBrans: sec.branslar[0], bolgeler: 'Bodrum, Marmaris' };
+    expect((await o.ist('POST', '/api/iletisim/cozum-ortagi-basvurusu', undefined, { ...B, vergiDairesi: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/iletisim/cozum-ortagi-basvurusu', undefined, B)).statusCode).toBe(200);
+    const k = (await o.sup.query(`SELECT kimlik, sicil_no, kayit_asamasi, beyan_teyidi, atanan_sicil_ref, hizmet_bolgeleri FROM kurulus WHERE vergi_no = $1`, [v])).rows;
+    expect(k).toHaveLength(1); expect(k[0]).toMatchObject({ kayit_asamasi: 'Başvuru', beyan_teyidi: 'Teyit Bekliyor', atanan_sicil_ref: null, hizmet_bolgeleri: ['Bodrum', 'Marmaris'] }); expect(k[0].sicil_no).toMatch(/^LGM-SC-\d{5}$/);
+    expect((await o.sup.query(`SELECT durum FROM brans_yetkinligi WHERE kurulus_ref = $1`, [k[0].kimlik])).rows[0].durum).toBe('Doğrulama Bekliyor');
+    expect((await o.ist('POST', '/api/iletisim/cozum-ortagi-basvurusu', undefined, { ...B, unvan: 'Başka Unvan' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kurulus WHERE vergi_no = $1`, [v])).rows[0].n).toBe(1);
+  });
   it('T-YG1654: dönem kartı, üç dönem kademeli düşüş önerisi; denetim planı erteleme ve çıkar çatışması', async () => {
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, ag_statusu, kayit_asamasi, risk_derecesi) VALUES ($1,'Düşen Tersane','Çözüm Ortağı',$2,'Aktif','Onaylı','Yakın İzleme') RETURNING kimlik`, [`S-DK${Date.now()}`, o.K.ds])).rows[0].kimlik;
     const ps = (await o.sup.query(`SELECT max(surum) s FROM karne_parametresi`)).rows[0].s;

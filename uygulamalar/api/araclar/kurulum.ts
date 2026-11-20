@@ -142,8 +142,9 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   }
   // YG-1037: teknik kabulü yapan kalite kontrolünü doğrulayamaz.
   await c.query(`INSERT INTO rol_cakisma SELECT a.kimlik, b.kimlik, 'Teknik kabul ile kalite doğrulaması aynı kişide olamaz' FROM rol a, rol b WHERE a.rol_adi = 'Teknik Uzman' AND b.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)' ON CONFLICT DO NOTHING`);
+  const tt = (await c.query(`SELECT durum_gecis_tetikleyicileri_kur() n`)).rows[0].n; // YG-060
   await c.query('COMMIT');
-  console.log(`${dl.length} değer, ${n} rol yüklendi`);
+  console.log(`${dl.length} değer, ${n} rol yüklendi, ${tt} durum geçiş denetimi`);
   return c;
 }
 

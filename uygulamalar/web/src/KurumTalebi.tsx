@@ -24,6 +24,33 @@ export function KurumTalebiFormu({ dil, geri, basvuru = false }: { dil: 'tr' | '
     <button type="button" className="lnk" onClick={geri}>{t.geri}</button></div>;
 }
 
+/** YG-1648 (A36): C-1 Çözüm Ortağı Başvurusu sihirbazı; beş adım, açıldığında sicil numarası alır ve Firma Yönetimi Yöneticisinin dağıtımına düşer. */
+const SH = {
+  tr: { adim: 'Adım', ileri: 'İleri', onceki: 'Önceki', gonder: 'Başvuruyu Gönder', a: ['Firma', 'Adres', 'Firma Yetkilisi', 'Hizmet', 'Özet'], rol: 'Başvuru Türü', roller: { 'Çözüm Ortağı': 'Çözüm Ortağı', 'Tedarikçi': 'Tedarikçi' } as Record<string, string>, unvan: 'Ticari Unvan', vkn: 'Vergi Numarası', vd: 'Vergi Dairesi', mersis: 'MERSİS No (varsa)', il: 'İl', ilce: 'İlçe', adres: 'Adres', konum: 'Konum Türü', yetkili: 'Ad Soyad', ep: 'E-Posta', tel: 'Telefon', brans: 'Ana Branş', bolge: 'Hizmet Bölgeleri (virgülle)', calisan: 'Çalışan Sayısı', sec: 'Seçiniz' },
+  en: { adim: 'Step', ileri: 'Next', onceki: 'Previous', gonder: 'Submit Application', a: ['Company', 'Address', 'Company Representative', 'Services', 'Summary'], rol: 'Application Type', roller: { 'Çözüm Ortağı': 'Solution Partner', 'Tedarikçi': 'Supplier' } as Record<string, string>, unvan: 'Company Name', vkn: 'Tax Number', vd: 'Tax Office', mersis: 'MERSIS No (if any)', il: 'Province', ilce: 'District', adres: 'Address', konum: 'Location Type', yetkili: 'Full Name', ep: 'E-mail', tel: 'Telephone', brans: 'Main Discipline', bolge: 'Service Regions (comma separated)', calisan: 'Number of Employees', sec: 'Select' },
+};
+export function BasvuruSihirbazi({ dil, geri }: { dil: 'tr' | 'en'; geri: () => void }) {
+  const t = SH[dil]; const b = BASVURU[dil];
+  const [s, setS] = useState<{ branslar: string[]; konumTurleri: string[] } | null>(null); const [n, setN] = useState(0); const [h, setH] = useState(''); const [ok, setOk] = useState(false);
+  const [f, setF] = useState({ rol: 'Çözüm Ortağı', unvan: '', vergiNo: '', vergiDairesi: '', mersis: '', il: '', ilce: '', adres: '', konumTuru: '', yetkili: '', eposta: '', telefon: '', anaBrans: '', bolgeler: '', calisan: '' });
+  useEffect(() => { void istek<NonNullable<typeof s>>('/iletisim/cozum-ortagi-basvurusu').then(setS).catch((x) => setH((x as Error).message)); }, []);
+  const al = (k: keyof typeof f, l: string, tip = 'text') => <><label htmlFor={`bs-${k}`}>{l}</label><input id={`bs-${k}`} type={tip} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
+  const sec = (k: keyof typeof f, l: string, l2: string[], ad: (x: string) => string = (x) => x) => <><label htmlFor={`bs-${k}`}>{l}</label><select id={`bs-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })}><option value="">{t.sec}</option>{l2.map((x) => <option key={x} value={x}>{ad(x)}</option>)}</select></>;
+  const tam = [f.rol && f.unvan.trim() && /^\d{10}$/.test(f.vergiNo) && f.vergiDairesi.trim(), f.il.trim() && f.ilce.trim() && f.adres.trim() && f.konumTuru, f.yetkili.trim() && f.eposta.includes('@') && f.telefon.replace(/\D/g, '').length >= 10, f.anaBrans, true][n];
+  const gonder = (e: FormEvent) => { e.preventDefault(); if (n < 4) { setN(n + 1); return; } setH(''); void istek('/iletisim/cozum-ortagi-basvurusu', { ...f, mersis: f.mersis || undefined, calisan: f.calisan ? Number(f.calisan) : undefined }).then(() => setOk(true)).catch((x) => setH((x as Error).message)); };
+  return <div><h2>{b.b}</h2>{h && <div className="hata" role="alert">{h}</div>}
+    {ok ? <div className="not orta" role="status">{b.tamam}</div> : s && <form onSubmit={gonder}>
+      <div className="not">{t.adim} {n + 1}/5 · {t.a[n]}</div>
+      {n === 0 && <>{sec('rol', t.rol, ['Çözüm Ortağı', 'Tedarikçi'], (x) => t.roller[x]!)}{al('unvan', t.unvan)}{al('vergiNo', t.vkn)}{al('vergiDairesi', t.vd)}{al('mersis', t.mersis)}</>}
+      {n === 1 && <>{al('il', t.il)}{al('ilce', t.ilce)}{al('adres', t.adres)}{sec('konumTuru', t.konum, s.konumTurleri)}</>}
+      {n === 2 && <>{al('yetkili', t.yetkili)}{al('eposta', t.ep, 'email')}{al('telefon', t.tel, 'tel')}</>}
+      {n === 3 && <>{sec('anaBrans', t.brans, s.branslar)}{al('bolgeler', t.bolge)}{al('calisan', t.calisan)}</>}
+      {n === 4 && <div className="ozet">{[[t.rol, t.roller[f.rol]], [t.unvan, f.unvan], [t.vkn, f.vergiNo], [t.vd, f.vergiDairesi], [t.adres, `${f.adres}, ${f.ilce} / ${f.il}`], [t.konum, f.konumTuru], [t.a[2], `${f.yetkili} · ${f.eposta} · ${f.telefon}`], [t.brans, f.anaBrans], [t.bolge, f.bolgeler]].map(([k, v]) => <div key={k} className="not">{k}: {v || '---'}</div>)}</div>}
+      <div className="dugmeler">{n > 0 && <button type="button" className="btn2" onClick={() => setN(n - 1)}>{t.onceki}</button>}<button className="btn" disabled={!tam}>{n < 4 ? t.ileri : t.gonder}</button></div>
+    </form>}
+    <button type="button" className="lnk" onClick={geri}>{T[dil].geri}</button></div>;
+}
+
 type Talep = { kimlik: string; talep_no: string; kurum_turu: string; kurum_adi: string; ad_soyad: string; e_posta: string; telefon: string | null; mesaj: string | null; durum: string; yonlenen: string | null; not_metni: string | null };
 /** YG-1556: Firma Yönetimi Müdürü yönlendirir; yönlendirilen birim görüşüp davet eder veya kapatır. */
 export function KurumTalepleri() {

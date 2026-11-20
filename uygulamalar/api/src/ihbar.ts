@@ -132,6 +132,14 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   const id = rows[0].kimlik as string;
   if (g.iletisimKisileri?.trim()) await c.query(`UPDATE talep SET iletisim_kisileri = $2 WHERE kimlik = $1`, [id, g.iletisimKisileri.trim()]); // YG-018
   if (yukseltme) await c.query(`UPDATE talep SET oncelik_yukseltme_gerekcesi = $2 WHERE kimlik = $1`, [id, g.oncelikGerekcesi!.trim()]); // YG-032
+  // YG-002: ilk durum — acil veya Kritik ise Acil; kayıtta bilgi eksikse Eksik; ihbar edenin yetkisi doğrulanmamışsa İncelemede; değilse Yeni.
+  const eksik: string[] = [];
+  if (!olay) eksik.push('Olay tarihi');
+  if (!g.olayYeri?.trim()) eksik.push('Olay yeri');
+  if (!(await c.query(`SELECT yat_sahibi_ref FROM yat WHERE kimlik = $1`, [yat.kimlik])).rows[0]?.yat_sahibi_ref) eksik.push('Yat sahibi');
+  if (g.sigortaci?.trim() && !g.hasarNo?.trim()) eksik.push('Sigorta hasar dosya numarası');
+  const ilkDurum = statu === 'Acil Eskalasyon' ? 'Acil' : eksik.length ? 'Eksik' : durum !== 'Doğrulandı' ? 'İncelemede' : 'Yeni';
+  await c.query(`UPDATE talep SET ilk_siniflandirma = $2, eksik_bilgiler = $3 WHERE kimlik = $1`, [id, ilkDurum, eksik]);
   await sureBaslat(c, { tur: 'İlk Yanıt', oncelik, baslangic: bildirimZamani, talep: id });
   // YG-1558: liste dışı girilen sigorta şirketi ana veri güncelleme görevi açar.
   if (g.sigortaci?.trim() && !(await c.query(`SELECT 1 FROM sigorta_sirketi WHERE lower(tam_unvan) = lower($1) OR lower(kisa_ad) = lower($1)`, [g.sigortaci.trim()])).rowCount)
@@ -142,7 +150,7 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
     const { mesaiIcinde } = await import('./bildirim.js');
     if (!mesaiIcinde(simdi)) { const n = await (await import('./acil.js')).nobetci(c, 'Dosya Sorumlusu', simdi); if (n) acilisSahibi = n; }
   }
-  await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: g.ihtiyac.trim().slice(0, 200), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: acilisSahibi, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
+  await kartAc(c, { tur: 'İhbar Açılış Kontrolü', kategori: 'gorev', baslik: `${no} · Mükerrerlik ve Açılış Kontrolü`, ozet: `İlk durum: ${ilkDurum}${eksik.length ? ` (eksik: ${eksik.join(', ')})` : ''} · ${g.ihtiyac.trim()}`.slice(0, 300), oncelik: oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: acilisSahibi, hazirlayan: kullanici, nesneTuru: 'Talep', nesneKimligi: id });
   // YG-525: yeni talep Operasyon Müdürlüğü talep kuyruğuna sistem içi bildirimle düşer; mesai dışında nöbetçi Dosya Sorumlusu da bilgilendirilir (Kritikte SMS).
   { const { mesaiIcinde } = await import('./bildirim.js'); const mesaiDisi = !mesaiIcinde(simdi);
     const om = await rolSahipleri(c, await rolId(c, 'Operasyon Müdürü'));
@@ -221,7 +229,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
   });
 
   s.get('/ihbar', ihbarci, async () => (await b.db.query(
-    `SELECT t.kimlik, t.talep_no, t.statu, t.oncelik, t.ihtiyac_tanimi, t.iletisim_kisileri, t.yat_mevcut_konumu, t.bildirim_alinma_zamani, t.ilk_yanit_zamani, t.talep_sahibi_adi, t.talep_sahibi_turu, y.yat_adi, u.bitis AS ilk_yanit_son
+    `SELECT t.kimlik, t.talep_no, t.statu, t.ilk_siniflandirma, t.eksik_bilgiler, t.oncelik, t.ihtiyac_tanimi, t.iletisim_kisileri, t.yat_mevcut_konumu, t.bildirim_alinma_zamani, t.ilk_yanit_zamani, t.talep_sahibi_adi, t.talep_sahibi_turu, y.yat_adi, u.bitis AS ilk_yanit_son
        FROM talep t JOIN yat y ON y.kimlik = t.yat_ref LEFT JOIN dosya_sure u ON u.talep_ref = t.kimlik AND u.tur = 'İlk Yanıt'
       WHERE t.statu NOT IN ('Dosyaya Dönüştü', 'Birleştirildi', 'Kapsam Dışı / Yönlendirme') ORDER BY array_position(ARRAY['Kritik','Yüksek','Normal','Planlı'], t.oncelik), t.bildirim_alinma_zamani LIMIT 200`)).rows);
 

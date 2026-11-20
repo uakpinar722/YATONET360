@@ -1,0 +1,3 @@
+-- YG-060: durum geçiş denetiminin ilk taramasında görülen, kodda doğru işleyen ama sözlükte izinli yazılmamış geçişler sözlüğe eklenir.
+UPDATE durum_sozlugu SET izinli_gecisler = array_append(izinli_gecisler, 'Geri Çekildi'), zaman = now() WHERE kayit_turu = 'is_karti' AND durum = 'Bekliyor' AND NOT ('Geri Çekildi' = ANY (izinli_gecisler));
+UPDATE durum_sozlugu SET izinli_gecisler = array_append(izinli_gecisler, 'İşlem Yapıldı'), cikis_kosulu = 'Alıcı istenen işlemi yapınca İşlem Yapıldı', zaman = now() WHERE kayit_turu = 'gonderim' AND durum = 'Gönderildi' AND NOT ('İşlem Yapıldı' = ANY (izinli_gecisler));
