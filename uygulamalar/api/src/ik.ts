@@ -123,6 +123,7 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
       await db.query(`UPDATE ayrilis_devri SET durum = 'Birim Amirine Atandı', devralan_ref = $2, zaman = now() WHERE kimlik = $1`, [d.kimlik, amir]);
     }
     await db.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Kapalı' WHERE kimlik = $1`, [a.personel_ref]);
+    await (await import('./hesap_devri.js')).hesapKapanisDevri(db, a.personel_ref); // YG-1054: kalan görev, boşalan onay makamı ve belge sorumluluğu
     await (await import('./mobil.js')).cihazIptal(db, a.personel_ref, 'Ayrılış'); // YG-498
     await hesapKapanisGorevi(db, a.kimlik); // YG-1050
     await db.query(`UPDATE personel_karti SET personel_durumu = 'Ayrıldı', ayrilis_tarihi = $2 WHERE kullanici_ref = $1`, [a.personel_ref, a.son_is_gunu]);

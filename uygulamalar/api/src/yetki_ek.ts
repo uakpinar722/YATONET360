@@ -66,6 +66,12 @@ export async function disMetinEngeli(db: Db, g: { telefon?: string | null; epost
   const a = (await db.query(`SELECT kayit_rolu FROM kurulus WHERE ($1::text IS NOT NULL AND lower(kurumsal_eposta COLLATE "C") = lower($1 COLLATE "C")) OR ($2::text IS NOT NULL AND kurumsal_telefon = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0]
     ?? (await db.query(`SELECT u.kayit_rolu FROM kullanici_hesabi h JOIN kurulus_kullanici k ON k.kullanici_ref = h.kimlik JOIN kurulus u ON u.kimlik = k.kurulus_ref WHERE ($1::text IS NOT NULL AND lower(h.e_posta COLLATE "C") = lower($1 COLLATE "C")) OR ($2::text IS NOT NULL AND h.cep_telefonu = $2) LIMIT 1`, [g.eposta ?? null, g.telefon ?? null])).rows[0];
   const t = `${g.konu} ${g.metin}`;
+  // YG-512: başka bir dosyanın tarafı olan alıcıya, tarafı olmadığı dosyanın bilgisi gönderilmez (firma ve sigorta yetkilisi gibi taraf kaydı olmayan alıcılar ayrıca denetlenir).
+  const tarafSart = `(($2::text IS NOT NULL AND (lower(x.eposta COLLATE "C") = lower($2 COLLATE "C") OR lower(r.eposta COLLATE "C") = lower($2 COLLATE "C"))) OR ($3::text IS NOT NULL AND (x.telefon = $3 OR r.telefon = $3)))`;
+  for (const no of new Set(t.match(/LGM-\d{4}-\d{2}-\d{4}/g) ?? [])) {
+    const s = (await db.query(`SELECT bool_or(d.dosya_no = $1) bu, bool_or(d.dosya_no <> $1) baska FROM dosya_tarafi x LEFT JOIN taraf r ON r.kimlik = x.taraf_ref JOIN dosya d ON d.kimlik = x.dosya_ref WHERE ${tarafSart}`, [no, g.eposta ?? null, g.telefon ?? null])).rows[0];
+    if (s?.baska && !s.bu && (await db.query(`SELECT 1 FROM dosya WHERE dosya_no = $1`, [no])).rowCount) return 'Başka dosyaya ait bilgi bu alıcıya gönderilemez.';
+  }
   if (a) {
     if (a.kayit_rolu === 'Tesis') return null; // YG-1167: Çözüm Ortağının kimliği marinaya açılabilir.
     const s = (await db.query(`SELECT 1 FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi x ON x.kimlik = s.sigorta_taraf_ref WHERE (length(s.sigorta_hasar_dosya_no) >= 4 AND position(s.sigorta_hasar_dosya_no in $1) > 0) OR (length(x.kurulus_unvani) >= 5 AND position(x.kurulus_unvani in $1) > 0) OR (length(s.sigortaci_adi) >= 5 AND position(s.sigortaci_adi in $1) > 0) LIMIT 1`, [t])).rowCount;

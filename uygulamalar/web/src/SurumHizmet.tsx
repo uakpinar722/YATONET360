@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 
 type V = {
@@ -47,7 +48,7 @@ export function SurumHizmet() {
       {al('hAd', 'Hesap Adı')}{al('hSag', 'Sağlayıcı')}{al('hKisi', 'İsimli Kişi')}{al('hKap', 'Yetki Kapsamı (virgülle)')}{sec('hYon', 'Destek Yöntemi', ['Onaylı Uzak Erişim Aracı', 'LGM Gözetiminde Ekran Paylaşımı', 'Yerinde'])}{al('hAlt', 'Alt Sağlayıcılar (virgülle)')}{al('hBit', 'Sözleşme Bitişi', 'date')}
       <label className="kutu"><input type="checkbox" checked={g.hMfa === '1'} onChange={(e) => setG({ ...g, hMfa: e.target.checked ? '1' : '' })} /><span>Çok faktörlü kimlik doğrulama tanımlandı</span></label>
       <button className="btn2 kucuk" onClick={() => is(istek('/hizmet-hesabi', { hesapAdi: g.hAd, saglayici: g.hSag, kisi: g.hKisi, kapsam: (g.hKap ?? '').split(','), cokFaktorlu: g.hMfa === '1', destekYontemi: g.hYon, altSaglayicilar: (g.hAlt ?? '').split(','), sozlesmeBitis: g.hBit }), 'Hesap onaya gönderildi.')}>Kaydet</button></details>
-    <details><summary>Olay Bazlı Erişimler</summary>{v.erisimler.map((x) => <div className={x.durum === 'Aktif' ? 'soru hata' : 'soru'} key={x.kimlik}><span>{x.hesap_adi} · {x.olay_turu} · {x.veri} · Bitiş {new Date(x.bitis).toLocaleString('tr-TR')} · {x.durum}</span>
+    <details><summary>Olay Bazlı Erişimler</summary>{v.erisimler.map((x) => <div className={x.durum === 'Aktif' ? 'soru hata' : 'soru'} key={x.kimlik}><span>{x.hesap_adi} · {x.olay_turu} · {x.veri} · Bitiş {tarihSaat(x.bitis)} · {x.durum}</span>
       <div className="tam">{v.onayci && x.durum === 'Onayda' && <><button className="btn2 kucuk" onClick={() => is(istek(`/dis-erisim/${x.kimlik}/karar`, { onay: true }), 'Erişim onaylandı.')}>Onayla</button><button className="btn2 kucuk" onClick={() => is(istek(`/dis-erisim/${x.kimlik}/karar`, { onay: false }), 'Erişim reddedildi.')}>Reddet</button></>}
         {(x.durum === 'Onayda' || x.durum === 'Aktif') && <button className="btn2 kucuk" onClick={() => is(istek(`/dis-erisim/${x.kimlik}/kapat`, {}), 'Erişim kapatıldı.')}>Kapat</button>}</div></div>)}
       <span><label htmlFor="sh-eHes">Hizmet Hesabı</label><select id="sh-eHes" value={g.eHes ?? ''} onChange={(e) => setG({ ...g, eHes: e.target.value })}><option value="">Seçiniz</option>{v.hesaplar.filter((x) => x.durum === 'Aktif').map((x) => <option key={x.kimlik} value={x.kimlik}>{x.hesap_adi}</option>)}</select></span>

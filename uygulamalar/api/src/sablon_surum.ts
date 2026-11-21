@@ -31,6 +31,24 @@ kapanisKaydet('Şablon Metni Onayı', async (c, k, karar, yapan) => {
   else if (karar === 'Yeniden Gönder') await c.query(`UPDATE sablon_metni SET durum = 'Onayda' WHERE kod = $1 AND dil = $2 AND surum = $3 AND durum = 'Taslak'`, [kod, dil, surum]);
 });
 
+/**
+ * YG-512: "yazım düzeltmesi" beyanı denetlenir. Sayı, tutar, tarih ve {alan} yer tutucuları aynı kalmalı; noktalama ve büyük-küçük harf dışında
+ * metin farkı en çok 3 karakter (uzun metinde %2) olmalıdır. Aşan değişiklik anlamı etkiler sayılır ve onaya gider.
+ */
+export function yazimDuzeltmesiMi(eski: string, yeni: string): boolean {
+  const ozel = (s: string) => [...(s.match(/\{[^}]+\}|\d+([.,]\d+)*/g) ?? [])].sort().join('|');
+  if (ozel(eski) !== ozel(yeni)) return false;
+  const sade = (s: string) => s.toLocaleLowerCase('tr').replace(/[\s.,;:!?'"()\-–—]/g, '');
+  const a = sade(eski), b = sade(yeni);
+  let onceki = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const s = [i];
+    for (let j = 1; j <= b.length; j++) s[j] = Math.min(onceki[j]! + 1, s[j - 1]! + 1, onceki[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    onceki = s;
+  }
+  return onceki[b.length]! <= Math.max(3, Math.floor(a.length * 0.02));
+}
+
 export function sablonSurumYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
@@ -55,7 +73,7 @@ export function sablonSurumYollari(s: FastifyInstance, b: Baglam) {
     if (g.metin.trim() === son.metin) return y.code(409).send({ hata: 'Metin değişmemiştir.' });
     // YG-626, K-144: hukuki işaret bir kez konunca yeni sürümlere taşınır; İngilizce hukuki metnin her yeni sürümü (yazım düzeltmesi dahil) CEO onayına gider.
     const hukuki = Boolean(son.hukuki) || g.hukuki === true; const ceo = hukuki && dil === 'en';
-    const yeni = sonrakiSurum(son.surum); const anlam = g.anlamEtkiler !== false || ceo;
+    const yeni = sonrakiSurum(son.surum); const anlam = g.anlamEtkiler !== false || ceo || !yazimDuzeltmesiMi(son.metin, g.metin.trim()); // YG-512
     await b.db.query(`INSERT INTO sablon_metni (kod, dil, surum, tur, baslik, metin, durum, sahip_rol, degisiklik_gerekcesi, onay_dayanagi, hazirlayan_ref, hukuki) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [kod, dil, yeni, son.tur, son.baslik, g.metin.trim(), anlam ? 'Onayda' : 'Yürürlükte', SAHIP, g.gerekce.trim(), ceo ? 'CEO onayı (YATONET 360) · İngilizce hukuki metin' : anlam ? 'Genel Müdür Yardımcısı onayı (YATONET 360)' : 'Yazım düzeltmesi · metin sahibi', o.kullanici, hukuki]);
     if (anlam) await kartAc(b.db, { tur: 'Şablon Metni Onayı', baslik: `${kod} (${dil.toUpperCase()}) · ${yeni}`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, ceo ? 'CEO' : ONAY)], nesneTuru: 'Şablon Metni', nesneKimligi: `${kod}|${dil}|${yeni}` });

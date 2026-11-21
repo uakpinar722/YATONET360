@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 import { DosyaBag } from './DosyaBag';
 
@@ -21,7 +22,7 @@ export function Analiz() {
   if (!v) return null;
   const tablo = (b: string, l: K[]) => <><div className="not">{b}</div>{l.map((x) => <div className="soru" key={x.grup}><span>{x.grup} · {o(x)}</span></div>)}</>;
   return <details><summary>Süre ve Sapma Analizi</summary>
-    <div className="not">Kapsam: {v.filtre.kapsam} · {v.filtre.bas.split('-').reverse().join('.')} – {v.filtre.son.split('-').reverse().join('.')} · Üretim: {new Date(v.uretim).toLocaleString('tr-TR')}</div>
+    <div className="not">Kapsam: {v.filtre.kapsam} · {v.filtre.bas.split('-').reverse().join('.')} – {v.filtre.son.split('-').reverse().join('.')} · Üretim: {tarihSaat(v.uretim)}</div>
     <label htmlFor="an-b">Başlangıç</label><input id="an-b" type="date" value={f.bas} onChange={(x) => setF({ ...f, bas: x.target.value })} /><label htmlFor="an-s">Bitiş</label><input id="an-s" type="date" value={f.son} onChange={(x) => setF({ ...f, son: x.target.value })} /><button className="btn2 kucuk" onClick={() => void yk()}>Uygula</button>
     <div className="bolum">Çevrim Süresi</div><div className="soru"><span>Toplam geçen süre (yetkili duraklamalar dahil): {o(v.cevrim.toplam)}</span></div><div className="soru"><span>Net çalışma süresi: {o(v.cevrim.net)}</span></div>
     <div className="bolum">Kırılımlar (net süre)</div>{tablo('Hizmet türü', v.kirilim.hizmet)}{tablo('Branş', v.kirilim.brans)}{tablo('Öncelik', v.kirilim.oncelik)}

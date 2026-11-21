@@ -1,4 +1,5 @@
 import { AdayTemas } from './ArsivFirma';
+import { tarih } from './bicim';
 import { AnaVeriMukerrer, KayitBirlestirme } from './AnaVeri';
 import { TesisBilgi } from './BaglamaNoktasi';
 import { useEffect, useState } from 'react';
@@ -87,7 +88,7 @@ function KararOnerisi({ id, yap, sicil, asama }: { id: string; yap: (f: () => Pr
   return <>
     {sicil && asama === 'Başvuru' && <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/on-incelemeye-gonder`, {}), 'Başvuru Firma Yönetimi Yöneticisine ön incelemeye gönderildi.').then(yk)}>Ön İncelemeye Gönder</button>}
     {v && <>
-      {v.son && v.asama === 'İncelemede' && <div className="not">Karara sunma son tarihi: {new Date(v.son).toLocaleDateString('tr-TR')}</div>}
+      {v.son && v.asama === 'İncelemede' && <div className="not">Karara sunma son tarihi: {tarih(v.son)}</div>}
       {v.oneriler.map((x) => <div key={x.kimlik} className="not">Karar Önerisi: {x.oneri}{x.kapsama ? ` · ${x.kapsama}` : ''} · {x.durum === 'Onayda' && x.makam ? `${x.makam} Kontrolünde` : x.durum} · Hazırlayan: {x.hazirlayan}{x.puanlar.length ? ` · ${x.puanlar.map((p) => `${p.baslik} ${p.puan}`).join(', ')}` : ''}</div>)}
       {v.hazirlar && v.asama === 'İncelemede' && !v.oneriler.some((x) => x.durum === 'Onayda') && <>
         <label htmlFor={`ko-o-${id}`}>Karar Önerisi</label><select id={`ko-o-${id}`} value={f.oneri} onChange={(e) => setF({ ...f, oneri: e.target.value })}><option value="">Seçiniz</option>{v.oneriTurleri.map((x) => <option key={x}>{x}</option>)}</select>

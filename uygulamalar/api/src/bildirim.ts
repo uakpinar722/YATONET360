@@ -8,6 +8,8 @@ import { onayMakami, rolSahipleri } from './makam.js';
 type Db = Pool | PoolClient;
 const TZ_FARK_DK = 180; // Türkiye UTC+3, yaz saati uygulanmaz.
 const AZAMI_DENEME = 3;
+/** YG-1309: kalıcı hata geçersiz veya engelli hedeftir; diğerleri sağlayıcı veya bağlantı hatasıdır. */
+export const kokNeden = (kalici: boolean) => (kalici ? 'Geçersiz veya engelli hedef' : 'Sağlayıcı veya bağlantı hatası');
 const SONRAKI_DAKIKA = [1, 5, 30];
 
 function yerel(d: Date) { return new Date(d.getTime() + TZ_FARK_DK * 60_000); }
@@ -52,6 +54,16 @@ export interface Bildirimi {
  * YG-507, YG-509, YG-510: sistem içi bildirim anında; e-posta ve SMS kuyruğa. Aynı olay aynı kişiye iki kez gitmez.
  * YG-521: mesai dışında SMS yalnız Kritik veya acil işaretli olayda anında çıkar; diğerleri sonraki iş günü 09:00.
  */
+/** YG-510: sessiz saat aralığındaki plan aralık sonuna kayar (TSİ, UTC+3; gece yarısını aşan aralık desteklenir). */
+export function sessizSonu(plan: Date, bas: string, bit: string): Date {
+  const dk = (s: string) => Number(s.slice(0, 2)) * 60 + Number(s.slice(3, 5));
+  const yerel = new Date(plan.getTime() + 3 * 3_600_000); const m = yerel.getUTCHours() * 60 + yerel.getUTCMinutes();
+  const b0 = dk(bas), b1 = dk(bit); const icinde = b0 <= b1 ? m >= b0 && m < b1 : m >= b0 || m < b1;
+  if (!icinde) return plan;
+  const gun = Date.UTC(yerel.getUTCFullYear(), yerel.getUTCMonth(), yerel.getUTCDate()) + (b0 > b1 && m >= b0 ? 86_400_000 : 0);
+  return new Date(gun + b1 * 60_000 - 3 * 3_600_000);
+}
+
 export async function bildir(db: Db, b: Bildirimi, simdi = new Date()): Promise<void> {
   const kritik = b.oncelik === 'Kritik' || Boolean(b.acil);
   for (const k of new Set(b.kullanicilar)) {
@@ -61,16 +73,25 @@ export async function bildir(db: Db, b: Bildirimi, simdi = new Date()): Promise<
     if (!yeni.rowCount || (!b.eposta && !b.sms)) continue;
     const h = (await db.query(`SELECT e_posta, cep_telefonu, hesap_durumu, kullanici_grubu, bildirim_kanali FROM kullanici_hesabi WHERE kimlik = $1`, [k])).rows[0];
     if (!h || h.hesap_durumu !== 'Aktif') continue;
-    const plan = kritik ? simdi : await sonrakiIsMesaisi(db, simdi); // YG-521: resmî tatil atlanır
+    let plan = kritik ? simdi : await sonrakiIsMesaisi(db, simdi); // YG-521: resmî tatil atlanır
     const metin = b.ozet ? `${b.baslik}: ${b.ozet}` : b.baslik;
+    // YG-510: kullanıcının rollerindeki bildirim kuralı (en kısıtlayıcısı); Kritik bildirim etkilenmez.
+    const kr = kritik ? null : (await db.query(`SELECT max(k.tekrar_dakika) tekrar, bool_or(k.birlestir) birlestir, min(to_char(k.sessiz_baslangic, 'HH24:MI')) bas, max(to_char(k.sessiz_bitis, 'HH24:MI')) bit
+      FROM bildirim_kurali k JOIN rol_atamasi a ON a.rol_ref = k.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [k])).rows[0];
+    if (kr?.tekrar && (await db.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND baslik = $2 AND olay_anahtari IS DISTINCT FROM $3 AND zaman > $4::timestamptz - make_interval(mins => $5)`, [k, b.baslik, b.olay, simdi, kr.tekrar])).rowCount) continue;
+    if (kr?.bas && kr?.bit) plan = sessizSonu(plan, kr.bas, kr.bit);
+    const ekle = async (kanal: string, hedef: string, konu: string, m: string) => {
+      if (kr?.birlestir && (await db.query(`UPDATE gonderim SET metin = metin || E'\n' || $4, konu = CASE WHEN konu LIKE '%(toplu)' THEN konu ELSE konu || ' (toplu)' END WHERE kimlik = (SELECT kimlik FROM gonderim WHERE kullanici_ref = $1 AND kanal = $2 AND hedef = $3 AND durum = 'Bekliyor' AND oncelik <> 'Kritik' ORDER BY plan_zamani LIMIT 1)`, [k, kanal, hedef, m])).rowCount) return;
+      await kuyruk(db, b.olay, k, kanal, hedef, konu, m, b.oncelik, plan);
+    };
     // YG-519: dış kullanıcı seçtiği kanaldan alır. WhatsApp bağlanana kadar e-posta yedek kanaldır.
     const dis = h.kullanici_grubu !== 'LGM İç Rolü';
     const ana = dis ? h.bildirim_kanali : 'E-posta';
-    if (b.eposta && ana === 'E-posta' && h.e_posta) await kuyruk(db, b.olay, k, 'E-posta', h.e_posta, b.baslik, metin, b.oncelik, plan);
-    if (((b.eposta && ana === 'SMS') || b.sms) && h.cep_telefonu) await kuyruk(db, b.olay, k, 'SMS', h.cep_telefonu, b.baslik, metin, b.oncelik, plan);
+    if (b.eposta && ana === 'E-posta' && h.e_posta) await ekle('E-posta', h.e_posta, b.baslik, metin);
+    if (((b.eposta && ana === 'SMS') || b.sms) && h.cep_telefonu) await ekle('SMS', h.cep_telefonu, b.baslik, metin);
     if (b.eposta && ana === 'WhatsApp') {
-      if (h.cep_telefonu) await kuyruk(db, b.olay, k, 'WhatsApp', h.cep_telefonu, b.baslik, whatsappMetni(b.baslik), b.oncelik, plan);
-      else if (h.e_posta) await kuyruk(db, b.olay, k, 'E-posta', h.e_posta, b.baslik, metin, b.oncelik, plan);
+      if (h.cep_telefonu) await ekle('WhatsApp', h.cep_telefonu, b.baslik, whatsappMetni(b.baslik));
+      else if (h.e_posta) await ekle('E-posta', h.e_posta, b.baslik, metin);
     }
   }
 }
@@ -166,7 +187,7 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
         const kalici = (e as { kalici?: boolean }).kalici === true || /geçersiz|invalid|unknown (user|number|recipient)|blacklist|kara liste|engellen/i.test((e as Error).message);
         const d = kalici ? AZAMI_DENEME : g.deneme + 1;
         if (d >= AZAMI_DENEME) {
-          await c.query(`UPDATE gonderim SET durum = 'Başarısız', deneme = $2, son_hata = $3 WHERE kimlik = $1`, [g.kimlik, g.deneme + 1, `${kalici ? 'Kalıcı hata: ' : ''}${(e as Error).message}`.slice(0, 200)]);
+          await c.query(`UPDATE gonderim SET durum = 'Başarısız', deneme = $2, son_hata = $3, kok_neden = $4 WHERE kimlik = $1`, [g.kimlik, g.deneme + 1, `${kalici ? 'Kalıcı hata: ' : ''}${(e as Error).message}`.slice(0, 200), kokNeden(kalici)]);
           const h = g.kullanici_ref ? (await c.query(`SELECT e_posta, cep_telefonu FROM kullanici_hesabi WHERE kimlik = $1`, [g.kullanici_ref])).rows[0] : null;
           const alt = g.kanal === 'E-posta' ? (h?.cep_telefonu ? ['SMS', h.cep_telefonu] : null) : (h?.e_posta ? ['E-posta', h.e_posta] : null);
           if (alt) await kuyruk(c, g.olay_anahtari + ':alternatif', g.kullanici_ref, alt[0], alt[1], g.konu, g.metin, g.oncelik, simdi);

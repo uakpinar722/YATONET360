@@ -1,4 +1,5 @@
 import { DosyaBag } from './DosyaBag';
+import { tarih } from './bicim';
 import { useEffect, useState } from 'react';
 import { istek, type Ben } from './api';
 import { DosyaHaritasi, IsListeleri, KonumPlani } from './IsGorunumu';
@@ -673,11 +674,11 @@ function SicilKalitesi() {
   useEffect(yk, []);
   if (!v || (!v.yildonumu.length && !v.guncellenmeyen.length)) return null;
   return <details><summary>Sicil Kalitesi · {v.yildonumu.length} yıldönümü · {v.guncellenmeyen.length} güncellenmeyen kayıt</summary>{m && <div className="not" role="status">{m}</div>}
-    {v.yildonumu.map((x) => <div key={x.firma} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan} · Kayıt Yıldönümü</b>{x.son_zaman && <span className="not">Son: {new Date(x.son_zaman).toLocaleDateString('tr-TR')}</span>}</div>
+    {v.yildonumu.map((x) => <div key={x.firma} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan} · Kayıt Yıldönümü</b>{x.son_zaman && <span className="not">Son: {tarih(x.son_zaman)}</span>}</div>
       <div className="not">Belge: {x.gecerli_belge} geçerli, {x.dolan_belge} süresi dolmuş · Personel: {x.personel} · Tesis: {x.tesis} · Ekipman: {x.ekipman} ({x.kullanilamaz_ekipman} kullanılamaz)</div>
       {v.hazirlar && <><label htmlFor={`yd-${x.firma}`}>Gözden Geçirme Değerlendirmesi</label><textarea id={`yd-${x.firma}`} rows={2} value={g[x.firma] ?? ''} onChange={(e) => setG({ ...g, [x.firma]: e.target.value })} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!g[x.firma]?.trim()} onClick={() => void istek(`/sicil/yildonumu/${x.firma}/onaya-gonder`, { degerlendirme: g[x.firma] }).then(() => { setM('Paket Firma Yönetimi Yöneticisine gönderildi.'); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>}</div>)}
-    {v.guncellenmeyen.length > 0 && <><div className="bolum">12 Aydır Güncellenmeyen Kayıtlar</div>{v.guncellenmeyen.map((x) => <div key={x.kimlik} className="not">{x.sicil_no} · {x.ticari_unvan} · Son güncelleme: {new Date(x.guncelleme_zamani).toLocaleDateString('tr-TR')}</div>)}</>}
+    {v.guncellenmeyen.length > 0 && <><div className="bolum">12 Aydır Güncellenmeyen Kayıtlar</div>{v.guncellenmeyen.map((x) => <div key={x.kimlik} className="not">{x.sicil_no} · {x.ticari_unvan} · Son güncelleme: {tarih(x.guncelleme_zamani)}</div>)}</>}
   </details>;
 }
 
@@ -690,16 +691,16 @@ function KabulSistemi() {
   useEffect(yk, []);
   if (!v) return null;
   return <details><summary>Kabul Sistemi · {v.dagitim.length} dağıtım bekleyen başvuru</summary>{m && <div className="not" role="status">{m}</div>}
-    {v.dagitim.length > 0 && <><div className="bolum">Dağıtım Bekleyen Başvurular</div>{v.dagitim.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">{x.kayit_rolu} · {new Date(x.olusturma_zamani).toLocaleDateString('tr-TR')}{x.basvuru_kanali ? ` · ${x.basvuru_kanali}` : ''}{x.beyan_teyidi ? ` · Beyan: ${x.beyan_teyidi}` : ''}{x.mukerrer_karari === 'Karar bekliyor' ? ' · Benzer kayıt: mükerrer kararı bekliyor' : ''}</span></div>
+    {v.dagitim.length > 0 && <><div className="bolum">Dağıtım Bekleyen Başvurular</div>{v.dagitim.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">{x.kayit_rolu} · {tarih(x.olusturma_zamani)}{x.basvuru_kanali ? ` · ${x.basvuru_kanali}` : ''}{x.beyan_teyidi ? ` · Beyan: ${x.beyan_teyidi}` : ''}{x.mukerrer_karari === 'Karar bekliyor' ? ' · Benzer kayıt: mükerrer kararı bekliyor' : ''}</span></div>
       {v.atar && <><label htmlFor={`da-${x.kimlik}`}>Sicil Sorumlusu</label><select id={`da-${x.kimlik}`} value={s[x.kimlik] ?? ''} onChange={(e) => setS({ ...s, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.sorumlular.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!s[x.kimlik]} onClick={() => void istek(`/firma/${x.kimlik}/sicil-ata`, { kullanici: s[x.kimlik] }).then(() => { setM('Başvuru Sicil Sorumlusuna atandı.'); yk(); }).catch((e) => setM(e.message))}>Sicil Sorumlusuna Ata</button></div></>}</div>)}</>}
     <div className="bolum">Aylık Göstergeler · Son 12 Ay</div>
     <div className="tablo"><table className="kartli"><thead><tr><th>Ay</th><th>Başvuru</th><th>Ön İnceleme</th><th>Karar</th><th>Onaylı</th><th>Koşullu Onaylı</th><th>Reddedildi</th><th>Ortalama Süre (Gün)</th><th>Süre Aşımı</th></tr></thead>
       <tbody>{v.gostergeler.map((x) => <tr key={x.ay}><td data-ad="Ay">{x.ay.split('-').reverse().join('.')}</td><td data-ad="Başvuru">{x.basvuru}</td><td data-ad="Ön İnceleme">{x.on_inceleme}</td><td data-ad="Karar">{x.karar}</td><td data-ad="Onaylı">{x.onayli}</td><td data-ad="Koşullu Onaylı">{x.kosullu}</td><td data-ad="Reddedildi">{x.reddedildi}</td><td data-ad="Ortalama Süre (Gün)">{x.ort_gun === null ? '---' : Number(x.ort_gun).toLocaleString('tr-TR')}</td><td data-ad="Süre Aşımı">{x.sure_asimi}</td></tr>)}</tbody></table></div>
-    {v.aylik && v.hazirlar && <><div className="bolum">{v.aylik.ay.split('-').reverse().join('.')} · Aylık Kabul Göstergeleri{v.aylik.son_zaman ? ` · Son: ${new Date(v.aylik.son_zaman).toLocaleDateString('tr-TR')}` : ''}</div>
+    {v.aylik && v.hazirlar && <><div className="bolum">{v.aylik.ay.split('-').reverse().join('.')} · Aylık Kabul Göstergeleri{v.aylik.son_zaman ? ` · Son: ${tarih(v.aylik.son_zaman)}` : ''}</div>
       <label htmlFor="kabul-aylik">Değerlendirme</label><textarea id="kabul-aylik" rows={2} value={ad} onChange={(e) => setAd(e.target.value)} />
       <div className="dugmeler"><button className="btn2 kucuk" disabled={!ad.trim()} onClick={() => void istek('/firma/kabul-gostergeleri/onaya-gonder', { degerlendirme: ad }).then(() => { setM('Göstergeler Firma Yönetimi Müdür Yardımcısına gönderildi.'); setAd(''); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>}
-    {v.yillik && <><div className="bolum">{v.yillik.yil} · Yıllık İyileştirme Önerisi{v.yillik.son_zaman ? ` · Son: ${new Date(v.yillik.son_zaman).toLocaleDateString('tr-TR')}` : ''}</div>
+    {v.yillik && <><div className="bolum">{v.yillik.yil} · Yıllık İyileştirme Önerisi{v.yillik.son_zaman ? ` · Son: ${tarih(v.yillik.son_zaman)}` : ''}</div>
       {v.hazirlar ? <><label htmlFor="kabul-oneri">İyileştirme Önerisi</label><textarea id="kabul-oneri" rows={3} value={oneri} onChange={(e) => setOneri(e.target.value)} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!oneri.trim()} onClick={() => void istek('/firma/kabul-iyilestirme', { oneri }).then(() => { setM('Öneri Firma Yönetimi Müdür Yardımcısına gönderildi.'); setOneri(''); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>
         : <div className="not">Firma Yönetimi Yöneticisinin önerisi bekleniyor.</div>}</>}
@@ -717,19 +718,19 @@ function DonemKartlari() {
   const s = (x: string | null) => (x === null ? '---' : Number(x).toLocaleString('tr-TR', { maximumFractionDigits: 2 }));
   return <details><summary>Dönem Performans Kartları · {v.kartlar.length} firma{v.kartlar.some((x) => x.kademeli_dusus) ? ` · ${v.kartlar.filter((x) => x.kademeli_dusus).length} kademeli düşüş` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
     {v.kartlar.map((x) => { const f = g[x.kimlik] ?? { oneri: '', gerekce: '' }; return <div key={x.kimlik} className={x.acik_emniyet_uygunsuzlugu || x.kademeli_dusus ? 'ozet kart-sol hata' : 'ozet kart-sol'}>
-      <div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">Dönem: {x.donem_sonu.split('-').reverse().join('.')} · Son: {new Date(x.son).toLocaleDateString('tr-TR')}</span></div>
+      <div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">Dönem: {x.donem_sonu.split('-').reverse().join('.')} · Son: {tarih(x.son)}</span></div>
       <div className="not">Dönem Puanı: {x.yetersiz_veri ? 'Yetersiz Veri' : s(x.donem_puani)} · Dosya Performansı: {s(x.agirlikli_ortalama)} ({x.kapanan_dosya_sayisi} dosya) · Denetim: {x.denetim} · Açık Düzeltici Faaliyet: {x.acik_duzeltici} · Kapasite: {x.kapasite_is ?? '---'}{x.acik_emniyet_uygunsuzlugu ? ' · Açık emniyet riski' : ''} · Risk Derecesi Önerisi: {x.risk_derecesi_onerisi} (mevcut: {x.risk_derecesi ?? '---'})</div>
       {x.kademeli_dusus && <div className="not">Üç dönem kademeli düşüş{x.oneri_bekliyor ? ' · Öneri Firma Yönetimi Müdürü Kontrolünde' : ''}</div>}
       {x.kademeli_dusus && v.oneriVerir && !x.oneri_bekliyor && <><label htmlFor={`kd-o-${x.kimlik}`}>Öneri</label><select id={`kd-o-${x.kimlik}`} value={f.oneri} onChange={(e) => setG({ ...g, [x.kimlik]: { ...f, oneri: e.target.value } })}><option value="">Seçiniz</option><option>Erken Denetim</option><option>Gelişim Görüşmesi</option></select>
         <label htmlFor={`kd-g-${x.kimlik}`}>Gerekçe</label><input id={`kd-g-${x.kimlik}`} value={f.gerekce} onChange={(e) => setG({ ...g, [x.kimlik]: { ...f, gerekce: e.target.value } })} />
         <button className="btn2 kucuk" disabled={!f.oneri || !f.gerekce.trim()} onClick={() => void istek(`/firma/${x.kimlik}/kademeli-dusus-onerisi`, f).then(() => { setM('Öneri Firma Yönetimi Müdürüne gönderildi.'); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></>}
     </div>; })}
-    {v.donem && (v.kayit ? <div className="not">Dönem kartları kaydedildi: {v.kayit.ad_soyad} · {new Date(v.kayit.zaman).toLocaleDateString('tr-TR')}</div>
+    {v.donem && (v.kayit ? <div className="not">Dönem kartları kaydedildi: {v.kayit.ad_soyad} · {tarih(v.kayit.zaman)}</div>
       : v.kaydeder && <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void istek('/firma/donem-kartlari/kaydet', { donem: v.donem }).then(() => { setM('Dönem kartları kaydedildi.'); yk(); }).catch((e) => setM(e.message))}>Dönem Kartlarını Kaydet</button></div>)}
     {v.donem && v.oneriVerir && <><div className="bolum">Üç Aylık Karne Özeti · {v.donem.split('-').reverse().join('.')}</div>
       {v.ozetBekliyor ? <div className="not">Özet Firma Yönetimi Müdürü Kontrolünde</div> : <><label htmlFor="karne-oz">Gözden Geçirme Değerlendirmesi</label><textarea id="karne-oz" rows={2} value={oz} onChange={(e) => setOz(e.target.value)} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!oz.trim()} onClick={() => void istek('/firma/karne-ozeti', { donem: v.donem, degerlendirme: oz }).then(() => { setM('Karne özeti Firma Yönetimi Müdürüne gönderildi.'); setOz(''); yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>}</>}
-    {v.ilkDonem.length > 0 && <><div className="bolum">İlk Dönem İzlemesi · Yeni Aktif Firmalar</div>{v.ilkDonem.map((x) => <div key={x.kimlik} className={x.acik_uygunsuzluk ? 'ozet kart-sol hata' : 'ozet kart-sol'}><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">Kabul: {new Date(x.kabul_karar_zamani).toLocaleDateString('tr-TR')} · {x.gun} gün</span></div>
+    {v.ilkDonem.length > 0 && <><div className="bolum">İlk Dönem İzlemesi · Yeni Aktif Firmalar</div>{v.ilkDonem.map((x) => <div key={x.kimlik} className={x.acik_uygunsuzluk ? 'ozet kart-sol hata' : 'ozet kart-sol'}><div className="ust2"><b>{x.sicil_no} · {x.ticari_unvan}</b><span className="not">Kabul: {tarih(x.kabul_karar_zamani)} · {x.gun} gün</span></div>
       <div className="not">İş Emri: {x.is_emri} · Tamamlanan: {x.tamamlanan} · Açık Uygunsuzluk: {x.acik_uygunsuzluk}</div></div>)}</>}
   </details>;
 }

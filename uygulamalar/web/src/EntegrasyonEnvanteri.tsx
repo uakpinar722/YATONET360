@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 
 type S = { kaynakAlan: string; hedefAlan: string; donusum: string; eslestirme: string; varsayilan: string; guncellenme: string };
 type B = { kimlik: string; ad: string; gonderen_sistem: string; alan_sistem: string; yon: string | null; veri_akisi: string | null; kayit_sahibi: string; teknik_sahip: string | null; bilgi_sinifi: string; hizmet_hesabi: string | null; uc_nokta: string | null; surum: string | null; siklik: string; hizmet_beklentisi: string; destek_yolu: string | null; paylasim_amaci: string; durum: string; veri_sozlesmesi: S[]; son_dogrulama: string | null; son_veri: string | null };
 type A = { kimlik: string; ad: string; donem: string; kaynak: string; gercek_sayi: number; sonuc: string; kabul_sayisi: number; red_sayisi: number; red_raporu: { sira: number; neden: string }[]; karantina_nedeni: string | null; zaman: string };
-const z = (s: string | null) => (s ? new Date(s).toLocaleString('tr-TR') : 'Veri gelmedi');
+const z = (s: string | null) => (s ? tarihSaat(s) : 'Veri gelmedi');
 /** YG-1297, 1298, 1300, 1315, 1317: entegrasyon envanteri, veri sözleşmesi ve toplu aktarım. */
 export function EntegrasyonEnvanteri() {
   const [v, setV] = useState<{ duzenler: boolean; yukler: boolean; baglantilar: B[]; aktarimlar: A[] } | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');

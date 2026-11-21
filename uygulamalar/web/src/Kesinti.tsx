@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 
 type V = { yonetir: boolean; kanallar: string[]; kesintiler: { kimlik: string; tur: string; neden: string; baslangic: string; durum: string; referans: number; bagsiz: number }[]; referanslarim: { kimlik: string; referans: string; durum: string }[] };
@@ -16,7 +17,7 @@ export function Kesinti() {
       <label htmlFor={`gk-${r.kimlik}`}>Kanal</label><select id={`gk-${r.kimlik}`} value={g[`k${r.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`k${r.kimlik}`]: e.target.value })}><option value="">Seçiniz</option>{v.kanallar.map((x) => <option key={x}>{x}</option>)}</select>
       {al(`y${r.kimlik}`, 'Yetkili Kişi')}{al(`o${r.kimlik}`, 'Asgari Veri Özeti')}{al(`s${r.kimlik}`, 'Saklama Yeri')}{al(`d${r.kimlik}`, 'Ana Dosya Kimliği')}{al(`z${r.kimlik}`, 'İşlem Zamanı', 'datetime-local')}
       <button className="btn2 kucuk" onClick={() => is(istek(`/gecici-referans/${r.kimlik}/geri-giris`, { kanal: g[`k${r.kimlik}`], yetkili: g[`y${r.kimlik}`], ozet: g[`o${r.kimlik}`], saklama: g[`s${r.kimlik}`], dosya: g[`d${r.kimlik}`], zaman: g[`z${r.kimlik}`] ? new Date(g[`z${r.kimlik}`]!).toISOString() : undefined }), 'Sisteme geri girildi.')}>Sisteme Gir</button></div></div>)}
-    {v.yonetir && <>{v.kesintiler.map((k) => <div className={k.durum === 'Açık' ? 'soru hata' : 'soru'} key={k.kimlik}><span>{k.tur} · {k.neden} · {new Date(k.baslangic).toLocaleString('tr-TR')} · {k.durum} · {k.referans} referans{k.bagsiz ? ` · ${k.bagsiz} bağsız` : ''}</span>
+    {v.yonetir && <>{v.kesintiler.map((k) => <div className={k.durum === 'Açık' ? 'soru hata' : 'soru'} key={k.kimlik}><span>{k.tur} · {k.neden} · {tarihSaat(k.baslangic)} · {k.durum} · {k.referans} referans{k.bagsiz ? ` · ${k.bagsiz} bağsız` : ''}</span>
       {k.durum === 'Açık' && <div className="tam">{al(`rs${k.kimlik}`, 'Referans Sorumlusu (Personel Kimliği)')}{al(`ra${k.kimlik}`, 'Adet')}<button className="btn2 kucuk" onClick={() => is(istek(`/kesinti/${k.kimlik}/referans`, { sorumlu: g[`rs${k.kimlik}`], adet: Number(g[`ra${k.kimlik}`]) }), '')}>Geçici Referans Üret</button>
         {TEST.map(([t, et]) => <label key={t}><input type="checkbox" checked={g[`t${t}${k.kimlik}`] === '1'} onChange={(e) => setG({ ...g, [`t${t}${k.kimlik}`]: e.target.checked ? '1' : '' })} /> {et} Başarılı</label>)}
         <button className="btn2 kucuk" onClick={() => is(istek(`/kesinti/${k.kimlik}/kapat`, { normallesme: Object.fromEntries(TEST.map(([t]) => [t, g[`t${t}${k.kimlik}`] === '1' ? 'Başarılı' : 'Yapılmadı'])) }), 'Kesinti kapandı.')}>Kesintiyi Kapat</button></div>}</div>)}

@@ -1,5 +1,5 @@
 import { DurumSayilari } from './DurumSayilari';
-import { eur as eurB } from './bicim';
+import { eur as eurB, tarih } from './bicim';
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek, type Ben } from './api';
 import { KurumsalFilo } from './KurumsalFilo';
@@ -159,7 +159,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       {d.faturalar.length > 0 && <><div className="bolum">Faturalar</div><div className="ozet">{d.faturalar.map((f) => <div key={f.fatura_no}>{f.fatura_no} · {f.fatura_tarihi?.split('-').reverse().join('.')} · {eurB(f.toplam_eur)}{f.toplam_tl ? ` · ${f.toplam_tl} TL` : ''} · {f.durum} <FaturaItiraz id={f.kimlik} /></div>)}</div></>}
       <SokulenParcalar id={id} />
       <div className="ozet"><a href={`/api/portal/dosya/${id}/ilerleme-raporu`}>İlerleme Raporu (PDF)</a></div>{/* YG-460 */}
-      {(d.fotograflar?.length ?? 0) > 0 && <><div className="bolum">İlerleme Fotoğrafları, Videoları ve Belgeleri</div><div className="ozet">{d.fotograflar!.map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a> · {new Date(f.onay_zamani).toLocaleDateString('tr-TR')}</div>)}</div></>}
+      {(d.fotograflar?.length ?? 0) > 0 && <><div className="bolum">İlerleme Fotoğrafları, Videoları ve Belgeleri</div><div className="ozet">{d.fotograflar!.map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a> · {tarih(f.onay_zamani)}</div>)}</div></>}
       <div className="bolum">Garanti Talebi</div>
       <GarantiTalebi id={id} />
       <IptalDevirTalebi id={id} />

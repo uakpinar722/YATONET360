@@ -13,6 +13,7 @@ import { BelgeInceleme } from './BelgeInceleme';
 import { Malikler } from './Malikler';
 import { SahipDevri } from './SahipDevri';
 import { IsDurdur } from './IsDurdur';
+import { tarih as gunBicim } from './bicim';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
 interface IhbarSatir { kimlik: string; talep_no: string; statu: string; ilk_siniflandirma?: string | null; eksik_bilgiler?: string[]; oncelik: string; ihtiyac_tanimi: string; iletisim_kisileri?: string | null; yat_mevcut_konumu: string; bildirim_alinma_zamani: string; ilk_yanit_zamani: string | null; talep_sahibi_adi: string; yat_adi: string; ilk_yanit_son: string | null }
@@ -593,7 +594,7 @@ function BeklemeMuhafaza({ dosya }: { dosya: string }) {
   useEffect(yk, [dosya]);
   if (!v || (!v.kayitlar.length && !(v.girer && v.teklif && v.tesisler.length))) return null;
   const eur = (x: string | number) => `${Number(x).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR`;
-  const t = (x: string) => new Date(x).toLocaleDateString('tr-TR');
+  const t = (x: string) => gunBicim(x);
   return <Blok baslik="Bekleme ve Muhafaza (Tesis Gideri)">{m && <div className="not" role="status">{m}</div>}
     {v.kayitlar.map((x) => <div key={x.kimlik} className="ozet"><div>{x.tesis} · {x.teklif_no}-{x.surum_no} · Günlük {eur(x.gunluk_eur)} · Başlangıç: {t(x.baslangic)}{x.bitis ? ` · Bitiş: ${t(x.bitis)}` : ' · Sürüyor'} · {x.gun} gün · Toplam {eur(x.toplam)}</div>
       {x.haftalar.map((h) => <div key={h.hafta} className="not">Hafta {h.hafta.split('-').reverse().join('.')}: {h.gun} gün · {eur(h.toplam)}</div>)}</div>)}

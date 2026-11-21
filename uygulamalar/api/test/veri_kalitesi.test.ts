@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { kaliteKontrolIsle, KURALLAR, oncelik } from '../src/veri_kalitesi.js';
 import { gostergeleriHesapla, guvenDuzeyi } from '../src/gosterge.js';
+import { hizmetHesabiIsle } from '../src/zamanlayici.js';
+import { sureAdimi, gorevSureIsle } from '../src/onay_sure.js';
+import { bildir, sessizSonu } from '../src/bildirim.js';
 import { isZamanlayici, zamanlanmisIsDenetimi } from '../src/zamanlayici.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
@@ -42,6 +45,111 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect(await zamanlanmisIsDenetimi(o.db)).toBe(0);
     const l = (await o.ist('GET', '/api/zamanlanmis-isler', await o.gir('bim'))).json(); expect(l.find((x: { ad: string }) => x.ad === 'Hatalı İş').gecikti).toBe(true);
     expect((await o.ist('GET', '/api/zamanlanmis-isler', await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('başarısız gönderim dosyaya ve kök nedene bağlanır; yeniden çalıştırma eski/yeni veri ve gerekçeyle kaydedilir (YG1309-YENIDEN)', async () => {
+    const d = await o.dosyaAc(); const bim = await o.gir('bim');
+    const g = (await o.sup.query(`INSERT INTO gonderim (olay_anahtari, kanal, hedef, konu, metin, durum, deneme, son_hata, kok_neden) VALUES ($1, 'E-posta', 'yanlis@ornek', 'Deneme', 'Metin', 'Başarısız', 3, 'Kalıcı hata: invalid recipient', 'Geçersiz veya engelli hedef') RETURNING kimlik`, [`teklif:${d.kimlik}`])).rows[0].kimlik;
+    const l = (await o.ist('GET', '/api/gonderim/basarisiz', bim)).json();
+    expect(l.satirlar.find((x: { kimlik: string }) => x.kimlik === g)).toMatchObject({ dosya_no: d.dosyaNo, kok_neden: 'Geçersiz veya engelli hedef' });
+    expect((await o.ist('GET', '/api/gonderim/basarisiz', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/gonderim/${g}/yeniden`, bim, { hedef: 'dogru@ornek.com', kokNeden: 'Yanlış iletişim bilgisi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/gonderim/${g}/yeniden`, bim, { hedef: 'dogru@ornek.com', kokNeden: 'Yanlış iletişim bilgisi', gerekce: 'Adres düzeltildi' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum, hedef, deneme FROM gonderim WHERE kimlik = $1`, [g])).rows[0]).toEqual({ durum: 'Bekliyor', hedef: 'dogru@ornek.com', deneme: 0 });
+    expect((await o.sup.query(`SELECT eski_hedef, yeni_hedef, eski_hata, gerekce FROM gonderim_yeniden_calistirma WHERE gonderim_ref = $1`, [g])).rows[0]).toEqual({ eski_hedef: 'yanlis@ornek', yeni_hedef: 'dogru@ornek.com', eski_hata: 'Kalıcı hata: invalid recipient', gerekce: 'Adres düzeltildi' });
+    expect((await o.ist('POST', `/api/gonderim/${g}/yeniden`, bim, { kokNeden: 'Diğer', gerekce: 'Tekrar' })).statusCode).toBe(409);
+  });
+  it('ilişki kimliği istekten değişiklik izine, arka plan işinden göreve taşınır ve birlikte izlenir (YG1146-ILISKI)', async () => {
+    await o.dosyaAc(); const t = (await o.sup.query(`SELECT taraf_no FROM taraf LIMIT 1`)).rows[0].taraf_no; const bim = await o.gir('bim');
+    const r = await o.ist('POST', `/api/taraf/${t}/pasif`, await o.gir('opm'), { pasif: true, gerekce: 'İzleme denemesi' }); expect(r.statusCode).toBe(200);
+    const il = r.headers['x-iliski-kimligi'] as string;
+    const v = (await o.ist('GET', `/api/iliski/${il}`, bim)).json();
+    expect(v.islemler.map((x: { eylem: string }) => x.eylem)).toContain('Taraf Pasife Alındı');
+    expect(v.degisiklikler.some((x: { tablo: string }) => x.tablo === 'taraf')).toBe(true);
+    await o.ist('POST', `/api/taraf/${t}/pasif`, await o.gir('opm'), { pasif: false });
+    const z = isZamanlayici(o.db, () => {});
+    await z.tur('İzleme İşi', 'deneme', 60_000, () => [import('../src/is_motoru.js').then((m) => m.kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'islem', baslik: 'İzleme', sahipKullanici: o.K.bim }))]);
+    const is = (await o.sup.query(`SELECT iliski_kimligi FROM zamanlanmis_is_durumu WHERE ad = 'İzleme İşi'`)).rows[0].iliski_kimligi;
+    expect(is).toMatch(/^is:/);
+    expect((await o.ist('GET', `/api/iliski/${is}`, bim)).json().gorevler.map((x: { baslik: string }) => x.baslik)).toEqual(['İzleme']);
+    expect((await o.ist('GET', `/api/iliski/${il}`, await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('role göre bildirim kuralı: tekrar, sessiz saat ve birleştirme; Kritik etkilenmez (YG510-KURAL)', async () => {
+    expect(sessizSonu(new Date('2026-11-22T20:00:00Z'), '22:00', '08:00').toISOString()).toBe('2026-11-23T05:00:00.000Z');
+    expect(sessizSonu(new Date('2026-11-22T02:00:00Z'), '22:00', '08:00').toISOString()).toBe('2026-11-22T05:00:00.000Z');
+    expect(sessizSonu(new Date('2026-11-22T10:00:00Z'), '22:00', '08:00').toISOString()).toBe('2026-11-22T10:00:00.000Z');
+    const bim = await o.gir('bim');
+    expect((await o.ist('POST', '/api/bildirim-kurali', bim, { rol: 'Dosya Sorumlusu', sessizBaslangic: '25:00', sessizBitis: '08:00' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/bildirim-kurali', bim, { rol: 'Dosya Sorumlusu', tekrarDakika: 60, birlestir: true })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/bildirim-kurali', bim)).json().kurallar).toContainEqual({ rol: 'Dosya Sorumlusu', tekrar_dakika: 60, sessiz_baslangic: null, sessiz_bitis: null, birlestir: true });
+    const say = async () => (await o.sup.query(`SELECT count(*)::int n, string_agg(metin, '|') m FROM gonderim WHERE kullanici_ref = $1 AND olay_anahtari LIKE 'yg510:%'`, [o.K.ds])).rows[0];
+    await o.sup.query(`UPDATE kullanici_hesabi SET e_posta = 'ds510@ornek.com' WHERE kimlik = $1`, [o.K.ds]);
+    await bildir(o.db, { olay: 'yg510:1', kullanicilar: [o.K.ds!], baslik: 'Rapor Hazır', eposta: true });
+    await bildir(o.db, { olay: 'yg510:2', kullanicilar: [o.K.ds!], baslik: 'Rapor Hazır', eposta: true });
+    expect((await say()).n).toBe(1); // tekrar süresi içinde aynı başlık dış kanaldan yeniden gitmez
+    await bildir(o.db, { olay: 'yg510:3', kullanicilar: [o.K.ds!], baslik: 'Teklif Onaylandı', eposta: true });
+    const s = await say(); expect(s.n).toBe(1); expect(s.m).toContain('Teklif Onaylandı'); // bekleyen iletiye birleşti
+    await bildir(o.db, { olay: 'yg510:4', kullanicilar: [o.K.ds!], baslik: 'Rapor Hazır', eposta: true, oncelik: 'Kritik' });
+    expect((await say()).n).toBe(2);
+    expect((await o.ist('GET', '/api/bildirim-kurali', await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('bildirim dosyaya ve kullanıcının görevine bağlanır; gizlemek görevi kapatmaz (YG509-BAG)', async () => {
+    const d = await o.dosyaAc(); const ds = await o.gir('ds');
+    const kart = await (await import('../src/is_motoru.js')).kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: 'Bağ', sahipKullanici: o.K.ds, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    await bildir(o.db, { olay: `bag-deneme:${d.kimlik}`, kullanicilar: [o.K.ds!], baslik: 'Bağ Denemesi' });
+    const b = (await o.ist('GET', '/api/bildirimler', ds)).json().find((x: { baslik: string }) => x.baslik === 'Bağ Denemesi');
+    expect(b).toMatchObject({ dosya_no: d.dosyaNo, is_ref: kart, gorev_durumu: 'Bekliyor' });
+    expect((await o.ist('POST', `/api/bildirim/${b.kimlik}/gizle`, ds, {})).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE kimlik = $1`, [kart])).rows[0].durum).toBe('Bekliyor');
+  });
+  it('görev türüne göre onay süresi, uyarı ve eskalasyon eşiği (YG536-ESIK)', async () => {
+    expect(sureAdimi('Normal', 100, 240, 150)).toBe('Uyarı'); expect(sureAdimi('Normal', 100, 240)).toBeNull();
+    const opm = await o.gir('opm');
+    expect((await o.ist('POST', '/api/gorev-esigi', opm, { tur: 'Deneme Görevi', onaySureDk: 30, uyariOnceDk: 40, gerekce: 'x' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/gorev-esigi', opm, { tur: 'Eşik Görevi', eskalasyonSaat: 2, gerekce: 'Hızlı iş' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/gorev-esigi', opm)).json().esikler).toContainEqual({ tur: 'Eşik Görevi', onay_sure_dk: null, uyari_once_dk: null, eskalasyon_saat: 2, gerekce: 'Hızlı iş' });
+    expect((await o.ist('GET', '/api/gorev-esigi', await o.gir('ds'))).statusCode).toBe(404);
+    const simdi = new Date();
+    const kart = await (await import('../src/is_motoru.js')).kartAc(o.db, { tur: 'Eşik Görevi', kategori: 'gorev', baslik: 'Eşik', sahipKullanici: o.K.ds, sonZaman: new Date(simdi.getTime() - 3 * 3_600_000) });
+    await gorevSureIsle(o.db, simdi);
+    expect((await o.sup.query(`SELECT anahtar FROM zamanlanmis_is WHERE ad = 'gorev-sure-e' AND anahtar = $1`, [kart])).rowCount).toBe(1); // 24 saat yerine 2 saat
+  });
+  it('hizmet hesabı envanteri; etkileşimli giriş kapalı; kullanılmayan hesap askıya alınır (YG1000-HIZMET)', async () => {
+    const { parolaOzetle } = await import('../src/parola.js');
+    const h = (await o.sup.query(`INSERT INTO kullanici_hesabi (ad_soyad, e_posta, hesap_turu, kullanici_grubu, kullanici_adi, dogrulama_yontemi, parola_ozeti, hesap_durumu) VALUES ('Banka Entegrasyonu', 'banka.entegrasyon@ornek.com', 'Hizmet hesabı', 'Sistem/Hizmet Hesabı', 'banka.entegrasyon', 'SMS kodu', $1, 'Aktif') RETURNING kimlik`, [await parolaOzetle('Hizmet-Parolasi-2026!')])).rows[0].kimlik;
+    expect((await o.ist('POST', '/api/kimlik/giris', undefined, { kimlik: 'banka.entegrasyon@ornek.com', parola: 'Hizmet-Parolasi-2026!' })).statusCode).toBe(401);
+    const bim = await o.gir('bim');
+    expect((await o.ist('GET', '/api/hizmet-hesabi-envanteri', bim)).json().kayitsiz.map((x: { kimlik: string }) => x.kimlik)).toContain(h);
+    const G = { hesap: h, sahipRol: 'Bilgi İşlem Müdürü', amac: 'Banka hareketi alımı', eristigiVeri: 'Banka hareketleri', anahtarTuru: 'Sertifika', anahtarBitis: '2027-06-30', kaynakAdres: '10.0.0.5', calismaZamani: 'Saatlik', kapanisYontemi: 'Sertifika iptali ve hesap kapatma' };
+    expect((await o.ist('POST', '/api/hizmet-hesabi-envanteri', bim, { ...G, amac: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/hizmet-hesabi-envanteri', bim, { ...G, hesap: o.K.ds })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/hizmet-hesabi-envanteri', bim, G)).statusCode).toBe(200);
+    await o.sup.query(`UPDATE hizmet_hesabi_envanteri SET olusturma_zamani = now() - interval '100 days' WHERE kullanici_ref = $1`, [h]);
+    expect(await hizmetHesabiIsle(o.db)).toBe(1);
+    expect((await o.sup.query(`SELECT hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [h])).rows[0].hesap_durumu).toBe('Askıda');
+    expect((await o.ist('GET', '/api/hizmet-hesabi-envanteri', await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('kapanan hesabın görevi Dosya Sorumlusuna, belge sorumluluğu devredilir; oluşturan değişmez (YG1054-DEVIR)', async () => {
+    const d = await o.dosyaAc(); const { hesapKapanisDevri } = await import('../src/hesap_devri.js');
+    const ds = o.K.ds; await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, ds]);
+    const kart = await (await import('../src/is_motoru.js')).kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: 'Devir', sahipKullanici: o.K.bim, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    const bel = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('k.pdf', 'Diğer', 'Kritik', 'Dosya', $1, 'Sistem', current_date, $2) RETURNING kimlik`, [d.kimlik, o.K.bim])).rows[0].kimlik;
+    expect(await hesapKapanisDevri(o.db, o.K.bim!)).toBeGreaterThanOrEqual(2);
+    expect((await o.sup.query(`SELECT sahip_kullanici_ref FROM is_karti WHERE kimlik = $1`, [kart])).rows[0].sahip_kullanici_ref).toBe(ds);
+    expect((await o.sup.query(`SELECT sorumlu_ref, olusturan_ref FROM belge WHERE kimlik = $1`, [bel])).rows[0]).toEqual({ sorumlu_ref: ds, olusturan_ref: o.K.bim });
+    expect((await o.sup.query(`SELECT 1 FROM belge_erisim_grubu WHERE belge_ref = $1 AND kullanici_ref = $2`, [bel, ds])).rowCount).toBe(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM hesap_kapanis_devri WHERE kullanici_ref = $1`, [o.K.bim])).rows[0].n).toBeGreaterThanOrEqual(2);
+  });
+  it('yazım düzeltmesi beyanı denetlenir; başka dosyanın numarası dış alıcıya gitmez (YG512-METIN)', async () => {
+    const { yazimDuzeltmesiMi } = await import('../src/sablon_surum.js');
+    expect(yazimDuzeltmesiMi('Teklifiniz {tarih} tarihine kadar geçerlidir.', 'Teklifiniz {tarih} tarihine kadar geçerlidir')).toBe(true);
+    expect(yazimDuzeltmesiMi('Teklifiniz 30 gün geçerlidir.', 'Teklifiniz 15 gün geçerlidir.')).toBe(false);
+    expect(yazimDuzeltmesiMi('Ödeme peşin yapılır.', 'Ödeme teslimden sonra yapılır.')).toBe(false);
+    const { disMetinEngeli } = await import('../src/yetki_ek.js');
+    const d = await o.dosyaAc(); const d2 = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya_tarafi SET eposta = 'baska.taraf@ornek.com' WHERE kimlik = (SELECT kimlik FROM dosya_tarafi WHERE dosya_ref = $1 LIMIT 1)`, [d2.kimlik]);
+    expect(await disMetinEngeli(o.db, { eposta: 'baska.taraf@ornek.com', konu: 'Bilgi', metin: `${d.dosyaNo} durumu` })).toBe('Başka dosyaya ait bilgi bu alıcıya gönderilemez.');
+    expect(await disMetinEngeli(o.db, { eposta: 'baska.taraf@ornek.com', konu: 'Bilgi', metin: `${d2.dosyaNo} durumu` })).toBeNull();
+    expect(await disMetinEngeli(o.db, { eposta: 'yabanci@ornek.com', konu: 'Bilgi', metin: 'LGM-2099-01-0001 durumu' })).toBeNull();
   });
   it('göstergede güven düzeyi: veri yok sıfır sayılmaz, yetersiz örneklemde renk verilmez (YG743-GUVEN)', async () => {
     expect(guvenDuzeyi(null, 0, '%', false)).toBe('Veri yok'); expect(guvenDuzeyi(50, 2, '%', false)).toBe('Yetersiz veri');

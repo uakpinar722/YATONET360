@@ -53,14 +53,17 @@ export function DuyuruYayimla() {
   const [baslik, setBaslik] = useState(''); const [govde, setGovde] = useState(''); const [kapsam, setKapsam] = useState(''); const [zorunlu, setZorunlu] = useState(false); const [bitis, setBitis] = useState('');
   const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const [dTur, setDTur] = useState('Genel'); // YG-563
+  const [hedef, setHedef] = useState<{ gruplar: string[]; roller: string[]; birimler: string[] }>({ gruplar: [], roller: [], birimler: [] }); // YG-560
+  const [yb, setYb] = useState(''); const [bEn, setBEn] = useState(''); const [gEn, setGEn] = useState('');
+  const [secenek, setSecenek] = useState<{ gruplar: string[]; roller: string[]; birimler: string[] }>({ gruplar: [], roller: [], birimler: [] });
   const yukle = () => istek<Yayim[]>('/duyuru/yayimlarim').then(setListe).catch((e) => setHata(e.message));
-  useEffect(() => { void istek<{ kapsamlar: string[]; onaysiz: string[] }>('/duyuru/yetkim').then((y) => { setYetki(y); setKapsam(y.kapsamlar[0] ?? ''); }).catch((e) => setHata(e.message)); void yukle(); }, []);
+  useEffect(() => { void istek<{ kapsamlar: string[]; onaysiz: string[]; gruplar?: string[]; roller?: string[]; birimler?: string[] }>('/duyuru/yetkim').then((y) => { setYetki(y); setKapsam(y.kapsamlar[0] ?? ''); setSecenek({ gruplar: y.gruplar ?? [], roller: y.roller ?? [], birimler: y.birimler ?? [] }); }).catch((e) => setHata(e.message)); void yukle(); }, []);
   const gonder = async (e: FormEvent) => {
     e.preventDefault(); setHata(''); setNot('');
     try {
-      const r = await istek<{ durum: string }>('/duyuru', { baslik, govde, kapsam, zorunlu, bitis: bitis || undefined, tur: dTur });
+      const r = await istek<{ durum: string }>('/duyuru', { baslik, govde, kapsam, zorunlu, bitis: bitis || undefined, tur: dTur, hedefGruplar: hedef.gruplar, hedefRoller: hedef.roller, hedefBirimler: hedef.birimler, yayinBaslangic: yb || undefined, baslikEn: bEn || undefined, govdeEn: gEn || undefined });
       setNot(r.durum === 'Yayında' ? 'Duyuru yayımlanmıştır.' : 'Duyuru onaya gönderilmiştir.');
-      setBaslik(''); setGovde(''); setZorunlu(false); setBitis(''); setDTur('Genel'); await yukle();
+      setBaslik(''); setGovde(''); setZorunlu(false); setBitis(''); setDTur('Genel'); setHedef({ gruplar: [], roller: [], birimler: [] }); setYb(''); setBEn(''); setGEn(''); await yukle();
     } catch (x) { setHata((x as Error).message); }
   };
   return (
@@ -80,6 +83,15 @@ export function DuyuruYayimla() {
           <label htmlFor="d-k">Hedef Kitle</label>
           <select id="d-k" value={kapsam} onChange={(e) => setKapsam(e.target.value)}>{yetki.kapsamlar.map((k) => <option key={k} value={k}>{KAPSAM_AD[k]}</option>)}</select>
           <div className="not">{yetki.onaysiz.includes(kapsam) ? 'Bu duyuru doğrudan yayımlanır.' : 'Bu duyuru bir üst kademenin onayından sonra yayımlanır.'}</div>
+          {([['gruplar', 'Kullanıcı Grubu'], ['roller', 'Rol'], ['birimler', 'Birim']] as const).map(([k, l]) => secenek[k].length > 0 && <div key={k}>
+            <label htmlFor={`d-h-${k}`}>Hedef {l} (Seçilmezse Tümü)</label>
+            <select id={`d-h-${k}`} multiple size={4} value={hedef[k]} onChange={(e) => setHedef({ ...hedef, [k]: [...e.target.selectedOptions].map((o) => o.value) })}>{secenek[k].map((x) => <option key={x}>{x}</option>)}</select></div>)}
+          <label htmlFor="d-yb">Yayın Başlangıcı (İsteğe Bağlı)</label>
+          <input id="d-yb" type="date" value={yb} onChange={(e) => setYb(e.target.value)} />
+          <label htmlFor="d-be">İngilizce Başlık (Yabancı Kullanıcılar İçin)</label>
+          <input id="d-be" value={bEn} onChange={(e) => setBEn(e.target.value)} />
+          <label htmlFor="d-ge">İngilizce Metin</label>
+          <textarea id="d-ge" rows={3} value={gEn} onChange={(e) => setGEn(e.target.value)} />
           <label htmlFor="d-s">Bitiş Tarihi (İsteğe Bağlı)</label>
           <input id="d-s" type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} />
           <label className="kutu"><input type="checkbox" checked={zorunlu} onChange={(e) => setZorunlu(e.target.checked)} /><span>Okunması Zorunlu</span></label>

@@ -195,6 +195,20 @@ describe('duyuru (YG-560, YG-561)', () => {
     const r = (await ist('GET', '/api/duyuru/yayimlarim', b)).json().find((x: any) => x.kimlik === id);
     expect(r.okuyan).toBe(1); expect(r.hedef).toBeGreaterThan(1);
   });
+  it('rol hedefli duyuru yalnız o role görünür; yayın başlangıcı ve İngilizce metin (YG560-HEDEF)', async () => {
+    const b = await gir(BIM); const c = await gir(CEO);
+    expect((await yeni(b, { baslik: 'Hedefli', hedefRoller: ['Olmayan Rol'] })).statusCode).toBe(400);
+    const id = (await yeni(b, { baslik: 'Yalnız CEO', hedefRoller: ['CEO'], baslikEn: 'CEO Only', govdeEn: 'Text' })).json().kimlik;
+    await yeni(b, { baslik: 'İleri Tarihli', yayinBaslangic: '2099-01-01' });
+    await sup.query(`UPDATE kullanici_hesabi SET tercih_dili = 'İngilizce' WHERE kimlik = $1`, [K[CEO]]);
+    const ceoGorur = (await ist('GET', '/api/bugun', c)).json().duyurular.map((x: any) => x.baslik);
+    await sup.query(`UPDATE kullanici_hesabi SET tercih_dili = 'Türkçe' WHERE kimlik = $1`, [K[CEO]]);
+    expect(ceoGorur).toContain('CEO Only'); expect(ceoGorur).not.toContain('İleri Tarihli');
+    expect((await ist('GET', '/api/bugun', b)).json().duyurular.map((x: any) => x.baslik)).not.toContain('Yalnız CEO');
+    expect((await ist('POST', `/api/duyuru/${id}/okudum`, b)).statusCode).not.toBe(200);
+    const r = (await ist('GET', '/api/duyuru/yayimlarim', b)).json().find((x: any) => x.kimlik === id);
+    expect(r.hedef).toBe(1);
+  });
   it('eksik başlık ve geçersiz kapsam reddedilir', async () => {
     const b = await gir(BIM);
     expect((await yeni(b, { baslik: ' ' })).statusCode).toBe(400);

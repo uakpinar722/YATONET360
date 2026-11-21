@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 
 type K = { islem_no: string; faz: string; yapilacak: string; muhatap: string; hedef_tarih: string | null; durum: string; verildigi_tarih: string | null; tamamlanma_tarihi: string | null; kayit_no: string | null; ceo_notu: string | null; renk: 'yesil' | 'kirmizi' | null; beklenen_cikti: string | null; kabul_makami: string | null };
@@ -40,5 +41,5 @@ export function UyumMatrisi() {
       {v.yonetir && <button className="btn2 kucuk" onClick={() => setG(Object.fromEntries(Object.entries(k).map(([a, b]) => [a, b === null ? '' : String(b)])))}>Düzenle</button>}</div>)}
     {v.yonetir && <div className="tam"><div className="bolum">{g.mum_no ? `${g.mum_no} · Düzenle` : 'Yeni Kural'}</div>{al('mum_no', 'MUM No')}{al('alan', 'Alan')}{al('mevzuat', 'Mevzuat')}{al('madde', 'Madde')}{al('yukumluluk', 'Yükümlülük')}{al('tetikleyici', 'Tetikleyici')}{al('sorumlu_rol', 'Sorumlu Rol')}{al('sure_metni', 'Süre')}{al('gerekli_kanit', 'Gerekli Kanıt')}{al('dogrulayan_rol', 'Doğrulayan Rol')}{al('sure_gun', 'Süre (gün)')}{al('gerekce', 'Değişiklik Gerekçesi')}
       <button className="btn2 kucuk" onClick={() => void istek('/uyum-kurali', { ...g, sure_gun: g.sure_gun === '' ? undefined : Number(g.sure_gun), engelleyici: g.engelleyici === 'true' }).then(() => { setM('Kural kaydedildi; değişiklik geçmişe yazıldı.'); setG({}); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>}
-    <div className="bolum">Değişiklik Geçmişi</div>{v.gecmis.length ? v.gecmis.map((x, i) => <div className="soru" key={i}><span>{new Date(x.zaman).toLocaleString('tr-TR')} · {x.mum_no} · {x.gerekce}{x.ad_soyad ? ` · ${x.ad_soyad}` : ''}</span></div>) : <div className="ozet bos">Değişiklik bulunmamaktadır.</div>}</details>;
+    <div className="bolum">Değişiklik Geçmişi</div>{v.gecmis.length ? v.gecmis.map((x, i) => <div className="soru" key={i}><span>{tarihSaat(x.zaman)} · {x.mum_no} · {x.gerekce}{x.ad_soyad ? ` · ${x.ad_soyad}` : ''}</span></div>) : <div className="ozet bos">Değişiklik bulunmamaktadır.</div>}</details>;
 }

@@ -97,10 +97,11 @@ await s.listen({ host: '127.0.0.1', port: 3001 });
 const baglam = { db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anahtar: e.YATONET_SIFRELEME_ANAHTARI!, guvenliCerez: false, webAdresi: 'http://127.0.0.1:5173' };
 import { sicilKaliteAylik } from './firma_ek.js';
 import { beklemeMuhafazaIsle } from './bekleme_muhafaza.js';
-import { isZamanlayici, zamanlanmisIsDenetimi } from './zamanlayici.js';
+import { hizmetHesabiIsle, isZamanlayici, zamanlanmisIsDenetimi } from './zamanlayici.js';
 // YG-1316: her grup tekil çalışır; çakışma, gecikme ve hata kaydedilir, denetim Sistem Yöneticisine uyarı açar.
 const { zamanla } = isZamanlayici(db, (m) => s.log.error(m));
 zamanla('Zamanlanmış İş Denetimi', 'zamanlanmış iş gecikme ve çakışma uyarıları', 300_000, () => [zamanlanmisIsDenetimi(db)]);
+zamanla('Hizmet Hesabı Denetimi', 'kullanılmayan hizmet hesaplarının askıya alınması', 3_600_000, () => [hizmetHesabiIsle(db)]); // YG-1000
 zamanla('Bildirim Kuyruğu', 'giden e-posta, SMS ve WhatsApp bildirimleri', 30_000, () => [kuyrukIsle(baglam)]);
 zamanla('Onay Hatırlatmaları', 'bekleyen onay hatırlatmaları', 300_000, () => [onayHatirlat(db)]);
 zamanla('Sistem Ölçümleri', 'sistem izleme ölçümleri ve kapasite uyarıları', 60_000, () => [olcumYaz(db)]);

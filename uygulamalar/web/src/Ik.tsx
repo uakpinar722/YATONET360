@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarih } from './bicim';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 
@@ -112,7 +113,7 @@ export function IkYonetimi({ yap }: { yap: Yap }) {
     </>}
 
     {kz.length > 0 && <div className="bolum">İş Kazası Bildirimleri</div>}
-    {kz.map((x) => <div className="soru" key={x.olay_ref}><span>{x.ozet} · İşveren: {x.ticari_unvan ?? x.isveren} · Son: {new Date(x.son_zaman).toLocaleDateString('tr-TR')}</span><div className="dugmeler">
+    {kz.map((x) => <div className="soru" key={x.olay_ref}><span>{x.ozet} · İşveren: {x.ticari_unvan ?? x.isveren} · Son: {tarih(x.son_zaman)}</span><div className="dugmeler">
       {yt.isg && x.isveren === 'LGM' && !x.bilgi_gonderme_zamani && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-kazasi/${x.olay_ref}/bilgi-gonder`, {}).then(() => { yk(yt); return { uyari: 'Olay bilgisi gönderildi.' }; }))}>Olay Bilgisini Gönder</button>}
       {yt.isg && x.isveren !== 'LGM' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-kazasi/${x.olay_ref}/belge-iste`, {}).then(() => ({ uyari: 'Belge istendi.' })))}>Belge İste</button>}
       {yt.ik && x.isveren === 'LGM' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-kazasi/${x.olay_ref}/sgk`, { tarih: new Date().toISOString().slice(0, 10) }).then(() => { yk(yt); return { uyari: 'SGK bildirimi kaydedildi.' }; }))}>SGK Bildirimi Yapıldı</button>}

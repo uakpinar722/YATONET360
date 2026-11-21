@@ -2,7 +2,7 @@ import { DurumSayilari } from './DurumSayilari';
 import { SigortaPanel } from './SigortaPanel';
 import { ArizaBildir } from './Broker';
 import { OdemeTakvimi } from './OdemeTakvimi';
-import { eur, tarih } from './bicim';
+import { eur, tarih, tarih as gunBicim } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
 import { SigortaIhbar, SigortaMutabakat } from './SigortaIhbar';
 import { OdemeYatSahibine } from './OdemeYatSahibine';
@@ -53,7 +53,7 @@ import { FormKatalogu } from './FormKatalogu';
 import { SablonMetinleri } from './SablonMetinleri';
 import { SozlesmeTakip } from './SozlesmeTakip';
 import { NakitTahmini } from './NakitTahmini';
-import { YonetimPanosu } from './YonetimPanosu';
+import { GorevEsikleri, YonetimPanosu } from './YonetimPanosu';
 import { EntegrasyonKarantina, Entegrasyonlar } from './Entegrasyon';
 import { KartelaNorm } from './KartelaNorm';
 import { TopluDuzeltme } from './TopluDuzeltme';
@@ -141,7 +141,7 @@ function SigortaTeklifIslem({ id, teklif, statu, karar, kanal, setKanal, yetkili
       <button className="btn2 kucuk" disabled={!belge || !girilen.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/eksper-karsilastirma`, { belge, satirlar: girilen.map(([s, x]) => ({ sira: Number(s), tutar: Number(x.tutar), not: x.not })) }), 'Eksper tutarları kaydedildi.')}>Eksper Tutarlarını Kaydet</button>
       {statu === 'Gönderildi' && <button className="btn2 kucuk" disabled={!sec.length} onClick={() => void isle(() => istek(`/teklif/${teklif}/sigorta-karar`, { karar: 'Kısmi Onay', kanal: kanal === 'YATONET 360' ? 'KEP' : kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined, onaylananSiralar: sec, ...gelisAlani() }), 'Sigorta kararı kaydedildi.')}>Seçilenlerle Kısmi Onay Kaydet</button>}
       {/* YG-154: Koşullu Onay (şart doğrulanınca uygulama) ve Sınırlı Yetki (yalnız seçilen ön/koruyucu işlem; esas karar beklenir). */}
-      {(v.kosullar ?? []).map((k, n) => <div key={n} className="not">{k.karar} · {new Date(k.onay_tarihi).toLocaleDateString('tr-TR')} · {k.sart}{k.izinli_siralar?.length ? ` · Kalemler: ${k.izinli_siralar.join(', ')}` : ''}{k.karar === 'Koşullu Onay' ? (k.sart_dogrulama_zamani ? ` · Şart doğrulandı (${new Date(k.sart_dogrulama_zamani).toLocaleDateString('tr-TR')})` : ' · Şart doğrulanmadı') : ''}</div>)}
+      {(v.kosullar ?? []).map((k, n) => <div key={n} className="not">{k.karar} · {tarih(k.onay_tarihi)} · {k.sart}{k.izinli_siralar?.length ? ` · Kalemler: ${k.izinli_siralar.join(', ')}` : ''}{k.karar === 'Koşullu Onay' ? (k.sart_dogrulama_zamani ? ` · Şart doğrulandı (${new Date(k.sart_dogrulama_zamani).toLocaleDateString('tr-TR')})` : ' · Şart doğrulanmadı') : ''}</div>)}
       {statu === 'Gönderildi' && <>
         <label htmlFor={`ks-${teklif}`}>Şart veya İzin Verilen Ön/Koruyucu İşlem</label><input id={`ks-${teklif}`} value={sart} onChange={(e) => setSart(e.target.value)} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!sart.trim()} onClick={() => void isle(() => istek(`/teklif/${teklif}/sigorta-karar`, { karar: 'Koşullu Onay', sart, kanal: kanal === 'YATONET 360' ? 'KEP' : kanal, yetkili, gonderen: gonderen || undefined, belge: onayBelge || undefined, ...gelisAlani() }).then(() => setSart('')), 'Koşullu onay kaydedildi; şart doğrulanınca uygulama başlar.')}>Koşullu Onay Kaydet</button>
@@ -631,7 +631,7 @@ function MasrafTakvimi({ tarih }: { tarih: string }) {
   const g = new Date(`${tarih}T00:00:00`); const bugun = new Date(); bugun.setHours(0, 0, 0, 0);
   const kalan = 30 - Math.floor((bugun.getTime() - g.getTime()) / 86_400_000);
   const d = bugun.getDate(); const ay = new Date(bugun.getFullYear(), bugun.getMonth() + (d >= 15 ? 1 : 0), 1);
-  const ilk = d < 15; const yaz = (x: Date) => x.toLocaleDateString('tr-TR');
+  const ilk = d < 15; const yaz = (x: Date) => gunBicim(x);
   const teslim = ilk ? new Date(bugun.getFullYear(), bugun.getMonth(), 15) : ay;
   const onay = new Date(teslim.getFullYear(), teslim.getMonth(), teslim.getDate() === 1 ? 5 : 19); const odeme = new Date(teslim.getFullYear(), teslim.getMonth(), teslim.getDate() === 1 ? 7 : 21);
   return <div className="not" data-t="masraf-takvim">Kalan giriş günü: {Math.max(0, kalan)} · Son teslim: {yaz(teslim)} 12:00 · Onay: {yaz(onay)} · Ödeme: {yaz(odeme)}</div>;
@@ -1019,6 +1019,7 @@ export function IdariIslemler() {
       <GeriYukleme />
       <Varliklar />
       <YonetimPanosu />
+      <GorevEsikleri />
       <YonetimRaporu />
       <NakitTahmini />
       <Entegrasyonlar />

@@ -133,6 +133,12 @@ export function kimlikYollari(s: FastifyInstance, b: Baglam) {
       await izYaz(b.db, { eylem: 'Giriş Denemesi', sonuc: 'Başarısız', gerekce: 'Bilinmeyen hesap', adres: i.ip, iliski: i.id });
       return y.code(401).send({ hata: HATALI });
     }
+    // YG-1000: hizmet hesabıyla etkileşimli (insan) giriş yapılamaz; hesabın varlığı da açığa çıkmaz.
+    if (h.kullanici_grubu === 'Sistem/Hizmet Hesabı') {
+      await sahteDogrula(parola);
+      await izYaz(b.db, { aktor: h.kimlik, eylem: 'Giriş Denemesi', sonuc: 'Başarısız', gerekce: 'Hizmet hesabıyla etkileşimli giriş', adres: i.ip, iliski: i.id });
+      return y.code(401).send({ hata: HATALI });
+    }
     if (h.kilit_bitis_zamani && new Date(h.kilit_bitis_zamani) > new Date()) {
       await sahteDogrula(parola);
       return y.code(423).send({ hata: kalanMetni(new Date(h.kilit_bitis_zamani)) });

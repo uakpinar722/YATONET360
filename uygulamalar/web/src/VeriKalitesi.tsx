@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarih } from './bicim';
 import { istek } from './api';
 
 type K = { kod: string; ad: string; sahip_rol: string; yetkili_kaynak: string; kalite_boyutlari: string[]; esik_yuzde: string; olcum_donemi: string; duzeltme_sorumlusu: string };
@@ -18,6 +19,6 @@ export function VeriKalitesi() {
     <div className="bolum">Kalite Kuralları</div>{v.kurallar.map((k) => <div className={k.acik > k.esik ? 'soru hata' : 'soru'} key={k.kod}><span><b>{k.kod}</b> · {k.ad} · Sürüm {k.surum} ({k.yururluk.split('-').reverse().join('.')}) · {k.boyut} · Etki: {k.etki} · Kaynak: {k.kaynak} · {k.kontrol_zamani} · Eşik {k.esik} · Açık {k.acik} · Sahip: {k.sahip_rol}{k.istisna ? ` · İstisna: ${k.istisna}` : ''}<br />{k.amac}</span>
       {v.yonetir && <div className="tam"><label htmlFor={`vk-e-${k.kod}`}>Eşik</label><input id={`vk-e-${k.kod}`} type="number" value={g[`e${k.kod}`] ?? ''} onChange={(e) => setG({ ...g, [`e${k.kod}`]: e.target.value })} /><label htmlFor={`vk-i-${k.kod}`}>İstisna</label><input id={`vk-i-${k.kod}`} value={g[`i${k.kod}`] ?? ''} onChange={(e) => setG({ ...g, [`i${k.kod}`]: e.target.value })} />
         <button className="btn2 kucuk" onClick={() => is(istek(`/kalite-kurali/${k.kod}`, { esik: g[`e${k.kod}`] ? Number(g[`e${k.kod}`]) : undefined, istisna: g[`i${k.kod}`] }), 'Kuralın yeni sürümü kaydedildi.')}>Yeni Sürüm</button></div>}</div>)}
-    <div className="bolum">Açık Veri Hataları</div>{v.hatalar.length ? v.hatalar.map((h) => <div className={h.oncelik === 'Yüksek' ? 'soru hata' : 'soru'} key={h.kimlik}><span>{h.oncelik} · {h.kural_kod} {h.ad} · {h.aciklama} · {h.boyut} · Etki: {h.etki} · {new Date(h.ilk_gorulme).toLocaleDateString('tr-TR')}</span>
+    <div className="bolum">Açık Veri Hataları</div>{v.hatalar.length ? v.hatalar.map((h) => <div className={h.oncelik === 'Yüksek' ? 'soru hata' : 'soru'} key={h.kimlik}><span>{h.oncelik} · {h.kural_kod} {h.ad} · {h.aciklama} · {h.boyut} · Etki: {h.etki} · {tarih(h.ilk_gorulme)}</span>
       {v.sahipOldugu.length > 0 && <div className="tam"><label htmlFor={`vh-${h.kimlik}`}>İstisna Gerekçesi</label><input id={`vh-${h.kimlik}`} value={g[h.kimlik] ?? ''} onChange={(e) => setG({ ...g, [h.kimlik]: e.target.value })} /><button className="btn2 kucuk" onClick={() => is(istek(`/veri-hatasi/${h.kimlik}/istisna`, { gerekce: g[h.kimlik] }), 'İstisna kaydedildi.')}>İstisna</button></div>}</div>) : <div className="ozet bos">Açık veri hatası bulunmamaktadır.</div>}</details>;
 }

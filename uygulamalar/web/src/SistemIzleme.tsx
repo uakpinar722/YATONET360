@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 
 type K = { oran: number | null; kesintiDakika: number | null };
@@ -9,7 +10,7 @@ export function SistemIzleme() {
   useEffect(() => { void istek<V>('/sistem-izleme').then(setV).catch(() => setV(null)); }, []);
   if (!v) return null;
   const k = (x: K) => (x.oran === null ? 'Ölçüm yok' : `%${x.oran.toLocaleString('tr-TR')} · Kesinti ${x.kesintiDakika} dk`);
-  return <details><summary>Sistem İzleme</summary><div className="not">Üretim: {new Date(v.uretim).toLocaleString('tr-TR')}</div>
+  return <details><summary>Sistem İzleme</summary><div className="not">Üretim: {tarihSaat(v.uretim)}</div>
     <div className="bolum">Kullanılabilirlik</div><div className="soru"><span>Son 24 saat: {k(v.kullanilabilirlik.son24Saat)} · Son 7 gün: {k(v.kullanilabilirlik.son7Gun)}</span></div>
     <div className="bolum">Kritik İş Akışları (son 24 saat)</div>{v.akislar.length ? v.akislar.map((x) => <div className={x.hataOrani > 1 || x.ucGecikmeOrani > 5 ? 'soru hata' : 'soru'} key={x.akis}><span>{x.akis} · {x.adet} istek · Hata %{x.hataOrani} · Ortalama {x.ortalama_ms} ms · En uzun {x.azami_ms} ms · Hedef {x.hedefMs} ms · Hedefi aşan %{x.ucGecikmeOrani}</span></div>) : <div className="ozet bos">Ölçüm bulunmamaktadır.</div>}
     <div className="bolum">Kapasite</div><div className="soru"><span>Veri tabanı {v.kapasite.vt_mb} MB · Bağlantı {v.kapasite.baglanti}/{v.kapasite.azami_baglanti} · Belge {v.kapasite.belge} · Açık dosya {v.kapasite.acik_dosya}</span></div>

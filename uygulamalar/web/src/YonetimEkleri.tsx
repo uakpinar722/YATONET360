@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tarih } from './bicim';
 import { istek } from './api';
 import { DosyaBag } from './DosyaBag';
 
@@ -26,7 +27,7 @@ export function YonetimEkleri() {
     <div className="bolum">Teklif Dönüşümü</div><div className={v.teklif.uyari ? 'soru hata' : 'soru'}><span>Dönem: {v.teklif.onaylanan}/{v.teklif.gonderilen}{v.teklif.oran !== null ? ` · %${v.teklif.oran}` : ''} · Üç aylık ortalama: {v.teklif.ucAylik !== null ? `%${v.teklif.ucAylik}` : '—'} · Hedef en az %{v.teklif.hedef}</span></div>
     <div className="bolum">Teknik Bitişten Mali Kapanışa</div><div className="soru"><span>Ortalama {v.mali.ortalamaIsGunu ?? '—'} iş günü · Hedef en çok {v.mali.hedef} iş günü</span></div>
     {v.mali.asan.map((x) => <div className="soru hata" key={x.dosyaNo}><span><DosyaBag no={x.dosyaNo} /> · {x.isGunu} iş günü{x.acik ? ' · Mali kapanış bekliyor' : ''}</span></div>)}
-    <div className="bolum">Kademe Atlamaları</div>{v.kademe.length ? v.kademe.map((x, i) => <div className="soru" key={i}><span>{new Date(x.zaman).toLocaleDateString('tr-TR')} · {x.baslik} · {x.yapan}{x.gerekce ? ` · ${x.gerekce}` : ''}</span></div>) : <div className="ozet bos">Dönemde kademe atlaması bulunmamaktadır.</div>}
+    <div className="bolum">Kademe Atlamaları</div>{v.kademe.length ? v.kademe.map((x, i) => <div className="soru" key={i}><span>{tarih(x.zaman)} · {x.baslik} · {x.yapan}{x.gerekce ? ` · ${x.gerekce}` : ''}</span></div>) : <div className="ozet bos">Dönemde kademe atlaması bulunmamaktadır.</div>}
     <div className="bolum">Sisteme Dönmeyen Yatlar</div>{v.kayip.length ? v.kayip.map((x) => <div className="soru" key={x.yat_adi}><span>{x.yat_adi} · Son kapanış {x.son_kapanis.split('-').reverse().join('.')} · {x.dosya} dosya</span></div>) : <div className="ozet bos">Kayıt bulunmamaktadır.</div>}
     <div className="bolum">Marka/Model Bazında Hasar</div>{v.markaModel.onayli.map(mm)}
     {v.markaModel.onayBekleyen.length > 0 && <><div className="not">"Diğer" ile girilip onay bekleyen kayıtlar</div>{v.markaModel.onayBekleyen.map(mm)}</>}</details>;

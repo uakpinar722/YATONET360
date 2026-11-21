@@ -85,8 +85,9 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const sure = [...k.onay, ...k.islem, ...k.gorev].filter((x) => x.son_zaman).sort((a, c) => +new Date(a.son_zaman) - +new Date(c.son_zaman)).slice(0, 5);
     const kapsam = o.grup === 'LGM İç Rolü' ? ['LGM', 'Tümü'] : ['Dış', 'Tümü'];
     const d = await b.db.query(
-      `SELECT d.kimlik, d.baslik, d.govde, d.zorunlu, d.tur, d.yayim_zamani, r.zaman AS okundu FROM duyuru d LEFT JOIN duyuru_okuma r ON r.duyuru_ref = d.kimlik AND r.kullanici_ref = $1
-        WHERE d.durum = 'Yayında' AND d.kapsam = ANY($2) AND (d.bitis_zamani IS NULL OR d.bitis_zamani > now()) AND (NOT d.zorunlu OR r.zaman IS NULL) ORDER BY d.zorunlu DESC, d.yayim_zamani DESC LIMIT 5`, [o.kullanici, kapsam]);
+      `SELECT d.kimlik, CASE WHEN h.tercih_dili = 'İngilizce' AND d.baslik_en IS NOT NULL THEN d.baslik_en ELSE d.baslik END baslik, CASE WHEN h.tercih_dili = 'İngilizce' AND d.govde_en IS NOT NULL THEN d.govde_en ELSE d.govde END govde, d.ek_belge_ref, d.zorunlu, d.tur, d.yayim_zamani, r.zaman AS okundu
+        FROM duyuru d JOIN kullanici_hesabi h ON h.kimlik = $1 LEFT JOIN duyuru_okuma r ON r.duyuru_ref = d.kimlik AND r.kullanici_ref = $1
+        WHERE d.durum = 'Yayında' AND d.kapsam = ANY($2) AND (d.bitis_zamani IS NULL OR d.bitis_zamani > now()) AND (d.yayin_baslangic IS NULL OR d.yayin_baslangic <= now()) AND duyuru_hedefte(d.kimlik, $1) AND (NOT d.zorunlu OR r.zaman IS NULL) ORDER BY d.zorunlu DESC, d.yayim_zamani DESC LIMIT 5`, [o.kullanici, kapsam]);
     const ood = await b.db.query(`SELECT baslangic FROM olaganustu_donem WHERE bitis IS NULL ORDER BY baslangic DESC LIMIT 1`);
     const say = await b.db.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND okunma_zamani IS NULL`, [o.kullanici]);
     const msj = await b.db.query(`SELECT count(*)::int n FROM ic_mesaj WHERE alici_ref = $1 AND okunma_zamani IS NULL`, [o.kullanici]);
@@ -221,7 +222,8 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
   // YG-1626: okunmamışlar önde.
   s.get('/bildirimler', oturumlu, async (i) => {
     // YG-514: kayıt bağlantısı (dosya numarası başlıktan, iş kartı is_ref'ten); YG-509: gizlenenler listelenmez.
-    const { rows } = await b.db.query(`SELECT kimlik, zaman, baslik, ozet, okunma_zamani, is_ref, substring(baslik FROM 'LGM-[0-9]{4}-[0-9]{2}-[0-9]{4}') dosya_no FROM bildirim WHERE kullanici_ref = $1 AND gizlenme_zamani IS NULL ORDER BY (okunma_zamani IS NULL) DESC, zaman DESC LIMIT 200`, [i.oturum!.kullanici]);
+    const { rows } = await b.db.query(`SELECT n.kimlik, n.zaman, n.baslik, n.ozet, n.okunma_zamani, n.is_ref, coalesce(d.dosya_no, substring(n.baslik FROM 'LGM-[0-9]{4}-[0-9]{2}-[0-9]{4}')) dosya_no, c.durum gorev_durumu
+      FROM bildirim n LEFT JOIN dosya d ON d.kimlik = n.dosya_ref LEFT JOIN is_karti c ON c.kimlik = n.is_ref WHERE n.kullanici_ref = $1 AND n.gizlenme_zamani IS NULL ORDER BY (n.okunma_zamani IS NULL) DESC, n.zaman DESC LIMIT 200`, [i.oturum!.kullanici]);
     return rows;
   });
   s.post('/bildirim/:id/gizle', oturumlu, async (i, y) => {
@@ -240,7 +242,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const kapsam = o.grup === 'LGM İç Rolü' ? ['LGM', 'Tümü'] : ['Dış', 'Tümü'];
-    const r = await b.db.query(`INSERT INTO duyuru_okuma (duyuru_ref, kullanici_ref) SELECT kimlik, $2 FROM duyuru WHERE kimlik = $1 AND durum = 'Yayında' AND kapsam = ANY($3) ON CONFLICT DO NOTHING`, [id, o.kullanici, kapsam]);
+    const r = await b.db.query(`INSERT INTO duyuru_okuma (duyuru_ref, kullanici_ref) SELECT kimlik, $2 FROM duyuru WHERE kimlik = $1 AND durum = 'Yayında' AND kapsam = ANY($3) AND duyuru_hedefte(kimlik, $2) ON CONFLICT DO NOTHING`, [id, o.kullanici, kapsam]);
     if (!r.rowCount) {
       const var_ = await b.db.query(`SELECT 1 FROM duyuru_okuma WHERE duyuru_ref = $1 AND kullanici_ref = $2`, [id, o.kullanici]);
       if (!var_.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });

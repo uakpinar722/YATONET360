@@ -46,7 +46,14 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
   s.post('/duyuru', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
-    const { baslik, govde, zorunlu, kapsam, bitis, tur } = (i.body ?? {}) as { baslik?: string; govde?: string; zorunlu?: boolean; kapsam?: string; bitis?: string; tur?: string };
+    const { baslik, govde, zorunlu, kapsam, bitis, tur, hedefGruplar, hedefRoller, hedefBirimler, yayinBaslangic, baslikEn, govdeEn, ekBelge } = (i.body ?? {}) as { baslik?: string; govde?: string; zorunlu?: boolean; kapsam?: string; bitis?: string; tur?: string; hedefGruplar?: string[]; hedefRoller?: string[]; hedefBirimler?: string[]; yayinBaslangic?: string; baslikEn?: string; govdeEn?: string; ekBelge?: string };
+    // YG-560: hedef grup, rol ve birim tanımlı değerlerden seçilir; rol adı kimliğe çevrilir.
+    const liste = (x: unknown) => (Array.isArray(x) ? x.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : []);
+    const hRol = liste(hedefRoller).length ? (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = ANY($1::text[])`, [liste(hedefRoller)])).rows.map((r) => r.kimlik as string) : [];
+    if (hRol.length !== liste(hedefRoller).length) return y.code(400).send({ hata: 'Hedef rolleri listeden seçiniz.' });
+    if (liste(hedefBirimler).length && (await b.db.query(`SELECT count(DISTINCT rol_sahibi_birim)::int n FROM rol WHERE rol_sahibi_birim = ANY($1::text[])`, [liste(hedefBirimler)])).rows[0].n !== new Set(liste(hedefBirimler)).size) return y.code(400).send({ hata: 'Hedef birimleri listeden seçiniz.' });
+    if (yayinBaslangic && Number.isNaN(Date.parse(yayinBaslangic))) return y.code(400).send({ hata: 'Yayın başlangıcını kontrol ediniz.' });
+    if (Boolean(baslikEn?.trim()) !== Boolean(govdeEn?.trim()) && govdeEn?.trim()) return y.code(400).send({ hata: 'İngilizce metin için İngilizce başlık da giriniz.' });
     if (tur !== undefined && !['Genel', 'Özel Gün'].includes(tur)) return y.code(400).send({ hata: 'Duyuru türünü seçiniz.' }); // YG-563
     if (!baslik?.trim() || !kapsam || !KAPSAM.includes(kapsam)) return y.code(400).send({ hata: 'Başlık ve kapsam zorunludur.' });
     const roller = await kullaniciRolleri(b.db, o.kullanici);
@@ -60,8 +67,8 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const { rows } = await c.query(
-        `INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum, tur) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`,
-        [baslik.trim(), govde?.trim() || null, Boolean(zorunlu), kapsam, o.kullanici, bitis || null, dogrudan ? 'Yayında' : 'Onay Bekliyor', tur ?? 'Genel']);
+        `INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum, tur, hedef_gruplar, hedef_roller, hedef_birimler, yayin_baslangic, baslik_en, govde_en, ek_belge_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`,
+        [baslik.trim(), govde?.trim() || null, Boolean(zorunlu), kapsam, o.kullanici, bitis || null, dogrudan ? 'Yayında' : 'Onay Bekliyor', tur ?? 'Genel', liste(hedefGruplar), hRol, liste(hedefBirimler), yayinBaslangic || null, baslikEn?.trim() || null, govdeEn?.trim() || null, ekBelge && /^[0-9a-f-]{36}$/.test(ekBelge) ? ekBelge : null]);
       const id = rows[0].kimlik as string;
       if (!dogrudan) {
         const kart = await kartAc(c, { tur: 'Duyuru Yayımı', baslik: `Dış Duyuru Onayı · ${baslik.trim()}`, ozet: govde?.trim() || undefined, hazirlayan: o.kullanici, zincir: [await onayMakami(c, (ust ?? roller[0]!).kimlik)], nesneTuru: 'duyuru', nesneKimligi: id });
@@ -80,16 +87,19 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     if (o.grup !== 'LGM İç Rolü') return { kapsamlar: [], onaysiz: [] };
     const roller = await kullaniciRolleri(b.db, o.kullanici);
     const ust = roller.some((r) => UST_KADEME.has(r.kademe));
-    if (roller.some((r) => r.rol_adi === 'CEO')) return { kapsamlar: KAPSAM, onaysiz: KAPSAM };
-    if (ust) return { kapsamlar: KAPSAM, onaysiz: ['LGM'] };
-    return roller.some((r) => r.kademe === 'Müdür Yardımcısı') ? { kapsamlar: ['Dış', 'Tümü'], onaysiz: [] } : { kapsamlar: [], onaysiz: [] };
+    // YG-560: hedefleme seçenekleri (kullanıcı grubu, rol, birim).
+    const secenek = { gruplar: (await b.db.query(`SELECT DISTINCT kullanici_grubu g FROM kullanici_hesabi WHERE kullanici_grubu <> 'Sistem/Hizmet Hesabı' ORDER BY 1`)).rows.map((r) => r.g as string),
+      roller: (await b.db.query(`SELECT rol_adi FROM rol WHERE rol_durumu = 'Aktif' ORDER BY 1`)).rows.map((r) => r.rol_adi as string), birimler: (await b.db.query(`SELECT DISTINCT rol_sahibi_birim b FROM rol ORDER BY 1`)).rows.map((r) => r.b as string) };
+    if (roller.some((r) => r.rol_adi === 'CEO')) return { kapsamlar: KAPSAM, onaysiz: KAPSAM, ...secenek };
+    if (ust) return { kapsamlar: KAPSAM, onaysiz: ['LGM'], ...secenek };
+    return roller.some((r) => r.kademe === 'Müdür Yardımcısı') ? { kapsamlar: ['Dış', 'Tümü'], onaysiz: [], ...secenek } : { kapsamlar: [], onaysiz: [] };
   });
 
   // YG-560: okunma oranı. Hedef kitle zorunlu duyuruda kapsamdaki aktif hesaplardır.
   s.get('/duyuru/yayimlarim', oturumlu, async (i) => {
     const { rows } = await b.db.query(
       `SELECT d.kimlik, d.baslik, d.zorunlu, d.kapsam, d.durum, d.yayim_zamani, (SELECT count(*)::int FROM duyuru_okuma o WHERE o.duyuru_ref = d.kimlik) AS okuyan,
-              (SELECT count(*)::int FROM kullanici_hesabi h WHERE h.hesap_durumu = 'Aktif' AND (d.kapsam = 'Tümü' OR (d.kapsam = 'LGM') = (h.kullanici_grubu = 'LGM İç Rolü'))) AS hedef
+              (SELECT count(*)::int FROM kullanici_hesabi h WHERE h.hesap_durumu = 'Aktif' AND h.kullanici_grubu <> 'Sistem/Hizmet Hesabı' AND duyuru_hedefte(d.kimlik, h.kimlik)) AS hedef
          FROM duyuru d WHERE d.yayimlayan_ref = $1 ORDER BY d.yayim_zamani DESC LIMIT 50`, [i.oturum!.kullanici]);
     return rows;
   });

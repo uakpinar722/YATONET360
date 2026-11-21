@@ -35,7 +35,10 @@ describe('metin kütüphanesi sürüm ve onay (YG-600)', () => {
     expect((await o.sup.query(`SELECT x.rol_adi FROM rol x WHERE x.kimlik = $1`, [kart.zincir[0]])).rows[0].rol_adi).toBe('CEO');
     expect((await o.ist('POST', `/api/is/${kart.kimlik}/karar`, await o.gir('ust'), { karar: 'Onayla' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT hukuki FROM sablon_metni WHERE kod = 'BLD-02' AND dil = 'en' AND surum = $1`, [r.surum])).rows[0].hukuki).toBe(true);
-    const tr = (await o.ist('POST', '/api/sablon-metni/BLD-02/tr', btd, { metin: 'Türkçe yazım düzeltmesi.', gerekce: 'Yazım', anlamEtkiler: false, hukuki: true })).json();
+    const trM = (await o.sup.query(`SELECT metin FROM sablon_metni WHERE kod = 'BLD-02' AND dil = 'tr' AND durum = 'Yürürlükte'`)).rows[0].metin;
+    const tr = (await o.ist('POST', '/api/sablon-metni/BLD-02/tr', btd, { metin: `${trM} .`, gerekce: 'Yazım', anlamEtkiler: false, hukuki: true })).json();
     expect(tr.durum).toBe('Yürürlükte'); // Türkçe hukuki metinde yazım düzeltmesi doğrudan yürürlüğe girer
+    const bas = (await o.ist('POST', '/api/sablon-metni/BLD-02/tr', btd, { metin: 'Bambaşka bir metin.', gerekce: 'Yazım', anlamEtkiler: false })).json();
+    expect(bas.durum).toBe('Onayda'); // YG-512: anlamı değiştiren metin yazım düzeltmesi beyanıyla yürürlüğe giremez
   });
 });

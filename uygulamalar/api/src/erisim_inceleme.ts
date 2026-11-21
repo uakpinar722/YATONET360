@@ -91,6 +91,7 @@ export async function disHesapPasifIsle(db: Pool, simdi = new Date()): Promise<n
   const b = await db.query(`UPDATE kullanici_hesabi SET hesap_durumu = 'Askıda' WHERE hesap_durumu = 'Aktif' AND ${K} $1::timestamptz - interval '90 days' RETURNING kimlik`, [simdi]);
   const l = [...a.rows, ...b.rows].map((r) => r.kimlik as string);
   if (l.length) await db.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Güvenlik sınırlaması' WHERE kullanici_ref = ANY($1::text[]) AND bitis_zamani IS NULL`, [l]);
+  for (const r of a.rows) await (await import('./hesap_devri.js')).hesapKapanisDevri(db, r.kimlik as string); // YG-1054: kapanan dış hesabın görev ve belge sorumluluğu
   return l.length;
 }
 

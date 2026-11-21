@@ -3,12 +3,14 @@ import pg from 'pg';
 import type { Pool, PoolClient } from 'pg';
 
 /** YG-1183: isteği yapan kullanıcı, değişiklik tetikleyicisine sorgu başındaki yorumla taşınır. */
-export const istekBaglami = new AsyncLocalStorage<{ aktor?: string }>();
+export const istekBaglami = new AsyncLocalStorage<{ aktor?: string; iliski?: string }>();
 const YAZMA = /^\s*(INSERT|UPDATE|DELETE|WITH)\b/i;
 const asilQuery = pg.Client.prototype.query as (...a: unknown[]) => unknown;
 pg.Client.prototype.query = function (this: unknown, ...a: unknown[]) {
-  const k = istekBaglami.getStore()?.aktor;
-  if (k && typeof a[0] === 'string' && YAZMA.test(a[0])) a[0] = `/*aktor=${k.replace(/[^\w-]/g, '')}*/ ${a[0]}`;
+  const st = istekBaglami.getStore(); const k = st?.aktor; const il = st?.iliski;
+  // YG-1146: ilişki kimliği de yazma sorgusuyla taşınır; aktör yorumu başta kalır (kayit_iz onu sorgu başından okur).
+  if (il && typeof a[0] === 'string' && YAZMA.test(a[0])) a[0] = `/*iliski=${il.replace(/[^\w:-]/g, '')}*/ ${a[0]}`;
+  if (k && typeof a[0] === 'string' && /^(\/\*iliski=[^*]*\*\/ )?\s*(INSERT|UPDATE|DELETE|WITH)\b/i.test(a[0])) a[0] = `/*aktor=${k.replace(/[^\w-]/g, '')}*/ ${a[0]}`;
   return asilQuery.apply(this, a);
 } as typeof pg.Client.prototype.query;
 
@@ -28,6 +30,6 @@ export async function izYaz(db: Pool | PoolClient, k: IzKaydi) {
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'')`,
     [k.aktor ?? null, k.oturum ?? null, k.eylem, k.nesneTuru ?? null, k.nesneKimligi ?? null,
       k.eski === undefined ? null : JSON.stringify(izMaskele(k.eski)), k.yeni === undefined ? null : JSON.stringify(izMaskele(k.yeni)),
-      k.kanal ?? 'Web', k.adres ?? null, k.sonuc, k.gerekce ?? null, k.iliski ?? null],
+      k.kanal ?? 'Web', k.adres ?? null, k.sonuc, k.gerekce ?? null, k.iliski ?? istekBaglami.getStore()?.iliski ?? null],
   );
 }

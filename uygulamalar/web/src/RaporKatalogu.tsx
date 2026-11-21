@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
+import { tarihSaat } from './bicim';
 import { istek } from './api';
 
 type T = { kod: string; surum: number; ad: string; tur: string; sahip_rol: string; amac: string; kaynak: string; pay: string; payda: string | null; dahil: string | null; haric: string | null; zaman_boyutu: string; kesim: string; birim: string; yuvarlama: string; siklik: string; hassasiyet: string; beklenen_eylem: string | null; yururluk: string; surum_sayisi: number; son_basarili: { bitis: string; satir: number | null } | null; son_hata: string | null; planli: { surum: number; yururluk: string; not: string; etki: string }[] | null };
 type V = { tanimlar: T[]; duzenler: boolean; dagitim: { kimlik: string; kod: string; ad_soyad: string; amac: string; bitis: string; durum: string; cikis_nedeni: string | null }[]; yayinlar: { kimlik: string; kod: string; surum: number; donem: string; durum: string; gerekce: string | null; etkilenen_kararlar: string | null; dogru: string | null }[]; hedefGecmisi: { kod: string; hedef: string | null; uyari_esigi: string | null; kritik_esik: string | null; gerekce: string; ad_soyad: string | null; zaman: string }[]; kisiler: { kimlik: string; ad_soyad: string }[] };
-const zt = (s: string) => new Date(s).toLocaleString('tr-TR');
+const zt = (s: string) => tarihSaat(s);
 /** YG-734–740, 742, 744, 751–754, 757: rapor ve gösterge kataloğu. */
 export function RaporKatalogu() {
   const [v, setV] = useState<V | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');

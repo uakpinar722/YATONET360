@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { damga, tarih, tarihSaat } from './bicim';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
 import { OlayKayitlari, SaglayiciMatrisi } from './DosyaEk';
@@ -47,8 +48,8 @@ export function DenetimArama() {
     <div className="iki-tarih"><div><label htmlFor="dn-b">Başlangıç</label><input id="dn-b" type="date" value={f.baslangic} onChange={(e) => setF({ ...f, baslangic: e.target.value })} /></div><div><label htmlFor="dn-s">Bitiş</label><input id="dn-s" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} /></div></div>
     <label htmlFor="dn-e">Eylem</label><input id="dn-e" value={f.eylem} onChange={(e) => setF({ ...f, eylem: e.target.value })} /><label htmlFor="dn-t">Tablo</label><input id="dn-t" value={f.tablo} onChange={(e) => setF({ ...f, tablo: e.target.value })} />
     <button className="btn2" disabled={!f.amac.trim() || !f.baslangic || !f.bitis} onClick={() => void yap(() => istek<NonNullable<typeof v>>(`/denetim/arama?${new URLSearchParams(f).toString()}`).then(setV), 'Arama kayda geçti.')}>Ara</button>
-    {v?.izler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{new Date(x.olay_zamani).toLocaleString('tr-TR')} · {x.aktor ?? 'Sistem'} · {x.eylem}{x.gerekce ? ` · ${x.gerekce}` : ''}</div>)}
-    {v?.degisiklikler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{new Date(x.zaman).toLocaleString('tr-TR')} · {x.aktor ?? 'Sistem'} · {x.tablo} · {JSON.stringify(x.degisen).slice(0, 300)}</div>)}</>;
+    {v?.izler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{damga(x.olay_zamani)} · {x.aktor ?? 'Sistem'} · {x.eylem}{x.gerekce ? ` · ${x.gerekce}` : ''}</div>)}
+    {v?.degisiklikler.slice(0, 100).map((x) => <div className="ozet" key={x.kimlik}>{damga(x.zaman)} · {x.aktor ?? 'Sistem'} · {x.tablo} · {JSON.stringify(x.degisen).slice(0, 300)}</div>)}</>;
 }
 
 /** YG-1546, YG-1547: görev, kanıt, doğrulama. */
@@ -72,6 +73,63 @@ function VerbisEsik() {
     <button className="btn2" disabled={!tl} onClick={() => void istek<NonNullable<typeof v>>('/yillik-bilanco', { yil: v.yil, toplamTl: Number(tl.replace(/\./g, '').replace(',', '.')) }).then((r) => { setV(r); setTl(''); setM('Bilanço toplamı kaydedildi.'); }).catch((e) => setM(e.message))}>Bilanço Toplamını Kaydet</button></>;
 }
 
+/** YG-1000: hizmet hesabı envanteri; envantere girmemiş hizmet hesapları ayrıca listelenir. */
+function HizmetHesaplari() {
+  type H = { kullanici_ref: string; ad_soyad: string; sahip: string; amac: string; anahtar_turu: string; anahtar_bitis: string; calisma_zamani: string; entegrasyon: string | null; durum: string; askiya_alma_nedeni: string | null };
+  const [v, setV] = useState<{ kayitlar: H[]; kayitsiz: { kimlik: string; ad_soyad: string }[] } | null>(null); const [m, setM] = useState('');
+  const bos = { hesap: '', sahipRol: '', amac: '', eristigiVeri: '', anahtarTuru: 'API Anahtarı', anahtarBitis: '', kaynakAdres: '', calismaZamani: '', kapanisYontemi: '' };
+  const [f, setF] = useState(bos);
+  const yk = () => istek<NonNullable<typeof v>>('/hizmet-hesabi-envanteri').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const A: [keyof typeof bos, string][] = [['sahipRol', 'Sahip Rol'], ['amac', 'Amaç'], ['eristigiVeri', 'Eriştiği Veri'], ['anahtarBitis', 'Anahtar Bitişi (YYYY-AA-GG)'], ['kaynakAdres', 'Kaynak Adres'], ['calismaZamani', 'Çalışma Zamanı'], ['kapanisYontemi', 'Kapanış Yöntemi']];
+  return <><div className="bolum">Hizmet Hesapları</div>{m && <div className="not" role="status">{m}</div>}
+    {v.kayitlar.map((x) => <div className={x.durum === 'Aktif' ? 'ozet' : 'hata'} key={x.kullanici_ref}>{x.ad_soyad} · {x.sahip} · {x.amac} · {x.anahtar_turu} (bitiş {tarih(x.anahtar_bitis)}) · {x.calisma_zamani}{x.entegrasyon ? ` · ${x.entegrasyon}` : ''} · {x.durum}{x.askiya_alma_nedeni ? ` · ${x.askiya_alma_nedeni}` : ''}</div>)}
+    {v.kayitsiz.length > 0 && <div className="hata">Envantere kaydedilmemiş hizmet hesabı: {v.kayitsiz.map((x) => x.ad_soyad).join(', ')}</div>}
+    {v.kayitsiz.length > 0 && <div className="ozet">
+      <label htmlFor="hh-h">Hesap</label><select id="hh-h" value={f.hesap} onChange={(e) => setF({ ...f, hesap: e.target.value })}><option value="">Seçiniz</option>{v.kayitsiz.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+      <label htmlFor="hh-a">Anahtar Türü</label><select id="hh-a" value={f.anahtarTuru} onChange={(e) => setF({ ...f, anahtarTuru: e.target.value })}><option>API Anahtarı</option><option>Sertifika</option></select>
+      {A.map(([k, l]) => <div key={k}><label htmlFor={`hh-${k}`}>{l}</label><input id={`hh-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>)}
+      <button className="btn2 kucuk" disabled={!f.hesap} onClick={() => void istek('/hizmet-hesabi-envanteri', f).then(() => { setM('Hizmet hesabı envantere kaydedildi.'); setF(bos); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>}</>;
+}
+
+/** YG-510: role göre tekrar sıklığı, sessiz saat ve birleştirme; Kritik bildirim etkilenmez. */
+function BildirimKurallari() {
+  type K = { rol: string; tekrar_dakika: number | null; sessiz_baslangic: string | null; sessiz_bitis: string | null; birlestir: boolean };
+  const [v, setV] = useState<{ roller: string[]; kurallar: K[] } | null>(null); const [m, setM] = useState('');
+  const [f, setF] = useState({ rol: '', tekrar: '', bas: '', bit: '', birlestir: false });
+  const yk = () => istek<NonNullable<typeof v>>('/bildirim-kurali').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  return <><div className="bolum">Bildirim Kuralları</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="not">Kritik bildirimler bu kurallardan etkilenmez.</div>
+    {v.kurallar.map((x) => <div className="ozet" key={x.rol}>{x.rol} · Tekrar: {x.tekrar_dakika ? `${x.tekrar_dakika} dk` : '—'} · Sessiz Saat: {x.sessiz_baslangic ? `${x.sessiz_baslangic}–${x.sessiz_bitis}` : '—'} · Birleştirme: {x.birlestir ? 'Evet' : 'Hayır'}</div>)}
+    <label htmlFor="bk-r">Rol</label><select id="bk-r" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}><option value="">Seçiniz</option>{v.roller.map((r) => <option key={r}>{r}</option>)}</select>
+    <label htmlFor="bk-t">Tekrar Süresi (dakika)</label><input id="bk-t" inputMode="numeric" value={f.tekrar} onChange={(e) => setF({ ...f, tekrar: e.target.value })} />
+    <label htmlFor="bk-b">Sessiz Saat Başlangıcı (SS:DD)</label><input id="bk-b" value={f.bas} onChange={(e) => setF({ ...f, bas: e.target.value })} />
+    <label htmlFor="bk-s">Sessiz Saat Bitişi (SS:DD)</label><input id="bk-s" value={f.bit} onChange={(e) => setF({ ...f, bit: e.target.value })} />
+    <label className="kutu"><input type="checkbox" checked={f.birlestir} onChange={(e) => setF({ ...f, birlestir: e.target.checked })} /><span>Bekleyen İletilerle Birleştir</span></label>
+    <button className="btn2 kucuk" disabled={!f.rol} onClick={() => void istek('/bildirim-kurali', { rol: f.rol, tekrarDakika: f.tekrar ? Number(f.tekrar) : null, sessizBaslangic: f.bas || null, sessizBitis: f.bit || null, birlestir: f.birlestir }).then(() => { setM('Bildirim kuralı kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></>;
+}
+
+/** YG-1309: başarısız gönderimler; kök neden ve gerekçeyle düzeltilip yeniden çalıştırılır. */
+function BasarisizGonderimler() {
+  type G = { kimlik: string; kanal: string; konu: string; hedef: string; deneme: number; son_hata: string | null; kok_neden: string | null; dosya_no: string | null; yeniden: number };
+  const [v, setV] = useState<{ kokNedenler: string[]; satirlar: G[] } | null>(null); const [m, setM] = useState('');
+  const [s, setS] = useState(''); const [f, setF] = useState({ hedef: '', kokNeden: '', gerekce: '' });
+  const yk = () => istek<NonNullable<typeof v>>('/gonderim/basarisiz').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  return <><div className="bolum">Başarısız Gönderimler</div>{m && <div className="not" role="status">{m}</div>}{v.satirlar.length === 0 && <div className="ozet bos">Başarısız gönderim bulunmamaktadır.</div>}
+    {v.satirlar.map((x) => <div className="hata" key={x.kimlik}>{x.kanal} · {x.konu} · {x.hedef}{x.dosya_no ? ` · ${x.dosya_no}` : ''} · {x.kok_neden ?? 'Kök neden belirlenmedi'}{x.son_hata ? ` · ${x.son_hata}` : ''}{x.yeniden ? ` · ${x.yeniden} kez yeniden çalıştırıldı` : ''}
+      {s === x.kimlik ? <div>
+        <label htmlFor="bg-h">Hedef (değişmeyecekse boş bırakınız)</label><input id="bg-h" value={f.hedef} onChange={(e) => setF({ ...f, hedef: e.target.value })} />
+        <label htmlFor="bg-k">Kök Neden</label><select id="bg-k" value={f.kokNeden} onChange={(e) => setF({ ...f, kokNeden: e.target.value })}><option value="">Seçiniz</option>{v.kokNedenler.map((k) => <option key={k}>{k}</option>)}</select>
+        <label htmlFor="bg-g">Gerekçe</label><input id="bg-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+        <button className="btn2 kucuk" disabled={!f.kokNeden || !f.gerekce.trim()} onClick={() => void istek(`/gonderim/${x.kimlik}/yeniden`, f).then(() => { setM('Gönderim yeniden kuyruğa alındı.'); setS(''); setF({ hedef: '', kokNeden: '', gerekce: '' }); return yk(); }).catch((e) => setM(e.message))}>Yeniden Çalıştır</button></div>
+        : <> <button className="btn2 kucuk" onClick={() => { setS(x.kimlik); setF({ hedef: '', kokNeden: x.kok_neden ?? '', gerekce: '' }); }}>Düzelt ve Yeniden Çalıştır</button></>}</div>)}</>;
+}
+
 /** YG-1316: zamanlanmış işlerin son çalışması; gecikme, çakışma ve hata görünür. */
 function ZamanlanmisIsler() {
   type Z = { ad: string; etki: string; son_bitis: string | null; son_sure_ms: number | null; son_hata: string | null; cakisma_sayisi: number; gecikti: boolean };
@@ -79,7 +137,7 @@ function ZamanlanmisIsler() {
   useEffect(() => { void istek<Z[]>('/zamanlanmis-isler').then(setL).catch(() => setL(null)); }, []);
   if (!l) return null;
   return <><div className="bolum">Zamanlanmış İşler</div>{l.length === 0 && <div className="ozet bos">Çalışma kaydı bulunmamaktadır.</div>}
-    {l.map((x) => <div className={x.gecikti || x.son_hata ? 'hata' : 'ozet'} key={x.ad}>{x.ad} · Son Bitiş: {x.son_bitis ? new Date(x.son_bitis).toLocaleString('tr-TR') : '—'}{x.son_sure_ms !== null ? ` · ${(x.son_sure_ms / 1000).toLocaleString('tr-TR')} sn` : ''}{x.gecikti ? ' · Gecikti' : ''}{x.cakisma_sayisi ? ` · Çakışma: ${x.cakisma_sayisi}` : ''}{x.son_hata ? ` · Hata: ${x.son_hata}` : ''}
+    {l.map((x) => <div className={x.gecikti || x.son_hata ? 'hata' : 'ozet'} key={x.ad}>{x.ad} · Son Bitiş: {x.son_bitis ? tarihSaat(x.son_bitis) : '—'}{x.son_sure_ms !== null ? ` · ${(x.son_sure_ms / 1000).toLocaleString('tr-TR')} sn` : ''}{x.gecikti ? ' · Gecikti' : ''}{x.cakisma_sayisi ? ` · Çakışma: ${x.cakisma_sayisi}` : ''}{x.son_hata ? ` · Hata: ${x.son_hata}` : ''}
       {(x.gecikti || x.son_hata) && <div>Etkilenen çıktılar: {x.etki}</div>}</div>)}</>;
 }
 
@@ -93,10 +151,10 @@ function Yedekler() {
   if (!v) return null;
   const is = (yol: string, g: object, t: (r: any) => string) => void istek(yol, g).then((r) => { setM(t(r)); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">Yedekler</div>{m && <div className="not" role="status">{m}</div>}{v.yedekler.length === 0 && <div className="ozet bos">Yedek kaydı bulunmamaktadır.</div>}
-    {v.yedekler.slice(0, 20).map((x) => { const sorun = x.durum === 'Başarısız' || x.durum === 'Eksik Set'; return <div className={sorun ? 'hata' : 'ozet'} key={x.kimlik}>{new Date(x.baslangic).toLocaleString('tr-TR')} · {x.tur} · {x.durum}{x.hata ? ` · ${x.hata}` : ''}{x.olay_no ? ` · Olay: ${x.olay_no}` : ''}
+    {v.yedekler.slice(0, 20).map((x) => { const sorun = x.durum === 'Başarısız' || x.durum === 'Eksik Set'; return <div className={sorun ? 'hata' : 'ozet'} key={x.kimlik}>{tarihSaat(x.baslangic)} · {x.tur} · {x.durum}{x.hata ? ` · ${x.hata}` : ''}{x.olay_no ? ` · Olay: ${x.olay_no}` : ''}
       {sorun && !x.olay_no && <> <button className="btn2 kucuk" onClick={() => is(`/yedek/${x.kimlik}/olay-bagla`, {}, (r) => `Olay kaydı açıldı: ${r.olayNo}`)}>Olay Kaydına Bağla</button></>}</div>; })}
     <div className="bolum">Geri Yükleme Testleri</div>
-    {v.testler.map((x, i) => <div className="ozet" key={i}>{x.tur} · {x.sonuc}{x.kabul ? ` · ${x.kabul}` : ''} · {new Date(x.zaman).toLocaleDateString('tr-TR')}</div>)}
+    {v.testler.map((x, i) => <div className="ozet" key={i}>{x.tur} · {x.sonuc}{x.kabul ? ` · ${x.kabul}` : ''} · {tarih(x.zaman)}</div>)}
     <div className="ozet">
       <label htmlFor="gy-tur">Test Türü</label><select id="gy-tur" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Örnek Kayıt', 'Tam Sistem', 'Felaket Tatbikatı'].map((d) => <option key={d}>{d}</option>)}</select>
       <label htmlFor="gy-k">Kurtarma Süresi (dakika)</label><input id="gy-k" inputMode="numeric" value={f.kurtarma} onChange={(e) => setF({ ...f, kurtarma: e.target.value })} />
@@ -121,6 +179,9 @@ export function KvkkEkrani() {
     <h1>KVKK ve Uyum</h1><Mesaj />
     <Yedekler />
     <ZamanlanmisIsler />
+    <BasarisizGonderimler />
+    <BildirimKurallari />
+    <HizmetHesaplari />
     <UyumGorevleri />
     <VerbisEsik />
     <SaglayiciMatrisi />
