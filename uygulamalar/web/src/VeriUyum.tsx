@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
-type S = { varlik: string; alan: string; teknik: string; tip: string; zorunlu: string; sinif: string; kisisel: string; saklama: string };
+type S = { varlik: string; alan: string; teknik: string; tip: string; zorunlu: string; sinif: string; kisisel: string; saklama: string; kaliteEsigi: string; paylasim: string };
+type C = { teknik: string; tanimlar: { tip: string; varliklar: string[] }[] };
 /** YG-1243: ortak veri sözlüğü araması. */
 export function VeriSozlugu() {
-  const [q, setQ] = useState(''); const [v, setV] = useState<{ toplam: number; satirlar: S[] } | null>(null); const [m, setM] = useState('');
+  const [q, setQ] = useState(''); const [v, setV] = useState<{ toplam: number; satirlar: S[] } | null>(null); const [m, setM] = useState(''); const [c, setC] = useState<C[] | null>(null);
   return <details><summary>Veri Sözlüğü</summary>{m && <div className="not" role="alert">{m}</div>}
     <label htmlFor="vs-q">Alan veya Varlık</label><input id="vs-q" value={q} onChange={(e) => setQ(e.target.value)} /><button className="btn2 kucuk" disabled={q.trim().length < 2} onClick={() => void istek<NonNullable<typeof v>>(`/veri-sozlugu?q=${encodeURIComponent(q)}`).then((x) => { setV(x); setM(''); }).catch((e) => setM(e.message))}>Ara</button>
-    {v && <div className="ozet"><div>Bulunan: {v.toplam}</div>{v.satirlar.map((x) => <div key={`${x.varlik}:${x.teknik}`}>{x.varlik} · {x.alan} ({x.teknik}) · {x.tip} · {x.zorunlu} · {x.sinif} · Kişisel Veri: {x.kisisel} · {x.saklama}</div>)}</div>}</details>;
+    {v && <div className="ozet"><div>Bulunan: {v.toplam}</div>{v.satirlar.map((x) => <div key={`${x.varlik}:${x.teknik}`}>{x.varlik} · {x.alan} ({x.teknik}) · {x.tip} · {x.zorunlu} · {x.sinif} · Kişisel Veri: {x.kisisel} · {x.saklama} · Kalite Eşiği: {x.kaliteEsigi} · Paylaşım: {x.paylasim}</div>)}</div>}
+    <button className="btn2 kucuk" onClick={() => void istek<C[]>('/veri-sozlugu/celiskiler').then(setC).catch((e) => setM(e.message))}>Çelişkili Tanımları Göster</button>
+    {c && <div className="ozet"><div>Çelişkili Kavram: {c.length}</div>{c.map((x) => <div key={x.teknik}>{x.teknik}: {x.tanimlar.map((t) => `${t.tip} (${t.varliklar.length} varlık)`).join(' · ')}</div>)}</div>}</details>;
 }
 
 type E = { varlik: string; alanSayisi: number; ozelNitelikli: number; saklama: string[]; ilgiliKisi: string | null; kategori: string | null; amac: string | null; hukuki: string | null; alici: string | null; tedbir: string | null; tamam: boolean };

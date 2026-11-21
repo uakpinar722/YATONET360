@@ -35,4 +35,10 @@ describe('entegrasyon envanteri (YG-1297, 1298, 1300, 1315, 1317)', () => {
     const r = (await o.ist('POST', `/api/entegrasyon-envanteri/${banka}/toplu-aktarim`, await o.gir('sy'), { donem: '2026-11', kaynak: 'Banka ekstresi', beyanSayi: 3, beyanOzet: ozet(icerik), semaSurumu: 'v1', icerik })).json();
     expect(r.sonuc).toBe('Kısmi Kabul');
   });
+  it('alan kalite kuralları toplu aktarımda satır bazında uygulanır; hatalı satır düzeltilmez (YG1250-TOPLU)', async () => {
+    const icerik = JSON.stringify([{ dis_kimlik: 'B1', eposta: 'a@b.com', tutar_eur: 10.5 }, { dis_kimlik: 'B2', eposta: 'yanlis' }, { dis_kimlik: 'B3', tutar_eur: -4 }, { dis_kimlik: 'B4', vergi_no: '123' }, { dis_kimlik: 'B5', fatura_tarihi: 'otuz' }]);
+    const d = topluDogrula({ beyanSayi: 5, beyanOzet: ozet(icerik), semaSurumu: 'v1', beklenenSema: 'v1', icerik });
+    expect(d).toMatchObject({ sonuc: 'Kısmi Kabul', kabul: 1 });
+    expect(d.red.map((r) => r.neden)).toEqual(['E-posta geçersiz (eposta)', 'Tutar geçersiz (tutar_eur)', 'Vergi numarası geçersiz', 'Tarih okunamadı (fatura_tarihi)']);
+  });
 });

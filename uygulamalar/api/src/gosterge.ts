@@ -3,12 +3,13 @@ import type { Pool, PoolClient } from 'pg';
 import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { zorunluFormlar } from './zorunlu_form.js';
+import { ASGARI_GRUP } from './analiz.js';
 
 type Db = Pool | PoolClient;
 type Tanim = { kod: string; ad: string; tablo: string; birim: string; yon: 'dusuk' | 'yuksek'; birimAdi: string; sql?: string; hesap?: (db: Db) => Promise<number | null> };
 const OP = 'Operasyon Müdürlüğü'; const TK = 'Teknik Müdürlük'; const KL = 'Kalite Müdürlüğü'; const FY = 'Firma Yönetimi Müdürlüğü'; const MF = 'Muhasebe ve Finans Müdürlüğü';
 const ONAY = `('Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü')`;
-const oran = (pay: string, payda: string) => `SELECT CASE WHEN (${payda}) > 0 THEN round(100.0 * (${pay}) / (${payda}), 1) END n`;
+const oran = (pay: string, payda: string) => `SELECT CASE WHEN (${payda}) > 0 THEN round(100.0 * (${pay}) / (${payda}), 1) END n, (${payda})::int orneklem`;
 
 /** Cilt I §9 Tablo 9.5, 9.6, 9.7 ve 9.10 göstergeleri; hesap kaynakları YATONET 360 kayıtlarıdır. */
 export const GOSTERGELER: Tanim[] = [
@@ -41,18 +42,34 @@ export const GOSTERGELER: Tanim[] = [
   { kod: 'G-9.10-8', ad: 'Tahsilat süresi – diğer müşteriler (en çok 15 gün)', tablo: '9.10', birim: 'gün', yon: 'dusuk', birimAdi: MF, sql: `SELECT round(avg(t.son - f.fatura_tarihi)::numeric, 1) n FROM musteri_faturasi f JOIN (SELECT fatura_ref, max(tarih) son FROM tahsilat GROUP BY 1) t ON t.fatura_ref = f.kimlik WHERE f.durum = 'Tahsil Edildi' AND f.muhatap <> 'Sigorta Şirketi' AND t.son > current_date - 90` },
 ];
 
-export type Sonuc = { kod: string; ad: string; tablo: string; deger: number | null; birim: string; birimAdi: string; hedef: number | null; renk: 'yesil' | 'sari' | 'kirmizi' | null; durum: string };
+export type Sonuc = { kod: string; ad: string; tablo: string; deger: number | null; birim: string; birimAdi: string; hedef: number | null; renk: 'yesil' | 'sari' | 'kirmizi' | null; durum: string; guven: string; orneklem: number | null };
+
+/**
+ * YG-743: güven düzeyi. Veri yoksa değer sıfır gösterilmez; örneklem asgari grup sayısının (analiz.ts) altındaysa yetersiz veri sayılır ve
+ * renk verilmez; göstergenin kaynak tablosunda kalite kuralı eşiğini aşan açık veri hatası varsa işaretlenir. Göstergeler kayıttan anlık hesaplanır.
+ */
+export function guvenDuzeyi(deger: number | null, orneklem: number | null, birim: string, kaliteUyari: boolean): string {
+  if (deger === null) return 'Veri yok';
+  if (birim !== 'adet' && orneklem !== null && orneklem < ASGARI_GRUP) return 'Yetersiz veri';
+  if (kaliteUyari) return 'Kalite eşiği aşıldı';
+  return 'Yeterli';
+}
 
 /** Cilt I §9.12: hedef ve eşik veri oluşmadan rastgele belirlenmez; tanımsızken "Başlangıç dönemi" gösterilir. */
 export async function gostergeleriHesapla(db: Db, gor: (birim: string) => boolean): Promise<Sonuc[]> {
   const h = new Map((await db.query(`SELECT kod, hedef, uyari_esigi, kritik_esik FROM gosterge_hedefi`)).rows.map((r) => [r.kod, r]));
+  const kaliteKaynak = (await db.query(`SELECT k.kaynak FROM kalite_kurali k WHERE k.durum = 'Yürürlükte' AND (SELECT count(*) FROM veri_hatasi v WHERE v.kural_kod = k.kod AND v.durum <> 'Giderildi') > k.esik`)).rows.flatMap((r) => String(r.kaynak).split(/,\s*/));
   const l: Sonuc[] = [];
   for (const g of GOSTERGELER) {
     if (!gor(g.birimAdi)) continue;
-    const v = g.hesap ? await g.hesap(db) : (await db.query(g.sql!)).rows[0].n; const deger = v === null || v === undefined ? null : Number(v);
+    const sql = g.sql?.startsWith('SELECT round(avg(') ? g.sql.replace('SELECT round(avg(', 'SELECT count(*)::int orneklem, round(avg(') : g.sql;
+    const satir = g.hesap ? { n: await g.hesap(db), orneklem: null } : (await db.query(sql!)).rows[0]; const v = satir.n; const deger = v === null || v === undefined ? null : Number(v);
+    const orneklem = satir.orneklem === null || satir.orneklem === undefined ? null : Number(satir.orneklem);
+    const kaynakTablo = /FROM (\w+)/.exec(g.sql ?? '')?.[1]; const guven = guvenDuzeyi(deger, orneklem, g.birim, Boolean(kaynakTablo && kaliteKaynak.includes(kaynakTablo)));
     const e = h.get(g.kod); let renk: Sonuc['renk'] = null; let durum = deger === null ? 'Veri yok' : 'Başlangıç dönemi';
     if (e && deger !== null) { const kotu = (x: number) => (g.yon === 'dusuk' ? deger > x : deger < x); renk = e.kritik_esik !== null && kotu(Number(e.kritik_esik)) ? 'kirmizi' : e.uyari_esigi !== null && kotu(Number(e.uyari_esigi)) ? 'sari' : 'yesil'; durum = { yesil: 'Hedefte', sari: 'İnceleme gerekli', kirmizi: 'Kritik sapma' }[renk]; }
-    l.push({ kod: g.kod, ad: g.ad, tablo: g.tablo, deger, birim: g.birim, birimAdi: g.birimAdi, hedef: e?.hedef !== undefined && e?.hedef !== null ? Number(e.hedef) : null, renk, durum });
+    if (guven === 'Yetersiz veri') renk = null;
+    l.push({ kod: g.kod, ad: g.ad, tablo: g.tablo, deger, birim: g.birim, birimAdi: g.birimAdi, hedef: e?.hedef !== undefined && e?.hedef !== null ? Number(e.hedef) : null, renk, durum, guven, orneklem });
   }
   return l;
 }

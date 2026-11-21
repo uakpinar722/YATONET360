@@ -185,6 +185,13 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (a.length < 2) return [];
     return (await b.db.query(`SELECT kimlik, taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, telefon, eposta, durum, tckn, vergi_no FROM taraf WHERE lower(unvan_ad_soyad) LIKE '%' || lower($1) || '%' OR vergi_no = $1 OR tckn = $1 ORDER BY lower(unvan_ad_soyad) LIMIT 20`, [a])).rows.map((r) => ({ ...r, tckn: maskeTckn(r.tckn) }));
   });
+  // YG-518: taraf ana kaydının telefon ve e-posta geçmişi; güncel değer bildirim hedefidir, eski değerler kanıt olarak kalır.
+  s.get('/taraf/:no/iletisim-gecmisi', ihbarci, async (i, y) => {
+    const { no } = i.params as { no: string };
+    const t = (await b.db.query(`SELECT kimlik::text FROM taraf WHERE taraf_no = $1`, [no])).rows[0];
+    if (!t) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
+    return (await b.db.query(`SELECT tur, deger, kaynak, gecerli, bildirim_hedefi, olusturma_zamani, gecersiz_zamani FROM ana_iletisim_gecmisi WHERE kayit_turu = 'Taraf' AND kayit_ref = $1 ORDER BY tur, bildirim_hedefi DESC, olusturma_zamani DESC`, [t.kimlik])).rows;
+  });
   // YG-926: taraf pasife alınır (gerekçeyle); pasif yat sahibiyle yeni dosya açılmaz. Operasyon Müdürü veya Müşteri ve Paydaş İlişkileri Müdürü.
   s.post('/taraf/:no/pasif', ihbarci, async (i, y) => {
     const o = i.oturum!; const { no } = i.params as { no: string }; const g = (i.body ?? {}) as { pasif?: boolean; gerekce?: string };

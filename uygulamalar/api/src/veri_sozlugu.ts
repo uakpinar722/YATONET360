@@ -19,6 +19,32 @@ export function gosterimDenetimi(l = alanlar()): string[] {
 }
 const kucuk = (s: string) => s.toLocaleLowerCase('tr-TR');
 
+/**
+ * YG-1243: kalite eşiği zorunluluk tanımından, paylaşım bilgi sınıfından türetilir. Paylaşım, sistemin bilgi sınıfına göre uyguladığı
+ * davranıştır (belge.ts: Kurumsal dış kullanıcıya gösterilmez, Kritik yalnız isim bazlı erişim grubunda ve bağlantıyla paylaşılmaz).
+ */
+export const PAYLASIM: Record<string, string> = {
+  'Kamuya Açık': 'Herkese açık',
+  Kurumsal: 'Yalnız LGM içi; dış kullanıcıya gösterilmez',
+  Gizli: 'Yetkili LGM rolleri ve dosyanın ilgili tarafları',
+  Kritik: 'Yalnız isim bazlı erişim grubu; bağlantıyla paylaşılmaz',
+};
+export function kaliteEsigi(zorunlu: string): string {
+  if (zorunlu === 'Zorunlu' || zorunlu.startsWith('Sistem')) return 'Doluluk %100; doğrulama kuralına uyum %100';
+  if (zorunlu.startsWith('Koşullu')) return 'Koşul sağlandığında doluluk %100; doğrulama kuralına uyum %100';
+  return 'Doluluk eşiği yok; girilen değerde doğrulama kuralına uyum %100';
+}
+export const sozlukSatiri = (a: Alan) => ({ ...a, kaliteEsigi: kaliteEsigi(a.zorunlu), paylasim: PAYLASIM[a.sinif] ?? 'Tanımsız' });
+/** YG-1243: aynı teknik ad farklı varlıklarda farklı veri tipiyle tanımlanmışsa çelişki olarak listelenir (sistem alanları hariç). */
+export function kavramCeliskileri(l = alanlar()) {
+  const m = new Map<string, Map<string, Set<string>>>();
+  for (const a of l) {
+    if (SISTEM_ALANLARI.includes(a.teknik) || !a.tip) continue;
+    const t = m.get(a.teknik) ?? new Map<string, Set<string>>(); t.set(a.tip, (t.get(a.tip) ?? new Set<string>()).add(a.varlik)); m.set(a.teknik, t);
+  }
+  return [...m.entries()].filter(([, t]) => t.size > 1).map(([teknik, t]) => ({ teknik, tanimlar: [...t.entries()].map(([tip, v]) => ({ tip, varliklar: [...v] })) })).sort((x, y) => x.teknik.localeCompare(y.teknik, 'tr'));
+}
+
 /** YG-1243: ortak veri sözlüğü LGM-2026-014'ten okunur. YG-1179: kişisel veri envanteri varlık bazında; amaç ve hukuki sebep Hukuk tarafından girilir. */
 export function veriSozluguYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -31,7 +57,12 @@ export function veriSozluguYollari(s: FastifyInstance, b: Baglam) {
     if (q.length < 2) return y.code(400).send({ hata: 'En az iki harf yazınız.' });
     const ekran = String((i.query as { ekran?: string }).ekran ?? '');
     const l = alanlar().filter((a) => kucuk(`${a.alan} ${a.teknik} ${a.varlik}`).includes(q) && (!ekran || a.ekran.startsWith(ekran)));
-    return { toplam: l.length, satirlar: l.slice(0, 100) };
+    return { toplam: l.length, satirlar: l.slice(0, 100).map(sozlukSatiri) };
+  });
+  // Çelişki raporu alan adlarını (maliyet alanları dahil) listeler; yalnız veri sözlüğünü yöneten Hukuk ve Bilgi İşlem görür.
+  s.get('/veri-sozlugu/celiskiler', oturumlu, async (i, y) => {
+    if (!(await hukuk(i.oturum!.kullanici)) && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi IN ('Bilgi İşlem Müdürü', 'Sistem Yöneticisi')`, [i.oturum!.kullanici])).rowCount) return yok(y);
+    return kavramCeliskileri();
   });
 
   s.get('/veri-envanteri', oturumlu, async (i, y) => {

@@ -72,6 +72,17 @@ function VerbisEsik() {
     <button className="btn2" disabled={!tl} onClick={() => void istek<NonNullable<typeof v>>('/yillik-bilanco', { yil: v.yil, toplamTl: Number(tl.replace(/\./g, '').replace(',', '.')) }).then((r) => { setV(r); setTl(''); setM('Bilanço toplamı kaydedildi.'); }).catch((e) => setM(e.message))}>Bilanço Toplamını Kaydet</button></>;
 }
 
+/** YG-1316: zamanlanmış işlerin son çalışması; gecikme, çakışma ve hata görünür. */
+function ZamanlanmisIsler() {
+  type Z = { ad: string; etki: string; son_bitis: string | null; son_sure_ms: number | null; son_hata: string | null; cakisma_sayisi: number; gecikti: boolean };
+  const [l, setL] = useState<Z[] | null>(null);
+  useEffect(() => { void istek<Z[]>('/zamanlanmis-isler').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Zamanlanmış İşler</div>{l.length === 0 && <div className="ozet bos">Çalışma kaydı bulunmamaktadır.</div>}
+    {l.map((x) => <div className={x.gecikti || x.son_hata ? 'hata' : 'ozet'} key={x.ad}>{x.ad} · Son Bitiş: {x.son_bitis ? new Date(x.son_bitis).toLocaleString('tr-TR') : '—'}{x.son_sure_ms !== null ? ` · ${(x.son_sure_ms / 1000).toLocaleString('tr-TR')} sn` : ''}{x.gecikti ? ' · Gecikti' : ''}{x.cakisma_sayisi ? ` · Çakışma: ${x.cakisma_sayisi}` : ''}{x.son_hata ? ` · Hata: ${x.son_hata}` : ''}
+      {(x.gecikti || x.son_hata) && <div>Etkilenen çıktılar: {x.etki}</div>}</div>)}</>;
+}
+
 /** YG-1276, YG-1642, YG-1645: yedek kayıtları, başarısız yedeği olay kaydına bağlama ve geri yükleme testi kaydı. */
 function Yedekler() {
   type V = { yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null; olay_no: string | null }[]; testler: { tur: string; sonuc: string; kabul: string | null; zaman: string }[] };
@@ -109,6 +120,7 @@ export function KvkkEkrani() {
   return (<>
     <h1>KVKK ve Uyum</h1><Mesaj />
     <Yedekler />
+    <ZamanlanmisIsler />
     <UyumGorevleri />
     <VerbisEsik />
     <SaglayiciMatrisi />

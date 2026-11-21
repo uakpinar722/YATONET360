@@ -41,7 +41,7 @@ export function ParolaYenile({ belirtec, bitti }: { belirtec: string; bitti: () 
 }
 
 interface Izin { tur: string; amac: string | null; kanal: string | null; verildi: boolean }
-interface Profil { adSoyad: string; ePosta: string | null; telefon: string | null; dil: 'tr' | 'en'; kanal: string; dis: boolean; izinler: Izin[] }
+interface Profil { adSoyad: string; ePosta: string | null; telefon: string | null; dil: 'tr' | 'en'; kanal: string; dis: boolean; izinler: Izin[]; iletisimGecmisi: { tur: string; deger: string; baslangic: string; bitis: string }[] }
 
 const izinAdi = (z: Izin) => z.amac ?? z.kanal ?? z.tur.replace('Özel gün – ', '');
 
@@ -79,6 +79,11 @@ export function Profilim() {
         <dt>E-Posta</dt><dd>{p.ePosta ?? '—'}</dd>
         <dt>Cep Telefonu</dt><dd>{p.telefon ?? '—'}</dd>
       </dl></div>
+      {p.iletisimGecmisi.length > 0 && <>
+        <h2 className="ara">Önceki İletişim Bilgileri</h2>
+        <div className="not">Bildirimler yalnız güncel bilgilerinize gönderilir; önceki bilgiler geçmiş kayıtlarda kanıt olarak korunur.</div>
+        {p.iletisimGecmisi.map((x) => <div key={`${x.tur}${x.deger}${x.bitis}`}>{x.tur}: {x.deger} · {x.baslangic} – {x.bitis}</div>)}
+      </>}
 
       <h2 className="ara">Dil</h2>
       <div className="satir2">

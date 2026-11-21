@@ -11,6 +11,10 @@ afterAll(async () => { await o.kapat(); });
 describe('veri sözlüğü ve envanter (YG-1243, YG-1179)', () => {
   it('sözlük aranır; envanteri Hukuk görür ve tamamlar', async () => {
     const ds = await o.gir('ds'); const r = (await o.ist('GET', `/api/veri-sozlugu?q=${encodeURIComponent('Talep Sahibi Telefonu')}`, ds)).json(); expect(r.toplam).toBeGreaterThan(0); expect(r.satirlar[0]).toMatchObject({ kisisel: 'Evet', sahip: 'Dosya Sorumlusu' });
+    expect(r.satirlar[0]).toMatchObject({ kaliteEsigi: expect.stringContaining('%100'), paylasim: expect.any(String) }); // YG1243-ESIK
+    expect((await o.ist('GET', '/api/veri-sozlugu/celiskiler', ds)).statusCode).toBe(404);
+    const c = (await o.ist('GET', '/api/veri-sozlugu/celiskiler', await o.gir('hd'))).json() as { teknik: string; tanimlar: { tip: string }[] }[];
+    expect(c.every((x) => x.tanimlar.length > 1 && x.teknik !== 'kimlik')).toBe(true);
     expect((await o.ist('GET', '/api/veri-sozlugu?q=a', ds)).statusCode).toBe(400); expect((await o.ist('GET', '/api/veri-envanteri', ds)).statusCode).toBe(404);
     const hd = await o.gir('hd'); const l = (await o.ist('GET', '/api/veri-envanteri', hd)).json() as { varlik: string; alanSayisi: number; tamam: boolean }[]; expect(l.length).toBeGreaterThan(10); const v = l.find((x) => x.alanSayisi > 0)!;
     const G = { varlik: v.varlik, ilgiliKisi: 'Müşteri', kategori: 'İletişim', amac: 'Hizmet', hukuki: 'Sözleşme', alici: 'Sigorta', tedbir: 'Şifreleme' };

@@ -5,7 +5,7 @@ import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
-import { UUID } from './yat.js';
+import { tcknGecerli, UUID, vergiNoGecerli } from './yat.js';
 
 const GORUR = ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Bilgi İşlem Müdürü', 'Sistem Yöneticisi', 'Hukuk ve Uyum Direktörü', 'CEO', 'Genel Müdür Yardımcısı', 'Muhasebe ve Finans Müdürü'];
 const DUZENLER = ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Bilgi İşlem Müdürü'];
@@ -28,6 +28,24 @@ export async function envanterIsle(db: Pool): Promise<number> {
  * YG-1315: toplu dosya aktarımı; beyan edilen kayıt sayısı ve SHA-256 özeti içerikle, şema sürümü beklenenle karşılaştırılır; uyuşmazlıkta dosya bütünüyle karantinaya alınır.
  * Satırlar tek tek doğrulanır (dış kimlik zorunlu, tekrar yasak); kısmi başarıda kabul edilen ve reddedilen satırlar ayrı raporlanır.
  */
+/**
+ * YG-1250: alan girişinde uygulanan kalite kuralları toplu aktarımda da satır bazında uygulanır (alan adına göre). Boş alan atlanır;
+ * hatalı değer otomatik düzeltilmez, satır gerekçesiyle reddedilir ve kaynak içerik değiştirilmeden saklanır.
+ */
+export function satirAlanHatasi(s: Record<string, unknown>): string | null {
+  for (const [k, ham] of Object.entries(s)) {
+    if (ham === null || ham === undefined || (typeof ham === 'string' && !ham.trim())) continue;
+    const v = typeof ham === 'string' ? ham.trim() : ham;
+    if (/e_?posta/.test(k) && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(v))) return `E-posta geçersiz (${k})`;
+    if (/telefon/.test(k) && !/^\+?[0-9 ()-]{10,20}$/.test(String(v))) return `Telefon geçersiz (${k})`;
+    if (k === 'tckn' && !tcknGecerli(String(v))) return 'T.C. Kimlik Numarası geçersiz';
+    if (k === 'vergi_no' && !vergiNoGecerli(String(v))) return 'Vergi numarası geçersiz';
+    if (/(^tarih|_tarihi|_zamani)$/.test(k) && Number.isNaN(Date.parse(String(v)))) return `Tarih okunamadı (${k})`;
+    if (/(tutar|_eur$|_tl$|fiyat)/.test(k) && !(typeof v === 'number' ? Number.isFinite(v) && v >= 0 : /^[0-9]+(\.[0-9]+)?$/.test(String(v)))) return `Tutar geçersiz (${k})`;
+  }
+  return null;
+}
+
 export function topluDogrula(g: { beyanSayi: number; beyanOzet: string; semaSurumu: string; beklenenSema: string | null; icerik: string }) {
   const ozet = createHash('sha256').update(g.icerik, 'utf8').digest('hex');
   let satirlar: Record<string, unknown>[] = [];
@@ -38,7 +56,8 @@ export function topluDogrula(g: { beyanSayi: number; beyanOzet: string; semaSuru
   const red: { sira: number; neden: string }[] = []; const gorulen = new Set<string>();
   satirlar.forEach((s, i) => {
     const k = s && typeof s === 'object' ? String((s as { dis_kimlik?: unknown }).dis_kimlik ?? '').trim() : '';
-    if (!k) red.push({ sira: i + 1, neden: 'Dış kimlik yok' }); else if (gorulen.has(k)) red.push({ sira: i + 1, neden: 'Tekrarlanan dış kimlik' }); else gorulen.add(k);
+    const h = s && typeof s === 'object' ? satirAlanHatasi(s as Record<string, unknown>) : 'Satır okunamadı';
+    if (!k) red.push({ sira: i + 1, neden: 'Dış kimlik yok' }); else if (gorulen.has(k)) red.push({ sira: i + 1, neden: 'Tekrarlanan dış kimlik' }); else if (h) red.push({ sira: i + 1, neden: h }); else gorulen.add(k);
   });
   return { sonuc: red.length ? ('Kısmi Kabul' as const) : ('Kabul' as const), neden: null, ozet, sayi: satirlar.length, kabul: satirlar.length - red.length, red };
 }
