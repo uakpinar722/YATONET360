@@ -409,6 +409,29 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).toBe('Uygulama');
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBeGreaterThan(0);
   });
+  it('karar sözlükten; Sınırlı Yetki teklifi bekletir; Koşullu Onay şart doğrulanınca Uygulama ve BLD-38 (YG-154)', async () => {
+    const { d, t } = await gonder(); const c = await o.gir('ds'); const u = `/api/teklif/${t.kimlik}/sigorta-karar`;
+    const ob = await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`);
+    expect((await o.ist('POST', u, c, { karar: 'Beklemede', kanal: 'KEP', belge: ob, yetkili: 'Y' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { karar: 'Sınırlı Yetki', kanal: 'KEP', belge: ob, yetkili: 'Y', onaylananSiralar: [1] })).statusCode).toBe(400);
+    const s = await o.ist('POST', u, c, { karar: 'Sınırlı Yetki', kanal: 'KEP', belge: ob, yetkili: 'Y', onaylananSiralar: [1], sart: 'Yalnız su tahliyesi ve örtü' }); expect(s.statusCode, s.body).toBe(200);
+    expect(s.json()).toMatchObject({ durum: 'Sınırlı Yetki', onaylananTutar: 130 });
+    expect((await o.sup.query(`SELECT statu FROM fiyat_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].statu).toBe('Gönderildi');
+    expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).not.toBe('Uygulama');
+    expect(await o.kart('Sınırlı Yetki', t.kimlik)).toBeDefined();
+    expect((await o.ist('POST', u, c, { karar: 'Koşullu Onay', kanal: 'KEP', belge: ob, yetkili: 'Y' })).statusCode).toBe(400);
+    const k = await o.ist('POST', u, c, { karar: 'Koşullu Onay', kanal: 'KEP', belge: ob, yetkili: 'Y', sart: 'Eksper ikinci keşfi' }); expect(k.statusCode, k.body).toBe(200);
+    expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).not.toBe('Uygulama');
+    expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBe(0);
+    expect(await o.kart('Koşullu Onay Şartı', t.kimlik)).toBeDefined();
+    expect((await o.ist('GET', `/api/teklif/${t.kimlik}/eksper-karsilastirma`, c)).json().kosullar.map((x: { karar: string }) => x.karar)).toEqual(['Sınırlı Yetki', 'Koşullu Onay']);
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, await o.gir('oy'), { belge: ob })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, c, {})).statusCode).toBe(400);
+    const v = await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, c, { belge: await o.belge(d.kimlik, 'ds', `Şart ${Math.random()}`) }); expect(v.statusCode, v.body).toBe(200);
+    expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).toBe('Uygulama');
+    expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBeGreaterThan(0);
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, c, { belge: ob })).statusCode).toBe(409);
+  });
   it('kısmi onayda kalem silinmez, işaretlenir; iş emrine yalnız onaylılar geçer; onaylanmayanlar için görev açılır', async () => {
     const { d, t } = await gonder();
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Kısmi Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' })).statusCode).toBe(400);

@@ -198,6 +198,22 @@ async function bas(html: string): Promise<Buffer> {
   } finally { await s.close(); }
 }
 
+/** YG-1170: görseldeki firma adı, logo ve imza alanları (0–1 oranlı dikdörtgen) siyahla kapatılır; çıktı PNG'dir. */
+export async function gorselMaskele(veri: Buffer, mime: string, alanlar: { x: number; y: number; w: number; h: number }[]): Promise<Buffer> {
+  const s = await (await tarayiciAl()).newPage();
+  try {
+    const url = await s.evaluate(async ({ src, alanlar }) => {
+      const d = globalThis as unknown as { Image: new () => { src: string; decode(): Promise<void>; naturalWidth: number; naturalHeight: number }; document: { createElement(t: string): { width: number; height: number; getContext(t: string): { drawImage(g: unknown, x: number, y: number): void; fillStyle: string; fillRect(x: number, y: number, w: number, h: number): void }; toDataURL(t: string): string } } };
+      const g = new d.Image(); g.src = src; await g.decode();
+      const c = d.document.createElement('canvas'); c.width = g.naturalWidth; c.height = g.naturalHeight;
+      const x = c.getContext('2d'); x.drawImage(g, 0, 0); x.fillStyle = '#000';
+      for (const a of alanlar) x.fillRect(Math.floor(a.x * c.width), Math.floor(a.y * c.height), Math.ceil(a.w * c.width), Math.ceil(a.h * c.height));
+      return c.toDataURL('image/png');
+    }, { src: `data:${mime};base64,${veri.toString('base64')}`, alanlar });
+    return Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
+  } finally { await s.close(); }
+}
+
 export const sayfaSayisi = (pdf: Buffer) => (pdf.toString('latin1').match(/\/Type\s*\/Page\b/g) ?? []).length;
 
 /** YG-665…YG-677: ortak A4 şablon. 5 sayfayı aşınca kapak, raporda İçindekiler eklenir; sayfa numaraları ölçülerek yazılır. */

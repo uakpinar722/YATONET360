@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import { Readable } from 'node:stream';
+import { gorselMaskele } from './pdf.js';
 import type { Pool, PoolClient } from 'pg';
 import { birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
@@ -374,18 +376,33 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-458: ilerleme fotoğrafını Dosya Sorumlusu veya dosyadaki teknik ekip onaylayıp portala açar; fotoğraf dosyaya ya da dosyanın iş emrine bağlı olmalıdır.
-  const FOTO = /\.(jpe?g|png|webp|heic|mp4|mov)$/i; // YG-462: fotoğrafla birlikte video kanıtı da yayımlanır; PDF ve diğer belgelerde firma adı/logosu olabileceğinden yayımlanmaz
+  // YG-462: fotoğraf, video ve PDF kanıtı yayımlanır. YG-1170: firma adı, logosu ve imzası fotoğrafta alan kapatılarak gizlenir; PDF ve videoda (alan kapatılamaz) yayımlayan görünmediğini teyit eder.
+  const FOTO = /\.(jpe?g|png|webp|heic|mp4|mov|pdf)$/i; const MASKELENIR = /\.(jpe?g|png|webp)$/i;
+  const MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
   const fotoYetkili = async (dosyaRef: string, k: string) => Boolean((await b.db.query(`SELECT 1 FROM dosya d WHERE d.kimlik = $1 AND d.dosya_sorumlusu_ref = $2 UNION SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = $1 AND a.kullanici_ref = $2 AND a.bitis_zamani IS NULL AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Saha Sorumlusu') LIMIT 1`, [dosyaRef, k])).rowCount);
   s.post('/dosya/:id/ilerleme-fotografi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belge?: string; aciklama?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belge?: string; aciklama?: string; maske?: { x: number; y: number; w: number; h: number }[]; teyit?: boolean };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await fotoYetkili(id, o.kullanici))) return y.code(403).send({ hata: 'Fotoğrafı Dosya Sorumlusu veya dosyadaki teknik ekip onaylar.' });
+    const oran = (v: unknown) => typeof v === 'number' && v >= 0 && v <= 1;
+    const alanlar = Array.isArray(g.maske) ? g.maske.filter((a) => a && oran(a.x) && oran(a.y) && oran(a.w) && oran(a.h) && a.w > 0 && a.h > 0 && a.x + a.w <= 1.0001 && a.y + a.h <= 1.0001) : [];
+    if ((g.maske !== undefined && (!Array.isArray(g.maske) || alanlar.length !== g.maske.length)) || alanlar.length > 30) return y.code(400).send({ hata: 'Kapatılacak alanlar geçersizdir.' });
     if (!g.belge || !UUID.test(g.belge) || !g.aciklama?.trim()) return y.code(400).send({ hata: 'Fotoğraf ve açıklama zorunludur.' });
-    const s0 = (await b.db.query(`SELECT s.kimlik, s.dosya_adi FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik AND s.durum NOT IN ('İptal', 'Yerine Geçti', 'Arşiv') WHERE e.kimlik = $1 AND e.imha_zamani IS NULL AND e.bilgi_sinifi <> 'Kritik' AND ((e.bag_turu = 'Dosya' AND e.bag_kimligi = $2::text) OR (e.bag_turu = 'İş Emri' AND e.bag_kimligi IN (SELECT kimlik::text FROM is_emri WHERE dosya_ref = $3))) ORDER BY s.surum_no DESC LIMIT 1`, [g.belge, id, id])).rows[0];
+    const s0 = (await b.db.query(`SELECT s.kimlik, s.dosya_adi, s.depo_anahtari FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik AND s.durum NOT IN ('İptal', 'Yerine Geçti', 'Arşiv') WHERE e.kimlik = $1 AND e.imha_zamani IS NULL AND e.bilgi_sinifi <> 'Kritik' AND ((e.bag_turu = 'Dosya' AND e.bag_kimligi = $2::text) OR (e.bag_turu = 'İş Emri' AND e.bag_kimligi IN (SELECT kimlik::text FROM is_emri WHERE dosya_ref = $3))) ORDER BY s.surum_no DESC LIMIT 1`, [g.belge, id, id])).rows[0];
     if (!s0) return y.code(404).send({ hata: 'Fotoğraf bu dosyada bulunamadı.' });
-    if (!FOTO.test(s0.dosya_adi)) return y.code(400).send({ hata: 'Yalnız fotoğraf veya video paylaşılabilir.' });
-    const r = await b.db.query(`INSERT INTO portal_ilerleme_fotografi (dosya_ref, surum_ref, aciklama, onaylayan_ref) VALUES ($1,$2,$3,$4) ON CONFLICT (dosya_ref, surum_ref) DO UPDATE SET aciklama = EXCLUDED.aciklama, onaylayan_ref = EXCLUDED.onaylayan_ref, onay_zamani = now(), kaldiran_ref = NULL, kaldirma_zamani = NULL RETURNING kimlik`, [id, s0.kimlik, g.aciklama.trim(), o.kullanici]);
-    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İlerleme Fotoğrafı Paylaşıldı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { surum: s0.kimlik }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    if (!FOTO.test(s0.dosya_adi)) return y.code(400).send({ hata: 'Yalnız fotoğraf, video veya PDF paylaşılabilir.' });
+    if (alanlar.length && !MASKELENIR.test(s0.dosya_adi)) return y.code(400).send({ hata: 'Alan kapatma yalnız fotoğrafta yapılır; PDF ve videoda firma adı, logosu ve imzası kapatılmış sürümü yükleyip teyit ediniz.' });
+    if (!alanlar.length && g.teyit !== true) return y.code(400).send({ hata: 'Firma adı, logosu veya imzası görünüyorsa alanları kapatınız; görünmüyorsa teyit ediniz.' });
+    let maskeli: string | null = null;
+    if (alanlar.length) {
+      const depo = b.depo ?? new Depo(); const parca: Buffer[] = [];
+      for await (const x of depo.bagla(s0.depo_anahtari) as AsyncIterable<Buffer>) parca.push(x);
+      let cikti: Buffer;
+      try { cikti = await gorselMaskele(Buffer.concat(parca), MIME[(s0.dosya_adi as string).split('.').pop()!.toLowerCase()]!, alanlar); } catch { return y.code(400).send({ hata: 'Görsel okunamadı; alanları kapatılmış sürümü yükleyiniz.' }); }
+      const al = await depo.al(Readable.from([cikti]), 100 * 1024 * 1024); maskeli = depo.yerlestir(al.yol, al.ozet);
+    }
+    const r = await b.db.query(`INSERT INTO portal_ilerleme_fotografi (dosya_ref, surum_ref, aciklama, onaylayan_ref, maske, maskeli_anahtar, maske_teyidi) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (dosya_ref, surum_ref) DO UPDATE SET aciklama = EXCLUDED.aciklama, onaylayan_ref = EXCLUDED.onaylayan_ref, onay_zamani = now(), kaldiran_ref = NULL, kaldirma_zamani = NULL, maske = EXCLUDED.maske, maskeli_anahtar = EXCLUDED.maskeli_anahtar, maske_teyidi = EXCLUDED.maske_teyidi RETURNING kimlik`, [id, s0.kimlik, g.aciklama.trim(), o.kullanici, alanlar.length ? JSON.stringify(alanlar) : null, maskeli, !alanlar.length]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İlerleme Fotoğrafı Paylaşıldı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { surum: s0.kimlik, kapatilanAlan: alanlar.length, teyit: !alanlar.length }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.rows[0].kimlik };
   });
   s.post('/ilerleme-fotografi/:id/kaldir', oturumlu, async (i, y) => {
@@ -400,13 +417,14 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   s.get('/portal/fotograf/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
-    const f = (await b.db.query(`SELECT f.dosya_ref, s.dosya_adi, s.depo_anahtari FROM portal_ilerleme_fotografi f JOIN belge_surum s ON s.kimlik = f.surum_ref JOIN belge e ON e.kimlik = s.belge_ref WHERE f.kimlik = $1 AND f.kaldirma_zamani IS NULL AND e.imha_zamani IS NULL`, [id])).rows[0];
+    const f = (await b.db.query(`SELECT f.dosya_ref, s.dosya_adi, s.depo_anahtari, f.maskeli_anahtar FROM portal_ilerleme_fotografi f JOIN belge_surum s ON s.kimlik = f.surum_ref JOIN belge e ON e.kimlik = s.belge_ref WHERE f.kimlik = $1 AND f.kaldirma_zamani IS NULL AND e.imha_zamani IS NULL`, [id])).rows[0];
     // YG-460: dosyanın sigorta şirketinin kullanıcısı veya dosyadaki eksper de görür.
     const sigortaGorur = async () => Boolean((await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi s JOIN sigorta_kullanici u ON lower(u.sigortaci_adi) = lower(s.sigortaci_adi) WHERE s.dosya_ref = $1 AND u.kullanici_ref = $2 UNION SELECT 1 FROM dosya_tarafi e WHERE e.dosya_ref = $1 AND e.taraf_rolu = 'Eksper' AND e.kullanici_ref = $2 AND e.aktif`, [f?.dosya_ref, o.kullanici])).rowCount);
     if (!f || !((await musteriMi(f.dosya_ref, o.kullanici)) || (await sigortaGorur()))) return yok(y);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge İndirildi', nesneTuru: 'İlerleme Fotoğrafı', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
-    const uz = (f.dosya_adi as string).match(FOTO)![1]!.toLowerCase();
-    return y.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; filename="ilerleme-${id.slice(0, 8)}.${uz}"`).header('x-content-type-options', 'nosniff').send((b.depo ?? new Depo()).bagla(f.depo_anahtari));
+    // YG-1170: alanı kapatılmış görselde yalnız kapatılmış kopya verilir.
+    const uz = f.maskeli_anahtar ? 'png' : (f.dosya_adi as string).match(FOTO)![1]!.toLowerCase();
+    return y.header('content-type', 'application/octet-stream').header('content-disposition', `attachment; filename="ilerleme-${id.slice(0, 8)}.${uz}"`).header('x-content-type-options', 'nosniff').send((b.depo ?? new Depo()).bagla(f.maskeli_anahtar ?? f.depo_anahtari));
   });
 
   // YG-079: tam ziyada onarım teslimi olmaz; yat, teslim alan kişi ve kapanış hesabı görülerek ayrı adımla bırakılır.

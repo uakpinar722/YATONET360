@@ -1,0 +1,2 @@
+-- YG-154: Koşullu Onayda şart, Sınırlı Yetkide izin verilen ön/koruyucu işlem kalemleri ve şartın doğrulanması.
+ALTER TABLE sigorta_onayi ADD COLUMN IF NOT EXISTS sart text, ADD COLUMN IF NOT EXISTS izinli_siralar integer[], ADD COLUMN IF NOT EXISTS sart_dogrulama_zamani timestamptz, ADD COLUMN IF NOT EXISTS sart_dogrulayan_ref text REFERENCES kullanici_hesabi (kimlik), ADD COLUMN IF NOT EXISTS sart_dogrulama_belgesi_ref uuid REFERENCES belge (kimlik);

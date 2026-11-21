@@ -18,6 +18,8 @@ import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DosyaDestek } from './Destek';
+import { PortalaAc } from './PortalaAc';
+import { DurumBoyutlari } from './DurumBoyutlari';
 import { YatGecmisi } from './YatGecmis';
 import { KilometreTaslari } from './Kilometre';
 import { KislikSorumlusu } from './Kislik';
@@ -194,7 +196,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   const [bg, setBg] = useState(''); // YG-1867
   const [yd, setYd] = useState({ mevcut: '', yeni: '' }); // YG-1864
   const [islak, setIslak] = useState(''); // YG-1433
-  const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null); const [pf, setPf] = useState({ belge: '', aciklama: '' });
+  const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null);
   const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
   const yp = () => istek<typeof parca>(`/dosya/${id}/sokulen-parca`).then(setParca);
   useEffect(() => { void yp().catch(() => {}); }, [id]);
@@ -230,6 +232,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <Randevular dosya={id} />
     <IletisimBilgisi dosya={id} />
     <IcIlerleme dosya={id} />
+    <DurumBoyutlari dosya={id} />
     <IlkKapsam dosya={id} />
     <KatalogReferansi dosya={id} />
     <YatKarada dosya={id} />
@@ -241,10 +244,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />
     <GonderimDurumu id={id} />
-    <div className="bolum">İlerleme Fotoğrafını Portala Aç</div>
-    <BelgeSec ad="İlerleme Fotoğrafı" bagTuru="Dosya" bagKimligi={id} deger={pf.belge} sec={(x) => setPf({ ...pf, belge: x })} />
-    <label htmlFor="pf-a">Yat Sahibinin Göreceği Açıklama</label><input id="pf-a" value={pf.aciklama} onChange={(e) => setPf({ ...pf, aciklama: e.target.value })} />
-    <button className="btn2 kucuk" disabled={!pf.belge || !pf.aciklama.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/ilerleme-fotografi`, pf), 'Fotoğraf yat sahibi portalına açıldı.').then(() => setPf({ belge: '', aciklama: '' }))}>Portala Aç</button>
+    <PortalaAc dosya={id} />
     <TeslimAlici dosya={id} />
     <div className="bolum">Teslim</div>
     <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/teslime-hazir`, {}), 'Hazır bildirimi gönderildi; 7 gün başladı.')}>Teslime Hazır Bildir</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/teslim-hatirlat`, {}), 'Tek hatırlatma gönderildi.')}>Tutanak Hatırlat</button><button className="btn2 kucuk" onClick={() => void yap(() => istek<Record<string, number>>(`/dosya/${id}/kapanis-hesabi`).then(setHs))}>Kapanış Hesabı</button></div>
@@ -316,20 +316,26 @@ function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
 /** YG-456: Ticari İşler Direktörü mutabakat raporunu gönderir; ikili teyit sonrası itiraz süresi başlar. */
 /** YG-569, YG-570: dış kanaldan gelen talimat ve kararların özgün metinle kaydı; aktaranın notu ayrı. */
 export function TalimatKayitlari({ id }: { id: string }) {
-  const [l, setL] = useState<{ kimlik: string; kanal: string; tur: string; gonderen: string; alinma_zamani: string; ozgun_metin: string; aktaran_notu: string | null; kaydeden: string }[]>([]);
-  const [f, setF] = useState({ kanal: 'E-posta', tur: 'Talimat', gonderen: '', zaman: '', metin: '', not: '' }); const [bl, setBl] = useState(''); const [m, setM] = useState('');
-  const yk = () => istek<typeof l>(`/dosya/${id}/talimatlar`).then(setL).catch(() => setL([]));
+  const [l, setL] = useState<{ kimlik: string; kanal: string; tur: string; gonderen: string; alinma_zamani: string; ozgun_metin: string; aktaran_notu: string | null; kaydeden: string; kaynak_yetkili: boolean; kaynak_sonucu: string | null; kaynak_notu: string | null; kaynak_rolu: string | null }[]>([]);
+  const [taraflar, setTaraflar] = useState<{ kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string }[]>([]); const [kd, setKd] = useState<Record<string, string>>({});
+  const [f, setF] = useState({ kanal: 'E-posta', tur: 'Talimat', gonderen: '', zaman: '', metin: '', not: '', kaynakTaraf: '' }); const [bl, setBl] = useState(''); const [m, setM] = useState('');
+  const yk = () => istek<{ kayitlar: typeof l; taraflar: typeof taraflar }>(`/dosya/${id}/talimatlar?taraflar=1`).then((r) => { setL(r.kayitlar); setTaraflar(r.taraflar); }).catch(() => setL([]));
+  const kaynak = (t: string, sonuc: string) => void istek(`/talimat/${t}/kaynak`, { sonuc, not: kd[t] ?? '' }).then(() => { setM('Kaynak işlemi kaydedildi.'); return yk(); }).catch((e) => setM(e.message));
   useEffect(() => { void yk(); }, [id]);
   return <Blok baslik="Talimat ve Karar Kayıtları">{m && <div className="not" role="status">{m}</div>}
-    {l.map((x) => <div className="soru" key={x.kimlik}><span><b>{x.tur}</b> · {x.kanal} · {x.gonderen} · {new Date(x.alinma_zamani).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}<div>“{x.ozgun_metin}”</div>{x.aktaran_notu && <div className="not">Aktaranın notu: {x.aktaran_notu}</div>}<div className="not">Kaydeden: {x.kaydeden}</div></span></div>)}
+    {l.map((x) => <div className="soru" key={x.kimlik}><span><b>{x.tur}</b> · {x.kanal} · {x.gonderen} · {new Date(x.alinma_zamani).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}<div>“{x.ozgun_metin}”</div>{x.aktaran_notu && <div className="not">Aktaranın notu: {x.aktaran_notu}</div>}<div className="not">Kaydeden: {x.kaydeden}{x.kaynak_rolu ? ` · Kaynak: ${x.kaynak_rolu}` : ''}</div>
+      {x.tur !== 'Bilgi' && !x.kaynak_yetkili && (x.kaynak_sonucu ? <div className="not">Yetkisiz kaynak · {x.kaynak_sonucu}: {x.kaynak_notu}</div> : <><div className="hata">Yetkisiz kaynak: doğrulanmadan aşama geçilemez.</div>
+        <label htmlFor={`tk-d-${x.kimlik}`}>Yetkili Taraftan Alınan Teyit veya Gerekçe</label><input id={`tk-d-${x.kimlik}`} value={kd[x.kimlik] ?? ''} onChange={(e) => setKd({ ...kd, [x.kimlik]: e.target.value })} />
+        <div className="dugmeler"><button className="btn2 kucuk" disabled={!kd[x.kimlik]?.trim()} onClick={() => kaynak(x.kimlik, 'Doğrulandı')}>Doğrulandı</button><button className="btn2 kucuk" disabled={!kd[x.kimlik]?.trim()} onClick={() => kaynak(x.kimlik, 'Dikkate Alınmadı')}>Dikkate Alınmadı</button></div></>)}</span></div>)}
     <label htmlFor="tk-k">Kanal</label><select id="tk-k" value={f.kanal} onChange={(e) => setF({ ...f, kanal: e.target.value })}>{['E-posta', 'Telefon', 'SMS', 'WhatsApp', 'WhatsApp Grubu', 'Yüz Yüze', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="tk-t">Kayıt Türü</label><select id="tk-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Talimat', 'Karar', 'Bilgi'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="tk-g">Gönderen</label><input id="tk-g" value={f.gonderen} onChange={(e) => setF({ ...f, gonderen: e.target.value })} />
+    <label htmlFor="tk-s">Gönderenin Dosyadaki Tarafı</label><select id="tk-s" value={f.kaynakTaraf} onChange={(e) => setF({ ...f, kaynakTaraf: e.target.value })}><option value="">Dosyada Kayıtlı Değil</option>{taraflar.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.taraf_rolu} · {x.kisi_adi_soyadi}</option>)}</select>
     <label htmlFor="tk-z">Alınma Zamanı</label><input id="tk-z" type="datetime-local" value={f.zaman} onChange={(e) => setF({ ...f, zaman: e.target.value })} />
     <label htmlFor="tk-m">Özgün İleti (Değiştirmeden)</label><textarea id="tk-m" value={f.metin} onChange={(e) => setF({ ...f, metin: e.target.value })} />
     <BelgeSec ad="Ekran Görüntüsü veya İleti Belgesi (Varsa)" bagTuru="Dosya" bagKimligi={id} deger={bl} sec={setBl} />
     <label htmlFor="tk-n">Aktaranın Notu (İsteğe Bağlı)</label><input id="tk-n" value={f.not} onChange={(e) => setF({ ...f, not: e.target.value })} />
-    <button className="btn2 kucuk" disabled={!f.gonderen.trim() || !f.zaman || !f.metin.trim()} onClick={() => void istek(`/dosya/${id}/talimat`, { ...f, zaman: new Date(f.zaman).toISOString(), belge: bl || undefined, not: f.not || undefined }).then(() => { setF({ ...f, gonderen: '', zaman: '', metin: '', not: '' }); setBl(''); setM('Kayıt eklendi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button>
+    <button className="btn2 kucuk" disabled={!f.gonderen.trim() || !f.zaman || !f.metin.trim()} onClick={() => void istek<{ kaynakYetkili: boolean }>(`/dosya/${id}/talimat`, { ...f, zaman: new Date(f.zaman).toISOString(), belge: bl || undefined, not: f.not || undefined, kaynakTaraf: f.kaynakTaraf || undefined }).then((r) => { setF({ ...f, gonderen: '', zaman: '', metin: '', not: '', kaynakTaraf: '' }); setBl(''); setM(r.kaynakYetkili || f.tur === 'Bilgi' ? 'Kayıt eklendi.' : 'Kayıt eklendi. Kaynak yetkili değildir; doğrulanana kadar aşama geçilemez.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button>
   </Blok>;
 }
 

@@ -389,6 +389,18 @@ describe('aşama kapıları (YG-065, YG-1468)', () => {
     expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.kimlik])).rows[0].n).toBe(1);
     await ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { tahrik: 'Çift dizel' });
     await sup.query(`INSERT INTO kesif (dosya_ref, amac_kapsam, planlanan_baslangic, planlanan_bitis, sorumlu_ref, durum, olusturan_ref) VALUES ($1,'Sınama',now(),now() + interval '1 hour',$2,'Tamamlandı',$2)`, [d.kimlik, K.tu]);
+    { // YG-158: yetkisiz kaynaktan gelen karar doğrulanmadan kapı geçilmez; yat sahibinden gelen kilitlemez
+      const ys = (await sup.query(`SELECT kimlik FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [d.kimlik])).rows[0].kimlik;
+      const z = new Date(Date.now() - 3_600_000).toISOString();
+      expect((await ist('POST', `/api/dosya/${d.kimlik}/talimat`, c, { kanal: 'E-posta', tur: 'Talimat', gonderen: 'Yat sahibi', zaman: z, metin: 'Devam', kaynakTaraf: ys })).json().kaynakYetkili).toBe(true);
+      const yk = await ist('POST', `/api/dosya/${d.kimlik}/talimat`, c, { kanal: 'WhatsApp', tur: 'Karar', gonderen: 'Marina personeli', zaman: z, metin: 'Yat taşınsın' }); expect(yk.json().kaynakYetkili).toBe(false);
+      expect((await sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Yetkisiz Kaynak Talimatı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.kimlik])).rowCount).toBe(1);
+      const r1 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teklif', gerekce: 'Keşif bitti' }); expect(r1.statusCode).toBe(409); expect(r1.json().hata).toContain('Yetkisiz kaynak');
+      expect((await ist('POST', `/api/talimat/${yk.json().kimlik}/kaynak`, await gir('tu'), { sonuc: 'Doğrulandı', not: 'x' })).statusCode).not.toBe(200);
+      expect((await ist('POST', `/api/talimat/${yk.json().kimlik}/kaynak`, c, { sonuc: 'Doğrulandı' })).statusCode).toBe(400);
+      { const x = await ist('POST', `/api/talimat/${yk.json().kimlik}/kaynak`, c, { sonuc: 'Dikkate Alınmadı', not: 'Yat sahibi telefonda teyit etmedi' }); expect(x.statusCode, x.body).toBe(200); }
+      expect((await sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Yetkisiz Kaynak Talimatı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.kimlik])).rowCount).toBe(0);
+    }
     expect((await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teklif', gerekce: 'Keşif bitti' })).statusCode).toBe(200);
     expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [d.kimlik])).rows[0].n).toBe(0);
   });
@@ -503,6 +515,19 @@ describe('arama ve erişim', () => {
     const o = ckr(await ist('POST', '/api/kimlik/dogrula', c, { kod: sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0] }));
     expect((await ist('GET', '/api/dosya', o)).statusCode).toBe(403);
     expect((await ist('GET', '/api/ihbar', o)).statusCode).toBe(403);
+  });
+});
+
+describe('durum boyutları (YG-005)', () => {
+  it('boyutlar kayıtlardan hesaplanır; engelleyen boyut tek tanımdan gelir; dış rol göremez', async () => {
+    const d = await dosyaAc(); await ekipKur(d.kimlik); const c = await gir('ds');
+    const r = await ist('GET', `/api/dosya/${d.kimlik}/durum-boyutlari`, c); expect(r.statusCode, r.body).toBe(200);
+    const m = Object.fromEntries(r.json().map((x: { boyut: string }) => [x.boyut, x]));
+    expect(Object.keys(m)).toEqual(['Müşteri Onayı', 'Satın Alma', 'Teknik İlerleme', 'Kalite', 'Ödeme', 'Kapanış']);
+    expect(m['Müşteri Onayı'].durum).toBe('Başlamadı'); expect(m['Satın Alma'].durum).toBe('Gerekmez');
+    expect(m['Teknik İlerleme'].engelleyenler).toEqual(['Müşteri Onayı']);
+    expect(m['Kapanış'].engelleyenler).toEqual(['Teknik İlerleme', 'Kalite', 'Ödeme']);
+    const { ENGELLER } = await import('../src/durum_boyutlari.js'); expect(ENGELLER['Kapanış'].engelleyen).toContain('Satın Alma');
   });
 });
 

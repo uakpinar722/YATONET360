@@ -839,7 +839,9 @@ describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
     const u = `/api/dosya/${d.kimlik}/ilerleme-fotografi`;
     expect((await o.ist('POST', u, await o.gir('oy'), { belge: foto, aciklama: 'Laminasyon tamamlandı' })).statusCode).toBe(403);
     expect((await o.ist('POST', u, await o.gir('tu'), { belge: pdf, aciklama: 'R' })).statusCode).toBe(400);
-    const r = await o.ist('POST', u, await o.gir('tu'), { belge: foto, aciklama: 'Laminasyon tamamlandı' }); expect(r.statusCode, r.body).toBe(200);
+    // YG-1170: teyit veya alan kapatma olmadan yayımlanmaz.
+    expect((await o.ist('POST', u, await o.gir('tu'), { belge: foto, aciklama: 'Laminasyon tamamlandı' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, await o.gir('tu'), { belge: foto, aciklama: 'Laminasyon tamamlandı', teyit: true }); expect(r.statusCode, r.body).toBe(200);
     const c = await o.gir('iks');
     const pr = await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c); expect(pr.statusCode, pr.body).toBe(200); const p = pr.json();
     expect(p.fotograflar.map((x: { aciklama: string }) => x.aciklama)).toEqual(['Laminasyon tamamlandı']);
@@ -851,8 +853,18 @@ describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
     expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c)).json().fotograflar).toEqual([]);
     // YG-462: video kanıtı da yayımlanır; indirilen adda firma adı yoktur.
     const vid = await o.belge(d.kimlik, 'ds', 'Firma X Deniz Denemesi', 'mp4');
-    const rv = await o.ist('POST', u, await o.gir('ds'), { belge: vid, aciklama: 'Deniz denemesi' }); expect(rv.statusCode, rv.body).toBe(200);
+    expect((await o.ist('POST', u, await o.gir('ds'), { belge: vid, aciklama: 'Deniz denemesi', maske: [{ x: 0, y: 0, w: 0.5, h: 0.5 }] })).statusCode).toBe(400);
+    const rv = await o.ist('POST', u, await o.gir('ds'), { belge: vid, aciklama: 'Deniz denemesi', teyit: true }); expect(rv.statusCode, rv.body).toBe(200);
     const iv = await o.ist('GET', `/api/portal/fotograf/${rv.json().kimlik}`, c); expect(iv.headers['content-disposition']).toMatch(/ilerleme-.*\.mp4/);
+    // YG-462: PDF kanıtı teyitle yayımlanır.
+    const rp = await o.ist('POST', u, await o.gir('ds'), { belge: pdf, aciklama: 'Test raporu', teyit: true }); expect(rp.statusCode, rp.body).toBe(200);
+    expect((await o.ist('GET', `/api/portal/fotograf/${rp.json().kimlik}`, c)).headers['content-disposition']).toMatch(/ilerleme-.*\.pdf/);
+    // YG-1170: fotoğrafta kapatılan alan siyah boyanır; yat sahibine yalnız kapatılmış PNG kopya gider.
+    const png = await o.belge(d.kimlik, 'ds', 'Firma X Logo', 'png');
+    expect((await o.ist('POST', u, await o.gir('ds'), { belge: png, aciklama: 'Boya', maske: [{ x: 0.5, y: 0.5, w: 0.9, h: 0.9 }] })).statusCode).toBe(400);
+    const rm = await o.ist('POST', u, await o.gir('ds'), { belge: png, aciklama: 'Boya', maske: [{ x: 0, y: 0, w: 1, h: 0.5 }] }); expect(rm.statusCode, rm.body).toBe(200);
+    const im = await o.ist('GET', `/api/portal/fotograf/${rm.json().kimlik}`, c); expect(im.statusCode).toBe(200); expect(im.headers['content-disposition']).toMatch(/ilerleme-.*\.png/);
+    expect(im.rawPayload.subarray(0, 4).toString('hex')).toBe('89504e47');
   });
 });
 

@@ -142,6 +142,11 @@ export async function yatEksikleri(db: Db, yat: string): Promise<string[]> {
   if (!y) return [];
   return [!(y.marka_model_ref || y.marka_diger) && 'marka', y.tam_boy_m === null && 'boy', (!y.govde_malzemesi || y.govde_malzemesi === 'Bilinmiyor') && 'gövde malzemesi', !y.tahrik_turu && 'tahrik'].filter(Boolean) as string[];
 }
+/** YG-158: yetkisiz kaynaktan (Yat Sahibi veya geçerli yetki kaydı olan taraf dışından) gelen talimat ve karar doğrulanmadan hiçbir aşama kapısı geçilmez. */
+for (const a of ASAMALAR.slice(1)) kapiKaydet(a, async (db, d) => {
+  const n = (await db.query(`SELECT count(*)::int n FROM talimat_kaydi WHERE dosya_ref = $1 AND tur IN ('Talimat', 'Karar') AND NOT kaynak_yetkili AND kaynak_sonucu IS NULL`, [d.kimlik])).rows[0].n;
+  return n ? `Yetkisiz kaynaktan gelen ${n} talimat/karar kaydı doğrulanmamıştır; Talimat ve Karar Kayıtlarından doğrulayınız veya dikkate almayınız.` : null;
+});
 kapiKaydet('Teklif', async (db, d) => {
   const eksik = await yatEksikleri(db, d.yat_ref);
   return eksik.length ? `Teklife geçmek için yat bilgisi eksik: ${eksik.join(', ')}.` : null;
@@ -647,19 +652,43 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/talimatlar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
-    return (await b.db.query(`SELECT t.kimlik, t.kanal, t.tur, t.gonderen, t.alinma_zamani, t.ozgun_metin, t.belge_ref, t.aktaran_notu, h.ad_soyad kaydeden, t.kayit_zamani FROM talimat_kaydi t JOIN kullanici_hesabi h ON h.kimlik = t.kaydeden_ref WHERE t.dosya_ref = $1 ORDER BY t.alinma_zamani DESC`, [id])).rows;
+    const kayitlar = (await b.db.query(`SELECT t.kimlik, t.kanal, t.tur, t.gonderen, t.alinma_zamani, t.ozgun_metin, t.belge_ref, t.aktaran_notu, h.ad_soyad kaydeden, t.kayit_zamani, t.kaynak_yetkili, t.kaynak_sonucu, t.kaynak_notu, (SELECT x.taraf_rolu FROM dosya_tarafi x WHERE x.kimlik = t.kaynak_taraf_ref) kaynak_rolu FROM talimat_kaydi t JOIN kullanici_hesabi h ON h.kimlik = t.kaydeden_ref WHERE t.dosya_ref = $1 ORDER BY t.alinma_zamani DESC`, [id])).rows;
+    // YG-158: kaynak seçimi için dosyanın aktif tarafları (sistem kimliği gösterilmez).
+    if (i.query && (i.query as { taraflar?: string }).taraflar) return { kayitlar, taraflar: (await b.db.query(`SELECT kimlik, taraf_rolu, kisi_adi_soyadi FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif ORDER BY taraf_rolu`, [id])).rows };
+    return kayitlar;
+  });
+  // YG-158: yetkisiz kaynaktan gelen talimat/kararı Dosya Sorumlusu yetkili taraftan teyit alarak doğrular ya da dikkate almaz; gerekçe zorunlu.
+  s.post('/talimat/:id/kaynak', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; not?: string };
+    if (!UUID.test(id)) return yok(y);
+    const t = (await b.db.query(`SELECT t.dosya_ref, t.kaynak_yetkili, t.kaynak_sonucu, d.dosya_sorumlusu_ref, d.yedek_sorumlu_ref FROM talimat_kaydi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [id])).rows[0];
+    if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
+    if (![t.dosya_sorumlusu_ref, t.yedek_sorumlu_ref].includes(o.kullanici)) return y.code(403).send({ hata: 'Kaynağı Dosya Sorumlusu doğrular.' });
+    if (t.kaynak_yetkili || t.kaynak_sonucu) return y.code(409).send({ hata: 'Bu kaydın kaynağı için işlem gerekmez.' });
+    if (!['Doğrulandı', 'Dikkate Alınmadı'].includes(g.sonuc ?? '') || !g.not?.trim()) return y.code(400).send({ hata: 'Sonucu seçip yetkili taraftan alınan teyidi veya gerekçeyi yazınız.' });
+    await b.db.query(`UPDATE talimat_kaydi SET kaynak_sonucu = $2, kaynak_notu = $3, kaynak_dogrulayan_ref = $4, kaynak_dogrulama_zamani = now() WHERE kimlik = $1`, [id, g.sonuc, g.not.trim(), o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Yetkisiz Kaynak Talimatı' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal') AND NOT EXISTS (SELECT 1 FROM talimat_kaydi WHERE dosya_ref = $1::uuid AND tur IN ('Talimat', 'Karar') AND NOT kaynak_yetkili AND kaynak_sonucu IS NULL)`, [t.dosya_ref]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Talimat Kaynağı', nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref, yeni: { talimat: id, sonuc: g.sonuc }, gerekce: g.not.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
   s.post('/dosya/:id/talimat', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; tur?: string; gonderen?: string; zaman?: string; metin?: string; belge?: string; not?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; tur?: string; gonderen?: string; zaman?: string; metin?: string; belge?: string; not?: string; kaynakTaraf?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (o.grup !== 'LGM İç Rolü') return yok(y);
     if (!['E-posta', 'Telefon', 'SMS', 'WhatsApp', 'WhatsApp Grubu', 'Yüz Yüze', 'Diğer'].includes(g.kanal ?? '') || !['Talimat', 'Karar', 'Bilgi'].includes(g.tur ?? 'Talimat')) return y.code(400).send({ hata: 'Kanalı ve kayıt türünü seçiniz.' });
     if (!g.gonderen?.trim() || !g.zaman || !g.metin?.trim()) return y.code(400).send({ hata: 'Gönderen, alınma zamanı ve özgün ileti metni zorunludur.' });
     if (new Date(g.zaman).getTime() > Date.now() + 60_000) return y.code(400).send({ hata: 'Alınma zamanı ileri bir tarih olamaz.' });
     if (g.belge && (!UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.belge, id])).rowCount)) return y.code(400).send({ hata: 'Ekran görüntüsü veya ileti belgesi bu dosyaya yüklenmiş olmalıdır.' });
-    const r = (await b.db.query(`INSERT INTO talimat_kaydi (dosya_ref, kanal, tur, gonderen, alinma_zamani, ozgun_metin, belge_ref, aktaran_notu, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, g.kanal, g.tur ?? 'Talimat', g.gonderen.trim(), g.zaman, g.metin.trim(), g.belge || null, g.not?.trim() || null, o.kullanici])).rows[0];
-    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Talimat Kaydı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { kanal: g.kanal, tur: g.tur ?? 'Talimat', gonderen: g.gonderen }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { kimlik: r.kimlik };
+    // YG-158: kaynak Yat Sahibi ya da geçerli yetki kaydı olan taraf değilse kayıt yetkisiz kaynak sayılır.
+    if (g.kaynakTaraf && (!UUID.test(g.kaynakTaraf) || !(await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE kimlik = $1 AND dosya_ref = $2 AND aktif`, [g.kaynakTaraf, id])).rowCount)) return y.code(400).send({ hata: 'Gönderen taraf bu dosyada kayıtlı değildir.' });
+    const yetkili = Boolean(g.kaynakTaraf && (await b.db.query(`SELECT 1 FROM dosya_tarafi x WHERE x.kimlik = $1 AND x.taraf_rolu = 'Yat Sahibi' UNION SELECT 1 FROM yetki_kaydi k WHERE k.dosya_tarafi_ref = $1 AND k.yetki_durumu = 'Geçerli' AND (k.gecerlilik_bitisi IS NULL OR k.gecerlilik_bitisi >= current_date) LIMIT 1`, [g.kaynakTaraf])).rowCount);
+    const r = (await b.db.query(`INSERT INTO talimat_kaydi (dosya_ref, kanal, tur, gonderen, alinma_zamani, ozgun_metin, belge_ref, aktaran_notu, kaydeden_ref, kaynak_taraf_ref, kaynak_yetkili) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [id, g.kanal, g.tur ?? 'Talimat', g.gonderen.trim(), g.zaman, g.metin.trim(), g.belge || null, g.not?.trim() || null, o.kullanici, g.kaynakTaraf || null, yetkili || (g.tur ?? 'Talimat') === 'Bilgi'])).rows[0];
+    if (!yetkili && (g.tur ?? 'Talimat') !== 'Bilgi') {
+      const ds = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+      if (ds?.dosya_sorumlusu_ref) await kartAc(b.db, { tur: 'Yetkisiz Kaynak Talimatı', kategori: 'gorev', baslik: `${ds.dosya_no} · Yetkisiz Kaynaktan ${g.tur ?? 'Talimat'}: Kaynağı Doğrulayınız`, ozet: `${g.gonderen.trim()} · ${g.kanal}`, oncelik: 'Yüksek', sahipKullanici: ds.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
+    }
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Talimat Kaydı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { kanal: g.kanal, tur: g.tur ?? 'Talimat', gonderen: g.gonderen, kaynakYetkili: yetkili }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik, kaynakYetkili: yetkili };
   });
   s.post('/dosya/:id/beklemede', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; sorumlu?: string; hedefTarih?: string; kanitBelge?: string; mesaj?: string; tedarikciKaynakli?: boolean };
