@@ -216,6 +216,19 @@ describe('kayıt birleştirme (YG1244-BIRLESTIR)', () => {
   });
 });
 
+describe('ana veri değişikliği etkisi (YG1240-ETKI)', () => {
+  it('yat kaydı değişince açık dosyanın Dosya Sorumlusuna bir kez değerlendirme görevi; eski değer izde', async () => {
+    const { d } = await kurumsal(); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    await o.sup.query(`UPDATE yat SET bayrak = 'Malta' WHERE kimlik = $1`, [yat]);
+    const { anaVeriEtkiIsle } = await import('../src/ana_veri_etki.js');
+    await anaVeriEtkiIsle(o.db); await anaVeriEtkiIsle(o.db);
+    const k = (await o.sup.query(`SELECT ozet, sahip_kullanici_ref FROM is_karti WHERE tur = 'Ana Veri Değişikliği Etkisi' AND nesne_kimligi = $1`, [d.kimlik])).rows;
+    expect(k).toHaveLength(1); expect(k[0].ozet).toContain('bayrak'); expect(k[0].sahip_kullanici_ref).toBe(o.K.ds);
+    expect((await o.sup.query(`SELECT degisen->'bayrak'->>'yeni' y FROM kayit_degisikligi WHERE tablo = 'yat' AND nesne = $1 ORDER BY kimlik DESC LIMIT 1`, [yat])).rows[0].y).toBe('Malta');
+  });
+});
+
 describe('uyuşmazlık (YG-107)', () => {
   it('yalnız HUD; savunma görevi; paket kayıtları listeler', async () => {
     const { d } = await kurumsal(); await fatura(d, { toplam: 700 });

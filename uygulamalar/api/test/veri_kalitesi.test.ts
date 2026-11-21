@@ -26,4 +26,14 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect((await o.ist('POST', '/api/kalite-kurali/VK-01', await o.gir('bim'), { esik: 5 })).json().surum).toBe(2);
     expect((await o.ist('GET', '/api/veri-kalitesi', await o.gir('ide'))).statusCode).toBe(404);
   });
+  it('tamlık birlikte: yat sahibi bağı, karar zamanı ve başka dosyaya ait kanıt (YG1251-TAMLIK)', async () => {
+    const d = await o.dosyaAc(); const d2 = await o.dosyaAc();
+    await o.sup.query(`UPDATE dosya SET statu = 'Aktif' WHERE kimlik = $1`, [d.kimlik]);
+    await o.sup.query(`UPDATE dosya_tarafi SET aktif = false WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]);
+    const bel = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali) VALUES ('f.jpg', 'Fotoğraf', 'Dosya', $1, 'Sistem') RETURNING kimlik`, [d2.kimlik])).rows[0].kimlik;
+    const g = (await o.sup.query(`INSERT INTO gorsel_kanit (gorsel_no, dosya_ref, belge_ref, ceken_ref, asama, cekim_kalemi) VALUES ($1,$2,$3,$4,'Keşif','Genel – Baş') RETURNING kimlik`, [`${d.dosyaNo}-G9001`, d.kimlik, bel, o.K.ds])).rows[0].kimlik;
+    await kaliteKontrolIsle(o.db);
+    const ac = async (kod: string, k: string) => (await o.sup.query(`SELECT 1 FROM veri_hatasi WHERE kural_kod = $1 AND kayit_kimligi = $2 AND durum = 'Açık'`, [kod, k])).rowCount;
+    expect(await ac('VK-14', d.kimlik)).toBe(1); expect(await ac('VK-17', g)).toBe(1);
+  });
 });
