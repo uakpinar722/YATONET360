@@ -470,13 +470,19 @@ interface TeklifTalebi { kimlik: string; talep_no: string; durum: string; gecerl
 export function TeklifTalebiBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [l, setL] = useState<TeklifTalebi[]>([]); const [ted, setTed] = useState<{ kimlik: string; ticari_unvan: string; engel: string | null }[]>([]); const [f, setF] = useState({ tedarikci: '', sonZaman: '', tanim: '', parcaNo: '', miktar: '1', birim: 'adet', satir: '' }); const [satirlar, setSatirlar] = useState<{ kimlik: string; satir_kodu: string; aciklama: string }[]>([]);
   const ts = roller.includes('Tedarik Sorumlusu');
-  const yukle = () => istek<TeklifTalebi[]>(`/dosya/${id}/teklif-talepleri`).then(setL);
+  const [kar, setKar] = useState<{ kimlik: string; talepNo: string; tedarikci: string; kdvHaric: number; teslimGun: number | null; gecerlilik: string | null; eksikFiyat: boolean; enDusuk: boolean; onayMakami: string }[]>([]);
+  const yukle = () => Promise.all([istek<TeklifTalebi[]>(`/dosya/${id}/teklif-talepleri`).then(setL), istek<typeof kar>(`/dosya/${id}/teklif-karsilastirma`).then(setKar).catch(() => {})]);
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => {}); if (ts) { void istek<typeof ted>('/firma/uygunluk?rol=Tedarikçi').then(setTed).catch(() => {}); void istek<typeof satirlar>(`/dosya/${id}/tedarik-satirlari`).then(setSatirlar).catch(() => {}); } }, [id]);
   if (!ts && !l.length) return null;
   return (
     <Blok baslik="Tedarikçi Teklif Talepleri">
       <Mesaj />
+      {/* YG-1590: aynı şartla karşılaştırma; seçim gerekçesi siparişte zorunludur, onay makamı sistemce belirlenir. */}
+      {kar.length > 0 && <><div className="bolum">Teklif Karşılaştırma</div>
+        <table className="tablo"><thead><tr><th>Teklif</th><th>Tedarikçi</th><th>KDV Hariç Toplam</th><th>Teslim Süresi</th><th>Geçerlilik</th><th>Onay Makamı</th></tr></thead>
+          <tbody>{kar.map((x) => <tr key={x.kimlik}><td>{x.talepNo}{x.enDusuk ? ' · En Düşük' : ''}</td><td>{x.tedarikci}</td><td>{x.eksikFiyat ? 'Fiyatı eksik kalem var' : eur(x.kdvHaric)}</td><td>{x.teslimGun !== null ? `${x.teslimGun} Gün` : '---'}</td><td>{x.gecerlilik ? tarih(x.gecerlilik) : '---'}</td><td>{x.onayMakami}</td></tr>)}</tbody></table>
+        <div className="not">En düşük teklif dışındaki seçimde gerekçe siparişte yazılır; onay makamı sistemce belirlenir.</div></>}
       {l.map((t) => <div className="soru" key={t.kimlik}><span>{t.talep_no} · {t.ticari_unvan} · {t.durum}{t.gecerlilik ? ` · Geçerlilik: ${tarih(t.gecerlilik)}` : ''}</span>{t.kalemler.map((k, n) => <div key={n}>{k.urun_tanimi} · {k.miktar} {k.birim}{k.birim_fiyat_eur !== null ? ` · ${eur(k.birim_fiyat_eur)} · ${k.teslim_suresi_gun} Gün` : ''}</div>)}</div>)}
       {ts && <>
         <label htmlFor="tt-t">Tedarikçi</label><select id="tt-t" value={f.tedarikci} onChange={(e) => setF({ ...f, tedarikci: e.target.value })}><option value="">Seçiniz</option>{ted.filter((x) => !x.engel).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>

@@ -337,6 +337,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     return rows.map(({ kayit_asamasi, dolan_belge, brans_var, ...f }) => ({ ...f, engel: uygunlukEngeli({ kayit_asamasi, ag_statusu: f.ag_statusu, dolan_belge, brans_var }) }));
   });
 
+  // YG-253: acil iş emrinde yasak işler (kapsam metninde) ve ortak hata metni.
+  const ACIL_YASAK = /onar[ıi]m|değiş(im|tir)|yenile|revizyon|tadilat|montaj|parça/i;
+  const ACIL_YASAK_HATA = 'Acil iş emri yalnız ilk tedbiri kapsar; esas onarım, parça değişimi ve kapsam genişletme yapılmaz. Esas onarım için yazılı kapsamla Onarım (ON) iş emri çıkarınız.';
   // YG-435: KN, ON, EK Operasyon Yöneticisi; GR Teknik Yönetici çıkarır. YG-322: mali ve kapsam doğrulanmadan yayımlanmaz.
   s.post('/dosya/:id/is-emri', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
@@ -353,6 +356,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!roller.includes(yetkili)) return y.code(403).send({ hata: `Bu iş emrini ${yetkili} çıkarır.` });
     if (g.tur === 'KN' && !(Number(g.bedel) >= 0 && g.bedel !== undefined && g.bedel !== null)) return y.code(400).send({ hata: 'Mali limit boş olan iş emri yayımlanmaz; keşif iş emrinin mali limitini giriniz.' }); // YG-323
     if (!g.yer?.trim() || !g.kapsam?.trim()) return y.code(400).send({ hata: 'Uygulama yeri ve kapsam zorunludur.' });
+    // YG-253: acil iş emri yalnız ilk tedbirdir; esas onarım, parça değişimi veya kapsam genişletme içermez.
+    if (g.tur === 'AC' && ACIL_YASAK.test(g.kapsam!)) return y.code(400).send({ hata: ACIL_YASAK_HATA });
     if (['ON', 'EK', 'GR'].includes(g.tur!) && !g.teknikSonuc?.trim()) return y.code(400).send({ hata: 'Beklenen teknik sonucu yazınız (işin bitiminde ulaşılacak durum).' }); // YG-320
     if (!g.firma || !UUID.test(g.firma)) return y.code(400).send({ hata: 'Firmayı seçiniz.' });
     if (g.baslangic && g.bitis && new Date(g.bitis).getTime() < new Date(g.baslangic).getTime()) return y.code(400).send({ hata: 'Hedef bitiş tarihini başlangıç tarihinden sonra seçmenizi rica ederiz.' }); // YG-1253
@@ -380,6 +385,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`INSERT INTO gorevlendirme_kontrolu (dosya_ref, kurulus_ref, gorev_sinifi, sonuc, engeller, uyarilar, yapan_ref, secim_gerekcesi, elenen_adaylar) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id, g.firma, gk.sinif, gk.sonuc, gk.engeller, gk.uyarilar, o.kullanici, (g as { secimGerekcesi?: string }).secimGerekcesi?.trim() || null, JSON.stringify(elenen)]);
     if (gk.sonuc === 'Ret') return y.code(409).send({ hata: gk.engeller[0] });
     if ((g.tur === 'EK' || g.tur === 'GR') && (!g.ana || !UUID.test(g.ana) || !(await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND dosya_ref = $2`, [g.ana, id])).rowCount)) return y.code(400).send({ hata: 'Ek İş ve Garanti iş emri bir ana iş emrine bağlanır.' }); // YG-316
+    if (g.tur === 'EK' && (await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND is_emri_turu = 'AC'`, [g.ana])).rowCount) return y.code(409).send({ hata: ACIL_YASAK_HATA }); // YG-253: acil iş emrinin kapsamı genişletilmez
     const karar = (g.tur === 'ON' || g.tur === 'EK' || g.tur === 'PH');
     let kalemler: { kimlik: string; aciklama: string; miktar: string; birim: string; satir_ref: string | null; teknik_pay?: string; olculemez?: boolean }[] = [];
     if (karar) {

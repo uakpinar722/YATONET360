@@ -2,7 +2,7 @@ import { DurumSayilari } from './DurumSayilari';
 import { SigortaPanel } from './SigortaPanel';
 import { ArizaBildir } from './Broker';
 import { OdemeTakvimi } from './OdemeTakvimi';
-import { eur } from './bicim';
+import { eur, tarih } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
 import { SigortaIhbar, SigortaMutabakat } from './SigortaIhbar';
 import { OdemeYatSahibine } from './OdemeYatSahibine';
@@ -182,7 +182,7 @@ interface Kayitlar {
   teklifler: { ana_teklif_no?: string | null; bant_disi?: boolean; bant_onayli?: boolean; kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; ara_toplam_eur: string; genel_toplam_eur: string; gecerlilik_bitis_tarihi: string | null; teklif_muhatabi: string }[];
   firma: { kimlik: string; teklif_no: string; durum: string; toplam_eur: string; gecerlilik: string; aralik_disi?: number }[];
   zarfSapmalari: { kimlik: string; aciklama: string; is_emri_no: string }[];
-  isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; mali_limit?: number | null; limit_surumu?: number; paket_statusu: string | null; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
+  isEmirleri: { kimlik: string; is_emri_no: string; is_emri_turu: string; statu: string; mali_limit?: number | null; limit_surumu?: number; namina?: string | null; paket_statusu: string | null; firma_yaniti: string | null; firma: string; ana_is_emri_ref: string | null; aski: { kimlik: string; oneri: string } | null }[];
 }
 interface Mali { kredi: { acik: number; limit: number; oran: number; uyari: boolean; asim: boolean; buyuk: boolean } | null; itirazlar: { kimlik: string; fatura_ref: string; kalem: string; tutar_eur: string; durum: string; yanit: string | null; yanit_son: string }[]; gecikme: { fatura: string; gun: number; tur: string; oran: number | null; faiz: number | null }[]; sigortali: boolean; ayriKalemler: { kimlik: string; tur: string; aciklama: string; tutar_eur: string; durum: string }[]; isEmirleri: { kimlik: string; is_emri_no: string; kurulus_ref: string; ticari_unvan: string }[]; odemeTalepleri: { kimlik: string; tur: string; tutar_eur: string; son_tarih: string; durum: string }[]; faturalar: { kimlik: string; proforma_no: string; durum: string; fatura_no: string | null; toplam_eur: string; toplam_tl: string | null; vade: string | null; tahsil_edilen_eur: string }[]; hakedisler: { kimlik: string; hakedis_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string; firma_fatura_no?: string | null; talimatsiz?: boolean }[]; teslimEngeli: string | null }
 
@@ -319,7 +319,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {v.isEmirleri.length === 0 && <div className="not">İş emri bulunmamaktadır.</div>}
         {v.isEmirleri.map((e) => (
           <div key={e.kimlik} className="soru">
-            <span>{e.is_emri_no} · {e.firma} · {e.statu}{e.ana_is_emri_ref ? ` · Bağlı Olduğu İş Emri: ${v.isEmirleri.find((a) => a.kimlik === e.ana_is_emri_ref)?.is_emri_no ?? '---'}` : ''}{e.paket_statusu ? ` · Paket: ${e.paket_statusu}` : ''}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}{/* YG-323 */ e.mali_limit !== null && e.mali_limit !== undefined ? ` · Mali Limit: ${eur(e.mali_limit)}${(e.limit_surumu ?? 0) > 1 ? ` (Limit Sürümü ${e.limit_surumu})` : ''}` : ''}</span>
+            <span>{e.is_emri_no} · {e.firma} · {e.statu}{e.ana_is_emri_ref ? ` · Bağlı Olduğu İş Emri: ${v.isEmirleri.find((a) => a.kimlik === e.ana_is_emri_ref)?.is_emri_no ?? '---'}` : ''}{e.paket_statusu ? ` · Paket: ${e.paket_statusu}` : ''}{e.firma_yaniti ? ` · ${e.firma_yaniti}` : ''}{/* YG-889 */ e.namina ? ` · ${e.namina} Namına` : ''}{/* YG-323 */ e.mali_limit !== null && e.mali_limit !== undefined ? ` · Mali Limit: ${eur(e.mali_limit)}${(e.limit_surumu ?? 0) > 1 ? ` (Limit Sürümü ${e.limit_surumu})` : ''}` : ''}</span>
             <div className="dugmeler">
               {e.aski && <AskiKarari aski={e.aski} yap={yap} />}
               {e.is_emri_turu === 'KN' && e.statu === 'Taslak' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/firmaya-gonder`, {}), 'Keşif iş emri firmaya gönderildi.')}>Firmaya Gönder</button>}
@@ -696,6 +696,35 @@ function FaizOranlari({ yap }: { yap: (f: () => Promise<unknown>, x?: string) =>
 }
 
 /** YG-909 kredi; YG-872 faiz; YG-887 itiraz; YG-916 üçüncü kişi; YG-820 hukuk kararı; YG-107 uyuşmazlık. */
+/** YG-851: ödemeyi üstlenen tarafın yazılı taahhüdü; kısmi ödeme ve kalan yükümlülük ayrı izlenir. Sigorta şirketi yalnız yazılı taahhüdüyle yükümlü olur. */
+function OdemeTaahhutleri({ dosya, ticari, faturalar, yap }: { dosya: string; ticari: boolean; faturalar: { kimlik: string; fatura_no: string | null }[]; yap: (f: () => Promise<unknown>, x?: string) => Promise<void> }) {
+  type Y = { taahhutler: { kimlik: string; ustlenen_turu: string; ustlenen_adi: string; tutar: number; vade: string | null; dayanak: string; durum: string; odenen: number; kalan: number }[]; kalanYukumluluk: number };
+  const [v, setV] = useState<Y | null>(null); const [f, setF] = useState({ ustlenenTuru: 'Yat Sahibi', ustlenen: '', tutar: '', vade: '', dayanak: '' }); const [t, setT] = useState({ taahhut: '', fatura: '', tutar: '', tarih: '' });
+  const yukle = () => istek<Y>(`/dosya/${dosya}/odeme-yukumlulugu`).then(setV).catch(() => {});
+  useEffect(() => { void yukle(); }, [dosya]);
+  const sayi = (x: string) => Number(x.replace(',', '.')); const y2 = (g: () => Promise<unknown>, m: string) => yap(() => g().then(yukle), m);
+  if (!v || (!ticari && !v.taahhutler.length)) return null;
+  return <>
+    <div className="bolum">Ödeme Taahhütleri</div>
+    {v.taahhutler.map((x) => <div key={x.kimlik}>{x.ustlenen_turu} · {x.ustlenen_adi} · Taahhüt {eur(String(x.tutar))} · Ödenen {eur(String(x.odenen))} · Kalan {eur(String(x.kalan))} · {x.durum}{x.vade ? ` · Vade ${tarih(x.vade)}` : ''} · Dayanak: {x.dayanak}</div>)}
+    {v.taahhutler.length > 0 && <div><b>Kalan Yükümlülük: {eur(String(v.kalanYukumluluk))}</b></div>}
+    {ticari && <>
+      <label htmlFor="ot-u">Ödemeyi Üstlenen</label><select id="ot-u" value={f.ustlenenTuru} onChange={(e) => setF({ ...f, ustlenenTuru: e.target.value })}>{['Yat Sahibi', 'Kurumsal Müşteri', 'Sigorta Şirketi', 'Üçüncü Kişi'].map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="ot-a">Üstlenenin Adı</label><input id="ot-a" value={f.ustlenen} onChange={(e) => setF({ ...f, ustlenen: e.target.value })} />
+      <label htmlFor="ot-t">Taahhüt Tutarı (EUR)</label><input id="ot-t" inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+      <label htmlFor="ot-v">Vade</label><input id="ot-v" type="date" value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
+      <label htmlFor="ot-d">Yazılı Dayanak</label><input id="ot-d" value={f.dayanak} onChange={(e) => setF({ ...f, dayanak: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!f.ustlenen.trim() || !f.dayanak.trim() || !(sayi(f.tutar) > 0)} onClick={() => void y2(() => istek(`/dosya/${dosya}/odeme-taahhudu`, { ...f, tutar: sayi(f.tutar), vade: f.vade || undefined }), 'Ödeme taahhüdü kaydedildi.')}>Taahhüdü Kaydet</button>
+      {v.taahhutler.some((x) => x.kalan > 0) && faturalar.length > 0 && <>
+        <label htmlFor="ot-s">Tahsilatın Bağlanacağı Taahhüt</label><select id="ot-s" value={t.taahhut} onChange={(e) => setT({ ...t, taahhut: e.target.value })}><option value="">Seçiniz</option>{v.taahhutler.filter((x) => x.kalan > 0).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ustlenen_adi} · Kalan {eur(String(x.kalan))}</option>)}</select>
+        <label htmlFor="ot-f">Fatura</label><select id="ot-f" value={t.fatura} onChange={(e) => setT({ ...t, fatura: e.target.value })}><option value="">Seçiniz</option>{faturalar.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.fatura_no}</option>)}</select>
+        <div className="iki-tarih"><div><label htmlFor="ot-ht">Tutar (EUR)</label><input id="ot-ht" inputMode="decimal" value={t.tutar} onChange={(e) => setT({ ...t, tutar: e.target.value })} /></div><div><label htmlFor="ot-hd">Tarih</label><input id="ot-hd" type="date" value={t.tarih} onChange={(e) => setT({ ...t, tarih: e.target.value })} /></div></div>
+        <button className="btn2 kucuk" disabled={!t.taahhut || !t.fatura || !t.tarih || !(sayi(t.tutar) > 0)} onClick={() => void y2(() => istek('/tahsilat', { fatura: t.fatura, taahhut: t.taahhut, tutar: sayi(t.tutar), tarih: t.tarih, kanal: 'Havale' }), 'Tahsilat taahhüde bağlandı.')}>Taahhüt Tahsilatı</button>
+      </>}
+    </>}
+  </>;
+}
+
 function AlacakBolumu({ dosya, m, ticari, yap }: { dosya: string; m: Mali; ticari: boolean; yap: (f: () => Promise<unknown>, x?: string) => Promise<void> }) {
   const [it, setIt] = useState({ fatura: '', kalem: '', tutar: '', gerekce: '' }); const [g, setG] = useState(''); const [u, setU] = useState({ ad: '', tutar: '', gerekce: '' }); const [h, setH] = useState({ tur: 'Dava', oneri: '' }); const [uy, setUy] = useState({ merci: '', esasNo: '', savunmaSon: '' }); const [tr, setTr] = useState({ tarafNo: '' });
   const sayi = (x: string) => Number(x.replace(',', '.')); const faturali = m.faturalar.filter((f) => f.fatura_no);
@@ -719,6 +748,7 @@ function AlacakBolumu({ dosya, m, ticari, yap }: { dosya: string; m: Mali; ticar
           <label htmlFor="ab-ug">Üçüncü Kişi Gerekçesi</label><input id="ab-ug" value={u.gerekce} onChange={(e) => setU({ ...u, gerekce: e.target.value })} />
           <button className="btn2 kucuk" disabled={!u.ad.trim() || !u.gerekce.trim()} onClick={() => void yap(() => istek(`/dosya/${dosya}/ucuncu-kisi-odeme`, { ad: u.ad, tutar: sayi(u.tutar), gerekce: u.gerekce }), 'Üçüncü kişi ödemesi onaya gönderildi.')}>Üçüncü Kişi Onayı İste</button>
         </>}
+        <OdemeTaahhutleri dosya={dosya} ticari={ticari} faturalar={faturali} yap={yap} />
         <label htmlFor="ab-tn">Taraf No (Tarama ve Risk Olayı)</label><input id="ab-tn" value={tr.tarafNo} onChange={(e) => setTr({ ...tr, tarafNo: e.target.value })} />
         <div className="dugmeler">{['Temiz', 'İnceleme', 'Ret'].map((x) => <button key={x} className="btn2 kucuk" disabled={!tr.tarafNo.trim()} onClick={() => void yap(() => istek('/taraf-tarama', { tarafNo: tr.tarafNo, sonuc: x }), 'Tarama sonucu kaydedildi.')}>Tarama: {x}</button>)}{['İflas', 'Konkordato', 'Tasfiye'].map((x) => <button key={x} className="btn hayir" disabled={!tr.tarafNo.trim()} onClick={() => void yap(() => istek('/taraf-risk-olayi', { tarafNo: tr.tarafNo, olay: x }), 'Risk olayı kaydedildi.')}>{x}</button>)}</div>
         <label htmlFor="ab-h">Hukuk Kararı Türü</label><select id="ab-h" value={h.tur} onChange={(e) => setH({ ...h, tur: e.target.value })}>{['Dava', 'İcra Takibi', 'Şüpheli Alacak', 'Alacak Silme', 'İhtiyati Haciz'].map((x) => <option key={x}>{x}</option>)}</select>

@@ -38,7 +38,7 @@ describe('keşif (YG-049, YG-056, YG-111)', () => {
     expect((await o.sup.query(`SELECT tamamlanma FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Randevu İletişimi'`, [d.kimlik])).rows[0].tamamlanma).not.toBeNull();
     expect((await o.sup.query(`SELECT 1 FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT baslangic_olayi, sure_birimi FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rows[0]).toMatchObject({ baslangic_olayi: expect.stringContaining('KSF-1'), sure_birimi: 'Saat' }); // YG-045
-    const s = await hazir({ sigortaci: 'SG' }, { musteriTuru: 'Sigorta Şirketi' });
+    const s = await hazir({ sigortaci: 'SG', hasarNo: 'H-1' }, { musteriTuru: 'Sigorta Şirketi' });
     expect((await kesifAc(s.kimlik)).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-01'`, [s.kimlik])).rowCount).toBe(0);
   });
@@ -264,7 +264,7 @@ describe('vefat ve itiraz (YG-1477, YG-1497)', () => {
     expect((await o.ist('POST', `/api/dosya/${ku.kimlik}/vefat`, await o.gir('ds'), {})).statusCode).toBe(409);
   });
   it('sigortalı dosyada itiraz: işler durur, BLD-40 gider, DS kırmızı görev; sigortasızda yok', async () => {
-    const d = await hazir({ sigortaci: 'SG' }, { musteriTuru: 'Sigorta Şirketi' }); const c = await o.gir('ds');
+    const d = await hazir({ sigortaci: 'SG', hasarNo: 'H-1' }, { musteriTuru: 'Sigorta Şirketi' }); const c = await o.gir('ds');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/itiraz`, c, {})).json().durduruldu).toBe(true);
     expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`bld40:${d.kimlik}`])).rows[0].metin).toContain('geçici olarak durdurulmuştur');
     expect((await o.kart('İtiraz Araması', d.kimlik)).oncelik).toBe('Kritik');

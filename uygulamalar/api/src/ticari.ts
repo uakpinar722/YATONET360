@@ -612,8 +612,27 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Banka Mektubu Kaydı', nesneTuru: 'İş Emri', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-851: ödemeyi üstlenen taraf yazılı dayanakla taahhüt kaydı olarak girilir; sigorta şirketi yalnız yazılı taahhüdüyle ödeme yükümlüsü olur.
+  s.post('/dosya/:id/odeme-taahhudu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ustlenenTuru?: string; ustlenen?: string; tutar?: number; vade?: string; dayanak?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı veya erişim yetkiniz yok.' });
+    if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Ödeme taahhüdünü Ticari Sorumlu kaydeder.' });
+    if (!['Yat Sahibi', 'Kurumsal Müşteri', 'Sigorta Şirketi', 'Üçüncü Kişi'].includes(g.ustlenenTuru ?? '') || !g.ustlenen?.trim()) return y.code(400).send({ hata: 'Ödemeyi üstlenen tarafı seçiniz ve adını yazınız.' });
+    if (!(Number(g.tutar) > 0) || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Taahhüt tutarı ve yazılı dayanağı (yazı, e-posta veya YATONET 360 onayı) zorunludur.' });
+    const r = (await b.db.query(`INSERT INTO odeme_taahhudu (dosya_ref, ustlenen_turu, ustlenen_adi, tutar_eur, vade, dayanak, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [id, g.ustlenenTuru, g.ustlenen.trim(), R2(Number(g.tutar)), g.vade || null, g.dayanak.trim(), o.kullanici])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ödeme Taahhüdü', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { ustlenen: g.ustlenen.trim(), tutar: Number(g.tutar) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
+  s.get('/dosya/:id/odeme-yukumlulugu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı veya erişim yetkiniz yok.' });
+    const l = (await b.db.query(`SELECT t.kimlik, t.ustlenen_turu, t.ustlenen_adi, t.tutar_eur::float tutar, t.vade::text, t.dayanak, t.durum, coalesce((SELECT sum(x.tutar_eur) FROM tahsilat x WHERE x.taahhut_ref = t.kimlik), 0)::float odenen FROM odeme_taahhudu t WHERE t.dosya_ref = $1 AND t.durum <> 'İptal' ORDER BY t.olusturma_zamani`, [id])).rows;
+    const taahhutler = l.map((x) => ({ ...x, kalan: R2(Math.max(0, x.tutar - x.odenen)) }));
+    return { taahhutler, toplamTaahhut: R2(taahhutler.reduce((a, x) => a + x.tutar, 0)), toplamOdenen: R2(taahhutler.reduce((a, x) => a + x.odenen, 0)), kalanYukumluluk: R2(taahhutler.reduce((a, x) => a + x.kalan, 0)) };
+  });
+
   s.post('/tahsilat', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { fatura?: string; odemeTalebi?: string; tutar?: number; tarih?: string; kanal?: string; referans?: string; ucuncuKisi?: string; taksit?: number };
+    const o = i.oturum!; const g = (i.body ?? {}) as { fatura?: string; odemeTalebi?: string; tutar?: number; tarih?: string; kanal?: string; referans?: string; ucuncuKisi?: string; taksit?: number; taahhut?: string };
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Tahsilatı Ticari Sorumlu kaydeder.' });
     if (!['Havale', 'POS', 'Ödeme Bağlantısı'].includes(g.kanal ?? '')) return y.code(400).send({ hata: 'Ödeme kanalını havale, POS veya ödeme bağlantısı olarak seçmenizi rica ederiz.' });
     if (!(Number(g.tutar) > 0) || !g.tarih) return y.code(400).send({ hata: 'Tutar ve tarih zorunludur.' });
@@ -621,6 +640,9 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     // YG-1460: POS tek çekimdir (taksit yok); POS ve ödeme bağlantısı banka/ödeme kuruluşu seçimine kadar kapalıdır, o zamana kadar havale (IBAN) kullanılır.
     if (g.taksit !== undefined && Number(g.taksit) !== 1) return y.code(400).send({ hata: 'POS ile tek çekim yapılır; taksit uygulanmaz.' });
     if (g.kanal !== 'Havale' && Number((await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'pos_odeme_baglantisi_acik'`)).rows[0]?.deger ?? 0) !== 1) return y.code(409).send({ hata: 'POS ve ödeme bağlantısı banka seçimi tamamlanana kadar kapalıdır; havale (IBAN) ile tahsilat kaydediniz.' });
+    // YG-851: tahsilat bir ödeme taahhüdüne bağlanabilir; taahhüt aynı dosyada ve açık olmalıdır.
+    const th = g.taahhut ? (UUID.test(g.taahhut) ? (await b.db.query(`SELECT t.kimlik, t.dosya_ref, t.durum FROM odeme_taahhudu t WHERE t.kimlik = $1 AND t.dosya_ref = (SELECT dosya_ref FROM musteri_faturasi WHERE kimlik::text = $2 UNION ALL SELECT dosya_ref FROM odeme_talebi WHERE kimlik::text = $2 LIMIT 1)`, [g.taahhut, g.fatura ?? g.odemeTalebi ?? ''])).rows[0] : undefined) : null;
+    if (th === undefined || (th && ['Ödendi', 'İptal'].includes(th.durum))) return y.code(409).send({ hata: 'Ödeme taahhüdü bu dosyada açık değildir.' });
     if (g.ucuncuKisi) { // YG-916: üçüncü kişi ödemesi onaylı kayda bağlıdır
       const u = UUID.test(g.ucuncuKisi) ? (await b.db.query(`UPDATE ucuncu_kisi_odeme SET durum = 'Kullanıldı' WHERE kimlik = $1 AND durum = 'Onaylandı' AND tutar_eur >= $2 RETURNING kimlik`, [g.ucuncuKisi, g.tutar])).rows[0] : undefined;
       if (!u) return y.code(409).send({ hata: 'Üçüncü kişi ödemesi için onay bekleniyor.' });
@@ -635,6 +657,10 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       await odemeAlindi(c, t.dosya_ref, t.muhatap, g.tarih!);
       return { durum: top >= Number(t.tutar_eur) ? 'Ödendi' : 'Kısmi', kalan: R2(Math.max(0, Number(t.tutar_eur) - top)) };
     });
+    if (th) { // YG-851: son tahsilat taahhüde bağlanır; kısmi ödeme ve kalan yükümlülük taahhüt üzerinden izlenir
+      await b.db.query(`UPDATE tahsilat SET taahhut_ref = $1 WHERE kimlik = (SELECT kimlik FROM tahsilat WHERE dosya_ref = $2 AND giren_ref = $3 AND taahhut_ref IS NULL ORDER BY olusturma_zamani DESC LIMIT 1)`, [th.kimlik, th.dosya_ref, o.kullanici]);
+      await b.db.query(`UPDATE odeme_taahhudu t SET durum = CASE WHEN (SELECT sum(x.tutar_eur) FROM tahsilat x WHERE x.taahhut_ref = t.kimlik) >= t.tutar_eur THEN 'Ödendi' ELSE 'Kısmi Ödendi' END WHERE t.kimlik = $1 AND t.durum <> CASE WHEN (SELECT sum(x.tutar_eur) FROM tahsilat x WHERE x.taahhut_ref = t.kimlik) >= t.tutar_eur THEN 'Ödendi' ELSE 'Kısmi Ödendi' END`, [th.kimlik]);
+    }
     // YG-904: eksik gelen ödemede kalan kısım müşteriden ayrıca istenir; tamamı gelince görev kapanır.
     const nesne = g.fatura ?? g.odemeTalebi!; const kalanEur = Number((sonuc as { kalan?: number }).kalan ?? 0);
     if (kalanEur > 0) {

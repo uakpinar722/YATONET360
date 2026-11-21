@@ -114,6 +114,9 @@ describe('mahsup, açık iş, avans, oran, kur', () => {
   });
   it('YG-842: avans tahsilatı aşamaz; yalnız Ticari Sorumlu; ödenince sonraki hakedişten düşer', async () => {
     const { d, e } = await kur(); const ts = await o.gir('ts'); const u = `/api/is-emri/${e}/malzeme-avansi`;
+    await o.sup.query(`UPDATE is_emri SET is_emri_turu = 'AC' WHERE kimlik = $1`, [e]); // YG253-ACIL
+    expect((await o.ist('POST', u, ts, { tutar: 10, gerekce: 'Parça' })).json().hata).toContain('Acil iş emrinde parça değişimi');
+    await o.sup.query(`UPDATE is_emri SET is_emri_turu = 'ON' WHERE kimlik = $1`, [e]);
     expect((await o.ist('POST', u, ts, { tutar: 100, gerekce: 'G' })).json().hata).toContain('tahsil edilen');
     await o.sup.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, giren_ref) SELECT kimlik, $1, 150, current_date, 'Havale', $2 FROM musteri_faturasi WHERE dosya_ref = $1`, [d.kimlik, o.K.ts]);
     expect((await o.ist('POST', u, await o.gir('ds'), { tutar: 100, gerekce: 'G' })).statusCode).toBe(403);

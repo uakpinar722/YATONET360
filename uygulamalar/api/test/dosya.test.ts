@@ -224,7 +224,10 @@ describe('mükerrerlik ve açılış kararı (YG-007, YG-023, YG-030, YG-100)', 
     expect((await ist('POST', `/api/ihbar/${t.kimlik}/yetki`, c, { durum: 'Doğrulandı' })).statusCode).toBe(400);
     expect((await ist('POST', `/api/ihbar/${t.kimlik}/yetki`, c, { durum: 'Doğrulandı', dayanak: 'Ruhsat' })).statusCode).toBe(200);
     await ist('POST', `/api/ihbar/${t.kimlik}/mukerrerlik`, c, { sonuc: 'Mükerrer değil' });
-    const r = await ist('POST', `/api/ihbar/${t.kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Ö', musteriTuru: 'Sigorta Şirketi' });
+    await sup.query(`UPDATE talep SET sigorta_hasar_dosya_no_beyan = NULL WHERE kimlik = $1`, [t.kimlik]); // YG029-KANIT
+    const r0 = await ist('POST', `/api/ihbar/${t.kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Ö', musteriTuru: 'Sigorta Şirketi' });
+    expect(r0.statusCode).toBe(409); expect(r0.json().hata).toContain('hasar dosya numarası');
+    const r = await ist('POST', `/api/ihbar/${t.kimlik}/acilis`, c, { karar: 'Kabul', ozet: 'Ö', musteriTuru: 'Sigorta Şirketi', hasarNo: 'H-1' });
     expect(r.statusCode, r.body).toBe(200);
     const d = (await sup.query(`SELECT * FROM dosya WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
     expect([d.statu, d.asama, d.dosya_niteligi, d.odeme_sorumlusu]).toEqual(['Açılış Kontrolünde', null, 'Sigorta bağlantılı', ['Sigorta']]);

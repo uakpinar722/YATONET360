@@ -349,6 +349,10 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       const sigortali = musteri === 'Sigorta Şirketi';
       const sigortaAdi = g.sigortaci?.trim() || t.sigortaci_beyan;
       if (sigortali && !sigortaAdi) return dur(400, 'Sigorta şirketini giriniz.');
+      // YG-029: kimlik kanıtı yetki doğrulamasının yazılı dayanağıdır (yukarıda); kapsam kanıtı (sigorta bağlantılı dosyada hasar dosya numarası) olmadan Kabul ile teknik dosya açılmaz. Koşullu Açılış ve acil ilk tedbir beklemez.
+      if (g.karar === 'Kabul' && !acil) {
+        if (sigortali && !(g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan)) return dur(409, 'Sigorta hasar dosya numarası olmadan sigorta bağlantılı dosya kabul edilemez; numarayı giriniz, Koşullu Açılış seçiniz veya talebi gerekçeyle reddediniz.');
+      }
       if (t.oncelik === 'Kritik' && (await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Kritik Öncelik Teyidi' AND nesne_kimligi = $1 AND durum = 'Reddedildi'`, [id])).rowCount) return dur(409, 'Kritik öncelik teyit edilmedi; önceliği güncelleyiniz.');
       const hasarIlerler = t.oncelik_cevaplari && Object.entries(t.oncelik_cevaplari as Record<string, string>).some(([k, v]) => k.startsWith('Hasar ilerleyebilir') && v === 'Evet');
       { const ps = (await c.query(`SELECT x.taraf_no, x.pasif_gerekcesi FROM yat y JOIN taraf x ON x.kimlik = y.yat_sahibi_ref WHERE y.kimlik = $1 AND x.pasif`, [t.yat_ref])).rows[0]; // YG-926

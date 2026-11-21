@@ -166,6 +166,20 @@ describe('haciz ve tarama (YG-915, YG-916)', () => {
   });
 });
 
+describe('ödeme taahhüdü (YG851-TAAHHUT)', () => {
+  it('üstlenen taraf yazılı dayanakla kaydedilir; kısmi ödeme ve kalan yükümlülük ayrı izlenir', async () => {
+    const { d } = await kurumsal(); const ts = await o.gir('ts'); const f = await fatura(d, { toplam: 1000 });
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/odeme-taahhudu`, ts, { ustlenenTuru: 'Sigorta Şirketi', ustlenen: 'SG', tutar: 600 })).statusCode).toBe(400);
+    const t = await o.ist('POST', `/api/dosya/${d.kimlik}/odeme-taahhudu`, ts, { ustlenenTuru: 'Sigorta Şirketi', ustlenen: 'SG', tutar: 600, dayanak: 'Sigorta yazısı' }); expect(t.statusCode, t.body).toBe(200);
+    expect((await o.ist('POST', '/api/tahsilat', ts, { fatura: f, tutar: 200, tarih: '2026-11-04', kanal: 'Havale', taahhut: t.json().kimlik })).statusCode).toBe(200);
+    const y1 = (await o.ist('GET', `/api/dosya/${d.kimlik}/odeme-yukumlulugu`, ts)).json();
+    expect(y1).toMatchObject({ toplamTaahhut: 600, toplamOdenen: 200, kalanYukumluluk: 400 }); expect(y1.taahhutler[0].durum).toBe('Kısmi Ödendi');
+    await o.ist('POST', '/api/tahsilat', ts, { fatura: f, tutar: 400, tarih: '2026-11-05', kanal: 'Havale', taahhut: t.json().kimlik });
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/odeme-yukumlulugu`, ts)).json().taahhutler[0]).toMatchObject({ durum: 'Ödendi', kalan: 0 });
+    expect((await o.ist('POST', '/api/tahsilat', ts, { fatura: f, tutar: 10, tarih: '2026-11-05', kanal: 'Havale', taahhut: t.json().kimlik })).json().hata).toContain('taahhüdü');
+  });
+});
+
 describe('uyuşmazlık (YG-107)', () => {
   it('yalnız HUD; savunma görevi; paket kayıtları listeler', async () => {
     const { d } = await kurumsal(); await fatura(d, { toplam: 700 });

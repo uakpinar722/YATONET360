@@ -199,8 +199,9 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
   s.post('/is-emri/:id/malzeme-avansi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tutar?: number; gerekce?: string };
     if (!UUID.test(id)) return yok(y);
-    const e = (await b.db.query(`SELECT e.dosya_ref, e.kurulus_ref, e.is_emri_no FROM is_emri e WHERE e.kimlik = $1`, [id])).rows[0];
+    const e = (await b.db.query(`SELECT e.dosya_ref, e.kurulus_ref, e.is_emri_no, e.is_emri_turu FROM is_emri e WHERE e.kimlik = $1`, [id])).rows[0];
     if (!e || !(await dosyaErisimi(b.db, o.kullanici, e.dosya_ref))) return yok(y);
+    if (e.is_emri_turu === 'AC') return y.code(409).send({ hata: 'Acil iş emrinde parça değişimi yapılmadığından malzeme avansı verilmez; esas onarım için Onarım (ON) iş emri çıkarınız.' }); // YG-253
     if (!(await rolVar(o.kullanici, [TICARI]))) return y.code(403).send({ hata: 'Malzeme avansını Ticari Sorumlu hazırlar.' });
     if (!(Number(g.tutar) > 0) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Tutar ve gerekçeyi girmenizi rica ederiz.' });
     const th = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM tahsilat WHERE dosya_ref = $1`, [e.dosya_ref])).rows[0].t);

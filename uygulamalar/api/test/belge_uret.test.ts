@@ -262,7 +262,7 @@ describe('İhbar Alındı Bilgilendirmesi (YG-722)', () => {
     expect(JSON.stringify(t.bolumler)).toContain('Teknik Rapor ve Fiyat Teklifi hazırlanarak onayınıza sunulacaktır');
     await o.sup.query(`UPDATE dosya SET oncelik = 'Planlı' WHERE kimlik = $1`, [d.kimlik]);
     const pl = (await ihbarAlindiTanim(o.db, d.kimlik)).t; expect(pl.ad).toBe('Hizmet Talebi Alındı Bilgilendirmesi'); expect(pl.matbuBas!.join(' ')).not.toContain('geçmiş olsun');
-    const s = await o.dosyaAc({}, { musteriTuru: 'Sigorta Şirketi', sigortaci: 'Örnek Sigorta' }); await o.ekipKur(s.kimlik);
+    const s = await o.dosyaAc({}, { musteriTuru: 'Sigorta Şirketi', sigortaci: 'Örnek Sigorta', hasarNo: 'H-1' }); await o.ekipKur(s.kimlik);
     expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'İhbar Alındı' AND nesne = $1`, [s.kimlik])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT metin FROM sigorta_gonderim WHERE tur = 'BLD-68' AND dosya_ref = $1`, [s.kimlik])).rows[0]?.metin).toContain(s.dosyaNo); // YG-1445
   });

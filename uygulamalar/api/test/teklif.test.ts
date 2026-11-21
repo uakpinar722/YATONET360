@@ -39,6 +39,7 @@ const kesifIsEmri = async (id: string, gonder = true) => {
   await o.sup.query(`UPDATE onay_talebi SET durum = 'Onaylandı' WHERE dosya_ref = $1`, [id]);
   await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-01','k','m','d','a','+905550002222',$2,'Onaylandı',now())`, [id, `x${Math.random()}`]);
   const r0 = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif' }); expect(r0.json().hata).toContain('Mali limit'); // YG323-KN
+  expect((await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'AC', firma, yer: 'Marmaris', kapsam: 'Pervane değişimi' })).json().hata).toContain('esas onarım'); // YG253-ACIL
   const r = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif', bedel: 0 });
   expect(r.statusCode, r.body).toBe(200);
   expect((await o.sup.query(`SELECT yeni_limit_eur FROM is_emri_limit_gecmisi WHERE is_emri_ref = $1`, [r.json().kimlik])).rows).toEqual([{ yeni_limit_eur: '0.00' }]);
@@ -227,7 +228,8 @@ describe('teklif hazırlama (YG-185, YG-1599)', () => {
     const d = await hazir(); await o.sup.query(`UPDATE yat SET gecici_kayit = true WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
     const t = await teklifAc(d); const c = await o.gir('ts');
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/onaya-gonder`, c)).json().hata).toContain('Geçici');
-    const s = await hazir({ sigortaci: 'SG' }, { musteriTuru: 'Sigorta Şirketi' }); const ts = await teklifAc(s);
+    const s = await hazir({ sigortaci: 'SG', hasarNo: 'H-1' }, { musteriTuru: 'Sigorta Şirketi' }); const ts = await teklifAc(s);
+    await o.sup.query(`UPDATE dosya_sigorta_kaydi SET sigorta_hasar_dosya_no = NULL WHERE dosya_ref = $1`, [s.kimlik]);
     expect((await o.ist('POST', `/api/teklif/${ts.kimlik}/onaya-gonder`, c)).json().hata).toContain('hasar dosya numarası');
   });
 });

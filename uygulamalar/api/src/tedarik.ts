@@ -135,6 +135,20 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     ];
     return { siparisNo: s.siparis_no, kdvHaric: Number(s.kdv_haric_eur), kritikSinif: s.kritik_sinif, sonMakam: k.son_makam, kontroller };
   });
+  // YG-1590: yanıtlanmış tedarikçi teklifleri aynı şartla yan yana; KDV hariç toplam ve onay makamı (aynı tedarikçiye önceki siparişlerle kümülatif) sistemce. Satış fiyatı gösterilmez.
+  s.get('/dosya/:id/teklif-karsilastirma', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const l = (await b.db.query(`SELECT t.kimlik, t.talep_no, t.kurulus_ref, t.gecerlilik::text, k.ticari_unvan, coalesce(sum(x.miktar * x.birim_fiyat_eur), 0)::float kdv_haric, max(x.teslim_suresi_gun)::int teslim_gun, count(*) FILTER (WHERE x.birim_fiyat_eur IS NULL)::int fiyatsiz
+      FROM tedarikci_teklif_talebi t JOIN kurulus k ON k.kimlik = t.kurulus_ref JOIN tedarikci_teklif_kalemi x ON x.talep_ref = t.kimlik WHERE t.dosya_ref = $1 AND t.durum = 'Yanıtlandı' GROUP BY t.kimlik, k.ticari_unvan ORDER BY 6, 7`, [id])).rows;
+    const enDusuk = l.filter((x) => !x.fiyatsiz).reduce((m, x) => Math.min(m, x.kdv_haric), Infinity);
+    const sonuc = [];
+    for (const x of l) {
+      const onceki = Number((await b.db.query(`SELECT coalesce(sum(kdv_haric_eur), 0) t FROM tedarik_siparisi WHERE dosya_ref = $1 AND kurulus_ref = $2 AND statu <> 'İptal'`, [id, x.kurulus_ref])).rows[0].t);
+      sonuc.push({ kimlik: x.kimlik, talepNo: x.talep_no, tedarikci: x.ticari_unvan, kdvHaric: R2(x.kdv_haric), teslimGun: x.teslim_gun, gecerlilik: x.gecerlilik, eksikFiyat: x.fiyatsiz > 0, enDusuk: !x.fiyatsiz && x.kdv_haric === enDusuk, onayMakami: await sonMakam(b.db, R2(onceki + x.kdv_haric)) });
+    }
+    return sonuc;
+  });
   s.get('/dosya/:id/siparisler', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
