@@ -380,7 +380,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
 }
 
 interface Saha {
-  kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null }[];
+  kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null; plan_onay_zamani?: string | null }[];
   bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null; teyit_bekliyor?: boolean }[];
   gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
@@ -426,7 +426,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       {hata && <div className="hata" role="alert">{hata}</div>}
       {not && <div className="not" role="status">{not}</div>}
       <Blok baslik="Keşif">
-        {v.kesifler.map((k) => <div key={k.kimlik}>{saat(k.planlanan_baslangic)} · {k.amac_kapsam} · {k.durum}{k.cikis_durumu ? ` · ${k.cikis_durumu}` : ''}</div>)}
+        {v.kesifler.map((k) => <div key={k.kimlik}>{saat(k.planlanan_baslangic)} · {k.amac_kapsam} · {k.durum}{k.cikis_durumu ? ` · ${k.cikis_durumu}` : ''}{k.durum === 'Planlandı' && !k.plan_onay_zamani && <> · Plan Teknik Yönetici onayı bekliyor <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/kesif/${k.kimlik}/plan-onay`, {}))}>Planı Onayla</button></>}</div>)}
         {d.statu === 'Aktif' && d.asama === 'Keşif' && !acikKesif && <>
           <label htmlFor="ks-a">Keşfin Amacı ve Kapsamı</label><input id="ks-a" value={amac} onChange={(e) => setAmac(e.target.value)} />
           <div className="iki-tarih"><div><label htmlFor="ks-b">Başlangıç</label><input id="ks-b" type="datetime-local" value={kBas} onChange={(e) => setKBas(e.target.value)} /></div><div><label htmlFor="ks-s">Bitiş</label><input id="ks-s" type="datetime-local" value={kBit} onChange={(e) => setKBit(e.target.value)} /></div></div>

@@ -20,6 +20,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { DosyaDestek } from './Destek';
 import { PortalaAc } from './PortalaAc';
 import { DurumBoyutlari } from './DurumBoyutlari';
+import { OnayKayitlari } from './OnayKayitlari';
 import { YatGecmisi } from './YatGecmis';
 import { KilometreTaslari } from './Kilometre';
 import { KislikSorumlusu } from './Kislik';
@@ -233,6 +234,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <IletisimBilgisi dosya={id} />
     <IcIlerleme dosya={id} />
     <DurumBoyutlari dosya={id} />
+    <OnayKayitlari dosya={id} />
     <IlkKapsam dosya={id} />
     <KatalogReferansi dosya={id} />
     <YatKarada dosya={id} />

@@ -4,7 +4,8 @@ import { ortamKur, type Ortam } from './yardimci.js';
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', hd: 'Hukuk ve Uyum Direktörü', mpd: 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
 let o: Ortam;
 const hazir = async (e: Record<string, unknown> = {}, ac: Record<string, unknown> = {}) => { const d = await o.dosyaAc(e, ac); await o.ekipKur(d.kimlik); return d; };
-const kesifAc = async (id: string, e: object = {}) => o.ist('POST', `/api/dosya/${id}/kesif`, await o.gir('tu'), { amac: 'Hasar tespiti', baslangic: '2026-11-20T09:00:00Z', bitis: '2026-11-20T12:00:00Z', ...e });
+// YG-055: plan Teknik Yönetici onayıyla tamamlanabilir olur.
+const kesifAc = async (id: string, e: object = {}, onayla = true) => { const r = await o.ist('POST', `/api/dosya/${id}/kesif`, await o.gir('tu'), { amac: 'Hasar tespiti', baslangic: '2026-11-20T09:00:00Z', bitis: '2026-11-20T12:00:00Z', ...e }); if (onayla && r.statusCode === 200) await o.ist('POST', `/api/kesif/${r.json().kimlik}/plan-onay`, await o.gir('ty'), {}); return r; };
 const bulgu = async (id: string, e: object = {}) => o.ist('POST', `/api/dosya/${id}/bulgu`, await o.gir('tu'), { konum: 'Baştan 8 m, sancak', aciklama: 'Çatlak', etiket: 'Hasar', bilgiTuru: 'İlk Gözlem', onem: 'Orta', yonlendirme: 'Onarım', sorumlu: o.K.tu, hedefTarih: '2026-12-01', ...e });
 const genelFoto = async (id: string) => {
   for (const k of ['Genel – Baş', 'Genel – Kıç', 'Genel – Sancak', 'Genel – İskele', 'Genel – Güverte', 'Kimlik – Yat Adı']) {
@@ -40,6 +41,15 @@ describe('keşif (YG-049, YG-056, YG-111)', () => {
     const s = await hazir({ sigortaci: 'SG' }, { musteriTuru: 'Sigorta Şirketi' });
     expect((await kesifAc(s.kimlik)).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-01'`, [s.kimlik])).rowCount).toBe(0);
+  });
+  it('keşif planı Teknik Yönetici onayı olmadan tamamlanmaz; hazırlayan ve başkası onaylayamaz (YG-055)', async () => {
+    const d = await hazir(); const k = (await kesifAc(d.kimlik, {}, false)).json().kimlik;
+    expect(await o.kart('Keşif Planı Onayı', k)).toBeDefined();
+    const r = await o.ist('POST', `/api/kesif/${k}/tamamla`, await o.gir('tu'), TAMAM); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Teknik Yönetici');
+    expect((await o.ist('POST', `/api/kesif/${k}/plan-onay`, await o.gir('tu'), {})).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/kesif/${k}/plan-onay`, await o.gir('ty'), {})).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/kesif/${k}/plan-onay`, await o.gir('ty'), {})).statusCode).toBe(409);
+    expect((await o.kart('Keşif Planı Onayı', k)).durum).toBe('Tamamlandı');
   });
   it('tamamlama: fotoğraf eksikse kapanmaz; erişilemeyen alan açık konu olur; keşif sayacı kapanır; teklife geçilir', async () => {
     const d = await hazir(); const k = (await kesifAc(d.kimlik)).json().kimlik; const c = await o.gir('tu');

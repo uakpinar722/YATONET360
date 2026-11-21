@@ -844,7 +844,7 @@ describe('onaylı ilerleme fotoğrafı (YG-458)', () => {
     const r = await o.ist('POST', u, await o.gir('tu'), { belge: foto, aciklama: 'Laminasyon tamamlandı', teyit: true }); expect(r.statusCode, r.body).toBe(200);
     const c = await o.gir('iks');
     const pr = await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, c); expect(pr.statusCode, pr.body).toBe(200); const p = pr.json();
-    expect(p.fotograflar.map((x: { aciklama: string }) => x.aciklama)).toEqual(['Laminasyon tamamlandı']);
+    expect(p.fotograflar.map((x: { aciklama: string }) => x.aciklama)).toEqual(['Laminasyon tamamlandı']); expect(p.kapsamOzeti).toEqual([]); // YG-055: onaylı cetvel yoksa özet boş
     const ind = await o.ist('GET', `/api/portal/fotograf/${r.json().kimlik}`, c); expect(ind.statusCode).toBe(200);
     expect(ind.headers['content-disposition']).not.toContain('Firma'); expect(ind.headers['content-disposition']).toMatch(/ilerleme-.*\.jpg/);
     expect((await o.ist('GET', `/api/portal/fotograf/${r.json().kimlik}`, await o.gir('mpm'))).statusCode).toBe(404);

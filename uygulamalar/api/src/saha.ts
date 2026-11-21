@@ -158,10 +158,33 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
         if (t?.telefon || t?.eposta) await onayTalebiAc(c, { dosya: id, ony: 'ONY-01', dil: d.yazisma_dili === 'İngilizce' ? 'en' : 'tr', alanlar: { Yat: t.yat_adi, Yacht: t.yat_adi, 'Dosya No': d.dosya_no, 'File No': d.dosya_no }, taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, belgeAdi: 'Keşif ve Söküm İzni', hazirlayan: o.kullanici, sigortaHatirlat: true, webAdresi: b.webAdresi, nesneTuru: 'Keşif', nesneKimligi: k.kimlik });
       }
       await (await import('./randevu.js')).randevuBildir(c, b, { dosya: id, tur: 'Keşif', zaman: new Date(g.baslangic!), yer: g.bulusma?.trim() || d.konum, yapan: o.kullanici }); // YG-552
+      // YG-055: keşif planı dosyanın Teknik Yöneticisinin onayına gider; Kritik dosyada beklenmez (onay sonradan da verilebilir).
+      if (d.oncelik === 'Kritik') await c.query(`UPDATE kesif SET plan_onay_zamani = now() WHERE kimlik = $1`, [k.kimlik]);
+      else {
+        const ty = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Yönetici' AND bitis_zamani IS NULL LIMIT 1`, [id])).rows[0]?.kullanici_ref as string | undefined;
+        await kartAc(c, { tur: 'Keşif Planı Onayı', kategori: 'gorev', baslik: `${d.dosya_no} · Keşif Planı Onayı`, ozet: g.amac!.trim().slice(0, 300), oncelik: d.oncelik === 'Yüksek' ? 'Yüksek' : 'Normal', ...(ty ? { sahipKullanici: ty } : { sahipRol: 'Teknik Yönetici' }), nesneTuru: 'Keşif', nesneKimligi: k.kimlik });
+      }
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Keşif Görevi Açıldı', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return k;
     });
     return r;
+  });
+
+  // YG-055: keşif planını dosyanın Teknik Yöneticisi (yoksa Teknik Yönetici rolü) onaylar; planı hazırlayan onaylayamaz.
+  s.post('/kesif/:id/plan-onay', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id)) return yok(y);
+    const k = (await b.db.query(`SELECT k.kimlik, k.dosya_ref, k.olusturan_ref, k.plan_onay_zamani, k.durum FROM kesif k WHERE k.kimlik = $1`, [id])).rows[0];
+    if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
+    const ty = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Yönetici' AND bitis_zamani IS NULL LIMIT 1`, [k.dosya_ref])).rows[0]?.kullanici_ref;
+    const rolde = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Teknik Yönetici'`, [o.kullanici])).rowCount);
+    if (ty ? ty !== o.kullanici : !rolde) return y.code(403).send({ hata: 'Keşif planını dosyanın Teknik Yöneticisi onaylar.' });
+    if (k.olusturan_ref === o.kullanici) return y.code(403).send({ hata: 'Planı hazırlayan onaylayamaz.' });
+    if (k.plan_onay_zamani || k.durum !== 'Planlandı') return y.code(409).send({ hata: 'Keşif planı onay beklemiyor.' });
+    await b.db.query(`UPDATE kesif SET plan_onaylayan_ref = $2, plan_onay_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Keşif Planı Onayı' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Keşif Planı Onayı', nesneTuru: 'Dosya', nesneKimligi: k.dosya_ref, yeni: { kesif: id }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-056, YG-111, YG-1529, YG-1452: tamamlanırken erişilemeyen alan açık konu olur; asbest/TBT şüphesi işi durdurur; katalog değeri teyit edilir; zorunlu fotoğraf eksiksizdir.
@@ -173,6 +196,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
     if (k.sorumlu_ref !== o.kullanici) return y.code(403).send({ hata: 'Keşfi sorumlu Teknik Uzman tamamlar.' });
     if (k.durum !== 'Planlandı') return y.code(409).send({ hata: 'Keşif sonuçlanmıştır.' });
+    if (!k.plan_onay_zamani) return y.code(409).send({ hata: 'Keşif planı Teknik Yönetici onayı bekliyor.' }); // YG-055
     if (!g.incelenen?.trim() || !g.tarih) return y.code(400).send({ hata: 'Keşif tarihi ve incelenen alanlar zorunludur.' });
     if (!['Hazır', 'Koşullu', 'Açık'].includes(g.cikis ?? '')) return y.code(400).send({ hata: 'Çıkış durumunu seçiniz.' });
     if (!['Hayır', 'Evet', 'Bilinmiyor'].includes(g.supheli ?? '')) return y.code(400).send({ hata: 'Asbest ve eski TBT boyası sorusunu yanıtlayınız.' });
@@ -353,7 +377,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const q = (t: string) => b.db.query(t, [id]).then((r) => r.rows);
     const ustKademe = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.kademe = 'Direktör' OR x.rol_adi IN ('CEO', 'Genel Müdür Yardımcısı')) LIMIT 1`, [o.kullanici])).rowCount);
     return {
-      kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
+      kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme, plan_onay_zamani FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
       bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
       gorseller: await q(`SELECT g.gorsel_no, g.asama, g.cekim_kalemi, g.bolge_kodu, g.cekilemedi_nedeni, g.cekim_zamani, g.belge_ref FROM gorsel_kanit g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani`),
       olcumler: await q(`SELECT olcum_no, olcum_noktasi, olculen_buyukluk, ozet_deger, birim, gecerlilik, sinir_disi FROM olcum_kaydi WHERE dosya_ref = $1 ORDER BY olcum_no`),

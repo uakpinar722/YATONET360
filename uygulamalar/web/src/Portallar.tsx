@@ -88,7 +88,7 @@ interface KurumHesapV { kurum: { kimlik: string; sicil_no: string; ticari_unvan:
 interface Cari { satirlar: { hakedis_no: string; is_emri_no: string; bu_donem_brut: string; kesinti: string; net: string; statu: string; firma_fatura_no: string | null; planlanan_tarih: string | null; talimat: string | null; tahsilat_tarihi: string | null }[]; acikNet: number }
 /** YG-1574: gün başına kayıt; zorunlu alanlar dolmadan Günü Kapat çalışmaz. */
 export function GunlukKayit({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
-  const [f, setF] = useState({ faaliyet: '', olcumler: '', engel: '', sonrakiPlan: '', sorumlu: '' }); const [fot, setFot] = useState<string[]>([]);
+  const [f, setF] = useState({ faaliyet: '', olcumler: '', engel: '', sonrakiPlan: '', sorumlu: '', sahaDuzeni: '' }); const [fot, setFot] = useState<string[]>([]);
   const kaydet = (kapat: boolean) => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/gunluk`, { ...f, fotograflar: fot, kapat }), kapat ? 'Gün kapatıldı.' : 'Kayıt saklandı.');
   return (
     <Blok baslik="Günlük Kayıt">
@@ -98,6 +98,7 @@ export function GunlukKayit({ isEmri, yap }: { isEmri: string; yap: (f: () => Pr
       <label htmlFor={`gl-e-${isEmri}`}>Engel</label><input id={`gl-e-${isEmri}`} value={f.engel} onChange={(e) => setF({ ...f, engel: e.target.value })} />
       <label htmlFor={`gl-p-${isEmri}`}>Bir Sonraki Çalışma Günü Planı</label><input id={`gl-p-${isEmri}`} value={f.sonrakiPlan} onChange={(e) => setF({ ...f, sonrakiPlan: e.target.value })} />
       <label htmlFor={`gl-s-${isEmri}`}>Sorumlu</label><input id={`gl-s-${isEmri}`} value={f.sorumlu} onChange={(e) => setF({ ...f, sorumlu: e.target.value })} />
+      <label htmlFor={`gl-d-${isEmri}`}>Saha Düzeni (Saha Sorumlusu atanmamışsa zorunlu; düzenliyse "Uygun")</label><input id={`gl-d-${isEmri}`} value={f.sahaDuzeni} onChange={(e) => setF({ ...f, sahaDuzeni: e.target.value })} />
       <div className="not">Günü kapatabilmeniz için zorunlu alanları tamamlamanızı rica ederiz.</div>
       <div className="dugmeler"><button className="btn2" onClick={() => kaydet(false)}>Kaydı Sakla</button><button className="btn evet" onClick={() => kaydet(true)}>Günü Kapat</button></div>
       <GecikmeBildirimi isEmri={isEmri} yap={yap} />
@@ -160,7 +161,7 @@ export function ParcaVeTeslim({ isEmri, yap }: { isEmri: string; yap: (f: () => 
   );
 }
 
-interface SahaV { teshisiBelirsiz: boolean; statu: string; toplanti: { tarih: string; kisa_form: boolean; katilimcilar: string } | null; gunlukler: { kimlik: string; tarih: string; faaliyet: string | null; engel: string | null; durum: string }[]; parcalar: { kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]; sapmalar: { kimlik: string; tur: string; aciklama: string; karar: string; durum: string; hedef_tarih: string | null }[]; bulgular: { kimlik: string; sinif: string; aciklama: string }[]; testler?: { kimlik: string; test_no: string; test_grubu: string; sonuc: string | null }[]; dosyaBulgulari?: { kimlik: string; bulgu_no: string; aciklama: string }[]; }
+interface SahaV { teshisiBelirsiz: boolean; statu: string; toplanti: { tarih: string; kisa_form: boolean; katilimcilar: string } | null; gunlukler: { kimlik: string; tarih: string; faaliyet: string | null; engel: string | null; durum: string; saha_duzeni?: string | null }[]; sahaDuzeniSorumlusu?: string; parcalar: { kimlik: string; urun_tanimi: string; parca_no: string; lot_no: string; kabul_karari: string | null }[]; sapmalar: { kimlik: string; tur: string; aciklama: string; karar: string; durum: string; hedef_tarih: string | null }[]; bulgular: { kimlik: string; sinif: string; aciklama: string }[]; testler?: { kimlik: string; test_no: string; test_grubu: string; sonuc: string | null }[]; dosyaBulgulari?: { kimlik: string; bulgu_no: string; aciklama: string }[]; }
 /** YG-379, YG-786, Ek I §7.5: LGM saha kayıtları; karneye kayıtlardan yansır. */
 export function SahaKayitlari({ isEmri }: { isEmri: string }) {
   const [v, setV] = useState<SahaV | null>(null); const [s, setS] = useState({ tur: 'Yöntem', aciklama: '', karar: 'Düzeltme', firmaKaynakli: true, isgIhlali: false, onaysizEkIs: false, ekTest: '', zarfGenisledi: false, bulgu: '' }); const [d, setD] = useState({ sinif: 'Minör', aciklama: '', hedef: '' }); const [be, setBe] = useState(''); const [ac, setAc] = useState(false); const [hedef, setHedef] = useState(''); const [kk, setKk] = useState<Record<string, string>>({}); const [gv, setGv] = useState(''); const [tp, setTp] = useState({ tarih: '', katilimcilar: '', konusulanlar: '', kisaForm: false });
@@ -171,7 +172,8 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
   return (
     <div className="tam"><Mesaj />
       {v && <>
-        {v.gunlukler.map((x) => <div key={x.kimlik}>{tarih(x.tarih)} · {x.faaliyet ?? '—'}{x.engel ? ` · Engel: ${x.engel}` : ''} · {x.durum}</div>)}
+        {v.sahaDuzeniSorumlusu && <div className="not">Saha düzeninden sorumlu: {v.sahaDuzeniSorumlusu}</div>}
+        {v.gunlukler.map((x) => <div key={x.kimlik}>{tarih(x.tarih)} · {x.faaliyet ?? '—'}{x.engel ? ` · Engel: ${x.engel}` : ''}{x.saha_duzeni ? ` · Saha düzeni: ${x.saha_duzeni}` : ''} · {x.durum}</div>)}
         {v.parcalar.map((x) => <div className="soru" key={x.kimlik}><span>{x.urun_tanimi} · {x.parca_no} · Lot: {x.lot_no} · {x.kabul_karari ?? 'Kontrol Bekliyor'}</span>{!x.kabul_karari && ['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => void yap(() => istek(`/parca-girisi/${x.kimlik}/karar`, { karar: k }))}>{k}</button>)}</div>)}
         {v.statu === 'Durduruldu' && <div className="uyari">⚠ İş durduruldu. <label htmlFor={`rb-${isEmri}`}>Güvenli Koşul Doğrulaması</label><input id={`rb-${isEmri}`} value={gv} onChange={(e) => setGv(e.target.value)} /><button className="btn2 kucuk" disabled={!gv.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/yeniden-baslat`, { gerekce: gv }), 'İş yeniden başlatıldı.')}>Yeniden Başlat</button></div>}
         {v.toplanti ? <div>Başlangıç Toplantısı: {tarih(v.toplanti.tarih)}{v.toplanti.kisa_form ? ' · Kısa Form' : ''} · {v.toplanti.katilimcilar}</div> : <>

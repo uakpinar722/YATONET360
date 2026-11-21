@@ -334,6 +334,7 @@ try {
   kontrol('zorunlu alan olmadan gün kapanmaz', (await pF2.getByRole('alert').first().textContent()).includes('zorunlu alan'));
   await pF2.getByLabel('Fotoğraf', { exact: true }).setInputFiles(dosyaYaz('gunluk')); await pF2.waitForTimeout(500);
   await pF2.getByLabel('Bir Sonraki Çalışma Günü Planı', { exact: true }).fill('Montaj'); await pF2.getByLabel('Sorumlu', { exact: true }).fill('Usta'); await pF2.getByLabel('Ölçümler', { exact: true }).fill('Yok'); await pF2.getByLabel('Engel', { exact: true }).fill('Yok');
+  await pF2.getByLabel('Saha Düzeni (Saha Sorumlusu atanmamışsa zorunlu; düzenliyse "Uygun")', { exact: true }).fill('Uygun');
   await tikla(pF2, 'Günü Kapat');
   kontrol('günlük kayıt kapatılır', (await sup.query(`SELECT g.durum FROM firma_gunluk_kaydi g JOIN is_emri e ON e.kimlik = g.is_emri_ref WHERE e.is_emri_no = $1`, [ie.is_emri_no])).rows[0]?.durum === 'Kapatıldı');
   await pF2.getByLabel('Ürün', { exact: true }).fill('Kovan'); await pF2.getByLabel('Parça No', { exact: true }).fill('PN-1'); await pF2.getByLabel('Parça Miktarı', { exact: true }).fill('1'); await pF2.getByLabel('Lot No', { exact: true }).fill('L-1');

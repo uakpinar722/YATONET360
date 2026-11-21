@@ -431,6 +431,12 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).toBe('Uygulama');
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBeGreaterThan(0);
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, c, { belge: ob })).statusCode).toBe(409);
+    // YG-160: sigorta kararları Bedel Kabulü onay kaydı olarak listelenir; tür süzgeci sözlük dışını reddeder.
+    const ok = await o.ist('GET', `/api/dosya/${d.kimlik}/onay-kayitlari?tur=${encodeURIComponent('Bedel Kabulü')}`, c); expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json().kayitlar.map((x: { sonuc: string }) => x.sonuc).sort()).toEqual(['Koşullu Onay', 'Sınırlı Yetki']);
+    expect(ok.json().turler).toEqual(['Talimat', 'Teknik Onay', 'Bedel Kabulü', 'Değişiklik Onayı', 'Teslim Kabulü']);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/onay-kayitlari`, c)).json().kayitlar.some((x: { tur: string }) => x.tur === 'Teknik Onay')).toBe(true);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/onay-kayitlari?tur=Beklemede`, c)).statusCode).toBe(400);
   });
   it('kısmi onayda kalem silinmez, işaretlenir; iş emrine yalnız onaylılar geçer; onaylanmayanlar için görev açılır', async () => {
     const { d, t } = await gonder();

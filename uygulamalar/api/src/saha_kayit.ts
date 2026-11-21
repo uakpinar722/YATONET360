@@ -108,7 +108,7 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-1574, YG-381: gün başına bir kayıt; zorunlu alanlar dolmadan gün kapanmaz; aynı görsel başka kayıtta kanıt olmaz.
   s.post('/firma-portal/is-emri/:id/gunluk', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { faaliyet?: string; fotograflar?: string[]; olcumler?: string; engel?: string; sonrakiPlan?: string; sorumlu?: string; kapat?: boolean };
+    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { faaliyet?: string; fotograflar?: string[]; olcumler?: string; engel?: string; sonrakiPlan?: string; sorumlu?: string; kapat?: boolean; sahaDuzeni?: string };
     if (!e) return yok(y);
     if (e.statu !== 'Aktif') return y.code(409).send({ hata: 'Günlük kayıt aktif iş emrine girilir.' });
     const fot = g.fotograflar ?? [];
@@ -117,15 +117,24 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     if (onceki.rowCount) return y.code(409).send({ hata: 'Aynı fotoğraf başka bir kayıtta kanıt olarak kullanılmıştır.' });
     // YG-504: ölçüm ve engel de zorunludur; yoksa "Yok" yazılır.
     if (g.kapat && (!g.faaliyet?.trim() || !fot.length || !g.sonrakiPlan?.trim() || !g.sorumlu?.trim() || !g.olcumler?.trim() || !g.engel?.trim())) return y.code(400).send({ hata: 'Günü kapatabilmeniz için zorunlu alanları (faaliyet, fotoğraf, ölçümler, engel; yoksa "Yok", sonraki gün planı, sorumlu) tamamlamanızı rica ederiz.' });
-    const r = (await b.db.query(`INSERT INTO firma_gunluk_kaydi (is_emri_ref, kurulus_ref, tarih, faaliyet, fotograflar, olcumler, engel, sonraki_plan, sorumlu, durum, giren_ref, kapanis_zamani) VALUES ($1,$2,(now() AT TIME ZONE 'Europe/Istanbul')::date,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-      ON CONFLICT (is_emri_ref, tarih) DO UPDATE SET faaliyet = EXCLUDED.faaliyet, fotograflar = EXCLUDED.fotograflar, olcumler = EXCLUDED.olcumler, engel = EXCLUDED.engel, sonraki_plan = EXCLUDED.sonraki_plan, sorumlu = EXCLUDED.sorumlu, durum = EXCLUDED.durum, kapanis_zamani = EXCLUDED.kapanis_zamani WHERE firma_gunluk_kaydi.durum = 'Açık' RETURNING kimlik, durum`,
-    [e.kimlik, e.kurulus_ref, g.faaliyet?.trim() || null, fot, g.olcumler?.trim() || null, g.engel?.trim() || null, g.sonrakiPlan?.trim() || null, g.sorumlu?.trim() || null, g.kapat ? 'Kapatıldı' : 'Açık', o.kullanici, g.kapat ? new Date() : null])).rows[0];
+    // YG-053: Saha Sorumlusu atanmamışsa günlük saha düzeninden Firma Yetkilisi sorumludur; gün, saha düzeni beyanı olmadan kapanmaz.
+    const sahaSorumlusu = Boolean((await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL LIMIT 1`, [e.dosya_ref])).rowCount);
+    if (g.kapat && !sahaSorumlusu && !g.sahaDuzeni?.trim()) return y.code(400).send({ hata: 'Bu işte Saha Sorumlusu atanmamıştır; günlük saha düzeninden firma yetkilisi sorumludur. Saha düzeni durumunu (düzenli ise "Uygun") yazmanızı rica ederiz.' });
+    const r = (await b.db.query(`INSERT INTO firma_gunluk_kaydi (is_emri_ref, kurulus_ref, tarih, faaliyet, fotograflar, olcumler, engel, sonraki_plan, sorumlu, durum, giren_ref, kapanis_zamani, saha_duzeni) VALUES ($1,$2,(now() AT TIME ZONE 'Europe/Istanbul')::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      ON CONFLICT (is_emri_ref, tarih) DO UPDATE SET faaliyet = EXCLUDED.faaliyet, fotograflar = EXCLUDED.fotograflar, olcumler = EXCLUDED.olcumler, engel = EXCLUDED.engel, sonraki_plan = EXCLUDED.sonraki_plan, sorumlu = EXCLUDED.sorumlu, durum = EXCLUDED.durum, kapanis_zamani = EXCLUDED.kapanis_zamani, saha_duzeni = EXCLUDED.saha_duzeni WHERE firma_gunluk_kaydi.durum = 'Açık' RETURNING kimlik, durum`,
+    [e.kimlik, e.kurulus_ref, g.faaliyet?.trim() || null, fot, g.olcumler?.trim() || null, g.engel?.trim() || null, g.sonrakiPlan?.trim() || null, g.sorumlu?.trim() || null, g.kapat ? 'Kapatıldı' : 'Açık', o.kullanici, g.kapat ? new Date() : null, g.sahaDuzeni?.trim() || null])).rows[0];
     if (!r) return y.code(409).send({ hata: 'Bugünün kaydı kapatılmıştır.' });
     // YG-504: kapanan gündeki engel açık konu günlüğüne Dosya Sorumlusu sahipliğinde aktarılır.
     if (g.kapat && g.engel?.trim() && !/^(yok|none|-+)$/i.test(g.engel.trim())) {
       const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref FROM dosya d WHERE d.kimlik = $1`, [e.dosya_ref])).rows[0];
       if (d?.dosya_sorumlusu_ref) await b.db.query(`INSERT INTO acik_konu (konu_no, dosya_ref, baslik, aciklama, sahip_ref, hedef_tarih, olusturan_ref) VALUES ($1,$2,'Saha Engeli',$3,$4,(now() AT TIME ZONE 'Europe/Istanbul')::date + 2,$5)`,
         [await (await import('./sure.js')).altNumara(b.db, d.dosya_no, 'AK'), d.kimlik, `${e.is_emri_no}: ${g.engel.trim()}`.slice(0, 500), d.dosya_sorumlusu_ref, o.kullanici]);
+    }
+    // YG-053: Dosya Sorumlusu gözetir; uygun olmayan saha düzeni açık konu olarak Dosya Sorumlusuna düşer.
+    if (g.kapat && !sahaSorumlusu && !/^(uygun|düzenli|ok)$/i.test(g.sahaDuzeni!.trim())) {
+      const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref FROM dosya d WHERE d.kimlik = $1`, [e.dosya_ref])).rows[0];
+      if (d?.dosya_sorumlusu_ref) await b.db.query(`INSERT INTO acik_konu (konu_no, dosya_ref, baslik, aciklama, sahip_ref, hedef_tarih, olusturan_ref) VALUES ($1,$2,'Saha Düzeni',$3,$4,(now() AT TIME ZONE 'Europe/Istanbul')::date + 1,$5)`,
+        [await (await import('./sure.js')).altNumara(b.db, d.dosya_no, 'AK'), d.kimlik, `${e.is_emri_no}: ${g.sahaDuzeni!.trim()}`.slice(0, 500), d.dosya_sorumlusu_ref, o.kullanici]);
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.kapat ? 'Günü Kapat' : 'Günlük Kayıt', nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Firma Portalı' });
     return { durum: r.durum };
@@ -182,7 +191,9 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     const q = async (sql: string) => (await b.db.query(sql, [e.kimlik])).rows;
     return {
       teshisiBelirsiz: e.teshisi_belirsiz, statu: e.statu, toplanti: (await b.db.query(`SELECT tarih::text, kisa_form, katilimcilar FROM baslangic_toplantisi WHERE is_emri_ref = $1`, [e.kimlik])).rows[0] ?? null,
-      gunlukler: await q(`SELECT kimlik, tarih::text, faaliyet, engel, sonraki_plan, sorumlu, durum FROM firma_gunluk_kaydi WHERE is_emri_ref = $1 ORDER BY tarih DESC LIMIT 30`),
+      gunlukler: await q(`SELECT kimlik, tarih::text, faaliyet, engel, sonraki_plan, sorumlu, durum, saha_duzeni FROM firma_gunluk_kaydi WHERE is_emri_ref = $1 ORDER BY tarih DESC LIMIT 30`),
+      // YG-053: Saha Sorumlusu yoksa saha düzeninden Firma Yetkilisi sorumlu, Dosya Sorumlusu gözetimde.
+      sahaDuzeniSorumlusu: (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL LIMIT 1`, [e.dosya_ref])).rowCount ? 'Saha Sorumlusu' : 'Firma Yetkilisi (gözetim: Dosya Sorumlusu)',
       parcalar: await q(`SELECT kimlik, urun_tanimi, parca_no, miktar, birim, lot_no, belge_ref, kabul_karari FROM firma_parca_girisi WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),
       sapmalar: await q(`SELECT kimlik, tur, aciklama, karar, durum, hedef_tarih::text, firma_kaynakli, isg_ihlali, onaysiz_ek_is, olusturma_zamani FROM sapma_kaydi WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),
       bulgular: await q(`SELECT kimlik, sinif, aciklama, hedef_tarih::text FROM firma_denetim_bulgusu WHERE is_emri_ref = $1 ORDER BY olusturma_zamani DESC`),

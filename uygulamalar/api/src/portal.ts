@@ -278,10 +278,12 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     // YG-1450: düğme yalnız süresi içinde ve bireysel kayıtta görünür.
     const cayma = Boolean((await b.db.query(`SELECT 1 FROM on_bilgilendirme_cayma_kaydi WHERE dosya_ref = $1 AND cayma_zamani IS NULL AND cayma_bitis > now() LIMIT 1`, [id])).rowCount);
     const fotograflar = (await b.db.query(`SELECT kimlik, aciklama, onay_zamani FROM portal_ilerleme_fotografi WHERE dosya_ref = $1 AND kaldirma_zamani IS NULL ORDER BY onay_zamani`, [d.kimlik])).rows; // YG-458
+    // YG-055: yat sahibi yalnız onaylanmış kapsamın özetini görür (fiyat ve iç notlar olmadan).
+    const kapsamOzeti = (await b.db.query(`SELECT s.satir_kodu, s.aciklama, s.miktar, s.birim FROM kapsam_satiri s WHERE s.cetvel_ref = (SELECT c.kimlik FROM kapsam_cetveli c WHERE c.dosya_ref = $1 AND c.durum = 'Onaylı' ORDER BY c.surum DESC LIMIT 1) ORDER BY s.satir_kodu`, [d.kimlik])).rows;
     // YG-477: yat sahibi kendi yatının mülkiyet türünü, takyidatını ve lehtarını görür.
     const mulkiyet = (await b.db.query(`SELECT y.mulkiyet_turu, y.takyidat, coalesce(y.lehtar_adi, (SELECT unvan_ad_soyad FROM taraf WHERE kimlik = y.lehtar_ref)) lehtar FROM dosya x JOIN yat y ON y.kimlik = x.yat_ref WHERE x.kimlik = $1`, [d.kimlik])).rows[0] ?? null;
     for (const x of teklifler) if (x.karar === 'Süre Dolumu Kabulü') x.karar = null; // SGT-1: sigorta onayı olarak gösterilmez
-    return { ...(await kart(d)), mulkiyet, cayma, belgeler, fotograflar, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
+    return { ...(await kart(d)), mulkiyet, cayma, belgeler, fotograflar, kapsamOzeti, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

@@ -47,7 +47,12 @@ describe('günlük kayıt (YG-1574, YG-381)', () => {
     expect((await o.ist('GET', '/api/firma-portal/gunluk', fC)).json().acik.some((x: { is_emri: string }) => x.is_emri === e)).toBe(true);
     const tam = { faaliyet: 'Söküm', fotograflar: [b1], sonrakiPlan: 'Montaj', sorumlu: 'Usta', engel: 'Parça gecikti', olcumler: 'Şaft salgısı 0,05 mm' };
     expect((await o.ist('POST', u, fC, { ...tam, olcumler: '', kapat: true })).statusCode).toBe(400); // YG-504
-    expect((await o.ist('POST', u, fC, { ...tam, kapat: true })).json().durum).toBe('Kapatıldı');
+    { // YG-053: Saha Sorumlusu yoksa saha düzeni beyanı zorunlu; uygun değilse Dosya Sorumlusuna açık konu
+      const ss = (await o.sup.query(`SELECT 1 FROM dosya_ekibi_atamasi a JOIN is_emri e ON e.dosya_ref = a.dosya_ref WHERE e.kimlik = $1 AND a.rol = 'Saha Sorumlusu' AND a.bitis_zamani IS NULL`, [e])).rowCount;
+      if (!ss) { const r0 = await o.ist('POST', u, fC, { ...tam, kapat: true }); expect(r0.statusCode).toBe(400); expect(r0.json().hata).toContain('Saha Sorumlusu atanmamıştır'); }
+    }
+    expect((await o.ist('POST', u, fC, { ...tam, sahaDuzeni: 'Malzeme iskelede dağınık', kapat: true })).json().durum).toBe('Kapatıldı');
+    expect((await o.sup.query(`SELECT saha_duzeni FROM firma_gunluk_kaydi WHERE is_emri_ref = $1`, [e])).rows[0].saha_duzeni).toBe('Malzeme iskelede dağınık');
     expect((await o.sup.query(`SELECT count(*)::int n FROM acik_konu WHERE baslik = 'Saha Engeli' AND aciklama LIKE '%Parça gecikti'`)).rows[0].n).toBeGreaterThanOrEqual(0);
     expect((await o.ist('POST', u, fC, tam)).statusCode).toBe(409);
     expect((await o.ist('GET', '/api/firma-portal/gunluk', fC)).json().acik.some((x: { is_emri: string }) => x.is_emri === e)).toBe(false);
