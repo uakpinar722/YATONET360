@@ -122,7 +122,7 @@ export function kurumTalebiYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT durum, yonlenen_birim AS yon_rol FROM kurum_talebi WHERE kimlik = $1`, [id])).rows[0];
     if (!t || !(await erisir(o.kullanici, t))) return yok(y);
-    if (g.durum !== 'Davet Edildi' && g.durum !== 'Kapatıldı') return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (g.durum !== 'Davet Edildi' && g.durum !== 'Kapatıldı') return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     if (g.durum === 'Kapatıldı' && !g.not?.trim()) return y.code(400).send({ hata: 'Kapatma gerekçesi yazınız.' });
     if (MPM_TURLERI.includes((await b.db.query(`SELECT kurum_turu FROM kurum_talebi WHERE kimlik = $1`, [id])).rows[0]?.kurum_turu)) return y.code(409).send({ hata: 'Bu talepte sonuç Müşteri ve Paydaş İlişkileri Müdürünün "Kararı Kaydet" adımıyla verilir.' });
     if (t.durum === 'Davet Edildi' || t.durum === 'Kapatıldı') return y.code(409).send({ hata: 'Bu talep sonuçlanmıştır.' });

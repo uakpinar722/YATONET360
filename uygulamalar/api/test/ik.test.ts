@@ -147,6 +147,15 @@ describe('ayrılış (YG-975, YG-979, YG-933)', () => {
     const dv = v.devir[0];
     expect((await o.ist('POST', `/api/ayrilis-devir/${dv.kimlik}`, await o.gir('oy'), { devralan: o.K.ds })).statusCode).toBe(403);
     for (const x of v.devir) expect((await o.ist('POST', `/api/ayrilis-devir/${x.kimlik}`, await o.gir('opm'), { devralan: o.K.ds })).statusCode).toBe(200);
+    // YG986-KABUL: devralan kabul edene kadar dosya geçmez, önceki sorumlunun ataması sürer
+    const dd = v.devir.find((x: { tur: string }) => x.tur === 'Dosya');
+    expect((await o.sup.query(`SELECT durum FROM ayrilis_devri WHERE kimlik = $1`, [dd.kimlik])).rows[0].durum).toBe('Devralan Kabulünde');
+    expect((await o.sup.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [d.kimlik, o.K.ds2])).rowCount).toBe(1);
+    expect((await o.ist('POST', `/api/ayrilis/${id}/tazminat`, iks, {})).json().hata).toContain('kabulü');
+    for (const x of v.devir) { const kk = await o.kart('Devir Kabulü', x.kimlik); expect((await o.karar(kk.kimlik, 'opm', 'Tamamlandı')).statusCode).toBe(403); expect((await o.karar(kk.kimlik, 'ds', 'Tamamlandı')).statusCode).toBe(200); }
+    expect((await o.sup.query(`SELECT durum, kabul_zamani IS NOT NULL k FROM ayrilis_devri WHERE kimlik = $1`, [dd.kimlik])).rows[0]).toEqual({ durum: 'Devredildi', k: true });
+    expect((await o.sup.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [d.kimlik, o.K.ds2])).rowCount).toBe(0);
+    expect((await o.sup.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = 'Yedek Sorumlu' AND bitis_zamani IS NULL`, [d.kimlik, o.K.ds])).rowCount).toBe(1);
     expect((await o.ist('POST', `/api/ayrilis/${id}/tazminat`, iks, {})).json().hata).toContain('Cihaz');
     const p = await o.gir('ds2');
     expect((await o.ist('POST', `/api/ayrilis/${id}/cihaz-onay`, await o.gir('opm'), {})).statusCode).toBe(409);

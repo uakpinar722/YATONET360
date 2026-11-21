@@ -23,8 +23,8 @@ export async function belgeUret(c: Db, g: { tur: UretimTuru; nesne: string; dosy
   await c.query(`INSERT INTO belge_uretim (tur, nesne, dosya_ref, gonder) VALUES ($1,$2,$3,$4) ON CONFLICT (tur, nesne) DO UPDATE SET gonder = CASE WHEN belge_uretim.durum = 'Bekliyor' THEN coalesce(EXCLUDED.gonder, belge_uretim.gonder) ELSE EXCLUDED.gonder END, durum = 'Bekliyor', deneme = 0`, [g.tur, g.nesne, g.dosya, g.gonder ? JSON.stringify(g.gonder) : null]);
 }
 
-/** YG-683: paket birimli kalemde miktar yerine Maktuen yazılır. */
-export const miktarYaz = (k: { miktar: unknown; birim: string }, dil: Dil) => (/^paket$/i.test(k.birim) ? (dil === 'en' ? 'Lump sum' : 'Maktuen') : `${tutar(Number(k.miktar), dil)} ${k.birim}`);
+/** YG-683: paket birimli kalemde miktar yerine Maktuen yazılır. YG-196: ölçülemeyen değer tahmini işaretlenir, teknik pay ayrı yazılır. */
+export const miktarYaz = (k: { miktar: unknown; birim: string; olculemez?: boolean; teknik_pay?: unknown }, dil: Dil) => (/^paket$/i.test(k.birim) ? (dil === 'en' ? 'Lump sum' : 'Maktuen') : `${tutar(Number(k.miktar), dil)} ${k.birim}${k.olculemez ? (dil === 'en' ? ' (estimated)' : ' (tahmini)') : ''}${Number(k.teknik_pay) > 0 ? (dil === 'en' ? ` + technical allowance ${tutar(Number(k.teknik_pay), dil)}` : ` + teknik pay ${tutar(Number(k.teknik_pay), dil)}`) : ''}`);
 
 /** YG-878: teklifte KDV durumu kullanıcıdan alınmaz, taraf kaydından gelir. */
 async function kdvDurumMetni(db: Db, dosya: string, muhatap: string, dil: Dil): Promise<string> {
@@ -92,7 +92,7 @@ async function teslimSatiri(db: Db, f: Record<string, any>, d: Record<string, an
 export async function teklifTanim(db: Db, id: string, kod: string, web: string): Promise<{ t: BelgeTanim; dosyaAdi: string; sinif: string }> {
   const f = (await db.query(`SELECT * FROM fiyat_teklifi WHERE kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, f.dosya_ref, f.hazirlayan_ref); const dil = b.dil; const e = E[dil];
-  const kl = (await db.query(`SELECT sira_no, kartela_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [id])).rows;
+  const kl = (await db.query(`SELECT sira_no, kartela_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, olculemez FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [id])).rows;
   const kapanis = (await db.query(`SELECT r.rol_adi, a.zaman FROM is_karti k JOIN is_karti_adim a ON a.is_ref = k.kimlik LEFT JOIN rol r ON r.kimlik = a.rol_ref WHERE k.tur = 'Fiyat Teklifi' AND k.nesne_kimligi = $1 AND a.karar IN ('Onayla', 'Kademe Atla') ORDER BY a.kimlik DESC LIMIT 1`, [id])).rows[0];
   const top = [{ et: e.ara, deger: para(f.ara_toplam_eur, dil) }];
   if (Number(f.indirim_tutari_eur) > 0) top.push({ et: `${e.indirim} %${oran(f.indirim_orani)}`, deger: `-${para(f.indirim_tutari_eur, dil)}` });
@@ -295,7 +295,7 @@ export async function yontemBilgiTanim(db: Db, id: string) {
 async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
   const e = (await db.query(`SELECT e.*, k.ticari_unvan, d.oncelik, d.kesin_teslim_tarihi, d.gecikme_bedeli_eur, d.kesin_teslim_durumu, f.teklif_no, f.surum_no AS teklif_surum FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref JOIN dosya d ON d.kimlik = e.dosya_ref LEFT JOIN fiyat_teklifi f ON f.kimlik = e.teklif_ref WHERE e.kimlik = $1`, [id])).rows[0];
   const b = await dosyaBilgi(db, e.dosya_ref, ''); const dil: Dil = 'tr'; const bt = { ...b, dil };
-  const kl = (await db.query(`SELECT aciklama, miktar, birim FROM is_emri_kalemi WHERE is_emri_ref = $1 ORDER BY aciklama`, [id])).rows;
+  const kl = (await db.query(`SELECT aciklama, miktar, birim, teknik_pay, olculemez FROM is_emri_kalemi WHERE is_emri_ref = $1 ORDER BY aciklama`, [id])).rows;
   const rapor = (await db.query(`SELECT rapor_no FROM teknik_rapor WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [e.dosya_ref])).rows[0]?.rapor_no as string | undefined;
   const lgm = (await db.query(`SELECT r.rol_adi, a.zaman FROM is_karti k JOIN is_karti_adim a ON a.is_ref = k.kimlik LEFT JOIN rol r ON r.kimlik = a.rol_ref WHERE k.tur = 'İş Emri' AND k.nesne_kimligi = $1 AND a.karar = 'Onayla' ORDER BY a.kimlik DESC LIMIT 1`, [id])).rows[0];
   const yetkili = (await db.query(`SELECT h.ad_soyad, h.cep_telefonu, h.e_posta FROM is_emri x JOIN kullanici_hesabi h ON h.kimlik = x.firma_kabul_eden_ref WHERE x.kimlik = $1`, [id])).rows[0];
@@ -311,6 +311,7 @@ async function isEmriTanim(db: Db, id: string, kod: string, web: string) {
   ];
   void ortM;
   if (kl.length) bolumler.push({ baslik: 'İş Paketleri', tur: 'tablo', sutunlar: [{ ad: 'Paket', hiza: 'ort' }, { ad: 'Kapsam' }, { ad: 'Miktar', hiza: 'sag' }], satirlar: kl.map((k, n) => [n + 1, k.aciklama, miktarYaz(k, dil)]) });
+  if (e.secilmeyen_kalemler) bolumler.push({ baslik: 'Seçilmeyen Opsiyon ve Alternatifler (Uygulanmaz)', tur: 'metin', metin: e.secilmeyen_kalemler }); // YG-196
   const dayanak = e.is_emri_turu === 'AC' ? 'Firmanın onaylı acil hizmet tarifesi (İB Çerçeve Sözleşmesi Ek-1)  ·  iş emri fiyat içermez' : e.teklif_ref ? 'Onaylı Firma Fiyat Teklifi FR-TIC-012  ·  iş emri fiyat içermez' : 'İş emri fiyat içermez';
   bolumler.push({ baslik: 'Bedel Dayanağı', tur: 'alanlar', alanlar: [{ et: 'Bedel Dayanağı', deger: dayanak, genis: true }] });
   if (['ON', 'EK', 'GR'].includes(e.is_emri_turu)) bolumler.push({ baslik: 'Saha Kuralları', tur: 'alanlar', alanlar: [{ et: 'Yatın Kullanımı', deger: 'Yatı yalnız yatın kaptanı kullanır', genis: true }, { et: 'Kayıt', deger: 'İlerleme ve fotoğraflar her gün YATONET 360’a', genis: true }, { et: 'Atık', deger: 'Ayrıştırılır, teslim belgesi yüklenir', genis: true }, { et: 'İSG', deger: 'Çalışma izni ve kişisel koruyucu donanım zorunlu', genis: true }, { et: 'İletişim', deger: 'Müşteri ve sigorta ile yalnız LGM üzerinden', genis: true }, { et: 'Çalışma Saatleri', deger: 'Tesisin çalışma saatlerine ve kurallarına uyulur', genis: true }] });

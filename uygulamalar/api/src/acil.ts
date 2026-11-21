@@ -207,7 +207,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[] };
     if (!(await teknikHazirlayan(o.kullanici))) return yok(y);
     if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });
-    if (!g.vardiyalar?.length) return y.code(400).send({ hata: 'Vardiya giriniz.' });
+    if (!g.vardiyalar?.length) return y.code(400).send({ hata: 'Vardiyayı girmenizi rica ederiz.' });
     const ad = new Map((await teknikAdaylar()).map((x) => [x.kimlik, x.katmanlar]));
     for (const v of g.vardiyalar) {
       if (!['Teknik Uzman', 'Yönetici'].includes(v.katman ?? '') || !v.kullanici || !v.baslangic || !v.bitis || new Date(v.bitis) <= new Date(v.baslangic)) return y.code(400).send({ hata: 'Vardiya katman, kişi ve zaman içermelidir.' });
@@ -254,7 +254,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   s.post('/nobet/cizelge', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { donem?: string; vardiyalar?: { katman?: string; kullanici?: string; baslangic?: string; bitis?: string; brans?: string }[]; degisiklik?: boolean };
     if (!/^\d{4}-\d{2}$/.test(g.donem ?? '')) return y.code(400).send({ hata: 'Dönem YYYY-AA biçiminde olmalıdır.' });
-    if (!g.vardiyalar?.length) return y.code(400).send({ hata: 'Vardiya giriniz.' });
+    if (!g.vardiyalar?.length) return y.code(400).send({ hata: 'Vardiyayı girmenizi rica ederiz.' });
     const ilkGun = new Date(`${g.donem}-01T00:00:00+03:00`);
     if (!g.degisiklik && ilkGun.getTime() - Date.now() < 10 * 86_400_000) return y.code(409).send({ hata: 'Çizelge dönem başından en az 10 gün önce yayımlanır; değişiklik olarak gönderiniz.' });
     for (const v of g.vardiyalar) {
@@ -350,7 +350,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { yanit?: string; tahmini?: number };
     const f = await firmam(o.kullanici);
     if (!f || !UUID.test(id)) return yok(y);
-    if (!['Kabul', 'Müsait Değil'].includes(g.yanit ?? '')) return y.code(400).send({ hata: 'Yanıtı seçiniz.' });
+    if (!['Kabul', 'Müsait Değil'].includes(g.yanit ?? '')) return y.code(400).send({ hata: 'Yanıtı seçmenizi rica ederiz.' });
     if (g.yanit === 'Kabul' && !(Number(g.tahmini) >= 0)) return y.code(400).send({ hata: 'Tahmini tutarı giriniz.' });
     return islem(async (c) => {
       const a = (await c.query(`SELECT a.*, d.dosya_no, d.konum, d.kisa_teknik_tanim FROM acil_gorev_cagrisi a JOIN dosya d ON d.kimlik = a.dosya_ref WHERE a.kimlik = $1 AND a.kurulus_ref = $2 FOR UPDATE OF a`, [id, f])).rows[0];
@@ -407,7 +407,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tahmini?: number };
     const f = await firmam(o.kullanici);
     if (!f || !UUID.test(id)) return yok(y);
-    if (!(Number(g.tahmini) >= 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
+    if (!(Number(g.tahmini) >= 0)) return y.code(400).send({ hata: 'Tutarı kontrol etmenizi rica ederiz.' });
     const e = (await b.db.query(`SELECT dosya_ref FROM is_emri WHERE kimlik = $1 AND kurulus_ref = $2 AND is_emri_turu = 'AC'`, [id, f])).rows[0];
     if (!e) return yok(y);
     return islem((c) => tutarIsle(c, e.dosya_ref, Number(g.tahmini), new Date()));

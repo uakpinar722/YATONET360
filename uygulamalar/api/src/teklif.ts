@@ -17,6 +17,7 @@ import { kutuAyikla, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { muvafakatKilidi } from './portal.js';
 import { altNumara, sureBitir } from './sure.js';
 import { UUID } from './yat.js';
+import { BILGI_HATA, bilgiBelgesiMi } from './belge_kural.js';
 import { sigortaBildirimEngeli, yurtDisiMi } from './onay_ek.js';
 import { bildir, birKez, disGonder } from './bildirim.js';
 
@@ -249,18 +250,23 @@ export async function kurumsalSozlesmeKur(c: Db, teklif: string, kanal: string, 
   await c.query(`INSERT INTO sozlesme_kaydi (taraf_ref, sozlesme_turu, sozlesme_sahibi_rolu, yururluk, durum, kurumsal_kanal, teklif_ref, kaydeden_ref) VALUES ($1,'Yat Onarım','Operasyon Müdürü',(now() AT TIME ZONE 'Europe/Istanbul')::date,'Yürürlükte',$2,$3,$4) ON CONFLICT (teklif_ref) WHERE teklif_ref IS NOT NULL DO NOTHING`, [f.yat_sahibi_ref, kanal, teklif, kaydeden]);
 }
 
+/** ONY-23 kararı; YATONET 360 onayı ve YG-220 ıslak imzalı belge aynı sonucu doğurur. */
+async function yatSahibiTeklifKarari(c: Db, teklif: string, onay: boolean, g: { zaman: Date; erken: boolean; gosterim: Date; yapan: string | null; kanal: 'YATONET 360' | 'Islak İmza' }) {
+  const ft = (await c.query(`SELECT f.*, d.statu AS d_statu, d.asama, d.dosya_no, d.musteri_turu, d.yazisma_dili FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [teklif])).rows[0];
+  if (!onay) { await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Ret', karar_zamani = $2 WHERE kimlik = $1`, [ft.kimlik, g.zaman]); await vazgecmeGorevi(c, ft); return; }
+  await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Tam Onay', karar_zamani = $2 WHERE kimlik = $1`, [ft.kimlik, g.zaman]);
+  await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = 'Onaylandı' WHERE teklif_ref = $1 AND NOT opsiyon`, [ft.kimlik]);
+  await kurumsalSozlesmeKur(c, ft.kimlik, g.kanal === 'Islak İmza' ? 'Islak İmzalı Teklif' : 'YATONET 360 Onayı', ft.hazirlayan_ref); // YG-208
+  if (ft.d_statu === 'Aktif' && ft.asama !== 'Uygulama') await statuYaz(c, { kimlik: ft.dosya_ref, statu: 'Aktif', asama: ft.asama }, { statu: 'Aktif', asama: 'Uygulama' }, g.kanal === 'Islak İmza' ? 'Fiyat teklifi yat sahibince ıslak imzayla onaylandı' : 'Fiyat teklifi yat sahibince onaylandı', g.yapan, 'Operasyon Yöneticisi');
+  const gun = await parametre(c, 'cayma_gun');
+  const bitis = new Date(g.zaman.getTime() + gun * 86_400_000);
+  if (ft.musteri_turu === 'Bireysel Müşteri') await c.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis, erken_ifa_onayi) VALUES ($1,$2,$6,$3,$4,$5) ON CONFLICT (teklif_ref) DO NOTHING`, [ft.kimlik, ft.dosya_ref, g.zaman, bitis, g.erken, g.gosterim]); // YG-467: ön bilgilendirme anı = gösterim anı
+}
+
 onaySonucKaydet('ONY-23', async (c, t, karar, k) => {
   if (!t.nesne_kimligi) return;
-  const ft = (await c.query(`SELECT f.*, d.statu AS d_statu, d.asama, d.dosya_no, d.musteri_turu, d.yazisma_dili FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.kimlik = $1`, [t.nesne_kimligi])).rows[0];
-  if (karar !== 'Onaylandı') { await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Ret', karar_zamani = $2 WHERE kimlik = $1`, [ft.kimlik, k.zaman]); await vazgecmeGorevi(c, ft); return; }
-  await c.query(`UPDATE fiyat_teklifi SET statu = 'Karar', karar = 'Tam Onay', karar_zamani = $2 WHERE kimlik = $1`, [ft.kimlik, k.zaman]);
-  await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = 'Onaylandı' WHERE teklif_ref = $1 AND NOT opsiyon`, [ft.kimlik]);
-  await kurumsalSozlesmeKur(c, ft.kimlik, 'YATONET 360 Onayı', ft.hazirlayan_ref); // YG-208
-  if (ft.d_statu === 'Aktif' && ft.asama !== 'Uygulama') await statuYaz(c, { kimlik: ft.dosya_ref, statu: 'Aktif', asama: ft.asama }, { statu: 'Aktif', asama: 'Uygulama' }, 'Fiyat teklifi yat sahibince onaylandı', t.alici_kullanici_ref, 'Operasyon Yöneticisi');
-  const gun = await parametre(c, 'cayma_gun');
-  const bitis = new Date(k.zaman.getTime() + gun * 86_400_000);
   const erken = Object.entries(k.kutular).some(([ad, v]) => v && /Cayma süresi içinde/i.test(ad));
-  if (ft.musteri_turu === 'Bireysel Müşteri') await c.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis, erken_ifa_onayi) VALUES ($1,$2,$6,$3,$4,$5) ON CONFLICT (teklif_ref) DO NOTHING`, [ft.kimlik, ft.dosya_ref, k.zaman, bitis, erken, t.gosterim_zamani ?? k.zaman]); // YG-467: ön bilgilendirme anı = gösterim anı
+  await yatSahibiTeklifKarari(c, t.nesne_kimligi, karar === 'Onaylandı', { zaman: k.zaman, erken, gosterim: t.gosterim_zamani ?? k.zaman, yapan: t.alici_kullanici_ref, kanal: 'YATONET 360' });
 });
 
 // YG-205, BLD-41: sigortanın onaylamadığı kalemler için yat sahibi onayı.
@@ -449,7 +455,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   // YG-195, YG-198: cetveli Teknik Uzman hazırlar, Teknik Yönetici onaylar; bedel türü ve nitelik satırda seçilir.
   s.post('/dosya/:id/cetvel', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { satirlar?: { kod?: string; kartela?: string; aciklama?: string; nitelik?: string; bedel?: string; miktar?: number; birim?: string; bolge?: string; kabul?: string; olcut?: string; gecici?: boolean; tur?: string }[]; dahilHaric?: string; varsayimlar?: string };
+    const g = (i.body ?? {}) as { satirlar?: { kod?: string; kartela?: string; aciklama?: string; nitelik?: string; bedel?: string; miktar?: number; birim?: string; bolge?: string; kabul?: string; olcut?: string; gecici?: boolean; tur?: string; teknikPay?: number; olculemez?: boolean }[]; dahilHaric?: string; varsayimlar?: string };
     const d = await dosyam(id, o.kullanici);
     if (!d) return yok(y);
     const ekip = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount;
@@ -472,6 +478,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       if (!NITELIK.includes(x.nitelik ?? '')) return y.code(400).send({ hata: `${n + 1}. satırda işin niteliğini seçiniz.` });
       if (!x.olcut?.trim()) return y.code(400).send({ hata: `${n + 1}. satırda kabul ölçütünü yazınız; ölçütsüz iş fiyatlanmaz ve atanmaz.` }); // YG-137
       if (!BEDEL.includes(x.bedel ?? '')) return y.code(400).send({ hata: `${n + 1}. satırda bedel türünü seçiniz.` });
+      if (x.teknikPay !== undefined && !(Number(x.teknikPay) >= 0)) return y.code(400).send({ hata: `${n + 1}. satırda teknik pay sıfır veya pozitif olmalıdır.` }); // YG-196
       if (x.kartela && !(await b.db.query(`SELECT 1 FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [x.kartela, sur])).rowCount) return y.code(400).send({ hata: `${n + 1}. satırdaki kartela kodu bulunamadı: ${x.kartela}` });
     }
     return islem(async (c) => {
@@ -479,8 +486,8 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       // YG-139: cetvelde yazılmadıysa onaylı İlk Kapsamın hariçleri ve varsayımları teklifin Kapsam Dışı ve Varsayımlar bölümüne aktarılır.
       const ik = (await c.query(`SELECT hariclar, varsayimlar FROM ilk_kapsam WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
       const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric?.trim() || ik?.hariclar || null, g.varsayimlar?.trim() || ik?.varsayimlar || null])).rows[0];
-      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu, satir_turu) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim(), x.tur ?? 'Ana Kapsam']);
+      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu, satir_turu, teknik_pay, olculemez) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim(), x.tur ?? 'Ana Kapsam', Number(x.teknikPay) || 0, x.olculemez === true]);
       await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no}-MT01 · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
       return { kimlik: t.kimlik, surum };
     });
@@ -542,9 +549,9 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
         if (h.bantDisi) bantDisi++;
         const bantAU = h.bant; // YG-233
         if (r.kartela_kodu) kodlar.push(r.kartela_kodu);
-        hesap.push({ tutar_eur: h.tutar, opsiyon: false });
-        await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, tedarikci_kalem_ref, opsiyon) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-          [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi, r.tedarikci_kalem ?? null, (r.satir_turu ?? 'Ana Kapsam') !== 'Ana Kapsam']); // YG-196: ana dışı satır opsiyon
+        hesap.push({ tutar_eur: h.tutar, opsiyon: (r.satir_turu ?? 'Ana Kapsam') !== 'Ana Kapsam' }); // YG-196: opsiyon, koşullu ve alternatif ana toplama girmez
+        await c.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, satir_ref, kartela_kodu, kartela_surumu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, firma_kalem_ref, birim_maliyet_eur, birim_satis_fiyati_eur, tutar_eur, bant_disi, tedarikci_kalem_ref, opsiyon, olculemez) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+          [t.kimlik, ++n, r.kimlik, r.kartela_kodu, r.kartela_kodu ? sur : null, r.kartela_disi, r.aciklama, r.isin_niteligi, r.bedel_turu, r.miktar, r.birim, r.firma_kalem, r.birim_fiyat_eur, h.birimSatis, h.tutar, h.bantDisi, r.tedarikci_kalem ?? null, (r.satir_turu ?? 'Ana Kapsam') !== 'Ana Kapsam', r.olculemez === true]); // YG-196: ana dışı satır opsiyon
         if (bantAU) await c.query(`UPDATE fiyat_teklifi_kalemi SET bant_alt_eur = $2, bant_ust_eur = $3 WHERE teklif_ref = $1 AND sira_no = $4`, [t.kimlik, bantAU.alt, bantAU.ust, n]);
       }
       const top = toplamlar(hesap, null, 0, kdvO);
@@ -762,7 +769,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return yok(y);
     if (t.teklif_muhatabi !== 'Sigorta Şirketi' || t.statu !== 'Gönderildi') return y.code(409).send({ hata: 'Sigorta kararı gönderilmiş tekliflere girilir.' });
     // YG-154: karar seçenekleri LST_ONAY_KARARI sözlüğündendir; Beklemede karar değil işarettir.
-    if (!(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_ONAY_KARARI' AND deger = $1`, [g.karar ?? ''])).rowCount) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    if (!(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_ONAY_KARARI' AND deger = $1`, [g.karar ?? ''])).rowCount) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     if (['Koşullu Onay', 'Sınırlı Yetki'].includes(g.karar!) && !g.sart?.trim()) return y.code(400).send({ hata: g.karar === 'Koşullu Onay' ? 'Onayın şartını yazınız.' : 'İzin verilen ön veya koruyucu işlemi yazınız.' });
     if (g.karar === 'Sınırlı Yetki' && !g.onaylananSiralar?.length) return y.code(400).send({ hata: 'İzin verilen kalemleri seçiniz.' });
     // YG-455: yazılı onay geliş zamanından itibaren 8 saat içinde kaydedilir; aşımda gecikme gerekçesi zorunludur.
@@ -819,6 +826,29 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-154: Koşullu Onayın şartını Dosya Sorumlusu kanıtla doğrular; dosya Uygulama aşamasına geçer ve yat sahibi tam onay bildirimini (BLD-38) alır.
+  // YG-220: yat sahibinin sistem erişimi yoksa karar ıslak imzalı taranmış teklifle kaydedilir; telefonla verilen onay seçeneği yoktur.
+  s.post('/teklif/:id/islak-imza', oturumlu, async (i, y) => {
+    const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { karar?: string; belge?: string; gerekce?: string; imzaTarihi?: string; erkenIfa?: boolean };
+    if (!t) return yok(y);
+    if (!(await dsMi(t.dosya_ref, o.kullanici))) return y.code(403).send({ hata: 'Islak imzalı kararı Dosya Sorumlusu kaydeder.' });
+    if (t.statu !== 'Gönderildi' || t.teklif_muhatabi === 'Sigorta Şirketi') return y.code(409).send({ hata: 'Yat sahibine gönderilmiş ve karar bekleyen teklif bulunmamaktadır.' });
+    const on = (await b.db.query(`SELECT kimlik, gosterim_zamani FROM onay_talebi WHERE ony_kod = 'ONY-23' AND nesne_kimligi = $1::text AND durum = 'Bekliyor' ORDER BY olusturma_zamani DESC LIMIT 1`, [t.kimlik])).rows[0];
+    if (!on) return y.code(409).send({ hata: 'Bekleyen yat sahibi onay talebi bulunmamaktadır.' });
+    if (!['Onaylandı', 'Reddedildi'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Yat sahibinin sisteme erişememe nedenini yazınız.' });
+    const zaman = g.imzaTarihi ? new Date(g.imzaTarihi) : null;
+    if (!zaman || Number.isNaN(zaman.getTime()) || zaman > new Date() || zaman < new Date(t.gonderim_zamani ?? 0)) return y.code(400).send({ hata: 'İmza tarihini giriniz; tarih teklifin gönderiminden önce veya ileri bir tarih olamaz.' });
+    if (!(await dosyaBelgesi(g.belge, t.dosya_ref))) return y.code(400).send({ hata: 'Islak imzalı taranmış teklifi dosyaya yükleyip seçiniz.' });
+    if (await bilgiBelgesiMi(b.db, g.belge!)) return y.code(409).send({ hata: BILGI_HATA });
+    return islem(async (c) => {
+      await c.query(`UPDATE onay_talebi SET durum = 'İptal' WHERE kimlik = $1`, [on.kimlik]);
+      await c.query(`UPDATE fiyat_teklifi SET onay_kanali = 'Islak İmza', islak_imza_belge_ref = $2, islak_imza_gerekcesi = $3, islak_imza_kaydeden_ref = $4 WHERE kimlik = $1`, [t.kimlik, g.belge, g.gerekce!.trim(), o.kullanici]);
+      await yatSahibiTeklifKarari(c, t.kimlik, g.karar === 'Onaylandı', { zaman, erken: g.erkenIfa === true, gosterim: on.gosterim_zamani ?? zaman, yapan: o.kullanici, kanal: 'Islak İmza' });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teklif Kararı – Islak İmza', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, yeni: { karar: g.karar, belge: g.belge, gerekce: g.gerekce, imzaTarihi: g.imzaTarihi, erkenIfa: g.erkenIfa === true }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { tamam: true };
+    });
+  });
+
   s.post('/teklif/:id/sart-dogrula', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { belge?: string };
     if (!t) return yok(y);

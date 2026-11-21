@@ -90,7 +90,7 @@ export function hesabimYollari(s: FastifyInstance, b: Baglam) {
   // YG-1156, EP-M1: kod yeni adrese, uyarı eski adrese.
   s.post('/profil/eposta-talep', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { yeni?: string; parola?: string };
-    if (!g.yeni || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.yeni)) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
+    if (!g.yeni || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.yeni)) return y.code(400).send({ hata: 'E-posta adresini kontrol etmenizi rica ederiz.' });
     const h = (await b.db.query(`SELECT e_posta, cep_telefonu, parola_ozeti FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
     if (h.parola_ozeti && !(await parolaDogrula(h.parola_ozeti, g.parola ?? ''))) { await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'E-posta Değişikliği Talebi', sonuc: 'Başarısız', adres: i.ip, iliski: i.id }); return y.code(403).send({ hata: 'Parola doğrulanamadı.' }); }
     if ((await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta COLLATE "C") = lower($1 COLLATE "C")`, [g.yeni])).rowCount) return y.code(409).send({ hata: 'Bu e-posta kullanılamaz.' });

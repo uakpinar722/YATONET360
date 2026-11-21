@@ -37,7 +37,7 @@ export function alanYollari(s: FastifyInstance, b: Baglam) {
     return alanSuz(g, await kurallar(b.db), { grup: o.grup, roller });
   });
   s.get('/alan-erisim', async (i, y) => {
-    if (i.oturum?.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (i.oturum?.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT alan, davranis, aciklama FROM alan_erisim_kurali ORDER BY alan`)).rows;
   });
 }

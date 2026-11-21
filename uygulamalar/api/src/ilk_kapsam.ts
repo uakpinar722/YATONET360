@@ -75,7 +75,7 @@ export function ilkKapsamYollari(s: FastifyInstance, b: Baglam) {
       const h = await denetle(id, yeni); if (h) return y.code(400).send({ hata: h });
       const [vs, fa, br, ko, de, bc, ka, ha, va] = deger(yeni);
       await b.db.query(`UPDATE ilk_kapsam SET varlik_sistem = $2, faaliyet = $3, teknik_brans = $4, koordinator_ref = $5, destek_isleri = $6, beklenen_cikti = $7, kabul_olcutu = $8, hariclar = $9, varsayimlar = $10, durum = 'Onaylı', kontrol_eden_ref = $11, kontrol_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [k.kimlik, vs, fa, br, ko, de, bc, ka, ha, va, o.kullanici]);
-    } else return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    } else return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_turu = 'Dosya' AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [TUR, id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `İlk Kapsam Kontrolü: ${g.karar}`, nesneTuru: 'Dosya', nesneKimligi: id, eski: { surum: k.surum }, gerekce: g.gerekce?.trim() || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

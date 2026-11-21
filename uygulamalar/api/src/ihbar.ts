@@ -92,7 +92,7 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   if (!turler.includes(g.sahibiTuru ?? '')) return { hata: 'İhbar edenin rolünü seçiniz.' };
   if (g.sahibiTuru === 'Diğer' && !g.sahibiTuruAciklama?.trim()) return { hata: '"Diğer" seçildiğinde kim olduğu yazılmalıdır.' }; // YG-020
   if (!g.telefon?.trim() && !g.eposta?.trim()) return { hata: 'Telefon veya e-postadan en az biri zorunludur.' };
-  if (g.eposta && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta)) return { hata: 'E-posta adresi geçersiz.' };
+  if (g.eposta && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta)) return { hata: 'E-posta adresini kontrol etmenizi rica ederiz.' };
   const durum = yetkiler.includes(g.yetkiDurumu ?? '') ? g.yetkiDurumu! : 'Beyan · Doğrulama Bekliyor'; // YG-021
   if (!g.konum?.trim()) return { hata: 'Yatın mevcut konumu zorunludur.' };
   if (!g.yatDurumu?.trim()) return { hata: 'Yatın mevcut durumu zorunludur.' };
@@ -105,7 +105,7 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   const cevaplar = g.cevaplar ?? {};
   const onerilen = await oncelikOner(c, cevaplar, Boolean(g.acil));
   const oncelik = g.oncelik ?? onerilen;
-  if (!ONCELIK_SIRA.includes(oncelik)) return { hata: 'Öncelik geçersiz.' };
+  if (!ONCELIK_SIRA.includes(oncelik)) return { hata: 'Önceliği listeden seçmenizi rica ederiz.' };
   // YG-036: yükseltme serbest; önerinin altına inmek ancak açılıştan sonra gerekçe ve iki onayla olur.
   if (ONCELIK_SIRA.indexOf(oncelik) < ONCELIK_SIRA.indexOf(onerilen)) return { hata: 'Öncelik düşürme, dosya açıldıktan sonra gerekçeyle talep edilir; sistemin önerdiği öncelik korunmuştur.' };
   // YG-032: öncelik etki ve aciliyet sorularından gelir; önerilenin üstü ancak gerekçeyle seçilir (her işi acil işaretleme engellenir).
@@ -235,11 +235,11 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/ihbar/:id', ihbarci, async (i, y) => {
     const { id } = i.params as { id: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const t = (await b.db.query(
       `SELECT t.*, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi, y.bayrak, y.kullanim_amaci, y.gecici_kayit, y.katalog_teyit, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model, o.unvan_ad_soyad AS yat_sahibi, u.bitis AS ilk_yanit_son, d.dosya_no AS bagli_dosya, a.dosya_no AS mukerrer_dosya_no
          FROM talep t JOIN yat y ON y.kimlik = t.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref LEFT JOIN taraf o ON o.kimlik = y.yat_sahibi_ref LEFT JOIN dosya_sure u ON u.talep_ref = t.kimlik AND u.tur = 'İlk Yanıt' LEFT JOIN dosya d ON d.kimlik = t.dosya_ref LEFT JOIN dosya a ON a.kimlik = t.mukerrer_dosya_ref WHERE t.kimlik = $1`, [id])).rows[0];
-    if (!t) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!t) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     // YG-023: olası mükerrer kayıtlar listelenir; birleştirme kullanıcı kararıyladır.
     const adaylar = (await b.db.query(
       `SELECT d.kimlik, d.dosya_no, d.statu, d.oncelik, d.konum, d.kisa_teknik_tanim, y.yat_adi, CASE WHEN d.yat_ref = $1 THEN 'Aynı Yat' ELSE 'Benzer Yat Adı' END AS neden
@@ -249,7 +249,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/ihbar/:id/ilk-yanit', ihbarci, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const r = await b.db.query(`UPDATE talep SET ilk_yanit_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1 AND ilk_yanit_zamani IS NULL RETURNING kimlik`, [id]);
     if (!r.rowCount) return y.code(409).send({ hata: 'İlk yanıt daha önce kaydedilmiştir.' });
     await sureBitir(b.db, { tur: 'İlk Yanıt', talep: id });
@@ -259,11 +259,11 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
 
   s.post('/ihbar/:id/yetki', ihbarci, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { durum?: string; dayanak?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!(await liste(b.db, 'LST_IHBAR_YETKI_DURUMU')).some((x) => x.deger === g.durum)) return y.code(400).send({ hata: 'Yetki durumunu seçiniz.' });
     if (g.durum === 'Doğrulandı' && !g.dayanak?.trim()) return y.code(400).send({ hata: 'Doğrulamanın dayanağını yazınız.' });
     const r = await b.db.query(`UPDATE talep SET ihbar_yetki_durumu = $2, yetki_dayanagi_beyani = coalesce($3, yetki_dayanagi_beyani), statu = CASE WHEN statu = 'Doğrulama Bekliyor' AND $2 = 'Doğrulandı' THEN 'Teknik Ön İnceleme' ELSE statu END, guncelleme_zamani = now() WHERE kimlik = $1 AND dosya_ref IS NULL RETURNING kimlik`, [id, g.durum, g.dayanak?.trim() || null]);
-    if (!r.rowCount) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!r.rowCount) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İhbar Yetki Durumu', nesneTuru: 'Talep', nesneKimligi: id, yeni: { durum: g.durum }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
@@ -271,7 +271,7 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
   // YG-023, YG-007: kontrol tamamlanmadan ilk kayıt tamamlanmış sayılmaz; ikinci ihbar ilk dosyaya bağlanır, yat sahibine ilk dosyanın numarası bildirilir.
   s.post('/ihbar/:id/mukerrerlik', ihbarci, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; dosya?: string; gerekce?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!['Mükerrer değil', 'Mevcut dosyaya bağlandı', 'Ayrı olay (gerekçeli)'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Kontrol sonucunu seçiniz.' });
     if (g.sonuc === 'Ayrı olay (gerekçeli)' && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Ayrım gerekçesi zorunludur.' });
     const c = await b.db.connect();

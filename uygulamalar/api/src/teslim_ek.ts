@@ -327,7 +327,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   /** YG-1079: teslim sonrası arıza bildirimi; bildiren taraf özete yazılır, Dosya Sorumlusuna Garanti Talebi görevi açılır. */
   const arizaBildir = async (id: string, belirti: string, bildiren: string, o: { kullanici: string; oturum: string }, ip: string, iliski: string) => {
     const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref, teslim_tarihi FROM dosya WHERE kimlik = $1`, [id])).rows[0];
-    if (!d) return { kod: 404, hata: 'Dosya bulunamadı.' };
+    if (!d) return { kod: 404, hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' };
     if (!d.teslim_tarihi) return { kod: 409, hata: 'Arıza bildirimi teslimden sonra açılır; devam eden işler için Dosya Sorumlusuyla iletişime geçiniz.' };
     await kartAc(b.db, { tur: 'Garanti Talebi', kategori: 'islem', baslik: `${d.dosya_no} · ${bildiren} Arıza Bildirimi`, ozet: belirti, oncelik: 'Yüksek', ...(d.dosya_sorumlusu_ref ? { sahipKullanici: d.dosya_sorumlusu_ref } : { sahipRol: await rolId(b.db, 'Operasyon Müdürü') }), nesneTuru: 'Dosya', nesneKimligi: id });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Arıza Bildirimi', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: belirti, sonuc: 'Başarılı', adres: ip, iliski, kanal: 'Portal' });

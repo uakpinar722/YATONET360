@@ -421,7 +421,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const od = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM odeme_talebi WHERE teklif_ref = $1 AND durum <> 'Reddedildi'`, [t.kimlik])).rows[0].t);
       tut = (await import('./kalan.js')).teslimBakiyesi(Number(t.genel_toplam_eur), od);
       if (!(tut > 0)) return y.code(409).send({ hata: 'Kalan bakiye bulunmamaktadır.' });
-    } else if (!(tut > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
+    } else if (!(tut > 0)) return y.code(400).send({ hata: 'Tutarı kontrol etmenizi rica ederiz.' });
     return islem(async (c) => {
       if ((await c.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND odeme_yat_sahibine_zamani IS NOT NULL`, [t.dosya_ref])).rowCount) t.teklif_muhatabi = 'Yat Sahibi'; // YG-892
       const r = (await c.query(`INSERT INTO odeme_talebi (dosya_ref, teklif_ref, tur, tutar_eur, muhatap, son_tarih, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [t.dosya_ref, t.kimlik, g.tur, tut, t.teklif_muhatabi, g.sonTarih, o.kullanici])).rows[0];
@@ -588,8 +588,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   s.post('/is-emri/:id/banka-mektubu', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belge?: string };
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Banka mektubunu Ticari Sorumlu kaydeder.' });
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
-    const e = (await b.db.query(`SELECT kurulus_ref, dosya_ref FROM is_emri WHERE kimlik = $1`, [id])).rows[0]; if (!e) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
+    const e = (await b.db.query(`SELECT kurulus_ref, dosya_ref FROM is_emri WHERE kimlik = $1`, [id])).rows[0]; if (!e) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!g.belge || !UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND ((bag_turu = 'İş Emri' AND bag_kimligi = $2) OR (bag_turu = 'Kuruluş' AND bag_kimligi = $3::text) OR (bag_turu = 'Dosya' AND bag_kimligi = $4::text))`, [g.belge, id, e.kurulus_ref, e.dosya_ref])).rowCount) return y.code(400).send({ hata: 'Banka mektubu belgesini yükleyip seçiniz.' });
     await b.db.query(`UPDATE is_emri SET banka_mektubu_ref = $2 WHERE kimlik = $1`, [id, g.belge]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Banka Mektubu Kaydı', nesneTuru: 'İş Emri', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
@@ -673,7 +673,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!f || !UUID.test(id)) return yok(y);
     const e = (await b.db.query(`SELECT e.*, d.dosya_no FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
     if (!e) return yok(y);
-    if (!(Number(g.brut) > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
+    if (!(Number(g.brut) > 0)) return y.code(400).send({ hata: 'Tutarı kontrol etmenizi rica ederiz.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Hakediş için Gerçekleşme kanıtını eklemenizi rica ederiz.' });
     if (e.firma_bedeli_eur === null || e.firma_bedeli_eur === undefined) return y.code(409).send({ hata: 'İş emrinin firma bedeli tanımlı değildir; boş bedel sıfır sayılmaz. Bedeli değişiklik onayıyla tanımlayınız.' }); // YG-852
     if ((await b.db.query(`SELECT 1 FROM hakedis WHERE kanit_belge_ref = $1`, [g.belge])).rowCount) return y.code(409).send({ hata: 'Aynı kanıt daha önce kullanılmıştır; bu dönemin kanıtını eklemenizi rica ederiz.' });

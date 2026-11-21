@@ -49,7 +49,7 @@ export function ucretBandiYollari(s: FastifyInstance, b: Baglam) {
   s.post('/ucret-bandi/yetki', oturumlu, async (i, y) => {
     const o = i.oturum!; if (!(await rolVar(o.kullanici, ['Ticari İşler Direktörü']))) return yok(y);
     const g = (i.body ?? {}) as { kullanici?: string; kaldir?: boolean };
-    if (!g.kullanici || !(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü'`, [g.kullanici])).rowCount) return y.code(400).send({ hata: 'Personel bulunamadı.' });
+    if (!g.kullanici || !(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü'`, [g.kullanici])).rowCount) return y.code(400).send({ hata: 'Personel kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (g.kaldir) await b.db.query(`DELETE FROM ucret_bandi_yetki WHERE kullanici_ref = $1`, [g.kullanici]);
     else await b.db.query(`INSERT INTO ucret_bandi_yetki (kullanici_ref, veren_ref) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [g.kullanici, o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.kaldir ? 'Ücret Bandı Yetkisi Kaldırıldı' : 'Ücret Bandı Yetkisi Verildi', nesneTuru: 'Kullanıcı', nesneKimligi: g.kullanici, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

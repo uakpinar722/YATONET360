@@ -848,7 +848,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (!a) return yok(y);
     if (a.dosya_sorumlusu_ref !== o.kullanici && !(await rolVar(o.kullanici, [OPM]))) return y.code(403).send({ hata: 'Kararı Dosya Sorumlusu veya Operasyon Müdürü verir.' });
     const karar = g.karar ?? a.oneri;
-    if (!['Güvenli Durdurma', 'Kontrollü Devam', 'Ek Gözetim', 'Devir'].includes(karar)) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    if (!['Güvenli Durdurma', 'Kontrollü Devam', 'Ek Gözetim', 'Devir'].includes(karar)) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     if (karar !== a.oneri && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Öneriden farklı kararda gerekçe zorunludur.' });
     const c = await b.db.connect();
     try {

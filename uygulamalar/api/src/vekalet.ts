@@ -135,7 +135,7 @@ export function vekaletYollari(s: FastifyInstance, b: Baglam) {
   s.post('/vekalet/:id/bitir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const r = await b.db.query(`UPDATE vekalet SET durum = 'Kapalı', kapanis_zamani = now() WHERE kimlik = $1 AND atayan_ref = $2 AND durum = 'Aktif' RETURNING vekil_ref`, [id, o.kullanici]);
-    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vekâlet Sonlandırıldı', nesneTuru: 'vekalet', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

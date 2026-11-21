@@ -265,7 +265,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { liman?: boolean; calisma?: boolean; gumruk?: boolean; aciklama?: string; sonuc?: string };
     if (!UUID.test(id) || !(await hukukMu(o.kullanici))) return yok(y);
     if (!(await yurtDisiMi(b.db, id))) return y.code(409).send({ hata: 'Dosya yurt dışı işaretli değildir.' });
-    if (!['Uygun', 'Uygun Değil'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (!['Uygun', 'Uygun Değil'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     if (g.sonuc === 'Uygun' && !(g.liman && g.calisma && g.gumruk)) return y.code(400).send({ hata: 'Uygun sonucu için üç izin kontrolünün de tamamlanması gerekir.' });
     if (g.sonuc === 'Uygun Değil' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Uygun Değil sonucunda açıklama zorunludur.' });
     await b.db.query(`INSERT INTO yurt_disi_uygunluk (dosya_ref, liman_marina_izni, calisma_giris_izni, gumruk_gecici_kabul, aciklama, sonuc, karar_veren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7)

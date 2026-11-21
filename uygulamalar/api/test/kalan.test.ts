@@ -181,6 +181,29 @@ describe('talebin özgün kaydı (YG-002)', () => {
   });
 });
 
+describe('ıslak imzalı teklif kararı (YG-220-ISLAK)', () => {
+  it('sistem erişimi olmayan yat sahibinin kararı ıslak imzalı belgeyle kaydedilir', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, hazirlayan_ref, statu, gonderim_zamani) VALUES ($1,$2,'Onarım','Yat Sahibi',20,$3,'Gönderildi',now() - interval '2 days') RETURNING kimlik`, [`T-II-${++n}`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    const u = `/api/teklif/${t}/islak-imza`; const c = await o.gir('ds'); const belge = await o.belge(d.kimlik, 'ds');
+    const G = { karar: 'Onaylandı', belge, gerekce: 'Yat sahibinin cep telefonu ve internet erişimi yok', imzaTarihi: new Date(Date.now() - 3_600_000).toISOString() };
+    expect((await o.ist('POST', u, c, G)).statusCode).toBe(409); // bekleyen onay talebi yok
+    await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, son_gecerlilik, nesne_turu, nesne_kimligi) VALUES ($1,'ONY-23','k','m','d','a','+905550002222',$2,now() + interval '3 days','Teklif',$3)`, [d.kimlik, `ii${n}`, t]);
+    expect((await o.ist('POST', u, await o.gir('opm'), G)).statusCode).toBe(403);
+    expect((await o.ist('POST', u, c, { ...G, karar: 'Telefonla Onay' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { ...G, gerekce: ' ' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { ...G, imzaTarihi: new Date(Date.now() + 86_400_000).toISOString() })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, c, { ...G, belge: undefined })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, c, G); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT statu, karar, onay_kanali, islak_imza_belge_ref::text b FROM fiyat_teklifi WHERE kimlik = $1`, [t])).rows[0]).toEqual({ statu: 'Karar', karar: 'Tam Onay', onay_kanali: 'Islak İmza', b: belge });
+    expect((await o.sup.query(`SELECT durum FROM onay_talebi WHERE nesne_kimligi = $1::text`, [t])).rows[0].durum).toBe('İptal');
+    expect((await o.sup.query(`SELECT erken_ifa_onayi FROM on_bilgilendirme_cayma_kaydi WHERE teklif_ref = $1`, [t])).rows[0].erken_ifa_onayi).toBe(false);
+    expect((await o.sup.query(`SELECT kanal FROM onay_kaydi WHERE kaynak_kimlik = $1::text`, [t])).rows[0].kanal).toBe('Islak İmza');
+    expect((await o.ist('POST', u, c, G)).statusCode).toBe(409);
+    await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref = $1`, [d.kimlik]); // YG220-KAPASITE: sonraki testlerin kapasitesini doldurmaz
+  });
+});
+
 describe('ön bilgilendirme gösterim anı (YG-467)', () => {
   it('ONY-23 gösterilmeden onaylanamaz; ilk görüntüleme anı kaydedilir', async () => {
     const d = await o.dosyaAc(); const bel = `ony23-gosterim-${Date.now()}-abcdefgh`;
@@ -1524,12 +1547,11 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const r = await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi', kaynak: 'Telefon (kaptan / yat sahibi)' }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
     // YG-096: bayrak, kullanım ve klas bilgisi eksikse ayrı görev; kaynakla tamamlanınca kapanır
-    const kk = (await o.sup.query(`SELECT y.bayrak, y.kullanim_amaci, y.klas_durumu, (SELECT durum FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1) durum FROM yat y WHERE y.kimlik::text = $1`, [yat])).rows[0];
-    if (!kk.bayrak || !kk.kullanim_amaci || !kk.klas_durumu) {
-      expect(kk.durum).toBe('Bekliyor');
-      const r2 = await o.ist('POST', u, c, { alanlar: { bayrak: 'Türkiye', kullanim_amaci: 'Özel', klas_durumu: 'Hayır' }, gerekce: 'Ruhsat', kaynak: 'Ruhsat' }); expect(r2.statusCode, r2.body).toBe(200);
-      expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
-    }
+    await o.sup.query(`UPDATE yat SET bayrak = NULL WHERE kimlik = $1`, [yat]); // YG096-KESIN: kayıtlı yat seçilerek açılan dosyada eksik bayrak
+    await o.dosyaAc({ yat: { yatId: yat } });
+    expect((await o.sup.query(`SELECT durum, ozet FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0]).toMatchObject({ durum: 'Bekliyor', ozet: expect.stringContaining('bayrak') });
+    const r2 = await o.ist('POST', u, c, { alanlar: { bayrak: 'Türkiye' }, gerekce: 'Ruhsat', kaynak: 'Ruhsat' }); expect(r2.statusCode, r2.body).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
   });
   it('periyodik iş tanımı Direktörce girilir ve listelenir (YG-1357)', async () => {
     const ad = `Deneme Gözden Geçirme ${Date.now()}`; const P = { ad, sahipRol: 'Operasyon Müdürü', periyotAy: 6, sonrakiTarih: '2027-01-15' };

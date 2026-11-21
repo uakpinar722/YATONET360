@@ -293,7 +293,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   s.post('/periyodik-is/:id/sonuc', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; kontroller?: Record<string, string>; aciklama?: string; kosul?: string; yeniPeriyotAy?: number };
     const p = UUID.test(id) ? (await b.db.query(`SELECT * FROM periyodik_is WHERE kimlik = $1 AND aktif`, [id])).rows[0] : undefined;
-    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!(await rolSahipleri(b.db, p.sahip_rol_ref)).includes(o.kullanici) && !(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Sonucu işin sahibi rol veya Direktör kademesi girer.' });
     if (!['Sürdür', 'Koşullu Sürdür', 'Değiştir', 'Askıya Al'].includes(g.karar ?? '') || !g.aciklama?.trim()) return y.code(400).send({ hata: 'Karar ve açıklama zorunludur.' });
     if (KONTROL.some((m) => !['Evet', 'Hayır', 'Uygulanamaz'].includes(g.kontroller?.[m] ?? ''))) return y.code(400).send({ hata: 'Kontrol listesindeki her maddeyi yanıtlayınız.' });
@@ -315,7 +315,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   s.post('/periyodik-is/:id/olay', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { olay } = (i.body ?? {}) as { olay?: string };
     const p = UUID.test(id) ? (await b.db.query(`SELECT * FROM periyodik_is WHERE kimlik = $1 AND aktif AND periyot_turu = 'Olaya Bağlı'`, [id])).rows[0] : undefined;
-    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!(await rolSahipleri(b.db, p.sahip_rol_ref)).includes(o.kullanici) && !(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Olayı işin sahibi rol veya Direktör kademesi kaydeder.' });
     if (!olay?.trim()) return y.code(400).send({ hata: 'Olayı yazınız.' });
     const k = await kartAc(b.db, { tur: 'Periyodik İş', kategori: 'gorev', baslik: `Olaya Bağlı · ${p.ad}`, ozet: olay.trim().slice(0, 300), sahipRol: p.sahip_rol_ref, nesneTuru: 'periyodik_is', nesneKimligi: id });
@@ -327,7 +327,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Periyodik iş tanımını Direktör, Genel Müdür Yardımcısı veya CEO değiştirir.' });
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
     const r = await b.db.query(`UPDATE periyodik_is SET aktif = $2 WHERE kimlik::text = $1 RETURNING ad`, [id, Boolean(g.aktif)]);
-    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik İş Durumu', nesneTuru: 'Periyodik İş', nesneKimligi: id, yeni: { aktif: Boolean(g.aktif) }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

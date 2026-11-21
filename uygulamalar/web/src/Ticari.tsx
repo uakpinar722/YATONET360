@@ -175,7 +175,7 @@ function useYap(yenile: () => unknown) {
 
 const NITELIK = ['Onarım', 'Yenileme (Değişim)', 'Bakım', 'Keşif ve Test', 'Geçici / Acil Önlem', 'Yat Sahibi Talebi'];
 const BEDEL = ['Malzeme', 'İşçilik', 'Nakliye', 'Masraf', 'Kurtarma', 'Çekme / Refakat', 'Dalgıçlık', 'Ulaşım', 'Konaklama', 'Harcırah', 'Gümrük ve İzin Giderleri'];
-interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string; olcut?: string; tur?: string }
+interface Satir { kod: string; aciklama: string; nitelik: string; bedel: string; miktar: string; birim: string; olcut?: string; tur?: string; teknikPay?: string; olculemez?: boolean }
 interface Kayitlar {
   cetveller: { kimlik: string; surum: number; durum: string; satir: number }[];
   ekonomikKilit: boolean;
@@ -259,7 +259,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
       <Blok baslik="Kapsam ve Metraj Cetveli">
         {v.cetveller.map((c) => <div key={c.kimlik}>Rev.{c.surum} · {c.satir} satır · {c.durum}</div>)}
         {tu && <>
-          {satirlar.map((x, n) => <div key={n}>{x.aciklama} · {x.miktar} {x.birim} · {x.nitelik} · {x.bedel}{x.kod ? ` · ${x.kod}` : ''}</div>)}
+          {satirlar.map((x, n) => <div key={n}>{x.aciklama} · {x.miktar} {x.birim}{x.olculemez ? ' (tahmini)' : ''}{x.teknikPay && Number(x.teknikPay.replace(',', '.')) > 0 ? ` · Teknik Pay: ${x.teknikPay} ${x.birim}` : ''} · {x.nitelik} · {x.bedel}{x.kod ? ` · ${x.kod}` : ''}{x.tur && x.tur !== 'Ana Kapsam' ? ` · ${x.tur}` : ''}</div>)}
           <button className="btn2 kucuk" onClick={() => void yap(async () => { const r = await istek<{ rapor: string | null; satirlar: string[] }>(`/dosya/${id}/rapor-onerileri`); if (!r.rapor) throw new Error('Önerisi olan teknik rapor bulunmamaktadır.'); setSatirlar([...satirlar, ...r.satirlar.map((x) => ({ ...satir, aciklama: x, kod: '' }))]); }, 'Teknik rapor önerileri satır olarak aktarıldı; kartela kodu, miktar ve birimi düzeltiniz.')}>Teknik Rapor Önerilerini Aktar</button>
           <label htmlFor="c-a">Açıklama</label><input id="c-a" value={satir.aciklama} onChange={(e) => setSatir({ ...satir, aciklama: e.target.value })} />
           <label htmlFor="c-ol">Kabul Ölçütü</label><input id="c-ol" value={satir.olcut ?? ''} onChange={(e) => setSatir({ ...satir, olcut: e.target.value })} />
@@ -267,8 +267,10 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <div className="iki-tarih"><div><label htmlFor="c-n">İşin Niteliği</label><select id="c-n" value={satir.nitelik} onChange={(e) => setSatir({ ...satir, nitelik: e.target.value })}>{NITELIK.map((x) => <option key={x}>{x}</option>)}</select></div><div><label htmlFor="c-b">Bedel Türü</label><select id="c-b" value={satir.bedel} onChange={(e) => setSatir({ ...satir, bedel: e.target.value })}>{BEDEL.map((x) => <option key={x}>{x}</option>)}</select></div></div>
           <label htmlFor="c-st">Satır Türü</label><select id="c-st" value={satir.tur ?? 'Ana Kapsam'} onChange={(e) => setSatir({ ...satir, tur: e.target.value })}>{['Ana Kapsam', 'Opsiyon', 'Koşullu', 'Alternatif'].map((x) => <option key={x}>{x}</option>)}</select>
           <div className="iki-tarih"><div><label htmlFor="c-m">Miktar</label><input id="c-m" inputMode="decimal" value={satir.miktar} onChange={(e) => setSatir({ ...satir, miktar: e.target.value })} /></div><div><label htmlFor="c-r">Birim</label><input id="c-r" list="c-r-l" value={satir.birim} onChange={(e) => setSatir({ ...satir, birim: e.target.value })} /><datalist id="c-r-l">{olcuBirimleri.map((x) => <option key={x} value={x} />)}</datalist></div></div>
-          <button className="btn2" disabled={!satir.aciklama.trim() || !satir.olcut?.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '', olcut: '' }); }}>Satır Ekle</button>
-          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim, tur: x.tur || undefined })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
+          {/* YG-196: teknik pay metrajdan ayrı; ölçülemeyen değer kesin metraj gibi gösterilmez. */}
+          <div className="iki-tarih"><div><label htmlFor="c-tp">Teknik Pay (Metraja Dahil Değil)</label><input id="c-tp" inputMode="decimal" value={satir.teknikPay ?? ''} onChange={(e) => setSatir({ ...satir, teknikPay: e.target.value })} /></div><div><label className="kutu"><input type="checkbox" checked={Boolean(satir.olculemez)} onChange={(e) => setSatir({ ...satir, olculemez: e.target.checked })} /><span>Ölçülemedi (Tahmini Miktar)</span></label></div></div>
+          <button className="btn2" disabled={!satir.aciklama.trim() || !satir.olcut?.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '', olcut: '', teknikPay: '', olculemez: false }); }}>Satır Ekle</button>
+          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim, tur: x.tur || undefined, teknikPay: x.teknikPay ? Number(x.teknikPay.replace(',', '.')) : undefined, olculemez: x.olculemez || undefined })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
         </>}
       </Blok>
       <Blok baslik="Fiyat Teklifleri">
@@ -290,6 +292,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
               {t.bant_disi && <span className="hata">{t.bant_onayli ? 'Bant Dışı · Onaylı' : '⚠ Bant Dışı · Ticari İşler Direktörü onayı bekleniyor'}</span>}
               {ticari && t.statu === 'Taslak' && t.bant_disi && !t.bant_onayli && <BantOnayi teklif={t.kimlik} yap={yap} />}
               {rollerim.includes('Dosya Sorumlusu') && t.statu === 'Karar' && <CaymaKaydi teklif={t.kimlik} yap={yap} />}
+              {rollerim.includes('Dosya Sorumlusu') && t.statu === 'Gönderildi' && t.teklif_muhatabi !== 'Sigorta Şirketi' && <IslakImzaKarari dosya={id} teklif={t.kimlik} yap={yap} />}
               {t.statu === 'Onaylı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek<{ durum: string }>(`/teklif/${t.kimlik}/gonder`, {}).then((r) => { window.dispatchEvent(new Event('sigorta-gonderim')); return { uyari: r.durum === 'Teyit Bekliyor' ? 'Sigortaya gönderim için iki teyit gereklidir; aşağıdaki bölümden teyit ediniz.' : 'Gönderildi.' }; }))}>Gönder</button>}
               {t.statu === 'Karar' && ticari && <>
                 <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/proforma`, {}), 'Proforma onaya gönderildi.')}>Proforma Hazırla</button>
@@ -376,7 +379,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
 }
 
 interface IsEmri { kimlik: string; dosya: string; isEmriNo: string; anaIsEmriNo?: string | null; tur: string; statu: string; dosyaNo: string; oncelik: string; yat: string; yatTuru: string | null; yer: string; kapsam: string; bedel: string | null; yanitSon: string | null; yanit: string | null }
-interface FirmaAyrinti extends IsEmri { kalemler: { aciklama: string; miktar: string; birim: string; gerceklesen_miktar: string; kabul_olcutu?: string | null }[]; guvenlik?: string[]; bitis?: string | null }
+interface FirmaAyrinti extends IsEmri { secilmeyenKalemler?: string | null; kalemler: { aciklama: string; miktar: string; birim: string; gerceklesen_miktar: string; kabul_olcutu?: string | null; teknik_pay?: string; olculemez?: boolean }[]; guvenlik?: string[]; bitis?: string | null }
 interface AcilCagri { kimlik: string; cagri_no: string; son_zaman: string; konum: string; yat_tipi: string | null; olay_turu: string; tehlike: string; hizmet_turu: string | null; erisim: string | null; erisim_konumu: string | null }
 
 /** YG-371, YG-372, YG-373: izni firma tesisten alır ve belgesini yükler; LGM düzenlemez. Sıcak iş ve kapalı alanda gaz ölçümü istenir. */
@@ -471,7 +474,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
       <h1>{acik.isEmriNo}</h1><Mesaj />
       {bolum === 'ana' && <DurumSayilari ogeler={[['Açık İş Emri', l.filter((x) => !['Kapalı', 'İptal', 'Yerine Geçti', 'Tamamlandı'].includes(x.statu)).length], ['Yanıtınızı Bekleyen', l.filter((x) => !x.yanit && !['Kapalı', 'İptal', 'Yerine Geçti'].includes(x.statu)).length], ['Acil Çağrı', ac.length], ['Kapanan İş Emri', l.filter((x) => x.statu === 'Kapalı').length]]} />}{acik.anaIsEmriNo && <div className="not">Bağlı Olduğu İş Emri: {acik.anaIsEmriNo}</div>}
       <div className="ozet"><div>{acik.yat} · {acik.yatTuru ?? '—'} · {acik.yer}</div><div>{acik.kapsam}</div><div>Bedel: {eur(acik.bedel)} · {acik.statu}</div>{acik.yanitSon && acik.statu === 'Kabul Bekliyor' && <div>Yanıt Son: {saat(acik.yanitSon)}</div>}</div>
-      {acik.kalemler.length > 0 && <Blok baslik="Kapsam">{acik.kalemler.map((k) => <div key={k.aciklama}>{k.aciklama} · {k.gerceklesen_miktar}/{k.miktar} {k.birim}{k.kabul_olcutu ? ` · Teslim Ölçütü: ${k.kabul_olcutu}` : ''}</div>)}</Blok>}
+      {acik.kalemler.length > 0 && <Blok baslik="Kapsam">{acik.kalemler.map((k) => <div key={k.aciklama}>{k.aciklama} · {k.gerceklesen_miktar}/{k.miktar} {k.birim}{k.olculemez ? ' (tahmini)' : ''}{Number(k.teknik_pay) > 0 ? ` · Teknik Pay: ${k.teknik_pay} ${k.birim}` : ''}{k.kabul_olcutu ? ` · Teslim Ölçütü: ${k.kabul_olcutu}` : ''}</div>)}</Blok>}
+      {acik.secilmeyenKalemler && <div className="uyari" role="note">Seçilmeyen opsiyon ve alternatifler (uygulanmaz): {acik.secilmeyenKalemler}</div>}
       {acik.bitis && <div className="not">Hedef Bitiş: {saat(acik.bitis)}</div>}
       {(acik.guvenlik ?? []).length > 0 && <Blok baslik="Güvenlik Gereği">{acik.guvenlik!.map((x) => <div key={x}>{x}</div>)}</Blok>}
       {acik.statu === 'Kabul Bekliyor' && <Blok baslik="Yanıt">
@@ -1045,6 +1049,21 @@ function BantOnayi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any
 }
 
 /** YG-1493: WhatsApp dahil beyan; 8 saatten geç kayıt bildirilir. */
+/** YG-220: sistem erişimi olmayan yat sahibinin ıslak imzalı teklif kararı; telefonla verilen onay kaydedilmez. */
+function IslakImzaKarari({ dosya, teklif, yap }: { dosya: string; teklif: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
+  const [ac, setAc] = useState(false); const [karar, setKarar] = useState('Onaylandı'); const [belge, setBelge] = useState(''); const [gerekce, setGerekce] = useState(''); const [tarih, setTarih] = useState(''); const [erken, setErken] = useState(false);
+  if (!ac) return <button className="btn2 kucuk" onClick={() => setAc(true)}>Islak İmzalı Kararı Kaydet</button>;
+  return <div className="tam">
+    <div className="not">Yalnız yat sahibinin sisteme erişimi yoksa kullanılır. Telefonla verilen onay geçerli değildir.</div>
+    <label htmlFor={`ii-k-${teklif}`}>Karar</label><select id={`ii-k-${teklif}`} value={karar} onChange={(e) => setKarar(e.target.value)}><option>Onaylandı</option><option>Reddedildi</option></select>
+    <label htmlFor={`ii-g-${teklif}`}>Sisteme Erişememe Nedeni</label><input id={`ii-g-${teklif}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
+    <label htmlFor={`ii-t-${teklif}`}>İmza Tarihi</label><input id={`ii-t-${teklif}`} type="datetime-local" value={tarih} onChange={(e) => setTarih(e.target.value)} />
+    <BelgeSec ad="Islak İmzalı Taranmış Teklif" bagTuru="Dosya" bagKimligi={dosya} deger={belge} sec={setBelge} />
+    {karar === 'Onaylandı' && <label className="kutu"><input type="checkbox" checked={erken} onChange={(e) => setErken(e.target.checked)} /><span>İmzalı belgede cayma süresi içinde işe başlanması onayı var</span></label>}
+    <button className="btn2 kucuk" disabled={!belge || !gerekce.trim() || !tarih} onClick={() => void yap(() => istek(`/teklif/${teklif}/islak-imza`, { karar, belge, gerekce, imzaTarihi: new Date(tarih).toISOString(), erkenIfa: karar === 'Onaylandı' && erken }).then(() => setAc(false)), 'Islak imzalı karar kaydedildi.')}>Kaydet</button>
+  </div>;
+}
+
 function CaymaKaydi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
   const [z, setZ] = useState('');
   return <><label htmlFor={`ck-${teklif}`}>Cayma Beyanının Geldiği Zaman</label><input id={`ck-${teklif}`} type="datetime-local" value={z} onChange={(e) => setZ(e.target.value)} /><button className="btn2 kucuk" disabled={!z} onClick={() => void yap(() => istek(`/teklif/${teklif}/cayma`, { beyanZamani: new Date(z).toISOString() }), 'Cayma kaydedildi.')}>Cayma Beyanını Kaydet</button></>;

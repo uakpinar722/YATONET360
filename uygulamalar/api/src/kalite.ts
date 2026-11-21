@@ -221,7 +221,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!n) return yok(y);
     const son = n.sinif === 'Kritik' || n.emniyet_isareti;
     if (!(await rolVar(o.kullanici, son ? [KM] : [KK, KM]))) return y.code(403).send({ hata: son ? 'Son karar Kalite Müdüründedir.' : 'Teknik tasarrufu Kalite Kontrolör verir.' });
-    if (!['Olduğu Gibi Kabul', 'Düzeltme', 'Yeniden İşleme', 'Ayırma/Karantina', 'İade/Değişim', 'Ret/Hurda'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    if (!['Olduğu Gibi Kabul', 'Düzeltme', 'Yeniden İşleme', 'Ayırma/Karantina', 'İade/Değişim', 'Ret/Hurda'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     if (g.karar === 'Olduğu Gibi Kabul' && n.sinif === 'Kritik') return y.code(409).send({ hata: 'Kritik sınıfta Olduğu Gibi Kabul dışında bir karar seçmenizi rica ederiz.' });
     if (n.firma_yeni_hasar && (!g.ihbar || !g.mahsup?.trim())) return y.code(400).send({ hata: 'Firma kaynaklı yeni hasarda sorumluluk ihbar tarihi ve mahsup referansı zorunludur.' });
     await b.db.query(`UPDATE uygunsuzluk SET tasarruf_karari = $2, tasarruf_onaylayan_ref = $3, bedel_sorumlusu = $4, sorumluluk_ihbar_tarihi = $5, mahsup_referansi = $6, statu = 'İşlemde' WHERE kimlik = $1`, [n.kimlik, g.karar, o.kullanici, g.bedel ?? null, g.ihbar ?? null, g.mahsup?.trim() ?? null]);
@@ -254,7 +254,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; kanit?: string };
     if (!UUID.test(id)) return yok(y);
     if (!(await rolVar(o.kullanici, [KK, KM]))) return y.code(403).send({ hata: 'Etkinliği Kalite birimi doğrular.' });
-    if (!['Etkili', 'Etkisiz'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (!['Etkili', 'Etkisiz'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Tamamlanma kanıtı zorunludur.' });
     if (g.sonuc === 'Etkisiz') { const u = (await b.db.query(`SELECT a.uygunsuzluk_ref FROM duzeltici_faaliyet f JOIN kok_neden_analizi a ON a.kimlik = f.kok_neden_ref WHERE f.kimlik = $1`, [id])).rows[0]?.uygunsuzluk_ref; if (u) await (await import('./risk_kalite.js')).kapsamliKokNedenGorevi(b.db, u, 'Düzeltici faaliyet etkisiz bulundu'); } // YG-1693
     const r = await b.db.query(`UPDATE duzeltici_faaliyet SET etkinlik_sonucu = $2, tamamlanma_kaniti_ref = $3, tamamlanma_tarihi = CASE WHEN $2::text = 'Etkili' THEN current_date END, statu = CASE WHEN $2::text = 'Etkili' THEN 'Kapalı' ELSE 'Açık' END, yeniden_acilma = yeniden_acilma + CASE WHEN $2::text = 'Etkisiz' THEN 1 ELSE 0 END WHERE kimlik = $1 RETURNING statu`, [id, g.sonuc, g.kanit]);
@@ -326,7 +326,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT n.*, e.dosya_ref, e.kabul_sinifi FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE n.kimlik = $1`, [id])).rows[0];
     if (!k || !(await erisim(k.dosya_ref, o.kullanici))) return yok(y);
-    if (!['Uygun', 'Koşullu uygun', 'Düzeltme gerekli', 'Reddedildi'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (!['Uygun', 'Koşullu uygun', 'Düzeltme gerekli', 'Reddedildi'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Kanıt zorunludur.' });
     if (k.serbest_birakma_zamani) return y.code(409).send({ hata: 'Kontrol noktası serbest bırakılmıştır.' });
     // YG-553: davetli katılmadıysa planlanan zamandan 2 saat sonra fotoğraf ve video kanıtıyla ilerlenir.

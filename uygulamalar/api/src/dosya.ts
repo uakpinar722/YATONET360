@@ -294,7 +294,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   s.post('/ihbar/:id/acilis', ihbarci, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const g = (i.body ?? {}) as { garantiModel?: string; karar?: string; ozet?: string; kosullar?: string; yenidenTarih?: string; gerekce?: string; musteriTuru?: string; hizmetTuru?: string; acilGecici?: boolean; eksikGerekce?: string; tamamlamaTarih?: string; garantiliEkipman?: boolean; garantiMarka?: string; garantiBitis?: string; sigortaci?: string; hasarNo?: string; policeNo?: string; kapsam?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'İhbar kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!['Kabul', 'Koşullu Açılış', 'Bekletme', 'Yönlendirme', 'Ret'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Açılış kararını seçiniz.' });
     if (!g.ozet?.trim()) return y.code(400).send({ hata: 'Açılış özeti zorunludur.' });
     const c = await b.db.connect();
@@ -402,7 +402,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   // YG-092, YG-515: rolün bitmesi kimliği silmez; ilişki bitiş tarihi ve gerekçesiyle kapanır, bitmiş ilişkiye bildirim gitmez (aktif = false).
   s.post('/dosya-tarafi/:id/bitir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { gerekce } = (i.body ?? {}) as { gerekce?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const t = (await b.db.query(`SELECT t.dosya_ref, t.taraf_rolu, d.dosya_sorumlusu_ref FROM dosya_tarafi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1 AND t.aktif`, [id])).rows[0];
     if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
     if (t.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Taraf ilişkisini Dosya Sorumlusu sonlandırır.' });
@@ -606,7 +606,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { oncelik?: string; gerekce?: string };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
-    if (!ONCELIK_SIRA.includes(g.oncelik ?? '') || g.oncelik === d.oncelik) return y.code(400).send({ hata: 'Öncelik geçersiz.' });
+    if (!ONCELIK_SIRA.includes(g.oncelik ?? '') || g.oncelik === d.oncelik) return y.code(400).send({ hata: 'Önceliği listeden seçmenizi rica ederiz.' });
     if (['Teknik Kapalı', 'Kapalı'].includes(d.statu)) return y.code(409).send({ hata: 'Kapanan dosyada öncelik değişmez.' });
     const ekip = (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [id, o.kullanici])).rows.map((r) => r.rol as string);
     const DS = ekip.includes('Dosya Sorumlusu'); const TU = ekip.includes('Teknik Uzman') || ekip.includes('Sorumlu Teknik Uzman (Koordinatör)');
@@ -755,7 +755,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   s.post('/beklemede/:id/karar', { preHandler: izinGerekli(b, 'dosya.ata.operasyon') }, async (i, y) => {
     const o = i.oturum!; const r = await beklemedeGetir((i.params as { id: string }).id, o.kullanici); const { karar } = (i.body ?? {}) as { karar?: string };
     if (!r) return yok(y);
-    if (!['Devam', 'Kontrollü Askıda', 'Kapanış'].includes(karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    if (!['Devam', 'Kontrollü Askıda', 'Kapanış'].includes(karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

@@ -606,7 +606,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!k || k.karar !== 'Garanti') return yok(y);
     const yetkili = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Kalite Kontrolör', 'Yedek Kalite Kontrolör') AND bitis_zamani IS NULL UNION SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $2 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)'`, [k.dosya_ref, o.kullanici])).rowCount;
     if (!yetkili) return y.code(403).send({ hata: 'Garanti yeniden doğrulamasını Kalite Kontrolör yapar.' });
-    if (!['Doğrulandı', 'Doğrulanmadı'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (!['Doğrulandı', 'Doğrulanmadı'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     if (g.sonuc === 'Doğrulanmadı' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Doğrulanmadı sonucunda açıklama zorunludur.' });
     await b.db.query(`UPDATE garanti_sikayet SET yeniden_dogrulama_sonucu = $2, yeniden_dogrulama_notu = $3, yeniden_dogrulayan_ref = $4, yeniden_dogrulama_zamani = now() WHERE kimlik = $1`, [id, g.sonuc, g.aciklama?.trim() || null, o.kullanici]);
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Garanti Yeniden Doğrulama' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
@@ -627,7 +627,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
     const garanti = k.kayit_turu.includes('Garanti bildirimi');
     if (garanti) {
-      if (!['Garanti', 'Üretici Garantisi', 'İyi Niyet', 'Ücretli İş', 'Kapsam Dışı'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+      if (!['Garanti', 'Üretici Garantisi', 'İyi Niyet', 'Ücretli İş', 'Kapsam Dışı'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
       const roller = await ekipRolleri(k.dosya_ref, o.kullanici);
       const izinler = await kullaniciIzinleri(b.db, o.kullanici);
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });

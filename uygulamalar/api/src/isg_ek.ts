@@ -46,7 +46,7 @@ export function isgEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { personel?: string; tarih?: string; sonuc?: string; sonraki?: string };
     if (!(await roller(o.kullanici)).includes(ISG)) return yok(y);
     if (!g.personel || !TARIH.test(g.tarih ?? '') || !SONUC.includes(g.sonuc ?? '') || (g.sonraki && !TARIH.test(g.sonraki))) return y.code(400).send({ hata: 'Personel, muayene tarihi ve sonuç (Çalışmaya Uygun / Uygun Değil) zorunludur; tanı veya sağlık bilgisi yazılmaz.' });
-    if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü'`, [g.personel])).rowCount) return y.code(400).send({ hata: 'Personel bulunamadı.' });
+    if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü'`, [g.personel])).rowCount) return y.code(400).send({ hata: 'Personel kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const r = (await b.db.query(`INSERT INTO saglik_gozetimi (personel_ref, muayene_tarihi, sonuc, sonraki_muayene, kaydeden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [g.personel, g.tarih, g.sonuc, g.sonraki || null, o.kullanici])).rows[0];
     if (g.sonuc === 'Çalışmaya Uygun Değil') await bildir(b.db, { olay: `saglik-uygun-degil:${r.kimlik}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, IKM)), baslik: 'Sağlık Gözetimi · Çalışmaya Uygun Değil', ozet: 'Görev düzenlemesi için personel kaydını inceleyiniz.', oncelik: 'Yüksek' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sağlık Gözetimi Kaydı', nesneTuru: 'Personel', nesneKimligi: g.personel, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

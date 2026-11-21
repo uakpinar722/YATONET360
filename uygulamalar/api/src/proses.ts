@@ -118,7 +118,7 @@ export function prosesYollari(s: FastifyInstance, b: Baglam) {
     else if (g.sonuc === 'Uygun Değil') {
       if (!g.uygunsuzluk || !UUID.test(g.uygunsuzluk) || !(await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE kimlik = $1 AND dosya_ref = $2`, [g.uygunsuzluk, t.dosya_ref])).rowCount) return y.code(400).send({ hata: 'Uygun Değil sonucunda dosyanın uygunsuzluk kaydını seçiniz.' });
       await b.db.query(`UPDATE proses_seansi SET durum = 'Uygun Değil', uygunsuzluk_ref = $2 WHERE kimlik = $1`, [t.kimlik, g.uygunsuzluk]);
-    } else return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    } else return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Proses Seansı Sonucu', nesneTuru: 'Proses Seansı', nesneKimligi: t.kimlik, yeni: { sonuc: g.sonuc }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { durum: g.sonuc === 'Uygun' ? 'Onaylı' : 'Uygun Değil' };
   });

@@ -148,7 +148,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const mersis = g.mersis?.replace(/\s/g, '') || null; const tel = g.telefon?.replace(/[\s()-]/g, '') || null;
     if (mersis && !/^\d{16}$/.test(mersis)) return y.code(400).send({ hata: 'MERSİS numarası 16 haneli olmalıdır.' });
     if (!['Çözüm Ortağı', 'Tedarikçi', 'Tesis'].includes(g.rol ?? '')) return y.code(400).send({ hata: 'Kayıt rolünü seçiniz.' });
-    if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarası geçersiz.' });
+    if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarasını kontrol etmenizi rica ederiz.' });
     return islem(async (c) => {
       if (g.vergiNo && (await c.query(`SELECT 1 FROM kurulus WHERE vergi_no = $1`, [g.vergiNo])).rowCount) throw Object.assign(new Error('Bu vergi numarasıyla kayıt vardır.'), { statusCode: 409 });
       if (mersis && (await c.query(`SELECT 1 FROM kurulus WHERE mersis_no = $1`, [mersis])).rowCount) throw Object.assign(new Error('Bu MERSİS numarasıyla kayıt vardır.'), { statusCode: 409 }); // YG-345
@@ -235,10 +235,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/firma/:id/hukuk-gorusu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const { oneri } = (i.body ?? {}) as { oneri?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (oneri !== 'Koşullu Onaylı' && oneri !== 'Reddedildi') return y.code(400).send({ hata: 'Öneriyi seçmenizi rica ederiz.' });
     const u = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0];
-    if (!u) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!u) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if ((await b.db.query(`SELECT 1 FROM firma_hukuk_gorusu WHERE kurulus_ref = $1 AND oneri = $2 AND durum IN ('Bekliyor', 'Verildi')`, [id, oneri])).rowCount) return y.code(409).send({ hata: 'Bu öneri için açık görüş kaydı bulunmaktadır.' });
     const c = await b.db.connect();
     try {
@@ -377,7 +377,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (gk.sonuc === 'Ret') return y.code(409).send({ hata: gk.engeller[0] });
     if ((g.tur === 'EK' || g.tur === 'GR') && (!g.ana || !UUID.test(g.ana) || !(await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND dosya_ref = $2`, [g.ana, id])).rowCount)) return y.code(400).send({ hata: 'Ek İş ve Garanti iş emri bir ana iş emrine bağlanır.' }); // YG-316
     const karar = (g.tur === 'ON' || g.tur === 'EK' || g.tur === 'PH');
-    let kalemler: { kimlik: string; aciklama: string; miktar: string; birim: string; satir_ref: string | null }[] = [];
+    let kalemler: { kimlik: string; aciklama: string; miktar: string; birim: string; satir_ref: string | null; teknik_pay?: string; olculemez?: boolean }[] = [];
     if (karar) {
       if (!g.teklif || !UUID.test(g.teklif)) return y.code(400).send({ hata: 'İş emri onaylı teklife dayanır; teklifi seçiniz.' }); // YG-319
       const t = (await b.db.query(`SELECT statu, karar, gecerlilik_bitis_tarihi, (karar_zamani AT TIME ZONE 'Europe/Istanbul')::date > gecerlilik_bitis_tarihi gec FROM fiyat_teklifi WHERE kimlik = $1 AND dosya_ref = $2`, [g.teklif, id])).rows[0];
@@ -388,7 +388,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       if (cay) return y.code(409).send({ hata: cay });
       { const fe = await (await import('./sigorta_fark.js')).odemeFarkiEngeli(b.db, g.teklif!); if (fe) return y.code(409).send({ hata: fe }); } // YG-891
       // YG-324: yalnız onaylanan paketler seçilir.
-      kalemler = (await b.db.query(`SELECT kimlik, aciklama, miktar, birim, satir_ref FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' AND bedel_turu <> 'Masraf' AND ($2::int[] IS NULL OR sira_no = ANY($2)) ORDER BY sira_no` /* YG-1770: tesis bedeli (Masraf) iş emrine girmez */, [g.teklif, g.siralar ?? null])).rows;
+      kalemler = (await b.db.query(`SELECT k.kimlik, k.aciklama, k.miktar, k.birim, k.satir_ref, coalesce(s.teknik_pay, 0) teknik_pay, k.olculemez FROM fiyat_teklifi_kalemi k LEFT JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.teklif_ref = $1 AND k.onay_durumu = 'Onaylandı' AND k.bedel_turu <> 'Masraf' AND ($2::int[] IS NULL OR k.sira_no = ANY($2)) ORDER BY k.sira_no` /* YG-1770: tesis bedeli (Masraf) iş emrine girmez */, [g.teklif, g.siralar ?? null])).rows;
       if (!kalemler.length) return y.code(409).send({ hata: 'Seçilebilecek onaylı kalem yoktur.' });
       if (g.bedel === undefined) return y.code(400).send({ hata: 'Mali limit boş olan iş emri yayımlanmaz.' }); // YG-323
     }
@@ -420,7 +420,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       if (g.tur === 'KN') await (await import('./ticari_atama.js')).ticariAtamaAc(c, id); // YG-1600
       if (g.tur === 'ON') await ym.yontemSinirAktar(c, e.kimlik, id); // PRS-1
       if (g.tur === 'EK' && g.sapma && UUID.test(g.sapma)) { const zs = await c.query(`UPDATE sapma_kaydi SET ek_is_emri_ref = $3 WHERE kimlik = $1 AND dosya_ref = $2 AND zarf_genisledi AND ek_is_emri_ref IS NULL RETURNING kimlik`, [g.sapma, id, e.kimlik]); if (zs.rowCount) await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Ek İş İş Emri Gerekli' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.sapma]); } // YG-407
-      for (const k of kalemler) await c.query(`INSERT INTO is_emri_kalemi (is_emri_ref, teklif_kalem_ref, satir_ref, aciklama, miktar, birim) VALUES ($1,$2,$3,$4,$5,$6)`, [e.kimlik, k.kimlik, k.satir_ref, k.aciklama, k.miktar, k.birim]);
+      for (const k of kalemler) await c.query(`INSERT INTO is_emri_kalemi (is_emri_ref, teklif_kalem_ref, satir_ref, aciklama, miktar, birim, teknik_pay, olculemez) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [e.kimlik, k.kimlik, k.satir_ref, k.aciklama, k.miktar, k.birim, k.teknik_pay ?? 0, k.olculemez === true]);
+      // YG-196: onaylanmayan opsiyon, koşullu ve alternatif kalemler uygulanmaz; iş emrinde ayrı ve görünür listelenir.
+      if (g.teklif && UUID.test(g.teklif)) { const sm = (await c.query(`SELECT string_agg(k.sira_no || '. ' || k.aciklama || coalesce(' (' || s.satir_turu || ')', ''), '; ' ORDER BY k.sira_no) l FROM fiyat_teklifi_kalemi k LEFT JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.teklif_ref = $1 AND k.opsiyon AND k.onay_durumu IS DISTINCT FROM 'Onaylandı'`, [g.teklif])).rows[0].l; if (sm) await c.query(`UPDATE is_emri SET secilmeyen_kalemler = $2 WHERE kimlik = $1`, [e.kimlik, sm]); }
       if (g.bedel !== undefined && g.bedel > 0) {
         // YG-302: son onay limite göre; kümülatif izlenir.
         const kum = Number((await c.query(`SELECT coalesce(sum(firma_bedeli_eur), 0) t FROM is_emri WHERE dosya_ref = $1 AND statu NOT IN ('İptal', 'Yerine Geçti')`, [id])).rows[0].t);
@@ -440,7 +442,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!f || !UUID.test(id)) return undefined;
     return (await b.db.query(`SELECT e.*, (SELECT a.is_emri_no FROM is_emri a WHERE a.kimlik = e.ana_is_emri_ref) AS ana_is_emri_no, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kimlik = $1 AND e.kurulus_ref = $2`, [id, f])).rows[0];
   };
-  const firmaGorunum = (e: Record<string, any>) => ({ kimlik: e.kimlik, dosya: e.dosya_ref, isEmriNo: e.is_emri_no, tur: e.is_emri_turu, statu: e.statu, anaIsEmri: e.ana_is_emri_ref, anaIsEmriNo: e.ana_is_emri_no ?? null, dosyaNo: e.dosya_no, oncelik: e.oncelik, yat: e.yat_adi, yatTuru: e.yat_turu, boy: e.tam_boy_m, govde: e.govde_malzemesi, yer: e.uygulama_yeri, kapsam: e.kapsam, teknikSonuc: e.teknik_sonuc ?? null, yontem: e.yontem ?? null, sorumluRol: e.sorumlu_rol ?? null, bedel: e.firma_bedeli_eur, baslangic: e.baslangic_tarihi, bitis: e.hedef_bitis_tarihi, yanitSon: e.yanit_son, yanit: e.firma_yaniti, tehlikeliAtik: e.tehlikeli_atik });
+  const firmaGorunum = (e: Record<string, any>) => ({ kimlik: e.kimlik, dosya: e.dosya_ref, isEmriNo: e.is_emri_no, tur: e.is_emri_turu, statu: e.statu, anaIsEmri: e.ana_is_emri_ref, anaIsEmriNo: e.ana_is_emri_no ?? null, dosyaNo: e.dosya_no, oncelik: e.oncelik, yat: e.yat_adi, yatTuru: e.yat_turu, boy: e.tam_boy_m, govde: e.govde_malzemesi, yer: e.uygulama_yeri, kapsam: e.kapsam, teknikSonuc: e.teknik_sonuc ?? null, yontem: e.yontem ?? null, sorumluRol: e.sorumlu_rol ?? null, bedel: e.firma_bedeli_eur, baslangic: e.baslangic_tarihi, bitis: e.hedef_bitis_tarihi, yanitSon: e.yanit_son, yanit: e.firma_yaniti, tehlikeliAtik: e.tehlikeli_atik, secilmeyenKalemler: e.secilmeyen_kalemler ?? null });
 
   s.get('/firma-portal/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const f = await firmam(o.kullanici);
@@ -474,7 +476,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const e = await firmaIsEmri((i.params as { id: string }).id, o.kullanici);
     if (!e) return yok(y);
     // YG-311: kabul öncesi kapsam, hedef süre, kalem bazında teslim (kabul) ölçütü ve güvenlik gereği birlikte gösterilir.
-    const kalemler = (await b.db.query(`SELECT k.aciklama, k.miktar, k.birim, k.gerceklesen_miktar, s.kabul_olcutu FROM is_emri_kalemi k LEFT JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.is_emri_ref = $1 ORDER BY k.aciklama`, [e.kimlik])).rows;
+    const kalemler = (await b.db.query(`SELECT k.aciklama, k.miktar, k.birim, k.gerceklesen_miktar, s.kabul_olcutu, k.teknik_pay, k.olculemez FROM is_emri_kalemi k LEFT JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.is_emri_ref = $1 ORDER BY k.aciklama`, [e.kimlik])).rows;
     const kesif = e.is_emri_turu === 'KN' ? (await b.db.query(`SELECT guvenlik_hazirligi, erisim_kisitlari FROM kesif WHERE dosya_ref = $1 ORDER BY planlanan_baslangic DESC LIMIT 1`, [e.dosya_ref])).rows[0] : undefined;
     const guvenlik = [e.calisma_izni_gerekli ? 'Tesis çalışma izni gereklidir (belge YATONET 360\'a yüklenir; en fazla 12 saat geçerli).' : null, e.tehlikeli_atik ? 'Tehlikeli atık çıkar; atık kayıtla bertaraf edilir.' : null, kesif?.guvenlik_hazirligi ? `Güvenlik hazırlığı: ${kesif.guvenlik_hazirligi}` : null, kesif?.erisim_kisitlari ? `Erişim kısıtı: ${kesif.erisim_kisitlari}` : null].filter(Boolean);
     return { ...firmaGorunum(e), kalemler, guvenlik };
@@ -485,7 +487,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const e = await firmaIsEmri((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { yanit?: string; aciklama?: string; kod?: string };
     if (!e) return yok(y);
     if (e.statu !== 'Kabul Bekliyor') return y.code(409).send({ hata: 'Bu iş emri yanıt beklemiyor.' });
-    if (!['Kabul', 'Koşullu Kabul', 'Çekince', 'Ret'].includes(g.yanit ?? '')) return y.code(400).send({ hata: 'Yanıtı seçiniz.' });
+    if (!['Kabul', 'Koşullu Kabul', 'Çekince', 'Ret'].includes(g.yanit ?? '')) return y.code(400).send({ hata: 'Yanıtı seçmenizi rica ederiz.' });
     if (g.yanit !== 'Kabul' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
     if (g.yanit === 'Kabul') {
       const h = (await b.db.query(`SELECT totp_gizli_sifreli, totp_son_adim FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
@@ -624,7 +626,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!e) return yok(y);
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, TEKNIK))) return y.code(403).send({ hata: 'Başlangıç kontrolünü Saha Sorumlusu veya Teknik Uzman yapar.' });
     if (e.statu !== 'Başlangıç Kontrolünde') return y.code(409).send({ hata: 'İş emri başlangıç kontrolünde değildir.' });
-    if (!['Başlanabilir', 'Koşullu Başlanabilir', 'Bekletilir'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (!['Başlanabilir', 'Koşullu Başlanabilir', 'Bekletilir'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     // YG-368: eksik ön koşulla başlama ancak Koşullu ve gerekçeyle; Başlanabilir yalnız tamamı işaretliyse.
     // YG-370: absorban ve bariyer onarım işlerinde aranır; keşifte aranmaz.
     const eksikOn = ON_KOSULLAR.filter((x) => !(e.is_emri_turu === 'KN' && x === 'Absorban ve Bariyer Mevcut') && !(onKosul ?? []).includes(x));

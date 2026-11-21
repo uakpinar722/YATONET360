@@ -73,7 +73,7 @@ export async function sigortaSureIsle(db: Pool, simdi = new Date()): Promise<num
 
 export function sigortaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
-  const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Dosya bulunamadı.' });
+  const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
   const sirketim = async (k: string) => (await b.db.query(`SELECT sigortaci_adi FROM sigorta_kullanici WHERE kullanici_ref = $1`, [k])).rows[0]?.sigortaci_adi as string | undefined;
   const dosyaKosul = `(lower(s.sigortaci_adi) = lower($1) OR EXISTS (SELECT 1 FROM dosya_tarafi e WHERE e.dosya_ref = d.kimlik AND e.taraf_rolu = 'Eksper' AND e.kullanici_ref = $2 AND e.aktif))`;
   const durum = async (d: Record<string, any>) => {

@@ -178,7 +178,7 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     if (m.kontrol_eden_ref !== o.kullanici && !tmy) return y.code(403).send({ hata: 'Kontrolü sistemin belirlediği sorumlu yapar.' });
     if (m.kabul_karari && !karantinada) return y.code(409).send({ hata: 'Karar verilmiştir.' });
     if (karantinada && karar === 'Karantina') return y.code(409).send({ hata: 'Ürün zaten karantinadadır; kabul, ret veya iade kararı veriniz.' });
-    if (!['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].includes(karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    if (!['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret', 'İade Edildi'].includes(karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     return islem(async (c) => {
       await c.query(`UPDATE malzeme_giris_kabulu SET kabul_karari = $2, onay_zamani = now() WHERE kimlik = $1`, [id, karar]);
       if (karar === 'Karantina') { const { kartAc } = await import('./is_motoru.js'); const { rolId } = await import('./ihbar.js'); const sp = (await c.query(`SELECT siparis_no FROM tedarik_siparisi WHERE kimlik = $1`, [m.siparis_ref])).rows[0]?.siparis_no ?? '';

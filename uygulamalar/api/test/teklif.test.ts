@@ -323,6 +323,24 @@ describe('bireysel onay ve cayma (YG-152, YG-466, YG-468)', () => {
     await o.sup.query(`UPDATE on_bilgilendirme_cayma_kaydi SET cayma_bitis = now() - interval '1 minute' WHERE teklif_ref = $1`, [g.t.kimlik]);
     expect((await ie()).statusCode).toBe(200);
   });
+  it('teknik pay ve ölçülemeyen değer ayrı; seçilmeyen alternatif iş emrinde görünür (YG196-PAY)', async () => {
+    const tu = await o.gir('tu'); const d0 = await o.dosyaAc(); await o.ekipKur(d0.kimlik);
+    expect((await o.ist('POST', `/api/dosya/${d0.kimlik}/cetvel`, tu, { satirlar: [{ aciklama: 'A', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat', olcut: 'Ö', teknikPay: -1 }] })).statusCode).toBe(400);
+    const d = await hazir({}, {}, [{ aciklama: 'İnceleme', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 10, birim: 'saat', kartela: KARTELA, teknikPay: 1.5, olculemez: true }, { aciklama: 'Alternatif İnceleme', nitelik: 'Onarım', bedel: 'İşçilik', miktar: 2, birim: 'saat', kartela: KARTELA, tur: 'Alternatif' }]);
+    const t = await teklifAc(d); await onayla(t.kimlik);
+    expect((await o.sup.query(`SELECT olculemez, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [t.kimlik])).rows).toEqual([{ olculemez: true, opsiyon: false }, { olculemez: false, opsiyon: true }]);
+    expect((await o.sup.query(`SELECT f.ara_toplam_eur = k.tutar_eur esit FROM fiyat_teklifi f JOIN fiyat_teklifi_kalemi k ON k.teklif_ref = f.kimlik AND k.sira_no = 1 WHERE f.kimlik = $1`, [t.kimlik])).rows[0].esit).toBe(true); // YG196-ARA: alternatif ana toplama girmez
+    expect((await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).statusCode).toBe(200);
+    const on = (await o.sup.query(`SELECT kimlik FROM onay_talebi WHERE nesne_kimligi = $1 AND ony_kod = 'ONY-23'`, [t.kimlik])).rows[0];
+    const bel = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${on.kimlik}`])).rows[0].metin.match(/#onay=([\w-]+)/)[1];
+    const e = (await o.ist('GET', `/api/onay/${bel}`)).json();
+    expect((await kararVer(bel, { [e.kutular[0].ad]: true, [e.kutular[1].ad]: true })).statusCode).toBe(200);
+    const ie = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 510 }); expect(ie.statusCode, ie.body).toBe(200);
+    expect((await o.sup.query(`SELECT secilmeyen_kalemler FROM is_emri WHERE kimlik = $1`, [ie.json().kimlik])).rows[0].secilmeyen_kalemler).toBe('2. Alternatif İnceleme (Alternatif)');
+    expect((await o.sup.query(`SELECT aciklama, teknik_pay::float tp, olculemez FROM is_emri_kalemi WHERE is_emri_ref = $1`, [ie.json().kimlik])).rows).toEqual([{ aciklama: 'İnceleme', tp: 1.5, olculemez: true }]);
+    const { miktarYaz } = await import('../src/belge_uret.js');
+    expect(miktarYaz({ miktar: 10, birim: 'saat', olculemez: true, teknik_pay: 1.5 }, 'tr')).toBe('10,00 saat (tahmini) + teknik pay 1,50');
+  });
   it('erken ifa kutusu işaretliyse iş emri açılır; cayma kaydedilince engellenir', async () => {
     const g = await gonder(); const e = (await o.ist('GET', `/api/onay/${g.belirtec}`)).json();
     expect((await kararVer(g.belirtec, { [e.kutular[0].ad]: true, [e.kutular[1].ad]: true })).statusCode).toBe(200);

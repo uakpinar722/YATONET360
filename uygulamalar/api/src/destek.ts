@@ -211,7 +211,7 @@ export function destekYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const a = await talep((i.params as { id: string }).id, o.kullanici); const sonuc = ((i.body ?? {}) as { sonuc?: string }).sonuc;
     if (!a || a.yetki !== 'acan') return yok(y);
     if (a.t.durum !== 'Çözüldü') return y.code(409).send({ hata: 'Doğrulanacak çözüm yoktur.' });
-    if (!['Çözüldü', 'Sorun Sürüyor'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+    if (!['Çözüldü', 'Sorun Sürüyor'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
     if (sonuc === 'Çözüldü') await b.db.query(`UPDATE destek_talebi SET kullanici_dogrulama = 'Çözüldü', durum = 'Kapalı', kapanis_zamani = now(), kapanis_notu = 'Kullanıcı doğruladı' WHERE kimlik = $1`, [a.t.kimlik]);
     else await b.db.query(`UPDATE destek_talebi SET kullanici_dogrulama = 'Sorun Sürüyor', durum = 'Yanıtlandı' WHERE kimlik = $1`, [a.t.kimlik]);
     return { durum: sonuc === 'Çözüldü' ? 'Kapalı' : 'Yanıtlandı' };

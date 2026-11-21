@@ -109,7 +109,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-502: süreli kartlar son zamandan önceki 30 dakikalık olay, toplantılar kendi süresiyle kişisel takvime aktarılır.
   s.get('/takvim/gorevlerim.ics', oturumlu, async (i, y) => {
-    const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const k = await kartlarim(o.kullanici); const { takvimDosyasi } = await import('./randevu.js');
     const kart = [...k.onay, ...k.islem, ...k.gorev].filter((x) => x.son_zaman).map((x) => ({ uid: `is-${x.kimlik}`, baslik: `${x.baslik} (Son Zaman)`, aciklama: `${x.tur}${x.ozet ? ` · ${x.ozet}` : ''} · YATONET 360 Bugün ekranından işleyiniz.`, yer: 'YATONET 360', baslangic: new Date(+new Date(x.son_zaman) - 30 * 60_000), dakika: 30 }));
     const tpl = (await b.db.query(`SELECT DISTINCT t.kimlik, t.konu, t.baslangic, t.sure_dk, t.gorusme_baglantisi FROM toplanti t JOIN toplanti_katilimci p ON p.toplanti_ref = t.kimlik WHERE p.kullanici_ref = $1 AND t.durum = 'Planlandı' AND t.baslangic BETWEEN now() AND now() + interval '30 days' ORDER BY t.baslangic`, [o.kullanici])).rows
@@ -121,7 +121,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
   s.post('/is/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const { karar, gerekce, kod, donulecekKademe } = (i.body ?? {}) as { karar?: Karar; gerekce?: string; kod?: string; donulecekKademe?: number };
-    if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const g = (gerekce ?? '').trim();
     if ((karar === 'Gerekçeyle İade Et' || karar === 'Reddet' || karar === 'Kademe Atla') && !g) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
     const etkin = await etkinRoller(b.db, o.kullanici, true); const roller = etkin.map((r) => r.kimlik);
@@ -231,12 +231,12 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
   // YG-1632: okundu kaydı yalnız kişinin kapsamındaki duyuruya yazılır.
   s.post('/duyuru/:id/okudum', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!/^[0-9a-f-]{36}$/.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const kapsam = o.grup === 'LGM İç Rolü' ? ['LGM', 'Tümü'] : ['Dış', 'Tümü'];
     const r = await b.db.query(`INSERT INTO duyuru_okuma (duyuru_ref, kullanici_ref) SELECT kimlik, $2 FROM duyuru WHERE kimlik = $1 AND durum = 'Yayında' AND kapsam = ANY($3) ON CONFLICT DO NOTHING`, [id, o.kullanici, kapsam]);
     if (!r.rowCount) {
       const var_ = await b.db.query(`SELECT 1 FROM duyuru_okuma WHERE duyuru_ref = $1 AND kullanici_ref = $2`, [id, o.kullanici]);
-      if (!var_.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+      if (!var_.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     }
     return { tamam: true };
   });

@@ -52,7 +52,7 @@ export interface YatGirdisi {
  */
 export async function yatBulVeyaAc(c: Db, g: YatGirdisi, kullanici: string): Promise<{ kimlik: string; yeni: boolean } | { hata: string }> {
   if (g.yatId) {
-    if (!UUID.test(g.yatId) || !(await c.query(`SELECT 1 FROM yat WHERE kimlik = $1`, [g.yatId])).rowCount) return { hata: 'Yat kaydı bulunamadı.' };
+    if (!UUID.test(g.yatId) || !(await c.query(`SELECT 1 FROM yat WHERE kimlik = $1`, [g.yatId])).rowCount) return { hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' };
     return { kimlik: g.yatId, yeni: false };
   }
   if (!g.adi?.trim()) return { hata: 'Yat adı zorunludur.' };
@@ -130,15 +130,15 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-091: yat satışında sahip devri. Yeni sahip kayıtlı taraf olmalıdır; önceki sahip geçmişte kalır. Açık dosyalar mevcut taraflarıyla sürer, Dosya Sorumlusuna gözden geçirme görevi düşer.
   s.get('/yat/:id/sahip-gecmisi', yonetici, async (i, y) => {
-    const { id } = i.params as { id: string }; if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    const { id } = i.params as { id: string }; if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT g.devir_tarihi::text devir_tarihi, o.unvan_ad_soyad onceki, n.unvan_ad_soyad yeni, g.dayanak FROM yat_sahip_gecmisi g LEFT JOIN taraf o ON o.kimlik = g.onceki_sahip_ref JOIN taraf n ON n.kimlik = g.yeni_sahip_ref WHERE g.yat_ref = $1 ORDER BY g.devir_tarihi DESC, g.zaman DESC`, [id])).rows;
   });
   s.post('/yat/:id/sahip-devri', yonetici, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarafNo?: string; devirTarihi?: string; dayanak?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!g.tarafNo?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.devirTarihi ?? '') || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Yeni sahibin taraf numarası, devir tarihi ve dayanak belge (satış sözleşmesi, ruhsat vb.) zorunludur.' });
     if (g.devirTarihi! > new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Devir tarihi ileri bir tarih olamaz.' });
-    const yt = (await b.db.query(`SELECT yat_adi, yat_sahibi_ref FROM yat WHERE kimlik = $1`, [id])).rows[0]; if (!yt) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    const yt = (await b.db.query(`SELECT yat_adi, yat_sahibi_ref FROM yat WHERE kimlik = $1`, [id])).rows[0]; if (!yt) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const t = (await b.db.query(`SELECT kimlik, unvan_ad_soyad FROM taraf WHERE taraf_no = $1 AND durum = 'Aktif'`, [g.tarafNo.trim()])).rows[0];
     if (!t) return y.code(400).send({ hata: 'Bu numarada aktif taraf kaydı bulunamadı.' });
     if (t.kimlik === yt.yat_sahibi_ref) return y.code(409).send({ hata: 'Seçilen taraf zaten yatın sahibidir.' });
@@ -158,14 +158,14 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
   s.post('/yat/:id/duzelt', yonetici, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const { alanlar, kaynak, gerekce } = (i.body ?? {}) as { alanlar?: Record<string, unknown>; kaynak?: string; gerekce?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!gerekce?.trim()) return y.code(400).send({ hata: 'Değişiklik gerekçesi zorunludur.' });
     if (kaynak && !KAYNAKLAR.includes(kaynak)) return y.code(400).send({ hata: 'Bilgi kaynağı geçersiz.' });
     const ad = Object.keys(alanlar ?? {}).filter((a) => DUZELTILEBILIR[a]);
     if (!ad.length) return y.code(400).send({ hata: 'Düzeltilecek alan yok.' });
     if (alanlar!.mmsi && !/^[0-9]{9}$/.test(String(alanlar!.mmsi))) return y.code(400).send({ hata: 'MMSI 9 haneli rakam olmalıdır.' }); // YG-091 // Yat değeri ve mülkiyet burada değişmez (YG-116, YG-476).
     const eski = (await b.db.query(`SELECT ${ad.join(',')} FROM yat WHERE kimlik = $1`, [id])).rows[0];
-    if (!eski) return y.code(404).send({ hata: 'Yat kaydı bulunamadı.' });
+    if (!eski) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     // YG-1245: eksik teknik bilgi kaynaksız doldurulmaz.
     if (!kaynak && ['tam_boy_m', 'govde_malzemesi', 'tahrik_turu'].some((a) => ad.includes(a) && (eski[a] === null || eski[a] === 'Bilinmiyor') && alanlar![a] !== '' && alanlar![a] != null)) return y.code(400).send({ hata: 'Eksik bilgiyi tamamlarken bilgi kaynağını seçmenizi rica ederiz.' });
     const kume = ad.map((a, n) => `${a} = $${n + 2}`);
@@ -191,7 +191,7 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi IN ('Operasyon Müdürü', 'Müşteri ve Paydaş İlişkileri Müdürü')`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Tarafı Operasyon Müdürü veya Müşteri ve Paydaş İlişkileri Müdürü pasife alır.' });
     if (typeof g.pasif !== 'boolean' || (g.pasif && !g.gerekce?.trim())) return y.code(400).send({ hata: 'Durum ve gerekçe zorunludur.' });
     const r = await b.db.query(`UPDATE taraf SET pasif = $2, pasif_gerekcesi = $3, pasif_yapan_ref = $4, pasif_zamani = now() WHERE taraf_no = $1 RETURNING kimlik`, [no, g.pasif, g.gerekce?.trim() || null, o.kullanici]);
-    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!r.rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.pasif ? 'Taraf Pasife Alındı' : 'Taraf Aktifleştirildi', nesneTuru: 'Taraf', nesneKimligi: r.rows[0].kimlik, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
@@ -201,10 +201,10 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (!g.ad?.trim()) return y.code(400).send({ hata: 'Ad soyad veya unvan zorunludur.' });
     // YG-1378: telefon veya e-postadan en az biri; e-posta ve telefon biçimi denetlenir.
     if (!g.telefon?.trim() && !g.eposta?.trim()) return y.code(400).send({ hata: 'Telefon veya e-postadan en az birini giriniz.' });
-    if (g.eposta?.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta.trim())) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
+    if (g.eposta?.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta.trim())) return y.code(400).send({ hata: 'E-posta adresini kontrol etmenizi rica ederiz.' });
     if (g.telefon?.trim() && !/^\+?[0-9 ()-]{10,20}$/.test(g.telefon.trim())) return y.code(400).send({ hata: 'Telefon numarası geçersiz.' });
     if (g.tckn && !tcknGecerli(g.tckn)) return y.code(400).send({ hata: 'T.C. Kimlik Numarası geçersiz.' });
-    if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarası geçersiz.' });
+    if (g.vergiNo && !vergiNoGecerli(g.vergiNo)) return y.code(400).send({ hata: 'Vergi numarasını kontrol etmenizi rica ederiz.' });
     const es = await b.db.query(`SELECT taraf_no FROM taraf WHERE vergi_no = $1 OR tckn = $2 LIMIT 1`, [g.vergiNo ?? null, g.tckn ?? null]);
     if (es.rows[0]) return y.code(409).send({ hata: `Bu kimlik bilgisiyle kayıt mevcuttur: ${es.rows[0].taraf_no}`, tarafNo: es.rows[0].taraf_no });
     // YG-926: tüzel kişide aynı unvanla (büyük-küçük harf ve Türkçe karakter farkı gözetmeden) ikinci kayıt açılmaz.

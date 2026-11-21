@@ -72,7 +72,7 @@ export function odemeTakvimiYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; aciklama?: string; tutarTl?: number; vade?: string };
     if (!(await muhasebe(o.kullanici))) return yok(y);
     if (!TURLER.includes(g.tur ?? '') || !g.aciklama?.trim() || !g.vade || !/^\d{4}-\d{2}-\d{2}$/.test(g.vade)) return y.code(400).send({ hata: 'Tür, açıklama ve vadeyi girmenizi rica ederiz.' });
-    if (g.tutarTl !== undefined && !(Number(g.tutarTl) > 0)) return y.code(400).send({ hata: 'Tutar geçersiz.' });
+    if (g.tutarTl !== undefined && !(Number(g.tutarTl) > 0)) return y.code(400).send({ hata: 'Tutarı kontrol etmenizi rica ederiz.' });
     const vade = await isGununeKaydir(b.db, g.vade);
     const r = (await b.db.query(`INSERT INTO odeme_takvimi_kalemi (tur, aciklama, tutar_tl, vade, giren_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [g.tur, g.aciklama.trim(), g.tutarTl ?? null, vade, o.kullanici])).rows[0];
     return { kimlik: r.kimlik, vade };

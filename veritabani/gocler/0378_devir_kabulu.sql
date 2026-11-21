@@ -1,0 +1,7 @@
+-- YG-986: devralan kabul etmeden devir tamamlanmaz; önceki sorumlunun erişimi kabul anına kadar sürer.
+ALTER TABLE ayrilis_devri DROP CONSTRAINT ayrilis_devri_durum_check;
+ALTER TABLE ayrilis_devri ADD CONSTRAINT ayrilis_devri_durum_check CHECK (durum IN ('Bekliyor', 'Kabul Bekliyor', 'Devredildi', 'Birim Amirine Atandı')), ADD COLUMN kabul_zamani timestamptz;
+INSERT INTO durum_sozlugu (kayit_turu, durum, is_anlami, giris_kosulu, cikis_kosulu, yetkili_rol, izinli_gecisler, zorunlu_aciklama, sure_durur, otomatik_bildirim, musteri_adi) VALUES
+  ('ayrilis_devri', 'Kabul Bekliyor', 'Devralan seçildi; devralanın kabulü bekleniyor. Önceki sorumlunun erişimi sürer.', 'Birim amiri veya İnsan Kaynakları devralanı seçince', 'Devralan Devir Kabulü görevini tamamlayınca Devredildi; son iş günü geçince sistem Birim Amirine Atandı yapar', 'İnsan Kaynakları Müdürü', ARRAY['Devredildi','Birim Amirine Atandı']::text[], false, false, 'Devralana Devir Kabulü görevi', NULL);
+UPDATE durum_sozlugu SET izinli_gecisler = ARRAY['Kabul Bekliyor','Birim Amirine Atandı']::text[], cikis_kosulu = 'Birim amiri devralanı seçince Kabul Bekliyor; son iş günü geçince sistem Birim Amirine Atandı yapar' WHERE kayit_turu = 'ayrilis_devri' AND durum = 'Bekliyor';
+UPDATE durum_sozlugu SET giris_kosulu = 'Devralan Devir Kabulü görevini tamamlayınca; dosya ve görev devralana geçer' WHERE kayit_turu = 'ayrilis_devri' AND durum = 'Devredildi';

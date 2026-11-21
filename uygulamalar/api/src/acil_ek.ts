@@ -402,7 +402,7 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     if (!a) return yok(y);
     if (!a.aktif) return { durdu: true };
     if (typeof g.enlem === 'number' && typeof g.boylam === 'number') {
-      if (Math.abs(g.enlem) > 90 || Math.abs(g.boylam) > 180) return y.code(400).send({ hata: 'Konum geçersiz.' });
+      if (Math.abs(g.enlem) > 90 || Math.abs(g.boylam) > 180) return y.code(400).send({ hata: 'Konumu kontrol etmenizi rica ederiz.' });
       await b.db.query(`INSERT INTO konum_kaydi (talep_ref, enlem, boylam, kaynak) VALUES ($1,$2,$3,'Cihaz')`, [talep, g.enlem, g.boylam]);
     } else await b.db.query(`INSERT INTO konum_kaydi (talep_ref, kaynak, metin) SELECT t.kimlik, 'Kayıtlı Konum', t.yat_mevcut_konumu FROM talep t WHERE t.kimlik = $1`, [talep]);
     return { durdu: false };

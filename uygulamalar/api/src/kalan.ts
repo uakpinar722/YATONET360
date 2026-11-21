@@ -291,7 +291,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   // YG-1499: iade (avans iadesi, fazla ödeme, itiraz sonucu) Ticari Sorumluca hazırlanır, Ticari İşler Direktörü onaylar; onayla BLD-47 yat sahibine gider.
   s.post('/dosya/:id/iade', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; tutar?: number; paraBirimi?: string; tarih?: string; odemeAraci?: string; aciklama?: string };
-    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     if (!(await rolSahipleri(b.db, await rolId(b.db, TIC))).includes(o.kullanici)) return y.code(403).send({ hata: 'İade kaydını Ticari Sorumlu hazırlar.' });
     if (!['Avans İadesi', 'Fazla Ödeme', 'İtiraz Sonucu İade'].includes(g.neden ?? '') || !(Number(g.tutar) > 0) || !['EUR', 'TL'].includes(g.paraBirimi ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.odemeAraci?.trim()) return y.code(400).send({ hata: 'İade nedeni, tutar, para birimi, iade tarihi ve ödeme aracı zorunludur.' });
     const r = (await b.db.query(`INSERT INTO iade_kaydi (dosya_ref, neden, tutar, para_birimi, iade_tarihi, odeme_araci, aciklama, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [id, g.neden, Number(g.tutar), g.paraBirimi, g.tarih, g.odemeAraci!.trim(), g.aciklama?.trim() || null, o.kullanici])).rows[0];
@@ -301,7 +301,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-1246: hatalı alan, doğru değer, doğru değerin kaynağı ve etkilenen dosya/işlemler yazılarak düzeltme istenir; Operasyon Müdürü onaylar; önceki değer denetim izinde korunur.
   s.get('/veri-duzeltme-alanlari', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
-    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const sonuc: Record<string, string[]> = {};
     for (const t of ['Yat', 'Taraf', 'Kuruluş']) sonuc[t] = Object.keys((await duzeltmeTanimi(t))!.alanlar);
     return sonuc;
@@ -316,7 +316,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     if (!String(g.dogruDeger ?? '').trim() || !g.kaynak?.trim() || !g.etkilenen?.trim()) return y.code(400).send({ hata: 'Doğru değer, doğru değerin kaynağı ve etkilenen dosya veya işlemler zorunludur.' });
     const kol = tn.alanlar[g.alan!]!;
     if (tn.bicim?.[kol] && !tn.bicim[kol]!.test(String(g.dogruDeger).trim())) return y.code(400).send({ hata: `${g.alan} biçimi geçersizdir.` });
-    const m = (await b.db.query(`SELECT ${tn.ad} ad, ${kol}::text v FROM ${tn.tablo} WHERE kimlik = $1`, [g.nesne])).rows[0]; if (!m) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const m = (await b.db.query(`SELECT ${tn.ad} ad, ${kol}::text v FROM ${tn.tablo} WHERE kimlik = $1`, [g.nesne])).rows[0]; if (!m) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const r = (await b.db.query(`INSERT INTO veri_duzeltme_talebi (nesne_turu, nesne_ref, alan, mevcut_deger, dogru_deger, kaynak, etkilenen, talep_eden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [g.nesneTuru, g.nesne, g.alan, m.v, String(g.dogruDeger).trim(), g.kaynak.trim(), g.etkilenen.trim(), o.kullanici])).rows[0];
     await kartAc(b.db, { tur: 'Veri Düzeltme Talebi', baslik: `${m.ad} · ${g.alan}: ${m.v ?? '—'} → ${String(g.dogruDeger).trim()}`, ozet: `Kaynak: ${g.kaynak.trim()} · Etkilenen: ${g.etkilenen.trim()}`.slice(0, 400), hazirlayan: o.kullanici, zincir: [await rolId(b.db, tn.onay)], nesneTuru: 'Veri Düzeltme Talebi', nesneKimligi: r.kimlik });
     return { kimlik: r.kimlik, durum: 'Onayda' };
@@ -324,7 +324,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   // YG-437: kurumsal müşteri tarafında LGM'yi görevlendiren kayıt "Müşteri Talimatı"dır (sigortada Sigorta Görevlendirmesi; İş Emri yalnız firmaya verilen belgedir). BLD-67 kurumsal onay e-postasına gider.
   s.post('/dosya/:id/musteri-talimati', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; limit?: number; hedef?: string; metin?: string };
-    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     const d = (await b.db.query(`SELECT d.dosya_no, d.musteri_turu, d.yazisma_dili, d.dosya_sorumlusu_ref, h.e_posta ds_eposta, t.kurumsal_onay_epostasi, t.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN taraf t ON t.kimlik = y.yat_sahibi_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1`, [id])).rows[0];
     if (d.musteri_turu !== 'Kurumsal Müşteri') return y.code(409).send({ hata: 'Müşteri Talimatı kurumsal müşteri dosyasında kaydedilir.' });
     if (d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Müşteri Talimatını Dosya Sorumlusu kaydeder.' });
@@ -345,14 +345,14 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   // YG-478, YG-091: çok malikli yat; malikler pay oranıyla kaydedilir, onay ve fatura muhatabı olarak tek yetkili malik seçilir.
   const malikDosya = async (k: string, id: string) => (UUID.test(id) && await dosyaErisimi(b.db, k, id) ? (await b.db.query(`SELECT d.dosya_no, d.yat_ref FROM dosya d WHERE d.kimlik = $1`, [id])).rows[0] : undefined);
   s.get('/dosya/:id/malikler', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
-    const d = await malikDosya(i.oturum!.kullanici, (i.params as { id: string }).id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    const d = await malikDosya(i.oturum!.kullanici, (i.params as { id: string }).id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT m.kimlik, m.ad, m.pay_orani, m.yetkili, m.yurt_disi, m.tebligat_adresi_tr, t.taraf_no FROM yat_malik m LEFT JOIN taraf t ON t.kimlik = m.taraf_ref WHERE m.yat_ref = $1 ORDER BY m.yetkili DESC, m.ad`, [d.yat_ref])).rows;
   });
   s.post('/dosya/:id/malik', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; pay?: number; tarafNo?: string; yurtDisi?: boolean; tebligat?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Malik kaydını LGM personeli girer.' });
     if (g.yurtDisi && !g.tebligat?.trim()) return y.code(400).send({ hata: 'Yurt dışında yerleşik veya yabancı malik için Türkiye tebligat adresi zorunludur.' }); // YG-479
-    const d = await malikDosya(o.kullanici, id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    const d = await malikDosya(o.kullanici, id); if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     if (!g.ad?.trim() || (g.pay !== undefined && !(Number(g.pay) > 0 && Number(g.pay) <= 100))) return y.code(400).send({ hata: 'Malik adı zorunludur; pay oranı 0–100 arasında olmalıdır.' });
     const toplam = Number((await b.db.query(`SELECT coalesce(sum(pay_orani), 0) s FROM yat_malik WHERE yat_ref = $1`, [d.yat_ref])).rows[0].s);
     if (g.pay !== undefined && toplam + Number(g.pay) > 100) return y.code(409).send({ hata: 'Malik payları toplamı %100\'ü aşamaz.' });
@@ -365,7 +365,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   s.post('/dosya/:id/malik/:malik/yetkili', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id, malik } = i.params as { id: string; malik: string }; const g = (i.body ?? {}) as { dayanak?: string };
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Yetkili maliki LGM personeli kaydeder.' });
-    const d = await malikDosya(o.kullanici, id); if (!d || !UUID.test(malik)) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    const d = await malikDosya(o.kullanici, id); if (!d || !UUID.test(malik)) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     if (!g.dayanak?.trim()) return y.code(400).send({ hata: 'Maliklerin yetkili malik belirlediği belge veya beyanı yazınız.' });
     const m = (await b.db.query(`SELECT kimlik, ad, taraf_ref FROM yat_malik WHERE kimlik = $1 AND yat_ref = $2`, [malik, d.yat_ref])).rows[0]; if (!m) return y.code(404).send({ hata: 'Malik bulunamadı.' });
     const c = await b.db.connect();
@@ -382,7 +382,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-147: sözleşme taahhüt süreleri Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörünce girilir.
   s.get('/sozlesme-hedef-sureleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
-    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT h.kimlik, h.sigortaci_adi, k.unvan kurum, h.tur, h.oncelik, h.saat FROM sozlesme_hedef_suresi h LEFT JOIN kurumsal_kurum k ON k.kimlik = h.kurum_ref ORDER BY coalesce(h.sigortaci_adi, k.unvan), h.tur, h.oncelik`)).rows;
   });
   s.post('/sozlesme-hedef-suresi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
@@ -397,7 +397,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-900: tahsilat vadesi; sigortada şirketin bildirdiği ödeme günü (en çok 30 gün), kurumsalda sözleşme vadesi.
   s.get('/sozlesme-odeme-vadeleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
-    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT v.kimlik, v.sigortaci_adi, k.unvan kurum, v.gun, v.dayanak FROM sozlesme_odeme_vadesi v LEFT JOIN kurumsal_kurum k ON k.kimlik = v.kurum_ref ORDER BY coalesce(v.sigortaci_adi, k.unvan)`)).rows;
   });
   s.post('/sozlesme-odeme-vadesi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
@@ -414,13 +414,13 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   });
   s.get('/dosya/:id/kapanis-asamalari', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-073
     const { id } = i.params as { id: string };
-    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     return kapanisAsamalari(b.db, id);
   });
   // YG-051, YG-052: Operasyon tarafı Saha Sorumlusu ister veya iş bitmeden geri çekilmesini ister; karar Teknik Müdürde. Kritik öncelikte atama zaten zorunludur (YG-050).
   s.post('/dosya/:id/saha-sorumlusu-talebi', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; gerekce?: string };
-    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     const tur = g.tur === 'Geri Çekme' ? 'Geri Çekme' : 'Atama';
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: tur === 'Atama' ? 'Talep gerekçesini yazınız.' : 'Devir notunu yazınız; devir kaydı tamamlanmadan Saha Sorumlusu geri çekilmez.' });
     const ekipte = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Yönetici')`, [id, o.kullanici])).rowCount;
@@ -440,7 +440,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   // YG-051: Teknik Müdür reddederse (uygun personel yok veya anlaşmazlık) Operasyon tarafı kararı T&O Direktörüne taşır.
   s.post('/dosya/:id/saha-sorumlusu-talebi/direktor', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerekce?: string };
-    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Anlaşmazlık gerekçesini yazınız.' });
     const t = (await b.db.query(`SELECT kimlik, tur FROM saha_sorumlusu_talebi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 1`, [id])).rows[0];
     if (!t || (await b.db.query(`SELECT durum FROM saha_sorumlusu_talebi WHERE kimlik = $1`, [t.kimlik])).rows[0].durum !== 'Reddedildi') return y.code(409).send({ hata: 'Direktöre yalnız Teknik Müdürün reddettiği talep taşınır.' });

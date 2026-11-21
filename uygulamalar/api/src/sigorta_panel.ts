@@ -54,9 +54,9 @@ export function sigortaPanelYollari(s: FastifyInstance, b: Baglam) {
       if (!['Gönderildi', 'Deneme Dosyasında'].includes(p.durum)) return y.code(409).send({ hata: 'Deneme dosyası gönderilmiş başvuruda kabul edilir.' });
       await b.db.query(`UPDATE sigorta_panel_basvurusu SET durum = 'Deneme Dosyasında', deneme_dosyalari = array_append(deneme_dosyalari, $2) WHERE kimlik = $1 AND NOT ($2 = ANY(deneme_dosyalari))`, [id, d.kimlik]);
     } else if (g.islem === 'Sonuç') {
-      if (!['Panele Alındı', 'Kabul Edilmedi'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz.' });
+      if (!['Panele Alındı', 'Kabul Edilmedi'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçmenizi rica ederiz.' });
       await b.db.query(`UPDATE sigorta_panel_basvurusu SET durum = $2, not_metni = coalesce($3, not_metni), sonuc_zamani = now() WHERE kimlik = $1`, [id, g.sonuc, g.not?.trim() || null]);
-    } else return y.code(400).send({ hata: 'İşlemi seçiniz.' });
+    } else return y.code(400).send({ hata: 'İşlemi seçmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Panel Başvurusu: ${g.islem}`, nesneTuru: 'Panel Başvurusu', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
@@ -91,7 +91,7 @@ export function sigortaPanelYollari(s: FastifyInstance, b: Baglam) {
       if (!g.metin?.trim()) return y.code(400).send({ hata: 'Yanıt özetini yazınız.' });
       await b.db.query(`UPDATE sigorta_denetim_talebi SET yanit_ozeti = $2, yanit_zamani = now(), durum = 'Yanıtlandı', yanitlayan_ref = $3 WHERE kimlik = $1`, [id, g.metin.trim(), o.kullanici]);
       await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur IN ('Sigorta Denetim Talebi', 'Sigorta Denetim Hukuk Görüşü') AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
-    } else return y.code(400).send({ hata: 'İşlemi seçiniz.' });
+    } else return y.code(400).send({ hata: 'İşlemi seçmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Sigorta Denetim Talebi: ${g.islem}`, nesneTuru: 'Sigorta Denetim Talebi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

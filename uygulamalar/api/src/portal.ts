@@ -164,7 +164,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     const n = kimlikNormalle(g.telefon ?? '');
     if (!n.telefon) return y.code(400).send({ hata: 'Telefon geçersiz.' });
     if (!g.ad?.trim()) return y.code(400).send({ hata: 'Ad soyad zorunludur.' });
-    if (g.eposta && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta)) return y.code(400).send({ hata: 'E-posta adresi geçersiz.' });
+    if (g.eposta && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(g.eposta)) return y.code(400).send({ hata: 'E-posta adresini kontrol etmenizi rica ederiz.' });
     const st = g.yetkili ? kimlikNormalle(g.yetkili.sahipTelefon ?? '') : null; // YG-1561
     if (g.yetkili && (!['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Yat Brokeri', 'Diğer'].includes(g.yetkili.rol ?? '') || !g.yetkili.sahipAd?.trim() || !st?.telefon)) return y.code(400).send({ hata: 'Rolünüzü ve yat sahibinin adı ile telefonunu girmenizi rica ederiz.' });
     const c = await b.db.connect();
@@ -258,15 +258,15 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   // YG-460: RP-RAP-001 İlerleme Raporu (PDF) yat sahibinin kendi dosyası için.
   s.get('/portal/dosya/:id/ilerleme-raporu', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const red = musteri(o.grup, y); if (red) return red;
-    if (!UUID.test(id) || !(await b.db.query(`SELECT 1 FROM dosya d WHERE d.kimlik = $2 AND (${benimDosyalarim})`, [o.kullanici, id])).rowCount) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
-    const r = await (await import('./ilerleme_rapor.js')).ilerlemeRaporuPdf(b.db, id); if (!r) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id) || !(await b.db.query(`SELECT 1 FROM dosya d WHERE d.kimlik = $2 AND (${benimDosyalarim})`, [o.kullanici, id])).rowCount) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
+    const r = await (await import('./ilerleme_rapor.js')).ilerlemeRaporuPdf(b.db, id); if (!r) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     return y.header('content-type', 'application/pdf').header('content-disposition', `attachment; filename="${r.dosyaAdi}"`).header('x-content-type-options', 'nosniff').send(r.pdf);
   });
   s.get('/portal/dosya/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const red = musteri(o.grup, y); if (red) return red;
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, d.acilis_tarihi, d.tahmini_teslim_tarihi::text, y.yat_adi, h.ad_soyad AS dosya_sorumlusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $2 AND (${benimDosyalarim})`, [o.kullanici, id])).rows[0];
-    if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı.' });
+    if (!d) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     const belgeler = (await b.db.query(`SELECT e.kimlik, e.ad, s.surum_no FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.bag_turu = 'Dosya' AND e.bag_kimligi = $1 AND s.durum = 'Yürürlükte' AND e.bilgi_sinifi <> 'Kritik' ORDER BY e.olusturma_zamani DESC`, [id])).rows;
     const kurtarma = (await b.db.query(`SELECT k.hizmet_turu, k.baslama_zamani, CASE WHEN k.saglayici_aciklama_onayi THEN u.ticari_unvan END AS saglayici FROM kurtarma_operasyonu k JOIN kurulus u ON u.kimlik = k.saglayici_ref WHERE k.dosya_ref = $1`, [d.kimlik])).rows; // YG-486
     // YG-206: teklif yat sahibinden saklanmaz, salt okunur; firma ve maliyet bilgisi yoktur.
@@ -289,13 +289,13 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).
   s.post('/portal/onay/:id/ac', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Onay bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Onay kaydı bulunamadı; bağlantıyı kontrol etmenizi rica ederiz.' });
     await (await import('./yetki_ek.js')).yetkiliyeDevret(b.db, id, o.kullanici); // YG-1031, YG-1070: kapsam, limit, süre içindeyse kod yetkiliye gider.
     const ot = (await b.db.query(`SELECT tutar_eur FROM onay_talebi WHERE kimlik = $1 AND alici_kullanici_ref = $2`, [id, o.kullanici])).rows[0];
     if (ot) { const oe = await onayEngeli(b.db, o.kullanici, ot.tutar_eur === null ? null : Number(ot.tutar_eur)); if (oe) { if (ot.tutar_eur !== null && /sınırınızın üzerinde/.test(oe)) return y.code(403).send({ hata: await (await import('./kalan.js')).limitYonlendir(b.db, id, o.kullanici, Number(ot.tutar_eur)) }); return y.code(403).send({ hata: oe }); } }
     const bel = rastgeleBelirtec();
     const r = await b.db.query(`UPDATE onay_talebi SET portal_belirtec_ozeti = $3 WHERE kimlik = $1 AND alici_kullanici_ref = $2 AND durum = 'Bekliyor' RETURNING kimlik`, [id, o.kullanici, ozet(bel)]);
-    if (!r.rowCount) return y.code(404).send({ hata: 'Onay bulunamadı.' });
+    if (!r.rowCount) return y.code(404).send({ hata: 'Onay kaydı bulunamadı; bağlantıyı kontrol etmenizi rica ederiz.' });
     return { belirtec: bel };
   });
 

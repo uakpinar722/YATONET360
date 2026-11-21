@@ -17,10 +17,10 @@ export function gorevErtelemeYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   s.post('/is/:id/ertele', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { yeniSon?: string; gerekce?: string };
-    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const roller = (await etkinRoller(b.db, o.kullanici, true)).map((r) => r.kimlik);
     const k = (await b.db.query(`SELECT kimlik, baslik, kategori, durum, son_zaman, sahip_kullanici_ref, sahip_rol_ref, ust_rol_ref, (SELECT count(*)::int FROM is_karti_erteleme e WHERE e.is_ref = is_karti.kimlik) n FROM is_karti WHERE kimlik = $1`, [id])).rows[0];
-    if (!k || k.kategori === 'onay' || !(k.sahip_kullanici_ref === o.kullanici || roller.includes(k.sahip_rol_ref) || roller.includes(k.ust_rol_ref))) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!k || k.kategori === 'onay' || !(k.sahip_kullanici_ref === o.kullanici || roller.includes(k.sahip_rol_ref) || roller.includes(k.ust_rol_ref))) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (k.durum !== 'Bekliyor') return y.code(409).send({ hata: 'Bu kayıt üzerinde işlem yapılmıştır.' });
     const gerekce = (g.gerekce ?? '').trim(); const yeni = g.yeniSon ? new Date(g.yeniSon) : null;
     if (!gerekce) return y.code(400).send({ hata: 'Erteleme gerekçesi zorunludur.' });
@@ -32,10 +32,10 @@ export function gorevErtelemeYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
   s.get('/is/:id/ertelemeler', oturumlu, async (i, y) => {
-    const { id } = i.params as { id: string }; if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    const { id } = i.params as { id: string }; if (!UUID.test(id)) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const roller = (await etkinRoller(b.db, i.oturum!.kullanici, true)).map((r) => r.kimlik);
     const k = (await b.db.query(`SELECT sahip_kullanici_ref, sahip_rol_ref, ust_rol_ref FROM is_karti WHERE kimlik = $1`, [id])).rows[0];
-    if (!k || !(k.sahip_kullanici_ref === i.oturum!.kullanici || roller.includes(k.sahip_rol_ref) || roller.includes(k.ust_rol_ref))) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    if (!k || !(k.sahip_kullanici_ref === i.oturum!.kullanici || roller.includes(k.sahip_rol_ref) || roller.includes(k.ust_rol_ref))) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT e.eski_son, e.yeni_son, e.gerekce, h.ad_soyad, e.zaman FROM is_karti_erteleme e JOIN kullanici_hesabi h ON h.kimlik = e.yapan_ref WHERE e.is_ref = $1 ORDER BY e.kimlik`, [id])).rows;
   });
 }

@@ -83,6 +83,16 @@ const dosyaDevret = async (c: Db, atama: string, yeni: string, yapan: string): P
   return r.kimlik;
 };
 
+/** YG-986: devralan Devir Kabulü görevini tamamlayınca dosya ve görev geçer. */
+kapanisKaydet('Devir Kabulü', async (c, k, karar, yapan) => {
+  if (karar !== 'Tamamlandı' || !k.nesne_kimligi) return;
+  const d = (await c.query(`SELECT * FROM ayrilis_devri WHERE kimlik = $1 AND durum = 'Devralan Kabulünde' AND devralan_ref = $2 FOR UPDATE`, [k.nesne_kimligi, yapan])).rows[0];
+  if (!d) return;
+  if (d.tur === 'Dosya') await dosyaDevret(c, d.nesne, yapan, yapan);
+  else if (d.tur === 'Görev') await c.query(`UPDATE is_karti SET sahip_kullanici_ref = $2 WHERE kimlik::text = $1 AND durum = 'Bekliyor'`, [d.nesne, yapan]);
+  await c.query(`UPDATE ayrilis_devri SET durum = 'Devredildi', kabul_zamani = now() WHERE kimlik = $1`, [d.kimlik]);
+});
+
 /** YG-1479: izin ve rapor durumu onaylı kayıttan işlenir; açık dosya ve görev vekile geçer, dönüşte geri döner. Ayrılışta son gün hesap kapanır, kalan iş birim amirine düşer. */
 export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0; const bugun = gunStr(simdi);
@@ -107,7 +117,8 @@ export async function personelDurumIsle(db: Pool, simdi = new Date()): Promise<n
   n += (await db.query(`UPDATE personel_karti k SET personel_durumu = 'Görevde' WHERE k.personel_durumu = 'Görevlendirmede' AND NOT EXISTS (SELECT 1 FROM yurtdisi_gorev g WHERE g.personel_ref = k.kullanici_ref AND g.durum = 'Onaylandı' AND g.baslangic <= $1 AND g.bitis >= $1)`, [bugun])).rowCount ?? 0;
   for (const a of (await db.query(`SELECT * FROM personel_ayrilisi WHERE durum = 'Açık' AND son_is_gunu < $1`, [bugun])).rows) {
     const amir = await birimAmiri(db, a.personel_ref);
-    for (const d of (await db.query(`SELECT * FROM ayrilis_devri WHERE ayrilis_ref = $1 AND durum = 'Bekliyor'`, [a.kimlik])).rows) {
+    for (const d of (await db.query(`SELECT * FROM ayrilis_devri WHERE ayrilis_ref = $1 AND durum IN ('Bekliyor', 'Devralan Kabulünde')`, [a.kimlik])).rows) {
+      await db.query(`UPDATE is_karti SET durum = 'İptal', kapanma_zamani = now() WHERE tur = 'Devir Kabulü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.kimlik]); // YG-986
       if (amir) { if (d.tur === 'Dosya') await dosyaDevret(db, d.nesne, amir, a.kaydeden_ref); else if (d.tur === 'Görev') await db.query(`UPDATE is_karti SET sahip_kullanici_ref = $2 WHERE kimlik::text = $1 AND durum = 'Bekliyor'`, [d.nesne, amir]); }
       await db.query(`UPDATE ayrilis_devri SET durum = 'Birim Amirine Atandı', devralan_ref = $2, zaman = now() WHERE kimlik = $1`, [d.kimlik, amir]);
     }
@@ -347,6 +358,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
   const ayrilisGetir = async (id: string) => UUID.test(id) ? (await b.db.query(`SELECT a.*, k.ise_giris_tarihi::text giris, k.brut_aylik_tl, h.ad_soyad FROM personel_ayrilisi a JOIN kullanici_hesabi h ON h.kimlik = a.personel_ref LEFT JOIN personel_karti k ON k.kullanici_ref = a.personel_ref WHERE a.kimlik = $1`, [id])).rows[0] : undefined;
   const ayrilisEngeli = async (a: { kimlik: string; tur: string; dilekce_belge: string | null; cihaz_beyan_zamani: unknown; cihaz_onay_ref: string | null; gizlilik_okundu_zamani: unknown }): Promise<string | null> => {
     if ((await b.db.query(`SELECT 1 FROM ayrilis_devri WHERE ayrilis_ref = $1 AND durum = 'Bekliyor' LIMIT 1`, [a.kimlik])).rowCount) return 'Devir listesi tamamlanmadı.';
+    if ((await b.db.query(`SELECT 1 FROM ayrilis_devri WHERE ayrilis_ref = $1 AND durum = 'Devralan Kabulünde' LIMIT 1`, [a.kimlik])).rowCount) return 'Devir kabulü bekleniyor; devralanlar Devir Kabulü görevini tamamlamalıdır.'; // YG-986
     if (!a.cihaz_beyan_zamani || !a.cihaz_onay_ref) return 'Cihaz iadesi beyanı ve teslim onayı bekleniyor.';
     if (!a.gizlilik_okundu_zamani) return 'Gizlilik hatırlatmasının okundu onayı bekleniyor.';
     if (a.tur === 'İstifa' && !a.dilekce_belge) return 'İmzalı istifa dilekçesi bekleniyor.';
@@ -408,10 +420,11 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if ((await birimAmiri(b.db, d.personel_ref)) !== o.kullanici && !(await ikMi(o.kullanici))) return y.code(403).send({ hata: 'Devri Birim Amiri yapar.' });
     if (d.durum !== 'Bekliyor') return y.code(409).send({ hata: 'Bu kalem devredilmiştir.' });
     if (!yeni || yeni === d.personel_ref) return y.code(400).send({ hata: 'Devralan kişiyi seçmenizi rica ederiz.' });
-    if (d.tur === 'Dosya') await dosyaDevret(b.db, d.nesne, yeni, o.kullanici);
-    else if (d.tur === 'Görev') await b.db.query(`UPDATE is_karti SET sahip_kullanici_ref = $2 WHERE kimlik::text = $1 AND durum = 'Bekliyor'`, [d.nesne, yeni]);
-    await b.db.query(`UPDATE ayrilis_devri SET durum = 'Devredildi', devralan_ref = $2, zaman = now() WHERE kimlik = $1`, [id, yeni]);
-    return { tamam: true };
+    // YG-986: devralanın hesabı açık olmalı; dosya ve görev devralan kabul edince geçer, o ana kadar önceki sorumlunun erişimi sürer.
+    if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND hesap_durumu = 'Aktif'`, [yeni])).rowCount) return y.code(400).send({ hata: 'Devralanın sistem hesabı açık değildir; erişimi açık bir kişi seçiniz.' });
+    await b.db.query(`UPDATE ayrilis_devri SET durum = 'Devralan Kabulünde', devralan_ref = $2, zaman = now() WHERE kimlik = $1`, [id, yeni]);
+    await kartAc(b.db, { tur: 'Devir Kabulü', kategori: 'islem', baslik: `Devir Kabulü · ${d.tur}`, ozet: `${d.aciklama}. Erişiminizi kontrol edip devri kabul ediniz; kabul edene kadar önceki sorumlunun erişimi sürer.`, oncelik: 'Yüksek', sahipKullanici: yeni, hazirlayan: o.kullanici, nesneTuru: 'Ayrılış Devri', nesneKimligi: id });
+    return { tamam: true, durum: 'Devralan Kabulünde' };
   });
   s.post('/ayrilis/:id/beyan', oturumlu, async (i, y) => { // YG-932, YG-980: imza yok; personel beyanı, gizlilik okundu.
     const o = i.oturum!; const a = await ayrilisGetir((i.params as { id: string }).id); const g = (i.body ?? {}) as { cihaz?: string; gizlilik?: boolean };

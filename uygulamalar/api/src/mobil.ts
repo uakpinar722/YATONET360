@@ -101,7 +101,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { dosya?: string; enlem?: number; boylam?: number };
     if (o.grup !== 'LGM İç Rolü') return yok(y);
     if (!g.dosya || !UUID.test(g.dosya) || !(await dosyaErisimi(b.db, o.kullanici, g.dosya))) return yok(y);
-    if (!(Math.abs(Number(g.enlem)) <= 90) || !(Math.abs(Number(g.boylam)) <= 180)) return y.code(400).send({ hata: 'Konum geçersiz.' });
+    if (!(Math.abs(Number(g.enlem)) <= 90) || !(Math.abs(Number(g.boylam)) <= 180)) return y.code(400).send({ hata: 'Konumu kontrol etmenizi rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM mobil_izin WHERE kullanici_ref = $1 AND tur = 'Konum' AND geri_alma_zamani IS NULL`, [o.kullanici])).rowCount) return y.code(409).send({ hata: 'Konum izni bekleniyor.' });
     if (!mesaiIcinde(new Date())) return y.code(409).send({ hata: 'Konum yalnız mesai saatinde kaydedilir.' }); // YG-1237
     await b.db.query(`INSERT INTO saha_konum_kaydi (kullanici_ref, dosya_ref, enlem, boylam) VALUES ($1,$2,$3,$4)`, [o.kullanici, g.dosya, g.enlem, g.boylam]);
