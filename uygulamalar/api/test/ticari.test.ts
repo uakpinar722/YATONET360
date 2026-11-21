@@ -545,6 +545,13 @@ describe('fiş aslı (YG-1622)', () => {
     expect((await o.ist('GET', '/api/teklif-performans?donem=2026-11', await o.gir('ds'))).statusCode).toBe(404);
     const r = await o.ist('GET', '/api/teklif-performans?donem=2026-11', await o.gir('tid')); expect(r.statusCode, r.body).toBe(200);
     expect(Object.keys(r.json())).toEqual(['donem', 'ozet', 'durumlar', 'kararlar', 'muhataplar']); expect(r.json().donem).toBe('2026-11');
+    // Teklif Statü Geçişi ve Beklemede Eskalasyonu ekranları
+    expect((await o.ist('GET', '/api/teklif-statu-gecisleri', await o.gir('ds'))).statusCode).toBe(404);
+    const g = await o.ist('GET', `/api/teklif-statu-gecisleri?donem=${new Date().toISOString().slice(0, 7)}`, await o.gir('tid')); expect(g.statusCode, g.body).toBe(200); expect(Array.isArray(g.json().gecisler)).toBe(true);
+    const f = (await o.sup.query(`SELECT kimlik, statu FROM fiyat_teklifi ORDER BY olusturma_zamani DESC LIMIT 1`)).rows[0];
+    if (f) { await o.sup.query(`UPDATE fiyat_teklifi SET karar = karar WHERE kimlik = $1`, [f.kimlik]); expect((await o.sup.query(`SELECT count(*)::int n FROM teklif_statu_gecmisi WHERE teklif_ref = $1`, [f.kimlik])).rows[0].n).toBeGreaterThan(0); }
+    expect((await o.ist('GET', '/api/beklemede-eskalasyonlari', await o.gir('ds'))).statusCode).toBe(404);
+    const e = await o.ist('GET', '/api/beklemede-eskalasyonlari', await o.gir('opm')); expect(e.statusCode, e.body).toBe(200); expect(Array.isArray(e.json())).toBe(true);
   });
   it('sigorta ödemeyi yat sahibine yapacaksa dosya yat sahibine yönlenir (YG-892)', async () => {
     const d = await dosya(); const u = `/api/dosya/${d.kimlik}/odeme-yat-sahibine`;

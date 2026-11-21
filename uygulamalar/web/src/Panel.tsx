@@ -15,6 +15,7 @@ import { TevkifatListesi } from './Tevkifat';
 import { KartelaGoruntule } from './KartelaGoruntule';
 import { KendiArama } from './KendiArama';
 import { TeklifPerformans } from './TeklifPerformans';
+import { BeklemedeEskalasyonlari, TeklifStatuGecisleri } from './TeklifIzleme';
 import { GunlukSayfasi, Kullanicilarim, KurumHesap, TedarikciAna, TesisAna } from './Portallar';
 import { BrokerAna, YetkiBelgeleri } from './Broker';
 import { DosyaHaritasi } from './IsGorunumu';
@@ -24,7 +25,7 @@ import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'teklifgecis' | 'eskalasyon' | 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -70,7 +71,8 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     ...(ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı', 'Bilgi İşlem Müdürü', 'Bilgi İşlem Destek Sorumlusu', 'Sistem Yöneticisi', 'Genel Müdür Yardımcısı', 'CEO', 'Muhasebe ve Finans Müdürü', 'Ticari İşler Direktörü', 'Operasyon Müdürü', 'Teknik Müdür', 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'].includes(r.rol_adi)) ? [{ s: 'kvkk' as Sayfa, ad: 'KVKK ve Uyum', ik: '⚖' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Müşteri ve Paydaş İlişkileri Müdürü') ? [{ s: 'ek2' as Sayfa, ad: 'Sigorta Ek-2', ik: '✉' }] : []),
     ...(ben.roller.some((r) => ['Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Müdürü'].includes(r.rol_adi)) ? [{ s: 'tedodeme' as Sayfa, ad: 'Tedarikçi Ödemeleri', ik: '₺' }] : []),
-    ...(ben.roller.some((r) => ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü'].includes(r.rol_adi)) ? [{ s: 'teklifperf' as Sayfa, ad: 'Teklif Performansı', ik: '▤' }] : []),
+    ...(ben.roller.some((r) => ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü'].includes(r.rol_adi)) ? [{ s: 'teklifperf' as Sayfa, ad: 'Teklif Performansı', ik: '▤' }, { s: 'teklifgecis' as Sayfa, ad: 'Teklif Statü Geçişleri', ik: '▤' }] : []),
+    ...(ben.roller.some((r) => ['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü'].includes(r.rol_adi)) ? [{ s: 'eskalasyon' as Sayfa, ad: 'Beklemede Eskalasyonları', ik: '▤' }] : []),
     ...(ben.roller.some((r) => ['Müşteri ve Paydaş İlişkileri Müdürü', 'Ticari İşler Direktörü'].includes(r.rol_adi)) ? [{ s: 'sozsure' as Sayfa, ad: 'Sözleşme Süreleri', ik: '⏱' }] : []),
     ...(ben.roller.some((r) => r.rol_adi === 'Teknik ve Operasyon Direktörü') ? [{ s: 'karnepar' as Sayfa, ad: 'Karne Parametreleri', ik: '⚙' }] : []),
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'firmaisemri' as Sayfa, ad: 'İş Emirleri', ik: '▣' }, { s: 'gunluk' as Sayfa, ad: 'Günlük Kayıt', ik: '✎' }, { s: 'kartela' as Sayfa, ad: 'Fiyat Kartelası', ik: '▤' }] : []),
@@ -102,6 +104,8 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     sozsure: <SozlesmeSureleri />,
     kartela: <KartelaGoruntule />,
     teklifperf: <TeklifPerformans />,
+    teklifgecis: <TeklifStatuGecisleri />,
+    eskalasyon: <BeklemedeEskalasyonlari />,
     gunluk: <GunlukSayfasi />,
     kullanicilarim: <Kullanicilarim />,
     yetkibelge: <YetkiBelgeleri />,

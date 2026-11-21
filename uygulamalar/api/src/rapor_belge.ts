@@ -64,6 +64,19 @@ export function raporBelgeYollari(s: FastifyInstance, b: Baglam) {
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);
   const donem = (q: unknown) => { const d = (q as { donem?: string }).donem; const n = new Date(); return d && /^\d{4}-(0[1-9]|1[0-2])$/.test(d) ? d : new Date(Date.UTC(n.getFullYear(), n.getMonth() - 1, 1)).toISOString().slice(0, 7); };
   const gonder = async (y: FastifyReply, tanim: BelgeTanim, q: unknown) => { const x = await belgeIcerik(tanim, (q as { bicim?: string }).bicim === 'docx' ? 'docx' : 'pdf'); return y.header('content-type', x.tur).header('content-disposition', `attachment; filename="${tanim.no}.${x.uzanti}"`).send(x.veri); };
+  // YG-227: Teklif Statü Geçişi ekranı; dönemdeki tüm statü ve karar geçişleri, son geçiş en üstte.
+  s.get('/teklif-statu-gecisleri', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü']))) return yok(y);
+    const d = donem(i.query);
+    return { donem: d, gecisler: (await b.db.query(`SELECT g.zaman, f.teklif_no, f.surum_no, f.teklif_muhatabi, d.dosya_no, g.eski_statu, g.yeni_statu, g.karar FROM teklif_statu_gecmisi g JOIN fiyat_teklifi f ON f.kimlik = g.teklif_ref JOIN dosya d ON d.kimlik = f.dosya_ref WHERE to_char(g.zaman AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $1 ORDER BY g.zaman DESC, g.kimlik DESC LIMIT 500`, [d])).rows };
+  });
+  // YG-227, YG-068: Beklemede Eskalasyonu ekranı; açık işaretler, 10. gün yükseltmesi ve 45. gün karar noktası.
+  s.get('/beklemede-eskalasyonlari', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü']))) return yok(y);
+    return (await b.db.query(`SELECT d.dosya_no, b.neden, b.olusturma_zamani, b.hedef_tarih, b.eskalasyon_zamani, b.gun45_karari, floor(extract(epoch FROM now() - b.olusturma_zamani) / 86400)::int gun, h.ad_soyad sorumlu
+      FROM beklemede_isareti b JOIN dosya d ON d.kimlik = b.dosya_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = b.sorumlu_ref WHERE b.kaldirilma_zamani IS NULL ORDER BY b.olusturma_zamani`)).rows;
+  });
+
   // YG-227: Teklif Performans Verisi; dönemde oluşturulan teklifler üzerinden sayılar ve süreler.
   s.get('/teklif-performans', oturumlu, async (i, y) => {
     if (!(await rolVar(i.oturum!.kullanici, ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü', 'Teknik ve Operasyon Direktörü', 'Operasyon Müdürü']))) return yok(y);

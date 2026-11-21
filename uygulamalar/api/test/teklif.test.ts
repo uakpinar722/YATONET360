@@ -424,6 +424,7 @@ describe('sigorta kararı (YG-205, YG-218, YG-1464)', () => {
     expect((await o.sup.query(`SELECT asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].asama).not.toBe('Uygulama');
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1`, [`bld38:${t.kimlik}`])).rowCount).toBe(0);
     expect(await o.kart('Koşullu Onay Şartı', t.kimlik)).toBeDefined();
+    expect((await o.sup.query(`SELECT eski_statu, yeni_statu, karar FROM teklif_statu_gecmisi WHERE teklif_ref = $1 ORDER BY kimlik DESC LIMIT 1`, [t.kimlik])).rows[0]).toEqual({ eski_statu: 'Gönderildi', yeni_statu: 'Karar', karar: 'Koşullu Onay' }); // YG-227
     expect((await o.ist('GET', `/api/teklif/${t.kimlik}/eksper-karsilastirma`, c)).json().kosullar.map((x: { karar: string }) => x.karar)).toEqual(['Sınırlı Yetki', 'Koşullu Onay']);
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, await o.gir('oy'), { belge: ob })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/teklif/${t.kimlik}/sart-dogrula`, c, {})).statusCode).toBe(400);

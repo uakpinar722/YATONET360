@@ -177,6 +177,14 @@ acilisKancasi(async (c, dosya, _web, yapan) => {
   await kartAc(c, { tur: 'Eksik Yat Bilgisi', kategori: 'gorev', baslik: `${d.dosya_no} · Eksik Yat Bilgisi`, ozet: `Eksik: ${eksik.join(', ')}. Bilgiyi kaynağıyla (ruhsat, kaptan/yat sahibi beyanı, keşif) tamamlamanız rica olunur.`, sahipKullanici: yapan, sonZaman: new Date(Date.now() + 2 * 86_400_000), nesneTuru: 'Yat', nesneKimligi: d.yat_ref });
 });
 
+// YG-096: bayrak, ticari/özel kullanım ve klas durumu (klaslıysa klas kuruluşu) açılışta girilmemişse kaynaksız doldurulmaz; Dosya Sorumlusuna görev düşer.
+acilisKancasi(async (c, dosya, _web, yapan) => {
+  const d = (await c.query(`SELECT d.dosya_no, d.yat_ref, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0]; if (!d) return;
+  const eksik = [!d.bayrak && 'bayrak', !d.kullanim_amaci && 'kullanım (ticari/özel)', !d.klas_durumu && 'klas durumu', d.klas_durumu === 'Evet' && !d.klas_kurulusu && 'klas kuruluşu'].filter(Boolean) as string[];
+  if (!eksik.length || (await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [d.yat_ref])).rowCount) return;
+  await kartAc(c, { tur: 'Eksik Klas ve Kullanım Bilgisi', kategori: 'gorev', baslik: `${d.dosya_no} · Eksik Klas ve Kullanım Bilgisi`, ozet: `Eksik: ${eksik.join(', ')}. Bilgiyi kaynağıyla (ruhsat, klas sertifikası, kaptan/yat sahibi beyanı) tamamlamanız rica olunur.`, sahipKullanici: yapan, sonZaman: new Date(Date.now() + 2 * 86_400_000), nesneTuru: 'Yat', nesneKimligi: d.yat_ref });
+});
+
 /** YG-036: görüş ayrılığında sırayla üst kademeye. Sahibi olmayan kademe atlanır. */
 const DUSURME_KADEMELERI = [['Operasyon Yöneticisi', 'Teknik Yönetici'], ['Operasyon Müdür Yardımcısı', 'Teknik Müdür Yardımcısı'], ['Operasyon Müdürü', 'Teknik Müdür'], ['Teknik ve Operasyon Direktörü']];
 
@@ -409,7 +417,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
-    const yat = (await b.db.query(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu, y.tam_boy_m, y.govde_malzemesi, y.tahrik_turu, y.uretim_yili, y.sicil_bilgisi, y.govde_no, y.gecici_kayit, y.katalog_teyit, y.turkiye_kalis_bitis, y.yabanci_yat_belgesi, y.yabanci_yat_belge_no, y.yabanci_yat_belge_gecerlilik::text, y.gecici_ithalat_bitis::text, y.kislama_yeri, y.mmsi, y.motor_adedi, y.motor_marka_model, y.motor_gucu_hp, y.takyidat, y.mulkiyet_turu, (y.lehtar_adi IS NOT NULL OR y.lehtar_ref IS NOT NULL) AS lehtar_var, y.lehtar_muvafakati_ref, y.lehtar_adi, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
+    const yat = (await b.db.query(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu, y.tabi_kod, y.tam_boy_m, y.govde_malzemesi, y.tahrik_turu, y.uretim_yili, y.sicil_bilgisi, y.govde_no, y.gecici_kayit, y.katalog_teyit, y.turkiye_kalis_bitis, y.yabanci_yat_belgesi, y.yabanci_yat_belge_no, y.yabanci_yat_belge_gecerlilik::text, y.gecici_ithalat_bitis::text, y.kislama_yeri, y.mmsi, y.motor_adedi, y.motor_marka_model, y.motor_gucu_hp, y.takyidat, y.mulkiyet_turu, (y.lehtar_adi IS NOT NULL OR y.lehtar_ref IS NOT NULL) AS lehtar_var, y.lehtar_muvafakati_ref, y.lehtar_adi, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
     if (yat) yat.govde_eslemesi = (await import('./zorunlu_form.js')).GOVDE_ESLEME[yat.govde_malzemesi ?? ''] ?? null; // YG-1531
     const talep = (await b.db.query(`SELECT talep_no, bildirim_kanali, talep_sahibi_adi, talep_sahibi_turu, ihbar_yetki_durumu, yat_mevcut_durumu, olay_yeri, ilk_yanit_zamani, oncelik_cevaplari FROM talep WHERE kimlik = $1`, [d.talep_ref])).rows[0];
     const taraflar = (await b.db.query(`SELECT t.kimlik, t.taraf_rolu, t.kisi_adi_soyadi, t.telefon, t.eposta, t.talep_sahibi_mi, t.kimlik_dogrulama_durumu, t.baslangic_zamani, r.tckn, r.tarama_sonucu FROM dosya_tarafi t LEFT JOIN taraf r ON r.kimlik = t.taraf_ref WHERE t.dosya_ref = $1 AND t.aktif ORDER BY t.olusturma_zamani`, [id])).rows.map((r) => ({ ...r, tckn: maskeTckn(r.tckn) }));

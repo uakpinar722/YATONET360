@@ -1523,6 +1523,13 @@ describe('istenecek belge listesi (YG-1439)', () => {
     expect((await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi' })).statusCode).toBe(400);
     const r = await o.ist('POST', u, c, { alanlar: { tahrik_turu: 'Şaft' }, gerekce: 'Kaptan söyledi', kaynak: 'Telefon (kaptan / yat sahibi)' }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
+    // YG-096: bayrak, kullanım ve klas bilgisi eksikse ayrı görev; kaynakla tamamlanınca kapanır
+    const kk = (await o.sup.query(`SELECT y.bayrak, y.kullanim_amaci, y.klas_durumu, (SELECT durum FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1) durum FROM yat y WHERE y.kimlik::text = $1`, [yat])).rows[0];
+    if (!kk.bayrak || !kk.kullanim_amaci || !kk.klas_durumu) {
+      expect(kk.durum).toBe('Bekliyor');
+      const r2 = await o.ist('POST', u, c, { alanlar: { bayrak: 'Türkiye', kullanim_amaci: 'Özel', klas_durumu: 'Hayır' }, gerekce: 'Ruhsat', kaynak: 'Ruhsat' }); expect(r2.statusCode, r2.body).toBe(200);
+      expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1`, [yat])).rows[0].durum).toBe('Tamamlandı');
+    }
   });
   it('periyodik iş tanımı Direktörce girilir ve listelenir (YG-1357)', async () => {
     const ad = `Deneme Gözden Geçirme ${Date.now()}`; const P = { ad, sahipRol: 'Operasyon Müdürü', periyotAy: 6, sonrakiTarih: '2027-01-15' };

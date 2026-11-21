@@ -175,6 +175,8 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE yat SET ${kume.join(', ')}, guncelleme_zamani = now() WHERE kimlik = $1`, [id, ...degerler]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yat Kaydı Düzeltildi', nesneTuru: 'Yat', nesneKimligi: id, eski, yeni: alanlar, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     if (!(await (await import('./dosya.js')).yatEksikleri(b.db, id)).length) await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Eksik Yat Bilgisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]); // YG-1245
+    // YG-096: bayrak, kullanım ve klas bilgisi tamamlanınca görev kapanır.
+    if (!(await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1 AND (bayrak IS NULL OR kullanim_amaci IS NULL OR klas_durumu IS NULL OR (klas_durumu = 'Evet' AND klas_kurulusu IS NULL))`, [id])).rowCount) await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Eksik Klas ve Kullanım Bilgisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     return { tamam: true };
   });
 
