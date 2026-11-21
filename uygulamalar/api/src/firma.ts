@@ -111,7 +111,10 @@ kapanisKaydet('Firma Hukuk Görüşü', async (c, k, karar, yapan) => {
 kapanisKaydet('İş Emri', async (c, k, karar) => {
   const e = (await c.query(`SELECT * FROM is_emri WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0];
   if (!e) return;
-  if (karar === 'Onayla') await yayimla(c, e);
+  if (karar === 'Onayla' && e.is_emri_turu === 'KN') { // YG-323, YG-1597: onaylanan keşif iş emri firmaya gönderime hazırlanır
+    await c.query(`UPDATE is_emri SET statu = 'Taslak', guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]);
+    await (await import('./kesif_talebi.js')).gonderimeHazirla(c, { kimlik: e.kimlik, is_emri_no: e.is_emri_no, dosya_ref: e.dosya_ref });
+  } else if (karar === 'Onayla') await yayimla(c, e);
   else if (karar === 'Reddet') await c.query(`UPDATE is_emri SET statu = 'İptal', guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]);
   else if (karar === 'Gerekçeyle İade Et') await c.query(`UPDATE is_emri SET statu = 'Taslak', guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik]);
 });
@@ -348,6 +351,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const roller = (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [id, o.kullanici])).rows.map((r) => r.rol as string);
     const yetkili = g.tur === 'GR' ? 'Teknik Yönetici' : 'Operasyon Yöneticisi';
     if (!roller.includes(yetkili)) return y.code(403).send({ hata: `Bu iş emrini ${yetkili} çıkarır.` });
+    if (g.tur === 'KN' && !(Number(g.bedel) >= 0 && g.bedel !== undefined && g.bedel !== null)) return y.code(400).send({ hata: 'Mali limit boş olan iş emri yayımlanmaz; keşif iş emrinin mali limitini giriniz.' }); // YG-323
     if (!g.yer?.trim() || !g.kapsam?.trim()) return y.code(400).send({ hata: 'Uygulama yeri ve kapsam zorunludur.' });
     if (['ON', 'EK', 'GR'].includes(g.tur!) && !g.teknikSonuc?.trim()) return y.code(400).send({ hata: 'Beklenen teknik sonucu yazınız (işin bitiminde ulaşılacak durum).' }); // YG-320
     if (!g.firma || !UUID.test(g.firma)) return y.code(400).send({ hata: 'Firmayı seçiniz.' });

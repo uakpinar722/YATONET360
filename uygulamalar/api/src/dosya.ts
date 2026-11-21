@@ -9,6 +9,7 @@ import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
 import { DURAK_SN, altNumara, sureBaslat, sureBitir, sureRengi } from './sure.js';
+import { surumCakismasi } from './surum.js';
 import { UUID, maskeTckn } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 
@@ -150,6 +151,16 @@ for (const a of ASAMALAR.slice(1)) kapiKaydet(a, async (db, d) => {
 kapiKaydet('Teklif', async (db, d) => {
   const eksik = await yatEksikleri(db, d.yat_ref);
   return eksik.length ? `Teklife geçmek için yat bilgisi eksik: ${eksik.join(', ')}.` : null;
+});
+// YG-065: Uygulamaya onaylanmış teklif, Kontrole tamamlanmış iş emirleri, Teslime tamamlanmış kontrol listeleri olmadan geçilmez. Acil ilk tedbir (acil müdahale) bu kapıları beklemez.
+kapiKaydet('Uygulama', async (db, d) => ((await db.query(`SELECT 1 FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu = 'Karar' AND karar IS NOT NULL AND karar <> 'Ret' LIMIT 1`, [d.kimlik])).rowCount ? null : 'Uygulamaya geçmek için onaylanmış bir fiyat teklifi gerekir.'));
+kapiKaydet('Kontrol', async (db, d) => {
+  const r = (await db.query(`SELECT count(*) FILTER (WHERE statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti'))::int n, count(*) FILTER (WHERE statu IN ('İç Onayda', 'Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'))::int acik FROM is_emri WHERE dosya_ref = $1`, [d.kimlik])).rows[0];
+  return !r.n ? 'Kontrole geçmek için yayımlanmış bir iş emri gerekir.' : r.acik ? `Kontrole geçmek için ${r.acik} iş emrinin tamamlanması gerekir.` : null;
+});
+kapiKaydet('Teslim', async (db, d) => {
+  const n = (await db.query(`SELECT count(*)::int n FROM kontrol_listesi_kaydi WHERE dosya_ref = $1 AND statu = 'Taslak'`, [d.kimlik])).rows[0].n;
+  return n ? `Teslime geçmek için ${n} kontrol listesinin tamamlanması gerekir.` : null;
 });
 
 /** YG-1440: süresi dolan yat belgesi yeniden istenir; yatın açık dosyalarının Dosya Sorumlusuna bir kez görev düşer. */
@@ -417,7 +428,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
-    const yat = (await b.db.query(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu, y.tabi_kod, y.tam_boy_m, y.govde_malzemesi, y.tahrik_turu, y.uretim_yili, y.sicil_bilgisi, y.govde_no, y.gecici_kayit, y.katalog_teyit, y.turkiye_kalis_bitis, y.yabanci_yat_belgesi, y.yabanci_yat_belge_no, y.yabanci_yat_belge_gecerlilik::text, y.gecici_ithalat_bitis::text, y.kislama_yeri, y.mmsi, y.motor_adedi, y.motor_marka_model, y.motor_gucu_hp, y.takyidat, y.mulkiyet_turu, (y.lehtar_adi IS NOT NULL OR y.lehtar_ref IS NOT NULL) AS lehtar_var, y.lehtar_muvafakati_ref, y.lehtar_adi, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
+    const yat = (await b.db.query(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu, y.tabi_kod, y.kayit_surumu::int, y.tam_boy_m, y.govde_malzemesi, y.tahrik_turu, y.uretim_yili, y.sicil_bilgisi, y.govde_no, y.gecici_kayit, y.katalog_teyit, y.turkiye_kalis_bitis, y.yabanci_yat_belgesi, y.yabanci_yat_belge_no, y.yabanci_yat_belge_gecerlilik::text, y.gecici_ithalat_bitis::text, y.kislama_yeri, y.mmsi, y.motor_adedi, y.motor_marka_model, y.motor_gucu_hp, y.takyidat, y.mulkiyet_turu, (y.lehtar_adi IS NOT NULL OR y.lehtar_ref IS NOT NULL) AS lehtar_var, y.lehtar_muvafakati_ref, y.lehtar_adi, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
     if (yat) yat.govde_eslemesi = (await import('./zorunlu_form.js')).GOVDE_ESLEME[yat.govde_malzemesi ?? ''] ?? null; // YG-1531
     const talep = (await b.db.query(`SELECT talep_no, bildirim_kanali, talep_sahibi_adi, talep_sahibi_turu, ihbar_yetki_durumu, yat_mevcut_durumu, olay_yeri, ilk_yanit_zamani, oncelik_cevaplari FROM talep WHERE kimlik = $1`, [d.talep_ref])).rows[0];
     const taraflar = (await b.db.query(`SELECT t.kimlik, t.taraf_rolu, t.kisi_adi_soyadi, t.telefon, t.eposta, t.talep_sahibi_mi, t.kimlik_dogrulama_durumu, t.baslangic_zamani, r.tckn, r.tarama_sonucu FROM dosya_tarafi t LEFT JOIN taraf r ON r.kimlik = t.taraf_ref WHERE t.dosya_ref = $1 AND t.aktif ORDER BY t.olusturma_zamani`, [id])).rows.map((r) => ({ ...r, tckn: maskeTckn(r.tckn) }));
@@ -427,7 +438,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const bekleme = (await b.db.query(`SELECT k.kimlik, k.neden, k.hedef_tarih::text, k.sayac_durur, k.uzatma_sayisi, k.olusturma_zamani, k.kaldirilma_zamani, k.gun45_karari, h.ad_soyad AS sorumlu FROM beklemede_isareti k JOIN kullanici_hesabi h ON h.kimlik = k.sorumlu_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani DESC`, [id])).rows;
     const sureler = (await b.db.query(`SELECT s.tur, s.baslangic, s.bitis + make_interval(secs => ${DURAK_SN}) AS bitis, s.kaydirma_notu, s.tamamlanma, s.baslangic_olayi, s.sure_birimi FROM dosya_sure s WHERE s.dosya_ref = $1 OR s.talep_ref = $2 ORDER BY s.bitis`, [id, d.talep_ref])).rows.map((r) => ({ ...r, renk: r.tamamlanma ? null : sureRengi(new Date(r.baslangic), new Date(r.bitis)) }));
     { const { sozlesmeHedefi } = await import('./kalan.js'); for (const s of sureler as Record<string, unknown>[]) s.sozlesme = await sozlesmeHedefi(b.db, id, String(s.tur)); } // YG-147
-    const konular = (await b.db.query(`SELECT k.kimlik, k.konu_no, k.baslik, k.statu, k.hedef_tarih::text, k.asama, k.kabul_olcutu, k.gerekli_belge, k.konu_turu, h.ad_soyad AS sahip, (k.statu NOT IN ('Kapalı','Geçersiz') AND k.hedef_tarih < current_date) AS gecikmis FROM acik_konu k JOIN kullanici_hesabi h ON h.kimlik = k.sahip_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani`, [id])).rows;
+    const konular = (await b.db.query(`SELECT k.kimlik, k.konu_no, k.baslik, k.statu, k.hedef_tarih::text, k.asama, k.kabul_olcutu, k.gerekli_belge, k.konu_turu, k.kayit_surumu::int surum, h.ad_soyad AS sahip, (k.statu NOT IN ('Kapalı','Geçersiz') AND k.hedef_tarih < current_date) AS gecikmis FROM acik_konu k JOIN kullanici_hesabi h ON h.kimlik = k.sahip_ref WHERE k.dosya_ref = $1 ORDER BY k.olusturma_zamani`, [id])).rows;
     const iliskiler = (await b.db.query(`SELECT i.tur, i.gerekce, CASE WHEN i.kaynak_ref = $1 THEN h.dosya_no ELSE k.dosya_no END AS dosya_no FROM dosya_iliskisi i JOIN dosya k ON k.kimlik = i.kaynak_ref JOIN dosya h ON h.kimlik = i.hedef_ref WHERE i.kaynak_ref = $1 OR i.hedef_ref = $1`, [id])).rows;
     const izinler = await kullaniciIzinleri(b.db, o.kullanici);
     // YG-105: müşteri (yat sahibi) kaydındaki risk olayı ve vefat işareti dosya ekranında gösterilir.
@@ -546,9 +557,10 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1530: eksik bilgi tamamlanınca teknik atama kartı açılır.
   s.post('/dosya/:id/yat-bilgisi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { boy?: number; govde?: string; tahrik?: string; kaynak?: string; teyit?: string; genislik?: number; derinlik?: number };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { boy?: number; govde?: string; tahrik?: string; kaynak?: string; teyit?: string; genislik?: number; derinlik?: number; surum?: number };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
+    if (await surumCakismasi(b.db, y, 'yat', d.yat_ref, g.surum)) return y; // YG-1382
     // YG-1707: kalıp genişliği ve derinliği GMO tarifeli kalemler için.
     if (g.genislik !== undefined || g.derinlik !== undefined) {
       if ((g.genislik !== undefined && !(g.genislik > 0)) || (g.derinlik !== undefined && !(g.derinlik > 0))) return y.code(400).send({ hata: 'Genişlik veya derinlik geçersiz.' });
@@ -802,11 +814,12 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-059: hedef tarih yalnız Dosya Sorumlusunca gerekçeyle değiştirilir; eski ve yeni tarih iz kaydına yazılır, konu sahibine bildirilir.
   s.post('/konu/:id/hedef', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarih?: string; gerekce?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarih?: string; gerekce?: string; surum?: number };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT k.*, d.dosya_sorumlusu_ref FROM acik_konu k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
     if (k.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Hedef tarihi dosyanın Dosya Sorumlusu değiştirir.' });
+    if (await surumCakismasi(b.db, y, 'acik_konu', id, g.surum)) return y; // YG-1382
     if (['Kapalı', 'Geçersiz'].includes(k.statu)) return y.code(409).send({ hata: 'Kapanmış konunun hedef tarihi değiştirilemez.' });
     if (!g.tarih || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Yeni hedef tarih ve gerekçe zorunludur.' });
     const eski = (await b.db.query(`SELECT $1::date::text t`, [k.hedef_tarih])).rows[0].t as string;
@@ -816,10 +829,11 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
   s.post('/konu/:id/durum', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { statu?: string; kanit?: string; gerekce?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { statu?: string; kanit?: string; gerekce?: string; surum?: number };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT * FROM acik_konu WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
+    if (await surumCakismasi(b.db, y, 'acik_konu', id, g.surum)) return y; // YG-1382
     const gecer: Record<string, string[]> = { 'Açık': ['İşlemde', 'Geçersiz'], 'İşlemde': ['Doğrulamada', 'Geçersiz'], 'Doğrulamada': ['Kapalı', 'İşlemde'], 'Kapalı': ['İşlemde'] };
     // YG-153: kapanmış konu ayrı geçişle ve gerekçeyle yeniden açılır; kapanış bilgisi silinmez, iz kaydında kalır.
     if (k.statu === 'Kapalı' && g.statu === 'İşlemde') {

@@ -38,8 +38,10 @@ const cetvel = async (id: string, satirlar: object[] = [{ aciklama: 'İnceleme',
 const kesifIsEmri = async (id: string, gonder = true) => {
   await o.sup.query(`UPDATE onay_talebi SET durum = 'Onaylandı' WHERE dosya_ref = $1`, [id]);
   await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-01','k','m','d','a','+905550002222',$2,'Onaylandı',now())`, [id, `x${Math.random()}`]);
-  const r = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif' });
+  const r0 = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif' }); expect(r0.json().hata).toContain('Mali limit'); // YG323-KN
+  const r = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif', bedel: 0 });
   expect(r.statusCode, r.body).toBe(200);
+  expect((await o.sup.query(`SELECT yeni_limit_eur FROM is_emri_limit_gecmisi WHERE is_emri_ref = $1`, [r.json().kimlik])).rows).toEqual([{ yeni_limit_eur: '0.00' }]);
   if (gonder) { const g = await o.ist('POST', `/api/is-emri/${r.json().kimlik}/firmaya-gonder`, await o.gir('ds'), {}); expect(g.statusCode, g.body).toBe(200); }
   return r.json();
 };

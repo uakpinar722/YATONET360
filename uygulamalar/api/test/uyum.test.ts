@@ -34,7 +34,7 @@ describe('uyum kuralları (YG-1545–1548)', () => {
   });
   it('iş emri rotası dalışta durur', async () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ('S-UY','F','Çözüm Ortağı','Onaylı','Aktif',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
-    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'KN', firma: f, yer: 'Y', kapsam: 'Dalış ile sualtı kontrol' }); expect(r.statusCode, r.body).toBe(409); expect(r.json().hata).toContain('kanıt bekleniyor');
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'KN', firma: f, yer: 'Y', kapsam: 'Dalış ile sualtı kontrol', bedel: 0 }); expect(r.statusCode, r.body).toBe(409); expect(r.json().hata).toContain('kanıt bekleniyor');
   });
   it('olay görev açar, tekrar açmaz; süre geçince yöneticiye ve GMY’ye gider', async () => {
     const d = await o.dosyaAc({}, {}); expect(await uyumOlay(o.db, 'personel_kaydi', 'Personel', d.kimlik)).toBeGreaterThan(0); expect(await uyumOlay(o.db, 'personel_kaydi', 'Personel', d.kimlik)).toBe(0);

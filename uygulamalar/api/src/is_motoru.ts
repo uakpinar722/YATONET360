@@ -135,6 +135,13 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       if (k.ayrik_kullanicilar?.includes(o.kullanici)) return dur(403, 'Görev ayrılığı gereği bu kaydı onaylayamazsınız; teknik kabulü veren kişi ödemeyi onaylamaz.'); // YG-827, YG-1036
       const makam: string | undefined = k.zincir[k.kademe];
       const sonMakam = k.kademe === k.zincir.length - 1;
+      // YG-1043: makamın Rol Müfredatı tamamlanmadan o makamda karar verilmez (rolü dersten önce almış olan kişi hariç).
+      if (k.kategori === 'onay' && makam && roller.includes(makam) && karar !== 'Geri Çek') {
+        const e = (await c.query(`SELECT d.ad FROM akademi_ders d JOIN rol r ON r.kimlik = $2 WHERE d.aktif AND d.tur = 'Rol Müfredatı' AND r.rol_adi = ANY (d.roller)
+          AND NOT EXISTS (SELECT 1 FROM akademi_beyan x WHERE x.ders_ref = d.kimlik AND x.personel_ref = $1)
+          AND NOT EXISTS (SELECT 1 FROM rol_atamasi a WHERE a.kullanici_ref = $1 AND a.rol_ref = $2 AND a.atama_durumu = 'Aktif' AND a.olusturma_zamani <= d.olusturma_zamani) ORDER BY d.ad LIMIT 1`, [o.kullanici, makam])).rows[0];
+        if (e) return dur(403, `Bu makamın zorunlu eğitimi (${e.ad}) tamamlanmadan karar verilemez; eğitimi Akademi'den tamamlamanızı rica ederiz.`);
+      }
       // YG-1426: kalıcı askı kararı Hukuk ve Uyum görüşü verilmeden son makamda kapanmaz.
       if (k.tur === 'Kalıcı Askı Önerisi' && sonMakam && (karar === 'Onayla' || karar === 'Reddet') && (await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Kalıcı Askı Hukuk Görüşü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [k.nesne_kimligi])).rowCount) return dur(409, 'Hukuk ve Uyum Görüşü Bekleniyor; görüş verildikten sonra karar verebilirsiniz.');
       let yeni: { durum: string; kademe: number; kapanir: boolean };

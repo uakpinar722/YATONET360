@@ -486,6 +486,27 @@ describe('süre aşımı ve açık konu (YG-040, YG-059)', () => {
     await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'Doğrulamada', kanit: 'Foto' });
     expect((await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'Kapalı' })).statusCode).toBe(403);
     expect((await ist('POST', `/api/konu/${id}/durum`, await gir('tu'), { statu: 'Kapalı' })).statusCode).toBe(200);
+    // YG1382-CAKISMA: eski sürümle gelen güncelleme reddedilir ve çakışma işaretlenir; güncel sürümle geçer
+    const kd = (await ist('GET', `/api/dosya/${d.kimlik}`, c)).json();
+    const sk = kd.konular.find((x: { kimlik: string }) => x.kimlik === id).surum as number;
+    const ck = await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'İşlemde', gerekce: 'G', surum: sk - 1 });
+    expect(ck.statusCode).toBe(409); expect(ck.json().cakisma).toBe(true); expect(ck.json().hata).toContain('Güncel kaydı');
+    expect((await ist('POST', `/api/konu/${id}/durum`, c, { statu: 'İşlemde', gerekce: 'G', surum: sk })).statusCode).toBe(200);
+    const sy = kd.yat.kayit_surumu as number;
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { tahrik: 'Dizel', surum: sy })).statusCode).toBe(200);
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/yat-bilgisi`, c, { tahrik: 'Dizel', surum: sy })).json().cakisma).toBe(true);
+  });
+  it('Uygulama, Kontrol ve Teslim aşama kapıları (YG065-KAPI)', async () => {
+    await sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await dosyaAc(); await ekipKur(d.kimlik); const c = await gir('ds');
+    await sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, statu = 'Aktif', asama = 'Onay' WHERE kimlik = $1`, [d.kimlik, K.ds]);
+    const r1 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Uygulama', gerekce: 'x' }); expect(r1.statusCode).toBe(409); expect(r1.json().hata).toContain('onaylanmış bir fiyat teklifi');
+    await sup.query(`UPDATE dosya SET asama = 'Uygulama' WHERE kimlik = $1`, [d.kimlik]);
+    const r2 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Kontrol', gerekce: 'x' }); expect(r2.statusCode).toBe(409); expect(r2.json().hata).toContain('yayımlanmış bir iş emri');
+    await sup.query(`UPDATE dosya SET asama = 'Kontrol' WHERE kimlik = $1`, [d.kimlik]);
+    await sup.query(`INSERT INTO kontrol_listesi_kaydi (kayit_no, dosya_ref, kontrol_listesi, hazirlayan_ref) VALUES ($1, $2, 'KL-T', $3)`, [`${d.dosyaNo}-KLT`, d.kimlik, K.ds]);
+    const r3 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teslim', gerekce: 'x' }); expect(r3.statusCode).toBe(409); expect(r3.json().hata).toContain('1 kontrol listesinin');
+    await sup.query(`UPDATE kontrol_listesi_kaydi SET statu = 'Tamamlandı' WHERE dosya_ref = $1`, [d.kimlik]);
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Teslim', gerekce: 'x' })).statusCode).toBe(200);
   });
   it('gecikmiş konu sahibine/DS ve 3 günde Operasyon Müdürüne bir kez yükselir; hedef tarihi yalnız DS gerekçeyle değiştirir (T-YG059)', async () => {
     await sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await dosyaAc(); await ekipKur(d.kimlik); const c = await gir('ds');

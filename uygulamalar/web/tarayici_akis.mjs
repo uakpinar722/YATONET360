@@ -124,7 +124,7 @@ try {
     await p.getByLabel('Firma', { exact: true }).locator(`option[value="${firma}"]`).waitFor({ state: 'attached', timeout: 90_000 }); // yük altında firma listesi geç gelebilir
     await p.getByLabel('Firma', { exact: true }).selectOption(firma);
     await p.getByLabel('Uygulama Yeri', { exact: true }).fill('Marmaris'); await p.getByLabel('Kapsam', { exact: true }).fill(kapsam);
-    if (bedel) await p.getByLabel('Firma Bedeli (EUR)', { exact: true }).fill(bedel);
+    if (bedel) await p.getByLabel(tur === 'KN' ? 'Mali Limit (EUR)' : 'Firma Bedeli (EUR)', { exact: true }).fill(bedel);
     if (tur !== 'KN') await p.getByLabel('Beklenen Teknik Sonuç', { exact: true }).fill('Hasarlı bölge onarılmış, test edilmiş');
     if (teklif) await p.getByLabel('Onaylı Teklif', { exact: true }).selectOption({ index: 1 });
     await tikla(p, 'İş Emri Oluştur');
@@ -134,7 +134,7 @@ try {
 
   // Keşif iş emri ekrandan; firma kabul eder
   const pOy = await al('oy', E); await dosyaAc(pOy, d.dosyaNo);
-  await isEmriForm(pOy, 'KN', 'Keşif');
+  await isEmriForm(pOy, 'KN', 'Keşif', '0');
   const kn = `${d.dosyaNo}-KN01`;
   kontrol('Operasyon Yöneticisi keşif iş emrini ekrandan açar', await pOy.getByText(kn).first().waitFor({ timeout: 10000 }).then(() => true).catch(() => false));
   const pDsKn = await al('ds', E); await dosyaAc(pDsKn, d.dosyaNo); await tikla(pDsKn, 'Firmaya Gönder');

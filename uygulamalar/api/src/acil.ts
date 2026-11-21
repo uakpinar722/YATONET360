@@ -388,6 +388,8 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     const durumKilitli = ['Onay Bekliyor', 'Onaylandı', 'Yükseltildi'].includes(m.sinir_durumu);
     const yeni = durumKilitli ? m.sinir_durumu : h.durum;
     await c.query(`UPDATE acil_mudahale SET tahmini_firma_eur = $2, yansiyan_eur = $3, sinir_durumu = $4 WHERE dosya_ref = $1`, [dosya, firmaEur, h.yansiyan, yeni]);
+    // YG-323: AC iş emrinin mali limiti acil tahmini firma tutarıdır; değişiklik limit sürümü olarak izlenir.
+    await c.query(`UPDATE is_emri SET firma_bedeli_eur = $2 WHERE dosya_ref = $1 AND is_emri_turu = 'AC' AND statu NOT IN ('İptal', 'Kapalı', 'Yerine Geçti') AND firma_bedeli_eur IS DISTINCT FROM $2`, [dosya, firmaEur]);
     const al = [m.dosya_sorumlusu_ref].filter(Boolean);
     if (h.durum === 'Ön Uyarı' && m.sinir_durumu === 'Sınır Altında') await bildir(c, { olay: `acil-onuyari:${dosya}`, kullanicilar: al, baslik: `Acil Tutar Ön Uyarı: ${m.dosya_no}`, ozet: `${tutar(h.yansiyan)} EUR`, oncelik: 'Kritik', acil: true }, simdi);
     if (h.durum === 'Onay Bekliyor' && !durumKilitli) {

@@ -12,7 +12,7 @@ import { gunAy, tutar } from './metin.js';
 import { kutuAyikla, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { kapanisKapisi } from './saha.js';
 import { altNumara } from './sure.js';
-import { parametre, parasalZincir, sonMakam } from './teklif.js';
+import { isGunuSonu, parametre, parasalZincir, sonMakam } from './teklif.js';
 import { UUID } from './yat.js';
 import { emniyetEngeli } from './kalite.js';
 import { tesisSerbestBirak } from './portallar.js';
@@ -117,10 +117,27 @@ export async function teslimEngeli(db: Db, dosya: string): Promise<string | null
   return borc + talep > 0 ? `Ödeme bekleniyor: ${tutar(R2(borc + talep))} EUR.` : null;
 }
 
+/** YG-904: ödeme teslimden en az 3 iş günü önce hesaba geçmelidir (dekont yeterli değildir); süre gelip bakiye açıksa Ticari Sorumluya bir kez görev. */
+export async function teslimOncesiOdemeIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const esik = (await isGunuSonu(db, simdi, 3)).toISOString().slice(0, 10); let n = 0;
+  const { rows } = await db.query(`SELECT d.kimlik, d.dosya_no, d.tahmini_teslim_tarihi::text teslim,
+      coalesce((SELECT sum(f.toplam_eur - f.tahsil_edilen_eur) FROM musteri_faturasi f WHERE f.dosya_ref = d.kimlik AND f.durum IN ('Faturalandı', 'Kısmi Tahsil') AND (d.musteri_turu <> 'Kurumsal Müşteri' OR f.vade IS NULL OR f.vade <= d.tahmini_teslim_tarihi)), 0)
+      + coalesce((SELECT sum(t.tutar_eur) FROM odeme_talebi t WHERE t.dosya_ref = d.kimlik AND t.durum = 'Gönderildi'), 0) bakiye
+    FROM dosya d WHERE d.statu = 'Aktif' AND d.teslim_tarihi IS NULL AND d.tahmini_teslim_tarihi IS NOT NULL AND d.tahmini_teslim_tarihi <= $1::date AND d.tahmini_teslim_tarihi >= ($2::timestamptz AT TIME ZONE 'Europe/Istanbul')::date
+      AND d.musteri_turu <> 'Sigorta Şirketi' AND NOT coalesce(d.teslim_istisnasi, false)`, [esik, simdi]);
+  for (const d of rows) {
+    if (!(Number(d.bakiye) > 0) || !(await birKez(db, 'teslim-oncesi-odeme', `${d.kimlik}:${d.teslim}`))) continue;
+    await kartAc(db, { tur: 'Teslim Öncesi Ödeme', kategori: 'gorev', baslik: `${d.dosya_no} · Teslim Öncesi Ödeme Bekleniyor`, ozet: `Tahmini teslim ${d.teslim.split('-').reverse().join('.')}; bekleyen ödeme ${tutar(R2(Number(d.bakiye)))} EUR. Ödemenin teslimden en az 3 iş günü önce hesaba geçmesi gerekir; dekont yeterli değildir, yurt dışı havalede para hesaba geçmeden ödeme tamamlandı işaretlenmez. Müşteriyle iletişime geçmenizi rica ederiz.`, sahipRol: await rolId(db, TICARI), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    n++;
+  }
+  return n;
+}
+
 /** YG-911, YG-1495, YG-1521: alacak takip basamakları. Sigortaya ihtar gitmez; vefatta tahsilat askısı. */
 export async function alacakIsle(db: Pool, simdi = new Date()): Promise<number> {
   let n = 0;
   const { rows } = await db.query(`SELECT f.kimlik, f.vade, f.proforma_no, f.fatura_no, f.toplam_eur, f.toplam_tl, f.tahsil_edilen_eur, f.dosya_ref, d.dosya_no, d.musteri_turu, d.vefat_isareti FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum IN ('Faturalandı', 'Kısmi Tahsil') AND f.vade IS NOT NULL`);
+  n += await teslimOncesiOdemeIsle(db, simdi); // YG-904
   const BAS: [string, number, string][] = [['24 Saat', 1, TICARI], ['15 Gün', 15, 'Ticari İşler Direktörü'], ['30 Gün', 30, 'Genel Müdür Yardımcısı'], ['60 Gün', 60, 'CEO']];
   for (const f of rows) {
     const gecen = (simdi.getTime() - new Date(f.vade).getTime()) / 86_400_000;

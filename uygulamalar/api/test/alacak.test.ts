@@ -4,7 +4,7 @@ import { COOKIE_ADI } from '../src/ayarlar.js';
 import { uyusmazlikTanim } from '../src/belge_uret.js';
 import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { sonMakam } from '../src/teklif.js';
-import { alacakIsle, teslimEngeli } from '../src/ticari.js';
+import { alacakIsle, teslimEngeli, teslimOncesiOdemeIsle } from '../src/ticari.js';
 import { ana, ortamKur, PAROLA, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', my: 'Muhasebe ve Finans Yöneticisi', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu' };
@@ -41,6 +41,17 @@ describe('hukuk kararı (YG-820, YG-912, YG-914)', () => {
     expect((await o.ist('POST', `/api/is/${k.kimlik}/karar`, await ceoGir(), { karar: 'Onayla' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM hukuk_karari WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Onaylandı');
   });
+  it('makamın Rol Müfredatı tamamlanmadan karar verilmez (YG1043-EGITIM)', async () => {
+    const { d } = await kurumsal(); const r = await o.ist('POST', `/api/dosya/${d.kimlik}/hukuk-karari`, await o.gir('mfm'), { tur: 'Alacak Silme', oneri: 'Ö', tutar: 100 });
+    const k = await o.kart('Hukuk Kararı', r.json().kimlik);
+    const hud = (await o.sup.query(`SELECT rol_adi, h.kimlik kul FROM rol, kullanici_hesabi h WHERE rol.kimlik = $1 AND h.kimlik = (SELECT kullanici_ref FROM rol_atamasi WHERE rol_ref = $1 AND atama_durumu = 'Aktif' LIMIT 1)`, [k.zincir[0]])).rows[0];
+    await o.sup.query(`UPDATE rol_atamasi SET olusturma_zamani = now() + interval '1 second' WHERE rol_ref = $1 AND kullanici_ref = $2`, [k.zincir[0], hud.kul]);
+    const ders = (await o.sup.query(`INSERT INTO akademi_ders (ad, tur, icerik, roller, olusturan_ref, olusturma_zamani) VALUES ('Makam Eğitimi', 'Rol Müfredatı', 'İçerik', $1, $2, now() - interval '1 day') RETURNING kimlik`, [[hud.rol_adi], hud.kul])).rows[0].kimlik;
+    const r1 = await o.karar(k.kimlik, 'hud', 'Onaya Gönder', 'Görüş'); expect(r1.statusCode).toBe(403); expect(r1.json().hata).toContain('Makam Eğitimi');
+    await o.sup.query(`INSERT INTO akademi_beyan (ders_ref, surum, personel_ref) VALUES ($1, 1, $2)`, [ders, hud.kul]);
+    expect((await o.karar(k.kimlik, 'hud', 'Onaya Gönder', 'Görüş')).statusCode).toBe(200);
+    await o.sup.query(`UPDATE akademi_ders SET aktif = false WHERE kimlik = $1`, [ders]);
+  });
   it('60. günde sistem önerisi açılır; muhataba göre yol', async () => {
     expect(alacakYolu('Bireysel Müşteri', 100)).toContain('Tüketici Hakem Heyeti');
     expect(alacakYolu('Bireysel Müşteri', 1000, { kur: 50, kurTarihi: '01.12.2026', sinirTl: 186000 })).toContain('altında: Tüketici Hakem Heyeti'); // YG-913
@@ -50,6 +61,18 @@ describe('hukuk kararı (YG-820, YG-912, YG-914)', () => {
     await alacakIsle(o.db, new Date('2026-03-15T12:00:00Z'));
     const h = (await o.sup.query(`SELECT kimlik, tutar_eur, oneri FROM hukuk_karari WHERE fatura_ref = $1 AND tur = 'Alacak Yolu'`, [f])).rows[0]; expect(h.tutar_eur).toBe('900.00'); expect(h.oneri).toContain('icra');
     expect((await o.kart('Hukuk Kararı', h.kimlik)).zincir).toHaveLength(3);
+  });
+});
+
+describe('teslim öncesi ödeme (YG904-UC-GUN)', () => {
+  it('tahmini teslimden 3 iş günü önce bakiye açıksa Ticari Sorumluya bir kez görev', async () => {
+    const { d } = await kurumsal(); const f = await fatura(d, { toplam: 700, vade: '2026-11-01' });
+    await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', tahsil_edilen_eur = 0 WHERE kimlik = $1`, [f]);
+    await o.sup.query(`UPDATE dosya SET statu = 'Aktif', tahmini_teslim_tarihi = '2026-12-03', teslim_tarihi = NULL, teslim_istisnasi = false WHERE kimlik = $1`, [d.kimlik]);
+    const kart = async () => (await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Teslim Öncesi Ödeme' AND nesne_kimligi = $1`, [d.kimlik])).rows;
+    await teslimOncesiOdemeIsle(o.db, new Date('2026-11-27T09:00:00Z')); expect(await kart()).toHaveLength(0);
+    await teslimOncesiOdemeIsle(o.db, new Date('2026-11-30T09:00:00Z')); await teslimOncesiOdemeIsle(o.db, new Date('2026-12-01T09:00:00Z'));
+    const k = await kart(); expect(k).toHaveLength(1); expect(k[0].ozet).toContain('700,00 EUR'); expect(k[0].ozet).toContain('03.12.2026');
   });
 });
 

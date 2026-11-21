@@ -1,3 +1,4 @@
+import { KayitCakismasi } from './KayitCakismasi';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { DestekSayfasi } from './Destek';
@@ -148,7 +149,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
         </nav>
         <main>
           {(() => { const isg = ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu'); const asil = ben.roller.filter((r) => r.rol_adi !== 'İSG Sorumlusu').map((r) => r.rol_adi); return isg && asil.length > 0 && <div className="not" role="note">İkiz Görev · İSG Sorumlusu · Asıl Rolünüz: <b>{[...new Set(asil)].join(', ')}</b></div>; })() /* YG-1670 */}
-          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{lgm && <IlkKullanimTuru />}<DugmeAciklamalari /><SayfaAciklama key={sayfa} sayfa={sayfa} />{icerik[sayfa]}
+          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{lgm && <IlkKullanimTuru />}<KayitCakismasi /><DugmeAciklamalari /><SayfaAciklama key={sayfa} sayfa={sayfa} />{icerik[sayfa]}
           <footer><span className="ayrac" aria-hidden="true" /><img src="/yatonet.png" alt="YATONET 360" /></footer>
         </main>
       </div>
