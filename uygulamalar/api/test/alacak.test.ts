@@ -180,6 +180,42 @@ describe('ödeme taahhüdü (YG851-TAAHHUT)', () => {
   });
 });
 
+describe('kurtarma sağlayıcı ödemesi (YG848-MAHSUP)', () => {
+  it('sağlayıcı faturası LGM adına; ödeme görev ayrılığıyla ve mahsup kaydıyla; yalnız LGM görür', async () => {
+    const { d } = await kurumsal(); const ts = await o.gir('ts'); const mfm = await o.gir('mfm');
+    const sg = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'Kurtarma Sağlayıcı','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-KS${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const op = (await o.sup.query(`INSERT INTO kurtarma_operasyonu (dosya_ref, hizmet_turu, saglayici_ref, hazirlayan_ref) VALUES ($1,'Kurtarma',$2,$3) RETURNING kimlik`, [d.kimlik, sg, o.K.ds])).rows[0].kimlik;
+    const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, hazirlayan_ref) VALUES ($1,$2,'Kurumsal Müşteri',20,'Karar','Tam Onay',1500,0,1500,$3) RETURNING kimlik`, [`${d.dosyaNo}-KT`, d.kimlik, o.K.ts])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'Kurtarma','Geçici / Acil Önlem','Kurtarma',1,'iş',1500,1500,'Onaylandı')`, [t]);
+    expect((await o.ist('POST', `/api/kurtarma/${op}/saglayici-faturasi`, mfm, { faturaNo: 'F1', tarih: '2026-11-20', tutar: 1000 })).statusCode).toBe(403);
+    const f = await o.ist('POST', `/api/kurtarma/${op}/saglayici-faturasi`, ts, { faturaNo: 'F1', tarih: '2026-11-20', tutar: 1000 }); expect(f.statusCode, f.body).toBe(200);
+    expect((await o.ist('POST', `/api/kurtarma/${op}/saglayici-faturasi`, ts, { faturaNo: 'F1', tarih: '2026-11-20', tutar: 1000 })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/kurtarma-saglayici-faturasi/${f.json().kimlik}/odendi`, mfm, { tarih: '2026-11-21' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/kurtarma-saglayici-faturasi/${f.json().kimlik}/odendi`, mfm, { referans: 'B-1', tarih: '2026-11-21' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/kurtarma-mali`, ts)).json()).toMatchObject({ lgmFiyat: 1500, saglayiciyaOdenen: 1000, mahsupSonrasi: 500 });
+    expect((await o.sup.query(`SELECT mahsup_lgm_fiyati_eur FROM kurtarma_saglayici_faturasi WHERE kimlik = $1`, [f.json().kimlik])).rows[0].mahsup_lgm_fiyati_eur).toBe('1500.00');
+  });
+});
+
+describe('kayıt birleştirme (YG1244-BIRLESTIR)', () => {
+  it('veri sahibi ana kaydı seçer; çelişen alanlar listelenir; ilişkiler taşınır, eski kimlik yönlenir, geri alınır', async () => {
+    const a = await kurumsal(); const e = await kurumsal(); const opm = await o.gir('opm');
+    const yatE = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [e.d.kimlik])).rows[0].yat_ref;
+    expect((await o.ist('POST', '/api/birlestirme', await o.gir('ds'), { tur: 'taraf', ana: a.taraf, eski: e.taraf, gerekce: 'Aynı kişi' })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/birlestirme', opm, { tur: 'taraf', ana: a.taraf, eski: e.taraf })).statusCode).toBe(400);
+    const on = (await o.ist('GET', `/api/birlestirme/onizleme?tur=taraf&ana=${a.taraf}&eski=${e.taraf}`, opm)).json();
+    expect(on.celisenAlanlar.length).toBeGreaterThan(0);
+    const r = await o.ist('POST', '/api/birlestirme', opm, { tur: 'taraf', ana: a.taraf, eski: e.taraf, gerekce: 'Aynı kişi' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT yat_sahibi_ref FROM yat WHERE kimlik = $1`, [yatE])).rows[0].yat_sahibi_ref).toBe(a.taraf);
+    expect((await o.ist('GET', `/api/birlestirme/yonlendir/taraf/${e.taraf}`, opm)).json()).toEqual({ kimlik: a.taraf, yonlendirildi: true });
+    expect((await o.sup.query(`SELECT 1 FROM taraf WHERE kimlik = $1`, [e.taraf])).rowCount).toBe(1); // eski kayıt silinmez
+    expect((await o.ist('POST', '/api/birlestirme', opm, { tur: 'taraf', ana: a.taraf, eski: e.taraf, gerekce: 'Tekrar' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/birlestirme/${r.json().kimlik}/geri-al`, opm, { gerekce: 'Farklı kişiler' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT yat_sahibi_ref FROM yat WHERE kimlik = $1`, [yatE])).rows[0].yat_sahibi_ref).toBe(e.taraf);
+    expect((await o.ist('GET', `/api/birlestirme/yonlendir/taraf/${e.taraf}`, opm)).json().yonlendirildi).toBe(false);
+  });
+});
+
 describe('uyuşmazlık (YG-107)', () => {
   it('yalnız HUD; savunma görevi; paket kayıtları listeler', async () => {
     const { d } = await kurumsal(); await fatura(d, { toplam: 700 });

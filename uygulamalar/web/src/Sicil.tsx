@@ -1,5 +1,5 @@
 import { AdayTemas } from './ArsivFirma';
-import { AnaVeriMukerrer } from './AnaVeri';
+import { AnaVeriMukerrer, KayitBirlestirme } from './AnaVeri';
 import { TesisBilgi } from './BaglamaNoktasi';
 import { useEffect, useState } from 'react';
 import { BelgeSec } from './Kalite';
@@ -25,6 +25,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
       <h1>Firma Sicili</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
       <AnaVeriMukerrer />
+      <KayitBirlestirme />
       <label><input type="checkbox" checked={aday} onChange={(e) => { setAday(e.target.checked); void yukle(e.target.checked); }} /> Aday Havuzunu Göster</label>
       <label><input type="checkbox" checked={arsiv} onChange={(e) => { setArsiv(e.target.checked); void yukle(aday, e.target.checked); }} /> Arşivi Göster (Çıkarılan, Pasif ve Reddedilen Kayıtlar)</label>
       <div className="bolum">Yeni Kayıt</div>

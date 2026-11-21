@@ -696,6 +696,29 @@ function FaizOranlari({ yap }: { yap: (f: () => Promise<unknown>, x?: string) =>
 }
 
 /** YG-909 kredi; YG-872 faiz; YG-887 itiraz; YG-916 üçüncü kişi; YG-820 hukuk kararı; YG-107 uyuşmazlık. */
+/** YG-847, YG-848: kurtarma sağlayıcısının LGM'ye faturası, ödeme ve mahsup; yalnız LGM görür (firma ve müşteri kullanıcısına uç 404 döner). */
+function KurtarmaMali({ dosya, ticari, yap }: { dosya: string; ticari: boolean; yap: (f: () => Promise<unknown>, x?: string) => Promise<void> }) {
+  type V = { lgmFiyat: number; faturalar: { kimlik: string; fatura_no: string; fatura_tarihi: string; tutar: number; durum: string; saglayici: string; odeme_referansi: string | null }[]; saglayiciyaOdenen: number; mahsupSonrasi: number };
+  const [v, setV] = useState<V | null>(null); const [ops, setOps] = useState<{ kimlik: string; hizmet_turu: string; ticari_unvan: string }[]>([]);
+  const [f, setF] = useState({ op: '', faturaNo: '', tarih: '', tutar: '' }); const [od, setOd] = useState({ referans: '', tarih: '' });
+  const yukle = () => Promise.all([istek<V>(`/dosya/${dosya}/kurtarma-mali`).then(setV), istek<typeof ops>(`/dosya/${dosya}/kurtarma`).then(setOps)]).catch(() => {});
+  useEffect(() => { void yukle(); }, [dosya]);
+  const y2 = (g: () => Promise<unknown>, m: string) => yap(() => g().then(yukle), m);
+  if (!v || !ops.length) return null;
+  return <>
+    <div className="bolum">Kurtarma Sağlayıcı Ödemesi</div>
+    <div>LGM Kurtarma Fiyatı: {eur(String(v.lgmFiyat))} · Sağlayıcıya Ödenen: {eur(String(v.saglayiciyaOdenen))} · Mahsup Sonrası: {eur(String(v.mahsupSonrasi))}</div>
+    {v.faturalar.map((x) => <div key={x.kimlik}>{x.saglayici} · {x.fatura_no} · {tarih(x.fatura_tarihi)} · {eur(String(x.tutar))} · {x.durum}{x.odeme_referansi ? ` · ${x.odeme_referansi}` : ''}
+      {x.durum === 'Kontrolde' && <> <input aria-label="Banka Referansı" placeholder="Banka Referansı" value={od.referans} onChange={(e) => setOd({ ...od, referans: e.target.value })} /><input aria-label="Ödeme Tarihi" type="date" value={od.tarih} onChange={(e) => setOd({ ...od, tarih: e.target.value })} /><button className="btn2 kucuk" disabled={!od.referans.trim() || !od.tarih} onClick={() => void y2(() => istek(`/kurtarma-saglayici-faturasi/${x.kimlik}/odendi`, od), 'Ödeme ve mahsup kaydedildi.')}>Ödendi</button></>}</div>)}
+    {ticari && <>
+      <label htmlFor="km-o">Operasyon</label><select id="km-o" value={f.op} onChange={(e) => setF({ ...f, op: e.target.value })}><option value="">Seçiniz</option>{ops.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.hizmet_turu} · {x.ticari_unvan}</option>)}</select>
+      <label htmlFor="km-n">Sağlayıcı Fatura No</label><input id="km-n" value={f.faturaNo} onChange={(e) => setF({ ...f, faturaNo: e.target.value })} />
+      <div className="iki-tarih"><div><label htmlFor="km-t">Fatura Tarihi</label><input id="km-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} /></div><div><label htmlFor="km-u">Tutar (EUR)</label><input id="km-u" inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} /></div></div>
+      <button className="btn2 kucuk" disabled={!f.op || !f.faturaNo.trim() || !f.tarih || !f.tutar} onClick={() => void y2(() => istek(`/kurtarma/${f.op}/saglayici-faturasi`, { faturaNo: f.faturaNo, tarih: f.tarih, tutar: Number(f.tutar.replace(',', '.')) }), 'Sağlayıcı faturası kaydedildi.')}>Sağlayıcı Faturasını Kaydet</button>
+    </>}
+  </>;
+}
+
 /** YG-851: ödemeyi üstlenen tarafın yazılı taahhüdü; kısmi ödeme ve kalan yükümlülük ayrı izlenir. Sigorta şirketi yalnız yazılı taahhüdüyle yükümlü olur. */
 function OdemeTaahhutleri({ dosya, ticari, faturalar, yap }: { dosya: string; ticari: boolean; faturalar: { kimlik: string; fatura_no: string | null }[]; yap: (f: () => Promise<unknown>, x?: string) => Promise<void> }) {
   type Y = { taahhutler: { kimlik: string; ustlenen_turu: string; ustlenen_adi: string; tutar: number; vade: string | null; dayanak: string; durum: string; odenen: number; kalan: number }[]; kalanYukumluluk: number };
@@ -749,6 +772,7 @@ function AlacakBolumu({ dosya, m, ticari, yap }: { dosya: string; m: Mali; ticar
           <button className="btn2 kucuk" disabled={!u.ad.trim() || !u.gerekce.trim()} onClick={() => void yap(() => istek(`/dosya/${dosya}/ucuncu-kisi-odeme`, { ad: u.ad, tutar: sayi(u.tutar), gerekce: u.gerekce }), 'Üçüncü kişi ödemesi onaya gönderildi.')}>Üçüncü Kişi Onayı İste</button>
         </>}
         <OdemeTaahhutleri dosya={dosya} ticari={ticari} faturalar={faturali} yap={yap} />
+        <KurtarmaMali dosya={dosya} ticari={ticari} yap={yap} />
         <label htmlFor="ab-tn">Taraf No (Tarama ve Risk Olayı)</label><input id="ab-tn" value={tr.tarafNo} onChange={(e) => setTr({ ...tr, tarafNo: e.target.value })} />
         <div className="dugmeler">{['Temiz', 'İnceleme', 'Ret'].map((x) => <button key={x} className="btn2 kucuk" disabled={!tr.tarafNo.trim()} onClick={() => void yap(() => istek('/taraf-tarama', { tarafNo: tr.tarafNo, sonuc: x }), 'Tarama sonucu kaydedildi.')}>Tarama: {x}</button>)}{['İflas', 'Konkordato', 'Tasfiye'].map((x) => <button key={x} className="btn hayir" disabled={!tr.tarafNo.trim()} onClick={() => void yap(() => istek('/taraf-risk-olayi', { tarafNo: tr.tarafNo, olay: x }), 'Risk olayı kaydedildi.')}>{x}</button>)}</div>
         <label htmlFor="ab-h">Hukuk Kararı Türü</label><select id="ab-h" value={h.tur} onChange={(e) => setH({ ...h, tur: e.target.value })}>{['Dava', 'İcra Takibi', 'Şüpheli Alacak', 'Alacak Silme', 'İhtiyati Haciz'].map((x) => <option key={x}>{x}</option>)}</select>
