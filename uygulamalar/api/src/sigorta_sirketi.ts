@@ -24,6 +24,11 @@ export function sigortaSirketiYollari(s: FastifyInstance, b: Baglam) {
     if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
     return (await b.db.query(`SELECT tsb_kodu, kisa_ad, tam_unvan, dayanak, mersis_teyit_tarihi, durum FROM sigorta_sirketi ORDER BY durum, tam_unvan`)).rows;
   });
+  // YG-1558: yer listesi ana veriden "Yer Adı (İlçe, İl)" etiketiyle; birleştirilen mükerrer noktalar listelenmez.
+  s.get('/yer-listesi', oturumlu, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return yok(y);
+    return (await b.db.query(`SELECT DISTINCT n.ad || coalesce(' (' || nullif(concat_ws(', ', n.ilce, n.il), '') || ')', '') etiket FROM baglama_noktasi n WHERE n.ana_nokta_ref IS NULL AND n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi' ORDER BY 1`)).rows.map((r) => r.etiket as string);
+  });
   // YG-453: sigorta şirketinin yazılı olarak yetkilendirdiği kişiye (yetkili veya eksper) sigorta portalı hesabı açılır; kişi yalnız o şirketin dosyalarını görür.
   s.post('/sigorta-kullanici', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { tsbKodu?: string; ad?: string; eposta?: string; telefon?: string; dayanak?: string };

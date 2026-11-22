@@ -116,7 +116,7 @@ export async function sahaSorumlusuIhtiyacIsle(db: Pool): Promise<number> {
 
 /** YG-064: dosya ekranındaki yapılacaklar; sıradaki işlem, sorumlu ve eksik kayıtlar. Tamamlandıkça sonraki adım kendiliğinden açılır. */
 export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; asama: string | null; oncelik: string; dosya_niteligi: string }) {
-  const l: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null }[] = [];
+  const l: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null; form?: { hedef: string; rol?: string } }[] = [];
   const ekip = new Set((await db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.rol as string));
   if (d.statu === 'Açılış Kontrolünde') {
     if (!ekip.has('Dosya Sorumlusu')) l.push({ is: 'Dosya Sorumlusunu Ata', sorumlu: 'Operasyon Müdürü', engel: true });
@@ -130,6 +130,9 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
   // YG-1360: her yapılacak işin hedefi dosyanın en yakın açık süresidir; dosyaya bağlı bekleyen görev kartları sorumlu ve hedef zamanla eklenir.
   const hedef = (await db.query(`SELECT min(bitis) b FROM dosya_sure WHERE dosya_ref = $1 AND tamamlanma IS NULL`, [d.kimlik])).rows[0]?.b ?? null;
   for (const x of l) x.hedef ??= hedef ? new Date(hedef).toISOString() : null;
+  // YG-1360: ekip atama işinde form (Atanacak Rol) ve rol bilinir; ekran bir adım tamamlanınca sıradakini açar.
+  const ATA: Record<string, string> = { 'Dosya Sorumlusunu Ata': 'Dosya Sorumlusu', 'Operasyon Yöneticisini Ata': 'Operasyon Yöneticisi', 'Teknik Uzmanı Ata': 'Teknik Uzman', 'Teknik Yöneticiyi Ata': 'Teknik Yönetici' };
+  for (const x of l) { const r = ATA[x.is] ?? (x.is.startsWith('Saha Sorumlusunu Ata') ? 'Saha Sorumlusu' : undefined); if (r) x.form = { hedef: 'e-r', rol: r }; }
   const kartlar = (await db.query(`SELECT k.baslik, k.son_zaman, coalesce(h.ad_soyad, r.rol_adi, '—') sorumlu FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.sahip_kullanici_ref LEFT JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE k.kategori = 'gorev' AND k.durum = 'Bekliyor' AND k.nesne_turu = 'Dosya' AND k.nesne_kimligi = $1 ORDER BY k.son_zaman NULLS LAST LIMIT 10`, [d.kimlik])).rows;
   for (const k of kartlar) l.push({ is: k.baslik, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null });
   return l;

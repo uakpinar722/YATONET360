@@ -504,6 +504,22 @@ describe('tesis bedeli Masraf kalemi (MSR-1, KRT-10)', () => {
   });
 });
 
+describe('görsel kanıtın iş kalemi bağı (YG-381)', () => {
+  it('fotoğraf teklif kalemine bağlanır; aynı görsel başka kalemde kanıt olamaz (YG381-KALEM)', async () => {
+    const d = await hazir(); const t = await teklifAc(d); const c = await o.gir('ds');
+    const k1 = (await o.sup.query(`SELECT kimlik FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no LIMIT 1`, [t.kimlik])).rows[0].kimlik;
+    const k2 = (await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi SELECT (jsonb_populate_record(NULL::fiyat_teklifi_kalemi, to_jsonb(k) || jsonb_build_object('kimlik', gen_random_uuid(), 'sira_no', k.sira_no + 100))).* FROM fiyat_teklifi_kalemi k WHERE kimlik = $1 RETURNING kimlik`, [k1])).rows[0].kimlik;
+    const liste = (await o.ist('GET', `/api/dosya/${d.kimlik}/is-kalemleri`, c)).json(); expect(liste.map((x: { kimlik: string }) => x.kimlik)).toEqual(expect.arrayContaining([k1, k2]));
+    const bel = await o.belge(d.kimlik, 'ds', `Foto ${Math.random()}`);
+    const g = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/gorsel`, c, { asama: 'Keşif', kalem: 'Genel – Baş', belge: bel, ...x });
+    expect((await g({ isKalemi: '00000000-0000-0000-0000-000000000000' })).statusCode).toBe(400);
+    const r = await g({ isKalemi: k1 }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT is_kalemi_ref FROM gorsel_kanit WHERE gorsel_no = $1`, [r.json().gorselNo])).rows[0].is_kalemi_ref).toBe(k1);
+    expect((await g({ isKalemi: k1 })).statusCode).toBe(200);
+    expect((await g({ isKalemi: k2 })).json().hata).toMatch(/başka bir iş kaleminin/);
+  });
+});
+
 describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', () => {
   const onarim = async (bedel = 510) => {
     const d = await hazir({ sigortaci: 'SG', hasarNo: 'H1' }, { musteriTuru: 'Sigorta Şirketi' }); const t = await teklifAc(d); await onayla(t.kimlik);

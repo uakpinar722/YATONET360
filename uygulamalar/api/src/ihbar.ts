@@ -144,6 +144,9 @@ export async function ihbarKaydet(c: PoolClient, g: IhbarGirdisi, kullanici: str
   // YG-1558: liste dışı girilen sigorta şirketi ana veri güncelleme görevi açar.
   if (g.sigortaci?.trim() && !(await c.query(`SELECT 1 FROM sigorta_sirketi WHERE lower(tam_unvan) = lower($1) OR lower(kisa_ad) = lower($1)`, [g.sigortaci.trim()])).rowCount)
     await kartAc(c, { tur: 'Ana Veri Güncelleme', kategori: 'gorev', baslik: `${no} · Liste Dışı Sigorta Şirketi`, ozet: `"${g.sigortaci.trim()}" sigorta şirketi listesinde yoktur; ana veriye eklenmesi veya listedeki kayıtla eşleştirilmesi rica olunur.`.slice(0, 200), sahipRol: await rolId(c, 'Sicil Sorumlusu'), sonZaman: new Date(Date.now() + 3 * 86_400_000), nesneTuru: 'Talep', nesneKimligi: id });
+  // YG-1558: yer listesi tanımlıyken liste dışı girilen yer ana veri güncelleme görevi açar.
+  if (g.konum?.trim() && (await c.query(`SELECT 1 FROM baglama_noktasi LIMIT 1`)).rowCount && !(await c.query(`SELECT 1 FROM baglama_noktasi n WHERE lower(n.ad || coalesce(' (' || nullif(concat_ws(', ', n.ilce, n.il), '') || ')', '')) = lower($1) OR lower(n.ad) = lower($1) LIMIT 1`, [g.konum.trim()])).rowCount)
+    await kartAc(c, { tur: 'Ana Veri Güncelleme', kategori: 'gorev', baslik: `${no} · Liste Dışı Yer`, ozet: `"${g.konum.trim()}" yer listesinde yoktur; ana veriye eklenmesi veya listedeki kayıtla eşleştirilmesi rica olunur.`.slice(0, 200), sahipRol: await rolId(c, 'Sicil Sorumlusu'), sonZaman: new Date(Date.now() + 3 * 86_400_000), nesneTuru: 'Talep', nesneKimligi: id });
   // YG-240: mesai dışında dış kanaldan (portal, sigorta, telefonla başkası adına) gelen ihbar nöbet düzenine yönlenir; görevi nöbetçi Dosya Sorumlusu alır.
   let acilisSahibi = baglam.ilkSorumlu;
   if (baglam.ilkSorumlu !== kullanici) {

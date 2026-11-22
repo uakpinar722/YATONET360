@@ -1538,7 +1538,7 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const c = await o.gir('ds');
     const r = await o.ist('POST', '/api/ihbar', c, { kanal: 'Telefon', sahibiAdi: 'Kaptan', sahibiTuru: 'Yatın Kaptanı', yetkiDurumu: 'Doğrulandı', telefon: '+905550001111', konum: 'Marmaris', yatDurumu: 'Bağlı', ihtiyac: 'Hasar', yat: { adi: `LD${Date.now()}`, markaDiger: 'M', modelDiger: 'N', boy: 14, govde: 'Fiber', tur: 'Motor Yat', bayrak: 'Türk', kullanim: 'Özel', klas: 'Hayır' }, yatSahibi: { ad: 'Sahip', telefon: '+905550002222', eposta: `ld${Date.now()}@deneme.yatonet.local` }, cevaplar: {}, sigortaci: 'Listede Olmayan Sigorta AŞ' });
     expect(r.statusCode, r.body).toBe(200);
-    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Ana Veri Güncelleme' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].n).toBe(1);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Ana Veri Güncelleme' AND baslik LIKE '%Sigorta Şirketi' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].n).toBe(1);
   });
   it('Ticari Sorumlu dosyanın ticari özetini görür (YG-1024)', async () => {
     const d = await o.dosyaAc({}, {});
@@ -1650,6 +1650,8 @@ describe('istenecek belge listesi (YG-1439)', () => {
     await kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: 'Dosya Görevi Deneme', sahipKullanici: o.K.opm, sonZaman: new Date(Date.now() + 86_400_000), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
     const v = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json();
     const g = v.yapilacaklar.find((x: { is: string }) => x.is === 'Dosya Görevi Deneme'); expect(g).toBeTruthy(); expect(g.hedef).toBeTruthy();
+    const ata = v.yapilacaklar.filter((x: { is: string }) => x.is === 'Dosya Sorumlusunu Ata' || x.is === 'Teknik Yöneticiyi Ata');
+    expect(ata.length).toBeGreaterThan(0); for (const x of ata) expect(x.form).toEqual({ hedef: 'e-r', rol: x.is === 'Dosya Sorumlusunu Ata' ? 'Dosya Sorumlusu' : 'Teknik Yönetici' }); // sıradaki form
   });
   it('periyodik gözden geçirme kontrol listesi ve karar seçenekleri (YG-1363)', async () => {
     const c = await o.gir('btd'); const ad = `GG Deneme ${Date.now()}`;
@@ -1802,5 +1804,16 @@ describe('istenecek belge listesi (YG-1439)', () => {
       const r2 = await ihbarKaydet(c, g, o.K.opm!, { ilkSorumlu: o.K.oy! }, new Date('2026-11-23T08:00:00Z')) as { kimlik: string };
       expect((await o.sup.query(`SELECT sahip_kullanici_ref s FROM is_karti WHERE tur = 'İhbar Açılış Kontrolü' AND nesne_kimligi = $1`, [r2.kimlik])).rows[0].s).toBe(o.K.oy);
     } finally { c.release(); }
+  });
+});
+
+describe('yer listesi (YG-1558)', () => {
+  it('yer listesi ana veriden "Yer Adı (İlçe, İl)"; liste dışı yer ana veri görevi açar (YG1558-YER)', async () => {
+    await o.sup.query(`INSERT INTO baglama_noktasi (nokta_no, tur, il, ilce, ad) VALUES (99001, 'Marina', 'Muğla', 'Bodrum', 'Deneme Marina')`);
+    expect((await o.ist('GET', '/api/yer-listesi', await o.gir('ds'))).json()).toContain('Deneme Marina (Bodrum, Muğla)');
+    const say = async () => Number((await o.sup.query(`SELECT count(*) n FROM is_karti WHERE tur = 'Ana Veri Güncelleme' AND baslik LIKE '%Liste Dışı Yer'`)).rows[0].n);
+    const once = await say();
+    await o.dosyaAc({ konum: 'Deneme Marina (Bodrum, Muğla)' }); expect(await say()).toBe(once);
+    await o.dosyaAc({ konum: 'Bilinmeyen Koy' }); expect(await say()).toBe(once + 1);
   });
 });

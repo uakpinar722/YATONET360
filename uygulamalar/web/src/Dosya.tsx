@@ -2,6 +2,7 @@ import { GarantiYanit } from './GarantiYanit';
 import { KontrolListeleri } from './KontrolListeleri';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { SigortaListesi } from './SigortaListesi';
+import { DIGER_YER, YerListesi } from './YerListesi';
 import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
 import { KaliteBolumu, RaporBolumu, SigortaEposta, SigortaGonderimBolumu, TedarikBolumu, YatDegeriBolumu } from './Kalite';
@@ -29,7 +30,7 @@ interface DosyaAyrinti extends DosyaSatir {
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   musteri_risk_olayi?: string | null; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null; baslangic_zamani?: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
-  ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null }[];
+  ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null; form?: { hedef: string; rol?: string } }[];
   gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null; tamamlanan_kosullar?: string[] | null; belgeler?: string[] | null }[];
 }
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
@@ -88,6 +89,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
   const [s, setS] = useState<Secenek | null>(null); const [hata, setHata] = useState('');
   const [altForm, setAltForm] = useState(false); const [altNo, setAltNo] = useState(''); const [altZaman, setAltZaman] = useState(''); // YG-278
   const [kanal, setKanal] = useState('Telefon'); const [ad, setAd] = useState(''); const [tur, setTur] = useState(''); const [turAcik, setTurAcik] = useState(''); const [tel, setTel] = useState(''); const [ep, setEp] = useState('');
+  const [yerElle, setYerElle] = useState(false); // YG-1558
   const [konum, setKonum] = useState(''); const [durum, setDurum] = useState(''); const [iKisi, setIKisi] = useState(''); const [ozet, setOzet] = useState(''); const [acil, setAcil] = useState(false); const [dil, setDil] = useState('Türkçe');
   const [cevap, setCevap] = useState<Record<string, string>>({}); const [oneri, setOneri] = useState('Normal'); const [oncelik, setOncelik] = useState(''); const [onG, setOnG] = useState('');
   const [yTur, setYTur] = useState(''); const [yAd, setYAd] = useState(''); const [ayniAd, setAyniAd] = useState(0); const [marka, setMarka] = useState(''); const [markalar, setMarkalar] = useState<{ marka: string }[]>([]); const [modeller, setModeller] = useState<{ kimlik: string; model: string; boy_m: number | null; govde_malzemesi: string | null }[]>([]);
@@ -153,7 +155,8 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
       <label htmlFor="i-sa">Adı Soyadı veya Unvanı</label><input id="i-sa" value={sahipAd} onChange={(e) => setSahipAd(e.target.value)} />
       <div className="iki-tarih"><div><label htmlFor="i-st">Telefon</label><input id="i-st" value={sahipTel} onChange={(e) => setSahipTel(e.target.value)} /></div><div><label htmlFor="i-se">E-posta</label><input id="i-se" type="email" value={sahipEp} onChange={(e) => setSahipEp(e.target.value)} /></div></div>
       <div className="bolum">Olay</div>
-      <label htmlFor="i-konum">Adres (Yatın Mevcut Konumu)</label><input id="i-konum" value={konum} onChange={(e) => setKonum(e.target.value)} />
+      <label htmlFor="i-konum">Adres (Yatın Mevcut Konumu)</label><input id="i-konum" list="yer-listesi" value={konum} onChange={(e) => { if (e.target.value === DIGER_YER) { setKonum(''); setYerElle(true); } else setKonum(e.target.value); }} /><YerListesi ara={konum} />
+      {yerElle && <div className="not">Listede olmayan yeri elle yazınız; yer ana veriye eklenmek üzere Sicil Sorumlusuna iletilir.</div>}
       <label htmlFor="i-durum">Yatın Mevcut Durumu</label><input id="i-durum" value={durum} onChange={(e) => setDurum(e.target.value)} />
       <label htmlFor="i-ik">İletişim Kişileri (Ad, Rol, Telefon)</label><textarea id="i-ik" rows={2} value={iKisi} onChange={(e) => setIKisi(e.target.value)} />
       <label htmlFor="i-ozet">Olay Özeti</label><textarea id="i-ozet" rows={3} value={ozet} onChange={(e) => setOzet(e.target.value)} />
@@ -244,7 +247,8 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
   useEffect(() => { void yukle(); }, [id]);
   useEffect(() => { const f = () => { setHata(''); void yukle(); }; window.addEventListener('kayit-yenile', f); return () => window.removeEventListener('kayit-yenile', f); }, [id]); // YG-1382
   useEffect(() => { if (!rol) { setAdaylar([]); return; } void istek<typeof adaylar>(`/dosya/${id}/ekip-oneri?rol=${encodeURIComponent(rol)}`).then(setAdaylar).catch((e) => setHata(e.message)); }, [rol, id]);
-  const yap = async (f: () => Promise<any>) => { setHata(''); setNot(''); try { const r = await f(); if (r?.uyari) setNot(r.uyari); await yukle(); } catch (x) { setHata((x as Error).message); window.scrollTo(0, 0); } };
+  const [sonrakiForm, setSonrakiForm] = useState(false); // YG-1360: adım tamamlanınca sıradaki form açılır
+  const yap = async (f: () => Promise<any>) => { setHata(''); setNot(''); try { const r = await f(); if (r?.uyari) setNot(r.uyari); await yukle(); setSonrakiForm(true); } catch (x) { setHata((x as Error).message); window.scrollTo(0, 0); } };
   const yukleBelge = async (f: File) => {
     const q = new URLSearchParams({ ad: f.name, tur: 'Dosya Belgesi', bagTuru: 'Dosya', bagKimligi: id, kaynak: 'Elden', dosya: f.name });
     const r = await fetch(`/api/belge/yukle?${q}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Yatonet': '1' }, body: f, credentials: 'same-origin' });
@@ -252,6 +256,12 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
     if (!r.ok) throw new Error(j.hata ?? 'Yükleme tamamlanamadı.');
     setBKanit(j.belge);
   };
+  useEffect(() => {
+    if (!sonrakiForm || !d) return; setSonrakiForm(false);
+    const s = d.yapilacaklar.find((x) => x.form && (!x.form.rol || document.querySelector(`#${x.form.hedef} option[value="${x.form.rol}"]`)));
+    if (!s?.form) return; if (s.form.rol) { setRol(s.form.rol); setKisi(''); }
+    const h = s.form.hedef; setTimeout(() => { const el = document.getElementById(h); if (!el) return; for (let p = el.closest('details'); p; p = p.parentElement?.closest('details') ?? null) p.open = true; el.scrollIntoView({ block: 'center' }); el.focus(); }, 0);
+  }, [sonrakiForm, d]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   const ds = d.rollerim.includes('Dosya Sorumlusu');
   const sonraki = d.asama ? ASAMALAR[ASAMALAR.indexOf(d.asama) + 1] : undefined;
@@ -423,6 +433,8 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
   const [amac, setAmac] = useState(''); const [kBas, setKBas] = useState(''); const [kBit, setKBit] = useState(''); const [inc, setInc] = useState(''); const [cikis, setCikis] = useState('Hazır'); const [sup, setSup] = useState('Hayır'); const [sayim, setSayim] = useState(false); const [eris, setEris] = useState(''); const [erisT, setErisT] = useState('');
   const [bTur, setBTur] = useState('İlk Gözlem'); const [bTy, setBTy] = useState<Record<string, { tur: string; ger: string }>>({});
   const [bKonum, setBKonum] = useState(''); const [bBolge, setBBolge] = useState(''); const [bAcik, setBAcik] = useState(''); const [bOnem, setBOnem] = useState('Orta'); const [bHedef, setBHedef] = useState('');
+  const [gIs, setGIs] = useState(''); const [isKalemleri, setIsKalemleri] = useState<{ kimlik: string; teklif_no: string; sira_no: number; aciklama: string }[]>([]); // YG-381
+  useEffect(() => { void istek<typeof isKalemleri>(`/dosya/${id}/is-kalemleri`).then(setIsKalemleri).catch(() => setIsKalemleri([])); }, [id]);
   const [gKalem, setGKalem] = useState(KALEMLER[0]!); const [gBelge, setGBelge] = useState(''); const [gBolge, setGBolge] = useState(''); const [gOlcek, setGOlcek] = useState(''); const [gNeden, setGNeden] = useState('');
   const [lmBelge, setLmBelge] = useState(''); const [iTur, setITur] = useState('Askı'); const [iNeden, setINeden] = useState(''); const [iGer, setIGer] = useState(''); const [iYapilan, setIYapilan] = useState(''); const [iAcik, setIAcik] = useState(''); const [iTeslim, setITeslim] = useState(''); const [iDev, setIDev] = useState('');
   const [kNeden, setKNeden] = useState(''); const [beyan, setBeyan] = useState(false);
@@ -478,7 +490,8 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         {gKalem.startsWith('Bölge') && <><label htmlFor="gr-b">Bölge Kodu</label><input id="gr-b" value={gBolge} onChange={(e) => setGBolge(e.target.value)} /></>}
         {gKalem.includes('Yakın') && <><label htmlFor="gr-o">Ölçek Referansı</label><input id="gr-o" value={gOlcek} onChange={(e) => setGOlcek(e.target.value)} /></>}
         <label htmlFor="gr-f">Yüklenmiş Fotoğraf</label><select id="gr-f" value={gBelge} onChange={(e) => setGBelge(e.target.value)}><option value="">Seçiniz</option>{belgeler.map((b) => <option key={b.kimlik} value={b.kimlik}>{b.ad}</option>)}</select>
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, belge: gBelge, bolge: gBolge || undefined, olcek: gOlcek || undefined }))}>Fotoğrafı Kaydet</button>
+        {isKalemleri.length > 0 && <><label htmlFor="gr-i">İş Kalemi</label><select id="gr-i" value={gIs} onChange={(e) => setGIs(e.target.value)}><option value="">Bağlama</option>{isKalemleri.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.teklif_no} · {x.sira_no}. {x.aciklama}</option>)}</select></>}
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, belge: gBelge, bolge: gBolge || undefined, olcek: gOlcek || undefined, isKalemi: gIs || undefined }))}>Fotoğrafı Kaydet</button>
         {!gKalem.startsWith('Bölge') && <><label htmlFor="gr-n">Çekilemedi Nedeni</label><select required id="gr-n" value={gNeden} onChange={(e) => setGNeden(e.target.value)}><option value="">Seçiniz</option>{CEKILEMEDI.map((x) => <option key={x}>{x}</option>)}</select><button className="btn2" disabled={!gNeden} onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, cekilemedi: gNeden }))}>Çekilemedi</button></>}
       </Blok>
       {d.statu === 'Kapalı' && <YenidenAc id={id} yap={yap} />}

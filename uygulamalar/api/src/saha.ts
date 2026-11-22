@@ -263,7 +263,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   // YG-503, YG-1452: yönlendirmeli fotoğraf. Numara Dosya no-Gnnnn; çekilemeyen kare neden ister, hasar bölgesi karesi geçilemez.
   s.post('/dosya/:id/gorsel', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { belge?: string; asama?: string; kalem?: string; tur?: string; bolge?: string; zaman?: string; konum?: string; olcek?: string; bulgu?: string; aciklama?: string; cekilemedi?: string; cekilemediAciklama?: string; cihazZamani?: string; yerelSira?: number; cevrimDisi?: boolean };
+    const g = (i.body ?? {}) as { belge?: string; asama?: string; kalem?: string; tur?: string; bolge?: string; zaman?: string; konum?: string; olcek?: string; bulgu?: string; aciklama?: string; cekilemedi?: string; cekilemediAciklama?: string; cihazZamani?: string; yerelSira?: number; cevrimDisi?: boolean; isKalemi?: string };
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     const lst = async (k: string, v?: string) => Boolean((await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = $1 AND deger = $2`, [k, v ?? ''])).rowCount);
@@ -279,6 +279,11 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     }
     if (g.kalem === 'Bölge – Yakın Plan (Ölçekli)' && !g.olcek?.trim()) return y.code(400).send({ hata: 'Yakın planda ölçek referansı zorunludur.' });
     if (!g.belge || !UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.belge, id])).rowCount) return y.code(400).send({ hata: 'Fotoğrafı dosyaya yükleyip seçiniz.' });
+    // YG-381: iş kalemi dosyanın teklifinden seçilir; aynı görsel başka iş kaleminin kanıtı olamaz.
+    if (g.isKalemi) {
+      if (!UUID.test(g.isKalemi) || !(await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE k.kimlik = $1 AND f.dosya_ref = $2`, [g.isKalemi, id])).rowCount) return y.code(400).send({ hata: 'İş kalemi bu dosyanın teklifinden seçilir.' });
+      if ((await b.db.query(`SELECT 1 FROM gorsel_kanit WHERE belge_ref = $1 AND is_kalemi_ref IS NOT NULL AND is_kalemi_ref <> $2 LIMIT 1`, [g.belge, g.isKalemi])).rowCount) return y.code(409).send({ hata: 'Bu görsel başka bir iş kaleminin kanıtıdır; aynı görsel farklı işte kanıt olarak kullanılamaz.' });
+    }
     const rol = (await ekipRolleri(id, o.kullanici))[0] ?? null;
     // YG-503: çekim zamanı sunucu saatine göre doğrulanır. Cihaz gönderim anındaki saatini bildirir; fark 5 dakikayı aşarsa çekim zamanı farkla düzeltilir.
     const simdi = Date.now(); const yerelSira = Number.isInteger(g.yerelSira) ? g.yerelSira! : null;
@@ -296,8 +301,15 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const no = await altNumara(c, d.dosya_no, 'G', 4);
       const k = (await c.query(`INSERT INTO gorsel_kanit (gorsel_no, dosya_ref, belge_ref, cekim_zamani, ceken_ref, ceken_rol, konum, asama, cekim_kalemi, cekim_turu, bolge_kodu, olcek_referansi, bulgu_ref, aciklama, cihaz_saati_farki_sn, saat_dogrulamasi, yerel_sira_no, senkron_zamani) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING gorsel_no`,
         [no, id, g.belge, new Date(cekim), o.kullanici, rol, g.konum ?? null, g.asama, g.kalem, g.tur ?? null, g.bolge?.trim() || null, g.olcek?.trim() || null, g.bulgu || null, g.aciklama?.trim() || null, fark, dogrulama, yerelSira, g.cevrimDisi || yerelSira !== null ? new Date(simdi) : null])).rows[0];
+      if (g.isKalemi) await c.query(`UPDATE gorsel_kanit SET is_kalemi_ref = $2 WHERE gorsel_no = $1`, [k.gorsel_no, g.isKalemi]); // YG-381
       return { gorselNo: k.gorsel_no, saatDogrulamasi: dogrulama };
     });
+  });
+
+  s.get('/dosya/:id/is-kalemleri', oturumlu, async (i, y) => { // YG-381: fotoğrafın bağlanacağı iş kalemleri
+    const { id } = i.params as { id: string };
+    if (!(await getir(id, i.oturum!.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT k.kimlik, f.teklif_no, k.sira_no, k.aciklama FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE f.dosya_ref = $1 AND k.bedel_turu <> 'Masraf' ORDER BY f.teklif_no, k.sira_no`, [id])).rows;
   });
 
   // YG-134: numune devir zinciri. İlk devirde numune numarası (Dosya no-NMnnn) verilir; sonraki el değiştirmeler önceki devre bağlanır. Kayıt silinmez.
