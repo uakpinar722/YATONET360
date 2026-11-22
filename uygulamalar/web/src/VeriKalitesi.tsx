@@ -22,3 +22,27 @@ export function VeriKalitesi() {
     <div className="bolum">Açık Veri Hataları</div>{v.hatalar.length ? v.hatalar.map((h) => <div className={h.oncelik === 'Yüksek' ? 'soru hata' : 'soru'} key={h.kimlik}><span>{h.oncelik} · {h.kural_kod} {h.ad} · {h.aciklama} · {h.boyut} · Etki: {h.etki} · {tarih(h.ilk_gorulme)}</span>
       {v.sahipOldugu.length > 0 && <div className="tam"><label htmlFor={`vh-${h.kimlik}`}>İstisna Gerekçesi</label><input id={`vh-${h.kimlik}`} value={g[h.kimlik] ?? ''} onChange={(e) => setG({ ...g, [h.kimlik]: e.target.value })} /><button className="btn2 kucuk" onClick={() => is(istek(`/veri-hatasi/${h.kimlik}/istisna`, { gerekce: g[h.kimlik] }), 'İstisna kaydedildi.')}>İstisna</button></div>}</div>) : <div className="ozet bos">Açık veri hatası bulunmamaktadır.</div>}</details>;
 }
+
+/** YG-998: modül ve veri kümesi sahipliği rolle tanımlanır; görev değişiminde CEO veya GMY sahipliği, açık işleri ve istenirse izinleri devreder. */
+export function SahiplikDevri() {
+  type V = { yonetir: boolean; moduller: { modul: string; sahip: string }[]; veriKumeleri: { kod: string; ad: string; sahip: string }[]; devirler: { eski: string; yeni: string; gerekce: string; sayilar: Record<string, number>; zaman: string }[] };
+  const [v, setV] = useState<V | null>(null); const [m, setM] = useState('');
+  const [f, setF] = useState({ eskiRol: '', yeniRol: '', gerekce: '', izinler: false }); const [md, setMd] = useState({ modul: '', sahipRol: '' });
+  const yk = () => istek<V>('/sahiplik').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  return <details><summary>Sahiplik ve Devir</summary>{m && <div className="not" role="status">{m}</div>}
+    <div className="bolum">Modüller</div>{v.moduller.length === 0 && <div className="ozet bos">Modül sahipliği tanımlanmamıştır.</div>}{v.moduller.map((x) => <div className="ozet" key={x.modul}>{x.modul} · {x.sahip}</div>)}
+    <div className="bolum">Veri Kümeleri</div>{v.veriKumeleri.map((x) => <div className="ozet" key={x.kod}>{x.ad} · {x.sahip}</div>)}
+    {v.yonetir && <>
+      <label htmlFor="sh-m">Modül</label><input id="sh-m" value={md.modul} onChange={(e) => setMd({ ...md, modul: e.target.value })} />
+      <label htmlFor="sh-r">Sahip Rol</label><input id="sh-r" value={md.sahipRol} onChange={(e) => setMd({ ...md, sahipRol: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!md.modul.trim() || !md.sahipRol.trim()} onClick={() => void istek('/sahiplik/modul', md).then(() => { setM('Modül sahipliği kaydedildi.'); setMd({ modul: '', sahipRol: '' }); return yk(); }).catch((e) => setM(e.message))}>Sahipliği Kaydet</button>
+      <div className="bolum">Görev Değişiminde Devir</div>
+      <label htmlFor="sh-e">Eski Rol</label><input id="sh-e" value={f.eskiRol} onChange={(e) => setF({ ...f, eskiRol: e.target.value })} />
+      <label htmlFor="sh-y">Yeni Rol</label><input id="sh-y" value={f.yeniRol} onChange={(e) => setF({ ...f, yeniRol: e.target.value })} />
+      <label htmlFor="sh-g">Gerekçe</label><input id="sh-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+      <label className="kutu"><input type="checkbox" checked={f.izinler} onChange={(e) => setF({ ...f, izinler: e.target.checked })} /><span>Eski Rolün İzinlerini de Ekle</span></label>
+      <button className="btn2 kucuk" disabled={!f.eskiRol.trim() || !f.yeniRol.trim() || !f.gerekce.trim()} onClick={() => void istek<{ sayilar: Record<string, number> }>('/sahiplik/devir', f).then((r) => { setM(`Devredildi: ${Object.entries(r.sayilar).map(([k, n]) => `${k} ${n}`).join(', ')}`); setF({ eskiRol: '', yeniRol: '', gerekce: '', izinler: false }); return yk(); }).catch((e) => setM(e.message))}>Devret</button></>}
+    {v.devirler.map((x, i) => <div className="ozet" key={i}>{tarih(x.zaman)} · {x.eski} → {x.yeni} · {x.gerekce}</div>)}</details>;
+}

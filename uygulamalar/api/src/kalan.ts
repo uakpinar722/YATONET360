@@ -698,7 +698,81 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const maske = (h: string) => h.includes('@') ? h.replace(/^(.).*(@.*)$/, '$1***$2') : h.replace(/.(?=.{3})/g, '*');
     const parca = (d: string) => (d === 'Bekliyor' ? 'Bekliyor' : d === 'Başarısız' ? 'Başarısız' : 'Tamamlandı');
     const satirlar = r.map((x) => ({ kanal: x.kanal, konu: x.konu, hedef: maske(x.hedef), durum: x.durum, parca: parca(x.durum), deneme: x.deneme, plan: x.plan_zamani, gonderim: x.gonderim_zamani }));
-    return { ozet: { tamamlandi: satirlar.filter((x) => x.parca === 'Tamamlandı').length, bekliyor: satirlar.filter((x) => x.parca === 'Bekliyor').length, basarisiz: satirlar.filter((x) => x.parca === 'Başarısız').length }, satirlar };
+    // YG-1308: dosyanın neden beklediği (karantinadaki entegrasyon kaydı) görünür.
+    const entegrasyonBeklemeleri = (await b.db.query(`SELECT e.ad, k.beklenen_sonuc, k.hata, k.olusturma_zamani FROM entegrasyon_kaydi k JOIN entegrasyon_tanimi e ON e.kimlik = k.entegrasyon_ref WHERE k.dosya_ref = $1::uuid AND k.durum = 'Karantina' ORDER BY k.olusturma_zamani`, [id])).rows;
+    return { ozet: { tamamlandi: satirlar.filter((x) => x.parca === 'Tamamlandı').length, bekliyor: satirlar.filter((x) => x.parca === 'Bekliyor').length, basarisiz: satirlar.filter((x) => x.parca === 'Başarısız').length }, satirlar, entegrasyonBeklemeleri };
+  });
+
+  // YG-995: dosya bazlı süreli ek erişim; dosya ekibi talep eder, Operasyon Müdürü onaylar; geniş rol verilmez.
+  s.get('/dosya/:id/ek-yetki', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT e.kimlik, h.ad_soyad, e.gerekce, e.bitis, CASE WHEN e.durum = 'Aktif' AND e.bitis <= now() THEN 'Süresi Doldu' ELSE e.durum END durum FROM dosya_ek_yetki e JOIN kullanici_hesabi h ON h.kimlik = e.kullanici_ref WHERE e.dosya_ref = $1 ORDER BY e.olusturma_zamani DESC`, [id])).rows;
+  });
+  s.post('/dosya/:id/ek-yetki', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kullanici?: string; gerekce?: string; bitis?: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const bitis = g.bitis ? new Date(g.bitis) : null;
+    if (!g.kullanici || !g.gerekce?.trim() || !bitis || Number.isNaN(bitis.getTime()) || bitis <= new Date()) return y.code(400).send({ hata: 'Kullanıcı, gerekçe ve ileri bir bitiş zamanı zorunludur.' });
+    if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif'`, [g.kullanici])).rowCount) return y.code(400).send({ hata: 'Ek erişim yalnız aktif LGM personeline verilir.' });
+    const r = (await b.db.query(`INSERT INTO dosya_ek_yetki (dosya_ref, kullanici_ref, gerekce, bitis, talep_eden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [id, g.kullanici, g.gerekce.trim(), bitis, o.kullanici])).rows[0].kimlik;
+    const no = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0].dosya_no;
+    await kartAc(b.db, { tur: 'Dosya Ek Erişim Onayı', baslik: `${no} · Süreli Ek Erişim`, ozet: g.gerekce.trim().slice(0, 200), hazirlayan: o.kullanici, ayrik: [g.kullanici], zincir: [(await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Operasyon Müdürü'`)).rows[0].kimlik], nesneTuru: 'Dosya Ek Yetki', nesneKimligi: r });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dosya Ek Erişim Talebi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { kullanici: g.kullanici, bitis }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r };
+  });
+
+  // YG-1071: tarafın dosyadaki işlevsel görevleri dayanak ve sınırla; dosya ekibi kaydeder, görev gerekçeyle sonlandırılır.
+  const GOREVLER = ['Talebi İleten', 'Teknik Muhatap', 'Sözleşme İmzalayan', 'Kapsam Onaylayan', 'Mali Taahhüt Veren', 'Ödeme Yapan', 'Yatı Teslim Alan'];
+  s.get('/dosya/:id/taraf-gorevleri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return { gorevler: GOREVLER, taraflar: (await b.db.query(`SELECT kimlik, taraf_rolu, kisi_adi_soyadi FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif ORDER BY taraf_rolu`, [id])).rows,
+      kayitlar: (await b.db.query(`SELECT g.kimlik, g.gorev, g.dayanak, g.sinir, t.kisi_adi_soyadi, t.taraf_rolu FROM dosya_taraf_gorevi g JOIN dosya_tarafi t ON t.kimlik = g.dosya_tarafi_ref WHERE t.dosya_ref = $1 AND g.aktif ORDER BY g.gorev`, [id])).rows };
+  });
+  s.post('/dosya/:id/taraf-gorevi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { taraf?: string; gorev?: string; dayanak?: string; sinir?: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!g.taraf || !UUID.test(g.taraf) || !GOREVLER.includes(g.gorev ?? '') || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Taraf, görev ve yetki dayanağı zorunludur.' });
+    if (!(await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE kimlik = $1 AND dosya_ref = $2 AND aktif`, [g.taraf, id])).rowCount) return y.code(400).send({ hata: 'Taraf bu dosyaya ait değildir.' });
+    const r = await b.db.query(`INSERT INTO dosya_taraf_gorevi (dosya_tarafi_ref, gorev, dayanak, sinir, kaydeden_ref) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING kimlik`, [g.taraf, g.gorev, g.dayanak.trim(), g.sinir?.trim() || null, o.kullanici]);
+    if (!r.rowCount) return y.code(409).send({ hata: 'Bu görev tarafa zaten kayıtlıdır.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Taraf Görevi Kaydedildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { gorev: g.gorev, dayanak: g.dayanak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.rows[0].kimlik };
+  });
+  s.post('/taraf-gorevi/:id/sonlandir', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerekce?: string };
+    if (!UUID.test(id) || o.grup !== 'LGM İç Rolü') return yok(y);
+    const d = (await b.db.query(`SELECT t.dosya_ref FROM dosya_taraf_gorevi g JOIN dosya_tarafi t ON t.kimlik = g.dosya_tarafi_ref WHERE g.kimlik = $1 AND g.aktif`, [id])).rows[0];
+    if (!d || !(await dosyaErisimi(b.db, o.kullanici, d.dosya_ref))) return yok(y);
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
+    await b.db.query(`UPDATE dosya_taraf_gorevi SET aktif = false WHERE kimlik = $1`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Taraf Görevi Sonlandırıldı', nesneTuru: 'Dosya', nesneKimligi: d.dosya_ref, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
+  // YG-539: tek görünüm. Açık iş, sahibi ve hedefi; bekleyen onayın makamı ve o makamdaki kişiler; durma nedeni (beklemede işareti,
+  // entegrasyon karantinası); eksik yat bilgisi ve zorunlu form; engelleyen işler bağımlılık olarak; sonraki işlem ilk engel, yoksa en yakın hedefli iştir.
+  s.get('/dosya/:id/durum-ozeti', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const d = (await b.db.query(`SELECT kimlik, statu, asama, oncelik, dosya_niteligi, yat_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (!d) return yok(y);
+    const { yapilacaklar, yatEksikleri } = await import('./dosya.js'); const { zorunluFormlar } = await import('./zorunlu_form.js');
+    const isler = await yapilacaklar(b.db, d);
+    const onaylar = (await b.db.query(`SELECT k.baslik, r.rol_adi makam, k.son_zaman, (SELECT string_agg(h.ad_soyad, ', ') FROM rol_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.rol_ref = r.kimlik AND a.atama_durumu = 'Aktif') kimde
+      FROM is_karti k JOIN rol r ON r.kimlik = k.zincir[k.kademe + 1] WHERE k.durum = 'Bekliyor' AND k.kategori = 'onay' AND (k.nesne_kimligi = $1::text
+        OR k.nesne_kimligi IN (SELECT kimlik::text FROM fiyat_teklifi WHERE dosya_ref = $1::uuid UNION SELECT kimlik::text FROM is_emri WHERE dosya_ref = $1::uuid UNION SELECT kimlik::text FROM hakedis WHERE dosya_ref = $1::uuid))
+      ORDER BY k.son_zaman NULLS LAST`, [id])).rows;
+    const durma = [
+      ...(await b.db.query(`SELECT 'Beklemede: ' || neden || coalesce(' (hedef ' || to_char(hedef_tarih, 'DD.MM.YYYY') || ')', '') n FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [id])).rows.map((r) => r.n as string),
+      ...(await b.db.query(`SELECT 'Entegrasyon bekleniyor: ' || e.ad || ' · ' || k.beklenen_sonuc n FROM entegrasyon_kaydi k JOIN entegrasyon_tanimi e ON e.kimlik = k.entegrasyon_ref WHERE k.dosya_ref = $1 AND k.durum = 'Karantina'`, [id])).rows.map((r) => r.n as string),
+      ...(await b.db.query(`SELECT 'Açık konu: ' || konu_no || ' · ' || baslik n FROM acik_konu WHERE dosya_ref = $1 AND statu IN ('Açık', 'İşlemde') AND hedef_tarih < current_date`, [id])).rows.map((r) => r.n as string),
+    ];
+    const eksik = [...(d.yat_ref ? (await yatEksikleri(b.db, d.yat_ref)).map((x) => `Yat bilgisi: ${x}`) : []), ...(await zorunluFormlar(b.db, id)).filter((f) => !f.var && !f.istisna).map((f) => `Form: ${f.kod} ${f.ad}`)];
+    const bagimliliklar = isler.filter((x) => x.engel).map((x) => x.is);
+    const sirali = [...isler].sort((a, c) => Number(Boolean(c.engel)) - Number(Boolean(a.engel)) || (a.hedef ?? '9').localeCompare(c.hedef ?? '9'));
+    const sonraki = sirali[0] ?? (onaylar[0] ? { is: `Onay: ${onaylar[0].baslik}`, sorumlu: onaylar[0].makam, hedef: onaylar[0].son_zaman } : null);
+    return { isler, onaylar, durma, eksik, bagimliliklar, sonraki };
   });
 
   // YG-1660: Firma Kapsama Raporu ve aday raporu ekranda da görülür.
@@ -738,7 +812,10 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
   const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_|hizmet_)/;
-  s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT kod, deger, aciklama FROM sistem_parametresi WHERE kod NOT IN ('fiyat_katsayisi', 'ara_kademesiz_donem') ORDER BY kod`)).rows : yok(y));
+  // YG-1367: katalogda sahip (öneren rol, YG-853) ve onaylayan (GMY uygun görüşüyle CEO) ile yürürlük tarihi ve son değişiklik gösterilir.
+  s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT p.kod, p.deger, p.aciklama, to_char(p.gecerlilik, 'DD.MM.YYYY') yururluk,
+      (SELECT to_char(g.zaman AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY') FROM parametre_gecmisi g WHERE g.kod = p.kod ORDER BY g.zaman DESC LIMIT 1) son_degisiklik
+    FROM sistem_parametresi p WHERE p.kod NOT IN ('fiyat_katsayisi', 'ara_kademesiz_donem') ORDER BY p.kod`)).rows.map((r) => ({ ...r, sahip: HIZMET_PARAMETRESI.test(r.kod) ? 'Teknik ve Operasyon Direktörü' : TID, onaylayan: 'Genel Müdür Yardımcısı uygun görüşüyle CEO' })) : yok(y));
   // YG-176 (KS-8): Ara Kademesiz Dönemi yalnız CEO açar ve kapatır; her değişiklik gerekçeyle geçmişe yazılır.
   s.get('/ara-kademesiz-donem', oturumlu, async (i, y) => {
     if (!(await parametreci(i.oturum!.kullanici))) return yok(y);
@@ -813,4 +890,11 @@ kapanisKaydet('Parametre Değişikliği', async (c, k, karar, yapan) => { // YG-
   await c.query(`INSERT INTO parametre_gecmisi (kod, eski, yeni, gerekce, giren_ref) VALUES ($1,$2,$3,$4,$5)`, [o.kod, o.eski, o.yeni, o.gerekce, yapan]);
   await c.query(`UPDATE parametre_onerisi SET durum = 'Onaylandı' WHERE kimlik = $1`, [o.kimlik]);
   if (String(o.kod).startsWith('kimlik_')) await (await import('./ayarlar.js')).kuralYukle(c); // YG-1712: kimlik süreleri hemen geçerli olur
+});
+
+// YG-995: onay sonucu ek erişime işlenir.
+kapanisKaydet('Dosya Ek Erişim Onayı', async (c, k, karar, yapan) => {
+  if (!k.nesne_kimligi) return;
+  if (karar === 'Onayla') await c.query(`UPDATE dosya_ek_yetki SET durum = 'Aktif', onaylayan_ref = $2 WHERE kimlik = $1 AND durum = 'Onayda'`, [k.nesne_kimligi, yapan]);
+  else if (karar === 'Reddet') await c.query(`UPDATE dosya_ek_yetki SET durum = 'Reddedildi', onaylayan_ref = $2 WHERE kimlik = $1 AND durum = 'Onayda'`, [k.nesne_kimligi, yapan]);
 });

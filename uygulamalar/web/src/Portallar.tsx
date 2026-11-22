@@ -334,6 +334,7 @@ export function KurumHesap({ baslik }: { baslik: string }) {
       </Blok>}
       {k.kayit_rolu === 'Çözüm Ortağı' && <FirmaKarne yap={yap} />}
       {k.kayit_rolu === 'Çözüm Ortağı' && <FirmaPersoneli />}
+      <FirmaKullaniciIslevleri />
       {(v.itirazEdilebilir || v.itiraz) && <Blok baslik="Kabul Kararı İtirazı">
         {v.itiraz && <div>İtiraz Durumu: {v.itiraz.durum}</div>}
         {v.itirazEdilebilir && <><label htmlFor="it-g">İtiraz Gerekçesi</label><input id="it-g" value={itz} onChange={(e) => setItz(e.target.value)} /><button className="btn2" disabled={!itz.trim()} onClick={() => void yap(() => istek('/kurum/kabul-itiraz', { gerekce: itz }))}>İtiraz Et</button></>}
@@ -509,4 +510,16 @@ export function SahaOryantasyonu() {
       <div className="not" style={{ whiteSpace: 'pre-wrap' }}>{d.icerik}</div>
       {p.filter((x) => !d.verilenler.includes(x.kimlik)).map((x) => <label key={x.kimlik}><input type="checkbox" checked={(sec[d.kimlik] ?? []).includes(x.kimlik)} onChange={(e) => setSec({ ...sec, [d.kimlik]: e.target.checked ? [...(sec[d.kimlik] ?? []), x.kimlik] : (sec[d.kimlik] ?? []).filter((z) => z !== x.kimlik) })} /> {x.ad_soyad}</label>)}
       <button className="btn2 kucuk" disabled={!(sec[d.kimlik] ?? []).length} onClick={() => void istek(`/firma-portal/oryantasyon/${d.kimlik}`, { personel: sec[d.kimlik] }).then(() => { setM('Oryantasyon kaydedildi.'); setSec({ ...sec, [d.kimlik]: [] }); return yk(); }).catch((e) => setM(e.message))}>Oryantasyon Verildi</button></details>)}</>;
+}
+
+/** YG-994: kurum yöneticisi kullanıcıların işlevini (Teklif ve Mali, Saha, Kalite, Yönetici) belirler; işlem bu işleve göre sınırlanır. */
+export function FirmaKullaniciIslevleri() {
+  const [v, setV] = useState<{ islevler: string[]; kullanicilar: { kimlik: string; ad_soyad: string; islevler: string[] }[] } | null>(null); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/firma-portal/kullanicilar').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const degis = (k: { kimlik: string; islevler: string[] }, x: string, acik: boolean) => void istek(`/firma-portal/kullanici/${k.kimlik}/islev`, { islevler: acik ? [...k.islevler, x] : k.islevler.filter((z) => z !== x) }).then(() => { setM('Kullanıcı işlevi güncellendi.'); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kullanıcı İşlevleri</div>{m && <div className="not" role="status">{m}</div>}
+    {v.kullanicilar.map((k) => <div className="ozet" key={k.kimlik}><b>{k.ad_soyad}</b>
+      <div className="kanallar">{v.islevler.map((x) => <label key={x} className="kutu"><input type="checkbox" checked={k.islevler.includes(x)} onChange={(e) => degis(k, x, e.target.checked)} /><span>{x}</span></label>)}</div></div>)}</>;
 }

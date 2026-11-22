@@ -129,14 +129,26 @@ export function erisimYollari(s: FastifyInstance, b: Baglam) {
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Rol Atandı', nesneTuru: 'erisim_talebi', nesneKimligi: id, yeni: { kullanici: t.kullanici_ref, rol: t.rol_ref, bitis: t.sure_sonu }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
-    // YG-1042: işlem sonrası gerçek yetki okunur ve kayda geçer.
+    // YG-1042: işlem sonrası gerçek yetki okunur ve onay kaydıyla karşılaştırılır: rol ataması, kullanıcı grubunun role uygunluğu, onaylı rolün
+    // izinlerinin açılması ve onaylı rollerden gelmeyen yönetim, dışa aktarım veya ayrıcalıklı izin. Uyuşmazlıkta Bilgi İşlem Müdürüne görev açılır.
     const t = (await b.db.query(`SELECT kullanici_ref, rol_ref FROM erisim_talebi WHERE kimlik = $1`, [id])).rows[0];
     const gercek = await b.db.query(
       `SELECT 1 FROM rol_atamasi WHERE kullanici_ref = $1 AND rol_ref = $2 AND atama_durumu = 'Aktif' AND baslangic_tarihi <= current_date AND (bitis_tarihi IS NULL OR bitis_tarihi >= current_date)`, [t.kullanici_ref, t.rol_ref]);
-    const dogru = Boolean(gercek.rowCount);
-    await b.db.query(`UPDATE erisim_talebi SET izin_dogrulandi = $2 WHERE kimlik = $1`, [id, dogru]);
+    const ri = (await b.db.query(`SELECT r.rol_adi, r.kullanici_gruplari, r.ayricalikli_rol, h.kullanici_grubu FROM rol r, kullanici_hesabi h WHERE r.kimlik = $1 AND h.kimlik = $2`, [t.rol_ref, t.kullanici_ref])).rows[0];
+    const beklenen = (await b.db.query(`SELECT izin FROM rol_izni WHERE rol_ref = $1`, [t.rol_ref])).rows.map((r) => r.izin as string);
+    const onayli = new Set((await b.db.query(`SELECT z.izin FROM rol_izni z JOIN rol_atamasi a ON a.rol_ref = z.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'
+      UNION SELECT z.izin FROM rol_izni z JOIN vekalet v ON v.rol_ref = z.rol_ref WHERE v.vekil_ref = $1 AND v.durum = 'Aktif'`, [t.kullanici_ref])).rows.map((r) => r.izin as string));
+    const simdiki = await kullaniciIzinleri(b.db, t.kullanici_ref);
+    const eksik = beklenen.filter((x) => !simdiki.includes(x));
+    const dersBekliyor = Boolean(ri.ayricalikli_rol) && eksik.length > 0; // YG-942: ayrıcalıklı rolün izni zorunlu ders beyanına kadar kapalıdır
+    const fazla = simdiki.filter((x) => !onayli.has(x) && /(yonet|yönet|disa|dışa|aktar|uretim|üretim|ayricalik|ayrıcalık)/i.test(x));
+    const grupUyumlu = String(ri.kullanici_gruplari).split(/\s*[,;]\s*/).includes(ri.kullanici_grubu);
+    const karsilastirma = { rolAtandi: Boolean(gercek.rowCount), grupUyumlu, eksikIzin: eksik, dersBekliyor, onaysizAyricalikliIzin: fazla };
+    const dogru = Boolean(gercek.rowCount) && grupUyumlu && (eksik.length === 0 || dersBekliyor) && fazla.length === 0;
+    await b.db.query(`UPDATE erisim_talebi SET izin_dogrulandi = $2, izin_karsilastirma = $3 WHERE kimlik = $1`, [id, dogru, JSON.stringify(karsilastirma)]);
+    if (!dogru) await kartAc(b.db, { tur: 'Erişim İzin Uyuşmazlığı', kategori: 'islem', baslik: `İzin Uyuşmazlığı · ${id}`, ozet: `${ri.rol_adi}: ${[!karsilastirma.rolAtandi && 'rol ataması yok', !grupUyumlu && 'kullanıcı grubu role uygun değil', eksik.length && !dersBekliyor && `açılmayan izin: ${eksik.join(', ')}`, fazla.length && `onaysız izin: ${fazla.join(', ')}`].filter(Boolean).join(' · ')}`.slice(0, 300), oncelik: 'Yüksek', sahipRol: (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Bilgi İşlem Müdürü'`)).rows[0]?.kimlik, nesneTuru: 'Erişim Talebi', nesneKimligi: id });
     await b.db.query(`UPDATE rol_atamasi SET izin_dogrulandi = $2 WHERE erisim_talebi_ref = $1`, [id, dogru]);
-    return { izinDogrulandi: dogru, izinler: await kullaniciIzinleri(b.db, t.kullanici_ref) };
+    return { izinDogrulandi: dogru, karsilastirma, izinler: simdiki };
   });
 }
 export { onayMakami };

@@ -145,7 +145,7 @@ function ZamanlanmisIsler() {
 function Yedekler() {
   type V = { yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null; olay_no: string | null }[]; testler: { tur: string; sonuc: string; kabul: string | null; zaman: string }[] };
   const [v, setV] = useState<V | null>(null); const [m, setM] = useState('');
-  const [f, setF] = useState({ tur: 'Örnek Kayıt', kurtarma: '', kayip: '', kayitTutarli: false, belge: false, yetki: false, not: '' });
+  const [f, setF] = useState({ tur: 'Örnek Kayıt', surecSinifi: 'Kritik', iliski: false, butunluk: false, entegrasyon: false, ornekAkis: false, kurtarma: '', kayip: '', kayitTutarli: false, belge: false, yetki: false, not: '' });
   const yk = () => istek<V>('/yedekler').then(setV).catch(() => {});
   useEffect(() => { void yk(); }, []);
   if (!v) return null;
@@ -162,6 +162,11 @@ function Yedekler() {
       <label className="kutu"><input type="checkbox" checked={f.kayitTutarli} onChange={(e) => setF({ ...f, kayitTutarli: e.target.checked })} /><span>Kayıt Sayıları Tutarlı</span></label>
       <label className="kutu"><input type="checkbox" checked={f.belge} onChange={(e) => setF({ ...f, belge: e.target.checked })} /><span>Belgelere Erişiliyor</span></label>
       <label className="kutu"><input type="checkbox" checked={f.yetki} onChange={(e) => setF({ ...f, yetki: e.target.checked })} /><span>Yetkiler Tutarlı</span></label>
+      <label className="kutu"><input type="checkbox" checked={f.iliski} onChange={(e) => setF({ ...f, iliski: e.target.checked })} /><span>İlişkiler Tutarlı</span></label>
+      <label className="kutu"><input type="checkbox" checked={f.butunluk} onChange={(e) => setF({ ...f, butunluk: e.target.checked })} /><span>Bütünlük Özeti Uyuşuyor</span></label>
+      <label className="kutu"><input type="checkbox" checked={f.entegrasyon} onChange={(e) => setF({ ...f, entegrasyon: e.target.checked })} /><span>Entegrasyonlar Çalışıyor</span></label>
+      <label className="kutu"><input type="checkbox" checked={f.ornekAkis} onChange={(e) => setF({ ...f, ornekAkis: e.target.checked })} /><span>Örnek İş Akışı Başarılı</span></label>
+      <label htmlFor="gy-s">Süreç Sınıfı</label><select id="gy-s" value={f.surecSinifi} onChange={(e) => setF({ ...f, surecSinifi: e.target.value })}>{['Kritik', 'Önemli', 'Destek'].map((d) => <option key={d}>{d}</option>)}</select>
       <label htmlFor="gy-n">Not</label><input id="gy-n" value={f.not} onChange={(e) => setF({ ...f, not: e.target.value })} />
       <button className="btn2 kucuk" disabled={f.kurtarma === '' || f.kayip === ''} onClick={() => is('/geri-yukleme-testi', { ...f, kurtarma: Number(f.kurtarma), kayip: Number(f.kayip) }, (r) => `Test kaydedildi: ${r.sonuc}${f.tur === 'Örnek Kayıt' ? '' : ' · onay kartı açıldı'}`)}>Testi Kaydet</button>
     </div></>;

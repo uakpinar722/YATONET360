@@ -42,7 +42,7 @@ import { OnMuhasebeRaporlari, SatisGorusmeleri, YonetimDegerlendirmesi } from '.
 import { SistemIzleme } from './SistemIzleme';
 import { Kapasite } from './Kapasite';
 import { EntegrasyonEnvanteri } from './EntegrasyonEnvanteri';
-import { VeriKalitesi } from './VeriKalitesi';
+import { SahiplikDevri, VeriKalitesi } from './VeriKalitesi';
 import { SureklilikOrtam } from './SureklilikOrtam';
 import { KartelaArama } from './KartelaArama';
 import { HaberDuyurusu, IstifaBildirimi, IzinBakiyesi, OzelAracOnayi } from './PersonelTalepleri';
@@ -1044,6 +1044,7 @@ export function IdariIslemler() {
       <Kapasite />
       <EntegrasyonEnvanteri />
       <VeriKalitesi />
+      <SahiplikDevri />
       <SureklilikOrtam />
       <IsletmeGideri />
       <IslemKatalogu />

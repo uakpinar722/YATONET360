@@ -46,7 +46,29 @@ async function kararUygula(c: Db, k: { atama_ref: string; kullanici_ref: string 
   if (karar === 'Askıya Al' || karar === 'Kapat') {
     await c.query(`UPDATE rol_atamasi SET atama_durumu = $2 WHERE kimlik = $1`, [k.atama_ref, karar === 'Kapat' ? 'Kapalı' : 'Askıda']);
     await c.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Yetki değişikliği' WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [k.kullanici_ref]); // YG-1048
+    await kaldirmaDogrula(c, k.atama_ref);
   }
+}
+
+/**
+ * YG-1048: kaldırılan rolün erişim vermeye devam etmediği doğrulanır: atama etkin değil, aynı role vekâlet yolu yok, yalnız bu rolden gelen
+ * izinler kişide kalmamış, açık oturum yok. Ayrıcalıklı rolde uygulama dışı sistemlerin (veritabanı, sunucu, uzak bağlantı) kapatılması görevle istenir.
+ * Sonuç inceleme kalemine yazılır; aykırılıkta Bilgi İşlem Müdürüne görev açılır.
+ */
+export async function kaldirmaDogrula(c: Db, atama: string) {
+  const a = (await c.query(`SELECT a.kullanici_ref, a.rol_ref, a.atama_durumu, r.rol_adi, r.ayricalikli_rol FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kimlik = $1`, [atama])).rows[0];
+  if (!a) return null;
+  const rolEtkin = a.atama_durumu === 'Aktif';
+  const vekalet = Boolean((await c.query(`SELECT 1 FROM vekalet WHERE vekil_ref = $1 AND rol_ref = $2 AND durum = 'Aktif' AND bitis_tarihi >= current_date`, [a.kullanici_ref, a.rol_ref])).rowCount);
+  const kalan = (await c.query(`SELECT z.izin FROM rol_izni z WHERE z.rol_ref = $2 AND EXISTS (SELECT 1 FROM rol_izni y JOIN rol_atamasi x ON x.rol_ref = y.rol_ref WHERE x.kullanici_ref = $1 AND x.atama_durumu = 'Aktif' AND x.rol_ref <> $2 AND y.izin = z.izin) IS FALSE
+      AND EXISTS (SELECT 1 FROM rol_izni y JOIN rol_atamasi x ON x.rol_ref = y.rol_ref WHERE x.kullanici_ref = $1 AND x.atama_durumu = 'Aktif' AND y.izin = z.izin)`, [a.kullanici_ref, a.rol_ref])).rows.map((r) => r.izin as string);
+  const oturum = Number((await c.query(`SELECT count(*) n FROM oturum WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [a.kullanici_ref])).rows[0].n);
+  const sonuc = { rolEtkin, vekaletYolu: vekalet, kalanIzin: kalan, acikOturum: oturum, ayriSistemKontrolu: Boolean(a.ayricalikli_rol), zaman: new Date().toISOString() };
+  await c.query(`UPDATE erisim_inceleme_kalemi SET kaldirma_dogrulama = $2 WHERE atama_ref = $1`, [atama, JSON.stringify(sonuc)]);
+  const bim = (await c.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Bilgi İşlem Müdürü'`)).rows[0]?.kimlik;
+  if (rolEtkin || vekalet || kalan.length || oturum) await kartAc(c, { tur: 'Rol Kaldırma Doğrulaması', kategori: 'islem', baslik: `Erişim Sürüyor · ${a.rol_adi}`, ozet: [rolEtkin && 'rol ataması etkin', vekalet && 'aynı role vekâlet sürüyor', kalan.length && `kalan izin: ${kalan.join(', ')}`, oturum && `${oturum} açık oturum`].filter(Boolean).join(' · '), oncelik: 'Yüksek', sahipRol: bim, nesneTuru: 'Rol Ataması', nesneKimligi: atama });
+  if (a.ayricalikli_rol) await kartAc(c, { tur: 'Ayrı Sistem Erişimi Kontrolü', kategori: 'islem', baslik: `Ayrı Sistem Erişimini Kapat · ${a.rol_adi}`, ozet: 'Ayrıcalıklı rol kaldırıldı. Veritabanı, sunucu, uzak bağlantı ve acil erişim sırlarının kapatıldığını doğrulayınız.', oncelik: 'Yüksek', sahipRol: bim, nesneTuru: 'Rol Ataması', nesneKimligi: atama });
+  return sonuc;
 }
 async function kapanisKontrol(c: Db, inceleme: string) {
   if (Number((await c.query(`SELECT count(*) n FROM erisim_inceleme_kalemi WHERE inceleme_ref = $1 AND karar IS NULL`, [inceleme])).rows[0].n)) return;

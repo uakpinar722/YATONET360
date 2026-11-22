@@ -151,6 +151,57 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect(await disMetinEngeli(o.db, { eposta: 'baska.taraf@ornek.com', konu: 'Bilgi', metin: `${d2.dosyaNo} durumu` })).toBeNull();
     expect(await disMetinEngeli(o.db, { eposta: 'yabanci@ornek.com', konu: 'Bilgi', metin: 'LGM-2099-01-0001 durumu' })).toBeNull();
   });
+  it('modül sahipliği rolle; devirde sahiplik, görev, onay ve izin yeni role geçer (YG998-DEVIR)', async () => {
+    const opm = await o.gir('opm');
+    expect((await o.ist('POST', '/api/sahiplik/devir', opm, { eskiRol: 'Operasyon Müdürü', yeniRol: 'Dosya Sorumlusu', gerekce: 'x' })).statusCode).toBe(404);
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Genel Müdür Yardımcısı'`, [o.K.bim]);
+    const g = await o.gir('bim');
+    expect((await o.ist('POST', '/api/sahiplik/modul', g, { modul: 'Veri Kalitesi', sahipRol: 'Operasyon Müdürü' })).statusCode).toBe(200);
+    const rid = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik;
+    const opmR = await rid('Operasyon Müdürü'); const kmR = await rid('Kalite Müdürü');
+    const kart = await (await import('../src/is_motoru.js')).kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: 'Rol Görevi', sahipRol: opmR });
+    const r = await o.ist('POST', '/api/sahiplik/devir', g, { eskiRol: 'Operasyon Müdürü', yeniRol: 'Kalite Müdürü', gerekce: 'Görev değişikliği', izinler: true });
+    expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().sayilar).toMatchObject({ modul: 1, gorev: expect.any(Number) });
+    expect((await o.sup.query(`SELECT sahip_rol_ref FROM is_karti WHERE kimlik = $1`, [kart])).rows[0].sahip_rol_ref).toBe(kmR);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM veri_kumesi WHERE sahip_rol = 'Operasyon Müdürü'`)).rows[0].n).toBe(0);
+    expect((await o.ist('GET', '/api/sahiplik', g)).json().moduller).toContainEqual({ modul: 'Veri Kalitesi', sahip: 'Kalite Müdürü' });
+  });
+  it('dosya durum özeti: açık iş, onayın kimde olduğu, bekleme nedeni, eksikler ve sonraki işlem (YG539-OZET)', async () => {
+    const d = await o.dosyaAc(); const opm = await o.gir('opm');
+    await o.sup.query(`INSERT INTO beklemede_isareti (dosya_ref, neden, sorumlu_ref, hedef_tarih, durum_mesaji, sayac_durur, olusturan_ref) VALUES ($1, 'Yat sahibi kararı', $2, current_date + 5, 'Karar bekleniyor', false, $2)`, [d.kimlik, o.K.opm]);
+    const r = await o.ist('GET', `/api/dosya/${d.kimlik}/durum-ozeti`, opm); expect(r.statusCode, r.body).toBe(200);
+    const v = r.json();
+    expect(v.durma.some((x: string) => x.startsWith('Beklemede: Yat sahibi kararı'))).toBe(true);
+    expect(Array.isArray(v.isler) && Array.isArray(v.onaylar) && Array.isArray(v.eksik)).toBe(true);
+    if (v.isler.length) expect(v.sonraki).not.toBeNull();
+    expect((await o.ist('GET', '/api/dosya/00000000-0000-4000-8000-000000000000/durum-ozeti', opm)).statusCode).toBe(404);
+  });
+  it('taraf görevleri dayanak ve sınırla; bir kişi birden çok görev taşır; talebi ileten kendiliğinden (YG1071-GOREV)', async () => {
+    const d = await o.dosyaAc(); const opm = await o.gir('opm');
+    const v = (await o.ist('GET', `/api/dosya/${d.kimlik}/taraf-gorevleri`, opm)).json();
+    const t = v.taraflar[0].kimlik;
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/taraf-gorevi`, opm, { taraf: t, gorev: 'Ödeme Yapan' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/taraf-gorevi`, opm, { taraf: t, gorev: 'Ödeme Yapan', dayanak: 'Şirket yetki belgesi', sinir: '10.000,00 EUR' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/taraf-gorevi`, opm, { taraf: t, gorev: 'Yatı Teslim Alan', dayanak: 'Vekâletname' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/taraf-gorevi`, opm, { taraf: t, gorev: 'Ödeme Yapan', dayanak: 'x' })).statusCode).toBe(409);
+    const k = (await o.ist('GET', `/api/dosya/${d.kimlik}/taraf-gorevleri`, opm)).json().kayitlar.map((x: { gorev: string }) => x.gorev);
+    expect(k).toEqual(expect.arrayContaining(['Ödeme Yapan', 'Yatı Teslim Alan']));
+  });
+  it('dosya bazlı süreli ek erişim Operasyon Müdürü onayıyla açılır, süre bitince düşer (YG995-EKYETKI)', async () => {
+    const d = await o.dosyaAc(); const ds = await o.gir('ds'); const { dosyaErisimi } = await import('../src/dosya.js');
+    const u = (await o.sup.query(`INSERT INTO kullanici_hesabi (ad_soyad, e_posta, hesap_turu, kullanici_grubu, kullanici_adi, dogrulama_yontemi) VALUES ('Ek Yetki Deneme', 'ek.yetki@ornek.com', 'Personel', 'LGM İç Rolü', 'ek.yetki', 'SMS kodu') RETURNING kimlik`)).rows[0].kimlik as string;
+    await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2)`, [d.kimlik, o.K.ds]);
+    expect(await dosyaErisimi(o.db, u, d.kimlik)).toBe(false);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ek-yetki`, ds, { kullanici: u, gerekce: 'Denetim örneklemi', bitis: '2000-01-01' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/ek-yetki`, ds, { kullanici: u, gerekce: 'Denetim örneklemi', bitis: new Date(Date.now() + 86_400_000).toISOString() }); expect(r.statusCode, r.body).toBe(200);
+    expect(await dosyaErisimi(o.db, u, d.kimlik)).toBe(false); // onaylanmadan açılmaz
+    const kart = await o.kart('Dosya Ek Erişim Onayı', r.json().kimlik);
+    expect((await o.ist('POST', `/api/is/${kart.kimlik}/karar`, await o.gir('opm'), { karar: 'Onayla' })).statusCode).toBe(200);
+    expect(await dosyaErisimi(o.db, u, d.kimlik)).toBe(true);
+    await o.sup.query(`UPDATE dosya_ek_yetki SET olusturma_zamani = now() - interval '2 days', bitis = now() - interval '1 minute' WHERE kimlik = $1`, [r.json().kimlik]);
+    expect(await dosyaErisimi(o.db, u, d.kimlik)).toBe(false);
+  });
   it('göstergede güven düzeyi: veri yok sıfır sayılmaz, yetersiz örneklemde renk verilmez (YG743-GUVEN)', async () => {
     expect(guvenDuzeyi(null, 0, '%', false)).toBe('Veri yok'); expect(guvenDuzeyi(50, 2, '%', false)).toBe('Yetersiz veri');
     expect(guvenDuzeyi(2, 2, 'adet', false)).toBe('Yeterli'); expect(guvenDuzeyi(80, 10, '%', true)).toBe('Kalite eşiği aşıldı');

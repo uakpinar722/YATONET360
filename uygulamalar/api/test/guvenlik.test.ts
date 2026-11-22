@@ -81,10 +81,12 @@ describe('yedek (YG-1274–1279)', () => {
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Felaket Tatbikatı'`)).rowCount).toBeGreaterThan(0);
   }, 120_000);
   it('geri yükleme testi hedeflerle karşılaştırılır', async () => {
-    const c = await o.gir('sy'); const P = { tur: 'Örnek Kayıt', kurtarma: 60, kayip: 60, kayitTutarli: true, belge: true, yetki: true };
+    const c = await o.gir('sy'); const P = { tur: 'Örnek Kayıt', kurtarma: 60, kayip: 60, kayitTutarli: true, belge: true, yetki: true, iliski: true, butunluk: true, entegrasyon: true, ornekAkis: true };
     expect((await o.ist('POST', '/api/geri-yukleme-testi', await o.gir('ds'), P)).statusCode).toBe(403);
     expect((await o.ist('POST', '/api/geri-yukleme-testi', c, P)).json().sonuc).toBe('Başarılı');
     expect((await o.ist('POST', '/api/geri-yukleme-testi', c, { ...P, kayip: 300 })).json().sonuc).toBe('Başarısız');
+    expect((await o.ist('POST', '/api/geri-yukleme-testi', c, { ...P, kayip: 300, surecSinifi: 'Önemli' })).json().sonuc).toBe('Başarılı'); // YG1279-HEDEF: Önemli sınıfta 24 saat
+    expect((await o.ist('POST', '/api/geri-yukleme-testi', c, { ...P, ornekAkis: false })).json().sonuc).toBe('Başarısız');
     expect((await o.ist('GET', '/api/yedekler', c)).json().yedekler.length).toBeGreaterThan(0);
   });
 });
@@ -115,7 +117,7 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect((await o.ist('POST', `${u}/kapat`, c, { ozet: 'Tekrar', kanit: 'Tekrar' })).statusCode).toBe(409);
   });
   it('aynı işlem anahtarı ikinci kez işlenmez', async () => {
-    const c = await o.gir('sy'); const H = { 'x-yatonet': '1', 'x-islem-anahtari': 'tek-1' }; const P = { tur: 'Örnek Kayıt', kurtarma: 1, kayip: 1, kayitTutarli: true, belge: true, yetki: true };
+    const c = await o.gir('sy'); const H = { 'x-yatonet': '1', 'x-islem-anahtari': 'tek-1' }; const P = { tur: 'Örnek Kayıt', kurtarma: 1, kayip: 1, kayitTutarli: true, belge: true, yetki: true, iliski: true, butunluk: true, entegrasyon: true, ornekAkis: true };
     const { COOKIE_ADI } = await import('../src/ayarlar.js');
     const a = await o.s.inject({ method: 'POST', url: '/api/geri-yukleme-testi', headers: H, cookies: { [COOKIE_ADI]: c }, payload: P });
     const n1 = Number((await o.sup.query(`SELECT count(*) n FROM geri_yukleme_testi`)).rows[0].n);
@@ -139,7 +141,7 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect((await o.sup.query(`SELECT e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.K.oy])).rows[0].e_posta).toBe(yeni);
   });
   it('tam geri yükleme testi sonucu BİMY, BİM ve Direktör onayıyla kabul edilir (YG-1278)', async () => {
-    const r = await o.ist('POST', '/api/geri-yukleme-testi', await o.gir('sy'), { tur: 'Tam Sistem', kurtarma: 120, kayip: 30, kayitTutarli: true, belge: true, yetki: true });
+    const r = await o.ist('POST', '/api/geri-yukleme-testi', await o.gir('sy'), { tur: 'Tam Sistem', kurtarma: 120, kayip: 30, kayitTutarli: true, belge: true, yetki: true, iliski: true, butunluk: true, entegrasyon: true, ornekAkis: true });
     expect(r.statusCode, r.body).toBe(200);
     const t = (await o.sup.query(`SELECT kimlik, kabul FROM geri_yukleme_testi WHERE tur = 'Tam Sistem' ORDER BY zaman DESC LIMIT 1`)).rows[0]; expect(t.kabul).toBe('Onay Bekliyor');
     const k = await o.kart('Geri Yükleme Testi Sonucu', t.kimlik);
@@ -167,7 +169,7 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect((await o.ist('POST', `/api/yedek/${yk}/olay-bagla`, await o.gir('ds'), {})).statusCode).toBe(403);
     const r = await o.ist('POST', `/api/yedek/${yk}/olay-bagla`, sy, {}); expect(r.statusCode, r.body).toBe(200); expect(r.json().olayNo).toMatch(/^OLY-\d{4}-\d{4}$/);
     expect((await o.ist('POST', `/api/yedek/${yk}/olay-bagla`, sy, {})).statusCode).toBe(409);
-    await o.ist('POST', '/api/geri-yukleme-testi', sy, { tur: 'Örnek Kayıt', kurtarma: 10, kayip: 0, kayitTutarli: true, belge: true, yetki: true });
+    await o.ist('POST', '/api/geri-yukleme-testi', sy, { tur: 'Örnek Kayıt', kurtarma: 10, kayip: 0, kayitTutarli: true, belge: true, yetki: true, iliski: true, butunluk: true, entegrasyon: true, ornekAkis: true });
     expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Örnek Geri Yükleme Testi%'`, [o.K.bimy])).rows[0].n).toBeGreaterThan(0);
   });
   it('Direktör vekili Bilgi İşlem Müdürünün kendi işi GMY onayına gider (YG-1647)', async () => {

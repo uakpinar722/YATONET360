@@ -68,6 +68,7 @@ describe('erişim talebi uçtan uca', () => {
     expect((await ist('GET', '/api/erisim/uygulanacak', sis)).json().map((x: any) => x.kimlik)).toContain(id);
     const u = await ist('POST', `/api/erisim/${id}/uygula`, sis);
     expect(u.json().izinDogrulandi).toBe(true);
+    expect(u.json().karsilastirma).toMatchObject({ rolAtandi: true, grupUyumlu: true, onaysizAyricalikliIzin: [] }); // YG1042-KARSILASTIR
     const r = (await sup.query(`SELECT bitis_tarihi::text b, atayan_ref a, onaylayan_ref o, izin_dogrulandi d FROM rol_atamasi WHERE erisim_talebi_ref = $1`, [id])).rows[0];
     expect(r).toEqual({ b: gelecek, a: K[SIS], o: K[BIM], d: true });
     expect((await sup.query(`SELECT ozet FROM bildirim WHERE baslik = $1 LIMIT 1`, [`Erişim Tanımlandı · ${id}`])).rows[0].ozet).toMatch(/Amaç: .+ · Kapsam: .+ · Bitiş: \d{2}\.\d{2}\.\d{4}\. .*Portal Kullanım Koşulları/); // YG-565

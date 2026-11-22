@@ -560,6 +560,17 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', '6. Doğu Akdeniz')).toContain('6. Doğu Akdeniz');
     expect((await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { ag: 'Çıkarıldı', gerekce: 'G' })).statusCode).toBe(403);
   });
+  it('firma kullanıcısının işlevi işlemi sınırlar; kurumda en az bir Yönetici kalır (YG994-ISLEV)', async () => {
+    const { firmaIslevi } = await import('../src/firma_islev.js');
+    expect([firmaIslevi('/api/firma-portal/dosya/x/fiyat'), firmaIslevi('/api/firma-portal/is-emri/x/ilerleme'), firmaIslevi('/api/firma-portal/uygunsuzluk/x/yanit'), firmaIslevi('/api/firma-portal/personel'), firmaIslevi('/api/dosya/x')]).toEqual(['Teklif ve Mali', 'Saha', 'Kalite', 'Yönetici', null]);
+    const k = (await o.sup.query(`SELECT kullanici_ref FROM kurulus_kullanici x JOIN kullanici_hesabi h ON h.kimlik = x.kullanici_ref WHERE h.e_posta = $1`, [FIRMA_EP])).rows[0].kullanici_ref;
+    expect((await o.ist('POST', `/api/firma-portal/kullanici/${k}/islev`, firmaC, { islevler: ['Saha'] })).statusCode).toBe(409); // tek Yönetici kendini düşüremez
+    await o.sup.query(`UPDATE kurulus_kullanici SET islevler = ARRAY['Saha'] WHERE kullanici_ref = $1`, [k]);
+    const r = await o.ist('POST', '/api/firma-portal/dosya/00000000-0000-4000-8000-000000000000/fiyat', firmaC, { kalemler: [] });
+    expect(r.statusCode).toBe(403); expect(r.json().hata).toContain('Teklif ve Mali');
+    await o.sup.query(`UPDATE kurulus_kullanici SET islevler = ARRAY['Teklif ve Mali', 'Saha', 'Kalite', 'Yönetici'] WHERE kullanici_ref = $1`, [k]);
+    expect((await o.ist('GET', '/api/firma-portal/kullanicilar', firmaC)).json().kullanicilar.length).toBeGreaterThan(0);
+  });
   it('tam akış: onay, yayın, firma görünümünde müşteri yok, kod ile kabul, başlangıç, ilerleme, teknik kabul, kapanış', async () => {
     const { d, e } = await onarim();
     const j = (await o.ist('GET', `/api/firma-portal/is-emri/${e.kimlik}`, firmaC)).json();

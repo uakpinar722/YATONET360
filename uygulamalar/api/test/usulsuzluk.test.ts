@@ -103,7 +103,8 @@ describe('entegrasyon tanımı ve askı (YG-1296, YG-1306)', () => {
     expect(await entegrasyonAcik(o.db, 'e-Arşiv Fatura')).toBe(true);
     const { entegrasyonSonucu, uzlastir } = await import('../src/entegrasyon_uzlastirma.js'); // YG-1311, YG-1312
     await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-1', beklenen: 'Fatura no dosyaya yazılır', sonucRef: 'F-1' });
-    const q = await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-2', beklenen: 'Fatura no dosyaya yazılır' });
+    const q = await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-2', beklenen: 'Fatura no dosyaya yazılır', hata: 'Alıcı a@b.com reddetti, token=abc123' });
+    expect((await o.sup.query(`SELECT hata, donduruldu, kaynak_sistem IS NOT NULL k FROM entegrasyon_kaydi WHERE kimlik = $1`, [q])).rows[0]).toEqual({ hata: 'Kısmi Başarı: Alıcı ***@*** reddetti, token=***', donduruldu: true, k: true }); // YG1308-HATA
     await entegrasyonSonucu(o.db, { entegrasyon: e, disKimlik: 'F-1', beklenen: 'Fatura no dosyaya yazılır', sonucRef: 'F-1' });
     expect(Number((await o.sup.query(`SELECT count(*) n FROM entegrasyon_kaydi WHERE entegrasyon_ref = $1 AND durum = 'Karantina'`, [e])).rows[0].n)).toBe(2);
     expect((await o.kart('Entegrasyon Uzlaştırma', q)).sahip_rol_ref).toBeTruthy();

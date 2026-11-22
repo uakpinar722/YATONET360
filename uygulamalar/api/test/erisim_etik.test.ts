@@ -55,6 +55,16 @@ describe('erişim incelemesi (YG-1044–1047, YG-1639, YG-1644)', () => {
   it('dış hesap 90 günde askıya, 180 günde kapanır; askıya alma ayrı ve gerekçeli işlemdir', async () => {
     const yeni = async (ad: string, gun: number) => (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi, izin_adimi_zamani, son_giris_zamani) VALUES ('Dış','İş Birliği Firması',$1,$2,$3,'x','Doğrulama uygulaması (6 haneli kod)',now(),now() - make_interval(days => $4)) RETURNING kimlik`, [ad, `${ad}@p.local`, `${ad}@p.local`, gun])).rows[0].kimlik as string;
     const a = await yeni('dis100', 100); const c = await yeni('dis200', 200); const t = await yeni('dis10', 10);
+    { // YG1048-KALDIR: kaldırılan rolün izni, vekâleti ve oturumu kalmadığı doğrulanır
+      const { kaldirmaDogrula } = await import('../src/erisim_inceleme.js');
+      const at = (await o.sup.query(`SELECT kimlik FROM rol_atamasi WHERE kullanici_ref = $1 LIMIT 1`, [o.K.ds])).rows[0].kimlik;
+      await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kimlik = $1`, [at]);
+      await o.sup.query(`UPDATE oturum SET bitis_zamani = now() WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [o.K.ds]);
+      const s = await kaldirmaDogrula(o.db, at);
+      expect(s).toMatchObject({ rolEtkin: false, vekaletYolu: false, kalanIzin: [], acikOturum: 0 });
+      await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Aktif' WHERE kimlik = $1`, [at]);
+      expect((await kaldirmaDogrula(o.db, at))!.rolEtkin).toBe(true);
+    }
     await disHesapPasifIsle(o.db); const d = async (k: string) => (await o.sup.query(`SELECT hesap_durumu d FROM kullanici_hesabi WHERE kimlik = $1`, [k])).rows[0].d;
     expect(await d(a)).toBe('Askıda'); expect(await d(c)).toBe('Kapalı'); expect(await d(t)).toBe('Aktif');
     const btm = await o.gir('btm'); const U = `/api/guvenlik/hesap/${t}/askiya-al`; expect((await o.ist('POST', U, await o.gir('opm'), { gerekce: 'G' })).statusCode).toBe(404); expect((await o.ist('POST', U, btm, {})).statusCode).toBe(400); expect((await o.ist('POST', U, btm, { gerekce: 'Şüphe' })).statusCode).toBe(200); expect(await d(t)).toBe('Askıda');

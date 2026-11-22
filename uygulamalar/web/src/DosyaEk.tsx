@@ -245,6 +245,8 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <GenelForm dosya={id} />
     <KurtarmaSonucKontrol dosya={id} />
     <DosyaPerformans dosya={id} />
+    <DurumOzeti id={id} />
+    <TarafGorevleri id={id} />
     <GonderimDurumu id={id} />
     <PortalaAc dosya={id} />
     <TeslimAlici dosya={id} />
@@ -410,11 +412,11 @@ function AraKademesizDonem() {
 }
 
 export function MaliParametreler() {
-  const [l, setL] = useState<{ kod: string; deger: string | null; aciklama: string }[] | null>(null); const [d, setD] = useState<Record<string, string>>({}); const [g, setG] = useState(''); const [m, setM] = useState('');
+  const [l, setL] = useState<{ kod: string; deger: string | null; aciklama: string; sahip?: string; onaylayan?: string; yururluk?: string }[] | null>(null); const [d, setD] = useState<Record<string, string>>({}); const [g, setG] = useState(''); const [m, setM] = useState('');
   const yk = () => istek<NonNullable<typeof l>>('/parametreler').then(setL).catch(() => setL(null));
   useEffect(() => { void yk(); }, []);
   if (!l) return null;
-  return <><div className="bolum">Mali Parametreler</div><AraKademesizDonem />{m && <div className="not" role="status">{m}</div>}<label htmlFor="mp-g">Değişiklik Gerekçesi</label><input id="mp-g" value={g} onChange={(e) => setG(e.target.value)} /><div className="ozet">{l.map((x) => <div key={x.kod}>{x.aciklama}: {x.deger ?? '⚠ Tanımsız (işlem bir üst onaya gider)'} <input aria-label={`${x.aciklama} yeni değer`} value={d[x.kod] ?? ''} onChange={(e) => setD({ ...d, [x.kod]: e.target.value })} /> <button className="btn2 kucuk" disabled={!g.trim() || d[x.kod] === undefined} onClick={() => void istek(`/parametre/${x.kod}`, { deger: d[x.kod] === '' ? null : Number(String(d[x.kod]).replace(',', '.')), gerekce: g }).then(() => { setM('Öneri GMY görüşü ve CEO onayına gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>)}</div></>;
+  return <><div className="bolum">Mali Parametreler</div><AraKademesizDonem />{m && <div className="not" role="status">{m}</div>}<label htmlFor="mp-g">Değişiklik Gerekçesi</label><input id="mp-g" value={g} onChange={(e) => setG(e.target.value)} /><div className="ozet">{l.map((x) => <div key={x.kod}>{x.aciklama}: {x.deger ?? '⚠ Tanımsız (işlem bir üst onaya gider)'}{x.sahip ? ` · Sahip: ${x.sahip} · Onaylayan: ${x.onaylayan}${x.yururluk ? ` · Yürürlük: ${x.yururluk}` : ''}` : ''} <input aria-label={`${x.aciklama} yeni değer`} value={d[x.kod] ?? ''} onChange={(e) => setD({ ...d, [x.kod]: e.target.value })} /> <button className="btn2 kucuk" disabled={!g.trim() || d[x.kod] === undefined} onClick={() => void istek(`/parametre/${x.kod}`, { deger: d[x.kod] === '' ? null : Number(String(d[x.kod]).replace(',', '.')), gerekce: g }).then(() => { setM('Öneri GMY görüşü ve CEO onayına gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div>)}</div></>;
 }
 
 /** YG-1472: resmî tatil ve arife takvimi (yıllık parametre). Arife yarım iş günü sayılır. */
@@ -453,11 +455,46 @@ export function ButceDonemi() {
 }
 
 /** YG-532: LGM poliçesi, imza sirküleri, broker ve acente yetki belgeleri; bitişe göre uyarı. */
+/** YG-1071: tarafların dosyadaki görevleri (talebi ileten, teknik muhatap, imzalayan, onaylayan, ödeme yapan, teslim alan) dayanak ve sınırla. */
+function TarafGorevleri({ id }: { id: string }) {
+  type V = { gorevler: string[]; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string }[]; kayitlar: { kimlik: string; gorev: string; dayanak: string; sinir: string | null; kisi_adi_soyadi: string; taraf_rolu: string }[] };
+  const [v, setV] = useState<V | null>(null); const [m, setM] = useState(''); const [f, setF] = useState({ taraf: '', gorev: '', dayanak: '', sinir: '' });
+  const yk = () => istek<V>(`/dosya/${id}/taraf-gorevleri`).then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, [id]);
+  if (!v) return null;
+  return <><div className="bolum">Taraf Görevleri</div>{m && <div className="not" role="status">{m}</div>}
+    {v.kayitlar.map((x) => <div className="ozet" key={x.kimlik}>{x.gorev}: {x.kisi_adi_soyadi} ({x.taraf_rolu}) · Dayanak: {x.dayanak}{x.sinir ? ` · Sınır: ${x.sinir}` : ''}
+      <button className="btn2 kucuk" onClick={() => { const g = window.prompt('Sonlandırma gerekçesi'); if (g?.trim()) void istek(`/taraf-gorevi/${x.kimlik}/sonlandir`, { gerekce: g }).then(yk).catch((e) => setM(e.message)); }}>Sonlandır</button></div>)}
+    <label htmlFor="tg-t">Taraf</label><select id="tg-t" value={f.taraf} onChange={(e) => setF({ ...f, taraf: e.target.value })}><option value="">Seçiniz</option>{v.taraflar.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.kisi_adi_soyadi} ({x.taraf_rolu})</option>)}</select>
+    <label htmlFor="tg-g">Görev</label><select id="tg-g" value={f.gorev} onChange={(e) => setF({ ...f, gorev: e.target.value })}><option value="">Seçiniz</option>{v.gorevler.map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="tg-d">Yetki Dayanağı</label><input id="tg-d" value={f.dayanak} onChange={(e) => setF({ ...f, dayanak: e.target.value })} />
+    <label htmlFor="tg-s">Sınır (İsteğe Bağlı)</label><input id="tg-s" value={f.sinir} onChange={(e) => setF({ ...f, sinir: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.taraf || !f.gorev || !f.dayanak.trim()} onClick={() => void istek(`/dosya/${id}/taraf-gorevi`, f).then(() => { setM('Taraf görevi kaydedildi.'); setF({ taraf: '', gorev: '', dayanak: '', sinir: '' }); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></>;
+}
+
+/** YG-539: açık işler, bekleyen onayın kimde olduğu, durma nedeni, eksikler ve sonraki işlem tek görünümde. */
+function DurumOzeti({ id }: { id: string }) {
+  type I = { is: string; sorumlu: string; engel?: boolean; hedef?: string | null };
+  const [v, setV] = useState<{ isler: I[]; onaylar: { baslik: string; makam: string; kimde: string | null; son_zaman: string | null }[]; durma: string[]; eksik: string[]; bagimliliklar: string[]; sonraki: I | null } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/dosya/${id}/durum-ozeti`).then(setV).catch(() => setV(null)); }, [id]);
+  if (!v) return null;
+  const h = (x?: string | null) => (x ? ` · Hedef ${new Date(x).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })}` : '');
+  return <><div className="bolum">Durum Özeti</div><div className="ozet">
+    <div><b>Sonraki İşlem:</b> {v.sonraki ? `${v.sonraki.is} · ${v.sonraki.sorumlu}${h(v.sonraki.hedef)}` : 'Bekleyen işlem yoktur.'}</div>
+    {v.durma.length > 0 && <div><b>Neden Bekliyor:</b> {v.durma.join(' · ')}</div>}
+    {v.onaylar.map((x, n) => <div key={`o${n}`}>Onay Bekliyor: {x.baslik} · Makam: {x.makam}{x.kimde ? ` (${x.kimde})` : ''}{h(x.son_zaman)}</div>)}
+    {v.bagimliliklar.length > 0 && <div><b>Önce Tamamlanmalı:</b> {v.bagimliliklar.join(' · ')}</div>}
+    {v.eksik.length > 0 && <div><b>Eksik:</b> {v.eksik.join(' · ')}</div>}
+    {v.isler.map((x, n) => <div key={`i${n}`}>{x.engel ? 'Engel · ' : ''}{x.is} · {x.sorumlu}{h(x.hedef)}</div>)}
+  </div></>;
+}
+
 /** YG-1145: tamamlanan, bekleyen ve başarısız gönderim parçaları ayrı görünür. */
 function GonderimDurumu({ id }: { id: string }) {
-  const [v, setV] = useState<{ ozet: { tamamlandi: number; bekliyor: number; basarisiz: number }; satirlar: { kanal: string; konu: string; hedef: string; parca: string; deneme: number }[] } | null>(null);
+  const [v, setV] = useState<{ ozet: { tamamlandi: number; bekliyor: number; basarisiz: number }; satirlar: { kanal: string; konu: string; hedef: string; parca: string; deneme: number }[]; entegrasyonBeklemeleri?: { ad: string; beklenen_sonuc: string; hata: string | null }[] } | null>(null);
   return <><div className="bolum">Gönderim Durumu</div>
     <button className="btn2 kucuk" onClick={() => void istek<NonNullable<typeof v>>(`/dosya/${id}/gonderimler`).then(setV).catch(() => setV(null))}>Gönderimleri Göster</button>
+    {v?.entegrasyonBeklemeleri?.map((x, n) => <div className="hata" key={`e${n}`}>Bekliyor · {x.ad}: {x.beklenen_sonuc}{x.hata ? ` · ${x.hata}` : ''}</div>)}
     {v && <div className="ozet"><div>Tamamlandı: {v.ozet.tamamlandi} · Bekliyor: {v.ozet.bekliyor} · Başarısız: {v.ozet.basarisiz}</div>{v.satirlar.map((x, n) => <div key={n}>{x.parca} · {x.kanal} · {x.konu} · {x.hedef}{x.deneme > 1 ? ` · ${x.deneme} deneme` : ''}</div>)}</div>}</>;
 }
 
