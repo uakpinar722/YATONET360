@@ -1037,6 +1037,14 @@ describe('e-postası olmayan alıcıya iletim (YG-207, YG-239)', () => {
     expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 AND kanal = 'SMS'`, [`onay-sonuc:${on}`])).rows[0].metin).toContain('http://ornek');
     expect((await o.sup.query(`SELECT 1 FROM belge_uretim WHERE tur = 'Onay Belgesi' AND nesne = $1`, [on])).rowCount).toBe(1);
     expect((await o.kart('Kalıcı Saklayıcıyla İletim', on)).baslik).toContain('Kalıcı Saklayıcıyla İletim');
+    // YG466-SAKLAYICI: iletim saklayıcı türüyle kaydedilir, görev kapanır
+    const kr = (await o.kart('Kalıcı Saklayıcıyla İletim', on)).kimlik; const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/kalici-iletim/${kr}`, ds, { saklayici: 'Disket', teslimAlan: 'Yat Sahibi', teslimZamani: new Date().toISOString() })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/kalici-iletim/${kr}`, await o.gir('opm'), { saklayici: 'USB Bellek', teslimAlan: 'Yat Sahibi', teslimZamani: new Date().toISOString() })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/kalici-iletim/${kr}`, ds, { saklayici: 'USB Bellek', teslimAlan: 'Yat Sahibi', teslimZamani: new Date().toISOString() })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT saklayici_turu FROM kalici_saklayici_iletimi WHERE kart_ref = $1`, [kr])).rows[0].saklayici_turu).toBe('USB Bellek');
+    expect((await o.kart('Kalıcı Saklayıcıyla İletim', on)).durum).toBe('Tamamlandı');
+    expect((await o.ist('POST', `/api/kalici-iletim/${kr}`, ds, { saklayici: 'USB Bellek', teslimAlan: 'Yat Sahibi', teslimZamani: new Date().toISOString() })).statusCode).toBe(409);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { belgeBagiKaydet } from './belge.js';
 import { izYaz } from './denetim.js';
 import { kapanisKaydet } from './kapanis.js';
 import { rolId } from './ihbar.js';
@@ -10,6 +11,14 @@ import { kullaniciRolleri } from './yetki.js';
 
 const UST_KADEME = new Set(['CEO', 'Genel Müdür Yardımcısı', 'Direktör', 'Müdür']);
 const KAPSAM = ['LGM', 'Dış', 'Tümü'];
+
+// YG-560: duyuru ekini yayımlayan yükler; yayındaki duyurunun hedefindeki kullanıcı görüntüler.
+belgeBagiKaydet('Duyuru', async (db, k, id) => {
+  if (!/^[0-9a-f-]{36}$/.test(id)) return 'yok';
+  const d = (await db.query(`SELECT yayimlayan_ref, durum, duyuru_hedefte(kimlik, $2) hedefte FROM duyuru WHERE kimlik = $1`, [id, k])).rows[0];
+  if (!d) return 'yok';
+  return d.yayimlayan_ref === k || (d.durum === 'Yayında' && d.hedefte) ? 'tamam' : 'yetkisiz';
+});
 
 /** YG-561: dış kapsamlı duyuru üst kademe onayıyla yayımlanır. */
 kapanisKaydet('Duyuru Yayımı', async (c, k, karar) => {
@@ -80,6 +89,15 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       return { kimlik: id, durum: dogrudan ? 'Yayında' : 'Onay Bekliyor' };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  // YG-560: ek, duyuru kaydına yüklenen belgedir; yalnız yayımlayan bağlar.
+  s.post('/duyuru/:id/ek', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { belge } = (i.body ?? {}) as { belge?: string };
+    const d = /^[0-9a-f-]{36}$/.test(id) ? (await b.db.query(`SELECT yayimlayan_ref FROM duyuru WHERE kimlik = $1`, [id])).rows[0] : null;
+    if (!d || d.yayimlayan_ref !== o.kullanici) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    if (!belge || !/^[0-9a-f-]{36}$/.test(belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Duyuru' AND bag_kimligi = $2`, [belge, id])).rowCount) return y.code(400).send({ hata: 'Eki duyuruya yükleyip seçiniz.' });
+    await b.db.query(`UPDATE duyuru SET ek_belge_ref = $2 WHERE kimlik = $1`, [id, belge]);
+    return { tamam: true };
   });
 
   s.get('/duyuru/yetkim', oturumlu, async (i) => {

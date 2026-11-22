@@ -27,6 +27,11 @@ describe('teknik çizim anteti (YG-679)', () => {
     for (const s of ['Çizim Anteti', d.dosyaNo, `${d.dosyaNo}-CZ01`, 'Teknik Uzman', 'Ölçeksiz', 'Revizyon Tablosu', 'İlk yayım', 'Ölçü eklendi', 'Genel Notlar', 'Rev.1']) expect(t).toContain(s);
     expect(t).not.toMatch(/YATONET 360|sistem notu|sistemde/i);
     const p = await o.ist('GET', `/api/teknik-cizim/${r.kimlik}/pdf`, tu); expect(p.statusCode).toBe(200);
+    // YG1442-GECERSIZ: eski revizyon GEÇERSİZ damgalı, tablosu o revizyona kadar; antette onay kodu alanı
+    const e0 = (await cizimTanim(o.db, r.kimlik, null, 0))!; expect(e0.t.damga).toBe('GEÇERSİZ · Yerine Rev.1 geçerlidir'); expect(e0.dosyaAdi).toContain('_GECERSIZ');
+    expect(JSON.stringify(e0.t)).not.toContain('Ölçü eklendi'); expect(t).toContain('Onay Kodu');
+    expect((await cizimTanim(o.db, r.kimlik, null))!.t.damga).toBeUndefined(); expect(await cizimTanim(o.db, r.kimlik, null, 5)).toBeNull();
+    expect((await o.ist('GET', `/api/teknik-cizim/${r.kimlik}/pdf?rev=0`, tu)).statusCode).toBe(200);
   });
 });
 

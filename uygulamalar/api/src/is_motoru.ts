@@ -94,7 +94,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
     const sure = [...k.onay, ...k.islem, ...k.gorev].filter((x) => x.son_zaman).sort((a, c) => +new Date(a.son_zaman) - +new Date(c.son_zaman)).slice(0, 5);
     const kapsam = o.grup === 'LGM İç Rolü' ? ['LGM', 'Tümü'] : ['Dış', 'Tümü'];
     const d = await b.db.query(
-      `SELECT d.kimlik, CASE WHEN h.tercih_dili = 'İngilizce' AND d.baslik_en IS NOT NULL THEN d.baslik_en ELSE d.baslik END baslik, CASE WHEN h.tercih_dili = 'İngilizce' AND d.govde_en IS NOT NULL THEN d.govde_en ELSE d.govde END govde, d.ek_belge_ref, d.zorunlu, d.tur, d.yayim_zamani, r.zaman AS okundu
+      `SELECT d.kimlik, CASE WHEN h.tercih_dili = 'İngilizce' AND d.baslik_en IS NOT NULL THEN d.baslik_en ELSE d.baslik END baslik, CASE WHEN h.tercih_dili = 'İngilizce' AND d.govde_en IS NOT NULL THEN d.govde_en ELSE d.govde END govde, d.ek_belge_ref, (SELECT max(s.surum_no) FROM belge_surum s WHERE s.belge_ref = d.ek_belge_ref) ek_surum, d.zorunlu, d.tur, d.yayim_zamani, r.zaman AS okundu
         FROM duyuru d JOIN kullanici_hesabi h ON h.kimlik = $1 LEFT JOIN duyuru_okuma r ON r.duyuru_ref = d.kimlik AND r.kullanici_ref = $1
         WHERE d.durum = 'Yayında' AND d.kapsam = ANY($2) AND (d.bitis_zamani IS NULL OR d.bitis_zamani > now()) AND (d.yayin_baslangic IS NULL OR d.yayin_baslangic <= now()) AND duyuru_hedefte(d.kimlik, $1) AND (NOT d.zorunlu OR r.zaman IS NULL) ORDER BY d.zorunlu DESC, d.yayim_zamani DESC LIMIT 5`, [o.kullanici, kapsam]);
     const ood = await b.db.query(`SELECT baslangic FROM olaganustu_donem WHERE bitis IS NULL ORDER BY baslangic DESC LIMIT 1`);

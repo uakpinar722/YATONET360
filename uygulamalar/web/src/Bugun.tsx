@@ -12,7 +12,7 @@ export interface Kart {
 }
 export interface BugunVeri {
   zincirde?: (Kart & { makam?: string })[]; onay: Kart[]; islem: Kart[]; gorev: Kart[]; iade: Kart[]; gonderilmis: Kart[]; sureUyarilari: Kart[];
-  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean; tur?: string }[]; ozelGunler?: { ad: string; gun: string; tur: string }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; baskanlik?: { kimlik: string; tpl_kod: string; konu: string; baslangic: string; kapanis_bekliyor: boolean; tutanak_var: boolean; katilimci: number }[]; tamamlanan?: { kimlik: string; tur: string; baslik: string; durum: string; kapanma_zamani: string }[]; takvim?: { zaman: string; baslik: string; tur: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
+  duyurular: { kimlik: string; baslik: string; govde: string | null; zorunlu: boolean; tur?: string; ek_belge_ref?: string | null; ek_surum?: number | null }[]; ozelGunler?: { ad: string; gun: string; tur: string }[]; olaganustu: string | null; okunmamisBildirim: number; okunmamisMesaj: number; toplantilar: { kimlik: string; tpl_kod: string; konu: string; baslangic: string }[]; baskanlik?: { kimlik: string; tpl_kod: string; konu: string; baslangic: string; kapanis_bekliyor: boolean; tutanak_var: boolean; katilimci: number }[]; tamamlanan?: { kimlik: string; tur: string; baslik: string; durum: string; kapanma_zamani: string }[]; takvim?: { zaman: string; baslik: string; tur: string }[]; vekaletler: { kimlik: string; bitis: string; asil: string; rol: string }[];
 }
 
 const TZ = 'Europe/Istanbul';
@@ -228,6 +228,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
             <div key={d.kimlik} className="duyuru-satir">
               <div className="ust2"><span>{d.baslik}</span>{d.zorunlu && <Rozet s="kirmizi" c="Zorunlu" />}</div>
               {d.govde && <div className="not">{d.govde}</div>}
+              {d.ek_belge_ref && d.ek_surum && <a className="not" href={`/api/belge/${d.ek_belge_ref}/surum/${d.ek_surum}/indir`}>Eki İndir</a>}
               {d.zorunlu && <button className="btn2 kucuk" onClick={() => void okudum(d.kimlik)}>Okudum</button>}
             </div>
           ))}

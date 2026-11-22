@@ -95,6 +95,7 @@ describe('iyi niyet kararı (YG-175)', () => {
   it('tutar zorunlu; %5 dahil GMY onayına gider, onaylanana kadar karar yazılmaz; onayda karar kesinleşir', async () => {
     const d = await dosya(); await fatura(d, 1000); const id = await kayit(d.kimlik);
     expect((await K(id, {})).statusCode).toBe(400);
+    await o.ist('POST', `/api/garanti-sikayet/${id}/kok-neden`, await o.gir('ty'), { problem: 'P', dogrudan: 'D', kokNeden: 'Talimat eksik' });
     const r = await K(id, { maliyet: 50, kapat: true, kokNeden: true }); expect(r.statusCode, r.body).toBe(200); expect(r.json().durum).toBe('Onay Bekleniyor');
     expect(await makam(id)).toBe('Genel Müdür Yardımcısı');
     const once = (await o.sup.query(`SELECT karar, statu, iyi_niyet_orani FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0];

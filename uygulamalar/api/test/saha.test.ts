@@ -120,6 +120,24 @@ describe('görsel kanıt (YG-503, YG-1452)', () => {
     expect((await g({ kalem: 'Genel – Kıç', cekilemedi: 'Yat suda, su altı görülemiyor' })).statusCode).toBe(200);
     expect((await g({ kalem: 'Bölge – Yakın Plan (Ölçekli)', bolge: 'S1', olcek: 'Cetvel', belge: bel })).json().gorselNo).toBe(`${d.dosyaNo}-G0002`);
     expect((await g({ kalem: 'Genel – Baş', belge: '00000000-0000-0000-0000-000000000000' })).statusCode).toBe(400);
+    // YG503-SAAT: cihaz saati 10 dakika geride; çekim zamanı farkla düzeltilir, yerel sıra ile yeniden gönderim aynı kaydı döner
+    const cihaz = new Date(Date.now() - 600_000); const cek = new Date(cihaz.getTime() - 60_000);
+    const s1 = await g({ kalem: 'Genel – Kıç', belge: bel, zaman: cek.toISOString(), cihazZamani: cihaz.toISOString(), yerelSira: 7, cevrimDisi: true });
+    expect(s1.json().saatDogrulamasi, s1.body).toBe('Sapma Düzeltildi');
+    expect((await g({ kalem: 'Genel – Kıç', belge: bel, zaman: cek.toISOString(), cihazZamani: cihaz.toISOString(), yerelSira: 7 })).json()).toEqual({ gorselNo: s1.json().gorselNo, tekrar: true });
+    const gk = (await o.sup.query(`SELECT cekim_zamani, cihaz_saati_farki_sn, senkron_zamani FROM gorsel_kanit WHERE gorsel_no = $1`, [s1.json().gorselNo])).rows[0];
+    expect(Math.abs(gk.cihaz_saati_farki_sn - 600)).toBeLessThan(5); expect(Math.abs(new Date(gk.cekim_zamani).getTime() - (Date.now() - 60_000))).toBeLessThan(10_000); expect(gk.senkron_zamani).not.toBeNull();
+    expect((await g({ kalem: 'Genel – Kıç', belge: bel, zaman: new Date(Date.now() + 3_600_000).toISOString() })).statusCode).toBe(400);
+  });
+  it('numune devir zinciri numaralı tutulur, önceki devre bağlanır (YG-134)', async () => {
+    const d = await hazir(); const c = await o.gir('tu'); const n = (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/numune-devri`, c, x);
+    expect((await n({ tanim: 'Boya kesiti', teslimAlan: 'Laboratuvar' })).statusCode).toBe(400);
+    const r = await n({ tanim: 'Boya kesiti', bolge: 'S1', teslimAlan: 'Kargo', amac: 'Laboratuvara gönderim' });
+    expect(r.json().numuneNo, r.body).toBe(`${d.dosyaNo}-NM001`);
+    expect((await n({ numune: r.json().numuneNo, teslimAlan: 'Laboratuvar', amac: 'Analiz' })).statusCode).toBe(200);
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/numune-devri`, c)).json(); // YG134-NUMUNE
+    expect(l.map((x: { teslim_alan: string }) => x.teslim_alan)).toEqual(['Kargo', 'Laboratuvar']);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM numune_devri WHERE onceki_ref IS NOT NULL AND dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe(1);
   });
   it('bulgudaki bölgenin geniş ve yakın karesi olmadan keşif kapanmaz', async () => {
     const d = await hazir(); const k = (await kesifAc(d.kimlik)).json().kimlik; await genelFoto(d.kimlik); await bulgu(d.kimlik, { bolge: 'S1' }); const c = await o.gir('tu');
@@ -305,6 +323,14 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
       expect((await o.ist('POST', `/api/garanti-sikayet/${r2.json().kimlik}/karar`, await o.gir('mpm'), { gerekce: 'G', sikayetSonucu: 'Haklı Değil' })).statusCode).toBe(409);
     }
   });
+  it('tekrarlayan garanti olayında kök neden analizi ayrıntılı seviyededir (YG-1420)', async () => {
+    const d = await hazir(); const c = await o.gir('ds');
+    const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Normal', belirti: 'B', tekrarlayan: true })).json().kimlik;
+    await o.sup.query(`UPDATE garanti_sikayet SET tekrarlayan = true WHERE kimlik = $1`, [id]);
+    const kn = (x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/kok-neden`, c, { problem: 'P', dogrudan: 'D', kokNeden: 'Talimat eksik', ...x });
+    expect((await kn({})).statusCode).toBe(400);
+    expect((await kn({ katki: 'K', bariyer: 'B', tekrar: 'Orta' })).json().seviye).toBe('Ayrıntılı');
+  });
   it('kapsam kararı Teknik Yönetici; 5.000 EUR üstü Teknik Müdür; kök neden olmadan kapanmaz', async () => {
     const d = await hazir(); const c = await o.gir('ds');
     const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/garanti-sikayet`, c, { turler: ['Garanti bildirimi'], kanal: 'Telefon', oncelik: 'Yüksek', belirti: 'B' })).json().kimlik;
@@ -313,8 +339,12 @@ describe('garanti ve şikâyet (YG-081, YG-085, YG-1416, YG-1423, YG-1424, YG-14
     expect((await o.ist('POST', `/api/garanti-sikayet/${id}/karar`, await o.gir('ty'), { gerekce: 'G', karar: 'Garanti' })).json().hata).toContain('Neden araştırması'); // YG-083
     expect((await K('ty', { maliyet: 5000.01 })).json()).toMatchObject({ durum: 'Onay Bekleniyor', makam: 'Teknik Müdür' }); // YG-1416: Teknik Müdür onayına gider
     await o.sup.query(`UPDATE garanti_sikayet SET onay_bekleyen_karar = NULL, onay_bekleyen_maliyet = NULL WHERE kimlik = $1`, [id]);
-    expect((await K('ty', { maliyet: 5000, kapat: true })).statusCode).toBe(409);
-    expect((await K('ty', { maliyet: 5000, kapat: true, kokNeden: true })).statusCode).toBe(200);
+    expect((await K('ty', { maliyet: 5000, kapat: true, kokNeden: true })).statusCode).toBe(409);
+    // YG1420-SEVIYE: tek seferlik olayda kısa seviye yeter; kişi hatası kök neden sayılmaz; analiz bir kez kaydedilir
+    const kn = (x: object) => o.ist('POST', `/api/garanti-sikayet/${id}/kok-neden`, c, { problem: 'Sızıntı', dogrudan: 'Conta', ...x });
+    expect((await kn({})).statusCode).toBe(400); expect((await kn({ kokNeden: 'Dikkatsizlik' })).statusCode).toBe(400);
+    expect((await kn({ kokNeden: 'Conta seçim talimatı eksik' })).json().seviye).toBe('Kısa'); expect((await kn({ kokNeden: 'X' })).statusCode).toBe(409);
+    expect((await K('ty', { maliyet: 5000, kapat: true })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT statu FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0].statu).toBe('Kapalı');
   });
 });

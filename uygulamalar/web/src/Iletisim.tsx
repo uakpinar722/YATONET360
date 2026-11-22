@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek } from './api';
+import { belgeYukle } from './Kalite';
 
 interface Kisi { kimlik: string; ad_soyad: string }
 interface Mesaj { kimlik: string; zaman: string; metin: string; okunma_zamani: string | null; benden: boolean; gonderen: string; alici: string; karsi: string }
@@ -55,13 +56,15 @@ export function DuyuruYayimla() {
   const [dTur, setDTur] = useState('Genel'); // YG-563
   const [hedef, setHedef] = useState<{ gruplar: string[]; roller: string[]; birimler: string[] }>({ gruplar: [], roller: [], birimler: [] }); // YG-560
   const [yb, setYb] = useState(''); const [bEn, setBEn] = useState(''); const [gEn, setGEn] = useState('');
+  const [ek, setEk] = useState<File | null>(null); // YG-560
   const [secenek, setSecenek] = useState<{ gruplar: string[]; roller: string[]; birimler: string[] }>({ gruplar: [], roller: [], birimler: [] });
   const yukle = () => istek<Yayim[]>('/duyuru/yayimlarim').then(setListe).catch((e) => setHata(e.message));
   useEffect(() => { void istek<{ kapsamlar: string[]; onaysiz: string[]; gruplar?: string[]; roller?: string[]; birimler?: string[] }>('/duyuru/yetkim').then((y) => { setYetki(y); setKapsam(y.kapsamlar[0] ?? ''); setSecenek({ gruplar: y.gruplar ?? [], roller: y.roller ?? [], birimler: y.birimler ?? [] }); }).catch((e) => setHata(e.message)); void yukle(); }, []);
   const gonder = async (e: FormEvent) => {
     e.preventDefault(); setHata(''); setNot('');
     try {
-      const r = await istek<{ durum: string }>('/duyuru', { baslik, govde, kapsam, zorunlu, bitis: bitis || undefined, tur: dTur, hedefGruplar: hedef.gruplar, hedefRoller: hedef.roller, hedefBirimler: hedef.birimler, yayinBaslangic: yb || undefined, baslikEn: bEn || undefined, govdeEn: gEn || undefined });
+      const r = await istek<{ kimlik: string; durum: string }>('/duyuru', { baslik, govde, kapsam, zorunlu, bitis: bitis || undefined, tur: dTur, hedefGruplar: hedef.gruplar, hedefRoller: hedef.roller, hedefBirimler: hedef.birimler, yayinBaslangic: yb || undefined, baslikEn: bEn || undefined, govdeEn: gEn || undefined });
+      if (ek) await istek(`/duyuru/${r.kimlik}/ek`, { belge: await belgeYukle(ek, 'Duyuru', r.kimlik) });
       setNot(r.durum === 'Yayında' ? 'Duyuru yayımlanmıştır.' : 'Duyuru onaya gönderilmiştir.');
       setBaslik(''); setGovde(''); setZorunlu(false); setBitis(''); setDTur('Genel'); setHedef({ gruplar: [], roller: [], birimler: [] }); setYb(''); setBEn(''); setGEn(''); await yukle();
     } catch (x) { setHata((x as Error).message); }
@@ -94,6 +97,8 @@ export function DuyuruYayimla() {
           <textarea id="d-ge" rows={3} value={gEn} onChange={(e) => setGEn(e.target.value)} />
           <label htmlFor="d-s">Bitiş Tarihi (İsteğe Bağlı)</label>
           <input id="d-s" type="date" value={bitis} onChange={(e) => setBitis(e.target.value)} />
+          <label htmlFor="d-ek">Ek (İsteğe Bağlı)</label>
+          <input id="d-ek" type="file" onChange={(e) => setEk(e.target.files?.[0] ?? null)} />
           <label className="kutu"><input type="checkbox" checked={zorunlu} onChange={(e) => setZorunlu(e.target.checked)} /><span>Okunması Zorunlu</span></label>
           <button className="btn" disabled={!baslik.trim()}>{yetki.onaysiz.includes(kapsam) ? 'Yayımla' : 'Onaya Gönder'}</button>
         </form>

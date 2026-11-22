@@ -23,22 +23,30 @@ kapanisKaydet('Teknik Çizim', async (c, k, karar, yapan) => {
 });
 
 /** LGM çizim anteti: dosya no, çizim adı/no, hazırlayan ve onaylayan rol, ölçek, tarih; revizyon tablosu ve genel notlar. Sistem notu yazılmaz. */
-export async function cizimTanim(db: Db, id: string, gorsel: string | null): Promise<{ t: BelgeTanim; dosyaAdi: string } | null> {
+export async function cizimTanim(db: Db, id: string, gorsel: string | null, revNo?: number): Promise<{ t: BelgeTanim; dosyaAdi: string } | null> {
   const c = (await db.query(`SELECT c.*, d.dosya_no, d.yazisma_dili, y.yat_adi FROM teknik_cizim c JOIN dosya d ON d.kimlik = c.dosya_ref LEFT JOIN yat y ON y.kimlik = d.yat_ref WHERE c.kimlik = $1`, [id])).rows[0];
   if (!c) return null;
   const en = c.yazisma_dili === 'İngilizce'; const L = (tr: string, e: string) => (en ? e : tr);
-  const rev = (await db.query(`SELECT rev_no, tarih, aciklama FROM teknik_cizim_revizyonu WHERE cizim_ref = $1 ORDER BY rev_no`, [id])).rows;
+  // YG-1442: eski revizyon kendi satırındaki ölçekle, revizyon tablosu o revizyona kadar, GEÇERSİZ damgasıyla üretilir.
+  const eski = revNo !== undefined && revNo < c.revizyon ? (await db.query(`SELECT rev_no, tarih, olcek FROM teknik_cizim_revizyonu WHERE cizim_ref = $1 AND rev_no = $2`, [id, revNo])).rows[0] : undefined;
+  if (revNo !== undefined && revNo !== c.revizyon && !eski) return null;
+  const guncel = c.revizyon as number;
+  if (eski) Object.assign(c, { revizyon: eski.rev_no, olcek: eski.olcek ?? c.olcek, durum: 'Onaylı', onay_zamani: null, olusturma_zamani: eski.tarih });
+  const rev = (await db.query(`SELECT rev_no, tarih, aciklama FROM teknik_cizim_revizyonu WHERE cizim_ref = $1 AND rev_no <= $2 ORDER BY rev_no`, [id, c.revizyon])).rows;
+  // Onay kodu: çizimin bu revizyonunu onaylayan kartın kısa kimliği (imza yerine).
+  const ok = (await db.query(`SELECT upper(left(replace(kimlik::text, '-', ''), 10)) kod FROM is_karti WHERE tur = 'Teknik Çizim' AND nesne_kimligi = $1 AND durum = 'Onaylandı' AND baslik LIKE $2 ORDER BY kapanma_zamani DESC LIMIT 1`, [id, `% · Rev.${c.revizyon}`])).rows[0]?.kod ?? null;
   const bolumler: Bolum[] = [];
   if (gorsel) bolumler.push({ baslik: c.ad, tur: 'gorsel', src: gorsel, numarasiz: true });
   bolumler.push(
     { baslik: L('Çizim Anteti', 'Title Block'), tur: 'alanlar', numarasiz: true, alanlar: [
       { et: L('Dosya No', 'File No'), deger: c.dosya_no }, { et: L('Çizim Adı', 'Drawing Title'), deger: c.ad }, { et: L('Çizim No', 'Drawing No'), deger: c.cizim_no },
       { et: L('Hazırlayan', 'Prepared by'), deger: L('Teknik Uzman', 'Technical Specialist') }, { et: L('Onaylayan', 'Approved by'), deger: c.durum === 'Onaylı' ? L(ONAY_ROL, 'Technical Manager') : null },
-      { et: L('Ölçek', 'Scale'), deger: c.olcek }, { et: L('Tarih', 'Date'), deger: gunAy(c.onay_zamani ?? c.olusturma_zamani) }] },
+      { et: L('Ölçek', 'Scale'), deger: c.olcek }, { et: L('Tarih', 'Date'), deger: gunAy(c.onay_zamani ?? c.olusturma_zamani) }, { et: L('Onay Kodu', 'Approval Code'), deger: c.durum === 'Onaylı' ? ok : null }] },
     { baslik: L('Revizyon Tablosu', 'Revision Table'), tur: 'tablo', numarasiz: true, sutunlar: [{ ad: 'Rev.', hiza: 'ort' }, { ad: L('Tarih', 'Date') }, { ad: L('Açıklama', 'Description') }], satirlar: rev.map((r) => [r.rev_no, gunAy(r.tarih), r.aciklama]) },
     { baslik: L('Genel Notlar', 'General Notes'), tur: 'metin', numarasiz: true, metin: c.genel_notlar ?? '---' },
   );
-  return { dosyaAdi: `${c.cizim_no}_Rev${c.revizyon}.pdf`, t: { ad: L('Teknik Çizim', 'Technical Drawing'), no: c.cizim_no, dosyaNo: c.dosya_no, tarih: gunAy(c.onay_zamani ?? c.olusturma_zamani), surum: `Rev.${c.revizyon}`, dil: en ? 'en' : 'tr', yat: c.yat_adi ?? undefined, bolumler } };
+  return { dosyaAdi: `${c.cizim_no}_Rev${c.revizyon}${eski ? '_GECERSIZ' : ''}.pdf`, t: { ad: L('Teknik Çizim', 'Technical Drawing'), no: c.cizim_no, dosyaNo: c.dosya_no, tarih: gunAy(c.onay_zamani ?? c.olusturma_zamani), surum: `Rev.${c.revizyon}`, dil: en ? 'en' : 'tr', yat: c.yat_adi ?? undefined, bolumler,
+    damga: eski ? L(`GEÇERSİZ · Yerine Rev.${guncel} geçerlidir`, `SUPERSEDED · Replaced by Rev.${guncel}`) : undefined } };
 }
 
 export function teknikCizimYollari(s: FastifyInstance, b: Baglam) {
@@ -63,7 +71,7 @@ export function teknikCizimYollari(s: FastifyInstance, b: Baglam) {
     const n = Number((await b.db.query(`SELECT count(*) n FROM teknik_cizim WHERE dosya_ref = $1`, [id])).rows[0].n) + 1;
     const r = (await b.db.query(`INSERT INTO teknik_cizim (cizim_no, dosya_ref, ad, olcek, belge_ref, genel_notlar, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik, cizim_no`,
       [`${d.dosya_no}-CZ${String(n).padStart(2, '0')}`, id, g.ad.trim(), g.olcek.trim(), g.belge, g.notlar?.trim() || null, o.kullanici])).rows[0];
-    await b.db.query(`INSERT INTO teknik_cizim_revizyonu (cizim_ref, rev_no, aciklama, hazirlayan_ref) VALUES ($1, 0, $2, $3)`, [r.kimlik, 'İlk yayım', o.kullanici]);
+    await b.db.query(`INSERT INTO teknik_cizim_revizyonu (cizim_ref, rev_no, aciklama, hazirlayan_ref, belge_ref, olcek) VALUES ($1, 0, $2, $3, $4, $5)`, [r.kimlik, 'İlk yayım', o.kullanici, g.belge, g.olcek.trim()]);
     return r;
   });
   s.post('/teknik-cizim/:id/onaya-gonder', oturumlu, async (i, y) => {
@@ -85,21 +93,24 @@ export function teknikCizimYollari(s: FastifyInstance, b: Baglam) {
     const rev = c.revizyon + 1;
     await b.db.query(`UPDATE teknik_cizim SET revizyon = $2, durum = 'Taslak', belge_ref = coalesce($3, belge_ref), olcek = coalesce($4, olcek), genel_notlar = coalesce($5, genel_notlar), hazirlayan_ref = $6, onaylayan_ref = NULL, onay_zamani = NULL WHERE kimlik = $1`,
       [c.kimlik, rev, g.belge || null, g.olcek?.trim() || null, g.notlar?.trim() || null, o.kullanici]);
-    await b.db.query(`INSERT INTO teknik_cizim_revizyonu (cizim_ref, rev_no, aciklama, hazirlayan_ref) VALUES ($1,$2,$3,$4)`, [c.kimlik, rev, g.aciklama.trim(), o.kullanici]);
+    await b.db.query(`INSERT INTO teknik_cizim_revizyonu (cizim_ref, rev_no, aciklama, hazirlayan_ref, belge_ref, olcek) VALUES ($1,$2,$3,$4,$5,$6)`, [c.kimlik, rev, g.aciklama.trim(), o.kullanici, g.belge || c.belge_ref, g.olcek?.trim() || c.olcek]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teknik Çizim Revizyonu', nesneTuru: 'Teknik Çizim', nesneKimligi: c.kimlik, gerekce: g.aciklama.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { revizyon: rev };
   });
   s.get('/teknik-cizim/:id/pdf', oturumlu, async (i, y) => {
     const o = i.oturum!; const c = await cizim((i.params as { id: string }).id, o.kullanici); if (!c) return yok(y);
+    // YG-1442: ?rev=n ile eski revizyon kendi görseliyle ve GEÇERSİZ damgasıyla alınır.
+    const q = (i.query ?? {}) as { rev?: string }; const revNo = q.rev !== undefined && /^\d+$/.test(q.rev) ? Number(q.rev) : undefined;
+    const rb = revNo !== undefined && revNo < c.revizyon ? (await b.db.query(`SELECT belge_ref FROM teknik_cizim_revizyonu WHERE cizim_ref = $1 AND rev_no = $2`, [c.kimlik, revNo])).rows[0]?.belge_ref : c.belge_ref;
     let gorsel: string | null = null;
-    const sr = (await b.db.query(`SELECT depo_anahtari, uzanti FROM belge_surum WHERE belge_ref = $1 ORDER BY surum_no DESC LIMIT 1`, [c.belge_ref])).rows[0];
+    const sr = rb ? (await b.db.query(`SELECT depo_anahtari, uzanti FROM belge_surum WHERE belge_ref = $1 ORDER BY surum_no DESC LIMIT 1`, [rb])).rows[0] : undefined;
     if (sr && b.depo) {
       try {
         const parca: Buffer[] = []; for await (const x of b.depo.bagla(sr.depo_anahtari)) parca.push(x as Buffer);
         gorsel = `data:image/${String(sr.uzanti).toLowerCase() === 'png' ? 'png' : 'jpeg'};base64,${Buffer.concat(parca).toString('base64')}`;
       } catch { gorsel = null; }
     }
-    const v = await cizimTanim(b.db, c.kimlik, gorsel); if (!v) return yok(y);
+    const v = await cizimTanim(b.db, c.kimlik, gorsel, revNo); if (!v) return yok(y);
     const { pdfUret } = await import('./pdf.js');
     return y.type('application/pdf').header('Content-Disposition', `inline; filename="${encodeURIComponent(v.dosyaAdi)}"`).send(await pdfUret(v.t));
   });

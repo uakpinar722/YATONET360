@@ -45,6 +45,8 @@ export interface BelgeTanim {
   kase?: boolean;
   /** YG-720: belgeye özgü kimlik bandı alanları. */
   bandEk?: { et: string; deger: string }[];
+  /** YG-1442: yerine yeni revizyon geçmiş belgede başlık altındaki damga (ör. GEÇERSİZ). */
+  damga?: string;
 }
 
 const k = (s: unknown) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -174,7 +176,7 @@ function belgeHtml(t: BelgeTanim, o: { kapak?: boolean; toc?: [string, number][]
   const onay = tamam && t.onay ? bolumHtml(t, [], { baslik: e.onay, tur: 'alanlar', numarasiz: true, alanlar: [{ et: e.onaylayan, deger: t.onay.rol }, { et: e.zaman, deger: t.onay.zaman }, { et: e.kanal, deger: t.onay.kanal }, ...(t.onay.kod ? [{ et: e.kod, deger: t.onay.kod, genis: true }] : [])] }) : '';
   return `<!doctype html><html lang="${t.dil}"><head><meta charset="utf-8"><title>${k(adTam)}</title><style>${stil(t, Boolean(o.kapak))}</style></head><body>
 ${kapak}${toc}<div class="bas"><img src="${logo}" alt=""><div><h1>${k(t.ad)}</h1>${t.kod ? `<div class="kod">${k(t.kod)}</div>` : ''}</div></div>${band}
-${t.icKayit ? `<div class="ic">${e.ic}</div>` : ''}
+${t.damga ? `<div style="border:2px solid #b00020;color:#b00020;font-weight:700;text-align:center;padding:4px;margin:6px 0;letter-spacing:.5px">${k(t.damga)}</div>` : ''}${t.icKayit ? `<div class="ic">${e.ic}</div>` : ''}
 ${(t.matbuBas ?? []).map((m) => `<p class="matbu">${k(m)}</p>`).join('')}${govde}${onay}
 ${tamam && t.kase ? `<div class="kase"><img src="${gorsel(`veri/sablon/kase_${t.dil}.png`)}" alt="${k(UNVAN)}"></div>` : ''}
 ${tamam ? (t.matbuSon ?? []).map((m) => `<p class="matbu son">${k(m)}</p>`).join('') : ''}

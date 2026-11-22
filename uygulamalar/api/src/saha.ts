@@ -263,7 +263,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   // YG-503, YG-1452: yönlendirmeli fotoğraf. Numara Dosya no-Gnnnn; çekilemeyen kare neden ister, hasar bölgesi karesi geçilemez.
   s.post('/dosya/:id/gorsel', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { belge?: string; asama?: string; kalem?: string; tur?: string; bolge?: string; zaman?: string; konum?: string; olcek?: string; bulgu?: string; aciklama?: string; cekilemedi?: string; cekilemediAciklama?: string };
+    const g = (i.body ?? {}) as { belge?: string; asama?: string; kalem?: string; tur?: string; bolge?: string; zaman?: string; konum?: string; olcek?: string; bulgu?: string; aciklama?: string; cekilemedi?: string; cekilemediAciklama?: string; cihazZamani?: string; yerelSira?: number; cevrimDisi?: boolean };
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     const lst = async (k: string, v?: string) => Boolean((await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = $1 AND deger = $2`, [k, v ?? ''])).rowCount);
@@ -280,12 +280,53 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (g.kalem === 'Bölge – Yakın Plan (Ölçekli)' && !g.olcek?.trim()) return y.code(400).send({ hata: 'Yakın planda ölçek referansı zorunludur.' });
     if (!g.belge || !UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.belge, id])).rowCount) return y.code(400).send({ hata: 'Fotoğrafı dosyaya yükleyip seçiniz.' });
     const rol = (await ekipRolleri(id, o.kullanici))[0] ?? null;
+    // YG-503: çekim zamanı sunucu saatine göre doğrulanır. Cihaz gönderim anındaki saatini bildirir; fark 5 dakikayı aşarsa çekim zamanı farkla düzeltilir.
+    const simdi = Date.now(); const yerelSira = Number.isInteger(g.yerelSira) ? g.yerelSira! : null;
+    const cz = g.cihazZamani ? new Date(g.cihazZamani).getTime() : NaN; const z = g.zaman ? new Date(g.zaman).getTime() : NaN;
+    if ((g.zaman && Number.isNaN(z)) || (g.cihazZamani && Number.isNaN(cz))) return y.code(400).send({ hata: 'Çekim ve cihaz zamanı geçerli tarih-saat olmalıdır.' });
+    const fark = Number.isNaN(cz) ? null : Math.round((simdi - cz) / 1000);
+    const cekim = Number.isNaN(z) ? simdi : z + (fark !== null && Math.abs(fark) > 300 ? fark * 1000 : 0);
+    const dogrulama = Number.isNaN(z) ? 'Sunucu Saati' : fark === null ? 'Doğrulanamadı' : Math.abs(fark) > 300 ? 'Sapma Düzeltildi' : 'Doğrulandı';
+    if (cekim > simdi + 300_000) return y.code(400).send({ hata: 'Çekim zamanı ileri bir tarih olamaz; cihaz saatini kontrol ediniz.' });
+    if (yerelSira !== null) { // çevrim dışı kuyruk yeniden gönderirse aynı kayıt döner
+      const v = (await b.db.query(`SELECT gorsel_no FROM gorsel_kanit WHERE dosya_ref = $1 AND ceken_ref = $2 AND yerel_sira_no = $3`, [id, o.kullanici, yerelSira])).rows[0];
+      if (v) return { gorselNo: v.gorsel_no, tekrar: true };
+    }
     return islem(async (c) => {
       const no = await altNumara(c, d.dosya_no, 'G', 4);
-      const k = (await c.query(`INSERT INTO gorsel_kanit (gorsel_no, dosya_ref, belge_ref, cekim_zamani, ceken_ref, ceken_rol, konum, asama, cekim_kalemi, cekim_turu, bolge_kodu, olcek_referansi, bulgu_ref, aciklama) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING gorsel_no`,
-        [no, id, g.belge, g.zaman ? new Date(g.zaman) : new Date(), o.kullanici, rol, g.konum ?? null, g.asama, g.kalem, g.tur ?? null, g.bolge?.trim() || null, g.olcek?.trim() || null, g.bulgu || null, g.aciklama?.trim() || null])).rows[0];
-      return { gorselNo: k.gorsel_no };
+      const k = (await c.query(`INSERT INTO gorsel_kanit (gorsel_no, dosya_ref, belge_ref, cekim_zamani, ceken_ref, ceken_rol, konum, asama, cekim_kalemi, cekim_turu, bolge_kodu, olcek_referansi, bulgu_ref, aciklama, cihaz_saati_farki_sn, saat_dogrulamasi, yerel_sira_no, senkron_zamani) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING gorsel_no`,
+        [no, id, g.belge, new Date(cekim), o.kullanici, rol, g.konum ?? null, g.asama, g.kalem, g.tur ?? null, g.bolge?.trim() || null, g.olcek?.trim() || null, g.bulgu || null, g.aciklama?.trim() || null, fark, dogrulama, yerelSira, g.cevrimDisi || yerelSira !== null ? new Date(simdi) : null])).rows[0];
+      return { gorselNo: k.gorsel_no, saatDogrulamasi: dogrulama };
     });
+  });
+
+  // YG-134: numune devir zinciri. İlk devirde numune numarası (Dosya no-NMnnn) verilir; sonraki el değiştirmeler önceki devre bağlanır. Kayıt silinmez.
+  s.post('/dosya/:id/numune-devri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const g = (i.body ?? {}) as { numune?: string; tanim?: string; bolge?: string; teslimAlan?: string; amac?: string; aciklama?: string };
+    const d = await getir(id, o.kullanici);
+    if (!d) return yok(y);
+    if (!(await ekipRolleri(id, o.kullanici)).length) return y.code(403).send({ hata: 'Numune devrini dosya ekibi kaydeder.' });
+    if (!g.teslimAlan?.trim() || !g.amac?.trim()) return y.code(400).send({ hata: 'Teslim alan ve devir amacı zorunludur.' });
+    return islem(async (c) => {
+      if (g.numune) {
+        const s = (await c.query(`SELECT kimlik, numune_tanimi, alindigi_bolge FROM numune_devri WHERE dosya_ref = $1 AND numune_no = $2 ORDER BY devir_zamani DESC LIMIT 1`, [id, g.numune])).rows[0];
+        if (!s) throw Object.assign(new Error('Numune bulunamadı.'), { statusCode: 404 });
+        await c.query(`INSERT INTO numune_devri (numune_no, dosya_ref, numune_tanimi, alindigi_bolge, teslim_eden_ref, teslim_alan, amac, onceki_ref, aciklama) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [g.numune, id, s.numune_tanimi, s.alindigi_bolge, o.kullanici, g.teslimAlan!.trim(), g.amac!.trim(), s.kimlik, g.aciklama?.trim() || null]);
+        return { numuneNo: g.numune };
+      }
+      if (!g.tanim?.trim()) throw Object.assign(new Error('Numune tanımı zorunludur.'), { statusCode: 400 });
+      const no = await altNumara(c, d.dosya_no, 'NM', 3);
+      await c.query(`INSERT INTO numune_devri (numune_no, dosya_ref, numune_tanimi, alindigi_bolge, teslim_eden_ref, teslim_alan, amac, aciklama) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [no, id, g.tanim.trim(), g.bolge?.trim() || null, o.kullanici, g.teslimAlan!.trim(), g.amac!.trim(), g.aciklama?.trim() || null]);
+      return { numuneNo: no };
+    });
+  });
+  s.get('/dosya/:id/numune-devri', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!(await getir(id, o.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT n.numune_no, n.numune_tanimi, n.alindigi_bolge, k.ad_soyad teslim_eden, n.teslim_alan, n.amac, n.aciklama, n.devir_zamani FROM numune_devri n JOIN kullanici_hesabi k ON k.kimlik = n.teslim_eden_ref WHERE n.dosya_ref = $1 ORDER BY n.numune_no, n.devir_zamani`, [id])).rows;
   });
 
   // YG-134: ham veri korunur; kalibrasyonu uygun olmayan cihaz kesin değer sayılmaz; sınır dışı sonuçta ikinci doğrulayan zorunlu.
@@ -616,6 +657,22 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-1416, YG-1420: kapsam kararı Teknik Yönetici; kök neden olmadan kapanmaz. Düzeltme maliyeti 5.000,00 EUR üstünde Teknik Müdür onayına gider. YG-1425: şikâyet sonucu listesi.
+  // YG-1420: FR-UYG-004 tek form iki seviye. Tekrarlayan işaretli olayda Ayrıntılı, diğerlerinde Kısa seviye istenir.
+  s.post('/garanti-sikayet/:id/kok-neden', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const g = (i.body ?? {}) as Record<string, string | undefined>;
+    const k = UUID.test(id) ? (await b.db.query(`SELECT kimlik, dosya_ref, tekrarlayan, kok_neden_ref, kayit_turu FROM garanti_sikayet WHERE kimlik = $1`, [id])).rows[0] : null;
+    if (!k || !k.kayit_turu.includes('Garanti bildirimi') || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
+    if (k.kok_neden_ref) return y.code(409).send({ hata: 'Bu garanti olayının kök neden analizi kayıtlıdır.' });
+    const seviye = k.tekrarlayan ? 'Ayrıntılı' : 'Kısa';
+    const alanlar = seviye === 'Kısa' ? ['problem', 'dogrudan', 'kokNeden'] : ['problem', 'dogrudan', 'katki', 'bariyer', 'kokNeden', 'tekrar'];
+    if (alanlar.some((a) => !g[a]?.trim())) return y.code(400).send({ hata: seviye === 'Kısa' ? 'Problem, doğrudan neden ve kök neden zorunludur.' : 'Tekrarlayan olayda ayrıntılı analizin tüm alanları zorunludur.' });
+    if (/^\s*(dikkatsizlik|ihmal|personel hatası|kişi hatası)\s*\.?\s*$/i.test(g.kokNeden!)) return y.code(400).send({ hata: 'Kök nedeni kişi yerine süreç ve sistem etkenleriyle yazmanızı rica ederiz.' });
+    const r = (await b.db.query(`INSERT INTO kok_neden_analizi (garanti_ref, seviye, problem_tanimi, dogrudan_neden, katki_faktorleri, bariyer_analizi, kok_neden, tekrar_olasiligi, analist_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`,
+      [id, seviye, g.problem!.trim(), g.dogrudan!.trim(), g.katki?.trim() || null, g.bariyer?.trim() || null, g.kokNeden!.trim(), g.tekrar?.trim() || null, o.kullanici])).rows[0];
+    await b.db.query(`UPDATE garanti_sikayet SET kok_neden_ref = $2, kok_neden_tamam = true WHERE kimlik = $1`, [id, r.kimlik]);
+    return { kimlik: r.kimlik, seviye };
+  });
   s.post('/garanti-sikayet/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const g = (i.body ?? {}) as { karar?: string; sikayetSonucu?: string; gerekce?: string; maliyet?: number; kokNeden?: boolean; kapat?: boolean; nedenArastirmasi?: string };
@@ -632,7 +689,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const izinler = await kullaniciIzinleri(b.db, o.kullanici);
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });
       const tmOnayi = (g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik') && g.karar !== 'İyi Niyet'; // YG-1416: kart Teknik Müdüre gider
-      if (g.kapat && !g.kokNeden) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
+      if (g.kapat && !k.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.', islem: 'Analizi Aç' }); // YG-1420: analiz formu kaydı
       // YG-083: arızanın nedeni araştırılıp yazılmadan kapsam kararı verilmez.
       if (!g.nedenArastirmasi?.trim() && !k.neden_arastirmasi) return y.code(409).send({ hata: 'Neden araştırması tamamlanmadan garanti kararı verilmez; bulunan nedeni yazınız.' });
       if (g.nedenArastirmasi?.trim()) await b.db.query(`UPDATE garanti_sikayet SET neden_arastirmasi = $2 WHERE kimlik = $1`, [id, g.nedenArastirmasi.trim()]);

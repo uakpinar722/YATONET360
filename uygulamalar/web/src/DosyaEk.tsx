@@ -62,7 +62,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
   useEffect(() => { void yukle().catch(() => {}); }, [id]);
   const [hn, setHn] = useState(''); const [k, setK] = useState({ teklif: '', eylem: '', sorumlu: '', son: '', gerceklesmezse: '' }); const [kb, setKb] = useState(''); const [kg, setKg] = useState(''); const [kt, setKt] = useState({ tarih: '', bedel: '' });
   const [p, setP] = useState({ tur: 'Değişiklik', mevcut: '', onerilen: '', fark: '', toplam: '', sure: '', kanal: 'YATONET 360', sigorta: 'Gerekli Değil', starih: '' }); const [pb, setPb] = useState('');
-  const [ek, setEk] = useState({ firma: '', kanal: 'Telefon', kisi: '', talimat: '', tahmini: '' }); // YG-270
+  const [ek, setEk] = useState({ firma: '', kanal: 'Telefon', kisi: '', talimat: '', tahmini: '', temasSaati: '', kabulSaati: '' }); // YG-270, YG-1456
   const [ioS, setIoS] = useState(''); // YG-555
   const [ak, setAk] = useState({ sonuc: '', risk: '', kapsam: '', gerekce: '', yetkiliKisi: '', kaynak: '', sonradan: '', devam: '' }); // YG-254
   const [ku, setKu] = useState({ hizmet: 'Kurtarma', saglayici: '', acil: false }); const [dalis, setDalis] = useState({ limanIzni: '', dalisPlani: '', enerjiIzolasyonu: '' }); const [kod, setKod] = useState(''); const [te, setTe] = useState({ tur: '112 Arandı', ozet: '' }); const [sec, setSec] = useState('Devam');
@@ -155,7 +155,9 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <label htmlFor="de-ei">Firmada Görüşülen Kişi</label><input id="de-ei" value={ek.kisi} onChange={(e) => setEk({ ...ek, kisi: e.target.value })} />
       <label htmlFor="de-et">Verilen Talimat</label><input id="de-et" value={ek.talimat} onChange={(e) => setEk({ ...ek, talimat: e.target.value })} />
       <label htmlFor="de-eu">Firmanın Tahmini Tutarı (EUR)</label><input id="de-eu" inputMode="decimal" value={ek.tahmini} onChange={(e) => setEk({ ...ek, tahmini: e.target.value })} />
-      <button className="btn2 kucuk" disabled={!ek.firma || !ek.kisi.trim() || !ek.talimat.trim()} onClick={() => void yap(() => istek(`/acil/${id}/elle-kabul`, { ...ek, tahmini: ek.tahmini ? sayi(ek.tahmini) : 0 }), 'Firma kabulü kaydedildi; acil iş emri açıldı.')}>Kabulü Kaydet</button>
+      <label htmlFor="de-ets">Temas Saati</label><input id="de-ets" type="datetime-local" value={ek.temasSaati} onChange={(e) => setEk({ ...ek, temasSaati: e.target.value })} />
+      <label htmlFor="de-eks">Kabul Saati</label><input id="de-eks" type="datetime-local" value={ek.kabulSaati} onChange={(e) => setEk({ ...ek, kabulSaati: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!ek.firma || !ek.kisi.trim() || !ek.talimat.trim()} onClick={() => void yap(() => istek(`/acil/${id}/elle-kabul`, { ...ek, tahmini: ek.tahmini ? sayi(ek.tahmini) : 0, temasSaati: ek.temasSaati ? new Date(ek.temasSaati).toISOString() : undefined, kabulSaati: ek.kabulSaati ? new Date(ek.kabulSaati).toISOString() : undefined }), 'Firma kabulü kaydedildi; acil iş emri açıldı.')}>Kabulü Kaydet</button>
     </Blok>
   );
 }

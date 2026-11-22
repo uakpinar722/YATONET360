@@ -166,6 +166,15 @@ describe('duyuru (YG-560, YG-561)', () => {
   const yeni = (c: string, b: object) => ist('POST', '/api/duyuru', c, { baslik: 'D', kapsam: 'LGM', ...b });
   it('Müdür LGM içi duyuruyu doğrudan yayımlar; alt kademe yayımlayamaz; dış kullanıcı hiç', async () => {
     expect((await yeni(await gir(BIM), { baslik: 'İç' })).json().durum).toBe('Yayında');
+    { // YG560-EK: ek duyuru kaydına yüklenir ve bağlanır; hedefteki kullanıcı Bugün ekranında eki görür
+      const b = await gir(BIM); const id = (await yeni(b, { baslik: 'Ekli Duyuru' })).json().kimlik;
+      const yk = await s.inject({ method: 'POST', url: `/api/belge/yukle?ad=Ek&tur=${encodeURIComponent('Dosya Belgesi')}&bagTuru=Duyuru&bagKimligi=${id}&kaynak=Elden&dosya=ek.pdf`, headers: { ...H, 'content-type': 'application/octet-stream' }, cookies: { [COOKIE_ADI]: b }, payload: Buffer.from(`%PDF-1.4 ${Math.random()}`) });
+      expect(yk.statusCode, yk.body).toBe(200);
+      expect((await ist('POST', `/api/duyuru/${id}/ek`, await gir(CEO), { belge: yk.json().belge })).statusCode).toBe(404);
+      expect((await ist('POST', `/api/duyuru/${id}/ek`, b, { belge: yk.json().belge })).statusCode).toBe(200);
+      const g = (await ist('GET', '/api/bugun', await gir(CEO))).json().duyurular.find((x: { baslik: string }) => x.baslik === 'Ekli Duyuru');
+      expect(g?.ek_belge_ref).toBe(yk.json().belge);
+    }
     expect((await yeni(await gir(DES), {})).statusCode).toBe(403);
     expect((await yeni(await gir(YAT), {})).statusCode).toBe(403);
   });

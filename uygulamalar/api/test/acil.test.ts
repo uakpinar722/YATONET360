@@ -202,8 +202,11 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
       const e0 = await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: ad, kanal: 'Telefon', kisi: 'Usta', talimat: 'Pompa', tahmini: 500 });
       expect(e0.statusCode).toBe(409); expect(e0.json().hata).toContain('onaylı Çözüm Ortağı');
     }
-    const e = await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: f2, kanal: 'Telefon', kisi: 'Usta', talimat: 'Pompa', tahmini: 500 });
+    const ts = new Date(Date.now() - 1_800_000).toISOString(); const ks = new Date(Date.now() - 1_200_000).toISOString(); // YG1456-SAAT
+    expect((await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: f2, kanal: 'Telefon', kisi: 'Usta', talimat: 'Pompa', temasSaati: ks, kabulSaati: ts })).statusCode).toBe(400);
+    const e = await o.ist('POST', `/api/acil/${r.kimlik}/elle-kabul`, c, { firma: f2, kanal: 'Telefon', kisi: 'Usta', talimat: 'Pompa', tahmini: 500, temasSaati: ts, kabulSaati: ks });
     expect(e.statusCode, e.body).toBe(200); expect(e.json().isEmriNo).toBe(`${r.dosyaNo}-AC01`);
+    expect(new Date((await o.sup.query(`SELECT firma_kabul_zamani FROM is_emri WHERE kimlik = $1`, [e.json().isEmri])).rows[0].firma_kabul_zamani).toISOString()).toBe(ks);
     expect((await o.sup.query(`SELECT count(*)::int n FROM acil_gorev_cagrisi WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [r.kimlik])).rows[0].n).toBe(0);
     expect((await o.ist('POST', `/api/acil/${r.kimlik}/kapat`, c, {})).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/acil/${r.kimlik}/kapat`, c, { sonuc: 'Sızıntı kesildi', risk: 'Kontrol altında' })).statusCode).toBe(200);

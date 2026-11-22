@@ -818,6 +818,27 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     if (o.grup !== 'LGM İç Rolü' || !/^[0-9a-f-]{36}$/.test(id) || !(await (await import('./dosya.js')).dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     return (await b.db.query(`SELECT kimlik, kanal, hedef, konu, durum, olusturma_zamani, gonderim_zamani FROM gonderim WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 200`, [id])).rows;
   });
+  // YG-466: Kalıcı Saklayıcıyla İletim görevinin sahibi iletimi saklayıcı türü, teslim alan ve teslim zamanıyla kaydeder; görev kapanır.
+  s.post('/kalici-iletim/:kart', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { kart } = i.params as { kart: string };
+    const g = (i.body ?? {}) as { saklayici?: string; teslimAlan?: string; teslimZamani?: string; aciklama?: string };
+    const k = /^[0-9a-f-]{36}$/.test(kart) ? (await b.db.query(`SELECT kimlik, nesne_kimligi, sahip_kullanici_ref, durum FROM is_karti WHERE kimlik = $1 AND tur = 'Kalıcı Saklayıcıyla İletim'`, [kart])).rows[0] : null;
+    if (!k || k.sahip_kullanici_ref !== o.kullanici) return yok(y);
+    if (k.durum !== 'Bekliyor') return y.code(409).send({ hata: 'İletim daha önce kaydedildi.' });
+    const tz = g.teslimZamani ? new Date(g.teslimZamani) : null;
+    if (!['USB Bellek', 'CD/DVD', 'Hafıza Kartı', 'Basılı Belge', 'Diğer'].includes(g.saklayici ?? '') || !g.teslimAlan?.trim() || !tz || Number.isNaN(tz.getTime()) || tz.getTime() > Date.now() + 300_000) return y.code(400).send({ hata: 'Saklayıcı türü, teslim alan ve teslim zamanı zorunludur; teslim zamanı ileri bir tarih olamaz.' });
+    if (g.saklayici === 'Diğer' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Diğer saklayıcıda açıklama zorunludur.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const dosya = (await c.query(`SELECT dosya_ref FROM onay_talebi WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0]?.dosya_ref ?? null;
+      await c.query(`INSERT INTO kalici_saklayici_iletimi (kart_ref, onay_ref, dosya_ref, saklayici_turu, teslim_alan, teslim_zamani, aciklama, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [k.kimlik, k.nesne_kimligi, dosya, g.saklayici, g.teslimAlan!.trim(), tz, g.aciklama?.trim() || null, o.kullanici]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [k.kimlik]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kalıcı Saklayıcıyla İletim', nesneTuru: 'Onay Talebi', nesneKimligi: k.nesne_kimligi, yeni: { saklayici: g.saklayici, teslimAlan: g.teslimAlan!.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+    return { tamam: true };
+  });
   // YG-1017: unvan–rol eşleşmesi (LGM personeli).
   s.get('/unvan-rol', oturumlu, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? yok(y) : (await b.db.query(`SELECT rol_ref, rol_adi, unvan, kademe, birim FROM unvan_rol_eslesmesi ORDER BY birim, rol_adi`)).rows);
   // YG-1367: katalogda sahip (öneren rol, YG-853) ve onaylayan (GMY uygun görüşüyle CEO) ile yürürlük tarihi ve son değişiklik gösterilir.

@@ -399,8 +399,15 @@ const KAPANMA = ['Tamamlandı', 'Sigortaca Onaylanmayan', 'Müşteri Vazgeçti',
 /** YG-175, YG-1425: garanti kapsam kararı; iyi niyet tutarına göre GMY veya CEO onayına gider. */
 function GarantiKarar({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [karar, setKarar] = useState('Garanti'); const [gerekce, setGerekce] = useState(''); const [tutar, setTutar] = useState(''); const [neden, setNeden] = useState('');
+  const [kn, setKn] = useState({ problem: '', dogrudan: '', katki: '', bariyer: '', kokNeden: '', tekrar: '' }); // YG-1420
+  const KN: [keyof typeof kn, string][] = [['problem', 'Problem Tanımı'], ['dogrudan', 'Doğrudan Neden'], ['katki', 'Katkı Faktörleri'], ['bariyer', 'Bariyer Analizi'], ['kokNeden', 'Kök Neden'], ['tekrar', 'Tekrar Olasılığı']];
   return (
     <div>
+      <details><summary>Kök Neden Analizi</summary>
+        <div className="not">Tekrarlayan garanti olayında tüm alanlar, diğer olaylarda problem, doğrudan neden ve kök neden doldurulur.</div>
+        {KN.map(([a, l]) => <span key={a}><label htmlFor={`gkn-${a}-${id}`}>{l}</label><input id={`gkn-${a}-${id}`} value={kn[a]} onChange={(e) => setKn({ ...kn, [a]: e.target.value })} /></span>)}
+        <button className="btn2 kucuk" disabled={!kn.problem.trim() || !kn.dogrudan.trim() || !kn.kokNeden.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/kok-neden`, kn), 'Kök neden analizi kaydedildi.')}>Analizi Kaydet</button>
+      </details>
       <label htmlFor={`gk-${id}`}>Kapsam Kararı</label><select id={`gk-${id}`} value={karar} onChange={(e) => setKarar(e.target.value)}>{['Garanti', 'Üretici Garantisi', 'İyi Niyet', 'Ücretli İş', 'Kapsam Dışı'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor={`gn-${id}`}>Neden Araştırması (Bulunan Neden)</label><input id={`gn-${id}`} value={neden} onChange={(e) => setNeden(e.target.value)} />
       <label htmlFor={`gg-${id}`}>Karar Gerekçesi</label><input id={`gg-${id}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />

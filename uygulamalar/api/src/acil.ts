@@ -427,9 +427,12 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1456, YG-270: firmayla başka kanaldan temas: elle kayıt, AC iş emri, sıralı arama durur.
   s.post('/acil/:dosya/elle-kabul', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { dosya } = i.params as { dosya: string }; const g = (i.body ?? {}) as { firma?: string; kanal?: string; kisi?: string; talimat?: string; tahmini?: number };
+    const o = i.oturum!; const { dosya } = i.params as { dosya: string }; const g = (i.body ?? {}) as { firma?: string; kanal?: string; kisi?: string; talimat?: string; tahmini?: number; temasSaati?: string; kabulSaati?: string };
     if (!UUID.test(dosya) || !(await dosyaErisimi(b.db, o.kullanici, dosya))) return yok(y);
     if (!g.firma || !g.kanal?.trim() || !g.kisi?.trim() || !g.talimat?.trim()) return y.code(400).send({ hata: 'Firma, kanal, kişi ve talimat zorunludur.' });
+    // YG-1456: temas saati ve firmanın kabul saati ayrı alandır; girilmezse kayıt anı esas alınır.
+    const temas = g.temasSaati ? new Date(g.temasSaati) : null; const kabul = g.kabulSaati ? new Date(g.kabulSaati) : new Date();
+    if ((temas && Number.isNaN(temas.getTime())) || Number.isNaN(kabul.getTime()) || kabul.getTime() > Date.now() + 300_000 || (temas && temas > kabul)) return y.code(400).send({ hata: 'Temas ve kabul saati geçerli olmalı; kabul saati temastan önce ve ileri bir tarih olamaz.' });
     // YG-272: elle kabulde de firma sicilde aktif, onaylı Çözüm Ortağı ve Çerçeve Sözleşmesi yürürlükte olmalıdır.
     if (!UUID.test(g.firma) || !(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND kayit_rolu = 'Çözüm Ortağı' AND ag_statusu = 'Aktif' AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [g.firma])).rowCount) return y.code(409).send({ hata: 'Acil iş yalnız sicilde aktif ve onaylı Çözüm Ortağına verilir.' });
     { const se = await (await import('./alacak.js')).sozlesmeEngeli(b.db, g.firma); if (se) return y.code(409).send({ hata: se }); }
@@ -438,7 +441,8 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE acil_gorev_cagrisi SET durum = 'İptal' WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [dosya]);
       const no = await altNumara(c, d.dosya_no, 'CA');
       const r = await acKabul(c, { ...d, dosya_ref: dosya }, g.firma!, o.kullanici, Number(g.tahmini ?? 0), new Date());
-      await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, durum, son_zaman, yanit_zamani, is_emri_ref, elle_kayit) VALUES ($1,$2,$3,'Kabul',now(),now(),$4,$5)`, [no, dosya, g.firma, r.isEmri, JSON.stringify({ kanal: g.kanal, kisi: g.kisi, talimat: g.talimat, giren: o.kullanici })]);
+      await c.query(`UPDATE is_emri SET firma_kabul_zamani = $2 WHERE kimlik = $1`, [r.isEmri, kabul]);
+      await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, durum, son_zaman, yanit_zamani, is_emri_ref, elle_kayit) VALUES ($1,$2,$3,'Kabul',now(),$4,$5,$6)`, [no, dosya, g.firma, kabul, r.isEmri, JSON.stringify({ kanal: g.kanal, kisi: g.kisi, talimat: g.talimat, temasSaati: temas?.toISOString() ?? null, kabulSaati: kabul.toISOString(), giren: o.kullanici })]);
       return r;
     });
   });
