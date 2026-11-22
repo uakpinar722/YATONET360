@@ -2,6 +2,7 @@ import { GarantiYanit } from './GarantiYanit';
 import { KontrolListeleri } from './KontrolListeleri';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { SigortaListesi } from './SigortaListesi';
+import { useSayfa } from './Sayfalama';
 import { DIGER_YER, YerListesi } from './YerListesi';
 import { istek, type Ben } from './api';
 import { TicariBolumu } from './Ticari';
@@ -56,6 +57,7 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
   };
   useEffect(yukle, [kapsam, ara]);
   useEffect(() => { if (acikDosya) { setDosyaId(acikDosya); setIhbarId(null); acildi(); } }, [acikDosya]);
+  const { parca: dosyaSayfasi, gezgin: dosyaGezgini } = useSayfa(dosyalar); // YG-1367
   if (dosyaId) return <DosyaEkrani id={dosyaId} roller={ben.roller.map((r) => r.rol_adi)} geri={() => { setDosyaId(null); yukle(); }} />;
   if (ihbarId) return <IhbarEkrani id={ihbarId} geri={(d) => { setIhbarId(null); yukle(); if (d) setDosyaId(d); }} />;
   if (form) return <IhbarFormu bitti={(id) => { setForm(false); yukle(); if (id) setIhbarId(id); }} />;
@@ -77,8 +79,8 @@ export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: stri
       <label htmlFor="dl-ara">Dosya Ara (Dosya No veya Yat Adı)</label><input id="dl-ara" value={ara} onChange={(e) => setAra(e.target.value)} />
       {dosyalar.length === 0 ? <div className="ozet bos">Dosya bulunmamaktadır.</div> : (
         <div className="tablo"><table className="kartli"><thead><tr><th>Dosya No</th><th>Yat</th><th>Öncelik</th><th>Durum</th><th>Dosya Sorumlusu</th><th /></tr></thead>
-          <tbody>{dosyalar.map((d) => <tr key={d.kimlik}><td data-ad="Dosya No">{d.dosya_no}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Öncelik"><Oncelik o={d.oncelik} /></td><td data-ad="Durum">{d.statu}{d.asama ? ` · ${d.asama}` : ''}{d.beklemede ? ` · Beklemede: ${d.beklemede}` : ''}</td><td data-ad="Dosya Sorumlusu">{d.dosya_sorumlusu ?? '—'}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setDosyaId(d.kimlik)}>Aç</button></td></tr>)}</tbody>
-        </table></div>
+          <tbody>{dosyaSayfasi.map((d) => <tr key={d.kimlik}><td data-ad="Dosya No">{d.dosya_no}</td><td data-ad="Yat">{d.yat_adi}</td><td data-ad="Öncelik"><Oncelik o={d.oncelik} /></td><td data-ad="Durum">{d.statu}{d.asama ? ` · ${d.asama}` : ''}{d.beklemede ? ` · Beklemede: ${d.beklemede}` : ''}</td><td data-ad="Dosya Sorumlusu">{d.dosya_sorumlusu ?? '—'}</td><td data-ad="İşlem"><button className="btn2 kucuk" onClick={() => setDosyaId(d.kimlik)}>Aç</button></td></tr>)}</tbody>
+        </table>{dosyaGezgini}</div>
       )}
     </>
   );

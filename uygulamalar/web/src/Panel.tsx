@@ -1,5 +1,6 @@
 import { KayitCakismasi } from './KayitCakismasi';
 import { TakilanAdim } from './TakilanAdim';
+import { useSayfa } from './Sayfalama';
 import { RolTanimi } from './RolTanimi';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
@@ -39,13 +40,14 @@ function Tablo<T>({ yol, baslik, satir }: { yol: string; baslik: string[]; satir
   const [d, setD] = useState<T[] | null>(null);
   const [h, setH] = useState('');
   useEffect(() => { istek<T[]>(yol).then(setD).catch((e) => setH(e.message)); }, [yol]);
+  const { parca, gezgin } = useSayfa(d ?? []); // YG-1367
   if (h) return <div className="hata" role="alert">{h}</div>;
   if (!d) return null;
   return (
     <div className="tablo"><table className="kartli">
       <thead><tr>{baslik.map((b) => <th key={b}>{b}</th>)}</tr></thead>
-      <tbody>{d.map((x, i) => <tr key={i}>{satir(x).map((c, j) => <td key={j} data-ad={baslik[j]}>{c ?? '—'}</td>)}</tr>)}</tbody>
-    </table></div>
+      <tbody>{parca.map((x, i) => <tr key={i}>{satir(x).map((c, j) => <td key={j} data-ad={baslik[j]}>{c ?? '—'}</td>)}</tr>)}</tbody>
+    </table>{gezgin}</div>
   );
 }
 

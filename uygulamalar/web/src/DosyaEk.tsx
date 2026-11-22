@@ -66,6 +66,8 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
   const [p, setP] = useState({ tur: 'Değişiklik', mevcut: '', onerilen: '', fark: '', toplam: '', sure: '', kanal: 'YATONET 360', sigorta: 'Gerekli Değil', starih: '' }); const [pb, setPb] = useState('');
   const [ek, setEk] = useState({ firma: '', kanal: 'Telefon', kisi: '', talimat: '', tahmini: '', temasSaati: '', kabulSaati: '' }); // YG-270, YG-1456
   const [ioS, setIoS] = useState(''); // YG-555
+  const [ioG, setIoG] = useState<string[]>([]); const [fotolar, setFotolar] = useState<{ gorsel_no: string | null; cekim_kalemi: string; bolge_kodu: string | null }[]>([]);
+  useEffect(() => { void istek<{ gorseller: typeof fotolar }>(`/dosya/${id}/saha`).then((v) => setFotolar(v.gorseller.filter((x) => x.gorsel_no))).catch(() => setFotolar([])); }, [id]);
   const [ak, setAk] = useState({ sonuc: '', risk: '', kapsam: '', gerekce: '', yetkiliKisi: '', kaynak: '', sonradan: '', devam: '' }); // YG-254
   const [ku, setKu] = useState({ hizmet: 'Kurtarma', saglayici: '', acil: false }); const [dalis, setDalis] = useState({ limanIzni: '', dalisPlani: '', enerjiIzolasyonu: '' }); const [kod, setKod] = useState(''); const [te, setTe] = useState({ tur: '112 Arandı', ozet: '' }); const [sec, setSec] = useState('Devam');
   const ret = teklifler.filter((t) => t.teklif_muhatabi === 'Sigorta Şirketi' && t.karar === 'Ret');
@@ -123,9 +125,10 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <button className="btn2 kucuk" disabled={!ku.saglayici} onClick={() => void yap(() => istek(`/dosya/${id}/kurtarma`, ku), 'Kurtarma operasyonu açıldı; yat sahibi onayı gönderildi.')}>Operasyon Aç</button>
 
       <div className="bolum">Müşteri İlerleme Özeti</div>
-      <div className="not">Yat sahibine fiziksel ilerleme, sonraki adım ve planlanan teslim tarihi gönderilir; firma adı ve fiyat yer almaz.</div>
+      <div className="not">Yat sahibine fiziksel ilerleme, sonraki adım ve planlanan teslim tarihi RP-RAP-006 PDF ekiyle gönderilir; firma adı ve fiyat yer almaz.</div>
       <label htmlFor="io-s">Sonraki Adım</label><input required id="io-s" value={ioS} onChange={(e) => setIoS(e.target.value)} />
-      <button className="btn2 kucuk" disabled={!ioS.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/ilerleme-ozeti`, { sonrakiAdim: ioS }).then(() => setIoS('')), 'İlerleme Özeti gönderildi.')}>İlerleme Özetini Gönder</button>
+      {fotolar.length > 0 && <><div className="not">Rapora eklenecek fotoğraflar (en çok 6)</div>{fotolar.map((f) => <label className="kutu" key={f.gorsel_no!}><input type="checkbox" checked={ioG.includes(f.gorsel_no!)} disabled={!ioG.includes(f.gorsel_no!) && ioG.length >= 6} onChange={(e) => setIoG(e.target.checked ? [...ioG, f.gorsel_no!] : ioG.filter((x) => x !== f.gorsel_no))} /><span>{f.gorsel_no} · {f.cekim_kalemi}{f.bolge_kodu ? ` · ${f.bolge_kodu}` : ''}</span></label>)}</>}
+      <button className="btn2 kucuk" disabled={!ioS.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/ilerleme-ozeti`, { sonrakiAdim: ioS, gorseller: ioG }).then(() => { setIoS(''); setIoG([]); }), 'İlerleme Özeti gönderildi.')}>İlerleme Özetini Gönder</button>
       <div className="bolum">Sigortalı Dosyada Yat Sahibi İtirazı</div>
       <div className="not">Yat sahibi sigorta onayıyla yürüyen işe itiraz ederse kaydedilir: çalışmalar geçici olarak durdurulur, yat sahibine onaylı itiraz bildirimi gider ve Dosya Sorumlusuna arama görevi açılır.</div>
       <div className="dugmeler"><button className="btn hayir kucuk" onClick={() => { if (window.confirm('Yat sahibi itirazı kaydedilsin ve çalışmalar geçici olarak durdurulsun mu?')) void yap(() => istek(`/dosya/${id}/itiraz`, {}), 'İtiraz kaydedildi; çalışmalar durduruldu.'); }}>Yat Sahibi İtirazını Kaydet</button></div>

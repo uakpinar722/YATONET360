@@ -75,6 +75,25 @@ export async function teslimIsle(db: Pool, simdi = new Date()): Promise<number> 
   return n;
 }
 
+/** YG-555, YG-787: RP-RAP-006 Müşteri İlerleme Özeti PDF'i; firma adı, fiyat, maliyet ve iç not içermez. Dosya belgesi olarak saklanır, sürüm kimliği döner. */
+async function ilerlemeOzetiPdf(b: Baglam, yapan: string, id: string, d: { dosya_no: string; yat_adi: string; yazisma_dili: string | null }, v: { tarih: string; oran: string; teslim: string; sonraki: string; fotolar: { gorsel_no: string; cekim_kalemi: string; bolge_kodu: string | null; depo_anahtari: string; uzanti: string }[] }): Promise<string> {
+  const { pdfUret } = await import('./pdf.js'); const dil = dilKod(d.yazisma_dili ?? 'Türkçe') === 'en' ? 'en' : 'tr'; const en = dil === 'en';
+  const depo = b.depo ?? new Depo();
+  const bolumler: import('./pdf.js').Bolum[] = [{ baslik: en ? 'Progress' : 'İlerleme', tur: 'alanlar', alanlar: [
+    { et: en ? 'Yacht' : 'Yat', deger: d.yat_adi }, { et: en ? 'File No' : 'Dosya No', deger: d.dosya_no }, { et: en ? 'Date' : 'Tarih', deger: v.tarih },
+    { et: en ? 'Physical Progress' : 'Fiziksel İlerleme', deger: `%${v.oran}` }, { et: en ? 'Estimated Delivery' : 'Tahmini Teslim', deger: v.teslim }, { et: en ? 'Next Step' : 'Sonraki Adım', deger: v.sonraki, genis: true }] }];
+  for (const f of v.fotolar) {
+    try {
+      const parca: Buffer[] = []; for await (const x of depo.bagla(f.depo_anahtari)) parca.push(x as Buffer);
+      bolumler.push({ baslik: `${f.gorsel_no} · ${f.cekim_kalemi}${f.bolge_kodu ? ` · ${f.bolge_kodu}` : ''}`, tur: 'gorsel', src: `data:image/${String(f.uzanti).toLowerCase() === 'png' ? 'png' : 'jpeg'};base64,${Buffer.concat(parca).toString('base64')}` });
+    } catch { /* depoda bulunmayan görsel PDF'e eklenmez */ }
+  }
+  const tanim = { ad: en ? 'Customer Progress Summary' : 'Müşteri İlerleme Özeti', kod: 'RP-RAP-006', no: `${d.dosya_no}-RAP006-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`, dosyaNo: d.dosya_no, yat: d.yat_adi, tarih: v.tarih, surum: 'Rev.1', dil, kase: true, bolumler } as import('./pdf.js').BelgeTanim;
+  const pdf = await pdfUret(tanim); const al = await depo.al(Readable.from(pdf), pdf.length + 1); const anahtar = depo.yerlestir(al.yol, al.ozet);
+  const be = (await b.db.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,'Müşteri İlerleme Özeti','Gizli','Dosya',$2,'Sistem',(now() AT TIME ZONE 'Europe/Istanbul')::date,$3) RETURNING kimlik`, [`${tanim.ad} ${tanim.no}`, id, yapan])).rows[0].kimlik;
+  return (await b.db.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, yukleyen_ref, durum, onay_zamani) VALUES ($1,1,$2,'pdf',$3,$4,$5,'Sistem',$6,'Yürürlükte',now()) RETURNING kimlik`, [be, `${tanim.no}.pdf`, pdf.length, al.ozet, anahtar, yapan])).rows[0].kimlik as string;
+}
+
 export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
@@ -176,20 +195,27 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-555, YG-787 (BLD-93, CEO 17.11.2026): Müşteri İlerleme Özeti; yalnız fiziksel ilerleme; firma, fiyat ve finansal oran yazılmaz; sigortaya e-postayla gitmez (MT-6).
   s.post('/dosya/:id/ilerleme-ozeti', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonrakiAdim?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonrakiAdim?: string; gorseller?: string[] };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'İlerleme Özetini Dosya Sorumlusu gönderir.' });
     if (!g.sonrakiAdim?.trim()) return y.code(400).send({ hata: 'Sonraki adımı yazınız.' });
+    // YG-555: seçili fotoğraflar (en çok 6) dosyanın görsel kanıtlarından; gizlilik denetiminden geçmeyen fotoğraf eklenmez.
+    const secili = [...new Set((g.gorseller ?? []).filter((x) => typeof x === 'string'))];
+    if (secili.length > 6) return y.code(400).send({ hata: 'En çok 6 fotoğraf seçiniz.' });
+    const fotolar = secili.length ? (await b.db.query(`SELECT k.gorsel_no, k.cekim_kalemi, k.bolge_kodu, s.kimlik surum, s.depo_anahtari, s.uzanti FROM gorsel_kanit k JOIN LATERAL (SELECT * FROM belge_surum WHERE belge_ref = k.belge_ref ORDER BY surum_no DESC LIMIT 1) s ON true WHERE k.dosya_ref = $1 AND k.gorsel_no = ANY($2) ORDER BY k.gorsel_no`, [id, secili])).rows : [];
+    if (fotolar.length !== secili.length) return y.code(400).send({ hata: 'Fotoğraflar bu dosyanın görsel kayıtlarından seçilir.' });
+    if (fotolar.length) { const h = await (await import('./gorsel_gizlilik.js')).hassasEkEngeli(b.db, fotolar.map((f) => f.surum)); if (h) return y.code(409).send({ hata: h }); }
     const d = (await b.db.query(`SELECT d.dosya_no, d.hizmet_turu, d.ilerleme_yuzdesi, d.tahmini_teslim_tarihi::text teslim, d.yazisma_dili, d.vefat_isareti, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [id])).rows[0];
     if (/kurtarma/i.test(d.hizmet_turu ?? '')) return y.code(409).send({ hata: 'Kurtarma dosyasında İlerleme Özeti gönderilmez.' });
     const t = await sahip(id); if (!t || (!t.telefon && !t.eposta)) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });
     if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmez.' });
     const tr = gunAy(new Date()); const oran = String(Math.floor(Number(d.ilerleme_yuzdesi ?? 0))); const tes = d.teslim ? gunAy(d.teslim) : '-';
-    await yatTarafinaYaz(b.db, { olay: `bld93:${id}:${new Date().toISOString().slice(0, 10)}`, kod: 'BLD-93', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Müşteri İlerleme Özeti`, telefon: t.telefon, eposta: t.eposta,
+    const ek = await ilerlemeOzetiPdf(b, o.kullanici, id, d, { tarih: tr, oran, teslim: tes, sonraki: g.sonrakiAdim.trim(), fotolar }); // YG-555: RP-RAP-006
+    await yatTarafinaYaz(b.db, { olay: `bld93:${id}:${new Date().toISOString().slice(0, 10)}`, kod: 'BLD-93', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Müşteri İlerleme Özeti`, telefon: t.telefon, eposta: t.eposta, ekler: [ek],
       alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi, tarih: tr, date: tr, oran, rate: oran, 'sonraki adım': g.sonrakiAdim.trim(), 'next step': g.sonrakiAdim.trim(), 'teslim tarihi': tes, 'delivery date': tes, 'bağlantı': b.webAdresi, link: b.webAdresi } });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'İlerleme Özetini Gönder' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Müşteri İlerleme Özeti Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { tamam: true };
+    return { tamam: true, belgeSurumu: ek };
   });
   s.post('/dosya/:id/teslime-hazir', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };

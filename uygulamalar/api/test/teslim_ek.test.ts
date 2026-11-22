@@ -83,6 +83,10 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/ilerleme-ozeti`, ds, { sonrakiAdim: 'Gövde boyası' }); expect(r.statusCode, r.body).toBe(200);
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld93:${d.kimlik}%`])).rows[0]?.metin as string;
     expect(m).toContain('Gövde boyası'); expect(m).not.toContain('EUR'); expect(m).not.toContain('[');
+    // YG-555: RP-RAP-006 PDF eki dosya belgesi olarak saklanır ve e-postaya eklenir; yabancı görsel seçilemez
+    const ek = (await o.sup.query(`SELECT s.dosya_adi, e.belge_turu, e.bag_kimligi FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE s.kimlik = $1`, [r.json().belgeSurumu])).rows[0];
+    expect(ek).toMatchObject({ belge_turu: 'Müşteri İlerleme Özeti', bag_kimligi: d.kimlik }); expect(ek.dosya_adi).toMatch(/RAP006/);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ilerleme-ozeti`, ds, { sonrakiAdim: 'X', gorseller: ['YOK-G0001'] })).statusCode).toBe(400);
   });
   it('Dosya Sorumlusu belge talebi ve ulaşılamama bildirimi gönderir (T-YG551)', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
