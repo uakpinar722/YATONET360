@@ -233,10 +233,14 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
   });
 
   const benimDosyalarim = `EXISTS (SELECT 1 FROM dosya_tarafi t WHERE t.dosya_ref = d.kimlik AND t.kullanici_ref = $1 AND t.aktif AND t.taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci', 'Kaptan', 'İşletmeci', 'Yat Yönetim Şirketi')) OR EXISTS (SELECT 1 FROM kurumsal_kullanici u JOIN kurumsal_kurum c ON c.kimlik = u.kurum_ref JOIN yat ky ON ky.yat_sahibi_ref = c.taraf_ref WHERE u.kullanici_ref = $1 AND ky.kimlik = d.yat_ref)`;
-  const kart = async (d: Record<string, any>) => {
+  const kart = async (d: Record<string, any>, kim?: string) => {
     const bek = (await b.db.query(`SELECT neden FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.neden as string);
     const durum = musteriDurumu(d as never, await musteriGostergeleri(b.db, d.kimlik, bek)); // YG-1564
-    return { kimlik: d.kimlik, dosyaNo: d.dosya_no, yat: d.yat_adi, durum: durum.ad, renk: durum.renk, ilerleme: Number(d.ilerleme_yuzdesi), acilis: d.acilis_tarihi, dosyaSorumlusu: d.dosya_sorumlusu ?? null };
+    // YG-1565: sonraki adım; yat sahibinden beklenen iş varsa o, yoksa LGM tarafındaki adım.
+    const onayBek = (await b.db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND alici_kullanici_ref = $2 AND durum = 'Bekliyor' AND son_gecerlilik > now() LIMIT 1`, [d.kimlik, kim ?? null])).rowCount;
+    const mesajBek = (await b.db.query(`SELECT 1 FROM dosya_yazismasi WHERE dosya_ref = $1 AND dis_taraf_ref = $2 AND lgm AND okunma_zamani IS NULL LIMIT 1`, [d.kimlik, kim ?? null])).rowCount;
+    const sonrakiAdim = durum.renk === 'gri' ? 'Dosya tamamlanmıştır.' : onayBek ? 'Onayınızı bekleyen belge bulunmaktadır.' : mesajBek ? 'Dosya Sorumlunuzdan yanıtlanmamış mesajınız bulunmaktadır.' : bek.length ? 'Beklenen bilgi veya belge için Dosya Sorumlunuz sizinle iletişime geçecektir.' : 'Dosyanızda LGM ekibinin çalışması sürmektedir.';
+    return { kimlik: d.kimlik, dosyaNo: d.dosya_no, yat: d.yat_adi, durum: durum.ad, renk: durum.renk, ilerleme: Number(d.ilerleme_yuzdesi), acilis: d.acilis_tarihi, dosyaSorumlusu: d.dosya_sorumlusu ?? null, sonrakiAdim };
   };
 
   // YG-1565: Onayınızı Bekleyenler, Dosyalarım. YG-459: firma, maliyet ve iç yazışma yoktur.
@@ -252,7 +256,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     const yetkili = (await b.db.query(`SELECT rol, sahip_ad, belge_durumu, ust_limit_eur, bitis_tarihi::text, odeme_yetkisi FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.kullanici])).rows[0] ?? null; // YG-1566
     const onaylar = (await b.db.query(`SELECT t.kimlik, t.ony_kod, t.baslik, t.belge_adi, t.son_gecerlilik, d.dosya_no FROM onay_talebi t LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.alici_kullanici_ref = $1 AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() ORDER BY t.olusturma_zamani DESC`, [o.kullanici])).rows;
     if (yetkili?.belge_durumu === 'Geçerli') { const var0 = new Set(onaylar.map((x) => x.kimlik)); for (const x of await (await import('./yetki_ek.js')).yetkiliOnaylari(b.db, o.kullanici)) if (!var0.has(x.kimlik)) onaylar.push(x); } // YG-1566
-    return { yetkili, onaylar, dosyalar: await Promise.all(dosyalar.map(kart)), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
+    return { yetkili, onaylar, dosyalar: await Promise.all(dosyalar.map((x) => kart(x, o.kullanici))), talepler: talepler.map((t) => ({ kimlik: t.kimlik, dosyaNo: t.talep_no, yat: t.yat_adi, durum: 'Talebiniz Alındı', renk: 'yeşil', zaman: t.kayda_gecis_zamani })) };
   });
 
   // YG-460: RP-RAP-001 İlerleme Raporu (PDF) yat sahibinin kendi dosyası için.
@@ -283,7 +287,7 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     // YG-477: yat sahibi kendi yatının mülkiyet türünü, takyidatını ve lehtarını görür.
     const mulkiyet = (await b.db.query(`SELECT y.mulkiyet_turu, y.takyidat, coalesce(y.lehtar_adi, (SELECT unvan_ad_soyad FROM taraf WHERE kimlik = y.lehtar_ref)) lehtar FROM dosya x JOIN yat y ON y.kimlik = x.yat_ref WHERE x.kimlik = $1`, [d.kimlik])).rows[0] ?? null;
     for (const x of teklifler) if (x.karar === 'Süre Dolumu Kabulü') x.karar = null; // SGT-1: sigorta onayı olarak gösterilmez
-    return { ...(await kart(d)), mulkiyet, cayma, belgeler, fotograflar, kapsamOzeti, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
+    return { ...(await kart(d, o.kullanici)), mulkiyet, cayma, belgeler, fotograflar, kapsamOzeti, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

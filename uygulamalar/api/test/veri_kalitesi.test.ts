@@ -7,7 +7,7 @@ import { bildir, sessizSonu } from '../src/bildirim.js';
 import { isZamanlayici, zamanlanmisIsDenetimi } from '../src/zamanlayici.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { bim: 'Bilgi İşlem Müdürü', opm: 'Operasyon Müdürü', ds: 'Dosya Sorumlusu', ide: 'İç Denetçi', tu: 'Teknik Uzman' };
+const KADRO = { bim: 'Bilgi İşlem Müdürü', opm: 'Operasyon Müdürü', ds: 'Dosya Sorumlusu', ide: 'İç Denetçi', tu: 'Teknik Uzman', ys: 'Yat Sahibi (Deneme)', ys2: 'Yat Sahibi (Deneme)' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test103', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -339,5 +339,30 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/yazismalar`, await o.gir('ide'))).json();
     expect(l.map((x: { konu: string }) => x.konu)).toContain(`${d.dosyaNo} · Ödeme Hatırlatması`);
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/yazismalar`, await o.gir('tu'))).statusCode).toBe(404);
+  });
+  it('dosya yazışması: dış taraf yalnız kendi başlığını görür, LGM rolle görünür; tehlike ifadesi Kritik; yanıt görevi; öncelik düşürme onaylı (YG1663-YAZISMA)', async () => {
+    const d = await o.dosyaAc(); await o.ata(d.kimlik, 'ds', 'Dosya Sorumlusu', 'opm'); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, oncelik = 'Normal' WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    await o.sup.query(`UPDATE kullanici_hesabi SET kullanici_grubu = 'Bireysel Müşteri (Yat Sahibi/Yetkilisi)' WHERE kimlik = ANY($1)`, [[o.K.ys, o.K.ys2]]);
+    await o.sup.query(`INSERT INTO aydinlatma_kaydi (ilgili_kisi_ref, ilgili_kisi_grubu, aydinlatma_metni, metin_surumu, dil, sunum_kanali) SELECT unnest($1::text[]), 'Müşteri', 'KVKK-01', 'R00', 'Türkçe', 'Web'`, [[o.K.ys, o.K.ys2]]);
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, kullanici_ref, olusturan_ref) VALUES ($1,'Yetkili Temsilci','Temsilci A',$2,$4), ($1,'Kaptan','Kaptan B',$3,$4)`, [d.kimlik, o.K.ys, o.K.ys2, o.K.ds]);
+    const ys = await o.gir('ys'), ys2 = await o.gir('ys2'), ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/yazisma`;
+    const r1 = await o.ist("POST", u, ys, { metin: "Teslim tarihi nedir?" }); const m1 = r1.json(); expect(m1.oncelik, r1.body).toBe("Normal");
+    expect((await o.kart('Mesaj Yanıtı', m1.kimlik)).sahip_kullanici_ref).toBe(o.K.ds);
+    const m2 = await o.ist('POST', u, ys2, { metin: 'Yat su alıyor, acil!' }); expect(m2.json().oncelik).toBe('Kritik');
+    expect((await o.ist('GET', u, ys)).json().mesajlar.map((x: { metin: string }) => x.metin)).toEqual(['Teslim tarihi nedir?']);
+    expect((await o.ist('POST', u, await o.gir('tu'), { metin: 'x', taraf: o.K.ys })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ds, { metin: 'x', taraf: o.K.tu })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { metin: 'Cuma teslim edilecektir.', taraf: o.K.ys })).statusCode).toBe(200);
+    expect((await o.kart('Mesaj Yanıtı', m1.kimlik)).durum).toBe('Tamamlandı');
+    const g = (await o.ist('GET', u, ys)).json().mesajlar; expect(g.at(-1).gonderen).toBe('Dosya Sorumlusu'); expect(JSON.stringify(g)).not.toContain('Yat su alıyor');
+    const lg = (await o.ist('GET', u, ds)).json(); expect(lg.yanitBekleyen).toBe(1); expect(lg.taraflar.length).toBe(2);
+    await o.ist('POST', u, ds, { metin: 'Fotoğraf iletebilir misiniz?', taraf: o.K.ys });
+    const pa = await o.ist('GET', '/api/portal/ana', ys); // YG1565-ADIM
+    expect(pa.json().dosyalar?.find((x: { kimlik: string }) => x.kimlik === d.kimlik)?.sonrakiAdim, pa.body).toContain('mesajınız');
+    const pu = `/api/dosya-yazismasi/${m2.json().kimlik}/oncelik`;
+    expect((await o.ist('POST', pu, ds, { oncelik: 'Normal' })).statusCode).toBe(400);
+    expect((await o.ist('POST', pu, ds, { oncelik: 'Normal', gerekce: 'Yanlış alarm, teyit edildi' })).json().makam).toBe('Operasyon Müdürü');
+    expect((await o.sup.query(`SELECT oncelik, bekleyen_oncelik FROM dosya_yazismasi WHERE kimlik = $1`, [m2.json().kimlik])).rows[0]).toEqual({ oncelik: 'Kritik', bekleyen_oncelik: 'Normal' });
+    await expect(o.db.query(`DELETE FROM dosya_yazismasi WHERE kimlik = $1`, [m1.kimlik])).rejects.toThrow(); await expect(o.db.query(`UPDATE dosya_yazismasi SET metin = 'x' WHERE kimlik = $1`, [m1.kimlik])).rejects.toThrow();
   });
 });

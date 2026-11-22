@@ -5,6 +5,7 @@ import { istek, type Ben } from './api';
 import { KurumsalFilo } from './KurumsalFilo';
 import { BelgeSec } from './Kalite';
 import { PazarlamaSorusu } from './PazarlamaSorusu';
+import { DosyaYazismasi } from './DosyaYazismasi';
 
 interface Kart { kimlik: string; dosyaNo: string; yat: string; durum: string; renk: string; ilerleme?: number; dosyaSorumlusu?: string | null }
 interface OnayKart { kimlik: string; baslik: string; belge_adi: string; dosya_no: string | null }
@@ -46,6 +47,7 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
           <b>{k.yat}</b> · {k.dosyaNo}
           <div><Durum k={k} /></div>
           <div className="ilerleme" role="progressbar" aria-valuenow={k.ilerleme} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${k.ilerleme}%` }} /></div>
+          {(k as { sonrakiAdim?: string }).sonrakiAdim && <div className="not">Sonraki Adım: {(k as { sonrakiAdim?: string }).sonrakiAdim}</div>}
           <button className="btn2 kucuk" onClick={() => setAcik(k.kimlik)}>Ayrıntı</button>
         </div>
       ))}
@@ -158,6 +160,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       {d.teslim?.teslime_hazir_zamani && <div className="uyari">Yatınız teslime hazırdır. Teslim için kalan gün: {d.teslim.kalan_gun}. Bu süreden sonraki barınma gideri tarafınıza aittir.</div>}
       {d.faturalar.length > 0 && <><div className="bolum">Faturalar</div><div className="ozet">{d.faturalar.map((f) => <div key={f.fatura_no}>{f.fatura_no} · {f.fatura_tarihi?.split('-').reverse().join('.')} · {eurB(f.toplam_eur)}{f.toplam_tl ? ` · ${f.toplam_tl} TL` : ''} · {f.durum} <FaturaItiraz id={f.kimlik} /></div>)}</div></>}
       <SokulenParcalar id={id} />
+      <DosyaYazismasi id={id} />
       <div className="ozet"><a href={`/api/portal/dosya/${id}/ilerleme-raporu`}>İlerleme Raporu (PDF)</a></div>{/* YG-460 */}
       {(d.fotograflar?.length ?? 0) > 0 && <><div className="bolum">İlerleme Fotoğrafları, Videoları ve Belgeleri</div><div className="ozet">{d.fotograflar!.map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a> · {tarih(f.onay_zamani)}</div>)}</div></>}
       <div className="bolum">Garanti Talebi</div>

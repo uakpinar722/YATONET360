@@ -18,6 +18,7 @@ import { DosyaPerformans } from './DosyaPerformans';
 import { ZorlukKatsayisi } from './Zorluk';
 import { useEffect, useState, type ReactNode } from 'react';
 import { DosyaDestek } from './Destek';
+import { DosyaYazismasi } from './DosyaYazismasi';
 import { PortalaAc } from './PortalaAc';
 import { DurumBoyutlari } from './DurumBoyutlari';
 import { OnayKayitlari } from './OnayKayitlari';
@@ -251,6 +252,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <DurumOzeti id={id} />
     <TarafGorevleri id={id} />
     <DosyaYazismalari id={id} />
+    <DosyaYazismasi id={id} ic dosyaSorumlusu />
     <GonderimDurumu id={id} />
     <PortalaAc dosya={id} />
     <TeslimAlici dosya={id} />
