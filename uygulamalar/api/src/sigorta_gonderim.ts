@@ -36,6 +36,8 @@ export async function sigortayaHazirla(c: Db, g: { dosya?: string | null; tur: s
   if (var_) return var_.kimlik;
   const r = (await c.query(`INSERT INTO sigorta_gonderim (dosya_ref, tur, nesne_kimligi, alici, konu, metin, acil, veri, sorumlu_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [g.dosya ?? null, g.tur, g.nesne, g.alici ?? null, g.konu, g.metin ?? null, Boolean(g.acil), JSON.stringify(g.veri ?? {}), g.sorumlu ?? null])).rows[0];
   const sahip = g.sorumlu ?? (g.dosya ? (await c.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [g.dosya])).rows[0]?.dosya_sorumlusu_ref : null);
+  // YG-1465: şablonun tanımlı doğan görevi sigorta kanalında da açılır.
+  if (/^BLD-\d/.test(g.tur) && g.dosya) { const no = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [g.dosya])).rows[0]?.dosya_no; if (no) await (await import('./ihbar.js')).doganGorevAc(c, g.tur, no, `sigorta:${g.tur}:${g.nesne}`); }
   if (sahip) await kartAc(c, { tur: 'Sigortaya Gönderim Teyidi', kategori: 'islem', baslik: `${g.konu} · Sigortaya Gönderim Teyidi`, oncelik: 'Yüksek', sahipKullanici: sahip, sonZaman: g.sonZaman ?? undefined, nesneTuru: 'Sigorta Gönderimi', nesneKimligi: r.kimlik });
   return r.kimlik;
 }

@@ -147,6 +147,9 @@ export async function kvkkIsle(db: Pool, simdi = new Date()): Promise<number> {
   }
   for (const k of (await db.query(`SELECT kimlik, basvuru_no, son_yanit_tarihi, hazirlayan_ref FROM ilgili_kisi_basvurusu WHERE durum <> 'Yanıtlandı' AND son_yanit_tarihi <= ($1::date + 7)`, [simdi.toISOString().slice(0, 10)])).rows) if (await birKez(db, 'basvuru_son', k.kimlik)) { await bildir(db, { olay: `basvuru-son:${k.kimlik}`, kullanicilar: [k.hazirlayan_ref, ...await rolKisileri(db, HUD)], baslik: `⚠ ${k.basvuru_no} · Yanıt Süresi Yaklaşıyor`, ozet: `Son yanıt: ${new Date(k.son_yanit_tarihi).toLocaleDateString('tr-TR')}`, oncelik: 'Yüksek' }); n++; }
   await db.query(`DELETE FROM bildirim WHERE zaman < $1`, [ayEkle(simdi, -24)]);
+  { // YG-1225: işlem güvenliği logları LOG-2 süresi (en az 24 ay) dolunca silinir; iş kaydı izi kalır.
+    const ay = Math.max(24, Number((await db.query(`SELECT sure_ay FROM saklama_plani WHERE kod = 'LOG-2'`)).rows[0]?.sure_ay ?? 24));
+    n += Number((await db.query(`SELECT guvenlik_izi_ayikla($1) n`, [ayEkle(simdi, -ay)])).rows[0].n); }
   n += (await db.query(`DELETE FROM konum_kaydi WHERE zaman < $1`, [ayEkle(simdi, -12)])).rowCount ?? 0; // YG-1658, YG-500: acil konum 1 yıl saklanır
   // YG-608, YG-1222: belge türüne göre grup; birden çok gruba giriyorsa en uzun süre. Mali kayıt takvim yılı sonundan başlar.
   // YG-608: dosya dışı kayda bağlı belge de hesaplanır. İş emri ve talep belgesi bağlı dosyanın kapanışından; kuruluş belgesi ilişkinin bitişinden (ILS-5);

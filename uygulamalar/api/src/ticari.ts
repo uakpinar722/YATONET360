@@ -575,6 +575,14 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const tl = R2(matrahTl + kdvTl - tevTl);
     await (await import('./uyum.js')).uyumOlay(b.db, 'fatura', 'Fatura No', g.no.trim()); // YG-1546
     await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8, fatura_pdf_ref = $9, fatura_giren_ref = $10, kur_kaynagi = $11 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl, g.pdf ?? null, o.kullanici, fk.kaynak]);
+    { // YG-530, BLD-101: yat sahibine fatura düzenlendi bildirimi (PDF ekli); sigortaya ve vefat işaretli dosyaya gitmez.
+      const yt = (await b.db.query(`SELECT t.telefon, t.eposta, d.dosya_no, d.yazisma_dili, d.musteri_turu, d.vefat_isareti FROM dosya d JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [f.dosya_ref])).rows[0];
+      if (yt && !yt.vefat_isareti && yt.musteri_turu !== 'Sigorta Şirketi' && f.muhatap !== 'Sigorta Şirketi') {
+        const v = gunAy(vade); const ft = gunAy(g.tarih);
+        await disGonder(b.db, { olay: `bld101:${f.kimlik}`, telefon: yt.telefon, eposta: yt.eposta, konu: `${yt.dosya_no} Faturanız Düzenlendi`, ekler: g.pdf ? [g.pdf] : undefined,
+          metin: await metinGetir(b.db, 'BLD-101', dilKod(yt.yazisma_dili), { 'Dosya No': yt.dosya_no, 'File No': yt.dosya_no, 'fatura no': g.no.trim(), 'invoice no': g.no.trim(), 'fatura tarihi': ft, 'invoice date': ft, vade: v, 'due date': v, 'bağlantı': b.webAdresi, link: b.webAdresi }) });
+      }
+    }
     // YG-421, K-193: firmaya Fatura Düzenleme Bildirimi (BLD-80).
     for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, e.kurulus_ref, coalesce((SELECT sum(h.bu_donem_brut) FROM hakedis h WHERE h.is_emri_ref = e.kimlik AND h.statu <> 'Reddedildi'), e.firma_bedeli_eur) AS tutar FROM is_emri e WHERE e.dosya_ref = $1 AND e.statu NOT IN ('İptal', 'Yerine Geçti', 'Taslak')`, [f.dosya_ref])).rows) {
       if (!(Number(e.tutar) > 0)) continue;

@@ -192,6 +192,8 @@ export async function sunucuKur(b: Baglam) {
   s.addHook('onSend', async (i, y) => { y.header('X-Iliski-Kimligi', i.id); });
   firmaIslevKancasi(s, b); // YG-994: rotalar kaydedilmeden önce
   aramaSuzgeciKancasi(s); // YG-1162
+  (await import('./mobil.js')).konumIziKancasi(s, b.db); // YG-1022
+  (await import('./anlamsiz_metin.js')).anlamsizMetinKancasi(s); // YG-1375
   olcumKur(s); // YG-778
   // Çerez SameSite=Strict; ek olarak durum değiştiren istek bu üst bilgiyi taşımalıdır.
   s.addHook('onRequest', async (i, y) => {

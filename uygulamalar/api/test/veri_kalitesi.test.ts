@@ -333,6 +333,13 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     for (const f of readdirSync(kok).filter((x) => x.endsWith('.ts'))) for (const m of readFileSync(join(kok, f), 'utf8').matchAll(/SET (?:durum|statu|sonuc) = '(?:Tamamlandı|Yapıldı|Gerçekleşti|Kapandı)'[^`]*?WHERE[^`]*?(?:<=? now\(\)|<=? current_date)/g)) bulgu.push(`${f}: ${m[0].slice(0, 80)}`);
     expect(bulgu).toEqual([]);
   });
+  it('gerekçe ve açıklamada anlamsız metin reddedilir (YG1375-ANLAMSIZ)', async () => {
+    const { anlamsizMetin } = await import('../src/anlamsiz_metin.js');
+    for (const x of ['xxx', '...', '---', 'test', 'Deneme', 'aaaa', '?!']) expect(anlamsizMetin(x), x).toBe(true);
+    for (const x of ['x', 'G', 'Ölçüm', 'Sızıntı kesildi', '3 gün']) expect(anlamsizMetin(x), x).toBe(false);
+    const d = await o.dosyaAc(); const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-durdur`, await o.gir('ds'), { neden: 'Gaz', gerekce: 'xxx' });
+    expect(r.json().hata).toContain('anlamlı');
+  });
   it('giden ileti dosya numarasından dosyaya bağlanır ve dosya yazışmalarında görünür (YG1601-YAZISMA)', async () => {
     const d = await o.dosyaAc(); const { disGonder } = await import('../src/bildirim.js');
     await disGonder(o.db, { olay: 'tahsilat-hatirlatma:deneme', eposta: 'muhasebe@ornek-musteri.local', konu: `${d.dosyaNo} · Ödeme Hatırlatması`, metin: 'Ödeme bekleniyor.' });

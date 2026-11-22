@@ -59,6 +59,14 @@ describe('ikili teyit (K-241)', () => {
     expect((await o.ist('GET', `/api/sigorta-gonderim?dosya=${d.kimlik}`, await o.gir('ic'))).json()).toHaveLength(0);
   });
 });
+describe('sigorta kanalında doğan görev (YG-1465)', () => {
+  it('doğan görevi tanımlı şablon sigortaya hazırlanınca görev açılır (YG1465-SIGORTA)', async () => {
+    const d = await dosya();
+    await sigortayaHazirla(o.db, { dosya: d.kimlik, tur: 'BLD-69', nesne: `N${Math.random()}`, alici: EP, konu: 'Konu', metin: 'Metin' });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Doğan Görev' AND baslik = $1`, [`${d.dosyaNo} · BLD-69 sonrası görev`])).rows[0].n).toBe(1);
+  });
+});
+
 describe('kaçak gönderim engeli', () => {
   it('sigorta adresine doğrudan gönderim hata verir', async () => {
     await dosya();

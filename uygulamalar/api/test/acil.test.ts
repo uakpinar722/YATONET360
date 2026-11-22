@@ -227,7 +227,8 @@ describe('acil çağrı (YG-253, YG-255, YG-263, YG-266)', () => {
     expect((await o.ist('GET', '/api/isg/sahadaki-isler', isg)).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/isg/sahadaki-isler', await o.gir('sc'))).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/dosya/${r.kimlik}/is-durdur`, await o.gir('sc'), { neden: 'Gaz' })).statusCode).toBe(404);
-    expect((await o.ist('POST', `/api/dosya/${r.kimlik}/is-durdur`, isg, { neden: 'Kaynak işi sırasında yakıt buharı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${r.kimlik}/is-durdur`, isg, { neden: 'Kaynak işi sırasında yakıt buharı', konum: { enlem: 36.85, boylam: 28.27 } })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT enlem::float e FROM saha_konum_kaydi WHERE dosya_ref = $1`, [r.kimlik])).rows[0]?.e).toBe(36.85); // YG1022-KONUM
     expect((await o.sup.query(`SELECT calisma_durduruldu d FROM dosya WHERE kimlik = $1`, [r.kimlik])).rows[0].d).toBe(true);
   });
   it('emniyet durdurması işi durdurur, tüm makamlara gider; yeniden başlatma yalnız Teknik Müdür', async () => {

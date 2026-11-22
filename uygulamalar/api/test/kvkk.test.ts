@@ -70,6 +70,19 @@ describe('ilgili kişi başvurusu (YG-1218–1220)', () => {
   });
 });
 
+describe('güvenlik logu saklama (YG-1225)', () => {
+  it('24 ayı dolan giriş logu silinir, özeti kalır; iş izi ve yeni log kalır; uygulama doğrudan silemez (YG1225-LOG)', async () => {
+    const eski = new Date(Date.now() - 25 * 30 * 86_400_000);
+    const g = (await o.sup.query(`INSERT INTO denetim_izi (eylem, sonuc, olay_zamani, butunluk_degeri) VALUES ('Giriş Denemesi', 'Başarısız', $1, 'x') RETURNING kimlik`, [eski])).rows[0].kimlik;
+    const is = (await o.sup.query(`INSERT INTO denetim_izi (eylem, sonuc, olay_zamani, butunluk_degeri) VALUES ('Onay Kararı', 'Başarılı', $1, 'x') RETURNING kimlik`, [eski])).rows[0].kimlik;
+    await expect(o.db.query(`DELETE FROM denetim_izi WHERE kimlik = $1`, [g])).rejects.toThrow();
+    await expect(o.db.query(`SELECT guvenlik_izi_ayikla(now())`)).rejects.toThrow();
+    const { kvkkIsle } = await import('../src/kvkk.js'); await kvkkIsle(o.db);
+    expect((await o.sup.query(`SELECT kimlik FROM denetim_izi WHERE kimlik = ANY($1)`, [[g, is]])).rows.map((r) => r.kimlik)).toEqual([is]);
+    expect((await o.sup.query(`SELECT butunluk_degeri FROM denetim_izi_ayiklama WHERE kimlik = $1`, [g])).rowCount).toBe(1);
+  });
+});
+
 describe('saklama, hukuki koruma, imha (YG-608, YG-1222, YG-1223, YG-1228, YG-1230–1232)', () => {
   const kapaliDosya = async (t = '2020-01-01') => { const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET statu = 'Kapalı', kapanma_nedeni = 'Tamamlandı', kapanis_zamani = $2 WHERE kimlik = $1`, [d.kimlik, t]); return d; };
   it('süresi dolan listeye girer; korunan ve açık garantili girmez; birim ve onay ayrı; imha uygulanır; geri yüklenen tekrar imha edilir', async () => {

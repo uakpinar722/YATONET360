@@ -129,7 +129,10 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
     await c.query(`INSERT INTO sablon_metni (kod, dil, surum, tur, baslik, metin, onay_dayanagi, degisiklik_gerekcesi, yayim_zamani) VALUES ($1,$2,$3,$4,$5,$6,'CEO onaylı metin kütüphanesi (kurulum)','Katalog güncellemesi',now())`, [kod, dil, `R${String(Number(String(son.surum).replace(/\D/g, '')) + 1).padStart(2, '0')}`, tur, baslik, m]);
   };
   for (const [kod, tr, en] of tsv('matbu_M1_M10.tsv')) { await metin(kod!, 'tr', 'Matbu', null, tr); await metin(kod!, 'en', 'Matbu', null, en); }
-  for (const r of tsv('bildirim_katalog.tsv')) { await metin(r[0]!, 'tr', 'Bildirim', `${r[1]} · ${r[2]}`, r[4]); await metin(r[0]!, 'en', 'Bildirim', `${r[1]} · ${r[2]}`, r[5]); }
+  for (const r of tsv('bildirim_katalog.tsv')) {
+    await metin(r[0]!, 'tr', 'Bildirim', `${r[1]} · ${r[2]}`, r[4]); await metin(r[0]!, 'en', 'Bildirim', `${r[1]} · ${r[2]}`, r[5]);
+    const dg = r[7]?.trim(); await c.query(`UPDATE sablon_metni SET dogan_gorev = $2 WHERE kod = $1 AND dil = 'tr'`, [r[0], dg && !/^[—-]$/.test(dg) ? dg : null]); // YG-1465: katalogdaki doğan görev
+  }
   // YG-1545: Mevzuat Uyum Matrisi kuralları. YG-1551: dosyadan yalnız ilk kurulumda alınır; sonrası program içinden yönetilir, mevcut kural değiştirilmez.
   const OLAY: [RegExp, string][] = [[/İşe alım/, 'personel_kaydi'], [/Dalış/, 'is_emri_dalis'], [/Sıcak iş/, 'is_emri_sicak'], [/Liman sahasında/, 'is_emri_sicak'], [/ağa kabul/, 'firma_kabulu'], [/Sözleşme/, 'sozlesme'], [/[Ff]atura/, 'fatura'], [/Hizmet tamamlanması/, 'teslim']];
   for (const l of readFileSync(join(KOK, 'veri', 'uyum_kurallari.tsv'), 'utf8').split(/\r?\n/).filter(Boolean)) {

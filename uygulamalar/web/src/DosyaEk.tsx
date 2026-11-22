@@ -251,6 +251,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <DosyaPerformans dosya={id} />
     <DurumOzeti id={id} />
     <TarafGorevleri id={id} />
+    <DosyaBolgesi id={id} />
     <DosyaYazismalari id={id} />
     <DosyaYazismasi id={id} ic dosyaSorumlusu />
     <GonderimDurumu id={id} />
@@ -648,6 +649,20 @@ function KaldirmaTutanaklari({ dosya }: { dosya: string }) {
   useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/kaldirma-tasima`).then(setL).catch(() => setL([])); }, [dosya]);
   if (!l.length) return null;
   return <div className="ozet">{l.map((x) => <div key={x.kimlik}>{new Date(x.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} · {x.tur} · {x.ekipman}{x.yeni_hasar ? ' · Yeni hasar' : ''} · <a href={`/api/kaldirma-tasima/${x.kimlik}/tutanak`}>Tutanak (PDF)</a></div>)}</div>;
+}
+
+/** YG-322: konumu bağlama noktasıyla eşleşmeyen dosyada bölge seçimi. */
+export function DosyaBolgesi({ id }: { id: string }) {
+  const [v, setV] = useState<{ bolge: string | null; secenekler: string[] } | null>(null); const [s, setS] = useState(''); const [m, setM] = useState('');
+  const yk = () => void istek<NonNullable<typeof v>>(`/dosya/${id}/bolge`).then(setV).catch(() => setV(null));
+  useEffect(yk, [id]);
+  if (!v) return null;
+  return <Blok baslik="Dosya Bölgesi">
+    <div>{v.bolge ?? 'Dosya konumu bir bağlama noktasıyla eşleşmedi; iş emri için bölgeyi seçiniz.'}</div>
+    <label htmlFor={`db-${id}`}>Bölge</label><select id={`db-${id}`} value={s} onChange={(e) => setS(e.target.value)}><option value="">Seçiniz</option>{v.secenekler.map((x) => <option key={x}>{x}</option>)}</select>
+    <button className="btn2 kucuk" disabled={!s} onClick={() => void istek(`/dosya/${id}/bolge-sec`, { bolge: s }).then(() => { setM('Bölge kaydedildi.'); yk(); }).catch((e) => setM(e.message))}>Bölgeyi Kaydet</button>
+    {m && <div className="not" role="status">{m}</div>}
+  </Blok>;
 }
 
 /** YG-1601: dosyaya ait giden yazışmaların kopyası (ticari koldan gidenler dahil). */

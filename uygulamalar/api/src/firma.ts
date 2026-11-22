@@ -67,7 +67,7 @@ function uygunlukEngeli(f: { kayit_asamasi: string; ag_statusu: string | null; d
 }
 /** YG-303, YG-322: dosyanın bölgesi; konum bağlama noktası adıyla eşleşirse o noktanın bölgesi (eşleşme yoksa null, denetim yapılmaz). */
 export async function dosyaBolgesi(db: Db, dosya: string): Promise<string | null> {
-  return (await db.query(`SELECT n.bolge FROM dosya d JOIN LATERAL (SELECT bolge FROM baglama_noktasi n WHERE n.bolge IS NOT NULL AND (n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi') AND d.konum IS NOT NULL AND length(trim(d.konum)) > 2
+  return (await db.query(`SELECT coalesce(n.bolge, d.secilen_bolge) bolge FROM dosya d LEFT JOIN LATERAL (SELECT bolge FROM baglama_noktasi n WHERE n.bolge IS NOT NULL AND (n.mukerrer_karari IS DISTINCT FROM 'Birleştirildi') AND d.konum IS NOT NULL AND length(trim(d.konum)) > 2
       AND (lower(d.konum) LIKE '%' || lower(n.ad) || '%' OR lower(n.ad) LIKE '%' || lower(d.konum) || '%') ORDER BY length(n.ad) DESC LIMIT 1) n ON true WHERE d.kimlik = $1`, [dosya])).rows[0]?.bolge ?? null;
 }
 
@@ -341,6 +341,21 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
   const ACIL_YASAK = /onar[ıi]m|değiş(im|tir)|yenile|revizyon|tadilat|montaj|parça/i;
   const ACIL_YASAK_HATA = 'Acil iş emri yalnız ilk tedbiri kapsar; esas onarım, parça değişimi ve kapsam genişletme yapılmaz. Esas onarım için yazılı kapsamla Onarım (ON) iş emri çıkarınız.';
   // YG-435: KN, ON, EK Operasyon Yöneticisi; GR Teknik Yönetici çıkarır. YG-322: mali ve kapsam doğrulanmadan yayımlanmaz.
+  // YG-322: Dosya Sorumlusu (veya ekipteki Operasyon Yöneticisi) eşleşmeyen konumda bölgeyi listeden seçer.
+  s.get('/dosya/:id/bolge', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return yok(y);
+    return { bolge: await dosyaBolgesi(b.db, id), secenekler: (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_BOLGE' ORDER BY sira`)).rows.map((r) => r.deger as string) };
+  });
+  s.post('/dosya/:id/bolge-sec', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { bolge } = (i.body ?? {}) as { bolge?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!(await b.db.query(`SELECT 1 FROM dosya d WHERE d.kimlik = $1 AND (d.dosya_sorumlusu_ref = $2 OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.kullanici_ref = $2 AND a.rol IN ('Dosya Sorumlusu', 'Operasyon Yöneticisi') AND a.bitis_zamani IS NULL))`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Bölgeyi Dosya Sorumlusu seçer.' });
+    if (!(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_BOLGE' AND deger = $1`, [bolge ?? ''])).rowCount) return y.code(400).send({ hata: 'Bölgeyi listeden seçiniz.' });
+    await b.db.query(`UPDATE dosya SET secilen_bolge = $2 WHERE kimlik = $1`, [id, bolge]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dosya Bölgesi Seçildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { bolge }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { bolge };
+  });
   s.post('/dosya/:id/is-emri', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const g = (i.body ?? {}) as { sapma?: string; tur?: string; firma?: string; yer?: string; kapsam?: string; bedel?: number; baslangic?: string; bitis?: string; teklif?: string; siralar?: number[]; ana?: string; tehlikeliAtik?: boolean; teknikSonuc?: string; yontem?: string; brans?: string; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean };
@@ -353,7 +368,9 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const yde = await yatDegeriEngeli(b.db, id, g.tur); if (yde) return y.code(409).send({ hata: yde });
     const roller = (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [id, o.kullanici])).rows.map((r) => r.rol as string);
     const yetkili = g.tur === 'GR' ? 'Teknik Yönetici' : 'Operasyon Yöneticisi';
-    if (!roller.includes(yetkili)) return y.code(403).send({ hata: `Bu iş emrini ${yetkili} çıkarır.` });
+    // YG-1596: hasar ilerleyebilir işaretli Yüksek dosyada Teknik Uzman keşfi beklemeden Geçici/Acil Önlem (AC) iş emri açar.
+    const geciciOnlem = g.tur === 'AC' && d.hasar_ilerleyebilir && d.oncelik === 'Yüksek' && roller.some((r) => ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)'].includes(r));
+    if (!roller.includes(yetkili) && !geciciOnlem) return y.code(403).send({ hata: `Bu iş emrini ${yetkili} çıkarır.` });
     if (g.tur === 'KN' && !(Number(g.bedel) >= 0 && g.bedel !== undefined && g.bedel !== null)) return y.code(400).send({ hata: 'Mali limit boş olan iş emri yayımlanmaz; keşif iş emrinin mali limitini giriniz.' }); // YG-323
     if (!g.yer?.trim() || !g.kapsam?.trim()) return y.code(400).send({ hata: 'Uygulama yeri ve kapsam zorunludur.' });
     // YG-253: acil iş emri yalnız ilk tedbirdir; esas onarım, parça değişimi veya kapsam genişletme içermez.
@@ -366,6 +383,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (red && !(g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi?.trim()) return y.code(409).send({ hata: `Firma ${red.is_emri_no} iş emrini reddetmiştir; aynı firmaya yeniden atama için gerekçe yazınız.`, yenidenAtama: true });
     if (red) await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Reddeden Firmaya Yeniden Atama', nesneTuru: 'Dosya', nesneKimligi: id, gerekce: (g as { yenidenAtamaGerekcesi?: string }).yenidenAtamaGerekcesi!.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     const dBolge = await dosyaBolgesi(b.db, id);
+    // YG-322: bağlama noktası ana verisi varken konumu eşleşmeyen dosyada bölge seçilmeden iş emri yayımlanmaz.
+    if (!dBolge && (await b.db.query(`SELECT 1 FROM baglama_noktasi WHERE bolge IS NOT NULL LIMIT 1`)).rowCount) return y.code(409).send({ hata: 'Dosya konumu bir bağlama noktasıyla eşleşmedi; dosyanın bölgesini seçiniz.', islem: 'Bölge Seç' });
     const engel = await firmaUygunlugu(b.db, g.firma, g.brans ?? null, dBolge);
     if (engel) return y.code(409).send({ hata: engel });
     // YG-326: mesai dışında Kritik iş yalnız acil hizmet veren firmaya verilir.

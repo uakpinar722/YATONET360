@@ -1568,7 +1568,7 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const r = await o.ist('POST', '/api/periyodik-is', c, P); expect(r.statusCode, r.body).toBe(200);
     expect((await o.ist('POST', '/api/periyodik-is', c, P)).statusCode).toBe(409);
     const l = (await o.ist('GET', '/api/periyodik-isler', c)).json(); expect(l.tanimlar).toBe(true); expect(l.isler.some((x: { ad: string }) => x.ad === ad)).toBe(true);
-    expect((await o.ist('POST', `/api/periyodik-is/${r.json().kimlik}/durum`, c, { aktif: false, gerekce: 'Deneme' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/periyodik-is/${r.json().kimlik}/durum`, c, { aktif: false, gerekce: 'Sezon sonu' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT aktif FROM periyodik_is WHERE kimlik = $1`, [r.json().kimlik])).rows[0].aktif).toBe(false);
     // YG-969: katalogdan yüklenen rol bazlı tanımlar kurulumla gelir; ilk tarih geçmişte kalmaz.
     expect((await o.sup.query(`SELECT count(*)::int n, bool_and(sonraki_tarih >= current_date) g FROM periyodik_is WHERE ad IN ('Haftalık Ödeme Planı', 'Sezon Kadro ve Kapasite Planı', 'Muadil Liste Gözden Geçirmesi')`)).rows[0]).toEqual({ n: 3, g: true });

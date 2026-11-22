@@ -11,6 +11,22 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
 import { UUID } from './yat.js';
 
+/** YG-1022: dosya veya iş emri üzerindeki başarılı işlemde cihaz konumu gönderildiyse işlem zamanıyla konum izi yazılır. */
+export function konumIziKancasi(s: FastifyInstance, db: Pool) {
+  s.addHook('onSend', async (i, y, govde) => { // yanıt gönderilmeden yazılır
+    if (i.method !== 'POST' || y.statusCode >= 300 || !i.oturum) return govde;
+    const k = (i.body as { konum?: { enlem?: unknown; boylam?: unknown } } | undefined)?.konum;
+    if (!k || typeof k !== 'object' || typeof k.enlem !== 'number' || typeof k.boylam !== 'number' || Math.abs(k.enlem) > 90 || Math.abs(k.boylam) > 180) return govde;
+    const url = i.routeOptions.url ?? ''; const id = (i.params as { id?: string; dosya?: string }).id ?? (i.params as { dosya?: string }).dosya;
+    if (!id || !UUID.test(id)) return govde;
+    try {
+      const dosya = /^\/api\/dosya\/:(id|dosya)\//.test(url) || /^\/api\/acil\/:dosya\//.test(url) ? id : /^\/api\/is-emri\/:id\//.test(url) ? (await db.query(`SELECT dosya_ref FROM is_emri WHERE kimlik = $1`, [id])).rows[0]?.dosya_ref : null;
+      if (dosya) await db.query(`INSERT INTO saha_konum_kaydi (kullanici_ref, dosya_ref, enlem, boylam) VALUES ($1,$2,$3,$4)`, [i.oturum.kullanici, dosya, k.enlem, k.boylam]);
+    } catch { /* konum izi işlemi bozmaz */ }
+    return govde;
+  });
+}
+
 type Db = Pool | PoolClient;
 const KONUM_GUN = 365;
 /** YG-498: kilit ekranında içerik görünmez; ayrıntı uygulama açılınca okunur. */

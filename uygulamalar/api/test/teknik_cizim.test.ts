@@ -35,6 +35,31 @@ describe('teknik çizim anteti (YG-679)', () => {
   });
 });
 
+describe('geçici/acil önlem iş emri (YG-1596)', () => {
+  it('hasar ilerleyebilir Yüksek dosyada Teknik Uzman AC iş emrini keşfi beklemeden çıkarabilir (YG1596-AC)', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const tu = await o.gir('tu');
+    await o.sup.query(`UPDATE dosya SET statu = 'Aktif', oncelik = 'Yüksek', hasar_ilerleyebilir = false WHERE kimlik = $1`, [d.kimlik]);
+    const ac = () => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, tu, { tur: 'AC', yer: 'Marina', kapsam: 'Sızıntı için geçici tıkama', firma: '00000000-0000-0000-0000-000000000000' });
+    expect((await ac()).statusCode).toBe(403);
+    await o.sup.query(`UPDATE dosya SET hasar_ilerleyebilir = true WHERE kimlik = $1`, [d.kimlik]);
+    const r = await ac(); expect(r.statusCode, r.body).not.toBe(403);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, tu, { tur: 'KN', yer: 'Marina', kapsam: 'Keşif', bedel: 0, firma: '00000000-0000-0000-0000-000000000000' })).statusCode).toBe(403);
+  });
+});
+
+describe('dosya bölgesi seçimi (YG-322)', () => {
+  it('eşleşmeyen konumda Dosya Sorumlusu bölgeyi listeden seçer; seçilen bölge dosya bölgesi olur (YG322-BOLGE)', async () => {
+    const { dosyaBolgesi } = await import('../src/firma.js');
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    expect(await dosyaBolgesi(o.db, d.kimlik)).toBeNull();
+    const u = `/api/dosya/${d.kimlik}/bolge-sec`;
+    expect((await o.ist('POST', u, await o.gir('tu'), { bolge: '3. Güney Ege' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, await o.gir('ds'), { bolge: 'Ege' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, await o.gir('ds'), { bolge: '3. Güney Ege' })).statusCode).toBe(200);
+    expect(await dosyaBolgesi(o.db, d.kimlik)).toBe('3. Güney Ege');
+  });
+});
+
 describe('belge önceliği (YG-617)', () => {
   it('bireysel müşteride tek iş, diğerlerinde çerçeve kuralı; çelişki Hukuk ve Uyum incelemesine gider', async () => {
     const d = await o.dosyaAc();
