@@ -7,7 +7,7 @@ import { bildir, sessizSonu } from '../src/bildirim.js';
 import { isZamanlayici, zamanlanmisIsDenetimi } from '../src/zamanlayici.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { bim: 'Bilgi İşlem Müdürü', opm: 'Operasyon Müdürü', ds: 'Dosya Sorumlusu', ide: 'İç Denetçi' };
+const KADRO = { bim: 'Bilgi İşlem Müdürü', opm: 'Operasyon Müdürü', ds: 'Dosya Sorumlusu', ide: 'İç Denetçi', tu: 'Teknik Uzman' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test103', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -239,5 +239,53 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     await kaliteKontrolIsle(o.db);
     const ac = async (kod: string, k: string) => (await o.sup.query(`SELECT 1 FROM veri_hatasi WHERE kural_kod = $1 AND kayit_kimligi = $2 AND durum = 'Açık'`, [kod, k])).rowCount;
     expect(await ac('VK-14', d.kimlik)).toBe(1); expect(await ac('VK-17', g)).toBe(1);
+  });
+  it('5 günü aşan görev süresi son gün 12:00 biter, pazara düşerse pazartesi 12:00 olur; 5 güne kadar süre saatle kalır (YG1607-GUN)', async () => {
+    const { gunSuresiBitis } = await import('../src/sure.js');
+    const bas = new Date('2026-11-16T07:00:00Z'); // pazartesi 10:00
+    expect(gunSuresiBitis(new Date('2026-11-23T07:00:00Z'), bas, 'Normal').bitis.toISOString()).toBe('2026-11-23T09:00:00.000Z'); // 7 gün: pazartesi 12:00
+    const p = gunSuresiBitis(new Date('2026-11-22T07:00:00Z'), bas, 'Normal'); // 6 gün: pazar
+    expect(p.bitis.toISOString()).toBe('2026-11-23T09:00:00.000Z'); expect(p.not).toContain('Pazartesi 12:00');
+    expect(gunSuresiBitis(new Date('2026-11-19T07:00:00Z'), bas, 'Normal').bitis.toISOString()).toBe('2026-11-19T07:00:00.000Z'); // 3 gün: saatle
+    expect(gunSuresiBitis(new Date('2026-11-22T07:00:00Z'), bas, 'Kritik').bitis.toISOString()).toBe('2026-11-22T07:00:00.000Z');
+    const { kartAc } = await import('../src/is_motoru.js');
+    const k = await kartAc(o.db, { tur: 'Süre Deneme', kategori: 'gorev', baslik: 'Süre Deneme', sahipRol: (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Kalite Müdürü'`)).rows[0].kimlik, sonZaman: new Date('2026-11-22T07:00:00Z'), simdi: bas });
+    expect((await o.sup.query(`SELECT son_zaman, sure_notu FROM is_karti WHERE kimlik = $1`, [k])).rows[0].sure_notu).toContain('Kaydırıldı');
+    await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [k]);
+  });
+  it('durum geçişi önceki geçişten bu yana tamamlanan görevleri ve eklenen belgeleri kaydeder (YG061-KOSUL)', async () => {
+    const d = await o.dosyaAc();
+    const { kartAc } = await import('../src/is_motoru.js');
+    const k = await kartAc(o.db, { tur: 'Ön Koşul Deneme', kategori: 'gorev', baslik: 'Ön Koşul Deneme', sahipKullanici: o.K.ds, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [k]);
+    await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Koşul Belgesi', 'Diğer', 'Kurumsal', 'Dosya', $1, 'Sistem', current_date, $2)`, [d.kimlik, o.K.ds]);
+    const { statuYaz } = await import('../src/dosya.js');
+    const s = (await o.sup.query(`SELECT kimlik, statu, asama FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0];
+    await statuYaz(o.db, s, { statu: s.statu, asama: s.asama }, 'Koşul deneme', o.K.ds!);
+    const g = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('ide'))).json().gecmis.at(-1); // İç Denetçi tüm dosyaları görür
+    expect(g.tamamlanan_kosullar).toContain('Ön Koşul Deneme'); expect(g.belgeler).toContain('Koşul Belgesi');
+  });
+  it('arama yolları süzgeç kaydındadır; süzgeçsiz arama yolu eklenemez; dosya araması erişimle süzülür (YG1162-ARAMA)', async () => {
+    const { ARAMA_SUZGECI, aramaYoluMu } = await import('../src/arama_suzgeci.js');
+    expect(Object.keys(ARAMA_SUZGECI).every((u) => aramaYoluMu(u))).toBe(true);
+    const Fastify = (await import('fastify')).default; const f = Fastify(); (await import('../src/arama_suzgeci.js')).aramaSuzgeciKancasi(f);
+    expect(() => f.get('/api/gizli/ara', async () => [])).toThrow(/süzgeci/);
+    const d = await o.dosyaAc();
+    const ara = async (k: string) => (await o.ist('GET', `/api/ara?q=${encodeURIComponent(d.dosyaNo)}`, await o.gir(k))).json().dosyalar.map((x: { kimlik: string }) => x.kimlik);
+    expect(await ara('ide')).toContain(d.kimlik); // İç Denetçi tüm dosyalar
+    expect(await ara('tu')).not.toContain(d.kimlik); // ekipte olmayan Teknik Uzman
+  });
+  it('görev kartı ortak statü, Beklemede ve Gecikmiş işaretiyle gelir; unvan–rol eşleşmesi tutulur (YG058-ROZET, YG1017-UNVAN)', async () => {
+    const d = await o.dosyaAc(); const { kartAc } = await import('../src/is_motoru.js');
+    const k = await kartAc(o.db, { tur: 'Rozet Deneme', kategori: 'gorev', baslik: 'Rozet Deneme', sahipKullanici: o.K.ds, nesneTuru: 'Dosya', nesneKimligi: d.kimlik, sonZaman: new Date(Date.now() - 3_600_000) });
+    await o.sup.query(`INSERT INTO beklemede_isareti (dosya_ref, neden, sorumlu_ref, hedef_tarih, sayac_durur, olusturan_ref) VALUES ($1,'Onay bekleniyor',$2,current_date + 3,false,$2)`, [d.kimlik, o.K.ds]);
+    const l = (await o.ist('GET', '/api/bugun', await o.gir('ds'))).json();
+    const x = [...l.onay, ...l.islem, ...l.gorev].find((z: { kimlik: string }) => z.kimlik === k);
+    expect(x).toMatchObject({ ortak_statu: 'Açık', beklemede: true, gecikmis: true });
+    await o.sup.query(`UPDATE beklemede_isareti SET kaldirilma_zamani = now() WHERE dosya_ref = $1`, [d.kimlik]);
+    await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE kimlik = $1`, [k]);
+    const u = (await o.ist('GET', '/api/unvan-rol', await o.gir('opm'))).json();
+    expect(u.find((r: { rol_adi: string }) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)').unvan).toBe('Kalite Kontrolör');
+    expect(u.find((r: { rol_adi: string }) => r.rol_adi === 'Teknik Yönetici')).toMatchObject({ kademe: 'Yönetici', birim: 'Teknik Müdürlük' });
   });
 });

@@ -33,6 +33,15 @@ describe('çevrimdışı eşitleme (YG-494)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe(once + 1);
     const c3 = await o.ist('POST', '/api/mobil/esitle', c, { kayitlar: [{ kimlik: crypto.randomUUID(), yol: u, govde: await G(d.kimlik, 'ds'), temelZaman: '2020-01-01T00:00:00Z' }] }); expect(c3.json().sonuc[0].durum).toBe('Çakışma'); expect(c3.json().sonuc[0].hata).toContain('üzerine yazılmadı');
     expect((await o.sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe(once + 1);
+    // YG1369-COZUM: çakışma Dosya Sorumlusunun ekranına düşer; cihaz kaydı onun kararıyla uygulanır, ikinci karar verilemez.
+    const ck = c3.json().sonuc[0].kimlik; const ds = await o.gir('ds');
+    expect((await o.ist('GET', '/api/mobil/cakismalar', ds)).json().map((x: { kimlik: string }) => x.kimlik)).toContain(ck);
+    expect((await o.ist('POST', `/api/mobil/cakisma/${ck}/karar`, await o.gir('tu'), { karar: 'Platform Kaydı Esas', gerekce: 'x' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/mobil/cakisma/${ck}/karar`, ds, { karar: 'Cihaz Kaydı Uygulansın' })).statusCode).toBe(400);
+    const kr = await o.ist('POST', `/api/mobil/cakisma/${ck}/karar`, ds, { karar: 'Cihaz Kaydı Uygulansın', gerekce: 'Sahadaki gözlem geçerli' }); expect(kr.statusCode, kr.body).toBe(200);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM uygunsuzluk WHERE dosya_ref = $1`, [d.kimlik])).rows[0].n).toBe(once + 2);
+    expect((await o.ist('POST', `/api/mobil/cakisma/${ck}/karar`, ds, { karar: 'Platform Kaydı Esas', gerekce: 'x' })).statusCode).toBe(409);
+    expect((await o.kart('Çevrim Dışı Çakışma', ck)).durum).toBe('Tamamlandı');
     const c4 = await o.ist('POST', '/api/mobil/esitle', c, { kayitlar: [{ kimlik: crypto.randomUUID(), yol: u, govde: {} }] }); expect(c4.json().sonuc[0].durum).toBe('Reddedildi');
     expect((await o.ist('POST', '/api/mobil/esitle', c, { kayitlar: [{ kimlik: crypto.randomUUID(), yol: '/hesabim/kapatma-talebi', govde: { onay: true } }] })).statusCode).toBe(400);
     expect((await o.ist('POST', '/api/mobil/esitle', await o.gir('tu'), { kayitlar: [{ kimlik: id, yol: u, govde: G1 }] })).statusCode).toBe(404);

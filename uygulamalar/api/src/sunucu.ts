@@ -119,6 +119,7 @@ import { iletisimBilgisiYollari } from './iletisim_bilgisi.js';
 import { zamanlayiciYollari } from './zamanlayici.js';
 import { sahiplikYollari } from './sahiplik.js';
 import { firmaIslevKancasi, firmaIslevYollari } from './firma_islev.js';
+import { aramaSuzgeciKancasi } from './arama_suzgeci.js';
 import { yonetimRaporuYollari } from './yonetim_raporu.js';
 import { nakitKarlilikYollari } from './nakit_karlilik.js';
 import { yonetimPanosuYollari } from './yonetim_panosu.js';
@@ -188,6 +189,7 @@ export async function sunucuKur(b: Baglam) {
   s.addHook('onRequest', (i, _y, done) => { istekBaglami.run({ iliski: i.id }, done); }); // YG-1183, YG-1146
   s.addHook('onSend', async (i, y) => { y.header('X-Iliski-Kimligi', i.id); });
   firmaIslevKancasi(s, b); // YG-994: rotalar kaydedilmeden önce
+  aramaSuzgeciKancasi(s); // YG-1162
   olcumKur(s); // YG-778
   // Çerez SameSite=Strict; ek olarak durum değiştiren istek bu üst bilgiyi taşımalıdır.
   s.addHook('onRequest', async (i, y) => {

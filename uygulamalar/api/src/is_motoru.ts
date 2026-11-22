@@ -33,10 +33,13 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
     const son = (await db.query(`SELECT rol_adi, kademe FROM rol WHERE kimlik = $1`, [g.zincir![g.zincir!.length - 1]])).rows[0];
     if (son && (son.kademe === 'Direktör' || son.rol_adi === 'Genel Müdür Yardımcısı' || son.rol_adi === 'CEO')) ilkKademe = g.zincir!.length - 1;
   }
+  // YG-1607: 5 günü aşan süre gün sayısıyla izlenir (son gün 12:00, pazar ve tatilde ilk çalışma günü).
+  let sonZaman = g.sonZaman ?? null; let sureNotu: string | null = null;
+  if (sonZaman) { const { gunSuresiBitis, tatilGunleri } = await import('./sure.js'); const s = gunSuresiBitis(sonZaman, g.simdi ?? new Date(), g.oncelik ?? 'Normal', await tatilGunleri(db)); sonZaman = s.bitis; sureNotu = s.not; }
   const { rows } = await db.query(
-    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe, ayrik_kullanicilar, tutar_eur, belge_surumu)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`,
-    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, g.sonZaman ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe, g.ayrik ?? [], g.tutar ?? null, g.belgeSurumu ?? null]);
+    `INSERT INTO is_karti (tur, kategori, baslik, ozet, oncelik, hazirlayan_ref, zincir, sahip_kullanici_ref, sahip_rol_ref, son_zaman, nesne_turu, nesne_kimligi, kademe, ayrik_kullanicilar, tutar_eur, belge_surumu, sure_notu)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`,
+    [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, sonZaman, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe, g.ayrik ?? [], g.tutar ?? null, g.belgeSurumu ?? null, sureNotu]);
   const id = rows[0].kimlik as string;
   if (ilkKademe) { const ara: string[] = []; for (const r of g.zincir!.slice(0, ilkKademe)) ara.push(...await rolSahipleri(db, r)); await bildir(db, { olay: `kart-ara:${id}`, kullanicilar: ara, baslik: `Bilgi: Doğrudan Son Makama Gitti: ${g.baslik}`, oncelik: g.oncelik, isRef: id }); }
   const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![ilkKademe]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
@@ -46,7 +49,10 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
 
 /** Görev ayrılığı yalnız son gönderimden sonraki kararlara bakar: iade edilip yeniden gönderilen kayda aynı makam yine karar verir. */
 const SON_GONDERIM = `(SELECT coalesce(max(g.kimlik), 0) FROM is_karti_adim g WHERE g.is_ref = k.kimlik AND g.karar = 'Yeniden Gönder')`;
-const SECIM = `k.kimlik, k.tur, k.kategori, k.baslik, k.ozet, k.oncelik, k.son_zaman, k.olusturma_zamani, k.kademe, k.durum, k.hazirlayan_ref, cardinality(k.zincir) AS kademe_sayisi, (SELECT string_agg('Kademe ' || (a.kademe + 1) || ': ' || a.gerekce, ' · ' ORDER BY a.kimlik) FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.karar = 'Onaya Gönder' AND a.gerekce IS NOT NULL) AS arz_notlari`; // YG-166
+// YG-058: kart statüsü ortak akışla (Açık → İşlemde → Kapalı; Geri Çekildi Geçersiz); Beklemede ve Gecikmiş işarettir.
+const ORTAK_STATU = `CASE WHEN k.durum = 'Geri Çekildi' THEN 'Geçersiz' WHEN k.durum IN ('Tamamlandı', 'Onaylandı', 'Reddedildi') THEN 'Kapalı' WHEN k.durum = 'İade Edildi' OR k.kademe > 0 THEN 'İşlemde' ELSE 'Açık' END AS ortak_statu,
+  EXISTS (SELECT 1 FROM beklemede_isareti w WHERE w.dosya_ref::text = k.nesne_kimligi AND w.kaldirilma_zamani IS NULL) AS beklemede, (k.durum IN ('Bekliyor', 'İade Edildi') AND k.son_zaman < now()) AS gecikmis`;
+const SECIM = `${ORTAK_STATU}, k.kimlik, k.tur, k.kategori, k.baslik, k.ozet, k.oncelik, k.son_zaman, k.sure_notu, k.olusturma_zamani, k.kademe, k.durum, k.hazirlayan_ref, cardinality(k.zincir) AS kademe_sayisi, (SELECT string_agg('Kademe ' || (a.kademe + 1) || ': ' || a.gerekce, ' · ' ORDER BY a.kimlik) FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.karar = 'Onaya Gönder' AND a.gerekce IS NOT NULL) AS arz_notlari`; // YG-166
 
 export function isYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };

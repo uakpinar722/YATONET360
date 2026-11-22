@@ -77,7 +77,10 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
       if (t.nesne) zaman = (await b.db.query(`SELECT guncelleme_zamani z FROM ${t.nesne === 'is_emri' ? 'is_emri' : 'dosya'} WHERE kimlik = $1`, [nid])).rows[0]?.z ?? null;
       if (zaman && k.temelZaman && zaman > new Date(k.temelZaman)) {
         const h = 'Bu kayıt siz çevrimdışıyken değişti; sunucudaki kayıt esas alındı, kaydınız üzerine yazılmadı.';
-        await b.db.query(`INSERT INTO mobil_esitleme (istemci_kimlik, kullanici_ref, yol, govde, temel_zaman, durum, yanit) VALUES ($1,$2,$3,$4,$5,'Çakışma',$6)`, [k.kimlik, o.kullanici, k.yol, JSON.stringify(k.govde ?? {}), k.temelZaman, h]);
+        // YG-1369: çakışma süreç sahibine (dosyanın Dosya Sorumlusu, yoksa Operasyon Müdürü) çözüm görevi olarak düşer.
+        const dr = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref FROM dosya d WHERE d.kimlik = ${t.nesne === 'is_emri' ? '(SELECT dosya_ref FROM is_emri WHERE kimlik = $1)' : '$1'}`, [nid])).rows[0];
+        await b.db.query(`INSERT INTO mobil_esitleme (istemci_kimlik, kullanici_ref, yol, govde, temel_zaman, durum, yanit, dosya_ref, sorumlu_ref) VALUES ($1,$2,$3,$4,$5,'Çakışma',$6,$7,$8)`, [k.kimlik, o.kullanici, k.yol, JSON.stringify(k.govde ?? {}), k.temelZaman, h, dr?.kimlik ?? null, dr?.dosya_sorumlusu_ref ?? null]);
+        await kartAc(b.db, { tur: 'Çevrim Dışı Çakışma', kategori: 'gorev', baslik: `${dr?.dosya_no ?? 'Saha'} · Çevrim Dışı Kayıt Çakışması`, ozet: 'Saha kaydı, cihaz çevrim dışıyken platformda değişen bir kayda yöneliktir. Platform kaydını esas alınız veya cihaz kaydını uygulayınız.', sahipKullanici: dr?.dosya_sorumlusu_ref ?? undefined, sahipRol: dr?.dosya_sorumlusu_ref ? undefined : await rolId(b.db, 'Operasyon Müdürü'), sonZaman: new Date(Date.now() + 24 * 3_600_000), nesneTuru: 'mobil_esitleme', nesneKimligi: k.kimlik });
         sonuc.push({ kimlik: k.kimlik, durum: 'Çakışma', hata: h, sunucuZamani: zaman.toISOString() }); continue;
       }
       const r = await s.inject({ method: 'POST', url: `/api${k.yol}`, headers: { cookie: i.headers.cookie ?? '', 'content-type': 'application/json', 'x-yatonet': '1', 'x-forwarded-for': i.ip }, payload: JSON.stringify(k.govde ?? {}) });
@@ -86,6 +89,31 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
       sonuc.push({ kimlik: k.kimlik, durum: tamam ? 'Uygulandı' : 'Reddedildi', yanitKodu: r.statusCode, hata: hata ?? undefined });
     }
     return { sonuc };
+  });
+
+  // YG-1369: çakışma ekranı. Süreç sahibi (kaydın Dosya Sorumlusu) veya Operasyon Müdürü görür ve karar verir.
+  const opMuduru = async (k: string) => (await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Operasyon Müdürü'`, [k])).rowCount! > 0;
+  s.get('/mobil/cakismalar', oturumlu, async (i) => {
+    const k = i.oturum!.kullanici; const tum = await opMuduru(k);
+    return (await b.db.query(`SELECT m.istemci_kimlik kimlik, m.yol, m.govde, m.temel_zaman, m.zaman, h.ad_soyad gonderen, d.dosya_no FROM mobil_esitleme m JOIN kullanici_hesabi h ON h.kimlik = m.kullanici_ref LEFT JOIN dosya d ON d.kimlik = m.dosya_ref
+      WHERE m.durum = 'Çakışma' AND m.cozum IS NULL AND ($2 OR m.sorumlu_ref = $1) ORDER BY m.zaman`, [k, tum])).rows;
+  });
+  s.post('/mobil/cakisma/:id/karar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    const m = (await b.db.query(`SELECT yol, govde, sorumlu_ref, cozum FROM mobil_esitleme WHERE istemci_kimlik = $1 AND durum = 'Çakışma'`, [id])).rows[0];
+    if (!m || (m.sorumlu_ref !== o.kullanici && !(await opMuduru(o.kullanici)))) return yok(y);
+    if (m.cozum) return y.code(409).send({ hata: 'Bu çakışma daha önce çözüldü.' });
+    if (!['Platform Kaydı Esas', 'Cihaz Kaydı Uygulansın'].includes(g.karar ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Kararı ve gerekçeyi yazınız.' });
+    if (g.karar === 'Cihaz Kaydı Uygulansın') {
+      // Cihaz kaydı karar verenin yetkisiyle asıl yoldan uygulanır; kural engeli varsa kayıt uygulanmaz.
+      const r = await s.inject({ method: 'POST', url: `/api${m.yol}`, headers: { cookie: i.headers.cookie ?? '', 'content-type': 'application/json', 'x-yatonet': '1', 'x-forwarded-for': i.ip }, payload: JSON.stringify(m.govde ?? {}) });
+      if (r.statusCode >= 300) { let h = 'Cihaz kaydı uygulanamadı.'; try { h = JSON.parse(r.body).hata ?? h; } catch { /* düz metin */ } return y.code(409).send({ hata: h }); }
+    }
+    await b.db.query(`UPDATE mobil_esitleme SET cozum = $2, cozum_gerekcesi = $3, cozen_ref = $4, cozum_zamani = now() WHERE istemci_kimlik = $1`, [id, g.karar === 'Platform Kaydı Esas' ? 'Platform Kaydı Esas' : 'Cihaz Kaydı Uygulandı', g.gerekce.trim(), o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Çevrim Dışı Çakışma' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Çevrim Dışı Çakışma Kararı', nesneTuru: 'Mobil Eşitleme', nesneKimligi: id, yeni: { karar: g.karar }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-500: izin aydınlatmayla istenir; yalnız iş amaçlı; izin olmadan konum alınmaz.

@@ -26,7 +26,7 @@ describe('görevlendirme kontrolü (YG-304, YG-306, YG-307, YG-332)', () => {
       expect((await o.ist('POST', `/api/firma/${f}/kapasite`, sc, { brans: 'MAKINE-01', sinif: 'G9', adet: 1 })).statusCode).toBe(400);
       expect((await o.ist('POST', `/api/firma/${f}/kapasite`, sc, { brans: 'MAKINE-01', sinif: 'G2', adet: 1 })).statusCode).toBe(200);
       await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref, ana_brans, gorev_sinifi) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4,'MAKINE-01','G2')`, [`K-${Date.now()}`, d.kimlik, f, o.K.ds]);
-      expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 5000 })).uyarilar.join(' ')).toContain('G2 kapasitesi doludur');
+      expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, brans: 'MAKINE-01', tutar: 5000 })).engeller.join(' ')).toContain('G2 kapasitesi doludur'); // YG303-KAPASITE: dolu kapasite engeldir
       expect((await o.ist('GET', `/api/firma/${f}/kapasite`, sc)).json()[0]).toMatchObject({ ana_brans: 'MAKINE-01', gorev_sinifi: 'G2', es_zamanli_is: 1, aktif: 1 });
       await o.sup.query(`DELETE FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = 'MAKINE-01'`, [f]); }
     await o.sup.query(`INSERT INTO sicil_belgesi (kurulus_ref, tur, gecerlilik_bitis) VALUES ($1,'Mesleki Sorumluluk Sigortası','2099-01-01')`, [f]);

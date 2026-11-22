@@ -120,15 +120,15 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
   const oryEksik = Number((await db.query(`SELECT count(*) n FROM firma_personeli p WHERE p.kurulus_ref = $1 AND p.aktif AND EXISTS (SELECT 1 FROM akademi_ders d WHERE d.aktif AND d.tur = 'Saha Oryantasyonu' AND NOT EXISTS (SELECT 1 FROM firma_oryantasyon o WHERE o.ders_ref = d.kimlik AND o.surum = d.surum AND o.personel_ref = p.kimlik))`, [g.firma])).rows[0].n);
   if (oryEksik) uyarilar.push(`Saha oryantasyonunu almamış ${oryEksik} personel vardır.`);
   if (sureli.length) uyarilar.push(`İSG eğitimi veya yetki belgesi süresi geçmiş personel vardır: ${sureli.map((x) => x.ad_soyad).join(', ')}.`);
-  if (f?.kapasite_is && Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma])).rows[0].n) >= f.kapasite_is) uyarilar.push('Firmanın beyan ettiği iş kapasitesi doludur.');
+  if (f?.kapasite_is && Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma])).rows[0].n) >= f.kapasite_is) engeller.push('Firmanın beyan ettiği iş kapasitesi doludur.'); // YG-303: dolu kapasitede seçilemez
   // YG-309: branş ve görev sınıfı bazındaki kapasite; sınıfa özel satır yoksa branşın genel satırı (tüm sınıflar ve tesisler toplamı) esas alınır.
   if (g.brans) {
     const kp = (await db.query(`SELECT sum(es_zamanli_is)::int n FROM firma_kapasitesi WHERE kurulus_ref = $1 AND ana_brans = $2 AND (gorev_sinifi = $3 OR (gorev_sinifi IS NULL AND NOT EXISTS (SELECT 1 FROM firma_kapasitesi x WHERE x.kurulus_ref = $1 AND x.ana_brans = $2 AND x.gorev_sinifi = $3)))`, [g.firma, g.brans, sinif])).rows[0].n;
-    if (kp) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans])).rows[0].n); if (ak >= kp) uyarilar.push(`Firmanın ${g.brans} branşındaki ${sinif} kapasitesi doludur (${ak}/${kp}).`); }
+    if (kp) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans])).rows[0].n); if (ak >= kp) engeller.push(`Firmanın ${g.brans} branşındaki ${sinif} kapasitesi doludur (${ak}/${kp}).`); }
     // Tesis seçildiyse o tesisin kendi kapasite satırı ayrıca denetlenir.
     if (g.tesis) {
       const tk = (await db.query(`SELECT sum(es_zamanli_is)::int n FROM firma_kapasitesi WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND (gorev_sinifi IS NULL OR gorev_sinifi = $4)`, [g.firma, g.brans, g.tesis, sinif])).rows[0].n;
-      if (tk) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans, g.tesis])).rows[0].n); if (ak >= tk) uyarilar.push(`Seçilen tesisteki ${g.brans} kapasitesi doludur (${ak}/${tk}).`); }
+      if (tk) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans, g.tesis])).rows[0].n); if (ak >= tk) engeller.push(`Seçilen tesisteki ${g.brans} kapasitesi doludur (${ak}/${tk}).`); }
     }
   }
   if (!(await db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%sigorta%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [g.firma])).rowCount) uyarilar.push('Firmanın sorumluluk sigortası kaydı yoktur.');

@@ -30,7 +30,7 @@ interface DosyaAyrinti extends DosyaSatir {
   musteri_risk_olayi?: string | null; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null; baslangic_zamani?: string | null }[];
   sigorta: { sigortaci_adi: string | null; sigorta_hasar_dosya_no: string | null; police_no: string | null; eposta: string | null; onay_yetkilisi_eposta: string | null } | null;
   ekip: Ekip[]; sureler: Sure[]; bekleme: Bekleme[]; konular: Konu[]; yapilacaklar: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null }[];
-  gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null }[];
+  gecmis: { yeni_statu: string; yeni_asama: string | null; gerekce: string; olusturma_zamani: string; yapan: string | null; sonraki_sorumlu_rol: string | null; tamamlanan_kosullar?: string[] | null; belgeler?: string[] | null }[];
 }
 const saat = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
 const gun = (s: string) => s.split('-').reverse().join('.');
@@ -378,7 +378,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       {d.yat.kimlik && d.izinler.includes('yat.duzelt') && <SahipDevri yat={d.yat.kimlik} />}
       {d.yat.kimlik && <><VeriDuzeltme nesneTuru="Yat" nesne={d.yat.kimlik} baslik="Yat Kaydında Düzeltme Talebi" /><VeriDuzeltme nesneTuru="Taraf" yat={d.yat.kimlik} baslik="Yat Sahibi Kaydında Düzeltme Talebi" /></>}
       {d.musteri_turu === 'Kurumsal Müşteri' && d.rollerim.includes('Dosya Sorumlusu') && <MusteriTalimati dosya={id} />}
-      <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}</div>)}</Blok>
+      <Blok baslik="Durum Geçmişi">{d.gecmis.map((g, i) => <div key={i}>{saat(g.olusturma_zamani)} · {g.yeni_statu}{g.yeni_asama ? ` · ${g.yeni_asama}` : ''} · {g.gerekce}{g.yapan ? ` · ${g.yapan}` : ''}{g.sonraki_sorumlu_rol ? ` · Sıradaki: ${g.sonraki_sorumlu_rol}` : ''}{g.tamamlanan_kosullar?.length ? <div className="not">Tamamlanan: {g.tamamlanan_kosullar.join(', ')}</div> : null}{g.belgeler?.length ? <div className="not">Belgeler: {g.belgeler.join(', ')}</div> : null}</div>)}</Blok>
     </>
   );
 }

@@ -7,7 +7,7 @@ import { GozdenGecirmeler } from './YonetimTakip';
 import { OzelGunler } from './OzelGunler';
 
 export interface Kart {
-  kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null; olusturma_zamani?: string;
+  kimlik: string; tur: string; kategori: string; baslik: string; ozet: string | null; oncelik: string; son_zaman: string | null; sure_notu?: string | null; olusturma_zamani?: string; ortak_statu?: string; beklemede?: boolean; gecikmis?: boolean;
   kademe: number; kademe_sayisi: number; durum: string; makam?: string; sonraki_rol?: string | null; hazirlayan_adi?: string | null; gerekce?: string | null; vekaleten?: boolean; arz_notlari?: string | null;
 }
 export interface BugunVeri {
@@ -47,7 +47,8 @@ function KartUst({ k, sayac = true }: { k: Kart; sayac?: boolean }) {
   return (
     <>
       <div className="ust2"><b>{k.baslik}</b>{sayac && kl && <Rozet s={kl.sinif} c={kl.yazi} y={kl.yanip} />}</div>
-      {sayac && k.son_zaman && <div className="not son">Son: {sonYazi(k.son_zaman)}</div>}
+      {(k.ortak_statu || k.beklemede || k.gecikmis) && <div>{k.ortak_statu && <Rozet s="gri" c={k.ortak_statu} />}{k.beklemede && <Rozet s="sari" c="Beklemede" />}{k.gecikmis && <Rozet s="kirmizi" c="Gecikmiş" />}</div>}
+      {sayac && k.son_zaman && <div className="not son">Son: {sonYazi(k.son_zaman)}{k.sure_notu ? ` · ${k.sure_notu}` : ''}</div>}
       {k.oncelik !== 'Normal' && <div><Rozet s={ONCELIK[k.oncelik] ?? 'gri'} c={k.oncelik} /></div>}
       {k.ozet && <div className="not">{k.ozet}</div>}
     </>
@@ -137,6 +138,19 @@ function IslemKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
 
 /** YG-1631: 7 günlük plan İK modülüyle dolar; o zamana kadar gün şeridi boş görünür. */
 /** YG-1631: 7 günlük planlanan konum; veri kişinin konum planından (görev, izin, saha) gelir. */
+/** YG-1369: çevrim dışı kayıt çakışmaları; süreç sahibi platform kaydını esas alır veya cihaz kaydını uygular. */
+function CevrimDisiCakismalar() {
+  const [l, setL] = useState<{ kimlik: string; gonderen: string; dosya_no: string | null; zaman: string }[]>([]); const [n, setN] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/mobil/cakismalar').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (l.length === 0) return m ? <div className="not" role="status">{m}</div> : null;
+  const karar = (k: string, karar: string) => void istek(`/mobil/cakisma/${k}/karar`, { karar, gerekce: n[k] ?? '' }).then(() => { setM('Karar kaydedildi.'); return yk(); }).catch((e) => setM(e.message));
+  return <>{m && <div className="not" role="status">{m}</div>}{l.map((x) => <div key={x.kimlik} className="kart-sol" data-t="cevrim-disi-cakisma"><b>Çevrim Dışı Kayıt Çakışması · {x.dosya_no ?? 'Saha'} · {x.gonderen}</b>
+    <div className="not">Kayıt {tarih(x.zaman)} tarihinde cihazdan geldi; platformdaki kayıt bu arada değişti.</div>
+    <label htmlFor={`cd-${x.kimlik}`}>Gerekçe</label><input id={`cd-${x.kimlik}`} value={n[x.kimlik] ?? ''} onChange={(e) => setN({ ...n, [x.kimlik]: e.target.value })} />
+    <div className="dugmeler"><button className="btn" disabled={!(n[x.kimlik] ?? '').trim()} onClick={() => karar(x.kimlik, 'Platform Kaydı Esas')}>Platform Kaydını Esas Al</button><button className="btn evet" disabled={!(n[x.kimlik] ?? '').trim()} onClick={() => karar(x.kimlik, 'Cihaz Kaydı Uygulansın')}>Cihaz Kaydını Uygula</button></div></div>)}</>;
+}
+
 /** YG-1582, YG-1586, YG-1587: yanıtsız kalıp size yükselen nöbet çağrısı; 15 dakikalık dönüş sayacıyla. */
 function YukselenCagri() {
   const [l, setL] = useState<{ kimlik: string; hat: string; arayan: string; telefon: string | null; ozet: string; sorumlu_rol: string; son_zaman: string }[]>([]); const [n, setN] = useState<Record<string, string>>({}); const [m, setM] = useState('');
@@ -272,7 +286,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Risk ve Kalite Direktörü', 'Kalite Müdürü'].includes(r.rol_adi)) && <OlayIzleme rkd={ben.roller.some((r) => r.rol_adi === 'Risk ve Kalite Direktörü')} km={ben.roller.some((r) => r.rol_adi === 'Kalite Müdürü')} />}
       {lgm && <NobetDevirKarti />}
       {lgm && <OlayYoneticisiKarti />}
-      {lgm && <YukselenCagri />}
+      {lgm && <><YukselenCagri /><CevrimDisiCakismalar /></>}
       {(() => { const acil = [...veri.onay, ...veri.islem, ...veri.gorev].filter((k) => k.oncelik === 'Kritik'); return acil.length > 0 && <>{/* YG-1635: acil kartlar Süre Uyarılarının üstünde */}
         <div className="bolum">Acil</div>
         {acil.map((k) => <div key={`acil-${k.kimlik}`} className="hata kart-sol"><KartUst k={k} /></div>)}</>; })()}

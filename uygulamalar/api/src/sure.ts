@@ -74,6 +74,16 @@ export function bitisKaydir(bitis: Date, oncelik: string, tatiller: Set<string> 
   return { bitis: new Date(g.getTime() - TZ), not: `Kaydırıldı: ${ad(y)} → ${ad(g)} 12:00` };
 }
 
+/**
+ * YG-1607: 5 güne kadar süreler saatle, üzerindekiler gün sayısıyla izlenir. Gün olarak verilen sürede bitiş son gün 12:00'dır;
+ * pazar veya resmî tatile düşerse ilk çalışma günü 12:00'a kayar. Kritik süreler ve 5 güne kadar olanlar değişmez.
+ */
+export function gunSuresiBitis(bitis: Date, baslangic: Date, oncelik: string, tatiller: Set<string> = new Set()): { bitis: Date; not: string | null } {
+  if (oncelik === 'Kritik' || bitis.getTime() - baslangic.getTime() <= 5 * 86_400_000) return { bitis, not: null };
+  const y = yerel(bitis);
+  return bitisKaydir(new Date(Date.UTC(y.getUTCFullYear(), y.getUTCMonth(), y.getUTCDate(), 12) - TZ), oncelik, tatiller);
+}
+
 export async function tatilGunleri(db: Db, arife = false): Promise<Set<string>> {
   return new Set((await db.query(`SELECT to_char(tarih, 'YYYY-MM-DD') t FROM resmi_tatil WHERE yarim_gun = $1`, [arife])).rows.map((r) => r.t as string));
 }

@@ -812,6 +812,8 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
   const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_|hizmet_)/;
+  // YG-1017: unvan–rol eşleşmesi (LGM personeli).
+  s.get('/unvan-rol', oturumlu, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? yok(y) : (await b.db.query(`SELECT rol_ref, rol_adi, unvan, kademe, birim FROM unvan_rol_eslesmesi ORDER BY birim, rol_adi`)).rows);
   // YG-1367: katalogda sahip (öneren rol, YG-853) ve onaylayan (GMY uygun görüşüyle CEO) ile yürürlük tarihi ve son değişiklik gösterilir.
   s.get('/parametreler', oturumlu, async (i, y) => (await parametreci(i.oturum!.kullanici)) ? (await b.db.query(`SELECT p.kod, p.deger, p.aciklama, to_char(p.gecerlilik, 'DD.MM.YYYY') yururluk,
       (SELECT to_char(g.zaman AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY') FROM parametre_gecmisi g WHERE g.kod = p.kod ORDER BY g.zaman DESC LIMIT 1) son_degisiklik

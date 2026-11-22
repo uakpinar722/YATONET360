@@ -151,6 +151,18 @@ describe('onay ve yürürlük (YG-594…YG-597, YG-691)', () => {
     expect(v.json()).toMatchObject({ ad: 'Prosedür', surum: 1, durum: 'Yerine Geçti' });
     expect((await s.inject({ method: 'GET', url: '/api/dogrula/AAAA-AAAA' })).statusCode).toBe(404);
   });
+  it('onaydaki sürüm değişince onay düşer, makama bildirilir, yeni sürüm ayrıca onaylanır (YG156-DUSME)', async () => {
+    const d = await gir(DES);
+    const id = (await yukle(d, PDF('d1'), { ad: 'Düşen Onay' })).json().belge;
+    const k = (await ist('POST', `/api/belge/${id}/surum/1/onaya-gonder`, d)).json().kart;
+    const y2 = (await yukle(d, PDF('d2'), { ad: 'Düşen Onay', gerekce: 'Tutar değişti' })).json();
+    expect(y2.onayDustu).toBe(true);
+    expect((await sup.query(`SELECT durum FROM is_karti WHERE kimlik = $1`, [k])).rows[0].durum).toBe('Geri Çekildi');
+    expect((await sup.query(`SELECT durum FROM belge_surum WHERE belge_ref = $1 ORDER BY surum_no`, [id])).rows.map((x) => x.durum)).toEqual(['İptal', 'Taslak']);
+    expect((await sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'Onay Düştü%'`, [K[BIM]])).rows[0].n).toBeGreaterThan(0);
+    expect((await ist('POST', `/api/is/${k}/karar`, await gir(BIM), { karar: 'Onayla' })).statusCode).toBeGreaterThanOrEqual(400);
+    expect((await onayla(id, 2)).durum).toBe('Yürürlükte');
+  });
   it('ileri tarihli sürüm tarihi gelince yürürlüğe girer', async () => {
     const d = await gir(DES);
     const id = (await yukle(d, PDF('i1'), { ad: 'İleri' })).json().belge;

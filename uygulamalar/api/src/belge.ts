@@ -177,13 +177,22 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO belge_surum (belge_ref, surum_no, dosya_adi, uzanti, boyut, ozet_sha256, depo_anahtari, tarama_kaynagi, degisiklik_gerekcesi, yukleyen_ref, durum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, $11) RETURNING kimlik`,
         [e.kimlik, no, dosya.trim(), uzanti, al.boyut, al.ozet, anahtar, karantina ? 'Bekliyor' : tarayici.ad, gerekce?.trim() || null, o.kullanici, karantina ? 'Karantina' : 'Taslak'])).rows[0];
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Belge Yüklendi', nesneTuru: 'belge', nesneKimligi: e.kimlik, yeni: { surum: no, ozet: al.ozet, boyut: al.boyut }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      // YG-156: onaydaki önceki sürümün onayı yeni içeriğe taşınmaz; düşer ve makama bildirilir. Yeni sürüm ayrıca onaya gönderilir.
+      let onayDustu = false;
+      if (no > 1) for (const x of (await c.query(`SELECT s.kimlik, s.surum_no, k.kimlik kart, k.zincir[k.kademe + 1] makam FROM belge_surum s JOIN is_karti k ON k.kimlik = s.is_karti_ref WHERE s.belge_ref = $1 AND s.durum = 'İncelemede' AND k.durum IN ('Bekliyor', 'İade Edildi')`, [e.kimlik])).rows) {
+        await c.query(`UPDATE belge_surum SET durum = 'İptal' WHERE kimlik = $1`, [x.kimlik]);
+        await c.query(`UPDATE is_karti SET durum = 'Geri Çekildi', kapanma_zamani = now() WHERE kimlik = $1`, [x.kart]);
+        const { rolSahipleri } = await import('./makam.js');
+        await (await import('./bildirim.js')).bildir(c, { olay: `onay-dustu:${x.kart}`, kullanicilar: x.makam ? await rolSahipleri(c, x.makam) : [], baslik: `Onay Düştü: ${ad.trim()} ${x.surum_no}. sürüm`, ozet: `Belgenin ${no}. sürümü yüklendi; önceki sürüm için onay gerekmez. Yeni sürüm onaya gönderildiğinde listenize düşer.`, isRef: x.kart });
+        onayDustu = true;
+      }
       // YG-1656: acil talebe eklenen fotoğraf nöbetçiye (ilk sorumlu ve dosya sorumlusu) anında Kritik bildirimle gider.
       if (bildirimFoto) {
         const tl = (await c.query(`SELECT t.talep_no, t.acil_durum, t.ilk_sorumlu_ref, d.dosya_no, d.dosya_sorumlusu_ref FROM talep t LEFT JOIN dosya d ON d.talep_ref = t.kimlik WHERE t.kimlik::text = $1`, [bagKimligi])).rows[0];
         if (tl?.acil_durum) await (await import('./bildirim.js')).bildir(c, { olay: `acil-foto:${r.kimlik}`, kullanicilar: [tl.ilk_sorumlu_ref, tl.dosya_sorumlusu_ref].filter((x): x is string => Boolean(x) && x !== o.kullanici), baslik: `Acil İhbara Fotoğraf Eklendi: ${tl.dosya_no ?? tl.talep_no}`, ozet: dosya.trim(), oncelik: 'Kritik', acil: true });
       }
       await c.query('COMMIT');
-      return { belge: e.kimlik, surum: no, surumKimligi: r.kimlik, ...(karantina ? { karantina: true, uyari: 'Dosya karantinaya alındı; tarama tamamlanınca kullanılabilir.' } : {}) };
+      return { belge: e.kimlik, surum: no, surumKimligi: r.kimlik, ...(onayDustu ? { onayDustu: true, uyari: 'Önceki sürümün onayı düştü; yeni sürümü onaya gönderiniz.' } : {}), ...(karantina ? { karantina: true, uyari: 'Dosya karantinaya alındı; tarama tamamlanınca kullanılabilir.' } : {}) };
     } catch (x) { await c.query('ROLLBACK').catch(() => {}); depo.vazgec(al.yol); throw x; } finally { c.release(); }
   });
 
