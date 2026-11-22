@@ -12,7 +12,7 @@ export function BelgeInceleme({ dosya }: { dosya: string }) {
   const isle = (b: string, sonuc: string) => void istek(`/dosya/${dosya}/belge/${b}/inceleme`, { sonuc, not: not[b] || undefined, gecerlilikBitis: gb[b] || undefined }).then(() => { setM('İnceleme kaydedildi.'); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">Belge İncelemesi</div><div className="ozet">{m && <div className="not" role="status">{m}</div>}
     {v.belgeler.map((b) => <div className="soru" key={b.kimlik}><span>{b.ad} · {b.belge_turu} · {b.bag_turu === 'Yat' ? 'Yat Kaydı' : 'Dosya'}{b.inceleme_sonucu ? ` · ${b.inceleme_sonucu}` : ' · İncelenmedi'}{b.inceleme_notu ? ` · ${b.inceleme_notu}` : ''}{b.gecerlilik_bitis ? ` · Geçerlilik: ${b.gecerlilik_bitis.split('-').reverse().join('.')}` : ''}</span>
-      <span className="tam"><label htmlFor={`bi-${b.kimlik}`}>Not</label><input id={`bi-${b.kimlik}`} value={not[b.kimlik] ?? ''} onChange={(e) => setNot({ ...not, [b.kimlik]: e.target.value })} />
+      <span className="tam"><label htmlFor={`bi-${b.kimlik}`}>Not</label><input required id={`bi-${b.kimlik}`} value={not[b.kimlik] ?? ''} onChange={(e) => setNot({ ...not, [b.kimlik]: e.target.value })} />
         <label htmlFor={`bg-${b.kimlik}`}>Geçerlilik Bitişi (Varsa)</label><input id={`bg-${b.kimlik}`} type="date" value={gb[b.kimlik] ?? ''} onChange={(e) => setGb({ ...gb, [b.kimlik]: e.target.value })} />
         <button className="btn2 kucuk" onClick={() => isle(b.kimlik, 'Uygun')}>Belge Uygun</button><button className="btn hayir kucuk" disabled={!not[b.kimlik]?.trim()} onClick={() => isle(b.kimlik, 'Eksik')}>Belge Eksik</button></span></div>)}</div></>;
 }

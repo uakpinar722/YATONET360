@@ -10,7 +10,7 @@ const zaman = (s: string | null) => (s ? new Date(s).toLocaleString('tr-TR', { d
 export function DosyaDestek({ dosya }: { dosya: string }) {
   const [b, setB] = useState(''); const [m, setM] = useState('');
   return <><div className="bolum">Bu Dosya İçin Destek Talebi</div>{m && <div className="not" role="status">{m}</div>}
-    <label htmlFor={`dd-${dosya}`}>Destek Talebi Açıklaması</label><input id={`dd-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} />
+    <label htmlFor={`dd-${dosya}`}>Destek Talebi Açıklaması</label><input required id={`dd-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} />
     <button className="btn2 kucuk" disabled={!b.trim()} onClick={() => void istek<{ talepNo: string }>('/destek', { tur: 'Soru', belirti: b.trim(), dosya }).then((r) => { setM(`${r.talepNo} açıldı.`); setB(''); }).catch((e) => setM(e.message))}>Talep Aç</button></>;
 }
 
@@ -27,7 +27,7 @@ export function DestekSayfasi({ lgm }: { lgm: boolean }) {
   return <><h1>{lgm ? 'Yardım | BT Destek' : 'Yardım | LGM Merkez'}</h1>{lgm && <button className="btn2 kucuk" onClick={turYenidenBaslat}>İlk Kullanım Turunu Yeniden Başlat</button>}{m && <div className="not" role="status">{m}</div>}
     <div className="bolum">Yeni Talep</div>
     <label htmlFor="ds-t">Talep Türü</label><select id="ds-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Hata', 'Öneri', 'Soru'].map((x) => <option key={x}>{x}</option>)}</select>
-    <label htmlFor="ds-b">Kısa Açıklama</label><input id="ds-b" value={f.belirti} onChange={(e) => setF({ ...f, belirti: e.target.value })} />
+    <label htmlFor="ds-b">Kısa Açıklama</label><input required id="ds-b" value={f.belirti} onChange={(e) => setF({ ...f, belirti: e.target.value })} />
     <label htmlFor="ds-e">Ekran veya İşlem</label><input id="ds-e" value={f.ekran} onChange={(e) => setF({ ...f, ekran: e.target.value })} />
     <label htmlFor="ds-k">Etkisi</label><input id="ds-k" value={f.etki} onChange={(e) => setF({ ...f, etki: e.target.value })} />
     <label htmlFor="ds-y">Beklenen Sonuç</label><input id="ds-y" value={f.beklenen} onChange={(e) => setF({ ...f, beklenen: e.target.value })} />

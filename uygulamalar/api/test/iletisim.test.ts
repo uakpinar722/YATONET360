@@ -98,6 +98,16 @@ describe('bildirim kuyruğu (YG-507…YG-513)', () => {
     await kuyrukIsle(b2, t);
     expect(sms.gidenler.length).toBe(once + 1);
   });
+  it('300 karakteri aşan SMS ilk cümle ve bağlantıyla gider; kayıtta tam metin kalır (YG1446-SMS)', async () => {
+    const { disGonder, smsMetni } = await import('../src/bildirim.js');
+    const uzun = `Dosyanız için yeni bir adım vardır. ${'Ayrıntı metni burada yer alır. '.repeat(12)}https://x/d/1`;
+    expect(smsMetni('Kısa metin.')).toBe('Kısa metin.');
+    expect(smsMetni('a'.repeat(400)).length).toBe(300);
+    await disGonder(db, { olay: 'uzun-sms', telefon: '+905550001446', konu: 'K', metin: uzun, acil: true }, SALI);
+    await kuyrukIsle(bag, SALI);
+    expect(sms.gidenler.filter((g) => g.telefon === '+905550001446').map((g) => g.metin)).toEqual(['Dosyanız için yeni bir adım vardır. https://x/d/1']);
+    expect((await sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = 'uzun-sms'`)).rows[0].metin).toBe(uzun);
+  });
   it('okundu ve işlem yapıldı izlenir; Kritik teslim hatası görev olur (T-YG513-DURUM)', async () => {
     const id = await kartAc(db, { tur: 'Deneme', kategori: 'gorev', baslik: 'Okuma Denemesi', sahipKullanici: K[CEO]! });
     await kuyrukIsle(bag, new Date(Date.now() + 5 * 86_400_000), 1000);

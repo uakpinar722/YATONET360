@@ -22,7 +22,7 @@ export function BelgeDogrula({ ilkKod }: { ilkKod: string }) {
     <Kabuk baslik="Belge Doğrulama">
       <form onSubmit={(e) => void sor(e)}>
         <label htmlFor="dg">Doğrulama Kodu</label>
-        <input id="dg" value={kod} onChange={(e) => setKod(e.target.value)} placeholder="7KQ4-M2XD" />
+        <input required id="dg" value={kod} onChange={(e) => setKod(e.target.value)} placeholder="7KQ4-M2XD" />
         {hata && <div className="hata" role="alert">{hata}</div>}
         <button className="btn" disabled={!kod.trim()}>Doğrula</button>
       </form>

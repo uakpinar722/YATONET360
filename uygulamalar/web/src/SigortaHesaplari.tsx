@@ -16,12 +16,12 @@ export function SigortaHesaplari() {
     {k.id && <div className="ozet"><div>Hesap kapatma: {l.find((x) => x.kimlik === k.id)?.ad_soyad}</div>
       <label htmlFor="sh-kt">Bildirim Türü</label><select id="sh-kt" value={k.tur} onChange={(e) => setK({ ...k, tur: e.target.value })}>{['Ayrılış', 'Görev Değişikliği'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="sh-kk">Bildirim Kanalı</label><select id="sh-kk" value={k.kanal} onChange={(e) => setK({ ...k, kanal: e.target.value })}>{['E-posta', 'Telefon', 'Yazı'].map((x) => <option key={x}>{x}</option>)}</select>
-      <label htmlFor="sh-kz">Bildirim Zamanı</label><input id="sh-kz" type="datetime-local" value={k.zaman} onChange={(e) => setK({ ...k, zaman: e.target.value })} />
+      <label htmlFor="sh-kz">Bildirim Zamanı</label><input required id="sh-kz" type="datetime-local" value={k.zaman} onChange={(e) => setK({ ...k, zaman: e.target.value })} />
       <button className="btn hayir" disabled={!k.zaman} onClick={kapat}>Hesabı Kapat</button></div>}
-    <label htmlFor="sh-s">Hesap Açılacak Sigorta Şirketi</label><select id="sh-s" value={f.tsbKodu} onChange={(e) => setF({ ...f, tsbKodu: e.target.value })}><option value="">Seçiniz</option>{s.map((x) => <option key={x.tsb_kodu} value={x.tsb_kodu}>{x.tam_unvan}</option>)}</select>
-    <label htmlFor="sh-a">Hesap Sahibi Ad Soyad</label><input id="sh-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-    <label htmlFor="sh-e">Hesap Sahibi E-posta</label><input id="sh-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
+    <label htmlFor="sh-s">Hesap Açılacak Sigorta Şirketi</label><select required id="sh-s" value={f.tsbKodu} onChange={(e) => setF({ ...f, tsbKodu: e.target.value })}><option value="">Seçiniz</option>{s.map((x) => <option key={x.tsb_kodu} value={x.tsb_kodu}>{x.tam_unvan}</option>)}</select>
+    <label htmlFor="sh-a">Hesap Sahibi Ad Soyad</label><input required id="sh-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+    <label htmlFor="sh-e">Hesap Sahibi E-posta</label><input required id="sh-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
     <label htmlFor="sh-t">Hesap Sahibi Telefon</label><input id="sh-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
-    <label htmlFor="sh-d">Yetkilendirme Yazısı (Tarih / Sayı)</label><input id="sh-d" value={f.dayanak} onChange={(e) => setF({ ...f, dayanak: e.target.value })} />
+    <label htmlFor="sh-d">Yetkilendirme Yazısı (Tarih / Sayı)</label><input required id="sh-d" value={f.dayanak} onChange={(e) => setF({ ...f, dayanak: e.target.value })} />
     <button className="btn2" disabled={!f.tsbKodu || !f.ad.trim() || !f.eposta.trim() || !f.dayanak.trim()} onClick={ac}>Hesap Aç</button></>;
 }

@@ -19,6 +19,6 @@ export function RiskRezervi({ dosya }: { dosya: string }) {
     {v.talepAcabilir && <>
       <label htmlFor="rr-t">Talep Türü</label><select id="rr-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}><option>Kullanım</option><option>Oran Değişikliği</option></select>
       {f.tur === 'Kullanım' ? <><label htmlFor="rr-u">Tutar (EUR)</label><input id="rr-u" inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} /></> : <><label htmlFor="rr-o">Yeni Oran (%)</label><input id="rr-o" inputMode="decimal" value={f.oran} onChange={(e) => setF({ ...f, oran: e.target.value })} /></>}
-      <label htmlFor="rr-g">Gerekçe</label><input id="rr-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+      <label htmlFor="rr-g">Gerekçe</label><input required id="rr-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
       <button className="btn2 kucuk" disabled={!f.gerekce.trim()} onClick={gonder}>Risk Rezervi Talebi Aç</button></>}</>;
 }

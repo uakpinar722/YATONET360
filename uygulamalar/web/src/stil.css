@@ -4,6 +4,7 @@ html, body, #kok { height: 100%; margin: 0; }
 body { font-family: 'Source Sans 3', system-ui, sans-serif; color: var(--met); background: var(--krem); font-size: 16px; }
 button { font: inherit; cursor: pointer; }
 label { display: block; font-weight: 600; color: var(--lac); margin: 14px 0 6px; }
+label:has(+ :is(input, select, textarea)[required])::after { content: " *" / ""; color: var(--hata); } /* YG-1351 */
 input { width: 100%; padding: 12px; border: 1px solid var(--ciz); border-radius: 8px; font: inherit; background: #fff; }
 input:focus { outline: 2px solid var(--brz); border-color: var(--brz); }
 .btn { display: block; width: 100%; margin-top: 16px; padding: 13px; border: 0; border-radius: 8px; background: var(--lac); color: #fff; font-weight: 700; box-shadow: 0 2px 8px rgba(22, 36, 66, .2); }

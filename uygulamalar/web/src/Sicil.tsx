@@ -48,7 +48,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <SicilKarne id={secili} onay={onay} gerekce={gerekce} yap={yap} />
           <KararOnerisi id={secili} yap={yap} sicil={ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu')} asama={l.find((f) => f.kimlik === secili)?.kayit_asamasi} />
           {onay && <>
-            <label htmlFor="fs-g">Statü Gerekçesi</label><input id="fs-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
+            <label htmlFor="fs-g">Statü Gerekçesi</label><input required id="fs-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce }), 'Firma onaylandı.')}>Onayla ve Aktif Yap</button>
             <label htmlFor="fs-o">Olumsuz Öneri</label><select id="fs-o" value={oneri} onChange={(e) => setOneri(e.target.value)}><option>Koşullu Onaylı</option><option>Reddedildi</option></select>
             <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/hukuk-gorusu`, { oneri }), 'Hukuk ve Uyum görüşü istendi.')}>Hukuk Görüşü İste</button>
@@ -91,10 +91,10 @@ function KararOnerisi({ id, yap, sicil, asama }: { id: string; yap: (f: () => Pr
       {v.son && v.asama === 'İncelemede' && <div className="not">Karara sunma son tarihi: {tarih(v.son)}</div>}
       {v.oneriler.map((x) => <div key={x.kimlik} className="not">Karar Önerisi: {x.oneri}{x.kapsama ? ` · ${x.kapsama}` : ''} · {x.durum === 'Onayda' && x.makam ? `${x.makam} Kontrolünde` : x.durum} · Hazırlayan: {x.hazirlayan}{x.puanlar.length ? ` · ${x.puanlar.map((p) => `${p.baslik} ${p.puan}`).join(', ')}` : ''}</div>)}
       {v.hazirlar && v.asama === 'İncelemede' && !v.oneriler.some((x) => x.durum === 'Onayda') && <>
-        <label htmlFor={`ko-o-${id}`}>Karar Önerisi</label><select id={`ko-o-${id}`} value={f.oneri} onChange={(e) => setF({ ...f, oneri: e.target.value })}><option value="">Seçiniz</option>{v.oneriTurleri.map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor={`ko-o-${id}`}>Karar Önerisi</label><select required id={`ko-o-${id}`} value={f.oneri} onChange={(e) => setF({ ...f, oneri: e.target.value })}><option value="">Seçiniz</option>{v.oneriTurleri.map((x) => <option key={x}>{x}</option>)}</select>
         {(f.oneri === 'Onaylı' || f.oneri === 'Koşullu Onaylı') && <><label htmlFor={`ko-k-${id}`}>Kapsama Türü</label><select id={`ko-k-${id}`} value={f.kapsama} onChange={(e) => setF({ ...f, kapsama: e.target.value })}><option value="">Seçiniz</option>{v.kapsamalar.map((x) => <option key={x}>{x}</option>)}</select></>}
         <label htmlFor={`ko-p-${id}`}>Puanlama (her satır: Başlık | Puan 1–5 | Kanıt)</label><textarea id={`ko-p-${id}`} rows={3} value={f.puanlar} onChange={(e) => setF({ ...f, puanlar: e.target.value })} />
-        <label htmlFor={`ko-g-${id}`}>Öneri Gerekçesi</label><input id={`ko-g-${id}`} value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+        <label htmlFor={`ko-g-${id}`}>Öneri Gerekçesi</label><input required id={`ko-g-${id}`} value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
         <button className="btn2" disabled={!f.oneri || !f.gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${id}/karar-onerisi`, { oneri: f.oneri, kapsama: f.kapsama || undefined, gerekce: f.gerekce, puanlar }), 'Karar önerisi Firma Yönetimi Müdür Yardımcısına gönderildi.').then(() => { setF({ oneri: '', kapsama: '', gerekce: '', puanlar: '' }); yk(); })}>Onaya Gönder</button></>}
     </>}
   </>;
@@ -114,7 +114,7 @@ export function KarneParametreleri() {
       {v && <div className="ozet">
         <div>Yürürlükteki Sürüm: {v.yururlukte.surum}{v.onayda ? ` · Onayda: Sürüm ${v.onayda.surum}` : ''}</div>
         {Object.keys(v.yururlukte.deger).map((k) => <div key={k}><label htmlFor={`kp-${k}`}>{PARAMETRE[k] ?? k}</label><input id={`kp-${k}`} inputMode="decimal" value={d[k] ?? ''} onChange={(e) => setD({ ...d, [k]: e.target.value })} /></div>)}
-        <label htmlFor="kp-g">Gerekçe</label><input id="kp-g" value={ger} onChange={(e) => setGer(e.target.value)} />
+        <label htmlFor="kp-g">Gerekçe</label><input required id="kp-g" value={ger} onChange={(e) => setGer(e.target.value)} />
         <button className="btn2" disabled={!ger.trim() || Boolean(v.onayda)} onClick={() => { setHata(''); setNot(''); void istek('/karne-parametre', { gerekce: ger, deger: Object.fromEntries(Object.entries(d).map(([k, x]) => [k, Number(x.replace(',', '.'))])) }).then(() => { setNot('Öneri Genel Müdür Yardımcısı görüşüne gönderildi.'); setGer(''); return yukle(); }).catch((x) => setHata((x as Error).message)); }}>Değişikliği Öner</button>
       </div>}
     </>
@@ -158,8 +158,8 @@ export function NobetCizelge() {
         {hata && <div className="hata" role="alert">{hata}</div>}{not_ && <div className="not" role="status">{not_}</div>}
         <label htmlFor="nb-d">Dönem (YYYY-AA)</label><input id="nb-d" value={donem} onChange={(e) => setDonem(e.target.value)} />
         <label htmlFor="nb-k">Katman</label><select id="nb-k" value={v.katman} onChange={(e) => setV({ ...v, katman: e.target.value, kullanici: '' })}>{['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'].map((x) => <option key={x}>{x}</option>)}</select>
-        <label htmlFor="nb-u">Kişi</label><select id="nb-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
-        <div className="iki-tarih"><div><label htmlFor="nb-b">Başlangıç</label><input id="nb-b" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nb-s">Bitiş</label><input id="nb-s" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
+        <label htmlFor="nb-u">Kişi</label><select required id="nb-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+        <div className="iki-tarih"><div><label htmlFor="nb-b">Başlangıç</label><input required id="nb-b" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nb-s">Bitiş</label><input required id="nb-s" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
         <button className="btn2" disabled={!v.kullanici || !v.baslangic || !v.bitis} onClick={() => setL([...l, v])}>Vardiya Ekle</button>
         {/^\d{4}-\d{2}$/.test(donem) && <button className="btn2" onClick={() => { setHata(''); void istek<{ vardiyalar: { katman: string; kullanici: string; baslangic: string; bitis: string }[]; gec: boolean; hazirlayan: string } | null>(`/nobet/teknik-taraf?donem=${donem}`).then((t) => { if (!t) { setNot('Bu dönem için teknik taraf iletilmemiştir.'); return; } const yerel = (z: string) => new Date(new Date(z).getTime() + 3 * 3_600_000).toISOString().slice(0, 16); setL([...l, ...t.vardiyalar.map((x) => ({ katman: x.katman, kullanici: x.kullanici, baslangic: yerel(x.baslangic), bitis: yerel(x.bitis) }))]); setNot(`Teknik taraf eklendi (${t.vardiyalar.length} vardiya · ${t.hazirlayan}${t.gec ? ' · süresinden sonra iletildi' : ''}).`); }).catch((x) => setHata((x as Error).message)); }}>Teknik Tarafı Ekle</button>}
         {l.map((x, n) => <div key={n}>{x.katman} · {ad.find((a) => a.kimlik === x.kullanici)?.ad_soyad} · {x.baslangic.replace('T', ' ')} – {x.bitis.replace('T', ' ')}</div>)}
@@ -178,7 +178,7 @@ function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown
   useEffect(() => { void yukle(); }, [id]);
   return (<>
     <label htmlFor="sz-t">Sözleşme Türü</label><select id="sz-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['İş Birliği Firması Çerçeve Sözleşmesi', 'Tedarikçi', 'Tedarik', 'Marina', 'Kurtarma', 'Teknik Uzmanlık', 'Ekipman Kiralama'].map((x) => <option key={x}>{x}</option>)}</select>
-    <label htmlFor="sz-y">Yürürlük Tarihi</label><input id="sz-y" type="date" value={f.yururluk} onChange={(e) => setF({ ...f, yururluk: e.target.value })} />
+    <label htmlFor="sz-y">Yürürlük Tarihi</label><input required id="sz-y" type="date" value={f.yururluk} onChange={(e) => setF({ ...f, yururluk: e.target.value })} />
     <label htmlFor="sz-b">Sözleşme Bitişi</label><input id="sz-b" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} />
     <button className="btn2" disabled={!f.yururluk} onClick={() => void yap(() => istek(`/firma/${id}/sozlesme`, { tur: f.tur, yururluk: f.yururluk, bitis: f.bitis || undefined }).then(yukle), 'Sözleşme taslağı açıldı.')}>Sözleşme Taslağı Aç</button>
     {l.map((s) => <div className="soru" key={s.kimlik}><span>{s.sozlesme_turu} · {s.yururluk.split('-').reverse().join('.')} · {s.durum}</span>
@@ -189,18 +189,18 @@ function FirmaSozlesme({ id, yap }: { id: string; yap: (f: () => Promise<unknown
     <label htmlFor="se-k">İş Kapasitesi</label><input id="se-k" inputMode="numeric" value={se.kapasite} onChange={(e) => setSe({ ...se, kapasite: e.target.value })} />
     <label htmlFor="se-t">Çıkar Çatışması: Taraf No</label><input id="se-t" value={se.taraf} onChange={(e) => setSe({ ...se, taraf: e.target.value })} />
     <button className="btn2" onClick={() => void yap(() => istek(`/firma/${id}/sicil-ek`, { ilceTeyitKaynagi: se.ilce || undefined, marka: se.marka || undefined, kapasite: Number(se.kapasite) || undefined, cikarTaraf: se.taraf || undefined }), 'Sicil bilgisi kaydedildi.')}>Sicil Bilgisini Kaydet</button>
-    <label htmlFor="kq-a">Kaptan Adı</label><input id="kq-a" value={kq.ad} onChange={(e) => setKq({ ...kq, ad: e.target.value })} />
+    <label htmlFor="kq-a">Kaptan Adı</label><input required id="kq-a" value={kq.ad} onChange={(e) => setKq({ ...kq, ad: e.target.value })} />
     <label htmlFor="kq-b">Yeterlilik Belgesi</label><input id="kq-b" value={kq.belge} onChange={(e) => setKq({ ...kq, belge: e.target.value })} />
-    <label htmlFor="kq-bb">Belge Geçerliliği</label><input id="kq-bb" type="date" value={kq.belgeBitis} onChange={(e) => setKq({ ...kq, belgeBitis: e.target.value })} />
+    <label htmlFor="kq-bb">Belge Geçerliliği</label><input required id="kq-bb" type="date" value={kq.belgeBitis} onChange={(e) => setKq({ ...kq, belgeBitis: e.target.value })} />
     <label htmlFor="kq-p">Mesleki Sorumluluk Poliçesi</label><input id="kq-p" value={kq.police} onChange={(e) => setKq({ ...kq, police: e.target.value })} />
-    <label htmlFor="kq-pb">Poliçe Bitişi</label><input id="kq-pb" type="date" value={kq.policeBitis} onChange={(e) => setKq({ ...kq, policeBitis: e.target.value })} />
+    <label htmlFor="kq-pb">Poliçe Bitişi</label><input required id="kq-pb" type="date" value={kq.policeBitis} onChange={(e) => setKq({ ...kq, policeBitis: e.target.value })} />
     <button className="btn2" disabled={!kq.ad.trim() || !kq.belgeBitis || !kq.policeBitis} onClick={() => void yap(() => istek(`/firma/${id}/kaptan`, kq), 'Kaptan kaydedildi.')}>Kaptan Ekle</button>
-    <label htmlFor="ka-g">Kalıcı Askı Gerekçesi</label><input id="ka-g" value={ag} onChange={(e) => setAg(e.target.value)} /><button className="btn hayir" disabled={!ag.trim()} onClick={() => void yap(() => istek(`/firma/${id}/kalici-aski-onerisi`, { gerekce: ag }), 'Görüşler istendi.')}>Kalıcı Askı Öner</button>
-    <label htmlFor="ac-s">Acil Arama Sırası</label><input id="ac-s" inputMode="numeric" value={aS} onChange={(e) => setAS(e.target.value)} />
+    <label htmlFor="ka-g">Kalıcı Askı Gerekçesi</label><input required id="ka-g" value={ag} onChange={(e) => setAg(e.target.value)} /><button className="btn hayir" disabled={!ag.trim()} onClick={() => void yap(() => istek(`/firma/${id}/kalici-aski-onerisi`, { gerekce: ag }), 'Görüşler istendi.')}>Kalıcı Askı Öner</button>
+    <label htmlFor="ac-s">Acil Arama Sırası</label><input required id="ac-s" inputMode="numeric" value={aS} onChange={(e) => setAS(e.target.value)} />
     <button className="btn2" disabled={!aS} onClick={() => void yap(() => istek(`/firma/${id}/acil-bilgi`, { hizmetVerir: true, aramaSirasi: Number(aS) }), 'Firma acil hizmet verir olarak kaydedildi.')}>Acil Hizmet Ver</button>
-    <label htmlFor="hz-n">Haciz İhbarname No</label><input id="hz-n" value={hz.no} onChange={(e) => setHz({ ...hz, no: e.target.value })} />
-    <label htmlFor="hz-t">Tebliğ Zamanı</label><input id="hz-t" type="datetime-local" value={hz.teblig} onChange={(e) => setHz({ ...hz, teblig: e.target.value })} />
-    <label htmlFor="hz-c">Cevap Son Günü</label><input id="hz-c" type="date" value={hz.cevapSon} onChange={(e) => setHz({ ...hz, cevapSon: e.target.value })} />
+    <label htmlFor="hz-n">Haciz İhbarname No</label><input required id="hz-n" value={hz.no} onChange={(e) => setHz({ ...hz, no: e.target.value })} />
+    <label htmlFor="hz-t">Tebliğ Zamanı</label><input required id="hz-t" type="datetime-local" value={hz.teblig} onChange={(e) => setHz({ ...hz, teblig: e.target.value })} />
+    <label htmlFor="hz-c">Cevap Son Günü</label><input required id="hz-c" type="date" value={hz.cevapSon} onChange={(e) => setHz({ ...hz, cevapSon: e.target.value })} />
     <button className="btn hayir" disabled={!hz.no.trim() || !hz.teblig || !hz.cevapSon} onClick={() => void yap(() => istek(`/firma/${id}/haciz-ihbari`, hz), 'Firma carisi bloke edildi.')}>Haciz İhbarını Kaydet</button>
   </>);
 }
@@ -221,7 +221,7 @@ function FirmaTesis({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, 
   const yk = () => istek<typeof l>(`/firma/${id}/tesis`).then(setL).catch(() => setL([]));
   useEffect(() => { void yk(); }, [id]);
   return <><div className="bolum">Tesisler ve Şubeler</div><div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tesis_kodu} · {x.ad}{x.il ? ` · ${x.il}${x.ilce ? ` / ${x.ilce}` : ''}` : ''}{x.aktif ? '' : ' · Pasif'} <TesisBilgi kimlik={x.kimlik} /></div>)}</div>
-    <label htmlFor="ft-a">Tesis Adı</label><input id="ft-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+    <label htmlFor="ft-a">Tesis Adı</label><input required id="ft-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
     <label htmlFor="ft-d">Adres</label><input id="ft-d" value={f.adres} onChange={(e) => setF({ ...f, adres: e.target.value })} />
     <label htmlFor="ft-i">İl</label><input id="ft-i" value={f.il} onChange={(e) => setF({ ...f, il: e.target.value })} />
     <label htmlFor="ft-c">İlçe</label><input id="ft-c" value={f.ilce} onChange={(e) => setF({ ...f, ilce: e.target.value })} />
@@ -246,7 +246,7 @@ function FirmaKapasite({ id, yap }: { id: string; yap: (f: () => Promise<unknown
   useEffect(() => { void yk(); void istek<{ kimlik: string; ad: string }[]>(`/firma/${id}/tesis`).then(setTs).catch(() => setTs([])); }, [id]);
   return <><div className="bolum">Eş Zamanlı İş Kapasitesi</div>
     <div className="ozet">{l.length === 0 ? <div className="not">Kapasite girilmemiştir.</div> : l.map((x, n) => <div key={n}>{x.ana_brans} · {x.gorev_sinifi ?? 'Tüm sınıflar'} · {x.tesis ?? 'Tüm yerler'} · {x.aktif}/{x.es_zamanli_is} aktif iş{x.aktif >= x.es_zamanli_is ? ' · ⚠ Kapasite dolu' : ''}</div>)}</div>
-    <label htmlFor="fk-b">Ana Branş</label><input id="fk-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })} />
+    <label htmlFor="fk-b">Ana Branş</label><input required id="fk-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })} />
     <label htmlFor="fk-s">Görev Sınıfı</label><select id="fk-s" value={f.sinif} onChange={(e) => setF({ ...f, sinif: e.target.value })}><option value="">Tüm sınıflar</option>{['G1', 'G2', 'G3', 'G4'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="fk-t">Tesis</label><select id="fk-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Tüm yerler</option>{ts.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad}</option>)}</select>
     <label htmlFor="fk-a">Eş Zamanlı İş Sayısı</label><input id="fk-a" inputMode="numeric" value={f.adet} onChange={(e) => setF({ ...f, adet: e.target.value })} />
@@ -267,9 +267,9 @@ export function NobetTeknikTaraf() {
         <div className="not">Branş ve teknik yönetici nöbetleri, dönem başından en az 25 gün önce Operasyon Müdür Yardımcısına iletilir.</div>
         <label htmlFor="nt-d">Dönem (YYYY-AA)</label><input id="nt-d" value={donem} onChange={(e) => setDonem(e.target.value)} />
         <label htmlFor="nt-k">Nöbet</label><select id="nt-k" value={v.katman} onChange={(e) => setV({ ...v, katman: e.target.value, kullanici: '' })}><option value="Teknik Uzman">Branş Nöbeti (Teknik Uzman)</option><option value="Yönetici">Teknik Yönetici Nöbeti</option></select>
-        <label htmlFor="nt-u">Kişi</label><select id="nt-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+        <label htmlFor="nt-u">Kişi</label><select required id="nt-u" value={v.kullanici} onChange={(e) => setV({ ...v, kullanici: e.target.value })}><option value="">Seçiniz</option>{ad.filter((x) => x.katmanlar.includes(v.katman)).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
         {v.katman === 'Teknik Uzman' && <><label htmlFor="nt-b">Branş</label><input id="nt-b" value={v.brans} onChange={(e) => setV({ ...v, brans: e.target.value })} /></>}
-        <div className="iki-tarih"><div><label htmlFor="nt-bs">Başlangıç</label><input id="nt-bs" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nt-bt">Bitiş</label><input id="nt-bt" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
+        <div className="iki-tarih"><div><label htmlFor="nt-bs">Başlangıç</label><input required id="nt-bs" type="datetime-local" value={v.baslangic} onChange={(e) => setV({ ...v, baslangic: e.target.value })} /></div><div><label htmlFor="nt-bt">Bitiş</label><input required id="nt-bt" type="datetime-local" value={v.bitis} onChange={(e) => setV({ ...v, bitis: e.target.value })} /></div></div>
         <button className="btn2" disabled={!v.kullanici || !v.baslangic || !v.bitis} onClick={() => setL([...l, v])}>Vardiya Ekle</button>
         {l.map((x, n) => <div key={n}>{x.katman === 'Yönetici' ? 'Teknik Yönetici Nöbeti' : `Branş Nöbeti${x.brans ? ` (${x.brans})` : ''}`} · {ad.find((a) => a.kimlik === x.kullanici)?.ad_soyad} · {x.baslangic.replace('T', ' ')} – {x.bitis.replace('T', ' ')}</div>)}
         <button className="btn2" disabled={!l.length} onClick={() => { setHata(''); setNot(''); void istek<{ gec: boolean }>('/nobet/teknik-taraf', { donem, vardiyalar: l.map((x) => ({ ...x, baslangic: new Date(x.baslangic).toISOString(), bitis: new Date(x.bitis).toISOString() })) }).then((r) => { setNot(r.gec ? 'Teknik taraf iletildi; süresinden sonra iletildiği kayda geçti.' : 'Teknik taraf Operasyon Müdür Yardımcısına iletildi.'); setL([]); }).catch((x) => setHata((x as Error).message)); }}>Operasyon Müdür Yardımcısına İlet</button>

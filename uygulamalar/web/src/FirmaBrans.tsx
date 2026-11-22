@@ -14,7 +14,7 @@ export function FirmaBrans({ id, yap }: { id: string; yap: (f: () => Promise<unk
   }, [id, f.brans, f.deneyim, f.belgeli, f.uretici, f.muhendislik]);
   const k = (a: 'belgeli' | 'uretici' | 'muhendislik', et: string) => <label><input type="checkbox" checked={f[a]} onChange={(e) => setF({ ...f, [a]: e.target.checked })} /> {et}</label>;
   return <><div className="bolum">Branş Yetkinliği</div>
-    <label htmlFor="fb-b">Ana Branş (Yetkinlik)</label><input id="fb-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })} />
+    <label htmlFor="fb-b">Ana Branş (Yetkinlik)</label><input required id="fb-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })} />
     <label htmlFor="fb-k">Kapsama</label><select id="fb-k" value={f.kapsama} onChange={(e) => setF({ ...f, kapsama: e.target.value })}>{['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="fb-r">Bölge</label><input id="fb-r" value={f.bolge} onChange={(e) => setF({ ...f, bolge: e.target.value })} />
     <label htmlFor="fb-d">Branş Deneyimi (Yıl)</label><input id="fb-d" inputMode="numeric" value={f.deneyim} onChange={(e) => setF({ ...f, deneyim: e.target.value })} />

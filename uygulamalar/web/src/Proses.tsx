@@ -44,7 +44,7 @@ export function ProsesLgm({ isEmri }: { isEmri: string }) {
       <button className="btn2 kucuk" onClick={() => is(istek(`/proses-seansi/${x.kimlik}/karar`, { karar: 'Durdur', gerekce: g[x.kimlik] }), 'İş durduruldu.')}>Durdur</button></div>}
       {v.tu && x.durum === 'Girildi' && <div className="tam">
         <button className="btn2 kucuk" onClick={() => is(istek(`/proses-seansi/${x.kimlik}/sonuc`, { sonuc: 'Uygun' }), 'Seans onaylandı.')}>Uygun</button>
-        <label htmlFor={`pu-${x.kimlik}`}>Uygunsuzluk Kaydı</label><select id={`pu-${x.kimlik}`} value={u[x.kimlik] ?? ''} onChange={(e) => setU({ ...u, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{(v.uygunsuzluklar ?? []).map((n) => <option key={n.kimlik} value={n.kimlik}>{n.uygunsuzluk_no}</option>)}</select>
+        <label htmlFor={`pu-${x.kimlik}`}>Uygunsuzluk Kaydı</label><select required id={`pu-${x.kimlik}`} value={u[x.kimlik] ?? ''} onChange={(e) => setU({ ...u, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{(v.uygunsuzluklar ?? []).map((n) => <option key={n.kimlik} value={n.kimlik}>{n.uygunsuzluk_no}</option>)}</select>
         <button className="btn2 kucuk" disabled={!u[x.kimlik]} onClick={() => is(istek(`/proses-seansi/${x.kimlik}/sonuc`, { sonuc: 'Uygun Değil', uygunsuzluk: u[x.kimlik] }), 'Sonuç kaydedildi.')}>Uygun Değil</button></div>}</div>)}
     {v.tu && <>
       <label htmlFor={`ps-t-${isEmri}`}>Proses Türü (Sınır)</label><select id={`ps-t-${isEmri}`} value={s.tur} onChange={(e) => setS({ ...s, tur: e.target.value })}>{TURLER.map((x) => <option key={x}>{x}</option>)}</select>

@@ -25,7 +25,7 @@ export function EtikBildirim() {
   useEffect(() => { void yk(); }, []);
   const karar = (x: E, yatSahibi?: string) => void istek(`/etik-bildirim/${x.kimlik}/karar`, { sonuc: g[x.kimlik], yatSahibi }).then(() => { setM('Karar kaydedildi.'); return yk(); }).catch((e) => setM(e.message));
   return <details><summary>Bildirimler</summary>{m && <div className="not" role="status">{m}</div>}
-    <label htmlFor="eb-k">Kategori</label><select id="eb-k" value={f.kategori} onChange={(e) => setF({ ...f, kategori: e.target.value })}>{KAT.map((x) => <option key={x}>{x}</option>)}</select><label htmlFor="eb-a">Açıklama</label><input id="eb-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} /><button className="btn2 kucuk" disabled={!f.aciklama.trim()} onClick={() => void istek('/etik-bildirim', f).then(() => { setM('Bildiriminiz iletildi.'); setF({ ...f, aciklama: '' }); return yk(); }).catch((e) => setM(e.message))}>Bildir</button>
+    <label htmlFor="eb-k">Kategori</label><select id="eb-k" value={f.kategori} onChange={(e) => setF({ ...f, kategori: e.target.value })}>{KAT.map((x) => <option key={x}>{x}</option>)}</select><label htmlFor="eb-a">Açıklama</label><input required id="eb-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} /><button className="btn2 kucuk" disabled={!f.aciklama.trim()} onClick={() => void istek('/etik-bildirim', f).then(() => { setM('Bildiriminiz iletildi.'); setF({ ...f, aciklama: '' }); return yk(); }).catch((e) => setM(e.message))}>Bildir</button>
     {l?.filter((x) => x.durum === 'Açık').map((x) => <div className="soru" key={x.kimlik}><span>{x.bildirim_no} · {x.kategori} · {x.aciklama}</span><div className="tam"><label htmlFor={`es-${x.kimlik}`}>Sonuç</label><input id={`es-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />{['Etik Bildirim', 'Yönlendirme Komisyonu'].includes(x.kategori) ? <><button className="btn2 kucuk" onClick={() => karar(x, 'Bildirilsin')}>Yat Sahibine Bildirilsin</button><button className="btn2 kucuk" onClick={() => karar(x, 'Bildirilmesin')}>Bildirilmesin</button></> : <button className="btn2 kucuk" onClick={() => karar(x)}>Kapat</button>}</div></div>)}</details>;
 }
 
@@ -46,9 +46,9 @@ export function IcDenetim() {
 function DenetciAtama({ d, v }: { d: D; v: { atayabilir?: boolean; denetciler?: { kimlik: string; ad_soyad: string }[]; ben?: string } }) {
   const [f, setF] = useState({ denetci: '', bitis: '', amac: '' }); const [m, setM] = useState(''); const [iz, setIz] = useState<{ olay_zamani: string; eylem: string; sonuc: string; aktor: string | null }[] | null>(null);
   return <div className="tam">{d.erisim_bitis && <div className="not">Erişim bitişi: {d.erisim_bitis.split('-').reverse().join('.')}{d.erisim_amaci ? ` · Amaç: ${d.erisim_amaci}` : ''}</div>}{m && <div className="not" role="status">{m}</div>}
-    {v.atayabilir && <><label htmlFor={`da-d-${d.kimlik}`}>Denetçi</label><select id={`da-d-${d.kimlik}`} value={f.denetci} onChange={(e) => setF({ ...f, denetci: e.target.value })}><option value="">Seçiniz</option>{(v.denetciler ?? []).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
-      <label htmlFor={`da-b-${d.kimlik}`}>Erişim Bitişi</label><input id={`da-b-${d.kimlik}`} type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} />
-      <label htmlFor={`da-a-${d.kimlik}`}>Denetim Amacı</label><input id={`da-a-${d.kimlik}`} value={f.amac} onChange={(e) => setF({ ...f, amac: e.target.value })} />
+    {v.atayabilir && <><label htmlFor={`da-d-${d.kimlik}`}>Denetçi</label><select required id={`da-d-${d.kimlik}`} value={f.denetci} onChange={(e) => setF({ ...f, denetci: e.target.value })}><option value="">Seçiniz</option>{(v.denetciler ?? []).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+      <label htmlFor={`da-b-${d.kimlik}`}>Erişim Bitişi</label><input required id={`da-b-${d.kimlik}`} type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} />
+      <label htmlFor={`da-a-${d.kimlik}`}>Denetim Amacı</label><input required id={`da-a-${d.kimlik}`} value={f.amac} onChange={(e) => setF({ ...f, amac: e.target.value })} />
       <button className="btn2 kucuk" disabled={!f.denetci || !f.bitis || !f.amac.trim()} onClick={() => void istek(`/ic-denetim/${d.kimlik}/ata`, f).then(() => setM('Denetçi atandı; erişim açıldı.')).catch((e) => setM(e.message))}>Denetçi Ata</button></>}
     {d.denetci_ref === v.ben && <button className="btn2 kucuk" onClick={() => void istek<NonNullable<typeof iz>>(`/ic-denetim/${d.kimlik}/izler`).then(setIz).catch((e) => setM(e.message))}>İşlem İzlerini Gör</button>}
     {d.denetci_ref === v.ben && <DenetimKanit id={d.kimlik} />}
@@ -92,8 +92,8 @@ export function OzDenetim() {
     {v.calismalar.map((c) => <div className="ozet" key={c.kimlik}><div><b>{c.calisma_no}</b> · {c.tur}{c.surum ? ` · ${c.surum}` : ''} · {zaman(c.baslangic)} · <span className={c.sonuc === 'Başarılı' ? 'rozet yesil' : c.sonuc === 'Sürüyor' ? 'rozet gri' : 'rozet kirmizi'}>{c.sonuc}</span>{c.aciklama ? ` · ${c.aciklama}` : ''}</div>
       {c.sonuclar.map((s) => <div key={s.senaryo_kodu} className="not">{s.basarili ? '✓' : '✗'} {s.senaryo_kodu} · {s.surec} · {s.ad} · Beklenen: {s.beklenen} · Gerçekleşen: {s.gerceklesen}{s.bulgu_no ? ` · Bulgu: ${s.bulgu_no}` : ''}</div>)}</div>)}
     <div className="bolum">Öz Denetim Başlat</div>
-    <label htmlFor="od-t">Çalışma Türü</label><select id="od-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option><option>Sürüm Öncesi</option><option>Kural Değişikliği</option></select>
-    {tur === 'Sürüm Öncesi' && <><label htmlFor="od-y">Yayın Seti</label><select id="od-y" value={ys} onChange={(e) => setYs(e.target.value)}><option value="">Seçiniz</option>{v.setler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.surum} · {x.ortam}</option>)}</select></>}
+    <label htmlFor="od-t">Çalışma Türü</label><select required id="od-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option><option>Sürüm Öncesi</option><option>Kural Değişikliği</option></select>
+    {tur === 'Sürüm Öncesi' && <><label htmlFor="od-y">Yayın Seti</label><select required id="od-y" value={ys} onChange={(e) => setYs(e.target.value)}><option value="">Seçiniz</option>{v.setler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.surum} · {x.ortam}</option>)}</select></>}
     <button className="btn2 kucuk" disabled={!tur || (tur === 'Sürüm Öncesi' && !ys)} onClick={() => void istek<{ calismaNo: string }>('/oz-denetim', { tur, yayin: ys || undefined }).then((r) => { setM(`${r.calismaNo} başlatıldı; sonuç birkaç dakika içinde listelenir.`); return yk(); }).catch((e) => setM(e.message))}>Öz Denetimi Başlat</button></details>;
 }
 
@@ -119,10 +119,10 @@ function DenetimKanit({ id }: { id: string }) {
     {v?.kanitlar.map((k, n) => <div key={n} className="not">Kanıt · {k.tur}: {k.aciklama}</div>)}
     {v?.talepler.map((k) => <div key={k.kimlik} className="not">Kanıt Talebi · {k.istenen} · {k.konu} · Son: {k.son_tarih.split('-').reverse().join('.')}{k.yanit ? ` · Yanıt: ${k.yanit}` : ' · Bekleniyor'}</div>)}
     <label htmlFor={`dk-t-${id}`}>Kanıt Türü</label><select id={`dk-t-${id}`} value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Belge', 'Kayıt', 'Gözlem', 'Ölçüm', 'Yetkili Görüşme'].map((x) => <option key={x}>{x}</option>)}</select>
-    <label htmlFor={`dk-a-${id}`}>Kanıt Açıklaması</label><input id={`dk-a-${id}`} value={f.aciklama ?? ''} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+    <label htmlFor={`dk-a-${id}`}>Kanıt Açıklaması</label><input required id={`dk-a-${id}`} value={f.aciklama ?? ''} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
     <button className="btn2 kucuk" disabled={!f.aciklama?.trim()} onClick={() => is(istek(`/ic-denetim/${id}/kanit`, { tur: f.tur, aciklama: f.aciklama }), 'Kanıt kaydedildi.')}>Kanıtı Kaydet</button>
-    <label htmlFor={`dk-e-${id}`}>Kanıt İstenecek Personel (kurumsal e-posta)</label><input id={`dk-e-${id}`} value={f.eposta ?? ''} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
-    <label htmlFor={`dk-k-${id}`}>Talep Konusu</label><input id={`dk-k-${id}`} value={f.konu ?? ''} onChange={(e) => setF({ ...f, konu: e.target.value })} />
-    <label htmlFor={`dk-s-${id}`}>Yanıt Son Tarihi</label><input id={`dk-s-${id}`} type="date" value={f.son ?? ''} onChange={(e) => setF({ ...f, son: e.target.value })} />
+    <label htmlFor={`dk-e-${id}`}>Kanıt İstenecek Personel (kurumsal e-posta)</label><input required id={`dk-e-${id}`} value={f.eposta ?? ''} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
+    <label htmlFor={`dk-k-${id}`}>Talep Konusu</label><input required id={`dk-k-${id}`} value={f.konu ?? ''} onChange={(e) => setF({ ...f, konu: e.target.value })} />
+    <label htmlFor={`dk-s-${id}`}>Yanıt Son Tarihi</label><input required id={`dk-s-${id}`} type="date" value={f.son ?? ''} onChange={(e) => setF({ ...f, son: e.target.value })} />
     <button className="btn2 kucuk" disabled={!f.eposta?.trim() || !f.konu?.trim() || !f.son} onClick={() => is(istek(`/ic-denetim/${id}/kanit-talebi`, { eposta: f.eposta, konu: f.konu, sonTarih: f.son }), 'Kanıt talebi gönderildi.')}>Kanıt İste</button></div>;
 }

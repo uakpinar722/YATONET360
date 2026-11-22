@@ -6,7 +6,7 @@ export function MenfaatBildir({ isEmri }: { isEmri: string }) {
   const [f, setF] = useState({ kaynak: 'Kaptan', aciklama: '' }); const [m, setM] = useState('');
   return <div className="blok"><div className="bolum">Menfaat Talebi Bildirimi</div>{m && <div className="not" role="status">{m}</div>}
     <label htmlFor={`mf-k-${isEmri}`}>Talebi Yapan</label><select id={`mf-k-${isEmri}`} value={f.kaynak} onChange={(e) => setF({ ...f, kaynak: e.target.value })}><option>Kaptan</option><option>Mürettebat</option></select>
-    <label htmlFor={`mf-a-${isEmri}`}>Açıklama</label><textarea id={`mf-a-${isEmri}`} rows={2} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+    <label htmlFor={`mf-a-${isEmri}`}>Açıklama</label><textarea required id={`mf-a-${isEmri}`} rows={2} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
     <button className="btn2 kucuk" disabled={!f.aciklama.trim()} onClick={() => void istek(`/firma-portal/is-emri/${isEmri}/menfaat-bildirimi`, f).then(() => { setM('Bildiriminiz iletildi.'); setF({ ...f, aciklama: '' }); }).catch((e) => setM(e.message))}>Bildir</button></div>;
 }
 

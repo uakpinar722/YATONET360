@@ -59,8 +59,18 @@ export function yetkiYollari(s: FastifyInstance, b: Baglam) {
   });
 
   s.get('/yetki/roller', { preHandler: izinGerekli(b, 'rol_katalogu.goruntule') }, async () => {
-    const { rows } = await b.db.query(`SELECT kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, ayricalikli_rol FROM rol ORDER BY kimlik`);
+    const { rows } = await b.db.query(`SELECT r.kimlik, r.rol_adi, r.rol_sahibi_birim, r.kademe, r.kullanici_gruplari, r.ayricalikli_rol, r.is_amaci, r.sahip_rol_ref, s.rol_adi sahip_rol, r.gozden_gecirme_ay FROM rol r LEFT JOIN rol s ON s.kimlik = r.sahip_rol_ref ORDER BY r.kimlik`);
     return rows;
+  });
+  // YG-1007: rolün iş amacı, sahip rolü ve gözden geçirme dönemi.
+  s.post('/yetki/rol/:id/tanim', { preHandler: izinGerekli(b, 'rol_katalogu.duzenle') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { amac?: string; sahip?: string; gozdenGecirmeAy?: number };
+    const ay = Number(g.gozdenGecirmeAy);
+    if (!g.amac?.trim() || !g.sahip || !Number.isInteger(ay) || ay < 1 || ay > 36) return y.code(400).send({ hata: 'İş amacı, sahip rol ve gözden geçirme dönemi (1–36 ay) zorunludur.' });
+    const r = await b.db.query(`UPDATE rol SET is_amaci = $2, sahip_rol_ref = $3, gozden_gecirme_ay = $4 WHERE kimlik = $1 AND EXISTS (SELECT 1 FROM rol s WHERE s.kimlik = $3 AND s.kimlik <> $1)`, [id, g.amac.trim(), g.sahip, ay]);
+    if (!r.rowCount) return y.code(404).send({ hata: 'Rol veya sahip rol bulunamadı.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Rol Tanımı Güncellendi', nesneTuru: 'Rol', nesneKimligi: id, yeni: { amac: g.amac.trim(), sahip: g.sahip, ay }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-1187: izi görüntüleme de kayda geçer.

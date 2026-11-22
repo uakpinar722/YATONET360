@@ -106,9 +106,9 @@ function AcilDugmesi() {
       {u112}
       {hata && <div className="hata" role="alert">{hata}</div>}{msg && <div>{msg}</div>}
       <label htmlFor="pa-t">Acil Durum Türü</label><select id="pa-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{TUR.map((x) => <option key={x}>{x}</option>)}</select>
-      <label htmlFor="pa-y">Yat</label><input id="pa-y" value={f.yatAdi} onChange={(e) => setF({ ...f, yatAdi: e.target.value })} />
-      <label htmlFor="pa-k">Konum</label><input id="pa-k" value={f.konum} onChange={(e) => setF({ ...f, konum: e.target.value })} />
-      <label htmlFor="pa-a">{f.tur === 'Diğer' ? 'Kısaca Belirtiniz' : 'Açıklama'}</label><input id="pa-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <label htmlFor="pa-y">Yat</label><input required id="pa-y" value={f.yatAdi} onChange={(e) => setF({ ...f, yatAdi: e.target.value })} />
+      <label htmlFor="pa-k">Konum</label><input required id="pa-k" value={f.konum} onChange={(e) => setF({ ...f, konum: e.target.value })} />
+      <label htmlFor="pa-a">{f.tur === 'Diğer' ? 'Kısaca Belirtiniz' : 'Açıklama'}</label><input required id="pa-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
       <label htmlFor="pa-f">Fotoğraf (isteğe bağlı)</label><input id="pa-f" type="file" accept="image/jpeg,image/png,image/heic" capture="environment" onChange={(e) => setFoto(e.target.files?.[0] ?? null)} />
       <div className="not">Acil Durum düğmesini kullandığınızda cihazınızın konumu Aydınlatma Metnimizde açıklandığı şekilde işlenir; konum izni vermezseniz yatın kayıtlı konumu iletilir.</div>
       <button className="btn hayir" disabled={!f.yatAdi.trim() || !f.konum.trim() || (f.tur === 'Diğer' && !f.aciklama.trim())} onClick={() => void gonder()}>Acil Durum</button>
@@ -128,7 +128,7 @@ function SokulenParcalar({ id }: { id: string }) {
 /** YG-458: portaldan garanti talebi. */
 function GarantiTalebi({ id }: { id: string }) {
   const [b, setB] = useState(''); const [m, setM] = useState('');
-  return <div className="ozet">{m && <div className="not" role="status">{m}</div>}<label htmlFor="gt-b">Sorunu Kısaca Yazınız</label><input id="gt-b" value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2" disabled={!b.trim()} onClick={() => void istek(`/portal/dosya/${id}/garanti-talebi`, { belirti: b }).then(() => { setB(''); setM('Talebiniz Dosya Sorumlunuza iletildi.'); }).catch((x) => setM(x.message))}>Garanti Talebi Gönder</button></div>;
+  return <div className="ozet">{m && <div className="not" role="status">{m}</div>}<label htmlFor="gt-b">Sorunu Kısaca Yazınız</label><input required id="gt-b" value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2" disabled={!b.trim()} onClick={() => void istek(`/portal/dosya/${id}/garanti-talebi`, { belirti: b }).then(() => { setB(''); setM('Talebiniz Dosya Sorumlunuza iletildi.'); }).catch((x) => setM(x.message))}>Garanti Talebi Gönder</button></div>;
 }
 
 /** YG-108: portaldan iptal veya devir talebi; Dosya Sorumlusuna iletilir. */
@@ -137,7 +137,7 @@ function IptalDevirTalebi({ id }: { id: string }) {
   if (!ac) return <button className="lnk" onClick={() => setAc(true)}>İptal veya Devir Talebi</button>;
   return <div className="ozet">{m && <div className="not" role="status">{m}</div>}
     <label htmlFor="idt-t">Talep Türü</label><select id="idt-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}><option>İptal</option><option>Devir</option></select>
-    <label htmlFor="idt-g">Gerekçe</label><input id="idt-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    <label htmlFor="idt-g">Gerekçe</label><input required id="idt-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
     {f.tur === 'Devir' && <><label htmlFor="idt-d">Devralacak Taraf</label><input id="idt-d" value={f.devralan} onChange={(e) => setF({ ...f, devralan: e.target.value })} /></>}
     <button className="btn2" disabled={!f.gerekce.trim()} onClick={() => void istek(`/portal/dosya/${id}/iptal-devir-talebi`, f).then(() => setM('Talebiniz Dosya Sorumlunuza iletildi.')).catch((x) => setM(x.message))}>Talebi Gönder</button></div>;
 }
@@ -201,9 +201,9 @@ function HasarBildirimi({ bitti }: { bitti: () => void }) {
       <h1>Hasar Bildirimi</h1>
       <div className="uyari">Bu form acil durumlar için değildir. Acil durumda 7/24 Destek Hattını arayınız.</div>
       {hata && <div className="hata" role="alert">{hata}</div>}
-      <label htmlFor="h-y">Yatın Adı</label><input id="h-y" value={yat} onChange={(e) => setYat(e.target.value)} />
-      <label htmlFor="h-b">Yatın Bulunduğu Yer</label><input id="h-b" value={yer} onChange={(e) => setYer(e.target.value)} />
-      <label htmlFor="h-o">Olay Özeti</label><textarea id="h-o" rows={4} value={ozet} onChange={(e) => setOzet(e.target.value)} />
+      <label htmlFor="h-y">Yatın Adı</label><input required id="h-y" value={yat} onChange={(e) => setYat(e.target.value)} />
+      <label htmlFor="h-b">Yatın Bulunduğu Yer</label><input required id="h-b" value={yer} onChange={(e) => setYer(e.target.value)} />
+      <label htmlFor="h-o">Olay Özeti</label><textarea required id="h-o" rows={4} value={ozet} onChange={(e) => setOzet(e.target.value)} />
       <label htmlFor="h-f">Fotoğraf Ekle ({fotolar.length}/5) (İsteğe Bağlı)</label><input id="h-f" type="file" accept="image/*" multiple onChange={(e) => { const l = [...(e.target.files ?? [])]; if (l.length > 5) { setHata('En fazla 5 fotoğraf ekleyebilirsiniz.'); return; } setFotolar(l); }} />
       <label htmlFor="h-s">Sigorta Durumu</label><select id="h-s" value={sigorta} onChange={(e) => setSigorta(e.target.value)}>{["Türkiye'de Sigortalı", 'Yurt Dışında Sigortalı', 'Sigortasız', 'Bilinmiyor'].map((x) => <option key={x}>{x}</option>)}</select>
       {sigorta === "Türkiye'de Sigortalı" && <><label htmlFor="h-sg">Sigorta Şirketi</label><input id="h-sg" value={sg} onChange={(e) => setSg(e.target.value)} /><label htmlFor="h-hn">Hasar Dosya Numarası</label><input id="h-hn" value={hn} onChange={(e) => setHn(e.target.value)} /></>}
@@ -287,13 +287,13 @@ export function YatSahibiKayit({ bitti, geri, yetkili }: { bitti: () => void; ge
       ) : (
         <form onSubmit={(e) => void tamam(e)}>
           <label htmlFor="y-k">Doğrulama Kodu</label><input id="y-k" inputMode="numeric" value={kod} onChange={(e) => setKod(e.target.value)} />
-          <label htmlFor="y-a">Ad Soyad</label><input id="y-a" value={ad} onChange={(e) => setAd(e.target.value)} />
+          <label htmlFor="y-a">Ad Soyad</label><input required id="y-a" value={ad} onChange={(e) => setAd(e.target.value)} />
           <label htmlFor="y-e">E-Posta</label><input id="y-e" type="email" value={ep} onChange={(e) => setEp(e.target.value)} />
           <div className="not">Teklif ve belgeleriniz PDF olarak bu adrese de gönderilecektir.</div>
           {yetkili && <>
-            <label htmlFor="yy-r">Yat Sahibine Göre Rolünüz</label><select id="yy-r" value={yt.rol} onChange={(e) => setYt({ ...yt, rol: e.target.value })}><option value="">Seçiniz</option>{['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Yat Brokeri', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
+            <label htmlFor="yy-r">Yat Sahibine Göre Rolünüz</label><select required id="yy-r" value={yt.rol} onChange={(e) => setYt({ ...yt, rol: e.target.value })}><option value="">Seçiniz</option>{['Yatın Kaptanı', 'Yat Sahibinin Yetkili Temsilcisi', 'Yat Yönetim Şirketi / İşletmeci', 'Sigorta Brokeri', 'Sigorta Acentesi', 'Yat Brokeri', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
             <div className="not">Adına işlem yaptığınız yat sahibinin bilgilerini giriniz. Yat sahibine bilgilendirme mesajı gönderilecektir.</div>
-            <label htmlFor="yy-a">Yat Sahibinin Adı Soyadı / Unvanı</label><input id="yy-a" value={yt.sahipAd} onChange={(e) => setYt({ ...yt, sahipAd: e.target.value })} />
+            <label htmlFor="yy-a">Yat Sahibinin Adı Soyadı / Unvanı</label><input required id="yy-a" value={yt.sahipAd} onChange={(e) => setYt({ ...yt, sahipAd: e.target.value })} />
             <label htmlFor="yy-t">Yat Sahibinin Cep Telefonu</label><input id="yy-t" inputMode="tel" value={yt.sahipTelefon} onChange={(e) => setYt({ ...yt, sahipTelefon: e.target.value })} />
             <label htmlFor="yy-e">Yat Sahibinin E-Postası</label><input id="yy-e" type="email" value={yt.sahipEposta} onChange={(e) => setYt({ ...yt, sahipEposta: e.target.value })} />
             <div className="not">Yetki belgesi olmadan talep açabilir ve dosyayı izleyebilirsiniz. Teklif onayı gibi işlemler yalnız yetki belgesinde yazılı kapsam, tutar ve süre içinde yapılabilir.</div>

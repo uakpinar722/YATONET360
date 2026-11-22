@@ -34,15 +34,15 @@ export function VekaletSayfasi() {
           <label htmlFor="v-a">Asıl Görevli</label>
           <select id="v-a" value={sec} onChange={(e) => { setSec(e.target.value); setVekil(''); }}><option value="">Seçiniz</option>{v.secenek.map((s) => <option key={`${s.kimlik}|${s.rol}`} value={`${s.kimlik}|${s.rol}`}>{s.ad} · {s.rolAdi}</option>)}</select>
           <label htmlFor="v-v">Vekil</label>
-          <select id="v-v" value={vekil} disabled={!asil} onChange={(e) => setVekil(e.target.value)}><option value="">Seçiniz</option>{asil?.vekiller.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad} · {k.rol}</option>)}</select>
+          <select required id="v-v" value={vekil} disabled={!asil} onChange={(e) => setVekil(e.target.value)}><option value="">Seçiniz</option>{asil?.vekiller.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad} · {k.rol}</option>)}</select>
           {asil && asil.vekiller.length === 0 && <div className="not">Bu role vekâlet edebilecek uygun kişi bulunmamaktadır.</div>}
           <label htmlFor="v-n">Vekâlet Nedeni</label>
           <select id="v-n" value={neden} onChange={(e) => setNeden(e.target.value)}>{NEDEN.map((n) => <option key={n}>{n}</option>)}</select>
           <label htmlFor="v-k">Kapsam</label>
-          <textarea id="v-k" rows={2} value={kapsam} onChange={(e) => setKapsam(e.target.value)} />
+          <textarea required id="v-k" rows={2} value={kapsam} onChange={(e) => setKapsam(e.target.value)} />
           <div className="iki-tarih">
-            <div><label htmlFor="v-b">Başlangıç Tarihi</label><input id="v-b" type="date" value={bas} onChange={(e) => setBas(e.target.value)} /></div>
-            <div><label htmlFor="v-s">Bitiş Tarihi</label><input id="v-s" type="date" value={bit} onChange={(e) => setBit(e.target.value)} /></div>
+            <div><label htmlFor="v-b">Başlangıç Tarihi</label><input required id="v-b" type="date" value={bas} onChange={(e) => setBas(e.target.value)} /></div>
+            <div><label htmlFor="v-s">Bitiş Tarihi</label><input required id="v-s" type="date" value={bit} onChange={(e) => setBit(e.target.value)} /></div>
           </div>
           <div className="not">Vekâlet en fazla 30 gün olabilir; bitiş tarihinde kendiliğinden kapanır.</div>
           <button className="btn" disabled={!asil || !vekil || !kapsam.trim() || !bas || !bit}>Vekâlet Tanımla</button>

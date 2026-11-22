@@ -118,7 +118,7 @@ export function Profilim() {
         <button className="btn hayir" disabled={!kapat} onClick={() => void yap(() => istek('/hesabim/kapatma-talebi', { onay: true }).then(() => { window.location.reload(); }), 'Hesabınız kapatıldı.')}>Hesabımı Kapat</button>
       </>}
       <h2 className="ara">E-Posta Değiştir</h2>
-      <label htmlFor="ep-y">Yeni E-Posta</label><input id="ep-y" type="email" value={ep.yeni} onChange={(e) => setEp({ ...ep, yeni: e.target.value })} />
+      <label htmlFor="ep-y">Yeni E-Posta</label><input required id="ep-y" type="email" value={ep.yeni} onChange={(e) => setEp({ ...ep, yeni: e.target.value })} />
       <label htmlFor="ep-p">Parolanız</label><input id="ep-p" type="password" value={ep.parola} onChange={(e) => setEp({ ...ep, parola: e.target.value })} />
       <button className="btn2" disabled={!ep.yeni} onClick={() => void yap(() => istek('/profil/eposta-talep', { yeni: ep.yeni, parola: ep.parola }), 'Doğrulama kodu yeni adresinize gönderildi.')}>Kod Gönder</button>
       <label htmlFor="ep-k">Doğrulama Kodu</label><input id="ep-k" inputMode="numeric" value={ep.kod} onChange={(e) => setEp({ ...ep, kod: e.target.value })} />
@@ -126,7 +126,7 @@ export function Profilim() {
       <h2 className="ara">Parola Değiştir</h2>
       <form className="dar-form" onSubmit={(e) => { e.preventDefault(); void yap(async () => { await istek('/kimlik/parola', { eski, yeni }); setEski(''); setYeni(''); }, 'Parolanız değiştirilmiştir.'); }}>
         <label htmlFor="pe">Mevcut Parola</label>
-        <input id="pe" type="password" autoComplete="current-password" value={eski} onChange={(e) => setEski(e.target.value)} />
+        <input required id="pe" type="password" autoComplete="current-password" value={eski} onChange={(e) => setEski(e.target.value)} />
         <label htmlFor="py">Yeni Parola</label>
         <input id="py" type="password" autoComplete="new-password" value={yeni} onChange={(e) => setYeni(e.target.value)} />
         <div className="not">{[...yeni].length >= 12 ? '✔' : '○'} En Az 12 Karakter</div>

@@ -11,8 +11,8 @@ export function KonuHedef({ kimlik, surum, statu, yenile }: { kimlik: string; su
   if (['Kapalı', 'Geçersiz'].includes(statu)) return null;
   if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Hedef Tarihi Değiştir</button>;
   return <span className="tam">{m && <span className="not" role="status">{m}</span>}
-    <label htmlFor={`kh-t-${kimlik}`}>Yeni Hedef Tarih</label><input id={`kh-t-${kimlik}`} type="date" value={t} onChange={(e) => setT(e.target.value)} />
-    <label htmlFor={`kh-g-${kimlik}`}>Değişiklik Gerekçesi</label><input id={`kh-g-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <label htmlFor={`kh-t-${kimlik}`}>Yeni Hedef Tarih</label><input required id={`kh-t-${kimlik}`} type="date" value={t} onChange={(e) => setT(e.target.value)} />
+    <label htmlFor={`kh-g-${kimlik}`}>Değişiklik Gerekçesi</label><input required id={`kh-g-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
     <button className="btn2 kucuk" disabled={!t || !g.trim()} onClick={() => void istek(`/konu/${kimlik}/hedef`, { tarih: t, gerekce: g, surum }).then(() => { setAc(false); setT(''); setG(''); yenile(); }).catch((e) => setM(e.message))}>Kaydet</button></span>;
 }
 
@@ -22,6 +22,6 @@ export function KonuIslem({ kimlik, surum, statu, yenile }: { kimlik: string; su
   if (!l.length) return null;
   const gonder = (s: string) => void istek(`/konu/${kimlik}/durum`, { statu: s, kanit: s === 'Doğrulamada' ? not : undefined, gerekce: statu === 'Kapalı' ? not : undefined, surum }).then(() => { setNot(''); setM(''); yenile(); }).catch((e) => setM(e.message));
   return <span className="tam">{m && <span className="not" role="status">{m}</span>}
-    {(statu === 'İşlemde' || statu === 'Kapalı') && <><label htmlFor={`ki-${kimlik}`}>{statu === 'Kapalı' ? 'Yeniden Açma Gerekçesi' : 'Kapanış Kanıtı'}</label><input id={`ki-${kimlik}`} value={not} onChange={(e) => setNot(e.target.value)} /></>}
+    {(statu === 'İşlemde' || statu === 'Kapalı') && <><label htmlFor={`ki-${kimlik}`}>{statu === 'Kapalı' ? 'Yeniden Açma Gerekçesi' : 'Kapanış Kanıtı'}</label><input required id={`ki-${kimlik}`} value={not} onChange={(e) => setNot(e.target.value)} /></>}
     {l.map((s) => <button key={s} className="btn2 kucuk" disabled={(s === 'Doğrulamada' || statu === 'Kapalı') && !not.trim()} onClick={() => gonder(s)}>{statu === 'Kapalı' ? 'Yeniden Aç' : statu === 'Doğrulamada' && s === 'İşlemde' ? 'İşleme Geri Gönder' : AD[s]}</button>)}</span>;
 }

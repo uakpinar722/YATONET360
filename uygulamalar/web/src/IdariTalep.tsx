@@ -14,7 +14,7 @@ export function IdariTalep() {
     <div className="not">İhtiyaç onayı silsilenizde verilir; parasal onay sipariş aşamasında tutara göre verilir: 5.000,00 EUR'ya kadar Ticari İşler Direktörü, 10.000,00 EUR'ya kadar Genel Müdür Yardımcısı, üzeri CEO.</div>
     {v.talepler.map((x) => { return <div className="soru" key={x.kimlik}><span>{x.talep_no} · {x.konu} · {x.durum}</span>
       </div>; })}
-    <label htmlFor="it-k">Talep Konusu</label><input id="it-k" value={f.konu} onChange={(e) => setF({ ...f, konu: e.target.value })} />
-    <label htmlFor="it-g">Gerekçe</label><input id="it-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    <label htmlFor="it-k">Talep Konusu</label><input required id="it-k" value={f.konu} onChange={(e) => setF({ ...f, konu: e.target.value })} />
+    <label htmlFor="it-g">Gerekçe</label><input required id="it-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
     <button className="btn2 kucuk" disabled={!f.konu.trim() || !f.gerekce.trim()} onClick={() => is(istek('/idari-talep', f).then(() => setF({ konu: '', gerekce: '' })), 'Talep açıldı.')}>Talep Aç</button></>;
 }

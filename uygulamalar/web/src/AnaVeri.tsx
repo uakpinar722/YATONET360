@@ -12,7 +12,7 @@ export function AnaVeriMukerrer() {
   if (!v || (!v.firmalar.length && !v.noktalar.length)) return null;
   const karar = (tur: string, x: K, k: string) => void istek('/ana-veri/mukerrer', { tur, kimlik: x.kimlik, karar: k, ana: k === 'Birleştirildi' ? ana[x.kimlik] : undefined }).then(() => { setM('Karar kaydedildi.'); return yk(); }).catch((e) => setM(e.message));
   const liste = (tur: string, l: K[]) => l.map((x) => <div className="soru" key={x.kimlik}><span>Grup {x.grup} · {x.no} · {x.ad}{x.il ? ` · ${x.il}` : ''}</span>
-    <label htmlFor={`am-${x.kimlik}`}>Ana Kayıt</label><select id={`am-${x.kimlik}`} value={ana[x.kimlik] ?? ''} onChange={(e) => setAna({ ...ana, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{l.filter((y) => y.grup === x.grup && y.kimlik !== x.kimlik).map((y) => <option key={y.kimlik} value={y.kimlik}>{y.ad}</option>)}</select>
+    <label htmlFor={`am-${x.kimlik}`}>Ana Kayıt</label><select required id={`am-${x.kimlik}`} value={ana[x.kimlik] ?? ''} onChange={(e) => setAna({ ...ana, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{l.filter((y) => y.grup === x.grup && y.kimlik !== x.kimlik).map((y) => <option key={y.kimlik} value={y.kimlik}>{y.ad}</option>)}</select>
     <button className="btn2 kucuk" onClick={() => karar(tur, x, 'Ayrı Kayıt')}>Ayrı Kayıt</button><button className="btn2 kucuk" disabled={!ana[x.kimlik]} onClick={() => karar(tur, x, 'Birleştirildi')}>Birleştir</button></div>);
   return <><div className="bolum">Ana Veri Mükerrer Kararları</div>{m && <div className="not" role="status">{m}</div>}{liste('firma', v.firmalar)}{liste('nokta', v.noktalar)}</>;
 }
@@ -36,7 +36,7 @@ export function KayitBirlestirme() {
       <select aria-label={k === 'ana' ? 'Ana Kayıt Seçimi' : 'Mükerrer Kayıt Seçimi'} value={sec[k]} onChange={(e) => { setSec({ ...sec, [k]: e.target.value }); setOn(null); }}><option value="">Seçiniz</option>{l[k].map((x) => <option key={x.kimlik} value={x.kimlik}>{x.etiket}</option>)}</select></div>)}
     <button className="btn2 kucuk" disabled={!sec.ana || !sec.eski || sec.ana === sec.eski} onClick={() => void istek<typeof on>(`/birlestirme/onizleme?tur=${tur}&ana=${sec.ana}&eski=${sec.eski}`).then(setOn).catch(hata)}>Çelişen Alanları Göster</button>
     {on && <>{on.celisenAlanlar.length ? on.celisenAlanlar.map((x) => <div key={x.alan}>{x.alan}: Ana {String(x.ana)} · Mükerrer {String(x.eski)}</div>) : <div>Çelişen alan yoktur.</div>}
-      <label htmlFor="kb-g">Gerekçe</label><input id="kb-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
+      <label htmlFor="kb-g">Gerekçe</label><input required id="kb-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
       <button className="btn2 kucuk" disabled={!gerekce.trim()} onClick={() => void istek('/birlestirme', { tur, ana: sec.ana, eski: sec.eski, gerekce }).then(() => { setM('Kayıtlar birleştirildi; mükerrer kayıt ana kayda yönlendirildi.'); setOn(null); setSec({ ana: '', eski: '' }); setGerekce(''); return yk(); }).catch(hata)}>Birleştir</button></>}
     {gecmis.map((x) => <div key={x.kimlik}>{x.tur === 'yat' ? 'Yat' : 'Taraf'} · {x.eski} → {x.ana} · {x.durum} · {x.tasinan_sayisi ?? 0} ilişki · {x.gerekce}
       {x.durum === 'Ana Kayda Bağlandı' && <button className="btn2 kucuk" onClick={() => { const g = window.prompt('Geri alma gerekçesi'); if (g?.trim()) void istek(`/birlestirme/${x.kimlik}/geri-al`, { gerekce: g }).then(() => { setM('Birleştirme geri alındı.'); return yk(); }).catch(hata); }}>Geri Al</button>}</div>)}

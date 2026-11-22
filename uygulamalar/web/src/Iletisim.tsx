@@ -37,10 +37,10 @@ export function Mesajlar({ lgm, yenile }: { lgm: boolean; yenile: () => void }) 
       })}
       <form className="ozet" onSubmit={(e) => void gonder(e)}>
         <label htmlFor="m-k">Kime</label>
-        <select id="m-k" value={secili} onChange={(e) => setSecili(e.target.value)}><option value="">Seçiniz</option>{kisiler.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
+        <select required id="m-k" value={secili} onChange={(e) => setSecili(e.target.value)}><option value="">Seçiniz</option>{kisiler.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
         {konusma.map((m) => <div key={m.kimlik} className="not"><b>{m.benden ? 'Siz' : m.gonderen}</b> · {saat(m.zaman)}{m.benden && m.okunma_zamani ? ' · Okundu' : ''}<br />{m.metin}</div>)}
         <label htmlFor="m-m">Mesaj</label>
-        <textarea id="m-m" rows={3} maxLength={4000} value={metin} onChange={(e) => setMetin(e.target.value)} />
+        <textarea required id="m-m" rows={3} maxLength={4000} value={metin} onChange={(e) => setMetin(e.target.value)} />
         <div className="not">Acil durumlarda lütfen Acil Durum düğmesini kullanınız. Gönderilen mesaj silinemez ve düzeltilemez.</div>
         <button className="btn" disabled={!secili || !metin.trim()}>Gönder</button>
       </form>
@@ -78,7 +78,7 @@ export function DuyuruYayimla() {
       {yetki && yetki.kapsamlar.length > 0 && (
         <form className="ozet" onSubmit={(e) => void gonder(e)}>
           <label htmlFor="d-b">Başlık</label>
-          <input id="d-b" value={baslik} onChange={(e) => setBaslik(e.target.value)} />
+          <input required id="d-b" value={baslik} onChange={(e) => setBaslik(e.target.value)} />
           <label htmlFor="d-g">Metin</label>
           <textarea id="d-g" rows={4} value={govde} onChange={(e) => setGovde(e.target.value)} />
           <label htmlFor="d-t">Duyuru Türü</label>

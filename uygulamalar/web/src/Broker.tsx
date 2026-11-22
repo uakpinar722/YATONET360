@@ -11,7 +11,7 @@ export function ArizaBildir({ url }: { url: string }) {
   const [ac, setAc] = useState(false); const [b, setB] = useState(''); const [m, setM] = useState('');
   if (m) return <div className="not" role="status">{m}</div>;
   if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Arıza Bildir</button>;
-  return <div><label htmlFor={`ab-${url}`}>Arızayı Kısaca Yazınız</label><input id={`ab-${url}`} value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => void istek(url, { belirti: b }).then(() => setM('Arıza bildiriminiz Dosya Sorumlusuna iletildi.')).catch((x) => setM(x.message))}>Gönder</button></div>;
+  return <div><label htmlFor={`ab-${url}`}>Arızayı Kısaca Yazınız</label><input required id={`ab-${url}`} value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => void istek(url, { belirti: b }).then(() => setM('Arıza bildiriminiz Dosya Sorumlusuna iletildi.')).catch((x) => setM(x.message))}>Gönder</button></div>;
 }
 
 export function BrokerAna() {

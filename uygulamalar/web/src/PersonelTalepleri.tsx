@@ -13,9 +13,9 @@ export function IzinBakiyesi() {
 export function OzelAracOnayi() {
   const [f, setF] = useState({ tarih: '', guzergah: '', gerekce: '' }); const [m, setM] = useState('');
   return <><div className="bolum">Özel Araç Kullanımı Ön Onayı</div><div className="ozet">{m && <div className="not" role="status">{m}</div>}
-    <label htmlFor="oa-t">Yolculuk Tarihi</label><input id="oa-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} />
-    <label htmlFor="oa-g">Güzergâh</label><input id="oa-g" value={f.guzergah} onChange={(e) => setF({ ...f, guzergah: e.target.value })} />
-    <label htmlFor="oa-r">Gerekçe</label><input id="oa-r" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    <label htmlFor="oa-t">Yolculuk Tarihi</label><input required id="oa-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} />
+    <label htmlFor="oa-g">Güzergâh</label><input required id="oa-g" value={f.guzergah} onChange={(e) => setF({ ...f, guzergah: e.target.value })} />
+    <label htmlFor="oa-r">Gerekçe</label><input required id="oa-r" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
     <button className="btn2" disabled={!f.tarih || !f.guzergah.trim() || !f.gerekce.trim()} onClick={() => void istek('/ozel-arac-onayi', f).then(() => { setM('Talebiniz birim amirinizin onayına gönderildi.'); setF({ tarih: '', guzergah: '', gerekce: '' }); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>;
 }
 

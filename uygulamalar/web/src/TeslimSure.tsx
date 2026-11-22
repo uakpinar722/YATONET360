@@ -17,7 +17,7 @@ export function TeslimSure({ dosya }: { dosya: string }) {
       {v.gecmis.map((x) => <div key={x.hedef_tarih}>{tr(x.hedef_tarih)} · {x.sonuc}{x.yeni_tarih ? ` · Yeni: ${tr(x.yeni_tarih)} · +${x.ek_is_gunu} iş günü · ${x.gerekce}` : ''}{x.gec_bildirim ? ' · Geç Bildirim' : ''}</div>)}</div>
     {v.karar && <>
       <label htmlFor="ts-s">Değerlendirme</label><select id="ts-s" value={f.sonuc} onChange={(e) => setF({ ...f, sonuc: e.target.value })}><option>Uzama Yok</option><option>Uzama Var</option></select>
-      {uz && <><label htmlFor="ts-e">Ek İş Günü</label><input id="ts-e" inputMode="numeric" value={f.ekGun} onChange={(e) => setF({ ...f, ekGun: e.target.value })} />
-        <label htmlFor="ts-g">Gerekçe (taraflara aynen iletilir; firma adı yazmayınız)</label><input id="ts-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} /></>}
+      {uz && <><label htmlFor="ts-e">Ek İş Günü</label><input required id="ts-e" inputMode="numeric" value={f.ekGun} onChange={(e) => setF({ ...f, ekGun: e.target.value })} />
+        <label htmlFor="ts-g">Gerekçe (taraflara aynen iletilir; firma adı yazmayınız)</label><input required id="ts-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} /></>}
       <button className="btn2 kucuk" disabled={uz && (!f.ekGun || !f.gerekce.trim())} onClick={kaydet}>Değerlendirmeyi Kaydet</button></>}</>;
 }

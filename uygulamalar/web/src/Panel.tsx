@@ -1,4 +1,6 @@
 import { KayitCakismasi } from './KayitCakismasi';
+import { TakilanAdim } from './TakilanAdim';
+import { RolTanimi } from './RolTanimi';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { DestekSayfasi } from './Destek';
@@ -27,7 +29,7 @@ import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
 type Sayfa = 'teklifgecis' | 'eskalasyon' | 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
-interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean }
+interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean; is_amaci: string | null; sahip_rol: string | null; gozden_gecirme_ay: number | null }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
 const tarih = (s: string) => new Date(s).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'medium', timeZone: 'Europe/Istanbul' });
@@ -117,7 +119,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     sicil: <FirmaSicil ben={ben} />,
     nobet: <NobetAcil cizelge={ben.izinler.includes('nobet.hazirla')} izinli={ben.izinler.includes('ihbar.kaydet')} dosyaAc={(id) => { setAcikDosya(id); git('dosya'); }} />,
     yardim: <DestekSayfasi lgm={lgm} />, // YG-1409–1412, YG-1504
-    roller: <><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır']} /></>,
+    roller: <><h1>Rol Kataloğu</h1><Tablo<Rol> yol="/yetki/roller" baslik={['Rol', 'Birim', 'Kademe', 'Ayrıcalıklı', 'İş Amacı', 'Sahip Rol', 'Gözden Geçirme']} satir={(r) => [r.rol_adi, r.rol_sahibi_birim, r.kademe, r.ayricalikli_rol ? 'Evet' : 'Hayır', r.is_amaci ?? '—', r.sahip_rol ?? '—', r.gozden_gecirme_ay ? `${r.gozden_gecirme_ay} ay` : '—']} />{ben.izinler.includes('rol_katalogu.duzenle') && <RolTanimi />}</>,
     iz: <><DenetimArama /><h1>İşlem İzi</h1><p className="not">Son 100 kayıt. Bu görüntüleme de kayda geçmiştir.</p><Tablo<Iz> yol="/denetim/izler" baslik={['Zaman', 'Kullanıcı', 'İşlem', 'Sonuç', 'Açıklama']} satir={(r) => [tarih(r.olay_zamani), r.aktor, r.eylem, r.sonuc, r.gerekce]} /></>,
   };
   return (
@@ -149,7 +151,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
         </nav>
         <main>
           {(() => { const isg = ben.roller.some((r) => r.rol_adi === 'İSG Sorumlusu'); const asil = ben.roller.filter((r) => r.rol_adi !== 'İSG Sorumlusu').map((r) => r.rol_adi); return isg && asil.length > 0 && <div className="not" role="note">İkiz Görev · İSG Sorumlusu · Asıl Rolünüz: <b>{[...new Set(asil)].join(', ')}</b></div>; })() /* YG-1670 */}
-          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{lgm && <IlkKullanimTuru />}<KayitCakismasi /><DugmeAciklamalari /><SayfaAciklama key={sayfa} sayfa={sayfa} />{icerik[sayfa]}
+          {ihlal && <IhlalBildir kapat={() => setIhlal(false)} />}{lgm && <IlkKullanimTuru />}<KayitCakismasi /><TakilanAdim /><DugmeAciklamalari /><SayfaAciklama key={sayfa} sayfa={sayfa} />{icerik[sayfa]}
           <footer><span className="ayrac" aria-hidden="true" /><img src="/yatonet.png" alt="YATONET 360" /></footer>
         </main>
       </div>

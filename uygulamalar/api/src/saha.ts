@@ -690,7 +690,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const izinler = await kullaniciIzinleri(b.db, o.kullanici);
       if (!roller.includes('Teknik Yönetici') && !izinler.includes('dosya.ata.teknik')) return y.code(403).send({ hata: 'Kapsam kararını Teknik Yönetici verir.' });
       const tmOnayi = (g.maliyet ?? 0) > 5000 && !izinler.includes('dosya.ata.teknik') && g.karar !== 'İyi Niyet'; // YG-1416: kart Teknik Müdüre gider
-      if (g.kapat && !k.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.', islem: 'Analizi Aç' }); // YG-1420: analiz formu kaydı
+      if (g.kapat && !k.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.', islem: 'Analizi Aç', hedef: `gkn-problem-${id}` }); // YG-1420: analiz formu kaydı
       // YG-083: arızanın nedeni araştırılıp yazılmadan kapsam kararı verilmez.
       if (!g.nedenArastirmasi?.trim() && !k.neden_arastirmasi) return y.code(409).send({ hata: 'Neden araştırması tamamlanmadan garanti kararı verilmez; bulunan nedeni yazınız.' });
       if (g.nedenArastirmasi?.trim()) await b.db.query(`UPDATE garanti_sikayet SET neden_arastirmasi = $2 WHERE kimlik = $1`, [id, g.nedenArastirmasi.trim()]);

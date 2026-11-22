@@ -26,7 +26,7 @@ export function MemnuniyetGorusme() {
   useEffect(() => { void yk(); }, []);
   if (!l?.length) return null;
   return <><div className="bolum">Memnuniyet Görüşmeleri</div>{m && <div className="not" role="status">{m}</div>}
-    {l.map((x) => <div className="soru" key={x.kimlik}><span>{x.dosya_no} · Genel {x.genel} · İletişim {x.iletisim} · İş Kalitesi {x.is_kalitesi}{x.yorum ? ` · ${x.yorum}` : ''}</span><div className="tam"><label htmlFor={`mg-${x.kimlik}`}>Görüşme Sonucu</label><input id={`mg-${x.kimlik}`} value={s[x.kimlik] ?? ''} onChange={(e) => setS({ ...s, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!s[x.kimlik]?.trim()} onClick={() => void istek(`/anket-gorusme/${x.kimlik}`, { sonuc: s[x.kimlik] }).then(() => { setM('Görüşme kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div></div>)}</>;
+    {l.map((x) => <div className="soru" key={x.kimlik}><span>{x.dosya_no} · Genel {x.genel} · İletişim {x.iletisim} · İş Kalitesi {x.is_kalitesi}{x.yorum ? ` · ${x.yorum}` : ''}</span><div className="tam"><label htmlFor={`mg-${x.kimlik}`}>Görüşme Sonucu</label><input required id={`mg-${x.kimlik}`} value={s[x.kimlik] ?? ''} onChange={(e) => setS({ ...s, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!s[x.kimlik]?.trim()} onClick={() => void istek(`/anket-gorusme/${x.kimlik}`, { sonuc: s[x.kimlik] }).then(() => { setM('Görüşme kaydedildi.'); return yk(); }).catch((e) => setM(e.message))}>Kaydet</button></div></div>)}</>;
 }
 
 type B = { rol: string; bloklar: { t: 'b' | 'a' | 'm'; m: string }[] };

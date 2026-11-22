@@ -510,13 +510,20 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     const gn = (await o.ist('POST', `/api/teklif/${t.kimlik}/gonder`, await o.gir('ts'))).json().gonderim;
     await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 1 }); await o.ist('POST', `/api/sigorta-gonderim/${gn}/teyit`, await o.gir('ts'), { adim: 2 });
     await o.ist('POST', `/api/teklif/${t.kimlik}/sigorta-karar`, await o.gir('ds'), { karar: 'Tam Onay', kanal: 'KEP', belge: await o.belge(d.kimlik, 'ds', `Onay ${Math.random()}`), yetkili: 'Y' });
-    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'Marmaris', kapsam: 'Onarım', teklif: t.kimlik, bedel, tehlikeliAtik: true });
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, await o.gir('oy'), { tur: 'ON', teknikSonuc: 'S', firma, yer: 'Marmaris', kapsam: 'Onarım', teklif: t.kimlik, bedel, tehlikeliAtik: true, atikSorumlusu: 'Firma Çevre Sorumlusu' });
     expect(r.statusCode, r.body).toBe(200);
     const k = await o.kart('İş Emri', r.json().kimlik);
     if (k.zincir.length > 1) await o.karar(k.kimlik, 'opm', 'Onaya Gönder');
     expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
     return { d, t, e: r.json() };
   };
+  it('atık sorumlusu kaydolur; aynı branşta geçmişin en az yarısında tehlikeli atık varsa öneri gelir (YG330-ATIK)', async () => {
+    const { d, e } = await onarim(); const br = `Atık ${Math.random()}`;
+    await o.sup.query(`UPDATE is_emri SET ana_brans = $2 WHERE kimlik = $1`, [e.kimlik, br]);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/atik-onerisi?brans=${encodeURIComponent(br)}`, await o.gir('oy'))).json()).toEqual({ oneri: true, toplam: 1, tehlikeli: 1 });
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/atik-onerisi?brans=Yok`, await o.gir('oy'))).json().oneri).toBe(false);
+    expect((await o.sup.query(`SELECT atik_sorumlusu FROM is_emri WHERE kimlik = $1`, [e.kimlik])).rows[0].atik_sorumlusu).toBe('Firma Çevre Sorumlusu');
+  });
   it('EK iş emri zarf sapmasına bağlanınca görev kapanır ve sapma listeden düşer (YG-407)', async () => {
     const { d, t, e } = await onarim();
     const bg = (await o.sup.query(`INSERT INTO bulgu (bulgu_no, dosya_ref, konum_referansi, aciklama, bulgu_etiketi, bilgi_turu, hasar_onem_derecesi, yonlendirme, yonlendirme_sorumlu_ref, yonlendirme_hedef_tarihi, olusturan_ref) VALUES ($1,$2,'S1','Gizli','E','B','Orta','Y',$3,current_date,$3) RETURNING kimlik`, [`${d.dosyaNo}-B09`, d.kimlik, o.K.tu])).rows[0].kimlik;

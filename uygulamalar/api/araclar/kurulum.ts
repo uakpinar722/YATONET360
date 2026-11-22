@@ -31,6 +31,7 @@ const DIS_ROLLER: [string, string, string][] = [ // YG-1030, YG-1025
 
 // Yetki matrisinin başlangıcı. İzinler modüller yazıldıkça eklenir (YG-996).
 const IZINLER: [string, string][] = [
+  ['Sistem Yöneticisi', 'rol_katalogu.duzenle'], ['Bilgi İşlem Müdürü', 'rol_katalogu.duzenle'], // YG-1007
   ['Sistem Yöneticisi', 'rol_katalogu.goruntule'], ['Bilgi İşlem Müdürü', 'rol_katalogu.goruntule'], ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'rol_katalogu.goruntule'],
   ['Sistem Yöneticisi', 'erisim.uygula'], // A33-2
   ['Bilgi İşlem Destek Sorumlusu', 'hesap_kurtarma.ac'], // A32-3
@@ -69,8 +70,8 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   // Roller
   const ic = readFileSync(join(KOK, 'veri', 'roller.tsv'), 'utf8').split(/\r?\n/).filter(Boolean).map((l) => l.split('\t') as [string, string]);
   let n = 0;
-  for (const [adi, birim] of ic) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, ayricalikli_rol) VALUES ($1,$2,$3,$4,'LGM İç Rolü',$5) ON CONFLICT (rol_adi) DO UPDATE SET rol_sahibi_birim = EXCLUDED.rol_sahibi_birim, kademe = EXCLUDED.kademe`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, kademeBul(adi), AYRICALIKLI.has(adi)]);
-  for (const [adi, birim, grup] of DIS_ROLLER) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari) VALUES ($1,$2,$3,'Dış Kullanıcı',$4) ON CONFLICT (rol_adi) DO NOTHING`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, grup]);
+  for (const [adi, birim] of ic) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, ayricalikli_rol, katalog_rolu) VALUES ($1,$2,$3,$4,'LGM İç Rolü',$5,true) ON CONFLICT (rol_adi) DO UPDATE SET rol_sahibi_birim = EXCLUDED.rol_sahibi_birim, kademe = EXCLUDED.kademe, katalog_rolu = true`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, kademeBul(adi), AYRICALIKLI.has(adi)]);
+  for (const [adi, birim, grup] of DIS_ROLLER) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, katalog_rolu) VALUES ($1,$2,$3,'Dış Kullanıcı',$4,true) ON CONFLICT (rol_adi) DO UPDATE SET katalog_rolu = true`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, grup]);
   for (const [adi, izin] of IZINLER) await c.query(`INSERT INTO rol_izni SELECT kimlik, $2 FROM rol WHERE rol_adi = $1 ON CONFLICT DO NOTHING`, [adi, izin]);
   // Hukuki metinler (R\KVKK onaylı belgelerden aktarılır)
   const mk = join(KOK, 'veri', 'metinler');

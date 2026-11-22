@@ -13,7 +13,7 @@ export function KislikSorumlusu({ dosya }: { dosya: string }) {
   return <><div className="bolum">Kışlık Hazırlık</div>{m && <div className="not" role="status">{m}</div>}
     <div className="ozet">Kışlık Hazırlık Sorumlusu: {d.sorumlu ?? <b>Belirlenmedi</b>}</div>
     <label htmlFor="ks-s">Kışlık Hazırlık Sorumlusu Seçimi</label>
-    <select id="ks-s" value={sec} onChange={(e) => setSec(e.target.value)}><option value="">Seçiniz</option>
+    <select required id="ks-s" value={sec} onChange={(e) => setSec(e.target.value)}><option value="">Seçiniz</option>
       <optgroup label="Dosya Ekibi">{d.ekip.map((x) => <option key={x.kimlik} value={`p:${x.kimlik}`}>{x.ad_soyad}</option>)}</optgroup>
       <optgroup label="Dosya Tarafları">{d.taraflar.map((x) => <option key={x.kimlik} value={`t:${x.kimlik}`}>{x.kisi_adi_soyadi} ({x.taraf_rolu})</option>)}</optgroup>
     </select>

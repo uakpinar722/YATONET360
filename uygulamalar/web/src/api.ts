@@ -26,6 +26,7 @@ async function gonder<T>(yol: string, govde?: object, anahtar?: string): Promise
     const j = await y.json().catch(() => ({}));
     // YG-1402: sunucu hatasında destek için kısa ilişki kodu gösterilir (teknik ayrıntı gösterilmez; olay sunucu günlüğünde kodla kayıtlıdır).
     if (!y.ok && y.status === 409 && j.cakisma) window.dispatchEvent(new CustomEvent('kayit-cakismasi', { detail: j.hata })); // YG-1382
+    if (!y.ok && j.islem && j.hedef) window.dispatchEvent(new CustomEvent('takilan-adim', { detail: { hata: j.hata, islem: j.islem, hedef: j.hedef } })); // YG-1386
     if (!y.ok) throw new ApiHatasi(y.status, `${j.hata ?? 'İşlem tamamlanamadı; yeniden deneyiniz.'}${y.status >= 500 && j.iliski ? ` Destek kodu: ${String(j.iliski).slice(-8)}` : ''}`);
     return j as T;
   } finally { bekleyen--; bildir(); }

@@ -12,7 +12,7 @@ export function ZorlukKatsayisi({ dosya }: { dosya: string }) {
   if (!v) return null;
   const kapali = v.girildi && v.revize;
   return <div className="blok"><div className="bolum">Zorluk Katsayısı: {Number(v.katsayi).toLocaleString('tr-TR', { minimumFractionDigits: 2 })}</div>{m && <div className="not" role="status">{m}</div>}
-    {!kapali && <><label htmlFor="zk-k">Katsayı (0,8–2,0)</label><input id="zk-k" inputMode="decimal" value={k} onChange={(e) => setK(e.target.value)} />
+    {!kapali && <><label htmlFor="zk-k">Katsayı (0,8–2,0)</label><input required id="zk-k" inputMode="decimal" value={k} onChange={(e) => setK(e.target.value)} />
       {OLCUT.map(([a, et]) => <span key={a}><label htmlFor={`zk-${a}`}>{et}</label><input id={`zk-${a}`} value={o[a] ?? ''} onChange={(e) => setO({ ...o, [a]: e.target.value })} /></span>)}
       {v.girildi && <><label htmlFor="zk-g">Revize Gerekçesi</label><input id="zk-g" value={g} onChange={(e) => setG(e.target.value)} /></>}
       <button className="btn2 kucuk" disabled={!k} onClick={() => void istek(`/dosya/${dosya}/zorluk`, { katsayi: Number(k.replace(',', '.')), olcutler: o, gerekce: g || undefined }).then(() => { setM('Zorluk katsayısı kaydedildi.'); setK(''); setG(''); return yk(); }).catch((e) => setM(e.message))}>{v.girildi ? 'Revize Et' : 'Kaydet'}</button></>}</div>;

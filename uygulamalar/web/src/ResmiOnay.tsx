@@ -24,6 +24,6 @@ export function KartelaResmiEtiket() {
   const yap = (etiket: boolean, k = kod.trim()) => void istek(`/kartela/${encodeURIComponent(k)}/resmi-onay`, { etiket }).then(() => { setM(etiket ? 'Etiket eklendi.' : 'Etiket kaldırıldı.'); setKod(''); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">Resmî / Klas Onayı Etiketi</div>{m && <div className="not" role="status">{m}</div>}
     <div className="ozet">{l.length === 0 && <div className="not">Etiketli işlem bulunmamaktadır.</div>}{l.map((x) => <div key={x.kod}>{x.kod} · {x.islem} <button className="btn2 kucuk" onClick={() => yap(false, x.kod)}>Kaldır</button></div>)}</div>
-    <label htmlFor="ro-k">İşlem Kodu</label><input id="ro-k" value={kod} onChange={(e) => setKod(e.target.value)} />
+    <label htmlFor="ro-k">İşlem Kodu</label><input required id="ro-k" value={kod} onChange={(e) => setKod(e.target.value)} />
     <button className="btn2 kucuk" disabled={!kod.trim()} onClick={() => yap(true)}>Etiketle</button></>;
 }

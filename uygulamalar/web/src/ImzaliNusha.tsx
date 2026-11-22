@@ -7,7 +7,7 @@ export function ImzaliNusha({ dosya, teklifler, yap }: { dosya: string; teklifle
   const [t, setT] = useState(''); const [ob, setOb] = useState(''); const [cf, setCf] = useState('');
   const yt = teklifler.filter((x) => x.teklif_muhatabi === 'Yat Sahibi');
   return <><div className="bolum">İmzalı Nüshalar</div><div className="ozet">
-    <label htmlFor="in-t">Teklif</label><select id="in-t" value={t} onChange={(e) => setT(e.target.value)}><option value="">Seçiniz</option>{yt.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.teklif_no} Rev.{x.surum_no}</option>)}</select>
+    <label htmlFor="in-t">Teklif</label><select required id="in-t" value={t} onChange={(e) => setT(e.target.value)}><option value="">Seçiniz</option>{yt.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.teklif_no} Rev.{x.surum_no}</option>)}</select>
     <BelgeSec ad="İmzalı Ön Bilgilendirme Nüshası" bagTuru="Dosya" bagKimligi={dosya} deger={ob} sec={setOb} />
     <button className="btn2 kucuk" disabled={!t || !ob} onClick={() => void yap(() => istek(`/teklif/${t}/imzali-on-bilgi`, { belge: ob }), 'İmzalı nüsha teklife bağlandı.')}>Nüshayı Bağla</button>
     <BelgeSec ad="İmzalı Cayma Formu" bagTuru="Dosya" bagKimligi={dosya} deger={cf} sec={setCf} />

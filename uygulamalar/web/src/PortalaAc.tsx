@@ -34,7 +34,7 @@ export function PortalaAc({ dosya }: { dosya: string }) {
       </div>
       {alanlar.length > 0 && <div className="dugmeler"><span>{alanlar.length} alan kapatıldı</span><button className="btn2 kucuk" onClick={() => setAlanlar(alanlar.slice(0, -1))}>Son Alanı Geri Al</button></div>}</>}
     {belge && !alanlar.length && <label className="secim"><input type="checkbox" checked={teyit} onChange={(e) => setTeyit(e.target.checked)} /> Firma adı, logosu ve imzası görünmüyor{onizleme ? '' : ' (PDF ve videoda kapatılmış sürüm yüklenmiştir)'}</label>}
-    <label htmlFor="pf-a">Yat Sahibinin Göreceği Açıklama</label><input id="pf-a" value={aciklama} onChange={(e) => setAciklama(e.target.value)} />
+    <label htmlFor="pf-a">Yat Sahibinin Göreceği Açıklama</label><input required id="pf-a" value={aciklama} onChange={(e) => setAciklama(e.target.value)} />
     <button className="btn2 kucuk" disabled={!belge || !aciklama.trim() || (!alanlar.length && !teyit)} onClick={gonder}>Portala Aç</button>
   </>;
 }

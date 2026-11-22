@@ -110,8 +110,8 @@ export function GunlukKayit({ isEmri, yap }: { isEmri: string; yap: (f: () => Pr
 function GecikmeBildirimi({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
   const [n, setN] = useState(''); const [t, setT] = useState('');
   return <div className="ozet" data-t="gecikme-bildirimi"><b>Gecikme Bildirimi</b>
-    <label htmlFor={`gc-n-${isEmri}`}>Gecikme Nedeni</label><input id={`gc-n-${isEmri}`} value={n} onChange={(e) => setN(e.target.value)} />
-    <label htmlFor={`gc-t-${isEmri}`}>Yeni Tahmini Bitiş Tarihi</label><input id={`gc-t-${isEmri}`} type="date" value={t} onChange={(e) => setT(e.target.value)} />
+    <label htmlFor={`gc-n-${isEmri}`}>Gecikme Nedeni</label><input required id={`gc-n-${isEmri}`} value={n} onChange={(e) => setN(e.target.value)} />
+    <label htmlFor={`gc-t-${isEmri}`}>Yeni Tahmini Bitiş Tarihi</label><input required id={`gc-t-${isEmri}`} type="date" value={t} onChange={(e) => setT(e.target.value)} />
     <button className="btn2 kucuk" disabled={!n.trim() || !t} onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/gecikme`, { neden: n, yeniTarih: t }), 'Gecikme bildirildi.').then(() => { setN(''); setT(''); })}>Gecikmeyi Bildir</button></div>;
 }
 
@@ -175,11 +175,11 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
         {v.sahaDuzeniSorumlusu && <div className="not">Saha düzeninden sorumlu: {v.sahaDuzeniSorumlusu}</div>}
         {v.gunlukler.map((x) => <div key={x.kimlik}>{tarih(x.tarih)} · {x.faaliyet ?? '—'}{x.engel ? ` · Engel: ${x.engel}` : ''}{x.saha_duzeni ? ` · Saha düzeni: ${x.saha_duzeni}` : ''} · {x.durum}</div>)}
         {v.parcalar.map((x) => <div className="soru" key={x.kimlik}><span>{x.urun_tanimi} · {x.parca_no} · Lot: {x.lot_no} · {x.kabul_karari ?? 'Kontrol Bekliyor'}</span>{!x.kabul_karari && ['Kabul', 'Koşullu Kabul', 'Karantina', 'Ret'].map((k) => <button key={k} className="btn2 kucuk" onClick={() => void yap(() => istek(`/parca-girisi/${x.kimlik}/karar`, { karar: k }))}>{k}</button>)}</div>)}
-        {v.statu === 'Durduruldu' && <div className="uyari">⚠ İş durduruldu. <label htmlFor={`rb-${isEmri}`}>Güvenli Koşul Doğrulaması</label><input id={`rb-${isEmri}`} value={gv} onChange={(e) => setGv(e.target.value)} /><button className="btn2 kucuk" disabled={!gv.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/yeniden-baslat`, { gerekce: gv }), 'İş yeniden başlatıldı.')}>Yeniden Başlat</button></div>}
+        {v.statu === 'Durduruldu' && <div className="uyari">⚠ İş durduruldu. <label htmlFor={`rb-${isEmri}`}>Güvenli Koşul Doğrulaması</label><input required id={`rb-${isEmri}`} value={gv} onChange={(e) => setGv(e.target.value)} /><button className="btn2 kucuk" disabled={!gv.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/yeniden-baslat`, { gerekce: gv }), 'İş yeniden başlatıldı.')}>Yeniden Başlat</button></div>}
         {v.toplanti ? <div>Başlangıç Toplantısı: {tarih(v.toplanti.tarih)}{v.toplanti.kisa_form ? ' · Kısa Form' : ''} · {v.toplanti.katilimcilar}</div> : <>
-          <label htmlFor={`tp-t-${isEmri}`}>Başlangıç Toplantısı Tarihi</label><input id={`tp-t-${isEmri}`} type="date" value={tp.tarih} onChange={(e) => setTp({ ...tp, tarih: e.target.value })} />
-          <label htmlFor={`tp-k-${isEmri}`}>Toplantı Katılımcıları</label><input id={`tp-k-${isEmri}`} value={tp.katilimcilar} onChange={(e) => setTp({ ...tp, katilimcilar: e.target.value })} />
-          <label htmlFor={`tp-o-${isEmri}`}>Konuşulanlar</label><input id={`tp-o-${isEmri}`} value={tp.konusulanlar} onChange={(e) => setTp({ ...tp, konusulanlar: e.target.value })} />
+          <label htmlFor={`tp-t-${isEmri}`}>Başlangıç Toplantısı Tarihi</label><input required id={`tp-t-${isEmri}`} type="date" value={tp.tarih} onChange={(e) => setTp({ ...tp, tarih: e.target.value })} />
+          <label htmlFor={`tp-k-${isEmri}`}>Toplantı Katılımcıları</label><input required id={`tp-k-${isEmri}`} value={tp.katilimcilar} onChange={(e) => setTp({ ...tp, katilimcilar: e.target.value })} />
+          <label htmlFor={`tp-o-${isEmri}`}>Konuşulanlar</label><input required id={`tp-o-${isEmri}`} value={tp.konusulanlar} onChange={(e) => setTp({ ...tp, konusulanlar: e.target.value })} />
           <label><input type="checkbox" checked={tp.kisaForm} onChange={(e) => setTp({ ...tp, kisaForm: e.target.checked })} /> Kısa Form (Basit İş)</label>
           <button className="btn2 kucuk" disabled={!tp.tarih || !tp.katilimcilar.trim() || !tp.konusulanlar.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/baslangic-toplantisi`, tp), 'Başlangıç toplantısı kaydedildi.')}>Toplantıyı Kaydet</button>
         </>}
@@ -188,7 +188,7 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
         <ProsesLgm isEmri={isEmri} />
         <label><input type="checkbox" checked={v.teshisiBelirsiz} onChange={(e) => void yap(() => istek(`/is-emri/${isEmri}/teshisi-belirsiz`, { deger: e.target.checked }))} /> Teşhisi Belirsiz İş</label>
         <label htmlFor={`sp-t-${isEmri}`}>Sapma Türü</label><select id={`sp-t-${isEmri}`} value={s.tur} onChange={(e) => setS({ ...s, tur: e.target.value })}>{['Kapsam', 'Yöntem', 'Süre', 'Maliyet', 'Kalite', 'Güvenlik', 'Belge'].map((x) => <option key={x}>{x}</option>)}</select>
-        <label htmlFor={`sp-a-${isEmri}`}>Sapma Açıklaması</label><input id={`sp-a-${isEmri}`} value={s.aciklama} onChange={(e) => setS({ ...s, aciklama: e.target.value })} />
+        <label htmlFor={`sp-a-${isEmri}`}>Sapma Açıklaması</label><input required id={`sp-a-${isEmri}`} value={s.aciklama} onChange={(e) => setS({ ...s, aciklama: e.target.value })} />
         <label htmlFor={`sp-k-${isEmri}`}>Sapma Kararı</label><select id={`sp-k-${isEmri}`} value={s.karar} onChange={(e) => setS({ ...s, karar: e.target.value })}>{['İşi Durdur', 'Sınırlı Devam', 'Düzeltme', 'Değişiklik Talebi'].map((x) => <option key={x}>{x}</option>)}</select>
         <label><input type="checkbox" checked={s.firmaKaynakli} onChange={(e) => setS({ ...s, firmaKaynakli: e.target.checked })} /> Firma Kaynaklı</label>
         <label><input type="checkbox" checked={s.isgIhlali} onChange={(e) => setS({ ...s, isgIhlali: e.target.checked })} /> İSG İhlali</label>
@@ -198,7 +198,7 @@ export function SahaKayitlari({ isEmri }: { isEmri: string }) {
         {(s.karar === 'Düzeltme' || s.karar === 'Sınırlı Devam') && <><label htmlFor={`sp-h-${isEmri}`}>Düzeltme Hedef Tarihi</label><input id={`sp-h-${isEmri}`} type="date" value={hedef} onChange={(e) => setHedef(e.target.value)} /></>}
         <button className="btn2 kucuk" disabled={!s.aciklama.trim()} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/sapma`, { ...s, ekTest: s.ekTest || undefined, zarfGenisledi: s.zarfGenisledi || undefined, bulgu: s.zarfGenisledi ? s.bulgu : undefined, hedef: hedef || undefined }).then(() => { setS({ ...s, aciklama: '', ekTest: '', zarfGenisledi: false, bulgu: '' }); setHedef(''); }))}>Sapmayı Kaydet</button>
         <label htmlFor={`db-s-${isEmri}`}>Denetim Bulgusu Sınıfı</label><select id={`db-s-${isEmri}`} value={d.sinif} onChange={(e) => setD({ ...d, sinif: e.target.value })}><option>Minör</option><option>Majör</option></select>
-        <label htmlFor={`db-a-${isEmri}`}>Bulgu Açıklaması</label><input id={`db-a-${isEmri}`} value={d.aciklama} onChange={(e) => setD({ ...d, aciklama: e.target.value })} />
+        <label htmlFor={`db-a-${isEmri}`}>Bulgu Açıklaması</label><input required id={`db-a-${isEmri}`} value={d.aciklama} onChange={(e) => setD({ ...d, aciklama: e.target.value })} />
         <BelgeSec ad="Denetim Kanıtı" bagTuru="İş Emri" bagKimligi={isEmri} deger={be} sec={setBe} />
         <button className="btn2 kucuk" disabled={!d.aciklama.trim() || !be} onClick={() => void yap(() => istek(`/is-emri/${isEmri}/denetim-bulgusu`, { ...d, belge: be }).then(() => { setBe(''); setD({ ...d, aciklama: '' }); }))}>Bulguyu Kaydet</button>
       </>}
@@ -261,12 +261,12 @@ export function Kullanicilarim() {
         <div className="ozet"><div>{v.kurum} · Ek-2 Onay Sınırı: {eur(v.ek2Siniri)} · Rolünüz: {v.rol}</div>{v.yetkili && v.kurumId && <div><a href={`/api/kurumsal-kurum/${v.kurumId}/ek2.pdf`} target="_blank" rel="noreferrer">Ek-2 PDF</a> · <a href={`/api/kurumsal-kurum/${v.kurumId}/ek2.pdf?dil=en`} target="_blank" rel="noreferrer">Annex 2 PDF</a></div>}</div>
         <Blok baslik="Kullanıcılar">
           {v.kullanicilar.map((u) => <div className="soru" key={u.kimlik}><span>{u.ad_soyad} · {u.e_posta} · {u.rol}{u.onay_siniri ? ` · Sınır: ${eur(u.onay_siniri)}` : ''}{u.yetkili ? ' · Kurum Yetkilisi' : ''} · {u.hesap_durumu}</span>
-            {v.yetkili && !u.ben && u.hesap_durumu !== 'Kapalı' && <div className="tam"><label htmlFor={`ku-${u.kimlik}`}>Kapatma Nedeni</label><input id={`ku-${u.kimlik}`} value={ge[u.kimlik] ?? ''} onChange={(e) => setGe({ ...ge, [u.kimlik]: e.target.value })} /><button className="btn hayir" disabled={!ge[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/kurumsal/kullanici/${u.kimlik}/kapat`, { gerekce: ge[u.kimlik] }))}>Hesabı Kapat</button></div>}
+            {v.yetkili && !u.ben && u.hesap_durumu !== 'Kapalı' && <div className="tam"><label htmlFor={`ku-${u.kimlik}`}>Kapatma Nedeni</label><input required id={`ku-${u.kimlik}`} value={ge[u.kimlik] ?? ''} onChange={(e) => setGe({ ...ge, [u.kimlik]: e.target.value })} /><button className="btn hayir" disabled={!ge[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/kurumsal/kullanici/${u.kimlik}/kapat`, { gerekce: ge[u.kimlik] }))}>Hesabı Kapat</button></div>}
           </div>)}
         </Blok>
         {v.yetkili && <Blok baslik="Kullanıcı Ekle">
-          <label htmlFor="kk-a">Ad Soyad</label><input id="kk-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-          <label htmlFor="kk-e">E-posta</label><input id="kk-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
+          <label htmlFor="kk-a">Ad Soyad</label><input required id="kk-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+          <label htmlFor="kk-e">E-posta</label><input required id="kk-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
           <label htmlFor="kk-t">Telefon</label><input id="kk-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
           <label htmlFor="kk-r">Rol</label><select id="kk-r" value={f.rol} onChange={(e) => setF({ ...f, rol: e.target.value })}>{['İzleyici', 'Talep Açan', 'Onaylayan'].map((x) => <option key={x}>{x}</option>)}</select>
           {f.rol === 'Onaylayan' && <div className="not">Onaylayan kullanıcılar kurumunuzun Ek-2 onay sınırı ({eur(v.ek2Siniri)}) içinde onay verir.</div>}
@@ -294,7 +294,7 @@ function FirmaKarne({ yap }: { yap: (f: () => Promise<any>) => Promise<void> }) 
       {v.olaylar.map((x) => (
         <div className="soru" key={x.kimlik}>
           <span><b className="koyu">{x.is_emri_no}</b> · {x.oncelik} · Puan: {puan(x.dosya_puani)} · Kalite {puan(x.kalite_puani)} · Uyum {puan(x.uyum_puani)} · Süre {puan(x.sure_puani)} · Maliyet {puan(x.maliyet_puani)} · İletişim {puan(x.iletisim_puani)}{x.itiraz ? ` · İtiraz: ${x.itiraz}` : ''}</span>
-          {x.itiraz !== 'İncelemede' && <div className="tam"><label htmlFor={`kr-${x.kimlik}`}>İtiraz Konusu</label><input id={`kr-${x.kimlik}`} value={itz[x.kimlik] ?? ''} onChange={(e) => setItz({ ...itz, [x.kimlik]: e.target.value })} /><button className="btn hayir" disabled={!itz[x.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/karne/${x.kimlik}/itiraz`, { konu: itz[x.kimlik] }).then(() => { setItz({ ...itz, [x.kimlik]: '' }); return yukle().then(() => ({ uyari: 'İtirazınız Firma Yönetimi Müdürüne iletildi.' })); }))}>İtiraz Et</button></div>}
+          {x.itiraz !== 'İncelemede' && <div className="tam"><label htmlFor={`kr-${x.kimlik}`}>İtiraz Konusu</label><input required id={`kr-${x.kimlik}`} value={itz[x.kimlik] ?? ''} onChange={(e) => setItz({ ...itz, [x.kimlik]: e.target.value })} /><button className="btn hayir" disabled={!itz[x.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/karne/${x.kimlik}/itiraz`, { konu: itz[x.kimlik] }).then(() => { setItz({ ...itz, [x.kimlik]: '' }); return yukle().then(() => ({ uyari: 'İtirazınız Firma Yönetimi Müdürüne iletildi.' })); }))}>İtiraz Et</button></div>}
         </div>
       ))}
     </Blok>
@@ -317,13 +317,13 @@ export function KurumHesap({ baslik }: { baslik: string }) {
         <div className="ozet"><div>{k.ticari_unvan} · {k.kayit_rolu} · Sicil No: {k.sicil_no}</div><div>E-posta: {k.kurumsal_eposta ?? '—'} · Telefon: {k.kurumsal_telefon ?? '—'} · {[k.il, k.ilce].filter(Boolean).join(' / ') || '—'}</div></div>
         {v.bilgiTalepleri.map((x) => <div key={x.kimlik}>{ALANLAR[x.alan]}: {x.yeni_deger} · {x.durum}</div>)}
         <label htmlFor="bi-a">Değiştirilecek Bilgi</label><select id="bi-a" value={bi.alan} onChange={(e) => setBi({ ...bi, alan: e.target.value })}>{Object.entries(ALANLAR).map(([a, ad]) => <option key={a} value={a}>{ad}</option>)}</select>
-        <label htmlFor="bi-y">Yeni Değer</label><input id="bi-y" value={bi.yeni} onChange={(e) => setBi({ ...bi, yeni: e.target.value })} />
+        <label htmlFor="bi-y">Yeni Değer</label><input required id="bi-y" value={bi.yeni} onChange={(e) => setBi({ ...bi, yeni: e.target.value })} />
         <button className="btn2" disabled={!bi.yeni.trim()} onClick={() => void yap(() => istek('/kurum/bilgi-degisikligi', bi).then(() => { setBi({ ...bi, yeni: '' }); return { uyari: 'Talebiniz LGM teyidine gönderildi.' }; }))}>Değişiklik Talep Et</button>
       </Blok>
       <Blok baslik="Banka Hesabı">
         {v.bankalar.length === 0 && <div className="not">Kayıtlı banka hesabı bulunmamaktadır.</div>}
         {v.bankalar.map((x) => <div key={x.kimlik}>{x.iban} · {x.durum === 'Karantina' ? 'Teyit Bekleniyor' : x.durum}</div>)}
-        <label htmlFor="ib-n">Yeni IBAN</label><input id="ib-n" value={iban} onChange={(e) => setIban(e.target.value)} />
+        <label htmlFor="ib-n">Yeni IBAN</label><input required id="ib-n" value={iban} onChange={(e) => setIban(e.target.value)} />
         <div className="not">Yeni hesap, sicilde kayıtlı numaranızdan geri aranarak teyit edilince geçerli olur.</div>
         <button className="btn2" disabled={!iban.trim()} onClick={() => void yap(() => istek('/kurum/banka', { iban }).then(() => { setIban(''); return { uyari: 'IBAN teyide gönderildi.' }; }))}>IBAN Bildir</button>
       </Blok>
@@ -337,7 +337,7 @@ export function KurumHesap({ baslik }: { baslik: string }) {
       <FirmaKullaniciIslevleri />
       {(v.itirazEdilebilir || v.itiraz) && <Blok baslik="Kabul Kararı İtirazı">
         {v.itiraz && <div>İtiraz Durumu: {v.itiraz.durum}</div>}
-        {v.itirazEdilebilir && <><label htmlFor="it-g">İtiraz Gerekçesi</label><input id="it-g" value={itz} onChange={(e) => setItz(e.target.value)} /><button className="btn2" disabled={!itz.trim()} onClick={() => void yap(() => istek('/kurum/kabul-itiraz', { gerekce: itz }))}>İtiraz Et</button></>}
+        {v.itirazEdilebilir && <><label htmlFor="it-g">İtiraz Gerekçesi</label><input required id="it-g" value={itz} onChange={(e) => setItz(e.target.value)} /><button className="btn2" disabled={!itz.trim()} onClick={() => void yap(() => istek('/kurum/kabul-itiraz', { gerekce: itz }))}>İtiraz Et</button></>}
       </Blok>}
       {k.kayit_rolu === 'Tedarikçi' && <Blok baslik="Faturalar ve Ödeme Durumu">
         {fat.length === 0 && <div className="not">Fatura bulunmamaktadır.</div>}
@@ -348,14 +348,14 @@ export function KurumHesap({ baslik }: { baslik: string }) {
           <div className="soru" key={u.kimlik}>
             <span>{u.ad_soyad} · {u.e_posta} · {u.hesap_durumu}</span>
             {!u.ben && u.hesap_durumu !== 'Kapalı' && <div className="tam">
-              <label htmlFor={`kk-${u.kimlik}`}>Kapatma Nedeni</label><input id={`kk-${u.kimlik}`} value={ge[u.kimlik] ?? ''} onChange={(e) => setGe({ ...ge, [u.kimlik]: e.target.value })} />
+              <label htmlFor={`kk-${u.kimlik}`}>Kapatma Nedeni</label><input required id={`kk-${u.kimlik}`} value={ge[u.kimlik] ?? ''} onChange={(e) => setGe({ ...ge, [u.kimlik]: e.target.value })} />
               <button className="btn hayir" disabled={!ge[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/kurum/kullanici/${u.kimlik}/kapat`, { gerekce: ge[u.kimlik] }))}>Hesabı Kapat</button>
             </div>}
           </div>
         ))}
         {v.talepler.map((u) => <div key={u.kimlik}>{u.ad_soyad} · {u.eposta} · {u.durum}</div>)}
-        <label htmlFor="ky-a">Ad Soyad</label><input id="ky-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-        <label htmlFor="ky-e">E-posta</label><input id="ky-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
+        <label htmlFor="ky-a">Ad Soyad</label><input required id="ky-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+        <label htmlFor="ky-e">E-posta</label><input required id="ky-e" type="email" value={f.eposta} onChange={(e) => setF({ ...f, eposta: e.target.value })} />
         <label htmlFor="ky-t">Telefon</label><input id="ky-t" value={f.telefon} onChange={(e) => setF({ ...f, telefon: e.target.value })} />
         <button className="btn2" disabled={!f.ad.trim() || !f.eposta.trim()} onClick={() => void yap(() => istek('/kurum/kullanici', f).then(() => { setF({ ad: '', eposta: '', telefon: '' }); return { uyari: 'Talebiniz LGM teyidine gönderildi.' }; }))}>Kullanıcı Ekle</button>
       </Blok>
@@ -371,7 +371,7 @@ function TedarikciUygunsuzluk({ yap }: { yap: (f: () => Promise<unknown>, m?: st
   const acik = l.filter((u) => u.statu !== 'Kapalı' && u.statu !== 'Geçersiz');
   if (!acik.length) return null;
   return <Blok baslik="Uygunsuzluklar">{acik.map((u) => <div className="soru" key={u.kimlik}><span>{u.uygunsuzluk_no} · {u.sinif} · {u.gercek_durum} · Ölçüt: {u.dayanak_olcut}{u.firma_yaniti ? ` · Yanıtınız: ${u.firma_yaniti}` : ''}</span>
-    <label htmlFor={`tu-${u.kimlik}`}>Yanıt ve Düzeltici Faaliyet</label><input id={`tu-${u.kimlik}`} value={yn[u.kimlik] ?? ''} onChange={(e) => setYn({ ...yn, [u.kimlik]: e.target.value })} />
+    <label htmlFor={`tu-${u.kimlik}`}>Yanıt ve Düzeltici Faaliyet</label><input required id={`tu-${u.kimlik}`} value={yn[u.kimlik] ?? ''} onChange={(e) => setYn({ ...yn, [u.kimlik]: e.target.value })} />
     <button className="btn2 kucuk" disabled={!yn[u.kimlik]?.trim()} onClick={() => void yap(() => istek(`/firma-portal/uygunsuzluk/${u.kimlik}/yanit`, { yanit: yn[u.kimlik] }), 'Yanıtınız iletildi.').then(yukle)}>Yanıtı Gönder</button></div>)}</Blok>;
 }
 

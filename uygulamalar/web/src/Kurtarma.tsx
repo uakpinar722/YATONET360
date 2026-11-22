@@ -28,7 +28,7 @@ export function HesapKurtarma() {
       <h1>Hesap Kurtarma</h1>
       <form className="ozet" onSubmit={(e) => void bul(e)}>
         <label htmlFor="hk-a">Kullanıcının E-Postası veya Cep Telefonu</label>
-        <input id="hk-a" value={ara} onChange={(e) => setAra(e.target.value)} />
+        <input required id="hk-a" value={ara} onChange={(e) => setAra(e.target.value)} />
         <div className="dugmeler"><button className="btn2" disabled={!ara.trim()}>Hesabı Bul</button></div>
       </form>
       {hata && <div className="hata" role="alert">{hata}</div>}
@@ -38,9 +38,9 @@ export function HesapKurtarma() {
           <div className="ust2"><b>{h.ad_soyad}</b><em className="rozet gri">{h.hesap_durumu}</em></div>
           <div className="not">{h.kullanici_grubu}</div>
           <label htmlFor="hk-t">Kimlik Teyidi</label>
-          <textarea id="hk-t" rows={2} value={teyit} onChange={(e) => setTeyit(e.target.value)} placeholder="Kimliği nasıl doğruladınız?" />
+          <textarea required id="hk-t" rows={2} value={teyit} onChange={(e) => setTeyit(e.target.value)} placeholder="Kimliği nasıl doğruladınız?" />
           <label htmlFor="hk-n">Neden</label>
-          <textarea id="hk-n" rows={2} value={neden} onChange={(e) => setNeden(e.target.value)} placeholder="Ör. Telefon kayboldu" />
+          <textarea required id="hk-n" rows={2} value={neden} onChange={(e) => setNeden(e.target.value)} placeholder="Ör. Telefon kayboldu" />
           <div className="not">Onaylanınca kullanıcının doğrulama uygulaması sıfırlanır ve açık oturumları kapanır.</div>
           {h.yol === null && <div className="hata">Bu kullanıcı grubu için teyit makamı tanımlı değildir.</div>}
           <div className="dugmeler"><button className="btn" disabled={!teyit.trim() || !neden.trim() || h.yol === null}>{h.yol ?? 'Onaya Gönder'}</button></div>

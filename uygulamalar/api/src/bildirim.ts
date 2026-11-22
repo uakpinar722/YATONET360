@@ -107,6 +107,15 @@ export function whatsappMetni(m: string): string {
   return m.replace(/\d[\d.]*(,\d+)?\s*(EUR|TL|€|₺)/gi, '').replace(/(EUR|TL|€|₺)\s*\d[\d.,]*/gi, '').replace(/(?<![\w-])\d{6}(?![\w-])/g, '').replace(/\s{2,}/g, ' ').replace(/\s+([:·,.])/g, '$1').trim();
 }
 
+/** YG-1446: SMS en çok 300 karakterdir; aşan metinde ilk cümle ve bağlantı gider, tam metin e-postada kalır. */
+export function smsMetni(m: string, sinir = 300): string {
+  if (m.length <= sinir) return m;
+  const bag = m.match(/https?:\/\/\S+/)?.[0] ?? '';
+  const ilk = (m.replace(bag, '').trim().split(/(?<=[.!?])\s/)[0] ?? '').trim();
+  const yer = sinir - (bag ? bag.length + 1 : 0);
+  return [ilk.length > yer ? `${ilk.slice(0, yer - 1).trimEnd()}…` : ilk, bag].filter(Boolean).join(' ');
+}
+
 async function kuyruk(db: Db, olay: string, k: string | null, kanal: string, hedef: string, konu: string, metin: string, oncelik: string | undefined, plan: Date) {
   await db.query(
     `INSERT INTO gonderim (olay_anahtari, kullanici_ref, kanal, hedef, konu, metin, oncelik, plan_zamani) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (olay_anahtari, kanal, hedef) DO NOTHING`,
@@ -176,6 +185,13 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
         if (g.kanal === 'E-posta') {
           const ek = g.ek_surumler?.length ? (await c.query(`SELECT dosya_adi, depo_anahtari FROM belge_surum WHERE kimlik = ANY($1) AND depo_anahtari NOT LIKE 'kritik/%'`, [g.ek_surumler])).rows.map((r) => ({ ad: r.dosya_adi as string, yol: join((b.depo ?? new Depo()).kok, r.depo_anahtari as string) })) : undefined;
           await b.eposta.gonder(g.hedef, g.metin, ek);
+        }
+        else if (g.kanal === 'SMS') { // YG-1446
+          await b.sms.gonder(g.hedef, smsMetni(g.metin));
+          if (g.metin.length > 300 && g.kullanici_ref && !(await c.query(`SELECT 1 FROM gonderim WHERE olay_anahtari = $1 AND kanal = 'E-posta'`, [g.olay_anahtari])).rowCount) {
+            const ep = (await c.query(`SELECT e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [g.kullanici_ref])).rows[0]?.e_posta as string | undefined;
+            if (ep) await kuyruk(c, g.olay_anahtari, g.kullanici_ref, 'E-posta', ep, g.konu, g.metin, g.oncelik, simdi);
+          }
         }
         else await b.sms.gonder(g.hedef, g.metin); // WhatsApp sağlayıcısı bağlanana kadar deneme kutusu
         await c.query(`UPDATE gonderim SET durum = 'Gönderildi', gonderim_zamani = $2, deneme = deneme + 1 WHERE kimlik = $1`, [g.kimlik, simdi]);

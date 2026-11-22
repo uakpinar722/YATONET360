@@ -12,8 +12,8 @@ export function KilometreTaslari({ dosya }: { dosya: string }) {
   const is = (p: Promise<unknown>, ok: string) => void p.then(() => { setM(ok); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">Kilometre Taşları</div>{m && <div className="not" role="status">{m}</div>}
     <div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.ad} · Baz: {tr(x.baz_tarih)} · Güncel: {tr(x.guncel_tarih)}{x.gerceklesme_tarihi ? ` · Gerçekleşti: ${tr(x.gerceklesme_tarihi)}` : ''}{x.gecikme_nedeni ? ` · Gecikme: ${x.gecikme_nedeni}` : ''} <button className="btn2 kucuk" onClick={() => setU({ ...u, kimlik: x.kimlik, guncel: x.guncel_tarih })}>Güncelle</button></div>)}</div>
-    <label htmlFor="km-a">Kilometre Taşı</label><input id="km-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-    <label htmlFor="km-b">Baz Tarih</label><input id="km-b" type="date" value={f.baz} onChange={(e) => setF({ ...f, baz: e.target.value })} />
+    <label htmlFor="km-a">Kilometre Taşı</label><input required id="km-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+    <label htmlFor="km-b">Baz Tarih</label><input required id="km-b" type="date" value={f.baz} onChange={(e) => setF({ ...f, baz: e.target.value })} />
     <button className="btn2 kucuk" disabled={!f.ad.trim() || !f.baz} onClick={() => is(istek(`/dosya/${dosya}/kilometre`, f).then(() => setF({ ad: '', baz: '' })), 'Kilometre taşı eklendi.')}>Ekle</button>
     {u.kimlik && <>
       <label htmlFor="km-g">Güncel Tarih</label><input id="km-g" type="date" value={u.guncel} onChange={(e) => setU({ ...u, guncel: e.target.value })} />

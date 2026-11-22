@@ -35,13 +35,13 @@ export function SahiplikDevri() {
     <div className="bolum">Modüller</div>{v.moduller.length === 0 && <div className="ozet bos">Modül sahipliği tanımlanmamıştır.</div>}{v.moduller.map((x) => <div className="ozet" key={x.modul}>{x.modul} · {x.sahip}</div>)}
     <div className="bolum">Veri Kümeleri</div>{v.veriKumeleri.map((x) => <div className="ozet" key={x.kod}>{x.ad} · {x.sahip}</div>)}
     {v.yonetir && <>
-      <label htmlFor="sh-m">Modül</label><input id="sh-m" value={md.modul} onChange={(e) => setMd({ ...md, modul: e.target.value })} />
-      <label htmlFor="sh-r">Sahip Rol</label><input id="sh-r" value={md.sahipRol} onChange={(e) => setMd({ ...md, sahipRol: e.target.value })} />
+      <label htmlFor="sh-m">Modül</label><input required id="sh-m" value={md.modul} onChange={(e) => setMd({ ...md, modul: e.target.value })} />
+      <label htmlFor="sh-r">Sahip Rol</label><input required id="sh-r" value={md.sahipRol} onChange={(e) => setMd({ ...md, sahipRol: e.target.value })} />
       <button className="btn2 kucuk" disabled={!md.modul.trim() || !md.sahipRol.trim()} onClick={() => void istek('/sahiplik/modul', md).then(() => { setM('Modül sahipliği kaydedildi.'); setMd({ modul: '', sahipRol: '' }); return yk(); }).catch((e) => setM(e.message))}>Sahipliği Kaydet</button>
       <div className="bolum">Görev Değişiminde Devir</div>
-      <label htmlFor="sh-e">Eski Rol</label><input id="sh-e" value={f.eskiRol} onChange={(e) => setF({ ...f, eskiRol: e.target.value })} />
-      <label htmlFor="sh-y">Yeni Rol</label><input id="sh-y" value={f.yeniRol} onChange={(e) => setF({ ...f, yeniRol: e.target.value })} />
-      <label htmlFor="sh-g">Gerekçe</label><input id="sh-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+      <label htmlFor="sh-e">Eski Rol</label><input required id="sh-e" value={f.eskiRol} onChange={(e) => setF({ ...f, eskiRol: e.target.value })} />
+      <label htmlFor="sh-y">Yeni Rol</label><input required id="sh-y" value={f.yeniRol} onChange={(e) => setF({ ...f, yeniRol: e.target.value })} />
+      <label htmlFor="sh-g">Gerekçe</label><input required id="sh-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
       <label className="kutu"><input type="checkbox" checked={f.izinler} onChange={(e) => setF({ ...f, izinler: e.target.checked })} /><span>Eski Rolün İzinlerini de Ekle</span></label>
       <button className="btn2 kucuk" disabled={!f.eskiRol.trim() || !f.yeniRol.trim() || !f.gerekce.trim()} onClick={() => void istek<{ sayilar: Record<string, number> }>('/sahiplik/devir', f).then((r) => { setM(`Devredildi: ${Object.entries(r.sayilar).map(([k, n]) => `${k} ${n}`).join(', ')}`); setF({ eskiRol: '', yeniRol: '', gerekce: '', izinler: false }); return yk(); }).catch((e) => setM(e.message))}>Devret</button></>}
     {v.devirler.map((x, i) => <div className="ozet" key={i}>{tarih(x.zaman)} · {x.eski} → {x.yeni} · {x.gerekce}</div>)}</details>;

@@ -289,22 +289,22 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       </Blok>
       {d.izinler.includes('dosya.ata.operasyon') && !['Kapalı', 'Teknik Kapalı'].includes(d.statu) && <Blok baslik="Alt Dosya">
         <div className="not">Ayrı yetki veya bütçe gerektiren iş için ana dosyaya bağlı alt dosya açılır; taraflar kopyalanır, ekip ayrıca atanır.</div>
-        <label htmlFor="ad-t">Kısa Teknik Tanım</label><input id="ad-t" value={alt.tanim} onChange={(e) => setAlt({ ...alt, tanim: e.target.value })} />
-        <label htmlFor="ad-g">Ayrı Dosya Gerekçesi</label><input id="ad-g" value={alt.gerekce} onChange={(e) => setAlt({ ...alt, gerekce: e.target.value })} />
+        <label htmlFor="ad-t">Kısa Teknik Tanım</label><input required id="ad-t" value={alt.tanim} onChange={(e) => setAlt({ ...alt, tanim: e.target.value })} />
+        <label htmlFor="ad-g">Ayrı Dosya Gerekçesi</label><input required id="ad-g" value={alt.gerekce} onChange={(e) => setAlt({ ...alt, gerekce: e.target.value })} />
         <button className="btn2" disabled={!alt.tanim.trim() || !alt.gerekce.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/alt-dosya`, alt))}>Alt Dosya Aç</button>
       </Blok>}
       {d.izinler.includes('dosya.ata.operasyon') && d.statu !== 'Kapalı' && <Blok baslik="Mükerrer Dosyayı Birleştir">
         <div className="not">Bu dosya kapanır, Birleştirildi statüsü alır; bekleyen görevler, onaylar ve açık süre sayaçları ana dosyaya geçer. Belgeler kopyalanmaz.</div>
-        <label htmlFor="br-a">Ana Dosya No</label><input id="br-a" value={birA} onChange={(e) => setBirA(e.target.value)} />
-        <label htmlFor="br-g">Gerekçe</label><input id="br-g" value={birG} onChange={(e) => setBirG(e.target.value)} />
+        <label htmlFor="br-a">Ana Dosya No</label><input required id="br-a" value={birA} onChange={(e) => setBirA(e.target.value)} />
+        <label htmlFor="br-g">Gerekçe</label><input required id="br-g" value={birG} onChange={(e) => setBirG(e.target.value)} />
         <button className="btn2" disabled={!birA.trim() || !birG.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/birlestir`, { anaNo: birA, gerekce: birG }))}>Dosyayı Birleştir</button>
       </Blok>}
       <Blok baslik="Dosya Ekibi">
         {d.ekip.length === 0 && <div className="not">Henüz atama yapılmadı.</div>}
         {d.ekip.map((e) => <div key={e.kimlik}>{e.rol}: {e.ad_soyad}</div>)}
         {izinliRoller.length > 0 && <>
-          <label htmlFor="e-r">Atanacak Rol</label><select id="e-r" value={rol} onChange={(e) => { setRol(e.target.value); setKisi(''); }}><option value="">Seçiniz</option>{izinliRoller.map((r) => <option key={r}>{r}</option>)}</select>
-          {rol && <><label htmlFor="e-k">Kişi</label><select id="e-k" value={kisi} onChange={(e) => setKisi(e.target.value)}><option value="">Seçiniz</option>{adaylar.map((a) => <option key={a.kimlik} value={a.kimlik} disabled={a.oran !== null && a.oran >= 100}>{a.ad_soyad}{a.oran !== null ? ` · Kapasite %${a.oran}` : ''}</option>)}</select></>}
+          <label htmlFor="e-r">Atanacak Rol</label><select required id="e-r" value={rol} onChange={(e) => { setRol(e.target.value); setKisi(''); }}><option value="">Seçiniz</option>{izinliRoller.map((r) => <option key={r}>{r}</option>)}</select>
+          {rol && <><label htmlFor="e-k">Kişi</label><select required id="e-k" value={kisi} onChange={(e) => setKisi(e.target.value)}><option value="">Seçiniz</option>{adaylar.map((a) => <option key={a.kimlik} value={a.kimlik} disabled={a.oran !== null && a.oran >= 100}>{a.ad_soyad}{a.oran !== null ? ` · Kapasite %${a.oran}` : ''}</option>)}</select></>}
           {rol && d.ekip.some((e) => e.rol === rol) && <><label htmlFor="e-d">Devir Notu</label><input id="e-d" value={devir} onChange={(e) => setDevir(e.target.value)} /></>}
           <button className="btn2" disabled={!rol || !kisi} onClick={() => void yap(() => istek(`/dosya/${id}/ekip`, { kullanici: kisi, rol, devirNotu: devir })).then(() => { setRol(''); setKisi(''); setDevir(''); })}>Ata</button>
         </>}
@@ -315,7 +315,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       </Blok>}
       {ds && <Blok baslik="Öncelik">
         {d.oncelik === 'Kritik' && <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/risk-kontrol`, {}))}>Risk Kontrol Altına Alındı</button>}
-        <label htmlFor="o-y">Yeni Öncelik</label><select id="o-y" value={oYeni} onChange={(e) => setOYeni(e.target.value)}><option value="">Seçiniz</option>{['Kritik', 'Yüksek', 'Normal', 'Planlı'].filter((x) => x !== d.oncelik).map((x) => <option key={x}>{x}</option>)}</select>
+        <label htmlFor="o-y">Yeni Öncelik</label><select required id="o-y" value={oYeni} onChange={(e) => setOYeni(e.target.value)}><option value="">Seçiniz</option>{['Kritik', 'Yüksek', 'Normal', 'Planlı'].filter((x) => x !== d.oncelik).map((x) => <option key={x}>{x}</option>)}</select>
         <label htmlFor="o-g">Gerekçe</label><input id="o-g" value={oGerekce} onChange={(e) => setOGerekce(e.target.value)} />
         <button className="btn2" disabled={!oYeni} onClick={() => void yap(() => istek(`/dosya/${id}/oncelik`, { oncelik: oYeni, gerekce: oGerekce }))}>Önceliği Değiştir</button>
       </Blok>}
@@ -367,11 +367,11 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
           <label htmlFor="yb-g">Belge Geçerlilik Tarihi</label><input id="yb-g" type="date" value={yd.yabanci_yat_belge_gecerlilik ?? ''} onChange={(e) => setYd({ ...yd, yabanci_yat_belge_gecerlilik: e.target.value })} />
           <label htmlFor="yb-i">Geçici İthalat Bitiş Tarihi</label><input id="yb-i" type="date" value={yd.gecici_ithalat_bitis ?? ''} onChange={(e) => setYd({ ...yd, gecici_ithalat_bitis: e.target.value })} />
           <label htmlFor="yb-s">Türkiye'de Kalış Bitiş Tarihi</label><input id="yb-s" type="date" value={yd.turkiye_kalis_bitis ?? ''} onChange={(e) => setYd({ ...yd, turkiye_kalis_bitis: e.target.value })} />
-          <label htmlFor="yb-r">Değişiklik Gerekçesi</label><input id="yb-r" value={yd.gerekce ?? ''} onChange={(e) => setYd({ ...yd, gerekce: e.target.value })} />
+          <label htmlFor="yb-r">Değişiklik Gerekçesi</label><input required id="yb-r" value={yd.gerekce ?? ''} onChange={(e) => setYd({ ...yd, gerekce: e.target.value })} />
           <button className="btn2 kucuk" disabled={!yd.gerekce?.trim()} onClick={() => { const { gerekce, ...alanlar } = yd; void yap(() => istek(`/yat/${d.yat.kimlik}/duzelt`, { alanlar, gerekce, kaynak: 'Ruhsat' })).then(() => setYd(null)); }}>Kaydet</button></div>
           : d.yat.kimlik && <button className="btn2 kucuk" onClick={() => setYd({ mmsi: d.yat.mmsi ?? '', motor_adedi: d.yat.motor_adedi == null ? '' : String(d.yat.motor_adedi), motor_marka_model: d.yat.motor_marka_model ?? '', motor_gucu_hp: d.yat.motor_gucu_hp ?? '', kislama_yeri: d.yat.kislama_yeri ?? '', yabanci_yat_belgesi: d.yat.yabanci_yat_belgesi ?? '', yabanci_yat_belge_no: d.yat.yabanci_yat_belge_no ?? '', yabanci_yat_belge_gecerlilik: d.yat.yabanci_yat_belge_gecerlilik ?? '', gecici_ithalat_bitis: d.yat.gecici_ithalat_bitis ?? '', turkiye_kalis_bitis: d.yat.turkiye_kalis_bitis ?? '', gerekce: '' })}>Yat Belgelerini Düzelt</button>}
       </Blok>
-      <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik} className="soru"><span>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '---'} · {t.eposta ?? '---'}{t.baslangic_zamani ? ` · Başlangıç: ${new Date(t.baslangic_zamani).toLocaleDateString('tr-TR')}` : ''}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</span>{d.rollerim.includes('Dosya Sorumlusu') && <div className="tam"><label htmlFor={`tb-${t.kimlik}`}>Sonlandırma Gerekçesi</label><input id={`tb-${t.kimlik}`} value={tBit[t.kimlik] ?? ''} onChange={(e) => setTBit({ ...tBit, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!tBit[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/dosya-tarafi/${t.kimlik}/bitir`, { gerekce: tBit[t.kimlik] }))}>İlişkiyi Sonlandır</button></div>}</div>)}</Blok>
+      <Blok baslik="Taraflar">{d.taraflar.map((t) => <div key={t.kimlik} className="soru"><span>{t.taraf_rolu}: {t.kisi_adi_soyadi} · {t.telefon ?? '---'} · {t.eposta ?? '---'}{t.baslangic_zamani ? ` · Başlangıç: ${new Date(t.baslangic_zamani).toLocaleDateString('tr-TR')}` : ''}{t.tarama_sonucu ? ` · Tarama: ${t.tarama_sonucu}` : ''}</span>{d.rollerim.includes('Dosya Sorumlusu') && <div className="tam"><label htmlFor={`tb-${t.kimlik}`}>Sonlandırma Gerekçesi</label><input required id={`tb-${t.kimlik}`} value={tBit[t.kimlik] ?? ''} onChange={(e) => setTBit({ ...tBit, [t.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!tBit[t.kimlik]?.trim()} onClick={() => void yap(() => istek(`/dosya-tarafi/${t.kimlik}/bitir`, { gerekce: tBit[t.kimlik] }))}>İlişkiyi Sonlandır</button></div>}</div>)}</Blok>
       {!['Kapalı', 'Teknik Kapalı'].includes(d.statu) && <><div className="bolum">Çalışmayı Durdurma</div><IsDurdur dosya={id} durdu={!!d.calisma_durduruldu} baslatabilir={d.izinler.includes('dosya.ata.teknik')} /></>}
       <BelgeInceleme dosya={id} />
       <Malikler dosya={id} />
@@ -410,8 +410,8 @@ function GarantiKarar({ id, yap }: { id: string; yap: (f: () => Promise<any>, ta
       </details>
       <label htmlFor={`gk-${id}`}>Kapsam Kararı</label><select id={`gk-${id}`} value={karar} onChange={(e) => setKarar(e.target.value)}>{['Garanti', 'Üretici Garantisi', 'İyi Niyet', 'Ücretli İş', 'Kapsam Dışı'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor={`gn-${id}`}>Neden Araştırması (Bulunan Neden)</label><input id={`gn-${id}`} value={neden} onChange={(e) => setNeden(e.target.value)} />
-      <label htmlFor={`gg-${id}`}>Karar Gerekçesi</label><input id={`gg-${id}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
-      <label htmlFor={`gt-${id}`}>{karar === 'İyi Niyet' ? 'İyi Niyet Tutarı (EUR)' : 'Düzeltme Maliyeti (EUR)'}</label><input id={`gt-${id}`} type="number" min="0" step="0.01" value={tutar} onChange={(e) => setTutar(e.target.value)} />
+      <label htmlFor={`gg-${id}`}>Karar Gerekçesi</label><input required id={`gg-${id}`} value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
+      <label htmlFor={`gt-${id}`}>{karar === 'İyi Niyet' ? 'İyi Niyet Tutarı (EUR)' : 'Düzeltme Maliyeti (EUR)'}</label><input required id={`gt-${id}`} type="number" min="0" step="0.01" value={tutar} onChange={(e) => setTutar(e.target.value)} />
       <button className="btn2 kucuk" disabled={!gerekce.trim() || (karar === 'İyi Niyet' && !tutar)} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/karar`, { karar, gerekce, nedenArastirmasi: neden || undefined, maliyet: tutar ? Number(tutar) : undefined }), karar === 'İyi Niyet' ? 'İyi niyet kararı onaya gönderildi.' : 'Karar kaydedildi.')}>Kararı Kaydet</button>
     </div>
   );
@@ -462,7 +462,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       <Blok baslik="Bulgular">
         {v.bulgular.filter((b) => b.teyit_bekliyor).map((b) => { const x = bTy[b.kimlik] ?? { tur: 'Beyan', ger: '' }; return <div className="uyari" key={`t-${b.kimlik}`}>Teyit Bekliyor: {b.bulgu_no} · {b.aciklama}
           <label htmlFor={`bt-t-${b.kimlik}`}>Ayrıştırılan Bilgi Türü</label><select id={`bt-t-${b.kimlik}`} value={x.tur} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, tur: e.target.value } })}>{['Beyan', 'İlk Gözlem', 'Doğrulanmış Olgu', 'Teknik Varsayım'].map((s) => <option key={s}>{s}</option>)}</select>
-          <label htmlFor={`bt-g-${b.kimlik}`}>Teyit Gerekçesi</label><input id={`bt-g-${b.kimlik}`} value={x.ger} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, ger: e.target.value } })} />
+          <label htmlFor={`bt-g-${b.kimlik}`}>Teyit Gerekçesi</label><input required id={`bt-g-${b.kimlik}`} value={x.ger} onChange={(e) => setBTy({ ...bTy, [b.kimlik]: { ...x, ger: e.target.value } })} />
           <button className="btn2 kucuk" disabled={!x.ger.trim()} onClick={() => void yap(() => istek(`/bulgu/${b.kimlik}/teyit`, { bilgiTuru: x.tur, gerekce: x.ger }), 'Bulgu teyit edildi.')}>Teyit Et</button></div>; })}
         {v.bulgular.map((b) => <div key={b.kimlik}>{b.bulgu_no} · {b.hasar_onem_derecesi}{b.bolge_kodu ? ` · ${b.bolge_kodu}` : ''} · {b.konum_referansi} · {b.aciklama}{(b.beyanla_celisen || b.tam_ziya_onerisi) && (b.sigortaciya_bildirim_zamani ? ' · Sigortaya Bildirildi' : <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/bulgu/${b.kimlik}/sigorta-bildirimi`, {}))}>Sigortaya Bildirildi</button>)}</div>)}
         <label htmlFor="bg-k">Konum Referansı</label><input id="bg-k" value={bKonum} onChange={(e) => setBKonum(e.target.value)} placeholder="Baştan 8 m, sancak" />
@@ -479,7 +479,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         {gKalem.includes('Yakın') && <><label htmlFor="gr-o">Ölçek Referansı</label><input id="gr-o" value={gOlcek} onChange={(e) => setGOlcek(e.target.value)} /></>}
         <label htmlFor="gr-f">Yüklenmiş Fotoğraf</label><select id="gr-f" value={gBelge} onChange={(e) => setGBelge(e.target.value)}><option value="">Seçiniz</option>{belgeler.map((b) => <option key={b.kimlik} value={b.kimlik}>{b.ad}</option>)}</select>
         <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, belge: gBelge, bolge: gBolge || undefined, olcek: gOlcek || undefined }))}>Fotoğrafı Kaydet</button>
-        {!gKalem.startsWith('Bölge') && <><label htmlFor="gr-n">Çekilemedi Nedeni</label><select id="gr-n" value={gNeden} onChange={(e) => setGNeden(e.target.value)}><option value="">Seçiniz</option>{CEKILEMEDI.map((x) => <option key={x}>{x}</option>)}</select><button className="btn2" disabled={!gNeden} onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, cekilemedi: gNeden }))}>Çekilemedi</button></>}
+        {!gKalem.startsWith('Bölge') && <><label htmlFor="gr-n">Çekilemedi Nedeni</label><select required id="gr-n" value={gNeden} onChange={(e) => setGNeden(e.target.value)}><option value="">Seçiniz</option>{CEKILEMEDI.map((x) => <option key={x}>{x}</option>)}</select><button className="btn2" disabled={!gNeden} onClick={() => void yap(() => istek(`/dosya/${id}/gorsel`, { asama: 'Keşif', kalem: gKalem, cekilemedi: gNeden }))}>Çekilemedi</button></>}
       </Blok>
       {d.statu === 'Kapalı' && <YenidenAc id={id} yap={yap} />}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <BelgeTalebi id={id} yap={yap} />}
@@ -524,7 +524,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
 function BelgeTalebi({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [l, setL] = useState('');
   return <Blok baslik="Belge Talebi">
-    <label htmlFor="bt-l">İstenen Belgeler (virgülle ayırınız)</label><input id="bt-l" value={l} onChange={(e) => setL(e.target.value)} />
+    <label htmlFor="bt-l">İstenen Belgeler (virgülle ayırınız)</label><input required id="bt-l" value={l} onChange={(e) => setL(e.target.value)} />
     <div className="dugmeler"><button className="btn2" disabled={!l.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { belgeler: l.split(',') }), 'Belge talebi yat sahibine gönderildi.').then(() => setL(''))}>Yat Sahibine Gönder</button>
       <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { ulasilamadi: true }), 'Ulaşılamama bildirimi gönderildi.')}>Ulaşılamadı Bildir</button></div>
   </Blok>;
@@ -533,8 +533,8 @@ function BelgeTalebi({ id, yap }: { id: string; yap: (f: () => Promise<any>, tam
 function YenidenAc({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [tur, setTur] = useState(''); const [g, setG] = useState('');
   return <Blok baslik="Yeniden Açma Talebi">
-    <label htmlFor="ya-t">Gerekçe Türü</label><select id="ya-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option>{['Yeni Bilgi', 'Hata', 'Müşteri Bildirimi'].map((x) => <option key={x}>{x}</option>)}</select>
-    <label htmlFor="ya-g">Yeniden Açma Gerekçesi</label><textarea id="ya-g" value={g} onChange={(e) => setG(e.target.value)} />
+    <label htmlFor="ya-t">Gerekçe Türü</label><select required id="ya-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option>{['Yeni Bilgi', 'Hata', 'Müşteri Bildirimi'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="ya-g">Yeniden Açma Gerekçesi</label><textarea required id="ya-g" value={g} onChange={(e) => setG(e.target.value)} />
     <button className="btn2" disabled={!tur || !g.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/yeniden-ac`, { tur, gerekce: g }), 'Yeniden açma talebi Operasyon Müdürü onayına gönderildi.')}>Onaya Gönder</button>
   </Blok>;
 }
@@ -558,7 +558,7 @@ export function AramaSonucu({ q, ac }: { q: string; ac: (id: string) => void }) 
 function Paylas({ belge, no }: { belge: string; no?: number }) {
   const [ac, setAc] = useState(false); const [f, setF] = useState({ alici: '', gun: 7 }); const [m, setM] = useState('');
   if (!ac) return <button className="lnk" onClick={() => setAc(true)}>Paylaş</button>;
-  return <span className="ozet"><label htmlFor={`p-a-${belge}`}>Alıcı E-Posta</label><input id={`p-a-${belge}`} value={f.alici} onChange={(e) => setF({ ...f, alici: e.target.value })} /><label htmlFor={`p-g-${belge}`}>Süre (Gün, En Çok 30)</label><input id={`p-g-${belge}`} type="number" min={1} max={30} value={f.gun} onChange={(e) => setF({ ...f, gun: Number(e.target.value) })} /><button className="btn2 kucuk" disabled={!f.alici.trim()} onClick={() => void istek<{ baglanti?: string }>(`/belge/${belge}/surum/${no}/paylas`, f).then((r) => setM(r.baglanti ? `Bağlantı: ${r.baglanti}` : 'Paylaşım sigorta teyidine gönderildi.')).catch((e) => setM(e.message))}>Bağlantı Oluştur</button>{m && <span className="not" role="status">{m}</span>}</span>;
+  return <span className="ozet"><label htmlFor={`p-a-${belge}`}>Alıcı E-Posta</label><input required id={`p-a-${belge}`} value={f.alici} onChange={(e) => setF({ ...f, alici: e.target.value })} /><label htmlFor={`p-g-${belge}`}>Süre (Gün, En Çok 30)</label><input id={`p-g-${belge}`} type="number" min={1} max={30} value={f.gun} onChange={(e) => setF({ ...f, gun: Number(e.target.value) })} /><button className="btn2 kucuk" disabled={!f.alici.trim()} onClick={() => void istek<{ baglanti?: string }>(`/belge/${belge}/surum/${no}/paylas`, f).then((r) => setM(r.baglanti ? `Bağlantı: ${r.baglanti}` : 'Paylaşım sigorta teyidine gönderildi.')).catch((e) => setM(e.message))}>Bağlantı Oluştur</button>{m && <span className="not" role="status">{m}</span>}</span>;
 }
 
 /** YG-1439: istenecek belgeler sistemce listelenir; eksik zorunlu belge sarı görünür. */
@@ -606,7 +606,7 @@ function BeklemeMuhafaza({ dosya }: { dosya: string }) {
     {v.kayitlar.map((x) => <div key={x.kimlik} className="ozet"><div>{x.tesis} · {x.teklif_no}-{x.surum_no} · Günlük {eur(x.gunluk_eur)} · Başlangıç: {t(x.baslangic)}{x.bitis ? ` · Bitiş: ${t(x.bitis)}` : ' · Sürüyor'} · {x.gun} gün · Toplam {eur(x.toplam)}</div>
       {x.haftalar.map((h) => <div key={h.hafta} className="not">Hafta {h.hafta.split('-').reverse().join('.')}: {h.gun} gün · {eur(h.toplam)}</div>)}</div>)}
     {v.girer && v.teklif && !v.kayitlar.some((x) => !x.bitis) && v.tesisler.length > 0 && <>
-      <label htmlFor="bm-t">Tesis</label><select id="bm-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Seçiniz</option>{v.tesisler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
+      <label htmlFor="bm-t">Tesis</label><select required id="bm-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Seçiniz</option>{v.tesisler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
       <label htmlFor="bm-g">Günlük Fiilî Gider (EUR, tesis tarifesinden)</label><input id="bm-g" inputMode="decimal" value={f.gunlukEur} onChange={(e) => setF({ ...f, gunlukEur: e.target.value })} />
       <div className="dugmeler"><button className="btn2 kucuk" disabled={!f.tesis || !(Number(f.gunlukEur.replace(',', '.')) > 0)} onClick={() => void istek(`/dosya/${dosya}/bekleme-muhafaza`, { tesis: f.tesis, gunlukEur: Number(f.gunlukEur.replace(',', '.')) }).then(() => { setM('Kayıt açıldı; günlük kalemler teklifin iletildiği günden işlenir.'); setF({ tesis: '', gunlukEur: '' }); yk(); }).catch((e) => setM(e.message))}>Kaydet ({v.teklif.teklif_no}-{v.teklif.surum_no})</button></div></>}
   </Blok>;

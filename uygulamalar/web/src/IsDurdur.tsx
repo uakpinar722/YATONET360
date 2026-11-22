@@ -9,10 +9,10 @@ export function IsDurdur({ dosya, durdu: ilk, baslatabilir }: { dosya: string; d
     {h && <div className="hata" role="alert">{h}</div>}{m && <div className="not" role="status">{m}</div>}
     {durdu ? <>
       <div className="uyari">⚠ Bu dosyada çalışma durdurulmuştur.</div>
-      {baslatabilir && <><label htmlFor="id-g">Güvenli Koşul Doğrulaması</label><textarea id="id-g" value={gv} onChange={(e) => setGv(e.target.value)} />
+      {baslatabilir && <><label htmlFor="id-g">Güvenli Koşul Doğrulaması</label><textarea required id="id-g" value={gv} onChange={(e) => setGv(e.target.value)} />
         <button className="btn2" disabled={!gv.trim()} onClick={() => yap('is-baslat', { gerekce: gv }, false, 'Çalışma yeniden başlatıldı.')}>İşi Yeniden Başlat</button></>}
     </> : <>
-      <label htmlFor="id-n">Durdurma Nedeni (ciddi ve yakın tehlike)</label><textarea id="id-n" value={neden} onChange={(e) => setNeden(e.target.value)} />
+      <label htmlFor="id-n">Durdurma Nedeni (ciddi ve yakın tehlike)</label><textarea required id="id-n" value={neden} onChange={(e) => setNeden(e.target.value)} />
       <button className="btn" disabled={!neden.trim()} onClick={() => yap('is-durdur', { neden }, true, 'İş durduruldu; ilgililere anlık bildirim gönderildi.')}>İşi Durdur</button>
     </>}
   </div>;

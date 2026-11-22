@@ -210,6 +210,20 @@ describe('yetki (YG-987, YG-992)', () => {
     const roller = await ist('GET', '/api/yetki/roller', await tamGiris(SISTEM));
     expect(roller.json().length).toBe(56);
   });
+  it('rol kataloğu amaç, sahip ve gözden geçirme dönemini tutar; yeni rolde sahipsiz atama engellenir (YG1007-ROL)', async () => {
+    const c = await tamGiris(SISTEM);
+    const yeni = (await sup.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari) VALUES ('ROL-990', 'Deneme Yeni Rol', 'Bilgi İşlem', 'Uzman', 'LGM İç Rolü') RETURNING katalog_rolu`)).rows[0];
+    expect(yeni.katalog_rolu).toBe(false);
+    expect((await sup.query(`SELECT count(*)::int n FROM rol WHERE NOT katalog_rolu`)).rows[0].n).toBe(1);
+    const { rows } = await sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE e_posta = $1`, [DENETCI]);
+    await expect(sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1, 'ROL-990')`, [rows[0].kimlik])).rejects.toThrow(/Sahibi/);
+    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-990', gozdenGecirmeAy: 12 })).statusCode).toBe(404);
+    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-001', gozdenGecirmeAy: 40 })).statusCode).toBe(400);
+    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-001', gozdenGecirmeAy: 12 })).statusCode).toBe(200);
+    await sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1, 'ROL-990')`, [rows[0].kimlik]);
+    expect((await ist('GET', '/api/yetki/roller', c)).json().find((x: { kimlik: string }) => x.kimlik === 'ROL-990')).toMatchObject({ is_amaci: 'Deneme', sahip_rol_ref: 'ROL-001', gozden_gecirme_ay: 12 });
+    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', await tamGiris(DENETCI), { amac: 'X', sahip: 'ROL-001', gozdenGecirmeAy: 12 })).statusCode).toBe(403);
+  });
   it('süresi biten rol ataması yetki vermez (YG-1008)', async () => {
     const c = await tamGiris(DENETCI);
     await sup.query(`UPDATE rol_atamasi a SET baslangic_tarihi = current_date - 10, bitis_tarihi = current_date - 1 FROM kullanici_hesabi h WHERE h.kimlik = a.kullanici_ref AND h.e_posta = $1`, [DENETCI]);

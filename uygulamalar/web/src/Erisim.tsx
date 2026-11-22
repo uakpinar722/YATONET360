@@ -32,18 +32,18 @@ export function ErisimTalebi() {
       {s && (
         <form className="ozet" onSubmit={(e) => void gonder(e)}>
           <label htmlFor="et-k">Erişim Verilecek Kullanıcı</label>
-          <select id="et-k" value={f.kullanici} onChange={(e) => d('kullanici', e.target.value)}><option value="">Seçiniz</option>{s.kullanicilar.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
+          <select required id="et-k" value={f.kullanici} onChange={(e) => d('kullanici', e.target.value)}><option value="">Seçiniz</option>{s.kullanicilar.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
           <label htmlFor="et-r">Talep Edilen Rol</label>
-          <select id="et-r" value={f.rol} onChange={(e) => d('rol', e.target.value)}><option value="">Seçiniz</option>{s.roller.map((r) => <option key={r.kimlik} value={r.kimlik}>{r.rol_adi}</option>)}</select>
+          <select required id="et-r" value={f.rol} onChange={(e) => d('rol', e.target.value)}><option value="">Seçiniz</option>{s.roller.map((r) => <option key={r.kimlik} value={r.kimlik}>{r.rol_adi}</option>)}</select>
           <label htmlFor="et-g">Görev ve İş Gerekçesi</label>
-          <textarea id="et-g" rows={2} value={f.gerekce} onChange={(e) => d('gerekce', e.target.value)} />
+          <textarea required id="et-g" rows={2} value={f.gerekce} onChange={(e) => d('gerekce', e.target.value)} />
           <label htmlFor="et-c">Kapsam</label>
-          <textarea id="et-c" rows={2} value={f.kapsam} onChange={(e) => d('kapsam', e.target.value)} />
+          <textarea required id="et-c" rows={2} value={f.kapsam} onChange={(e) => d('kapsam', e.target.value)} />
           <label htmlFor="et-s">Talep Edilen Süre Sonu</label>
-          <input id="et-s" type="date" value={f.sureSonu} onChange={(e) => d('sureSonu', e.target.value)} />
+          <input required id="et-s" type="date" value={f.sureSonu} onChange={(e) => d('sureSonu', e.target.value)} />
           {s.roller.find((r) => r.kimlik === f.rol)?.ayricalikli_rol && <div className="not">Ayrıcalıklı (yönetim) rolü: yalnız kişinin yönetim hesabına verilir.</div>}
           <label><input type="checkbox" checked={kisisel} onChange={(e) => setKisisel(e.target.checked)} /> Erişim kişisel veri içerir</label>
-          {kisisel && <><label htmlFor="et-v">Veri Sahibi Birim</label><select id="et-v" value={f.veriSahibi} onChange={(e) => d('veriSahibi', e.target.value)}><option value="">Seçiniz</option>{s.roller.filter((r) => r.veri_sahibi).map((r) => <option key={r.kimlik} value={r.kimlik}>{r.rol_adi}</option>)}</select></>}
+          {kisisel && <><label htmlFor="et-v">Veri Sahibi Birim</label><select required id="et-v" value={f.veriSahibi} onChange={(e) => d('veriSahibi', e.target.value)}><option value="">Seçiniz</option>{s.roller.filter((r) => r.veri_sahibi).map((r) => <option key={r.kimlik} value={r.kimlik}>{r.rol_adi}</option>)}</select></>}
           {hata && <div className="hata" role="alert">{hata}</div>}
           {not && <div className="basari">{not}</div>}
           <button className="btn" disabled={!f.kullanici || !f.rol || !f.gerekce.trim() || !f.kapsam.trim() || !f.sureSonu || (kisisel && !f.veriSahibi)}>Talebi Gönder</button>

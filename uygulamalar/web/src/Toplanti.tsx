@@ -64,16 +64,16 @@ function PlanFormu({ sec, bitti }: { sec: { turler: Tur[]; kisiler: Kisi[] }; bi
     <form className="ozet" onSubmit={(e) => void gonder(e)}>
       {hata && <div className="hata" role="alert">{hata}</div>}
       <label htmlFor="t-k">Toplantı</label>
-      <select id="t-k" value={kod} onChange={(e) => { setKod(e.target.value); setKritik(false); }}>{sec.turler.map((t) => <option key={t.kod} value={t.kod}>{t.kod} {t.ad}</option>)}</select>
+      <select required id="t-k" value={kod} onChange={(e) => { setKod(e.target.value); setKritik(false); }}>{sec.turler.map((t) => <option key={t.kod} value={t.kod}>{t.kod} {t.ad}</option>)}</select>
       {tur && <div className="not">Katılımcılar: {tur.katilimcilar}. Rolü belli olan katılımcılar otomatik eklenir.</div>}
       <label htmlFor="t-o">Konu</label>
-      <input id="t-o" value={konu} onChange={(e) => setKonu(e.target.value)} />
+      <input required id="t-o" value={konu} onChange={(e) => setKonu(e.target.value)} />
       <label htmlFor="t-d">İlgili Dosya No{tur?.dosyaGerekli ? '' : ' (Varsa)'}</label>
       <input id="t-d" value={dosyaNo} onChange={(e) => setDosyaNo(e.target.value)} />
       <label htmlFor="t-g">Gündem</label>
       <textarea id="t-g" rows={2} value={gundem} onChange={(e) => setGundem(e.target.value)} />
       <div className="iki-tarih">
-        <div><label htmlFor="t-z">Tarih ve Saat</label><input id="t-z" type="datetime-local" value={zaman} onChange={(e) => setZaman(e.target.value)} /></div>
+        <div><label htmlFor="t-z">Tarih ve Saat</label><input required id="t-z" type="datetime-local" value={zaman} onChange={(e) => setZaman(e.target.value)} /></div>
         <div><label htmlFor="t-s">Süre (Dakika)</label><input id="t-s" type="number" min={5} max={600} value={sure} onChange={(e) => setSure(Number(e.target.value))} /></div>
       </div>
       <label>Katılımcı Ekle</label>
@@ -121,7 +121,7 @@ function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; g
       {acik && !t.baskanim && (
         <form className="ozet" onSubmit={(e) => { e.preventDefault(); void yap(() => istek(`/toplanti/${id}/vekil`, { vekil })); }}>
           <label htmlFor="t-v">Vekil Talep Et</label>
-          <select id="t-v" value={vekil} onChange={(e) => setVekil(e.target.value)}><option value="">Seçiniz</option>{kisiler.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
+          <select required id="t-v" value={vekil} onChange={(e) => setVekil(e.target.value)}><option value="">Seçiniz</option>{kisiler.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
           <div className="not">Vekil, üst makamınızın en geç toplantıdan 1 saat önce vereceği onayla geçerlidir; onay yoksa mazeretli sayılırsınız.</div>
           <button className="btn2" disabled={!vekil}>Onaya Gönder</button>
         </form>
@@ -132,10 +132,10 @@ function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; g
       {acik && yonetir && (
         <form className="ozet" onSubmit={(e) => { e.preventDefault(); void yap(async () => { await istek(`/toplanti/${id}/karar`, { metin, sorumlu, hedef, tur: kTur, olcut: kOlcut || undefined, izleme: kIzleme || undefined }); setMetin(''); setSorumlu(''); setHedef(''); setKOlcut(''); setKIzleme(''); }); }}>
           <label htmlFor="t-m">Karar</label>
-          <textarea id="t-m" rows={2} value={metin} onChange={(e) => setMetin(e.target.value)} />
+          <textarea required id="t-m" rows={2} value={metin} onChange={(e) => setMetin(e.target.value)} />
           <div className="iki-tarih">
-            <div><label htmlFor="t-r">Sorumlu</label><select id="t-r" value={sorumlu} onChange={(e) => setSorumlu(e.target.value)}><option value="">Seçiniz</option>{t.katilimcilar.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select></div>
-            <div><label htmlFor="t-h">Hedef Tarih</label><input id="t-h" type="date" value={hedef} onChange={(e) => setHedef(e.target.value)} /></div>
+            <div><label htmlFor="t-r">Sorumlu</label><select required id="t-r" value={sorumlu} onChange={(e) => setSorumlu(e.target.value)}><option value="">Seçiniz</option>{t.katilimcilar.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select></div>
+            <div><label htmlFor="t-h">Hedef Tarih</label><input required id="t-h" type="date" value={hedef} onChange={(e) => setHedef(e.target.value)} /></div>
           </div>
           <div className="iki-tarih">
             <div><label htmlFor="t-kt">Karar Türü</label><select id="t-kt" value={kTur} onChange={(e) => setKTur(e.target.value)}>{['Diğer', 'Risk Kabulü', 'Kaynak Tahsisi', 'Öncelik', 'İyileştirme', 'Eğitim', 'Ek Denetim'].map((x) => <option key={x}>{x}</option>)}</select></div>
@@ -151,7 +151,7 @@ function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; g
       {acik && yonetir && (
         <form className="ozet" onSubmit={(e) => { e.preventDefault(); void yap(() => istek(`/toplanti/${id}/tutanak`, { tutanak })); }}>
           <label htmlFor="t-t">Tutanak</label>
-          <textarea id="t-t" rows={4} value={tutanak} onChange={(e) => setTutanak(e.target.value)} />
+          <textarea required id="t-t" rows={4} value={tutanak} onChange={(e) => setTutanak(e.target.value)} />
           <button className="btn2" disabled={!tutanak.trim()}>Tutanağı Kaydet</button>
           {t.baskanim && <button type="button" className="btn" disabled={!t.tutanak} onClick={() => void yap(() => istek(`/toplanti/${id}/kapat`, {}))}>Onayla ve Kapat</button>}
           {t.duzenleyenim && <button type="button" className="lnk" onClick={() => void yap(() => istek(`/toplanti/${id}/iptal`, {}))}>Toplantıyı İptal Et</button>}
@@ -172,16 +172,16 @@ function PeriyodikIsler() {
   const tr = (x: string) => x.split('-').reverse().join('.');
   return <><div className="bolum">Periyodik İşler</div>{m && <div className="not" role="status">{m}</div>}
     <div className="ozet">{v.isler.length === 0 ? <div className="not">Tanımlı periyodik iş bulunmamaktadır.</div> : v.isler.map((x) => <div key={x.kimlik}>{x.ad} · {x.sahip_rol} · {x.periyot_turu === 'Aylık' && x.periyot_ay > 1 ? `${x.periyot_ay} ayda bir` : x.periyot_turu}{x.sonraki_tarih ? ` · Sonraki: ${tr(x.sonraki_tarih)}` : ''}{x.son_karar ? ` · Son karar: ${x.son_karar}` : ''}{x.aktif ? '' : ' · Pasif'}
-      {x.aktif && (x.sahibim || v.tanimlar) && x.periyot_turu === 'Olaya Bağlı' && <><label htmlFor={`pi-o-${x.kimlik}`}>Olay</label><input id={`pi-o-${x.kimlik}`} value={ol[x.kimlik] ?? ''} onChange={(e) => setOl({ ...ol, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!ol[x.kimlik]?.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/olay`, { olay: ol[x.kimlik] }).then(() => { setOl({}); setM('Görev açıldı.'); }).catch((e) => setM(e.message))}>Olayı Kaydet</button></>}
+      {x.aktif && (x.sahibim || v.tanimlar) && x.periyot_turu === 'Olaya Bağlı' && <><label htmlFor={`pi-o-${x.kimlik}`}>Olay</label><input required id={`pi-o-${x.kimlik}`} value={ol[x.kimlik] ?? ''} onChange={(e) => setOl({ ...ol, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!ol[x.kimlik]?.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/olay`, { olay: ol[x.kimlik] }).then(() => { setOl({}); setM('Görev açıldı.'); }).catch((e) => setM(e.message))}>Olayı Kaydet</button></>}
       {x.aktif && (x.sahibim || v.tanimlar) && !['Günlük', 'Haftalık', 'Olaya Bağlı'].includes(x.periyot_turu) && <button className="btn2 kucuk" onClick={() => setAcik(acik === x.kimlik ? '' : x.kimlik)}>Gözden Geçirme Sonucu</button>}
       {acik === x.kimlik && <GozdenGecirmeSonucu id={x.kimlik} kontroller={v.kontroller} bitti={() => { setAcik(''); setM('Gözden geçirme sonucu kaydedildi.'); void yk(); }} />}
       {v.tanimlar && <button className="btn2 kucuk" disabled={!gr.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/durum`, { aktif: !x.aktif, gerekce: gr }).then(() => { setGr(''); return yk(); }).catch((e) => setM(e.message))}>{x.aktif ? 'Pasife Al' : 'Etkinleştir'}</button>}</div>)}</div>
-    {v.tanimlar && <><label htmlFor="pi-g">Durum Değişikliği Gerekçesi</label><input id="pi-g" value={gr} onChange={(e) => setGr(e.target.value)} />
-      <label htmlFor="pi-a">İş Adı</label><input id="pi-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-      <label htmlFor="pi-r">Sahibi Rol</label><select id="pi-r" value={f.sahipRol} onChange={(e) => setF({ ...f, sahipRol: e.target.value })}><option value="">Seçiniz</option>{v.roller.map((x) => <option key={x}>{x}</option>)}</select>
+    {v.tanimlar && <><label htmlFor="pi-g">Durum Değişikliği Gerekçesi</label><input required id="pi-g" value={gr} onChange={(e) => setGr(e.target.value)} />
+      <label htmlFor="pi-a">İş Adı</label><input required id="pi-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+      <label htmlFor="pi-r">Sahibi Rol</label><select required id="pi-r" value={f.sahipRol} onChange={(e) => setF({ ...f, sahipRol: e.target.value })}><option value="">Seçiniz</option>{v.roller.map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="pi-pt">Periyot</label><select id="pi-pt" value={f.periyotTuru} onChange={(e) => setF({ ...f, periyotTuru: e.target.value })}>{v.periyotTurleri.map((x) => <option key={x}>{x}</option>)}</select>
       {f.periyotTuru === 'Aylık' && <><label htmlFor="pi-p">Kaç Ayda Bir</label><input id="pi-p" inputMode="numeric" value={f.periyotAy} onChange={(e) => setF({ ...f, periyotAy: e.target.value })} /></>}
-      {f.periyotTuru !== 'Olaya Bağlı' && <><label htmlFor="pi-t">İlk Tarih</label><input id="pi-t" type="date" value={f.sonrakiTarih} onChange={(e) => setF({ ...f, sonrakiTarih: e.target.value })} /></>}
+      {f.periyotTuru !== 'Olaya Bağlı' && <><label htmlFor="pi-t">İlk Tarih</label><input required id="pi-t" type="date" value={f.sonrakiTarih} onChange={(e) => setF({ ...f, sonrakiTarih: e.target.value })} /></>}
       <button className="btn2" disabled={!f.ad.trim() || !f.sahipRol || (f.periyotTuru === 'Aylık' && !(Number(f.periyotAy) > 0)) || (f.periyotTuru !== 'Olaya Bağlı' && !f.sonrakiTarih)} onClick={() => void istek('/periyodik-is', { ...f, periyotAy: Number(f.periyotAy), sonrakiTarih: f.sonrakiTarih || undefined }).then(() => { setF({ ad: '', sahipRol: '', periyotTuru: 'Aylık', periyotAy: '1', sonrakiTarih: '' }); setM('Periyodik iş tanımlandı.'); return yk(); }).catch((e) => setM(e.message))}>Periyodik İş Tanımla</button></>}</>;
 }
 
@@ -189,10 +189,10 @@ function PeriyodikIsler() {
 function GozdenGecirmeSonucu({ id, kontroller, bitti }: { id: string; kontroller: string[]; bitti: () => void }) {
   const [k, setK] = useState<Record<string, string>>({}); const [f, setF] = useState({ karar: 'Sürdür', aciklama: '', kosul: '', yeniPeriyotAy: '' }); const [m, setM] = useState('');
   return <div className="ozet">{m && <div className="not" role="status">{m}</div>}
-    {kontroller.map((x, n) => <div key={x}><label htmlFor={`gg-${id}-${n}`}>{x}</label><select id={`gg-${id}-${n}`} value={k[x] ?? ''} onChange={(e) => setK({ ...k, [x]: e.target.value })}><option value="">Seçiniz</option>{['Evet', 'Hayır', 'Uygulanamaz'].map((s) => <option key={s}>{s}</option>)}</select></div>)}
+    {kontroller.map((x, n) => <div key={x}><label htmlFor={`gg-${id}-${n}`}>{x}</label><select required id={`gg-${id}-${n}`} value={k[x] ?? ''} onChange={(e) => setK({ ...k, [x]: e.target.value })}><option value="">Seçiniz</option>{['Evet', 'Hayır', 'Uygulanamaz'].map((s) => <option key={s}>{s}</option>)}</select></div>)}
     <label htmlFor={`gg-${id}-k`}>Karar</label><select id={`gg-${id}-k`} value={f.karar} onChange={(e) => setF({ ...f, karar: e.target.value })}>{['Sürdür', 'Koşullu Sürdür', 'Değiştir', 'Askıya Al'].map((s) => <option key={s}>{s}</option>)}</select>
     {f.karar === 'Koşullu Sürdür' && <><label htmlFor={`gg-${id}-o`}>Koşul</label><input id={`gg-${id}-o`} value={f.kosul} onChange={(e) => setF({ ...f, kosul: e.target.value })} /></>}
     {f.karar === 'Değiştir' && <><label htmlFor={`gg-${id}-p`}>Yeni Periyot (Ay)</label><input id={`gg-${id}-p`} inputMode="numeric" value={f.yeniPeriyotAy} onChange={(e) => setF({ ...f, yeniPeriyotAy: e.target.value })} /></>}
-    <label htmlFor={`gg-${id}-a`}>Açıklama</label><input id={`gg-${id}-a`} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+    <label htmlFor={`gg-${id}-a`}>Açıklama</label><input required id={`gg-${id}-a`} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
     <button className="btn2 kucuk" disabled={kontroller.some((x) => !k[x]) || !f.aciklama.trim()} onClick={() => void istek(`/periyodik-is/${id}/sonuc`, { karar: f.karar, kontroller: k, aciklama: f.aciklama, kosul: f.kosul || undefined, yeniPeriyotAy: f.yeniPeriyotAy ? Number(f.yeniPeriyotAy) : undefined }).then(bitti).catch((e) => setM(e.message))}>Sonucu Kaydet</button></div>;
 }

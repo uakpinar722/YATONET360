@@ -18,7 +18,7 @@ export function DosyaYazismasi({ id, ic, dosyaSorumlusu }: { id: string; ic?: bo
     <div>
       <div className="bolum">Dosya Yazışması{ic && v.yanitBekleyen ? ` · Yanıt Bekleyen: ${v.yanitBekleyen}` : ''}</div>
       {ic && !v.yazabilir && <div className="not">Dosyaya atanmadığınız için yazışmayı salt okunur izlersiniz.</div>}
-      {ic && (v.taraflar?.length ?? 0) > 0 && <><label htmlFor={`dy-t-${id}`}>Dış Taraf</label><select id={`dy-t-${id}`} value={taraf} onChange={(e) => setTaraf(e.target.value)}><option value="">Tümü</option>{v.taraflar!.map((t) => <option key={t.kimlik} value={t.kimlik}>{t.ad_soyad}</option>)}</select></>}
+      {ic && (v.taraflar?.length ?? 0) > 0 && <><label htmlFor={`dy-t-${id}`}>Dış Taraf</label><select required id={`dy-t-${id}`} value={taraf} onChange={(e) => setTaraf(e.target.value)}><option value="">Tümü</option>{v.taraflar!.map((t) => <option key={t.kimlik} value={t.kimlik}>{t.ad_soyad}</option>)}</select></>}
       <div className="ozet">{liste.length === 0 ? 'Mesaj bulunmamaktadır.' : liste.map((x) => <div key={x.kimlik}>
         <div className="not">{zaman(x.zaman)} · {x.gonderen}{ic && x.taraf ? ` · ${x.taraf}` : ''}{ic && x.oncelik ? ` · ${x.oncelik}${x.bekleyen_oncelik ? ` (Düşürme onayda: ${x.bekleyen_oncelik})` : ''}` : ''}{ic && !x.lgm && !x.yanitlandi_zamani && x.yanit_son ? ` · Yanıt son: ${zaman(x.yanit_son)}` : ''}</div>
         <div>{x.metin}</div>
@@ -27,7 +27,7 @@ export function DosyaYazismasi({ id, ic, dosyaSorumlusu }: { id: string; ic?: bo
           <button className="btn2 kucuk" disabled={!onc[x.kimlik] || onc[x.kimlik]!.oncelik === x.oncelik} onClick={() => void istek<{ durum?: string }>(`/dosya-yazismasi/${x.kimlik}/oncelik`, onc[x.kimlik]).then((r) => { setM(r.durum ? 'Öncelik düşürme Operasyon Müdürü onayına gönderildi.' : 'Öncelik yükseltildi.'); yk(); }).catch((e) => setM(e.message))}>Önceliği Kaydet</button></span>}
       </div>)}</div>
       {v.yazabilir && <>
-        <label htmlFor={`dy-m-${id}`}>Mesaj</label><textarea id={`dy-m-${id}`} rows={3} maxLength={4000} value={metin} onChange={(e) => setMetin(e.target.value)} />
+        <label htmlFor={`dy-m-${id}`}>Mesaj</label><textarea required id={`dy-m-${id}`} rows={3} maxLength={4000} value={metin} onChange={(e) => setMetin(e.target.value)} />
         <div className="not">Acil durumlarda lütfen Acil Durum düğmesini kullanınız. Gönderilen mesaj silinemez ve düzeltilemez; mesaj onay yerine geçmez.</div>
         <button className="btn2 kucuk" disabled={!metin.trim() || (ic && !taraf)} onClick={gonder}>Gönder</button>
       </>}

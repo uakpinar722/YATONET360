@@ -29,9 +29,9 @@ export function OdemeTakvimi() {
           <td data-ad="Tutar">{s.tutar_eur !== null ? eur(s.tutar_eur) : s.tutar_tl !== null ? `${s.tutar_tl.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} TL` : '—'}</td>
           <td>{['Vergi', 'SGK', 'Diğer'].includes(s.kaynak) && s.kimlik && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/odeme-takvimi/kalem/${s.kimlik}/odendi`, {}), 'Ödeme kaydedildi.')}>Ödendi</button>}</td></tr>)}</tbody></table></div>
       <label htmlFor="ot-t">Ödeme Türü</label><select id="ot-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Vergi', 'SGK', 'Diğer'].map((x) => <option key={x}>{x}</option>)}</select>
-      <label htmlFor="ot-a">Ödeme Açıklaması</label><input id="ot-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <label htmlFor="ot-a">Ödeme Açıklaması</label><input required id="ot-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
       <label htmlFor="ot-u">Tutar (TL)</label><input id="ot-u" inputMode="decimal" value={f.tutarTl} onChange={(e) => setF({ ...f, tutarTl: e.target.value })} />
-      <label htmlFor="ot-v">Vade</label><input id="ot-v" type="date" value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
+      <label htmlFor="ot-v">Vade</label><input required id="ot-v" type="date" value={f.vade} onChange={(e) => setF({ ...f, vade: e.target.value })} />
       <button className="btn2" disabled={!f.aciklama.trim() || !f.vade} onClick={() => void yap(() => istek('/odeme-takvimi/kalem', { tur: f.tur, aciklama: f.aciklama, vade: f.vade, tutarTl: f.tutarTl ? Number(f.tutarTl.replace(/\./g, '').replace(',', '.')) : undefined }).then(() => setF({ tur: f.tur, aciklama: '', tutarTl: '', vade: '' })), 'Ödeme takvime eklendi.')}>Takvime Ekle</button>
     </Blok>
   );
