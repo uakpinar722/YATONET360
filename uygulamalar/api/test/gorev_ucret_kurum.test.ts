@@ -103,5 +103,13 @@ describe('gelen talep (YG-1543, YG-1554)', () => {
       expect((await o.sup.query(`SELECT yonlenen_rol FROM gelen_talep WHERE kimlik = $1`, [dk.kimlik])).rows[0].yonlenen_rol).toBe('Operasyon Müdürü');
       expect((await o.ist('POST', `/api/gelen-talep/${dk.kimlik}/yonlendir`, await o.gir('mpm'), { rol: 'Teknik Müdür' })).statusCode).toBe(200);
     }
+    { // YG1555-SILSILE: Bilgi İşlem Müdürüne yönlendirilen talep bağlı Direktöre bilgi olarak gider
+      const d2 = (await o.ist('POST', '/api/iletisim/gelen-talep', undefined, { ...G, konu: 'Bilinmeyen' })).json();
+      const k2 = (await o.sup.query(`SELECT kimlik FROM gelen_talep WHERE talep_no = $1`, [d2.talepNo])).rows[0].kimlik;
+      const say = async () => (await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik = $2`, [o.K.btd, `Birime Yönlendirilen Talep: ${d2.talepNo}`])).rows[0].n as number;
+      const once = await say();
+      expect((await o.ist('POST', `/api/gelen-talep/${k2}/yonlendir`, await o.gir('mpm'), { rol: 'Bilgi İşlem Müdürü' })).statusCode).toBe(200);
+      expect(await say()).toBe(once + 1);
+    }
   });
 });

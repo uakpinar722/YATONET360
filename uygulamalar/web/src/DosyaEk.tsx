@@ -32,6 +32,7 @@ import { TeslimSure } from './TeslimSure';
 import { SigortaFark } from './SigortaFark';
 import { OnerilenTesisler } from './BaglamaNoktasi';
 import { istek } from './api';
+import { tarihSaat } from './bicim';
 import { BelgeSec } from './Kalite';
 import { TeslimAlici } from './TeslimAlici';
 
@@ -247,6 +248,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
     <DosyaPerformans dosya={id} />
     <DurumOzeti id={id} />
     <TarafGorevleri id={id} />
+    <DosyaYazismalari id={id} />
     <GonderimDurumu id={id} />
     <PortalaAc dosya={id} />
     <TeslimAlici dosya={id} />
@@ -642,4 +644,12 @@ function KaldirmaTutanaklari({ dosya }: { dosya: string }) {
   useEffect(() => { void istek<typeof l>(`/dosya/${dosya}/kaldirma-tasima`).then(setL).catch(() => setL([])); }, [dosya]);
   if (!l.length) return null;
   return <div className="ozet">{l.map((x) => <div key={x.kimlik}>{new Date(x.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} · {x.tur} · {x.ekipman}{x.yeni_hasar ? ' · Yeni hasar' : ''} · <a href={`/api/kaldirma-tasima/${x.kimlik}/tutanak`}>Tutanak (PDF)</a></div>)}</div>;
+}
+
+/** YG-1601: dosyaya ait giden yazışmaların kopyası (ticari koldan gidenler dahil). */
+export function DosyaYazismalari({ id }: { id: string }) {
+  const [l, setL] = useState<{ kimlik: string; kanal: string; hedef: string; konu: string; durum: string; olusturma_zamani: string }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>(`/dosya/${id}/yazismalar`).then(setL).catch(() => setL(null)); }, [id]);
+  if (!l?.length) return null;
+  return <Blok baslik="Giden Yazışmalar">{l.map((x) => <div key={x.kimlik}>{tarihSaat(x.olusturma_zamani)} · {x.kanal} · {x.hedef} · {x.konu} · {x.durum}</div>)}</Blok>;
 }

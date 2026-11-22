@@ -13,10 +13,21 @@ const OZEL_GUN = ['Özel gün – Doğum günü paylaşımı', 'Özel gün – E
 
 const GECERSIZ = 'Bu davet bağlantısı geçersiz veya süresi dolmuştur; davet gönderen birimden yenilemesini isteyiniz.';
 
-export interface DavetGirdisi { adSoyad: string; eposta: string; telefon?: string; grup: string; rol: string; yontem?: string; olusturan?: string }
+export interface DavetGirdisi { adSoyad: string; eposta: string; telefon?: string; grup: string; rol: string; yontem?: string; olusturan?: string | null; ilkKurulum?: boolean }
+
+/** YG-1005: hesap açma talebinde kimlik (ad soyad), kurumsal ilişki, görev (rol) ve talebi açan sorumlu zorunludur; yalnız e-postayla hesap açılmaz. */
+export function hesapAcmaEksigi(d: DavetGirdisi): string | null {
+  const ad = (d.adSoyad ?? '').trim();
+  if (!ad || ad.includes('@') || ad.toLocaleLowerCase('tr') === (d.eposta ?? '').trim().toLocaleLowerCase('tr')) return 'Hesap açmak için kişinin adı ve soyadı zorunludur; yalnız e-posta adresiyle hesap açılmaz.';
+  if (!d.grup?.trim() || !d.rol?.trim()) return 'Hesap açmak için kurumsal ilişki (kullanıcı grubu) ve görev (rol) zorunludur.';
+  if (!d.olusturan && !d.ilkKurulum) return 'Hesap açma talebini açan sorumlu (yönetici veya kurum sponsoru) kaydedilmelidir.';
+  return null;
+}
 
 /** Hesap ve 7 gün geçerli davet açar. Belirtecin yalnız özeti saklanır; bağlantı bir kez üretilir. */
 export async function davetOlustur(db: { query: Baglam['db']['query'] }, d: DavetGirdisi) {
+  const eksik = hesapAcmaEksigi(d);
+  if (eksik) throw Object.assign(new Error(eksik), { statusCode: 400 });
   const belirtec = rastgeleBelirtec();
   const yontem = d.yontem ?? 'Doğrulama uygulaması (6 haneli kod)';
   const { rows } = await db.query(

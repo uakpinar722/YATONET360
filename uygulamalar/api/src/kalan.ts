@@ -812,6 +812,12 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-1039: hizmet süresi ve performans parametrelerini T&O Direktörü, mali ve fiyat parametrelerini Ticari İşler Direktörü önerir.
   const HIZMET_PARAMETRESI = /^(rapor_sure_saat_|onay_sure_dk_|tedarik_|acil_cagri_dk|nobet_donus_dk|onarim_sure_tamponu|kis_|hizmet_)/;
+  // YG-1601: dosyaya ait giden yazışmaların kopyası (ticari koldan gidenler dahil); yalnız dosyaya erişimi olan LGM personeli.
+  s.get('/dosya/:id/yazismalar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !/^[0-9a-f-]{36}$/.test(id) || !(await (await import('./dosya.js')).dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT kimlik, kanal, hedef, konu, durum, olusturma_zamani, gonderim_zamani FROM gonderim WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC LIMIT 200`, [id])).rows;
+  });
   // YG-1017: unvan–rol eşleşmesi (LGM personeli).
   s.get('/unvan-rol', oturumlu, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? yok(y) : (await b.db.query(`SELECT rol_ref, rol_adi, unvan, kademe, birim FROM unvan_rol_eslesmesi ORDER BY birim, rol_adi`)).rows);
   // YG-1367: katalogda sahip (öneren rol, YG-853) ve onaylayan (GMY uygun görüşüyle CEO) ile yürürlük tarihi ve son değişiklik gösterilir.

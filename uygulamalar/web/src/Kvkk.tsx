@@ -141,6 +141,16 @@ function ZamanlanmisIsler() {
       {(x.gecikti || x.son_hata) && <div>Etkilenen çıktılar: {x.etki}</div>}</div>)}</>;
 }
 
+/** YG-1354: arka plan işleri; sürenler önce, etkilenen kayıt ve hata özetiyle. */
+function ArkaPlanIsleri() {
+  type A = { kimlik: string; tur: string; kaynak: string; baslatan: string | null; baslangic: string; bitis: string | null; sonuc: string; etkilenen_kayit: number | null; hata: string | null };
+  const [l, setL] = useState<A[] | null>(null);
+  useEffect(() => { void istek<A[]>('/arka-plan-isleri').then(setL).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  return <><div className="bolum">Arka Plan İşleri</div>{l.length === 0 && <div className="ozet bos">İş kaydı bulunmamaktadır.</div>}
+    {l.slice(0, 30).map((x) => <div className={x.sonuc === 'Hata' ? 'hata' : 'ozet'} key={x.kimlik}>{x.tur} · {x.sonuc === 'Sürüyor' ? 'İşlem sürüyor' : x.sonuc} · {tarihSaat(x.baslangic)}{x.bitis ? ` → ${tarihSaat(x.bitis)}` : ''}{x.etkilenen_kayit !== null ? ` · ${x.etkilenen_kayit} kayıt` : ''}{x.baslatan ? ` · ${x.baslatan}` : ''}{x.hata ? <div>{x.hata}</div> : null}</div>)}</>;
+}
+
 /** YG-1276, YG-1642, YG-1645: yedek kayıtları, başarısız yedeği olay kaydına bağlama ve geri yükleme testi kaydı. */
 function Yedekler() {
   type V = { yedekler: { kimlik: string; tur: string; baslangic: string; durum: string; hata: string | null; satir_sayisi: string | null; olay_no: string | null }[]; testler: { tur: string; sonuc: string; kabul: string | null; zaman: string }[] };
@@ -183,7 +193,7 @@ export function KvkkEkrani() {
   return (<>
     <h1>KVKK ve Uyum</h1><Mesaj />
     <Yedekler />
-    <ZamanlanmisIsler />
+    <ZamanlanmisIsler /><ArkaPlanIsleri />
     <BasarisizGonderimler />
     <BildirimKurallari />
     <HizmetHesaplari />

@@ -36,6 +36,8 @@ async function hedefeGorevAc(c: Db, t: { kimlik: string; talep_no: string; konu:
   else if (mesaiIcinde(simdi)) son = new Date(simdi.getTime() + 3_600_000);
   else { const { bitisKaydir, tatilGunleri } = await import('./sure.js'); son = bitisKaydir(new Date(simdi.getTime() + 3_600_000), 'Normal', await tatilGunleri(c)).bitis; }
   await kartAc(c, { tur: TUR, kategori: 'gorev', baslik: `${t.talep_no} · ${t.konu}`, ozet: t.ozet.slice(0, 300), sahipRol: await rolId(c, rol), sonZaman: son, nesneTuru: TUR, nesneKimligi: t.kimlik });
+  // YG-1555: görevi alan rolün üstündeki dolu silsileye bilgi bildirimi (onay adımı değil).
+  await (await import('./silsile.js')).silsileBildir(c, await rolId(c, rol), { olay: `gelen-talep-silsile:${t.kimlik}:${rol}`, baslik: `Birime Yönlendirilen Talep: ${t.talep_no}`, ozet: `${t.konu} · ${rol}` });
   await c.query(`UPDATE gelen_talep SET durum = $2, yonlenen_rol = $3 WHERE kimlik = $1`, [t.kimlik, rol === MPM && t.konu === 'Diğer' ? 'Yönlendirme bekliyor' : 'Yönlendirildi', rol]);
 }
 

@@ -10,7 +10,7 @@ export function SablonMetinleri() {
   useEffect(() => { const t = setTimeout(yk, 250); return () => clearTimeout(t); }, [ara]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!v) return null;
   return <details><summary>Metin Kütüphanesi · {v.metinler.filter((x) => x.durum === 'Yürürlükte').length} yürürlükte · {v.metinler.filter((x) => x.durum === 'Onayda').length} onayda</summary>{m && <div className="not" role="status">{m}</div>}
-    <label htmlFor="sm-ara">Kod veya ad ara</label><input id="sm-ara" value={ara} onChange={(e) => setAra(e.target.value)} />
+    <label htmlFor="sm-ara">Kod veya Ad Ara</label><input id="sm-ara" value={ara} onChange={(e) => setAra(e.target.value)} />
     {v.metinler.map((x) => { const k = `${x.kod}|${x.dil}|${x.surum}`; return <div className={x.durum === 'Yürürlükte' ? 'soru' : 'soru bos'} key={k}>
       <span><b>{x.kod}</b> · {x.dil.toUpperCase()} · Rev.{x.surum} · {x.durum}{x.hukuki ? ' · Hukuki Metin' : ''}{x.baslik ? ` · ${x.baslik}` : ''}<br /><small>Sahip: {x.sahip_rol} · Onay: {x.onay_dayanagi ?? '---'}{x.degisiklik_gerekcesi ? ` · Gerekçe: ${x.degisiklik_gerekcesi}` : ''}</small><br />{x.metin}</span>
       {v.duzenler && x.durum === 'Yürürlükte' && (d?.anahtar === k ? <div className="tam">

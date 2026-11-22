@@ -53,8 +53,15 @@ describe('kesinti ve platform dışı işlem (YG-1368, YG-1284)', () => {
     expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: T })).statusCode).toBe(409);
     const ds = await o.gir('ds'); const l = (await o.ist('GET', '/api/kesinti', ds)).json().referanslarim as { kimlik: string; referans: string }[]; expect(l.length).toBe(2);
     expect((await o.ist('POST', `/api/gecici-referans/${l[0]!.kimlik}/geri-giris`, ds, { kanal: 'WhatsApp' })).statusCode).toBe(400);
+    { // YG177-8SAAT: sistem dışı onay 8 saatten geç girilirse gerekçe istenir ve Operasyon Müdürüne bildirilir
+      const G0 = { kanal: 'Kurumsal E-posta', yetkili: 'Yat Sahibi', ozet: 'Teklif onayı', saklama: 'Kurumsal e-posta kutusu', dosya: d.kimlik, zaman: new Date(Date.now() - 9 * 3_600_000).toISOString(), tur: 'Onay' };
+      expect((await o.ist('POST', `/api/gecici-referans/${l[1]!.kimlik}/geri-giris`, ds, G0)).statusCode).toBe(409);
+      expect((await o.ist('POST', `/api/gecici-referans/${l[1]!.kimlik}/geri-giris`, ds, { ...G0, gecikmeGerekcesi: 'Kesinti gece sürdü' })).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik = 'Sistem Dışı Onay 8 Saatten Geç Aktarıldı'`, [o.K.opm])).rows[0].n).toBe(1);
+      expect((await o.ist('GET', '/api/kesinti', sy)).json().geriGirisler.find((x: { islem_turu: string }) => x.islem_turu === 'Onay').gecikme_saat).toBeGreaterThanOrEqual(9);
+    }
     expect((await o.ist('POST', `/api/gecici-referans/${l[0]!.kimlik}/geri-giris`, ds, { kanal: 'Telefon Kaydı', yetkili: 'Kaptan', ozet: 'Hasar ihbarı', saklama: 'Ofis dolabı A', dosya: d.kimlik, zaman: new Date().toISOString() })).statusCode).toBe(200);
-    expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: T, kullanilmayan: [l[1]!.kimlik] })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: T })).statusCode).toBe(200);
   });
 });
 

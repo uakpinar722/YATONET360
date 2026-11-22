@@ -218,6 +218,13 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     if (!(await muhasebeMi(i.oturum!.kullanici))) return yok(y);
     return (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.tarih::text, f.tutar_eur, (f.tarih + 60)::text AS vade, u.ticari_unvan, s.siparis_no, (SELECT l.liste_no FROM odeme_listesi l WHERE l.kimlik = f.odeme_listesi_ref) AS liste_no, (SELECT l.durum FROM odeme_listesi l WHERE l.kimlik = f.odeme_listesi_ref) AS liste_durumu, (SELECT e.sonuc FROM uclu_eslestirme e WHERE e.siparis_ref = f.siparis_ref AND e.fatura_no = f.fatura_no LIMIT 1) AS eslestirme FROM tedarikci_faturasi f JOIN kurulus u ON u.kimlik = f.kurulus_ref JOIN tedarik_siparisi s ON s.kimlik = f.siparis_ref WHERE f.odeme_zamani IS NULL ORDER BY f.tarih`)).rows;
   });
+  // YG-845: 60 gün vadeli ödeme planı; tedarikçi faturaları ile kurtarma, çekme ve dalış sağlayıcı faturaları müşteri tahsilatından bağımsız vadeye göre.
+  s.get('/odeme-plani', oturumlu, async (i, y) => {
+    if (!(await muhasebeMi(i.oturum!.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT 'Tedarikçi' kaynak, f.kimlik, f.fatura_no, u.ticari_unvan, f.tarih::text fatura_tarihi, (f.tarih + 60)::text vade, f.tutar_eur::float tutar, NULL dosya_no FROM tedarikci_faturasi f JOIN kurulus u ON u.kimlik = f.kurulus_ref WHERE f.odeme_zamani IS NULL
+      UNION ALL SELECT 'Kurtarma Sağlayıcısı', f.kimlik, f.fatura_no, u.ticari_unvan, f.fatura_tarihi::text, (f.fatura_tarihi + 60)::text, f.tutar_eur::float, d.dosya_no FROM kurtarma_saglayici_faturasi f JOIN kurulus u ON u.kimlik = f.saglayici_ref JOIN dosya d ON d.kimlik = f.dosya_ref WHERE f.durum = 'Kontrolde'
+      ORDER BY vade, fatura_no`)).rows;
+  });
   s.post('/tedarikci-odemeleri/:id/odendi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await muhasebeMi(o.kullanici))) return yok(y);

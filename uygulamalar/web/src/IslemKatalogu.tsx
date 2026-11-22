@@ -9,9 +9,9 @@ export function IslemKatalogu() {
   if (!v) return null;
   return <details><summary>Branş ve İşlem Kataloğu · {v.ozet.map((x) => `${x.duzey} ${x.n}`).join(' · ')}</summary>
     {v.kartelaBaglanmayan.length > 0 && <div className="soru hata"><span>Kataloğa bağlanamayan kartela kalemleri: {v.kartelaBaglanmayan.join(', ')}</span></div>}
-    <label htmlFor="ik-q">Kod veya işlem ara</label><input id="ik-q" value={q} onChange={(e) => setQ(e.target.value)} />
+    <label htmlFor="ik-q">Kod veya İşlem Ara</label><input id="ik-q" value={q} onChange={(e) => setQ(e.target.value)} />
     {v.sonuc.map((x) => <div className={x.durum === 'Yürürlükte' ? 'soru' : 'soru bos'} key={x.kod}><span><b>{x.kod}</b> · {x.duzey} · {x.ad}{x.durum !== 'Yürürlükte' ? ` · ${x.durum}` : ''}</span></div>)}
-    <label htmlFor="ik-k">Kartela kaleminin kapsadığı işlemler</label><input id="ik-k" placeholder="ör. TAHRIK-01.03.02-01" value={k} onChange={(e) => setK(e.target.value)} />
+    <label htmlFor="ik-k">Kartela Kaleminin Kapsadığı İşlemler</label><input id="ik-k" placeholder="ör. TAHRIK-01.03.02-01" value={k} onChange={(e) => setK(e.target.value)} />
     <button className="btn2 kucuk" onClick={() => { setH(''); void istek<NonNullable<typeof ki>>(`/kartela/${encodeURIComponent(k.trim())}/islemler`).then(setKi).catch((e) => { setKi(null); setH(e.message); }); }}>Göster</button>
     {h && <div className="hata" role="alert">{h}</div>}
     {ki && <><div className="not">{ki.tali.ana_ad} › {ki.tali.alt_ad} › {ki.tali.ad} ({ki.tali.kod})</div>{ki.islemler.map((x) => <div className="soru" key={x.kod}><span><b>{x.kod}</b> · {x.ad}</span></div>)}</>}</details>;

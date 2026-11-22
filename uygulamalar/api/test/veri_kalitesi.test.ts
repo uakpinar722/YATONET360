@@ -288,4 +288,56 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect(u.find((r: { rol_adi: string }) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)').unvan).toBe('Kalite Kontrolör');
     expect(u.find((r: { rol_adi: string }) => r.rol_adi === 'Teknik Yönetici')).toMatchObject({ kademe: 'Yönetici', birim: 'Teknik Müdürlük' });
   });
+  it('arka plan işi kimlik, süre, sonuç ve etkilenen kayıtla izlenir; başlatana bitince bildirim gider (YG1354-ISKAYDI)', async () => {
+    const { arkaPlanIsi } = await import('../src/zamanlayici.js');
+    const z = isZamanlayici(o.db, () => {});
+    await z.tur('Deneme Etkili', 'Rapor', 60_000, () => [Promise.resolve(3), Promise.resolve([1, 2])]);
+    await z.tur('Deneme Etkisiz', 'Rapor', 60_000, () => [Promise.resolve(0)]);
+    const l = (await o.sup.query(`SELECT tur, sonuc, etkilenen_kayit, bitis IS NOT NULL bitti FROM arka_plan_isi WHERE tur LIKE 'Deneme Etki%'`)).rows;
+    expect(l).toEqual([{ tur: 'Deneme Etkili', sonuc: 'Tamamlandı', etkilenen_kayit: 5, bitti: true }]);
+    const r = await arkaPlanIsi(o.db, { tur: 'Toplu Deneme', baslatan: o.K.bim }, async () => 7);
+    expect(r).toMatchObject({ sonuc: 'Tamamlandı', etkilenen: 7 });
+    await expect(arkaPlanIsi(o.db, { tur: 'Hatalı Deneme', baslatan: o.K.bim }, async () => { throw new Error('Bozuk satır'); })).rejects.toThrow('Bozuk satır');
+    expect((await o.sup.query(`SELECT baslik FROM bildirim WHERE kullanici_ref = $1 AND baslik LIKE 'İşlem Tamam%' ORDER BY zaman`, [o.K.bim])).rows.map((x) => x.baslik)).toEqual(['İşlem Tamamlandı: Toplu Deneme', 'İşlem Tamamlanamadı: Hatalı Deneme']);
+    const a = (await o.ist('GET', '/api/arka-plan-isleri', await o.gir('bim'))).json();
+    expect(a.find((x: { tur: string }) => x.tur === 'Hatalı Deneme')).toMatchObject({ sonuc: 'Hata', hata: 'Bozuk satır' });
+    expect((await o.ist('GET', '/api/arka-plan-isleri', await o.gir('ds'))).statusCode).toBe(404);
+  });
+  it('kural veya parametre değişikliği öz denetimi bekletir; çalışmadan sonra beklemez (YG1652-TETIK)', async () => {
+    const { kuralDegisikligiBekliyor } = await import('../src/oz_denetim.js');
+    await o.sup.query(`INSERT INTO oz_denetim_calismasi (calisma_no, tur) VALUES ('ODN-T-1', 'Zamanlanmış')`);
+    await o.sup.query(`UPDATE oz_denetim_calismasi SET sonuc = 'Başarılı', bitis = now() WHERE calisma_no = 'ODN-T-1'`);
+    expect(await kuralDegisikligiBekliyor(o.db)).toBe(false);
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = deger WHERE kod = 'arama_oneri_azami'`); // değer aynı: değişiklik sayılmaz
+    expect(await kuralDegisikligiBekliyor(o.db)).toBe(false);
+    const e = (await o.sup.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'arama_oneri_azami'`)).rows[0].deger;
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = '11' WHERE kod = 'arama_oneri_azami'`);
+    expect(await kuralDegisikligiBekliyor(o.db)).toBe(true);
+    await o.sup.query(`UPDATE sistem_parametresi SET deger = $1 WHERE kod = 'arama_oneri_azami'`, [e]);
+    await o.sup.query(`INSERT INTO oz_denetim_calismasi (calisma_no, tur, sonuc, bitis) VALUES ('ODN-T-2', 'Kural Değişikliği', 'Başarılı', now())`);
+    expect(await kuralDegisikligiBekliyor(o.db)).toBe(false);
+  });
+  it('ekran etiketlerinde her kelimenin baş harfi büyüktür (YG671-ETIKET)', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs'); const { join } = await import('node:path');
+    const kok = join(process.cwd(), '..', 'web', 'src'); const KUCUK = new Set(['ve', 'ile', 'veya', 'ya', 'da', 'de', 'için', 'ki', 'mi', 'mı', 'mu', 'mü', 'vb']);
+    const hatali: string[] = [];
+    for (const f of readdirSync(kok).filter((x) => x.endsWith('.tsx'))) for (const m of readFileSync(join(kok, f), 'utf8').matchAll(/<label[^>]*>([^<{]+)<\/label>/g)) {
+      const s = m[1]!.replace(/\([^)]*\)/g, ' '); // parantez içi açıklama cümle düzeninde kalır
+      if (s.split(/[\s/–]+/).map((w) => w.replace(/^[(),:;.?]+|[(),:;.?]+$/g, '')).some((w) => w && !KUCUK.has(w) && /^\p{Ll}/u.test(w))) hatali.push(`${f}: ${m[1]!.trim()}`);
+    }
+    expect(hatali).toEqual([]);
+  });
+  it('planlanan işlem zamanı geldi diye tamamlanmış sayılmaz (YG540-PLAN)', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs'); const { join } = await import('node:path');
+    const kok = join(process.cwd(), 'src'); const bulgu: string[] = [];
+    for (const f of readdirSync(kok).filter((x) => x.endsWith('.ts'))) for (const m of readFileSync(join(kok, f), 'utf8').matchAll(/SET (?:durum|statu|sonuc) = '(?:Tamamlandı|Yapıldı|Gerçekleşti|Kapandı)'[^`]*?WHERE[^`]*?(?:<=? now\(\)|<=? current_date)/g)) bulgu.push(`${f}: ${m[0].slice(0, 80)}`);
+    expect(bulgu).toEqual([]);
+  });
+  it('giden ileti dosya numarasından dosyaya bağlanır ve dosya yazışmalarında görünür (YG1601-YAZISMA)', async () => {
+    const d = await o.dosyaAc(); const { disGonder } = await import('../src/bildirim.js');
+    await disGonder(o.db, { olay: 'tahsilat-hatirlatma:deneme', eposta: 'muhasebe@ornek-musteri.local', konu: `${d.dosyaNo} · Ödeme Hatırlatması`, metin: 'Ödeme bekleniyor.' });
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/yazismalar`, await o.gir('ide'))).json();
+    expect(l.map((x: { konu: string }) => x.konu)).toContain(`${d.dosyaNo} · Ödeme Hatırlatması`);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/yazismalar`, await o.gir('tu'))).statusCode).toBe(404);
+  });
 });

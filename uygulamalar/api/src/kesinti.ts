@@ -31,6 +31,8 @@ export function kesintiYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const yonetir = await rolVar(o.kullanici, YONETIR);
     return { yonetir, kanallar: KANAL, kesintiler: (await b.db.query(`SELECT k.kimlik, k.tur, k.neden, k.baslangic, k.bitis, k.durum, k.normallesme, (SELECT count(*)::int FROM gecici_referans g WHERE g.kesinti_ref = k.kimlik) referans, (SELECT count(*)::int FROM gecici_referans g WHERE g.kesinti_ref = k.kimlik AND g.kullanildi AND g.dosya_ref IS NULL) bagsiz FROM kesinti k ORDER BY k.baslangic DESC LIMIT 20`)).rows,
+      // YG-1313: geri girilen referansların gecikmesi (işlem zamanı → geri giriş, saat).
+      geriGirisler: yonetir ? (await b.db.query(`SELECT g.referans, g.islem_turu, round(extract(epoch FROM (g.geri_giris_zamani - g.islem_zamani)) / 3600, 1)::float gecikme_saat, g.gecikme_gerekcesi, d.dosya_no FROM gecici_referans g JOIN dosya d ON d.kimlik = g.dosya_ref WHERE g.geri_giris_zamani IS NOT NULL ORDER BY g.geri_giris_zamani DESC LIMIT 100`)).rows : [],
       referanslarim: (await b.db.query(`SELECT g.kimlik, g.referans, g.kullanildi, g.dosya_ref IS NOT NULL bagli, k.durum FROM gecici_referans g JOIN kesinti k ON k.kimlik = g.kesinti_ref WHERE g.sorumlu_ref = $1 AND (g.dosya_ref IS NULL) ORDER BY g.referans`, [o.kullanici])).rows };
   });
   // Kesinti hemen açılır; olağan dışı istisna BT ve Firma Yönetimi Direktörü onayıyla açılır.
@@ -55,13 +57,18 @@ export function kesintiYollari(s: FastifyInstance, b: Baglam) {
   });
   // Sisteme geri giriş: kanal, yetkili kişi, asgari veri, saklama yeri ve ana dosya bağı zorunlu.
   s.post('/gecici-referans/:id/geri-giris', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; yetkili?: string; ozet?: string; saklama?: string; dosya?: string; zaman?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kanal?: string; yetkili?: string; ozet?: string; saklama?: string; dosya?: string; zaman?: string; tur?: string; gecikmeGerekcesi?: string };
     if (!UUID.test(id)) return yok(y);
     const r = (await b.db.query(`SELECT sorumlu_ref, dosya_ref FROM gecici_referans WHERE kimlik = $1`, [id])).rows[0]; if (!r || r.sorumlu_ref !== o.kullanici) return yok(y);
     if (r.dosya_ref) return y.code(409).send({ hata: 'Referans sisteme geri girilmiştir.' });
     if (!KANAL.includes(g.kanal ?? '') || !g.yetkili?.trim() || !g.ozet?.trim() || !g.saklama?.trim() || !g.zaman) return y.code(400).send({ hata: 'Kanal, yetkili kişi, asgari veri özeti, saklama yeri ve işlem zamanı zorunludur.' });
     if (!g.dosya || !UUID.test(g.dosya) || !(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1`, [g.dosya])).rowCount) return y.code(400).send({ hata: 'Ana dosyayı seçiniz.' });
-    await b.db.query(`UPDATE gecici_referans SET kullanildi = true, kanal = $2, yetkili_kisi = $3, asgari_veri = $4, saklama_yeri = $5, dosya_ref = $6, islem_zamani = $7, geri_giris_zamani = now() WHERE kimlik = $1`, [id, g.kanal, g.yetkili.trim(), g.ozet.trim(), g.saklama.trim(), g.dosya, g.zaman]);
+    // YG-177: sistem dışı alınan onay 8 saat içinde dijital kayda aktarılır; aşımda gecikme gerekçesi yazılır ve Operasyon Müdürüne bildirilir.
+    const islem = new Date(g.zaman); if (Number.isNaN(islem.getTime()) || islem.getTime() > Date.now() + 60_000) return y.code(400).send({ hata: 'İşlem zamanı geçersizdir.' });
+    const onay = g.tur === 'Onay'; const asim = onay && Date.now() - islem.getTime() > 8 * 3_600_000;
+    if (asim && !g.gecikmeGerekcesi?.trim()) return y.code(409).send({ hata: 'Onay alındıktan sonra 8 saat geçmiştir; geri giriş gecikmesinin gerekçesini yazmanızı rica ederiz.' });
+    await b.db.query(`UPDATE gecici_referans SET kullanildi = true, kanal = $2, yetkili_kisi = $3, asgari_veri = $4, saklama_yeri = $5, dosya_ref = $6, islem_zamani = $7, geri_giris_zamani = now(), islem_turu = $8, gecikme_gerekcesi = $9 WHERE kimlik = $1`, [id, g.kanal, g.yetkili.trim(), g.ozet.trim(), g.saklama.trim(), g.dosya, g.zaman, onay ? 'Onay' : 'Diğer', g.gecikmeGerekcesi?.trim() || null]);
+    if (asim) { const { rolSahipleri } = await import('./makam.js'); await (await import('./bildirim.js')).bildir(b.db, { olay: `onay-geri-giris-gecikme:${id}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, 'Operasyon Müdürü')), baslik: 'Sistem Dışı Onay 8 Saatten Geç Aktarıldı', ozet: g.gecikmeGerekcesi!.trim() }); };
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Platform Dışı İşlem Geri Girişi', nesneTuru: 'Dosya', nesneKimligi: g.dosya, yeni: { referans: id, kanal: g.kanal }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

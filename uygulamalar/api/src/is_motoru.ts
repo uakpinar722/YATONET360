@@ -26,7 +26,9 @@ export { rolSahipleri };
 /** Modüllerin ortak giriş noktası (YG-1143): iş kartı açar ve sıradaki makama bildirir. */
 export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<string> {
   const kategori = g.kategori ?? (g.zincir?.length ? 'onay' : 'islem');
+  const ilkZincir = g.zincir ?? [];
   if (g.zincir?.length) g = { ...g, zincir: await zinciriDuzelt(db, g.zincir, g.hazirlayan, g.ayrik) };
+  const atlanan = ilkZincir.filter((r) => !g.zincir!.includes(r)); // YG-168: görev ayrılığı atlaması işlem izine yazılır
   // YG-228: mesai dışında Kritik onay, son makam Direktör, GMY veya CEO ise ara kademeler beklenmeden son makama gider; ara kademeler bilgilenir.
   let ilkKademe = 0;
   if (kategori === 'onay' && g.oncelik === 'Kritik' && g.zincir!.length > 1 && !MESLEKI.has(g.tur) && !mesaiIcinde(g.simdi ?? new Date())) {
@@ -41,6 +43,7 @@ export async function kartAc(db: Pool | PoolClient, g: KartGirdisi): Promise<str
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`,
     [g.tur, kategori, g.baslik, g.ozet ?? null, g.oncelik ?? 'Normal', g.hazirlayan ?? null, g.zincir ?? [], g.sahipKullanici ?? null, g.sahipRol ?? null, sonZaman, g.nesneTuru ?? null, g.nesneKimligi ?? null, ilkKademe, g.ayrik ?? [], g.tutar ?? null, g.belgeSurumu ?? null, sureNotu]);
   const id = rows[0].kimlik as string;
+  if (atlanan.length) await izYaz(db, { aktor: g.hazirlayan ?? null, eylem: 'Görev Ayrılığı Kademe Atlaması', nesneTuru: g.tur, nesneKimligi: id, eski: { zincir: ilkZincir }, yeni: { zincir: g.zincir, atlanan }, gerekce: 'Makamın sahipleri görev ayrılığına takıldığı için onay bir üst makama geçti.', sonuc: 'Başarılı' });
   if (ilkKademe) { const ara: string[] = []; for (const r of g.zincir!.slice(0, ilkKademe)) ara.push(...await rolSahipleri(db, r)); await bildir(db, { olay: `kart-ara:${id}`, kullanicilar: ara, baslik: `Bilgi: Doğrudan Son Makama Gitti: ${g.baslik}`, oncelik: g.oncelik, isRef: id }); }
   const hedef = kategori === 'onay' ? await rolSahipleri(db, g.zincir![ilkKademe]!) : g.sahipKullanici ? [g.sahipKullanici] : await rolSahipleri(db, g.sahipRol!);
   await bildir(db, { olay: `kart-ac:${id}`, kullanicilar: hedef.filter((k) => k !== g.hazirlayan), baslik: `Yeni İş: ${g.baslik}`, ozet: g.ozet ?? null, isRef: id, oncelik: g.oncelik, eposta: true });
@@ -141,7 +144,9 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       if (!k) return dur(404, 'Kayıt bulunamadı.');
       if (k.ayrik_kullanicilar?.includes(o.kullanici)) return dur(403, 'Görev ayrılığı gereği bu kaydı onaylayamazsınız; teknik kabulü veren kişi ödemeyi onaylamaz.'); // YG-827, YG-1036
       const makam: string | undefined = k.zincir[k.kademe];
-      const sonMakam = k.kademe === k.zincir.length - 1;
+      // YG-990: aynı kişi iki kademeyi taşısa da her kademe ayrı karardır (görev ayrılığı); YG-168 birleşik adım bu kuralla çeliştiği için uygulanmaz.
+      const birlesikSon = k.kademe;
+      const sonMakam = birlesikSon === k.zincir.length - 1;
       // YG-1043: makamın Rol Müfredatı tamamlanmadan o makamda karar verilmez (rolü dersten önce almış olan kişi hariç).
       if (k.kategori === 'onay' && makam && roller.includes(makam) && karar !== 'Geri Çek') {
         const e = (await c.query(`SELECT d.ad FROM akademi_ders d JOIN rol r ON r.kimlik = $2 WHERE d.aktif AND d.tur = 'Rol Müfredatı' AND r.rol_adi = ANY (d.roller)
@@ -198,8 +203,8 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
           hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `İade Edildi: ${k.baslik}`;
         } else if (karar === 'Onaya Gönder') {
           if (sonMakam) return dur(400, 'Son makamda "Onayla" veya "Reddet" kullanılır.');
-          yeni = { durum: 'Bekliyor', kademe: k.kademe + 1, kapanir: false };
-          hedef = await rolSahipleri(c, k.zincir[k.kademe + 1]); baslik = `Onayınızı Bekliyor: ${k.baslik}`;
+          yeni = { durum: 'Bekliyor', kademe: birlesikSon + 1, kapanir: false };
+          hedef = await rolSahipleri(c, k.zincir[birlesikSon + 1]); baslik = `Onayınızı Bekliyor: ${k.baslik}`;
         } else if (karar === 'Onayla' || karar === 'Reddet') {
           if (!sonMakam) return dur(400, 'Ara kademede "Onaya Gönder" veya "Gerekçeyle İade Et" kullanılır.');
           // YG-222: limit üstü son onayda doğrulama kodu yeniden istenir.
@@ -210,7 +215,7 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
             if (!adim) { await c.query('ROLLBACK'); return y.code(401).send({ hata: 'Bu onay için doğrulama kodunu girmenizi rica ederiz.', kodGerekli: true }); }
             await c.query(`UPDATE kullanici_hesabi SET totp_son_adim = $2 WHERE kimlik = $1`, [o.kullanici, adim]);
           }
-          yeni = { durum: karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi', kademe: k.kademe, kapanir: true };
+          yeni = { durum: karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi', kademe: birlesikSon, kapanir: true };
           hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `${yeni.durum}: ${k.baslik}`;
         } else return dur(400, 'Geçersiz karar.');
       }

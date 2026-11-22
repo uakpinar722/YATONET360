@@ -206,8 +206,14 @@ async function calismaAc(db: Pool, tur: string, yayin: string | null, baslatan: 
   return { kimlik: r.kimlik, no };
 }
 
-/** Saatlik iş: sıklık gününde İstanbul saatiyle 02:00'de bir kez çalışır. */
+/** YG-1652: son öz denetim çalışmasından sonra kural veya parametre değişikliği var mı (ilk çalışmadan önce değişiklik sayılmaz). */
+export async function kuralDegisikligiBekliyor(db: Pool): Promise<boolean> {
+  return Boolean((await db.query(`SELECT 1 FROM kural_degisikligi WHERE zaman > (SELECT max(baslangic) FROM oz_denetim_calismasi) LIMIT 1`)).rowCount);
+}
+
+/** Saatlik iş: sıklık gününde İstanbul saatiyle 02:00'de bir kez çalışır; kural veya parametre değişikliğinden sonra (YG-1652) ilk saatlik turda kendiliğinden başlar. */
 export async function ozDenetimZamanla(db: Pool, simdi = new Date()): Promise<boolean> {
+  if (await kuralDegisikligiBekliyor(db)) { const c = await calismaAc(db, 'Kural Değişikliği', null, null); if (c) { await ozDenetimCalistir(db, c.kimlik); return true; } }
   const t = new Date(simdi.getTime() + 3 * 3_600_000); if (t.getUTCHours() !== 2) return false;
   const bas = Number((await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'oz_denetim_baslangic'`)).rows[0]?.deger ?? 0);
   if (!ozDenetimGunuMu(bas, simdi) || !(await birKez(db, 'oz-denetim', t.toISOString().slice(0, 10)))) return false;

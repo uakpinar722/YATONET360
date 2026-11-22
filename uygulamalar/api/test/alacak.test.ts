@@ -193,6 +193,7 @@ describe('kurtarma sağlayıcı ödemesi (YG848-MAHSUP)', () => {
     expect((await o.ist('POST', `/api/kurtarma-saglayici-faturasi/${f.json().kimlik}/odendi`, mfm, { tarih: '2026-11-21' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/kurtarma-saglayici-faturasi/${f.json().kimlik}/odendi`, mfm, { referans: 'B-1', tarih: '2026-11-21' })).statusCode).toBe(200);
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}/kurtarma-mali`, ts)).json()).toMatchObject({ lgmFiyat: 1500, saglayiciyaOdenen: 1000, mahsupSonrasi: 500 });
+    { const f = (await o.ist('GET', `/api/dosya/${d.kimlik}/kurtarma-mali`, ts)).json().faturalar[0]; expect(new Date(f.vade).getTime() - new Date(f.fatura_tarihi).getTime()).toBe(60 * 86_400_000); } // YG845-VADE
     expect((await o.sup.query(`SELECT mahsup_lgm_fiyati_eur FROM kurtarma_saglayici_faturasi WHERE kimlik = $1`, [f.json().kimlik])).rows[0].mahsup_lgm_fiyati_eur).toBe('1500.00');
   });
 });

@@ -18,7 +18,7 @@ export function FormKatalogu() {
   return <details><summary>Belge Kataloğu (Ek II) · {say('Yürürlükte')} yürürlükte · {say('Taslak')} taslak · {say('İptal')} iptal{bagsiz ? ` · ${bagsiz} sistem karşılığı bekliyor` : ''}</summary>
     {m && <div className="not" role="status">{m}</div>}
     <div className="not">Taslak veya iptal edilmiş araç yeni kayıtta seçilemez; iptal edilen kod yeniden verilmez. Doldurulmuş kayıtlar yeni sürümle geriye dönük değişmez.</div>
-    <label htmlFor="fk-ara">Kod veya ad ara</label><input id="fk-ara" value={ara} onChange={(e) => setAra(e.target.value)} />
+    <label htmlFor="fk-ara">Kod veya Ad Ara</label><input id="fk-ara" value={ara} onChange={(e) => setAra(e.target.value)} />
     {v.kalemler.map((x) => <div className={x.durum === 'Yürürlükte' ? 'soru' : x.durum === 'İptal' ? 'soru bos' : 'soru hata'} key={x.kod}>
       <span><b>{x.kod}</b> · {x.ad} · {x.sinif} · {x.bicim} · Sürüm {x.surum} · {x.durum}{x.yerine ? ` → ${x.yerine}` : ''}{x.durum !== 'İptal' ? ` · Sistem: ${x.sistem_karsiligi ?? 'bekliyor'}` : ''}<br />
         <small>Dolduran: {x.dolduran ?? '—'} · Onaylayan: {x.onaylayan ?? '—'}</small></span>

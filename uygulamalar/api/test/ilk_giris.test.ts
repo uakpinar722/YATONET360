@@ -26,7 +26,7 @@ beforeAll(async () => {
 afterAll(async () => { await s.close(); await db.end(); await sup.end(); });
 
 let n = 0;
-const yeni = (grup: string, rol: string, ek: object = {}) => davetOlustur(db, { adSoyad: 'Deneme Kişi', eposta: `k${++n}@deneme.yatonet.local`, grup, rol, ...ek });
+const yeni = (grup: string, rol: string, ek: object = {}) => davetOlustur(db, { adSoyad: 'Deneme Kişi', eposta: `k${++n}@deneme.yatonet.local`, grup, rol, ilkKurulum: true, ...ek });
 /** Davet bağlantısından tam oturuma. */
 async function davetle(belirtec: string, dil = 'tr') {
   const p = await ist('POST', '/api/ilk-giris/parola', undefined, { belirtec, parola: PAROLA, dil });
@@ -39,6 +39,15 @@ async function davetle(belirtec: string, dil = 'tr') {
 }
 
 describe('davet (G2-1)', () => {
+  it('yalnız e-postayla, rolsüz veya sorumlusuz hesap açılmaz (YG1005-HESAP)', async () => {
+    const { hesapAcmaEksigi } = await import('../src/ilk_giris.js');
+    const D = { adSoyad: 'Deneme Kişi', eposta: 'x@deneme.yatonet.local', grup: 'LGM İç Rolü', rol: 'Teknik Uzman', olusturan: 'K' };
+    expect(hesapAcmaEksigi(D)).toBeNull();
+    expect(hesapAcmaEksigi({ ...D, adSoyad: 'x@deneme.yatonet.local' })).toContain('yalnız e-posta');
+    expect(hesapAcmaEksigi({ ...D, rol: '' })).toContain('görev');
+    expect(hesapAcmaEksigi({ ...D, olusturan: null })).toContain('sorumlu');
+    await expect(davetOlustur(db, { ...D, olusturan: null, eposta: `k${++n}@deneme.yatonet.local` })).rejects.toThrow('sorumlu');
+  });
   it('bağlantı geçerliyken bilgi verir, belirteç veritabanında açık tutulmaz', async () => {
     const { belirtec } = await yeni('LGM İç Rolü', 'Dosya Sorumlusu');
     expect((await ist('POST', '/api/ilk-giris/davet', undefined, { belirtec })).json()).toMatchObject({ lgm: true, gun: 7 });

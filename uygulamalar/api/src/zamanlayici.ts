@@ -15,6 +15,23 @@ const GECIKME_KAT = 3;
  * YG-1316: zamanlanmış iş grubu tekil çalışır; önceki tur bitmeden yeni tur başlamaz, çakışma kaydedilir. Her tur başlangıç, bitiş,
  * süre ve hata bilgisiyle zamanlanmis_is_durumu tablosuna yazılır; bir işin hatası gruptaki diğer işleri durdurmaz.
  */
+/** YG-1354: işlerin döndürdüğü sayı ve dizilerden etkilenen kayıt sayısı. */
+const etkilenen = (l: PromiseSettledResult<unknown>[]) => l.reduce((t, r) => t + (r.status !== 'fulfilled' ? 0 : typeof r.value === 'number' ? r.value : Array.isArray(r.value) ? r.value.length : 0), 0);
+
+/**
+ * YG-1354: uzun süren işi genel iş kaydıyla çalıştırır (kimlik, başlama-bitiş, deneme, sonuç, etkilenen kayıt). Kullanıcının başlattığı iş
+ * bitince başlatana bildirim gider. İş, etkilenen kayıt sayısını döndürür.
+ */
+export async function arkaPlanIsi(db: Pool, g: { tur: string; baslatan?: string | null; nesneTuru?: string; nesneKimligi?: string; deneme?: number }, is: () => Promise<number>): Promise<{ kimlik: string; sonuc: 'Tamamlandı' | 'Hata'; etkilenen: number }> {
+  const kimlik = (await db.query(`INSERT INTO arka_plan_isi (tur, kaynak, baslatan_ref, nesne_turu, nesne_kimligi, deneme, iliski_kimligi) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.tur, g.baslatan ? 'Kullanıcı' : 'Zamanlanmış', g.baslatan ?? null, g.nesneTuru ?? null, g.nesneKimligi ?? null, g.deneme ?? 1, istekBaglami.getStore()?.iliski ?? null])).rows[0].kimlik as string;
+  let sonuc: 'Tamamlandı' | 'Hata' = 'Tamamlandı'; let n = 0; let hata: string | null = null;
+  try { n = await is(); } catch (h) { sonuc = 'Hata'; hata = String((h as Error)?.message ?? h).slice(0, 500); }
+  await db.query(`UPDATE arka_plan_isi SET bitis = now(), sonuc = $2, etkilenen_kayit = $3, hata = $4 WHERE kimlik = $1`, [kimlik, sonuc, n, hata]);
+  if (g.baslatan) await (await import('./bildirim.js')).bildir(db, { olay: `arka-plan:${kimlik}`, kullanicilar: [g.baslatan], baslik: sonuc === 'Tamamlandı' ? `İşlem Tamamlandı: ${g.tur}` : `İşlem Tamamlanamadı: ${g.tur}`, ozet: sonuc === 'Tamamlandı' ? `${n} kayıt işlendi.` : 'Hata kaydedildi; Bilgi İşlem incelemektedir.' });
+  if (hata) throw Object.assign(new Error(hata), { arkaPlanIsi: kimlik });
+  return { kimlik, sonuc, etkilenen: n };
+}
+
 export function isZamanlayici(db: Pool, hataYaz: (m: string) => void) {
   const calisiyor = new Set<string>();
   const tur = async (ad: string, etki: string, ms: number, isler: () => Promise<unknown>[]) => {
@@ -25,8 +42,14 @@ export function isZamanlayici(db: Pool, hataYaz: (m: string) => void) {
     calisiyor.add(ad); const bas = Date.now(); const iliski = `is:${randomUUID()}`; // YG-1146: her tur kendi ilişki kimliğiyle izlenir
     try {
       await db.query(`INSERT INTO zamanlanmis_is_durumu (ad, etki, periyot_sn, son_baslangic, iliski_kimligi) VALUES ($1,$2,$3,now(),$4) ON CONFLICT (ad) DO UPDATE SET etki = EXCLUDED.etki, periyot_sn = EXCLUDED.periyot_sn, son_baslangic = now(), iliski_kimligi = EXCLUDED.iliski_kimligi, guncelleme_zamani = now()`, [ad, etki, Math.round(ms / 1000), iliski]);
-      const hatalar = (await istekBaglami.run({ iliski }, () => Promise.allSettled(isler()))).flatMap((r) => (r.status === 'rejected' ? [String((r.reason as Error)?.message ?? r.reason)] : []));
+      // YG-1354: tur genel iş kaydıyla izlenir; kayıt etkilemeyen ve hatasız turun kaydı tutulmaz.
+      const ik = (await db.query(`INSERT INTO arka_plan_isi (tur, kaynak, iliski_kimligi) VALUES ($1,'Zamanlanmış',$2) RETURNING kimlik`, [ad, iliski])).rows[0].kimlik as string;
+      const sonuclar = await istekBaglami.run({ iliski }, () => Promise.allSettled(isler()));
+      const hatalar = sonuclar.flatMap((r) => (r.status === 'rejected' ? [String((r.reason as Error)?.message ?? r.reason)] : []));
       hatalar.forEach(hataYaz);
+      const n = etkilenen(sonuclar);
+      if (!n && !hatalar.length) await db.query(`DELETE FROM arka_plan_isi WHERE kimlik = $1`, [ik]);
+      else await db.query(`UPDATE arka_plan_isi SET bitis = now(), sonuc = $2, etkilenen_kayit = $3, hata = $4 WHERE kimlik = $1`, [ik, hatalar.length ? 'Hata' : 'Tamamlandı', n, hatalar[0]?.slice(0, 500) ?? null]);
       await db.query(`UPDATE zamanlanmis_is_durumu SET son_bitis = now(), son_sure_ms = $2, son_hata = $3, hata_sayisi = hata_sayisi + $4, guncelleme_zamani = now() WHERE ad = $1`, [ad, Date.now() - bas, hatalar[0] ?? null, hatalar.length ? 1 : 0]);
       return 'Tamamlandı' as const;
     } catch (h) { hataYaz((h as Error).message); return 'Hata' as const; } finally { calisiyor.delete(ad); }
@@ -185,5 +208,10 @@ export function zamanlayiciYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT ad, etki, periyot_sn, son_baslangic, son_bitis, son_sure_ms, son_hata, hata_sayisi, cakisma_sayisi, son_cakisma,
         (son_bitis IS NULL OR son_bitis < now() - make_interval(secs => periyot_sn * $1)) AND son_baslangic < now() - make_interval(secs => periyot_sn * $1) gecikti
       FROM zamanlanmis_is_durumu ORDER BY ad`, [GECIKME_KAT])).rows;
+  });
+  // YG-1354: son arka plan işleri (sürenler önce).
+  s.get('/arka-plan-isleri', oturumlu, async (i, y) => {
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi IN ('Sistem Yöneticisi', 'Bilgi İşlem Müdürü')`, [i.oturum!.kullanici])).rowCount) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    return (await b.db.query(`SELECT a.kimlik, a.tur, a.kaynak, h.ad_soyad baslatan, a.baslangic, a.bitis, a.deneme, a.sonuc, a.etkilenen_kayit, a.hata, a.iliski_kimligi FROM arka_plan_isi a LEFT JOIN kullanici_hesabi h ON h.kimlik = a.baslatan_ref ORDER BY a.sonuc <> 'Sürüyor', a.baslangic DESC LIMIT 100`)).rows;
   });
 }

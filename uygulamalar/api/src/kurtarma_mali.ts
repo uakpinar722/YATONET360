@@ -53,7 +53,7 @@ export function kurtarmaMaliYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id)) || !(await lgmMi(o.kullanici))) return yok(y);
     const lgmFiyat = R2(Number((await b.db.query(`SELECT coalesce(sum(k.tutar_eur), 0) t FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi t ON t.kimlik = k.teklif_ref WHERE t.dosya_ref = $1 AND k.onay_durumu = 'Onaylandı' AND k.bedel_turu = ANY($2::text[])`, [id, KURTARMA_BEDEL])).rows[0].t));
-    const faturalar = (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.fatura_tarihi::text, f.tutar_eur::float tutar, f.durum, f.odeme_tarihi::text, f.odeme_referansi, u.ticari_unvan saglayici FROM kurtarma_saglayici_faturasi f JOIN kurulus u ON u.kimlik = f.saglayici_ref WHERE f.dosya_ref = $1 ORDER BY f.olusturma_zamani`, [id])).rows;
+    const faturalar = (await b.db.query(`SELECT f.kimlik, f.fatura_no, f.fatura_tarihi::text, (f.fatura_tarihi + 60)::text vade, f.tutar_eur::float tutar, f.durum, f.odeme_tarihi::text, f.odeme_referansi, u.ticari_unvan saglayici FROM kurtarma_saglayici_faturasi f JOIN kurulus u ON u.kimlik = f.saglayici_ref WHERE f.dosya_ref = $1 ORDER BY f.olusturma_zamani`, [id])).rows;
     const odenen = R2(faturalar.filter((f) => f.durum === 'Ödendi').reduce((a, f) => a + f.tutar, 0));
     return { lgmFiyat, faturalar, saglayiciFaturaToplami: R2(faturalar.filter((f) => f.durum !== 'Reddedildi').reduce((a, f) => a + f.tutar, 0)), saglayiciyaOdenen: odenen, mahsupSonrasi: R2(lgmFiyat - odenen) };
   });

@@ -32,4 +32,19 @@ describe('ana veri kalemleri (YG-1266, 1532, 1533, 1535)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/katalog-bilgisi`, tu, { kaynak: 'Ruhsat / plaka', teknikBilgi: 'Boy 14,2 m; 2 × 300 hp' })).json().durum).toBe('Fotoğraf eksik');
     expect((await o.sup.query(`SELECT bilgi_kaynagi, teknik_veri FROM yat_marka_model WHERE kimlik = $1`, [m])).rows[0]).toEqual({ bilgi_kaynagi: 'Ruhsat / plaka', teknik_veri: 'Var' });
   });
+  it('marka-model listesi yenilenir, kod tekil, aktarım raporu dosyayla karşılaştırılır (YG1526-AKTARIM)', async () => {
+    const { markaModelYenile, MARKA_MODEL_SUTUNLARI } = await import('../src/marka_model.js');
+    const h = MARKA_MODEL_SUTUNLARI.join('\t'); const s = (kod: string, marka: string, model: string, durum = 'Tamam') => [kod, marka, model, 'Hayır', '', '', 'Motoryat', '12,50', 'Fiber', '', 'Var', 'Var', durum].join('\t');
+    const yapan = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi LIMIT 1`)).rows[0].kimlik;
+    const r1 = await markaModelYenile(o.db, { dosyaAdi: 'liste1.tsv', metin: [h, s('MRK-9901', 'Aktarım Marka', 'A1'), s('MRK-9901', 'Aktarım Marka', 'A2', 'Fotoğraf ve teknik eksik')].join('\n'), yapan });
+    expect(r1).toMatchObject({ sonuc: 'Uyumlu', eklenen: 2, dosya_satir: 2, aktarilan_satir: 2, dosya_marka: 1 });
+    const r2 = await markaModelYenile(o.db, { dosyaAdi: 'liste2.tsv', metin: [h, s('MRK-9902', 'AKTARIM MARKA', 'A1')].join('\n'), yapan });
+    expect(r2).toMatchObject({ sonuc: 'Uyumlu', guncellenen: 1, kod_degisen_marka: 1 });
+    expect((await o.sup.query(`SELECT DISTINCT marka_kodu FROM yat_marka_model WHERE lower(marka) = 'aktarım marka'`)).rows).toEqual([{ marka_kodu: 'MRK-9902' }]); // listede olmayan A2 de yeni kodu alır
+    const r3 = await markaModelYenile(o.db, { dosyaAdi: 'liste3.tsv', metin: [h, s('MRK-9902', 'Başka Marka', 'B1')].join('\n'), yapan });
+    expect(r3).toMatchObject({ sonuc: 'Hatalı' }); expect((r3 as { hata: string }).hata).toContain('birden fazla');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM yat_marka_model WHERE lower(marka) = 'başka marka'`)).rows[0].n).toBe(0);
+    expect((await markaModelYenile(o.db, { dosyaAdi: 'x.tsv', metin: 'a\tb', yapan })).hata).toContain('sütunları');
+    expect((await o.sup.query(`SELECT sonuc FROM marka_model_aktarimi ORDER BY zaman`)).rows.map((x) => x.sonuc)).toEqual(['Uyumlu', 'Uyumlu', 'Hatalı']);
+  });
 });

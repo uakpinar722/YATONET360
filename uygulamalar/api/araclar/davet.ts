@@ -12,7 +12,7 @@ if (!eposta.endsWith('@deneme.yatonet.local')) throw new Error('Geliştirme orta
 const e = ortamOku();
 const c = new pg.Client({ host: 'localhost', user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: 'yatonet360' });
 await c.connect();
-const { belirtec } = await davetOlustur(c as never, { adSoyad: ad, eposta, rol, grup, telefon });
+const { belirtec } = await davetOlustur(c as never, { adSoyad: ad, eposta, rol, grup, telefon, ilkKurulum: true }); // YG-1005: ilk kurulumda sponsor aranmaz
 await c.end();
 const baglanti = `http://127.0.0.1:5173/#davet=${belirtec}`;
 appendFileSync(join(KOK, '.araclar', 'eposta_kutusu.txt'), `${new Date().toISOString()} ${eposta} ${baglanti}\n`);

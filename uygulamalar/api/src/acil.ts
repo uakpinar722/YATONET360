@@ -245,10 +245,20 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     }
     const cakisma = v.filter((x, n) => v.some((z, m) => m !== n && z.kullanici_ref === x.kullanici_ref && new Date(z.baslangic) < new Date(x.bitis) && new Date(x.baslangic) < new Date(z.bitis))).map((x) => x.ad_soyad);
     const izinli = (await b.db.query(`SELECT DISTINCT h.ad_soyad FROM nobet_vardiyasi v JOIN izin_talebi z ON z.personel_ref = v.kullanici_ref AND z.durum = 'Onaylandı' AND z.baslangic <= (v.bitis AT TIME ZONE 'Europe/Istanbul')::date AND z.bitis >= (v.baslangic AT TIME ZONE 'Europe/Istanbul')::date JOIN kullanici_hesabi h ON h.kimlik = v.kullanici_ref WHERE v.cizelge_ref = $1`, [k.nesne_kimligi])).rows.map((r) => r.ad_soyad as string);
+    // YG-242: haftalık dönüşüm; haftanın (pazartesi başlangıçlı) tek nöbetçisi ertesi hafta da tek nöbetçiyse ve katman havuzunda başka aday varsa uyarı.
+    const hafta = (d: Date) => { const t = new Date(d.getTime() + 3 * 3_600_000); return Math.floor((Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) / 86_400_000 + 3) / 7); };
+    const havuz = new Map<string, number>(); for (const a of await katmanAdaylari()) for (const kt of a.katmanlar as string[]) havuz.set(kt, (havuz.get(kt) ?? 0) + 1);
+    const tekrar: string[] = [];
+    for (const kt of ['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici']) {
+      if ((havuz.get(kt) ?? 0) < 2) continue;
+      const hk = new Map<number, Set<string>>(); for (const x of v.filter((z) => z.katman === kt)) { const w = hafta(new Date(x.baslangic)); hk.set(w, (hk.get(w) ?? new Set()).add(x.ad_soyad)); }
+      for (const [w, s] of hk) { const s2 = hk.get(w + 1); if (s.size === 1 && s2?.size === 1 && [...s][0] === [...s2][0]) tekrar.push(`${kt}: ${[...s][0]}`); }
+    }
     return { donem: c.donem, surum: c.surum, vardiyalar: v.map(({ kullanici_ref: _k, ...x }) => x), kontroller: [
       { ad: 'Her gün her katmanda nöbetçi', sonuc: !bosluk.length, aciklama: bosluk.length ? `Boş: ${bosluk.slice(0, 12).join(', ')}${bosluk.length > 12 ? ' …' : ''}` : 'Tüm günler kapsanıyor.' },
       { ad: 'Aynı kişide çakışan vardiya yok', sonuc: !cakisma.length, aciklama: cakisma.length ? [...new Set(cakisma)].join(', ') : 'Çakışma yok.' },
       { ad: 'İzinli kişiye vardiya yok', sonuc: !izinli.length, aciklama: izinli.length ? izinli.join(', ') : 'İzinle çakışma yok.' },
+      { ad: 'Haftalık dönüşüm', sonuc: !tekrar.length, aciklama: tekrar.length ? `Art arda iki hafta aynı nöbetçi: ${[...new Set(tekrar)].join(', ')}` : 'Nöbet haftalık dönüşümlü.' },
     ] };
   });
   s.post('/nobet/cizelge', { preHandler: izinGerekli(b, 'nobet.hazirla') }, async (i, y) => {
