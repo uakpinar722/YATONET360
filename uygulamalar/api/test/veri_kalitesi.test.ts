@@ -32,9 +32,10 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect((await o.ist('GET', '/api/veri-kalitesi', await o.gir('ide'))).statusCode).toBe(404);
   });
   it('zamanlanmış iş tekil çalışır; çakışma ve gecikme kaydedilir, uyarı etkilenen çıktıları yazar (YG1316-ZAMAN)', async () => {
-    const z = isZamanlayici(o.db, () => {}); let bitir: () => void = () => {};
-    const uzun = z.tur('Deneme İşi', 'deneme raporu', 60_000, () => [new Promise<void>((r) => { bitir = r; })]);
+    const z = isZamanlayici(o.db, () => {}); let bitir: () => void = () => {}; let basladi = false;
+    const uzun = z.tur('Deneme İşi', 'deneme raporu', 60_000, () => [new Promise<void>((r) => { bitir = r; basladi = true; })]);
     expect(await z.tur('Deneme İşi', 'deneme raporu', 60_000, () => [Promise.resolve()])).toBe('Çakışma');
+    while (!basladi) await new Promise((r) => setTimeout(r, 10)); // iş kaydı yavaş yazılırsa bitir henüz atanmamış olabilir
     bitir(); expect(await uzun).toBe('Tamamlandı');
     expect(await z.tur('Hatalı İş', 'hatalı çıktı', 60_000, () => [Promise.reject(new Error('bozuk')), Promise.resolve()])).toBe('Tamamlandı');
     const d = (await o.sup.query(`SELECT ad, cakisma_sayisi, son_hata FROM zamanlanmis_is_durumu ORDER BY ad`)).rows;
@@ -362,7 +363,7 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect((await o.ist('POST', u, ds, { metin: 'Cuma teslim edilecektir.', taraf: o.K.ys })).statusCode).toBe(200);
     expect((await o.kart('Mesaj Yanıtı', m1.kimlik)).durum).toBe('Tamamlandı');
     const g = (await o.ist('GET', u, ys)).json().mesajlar; expect(g.at(-1).gonderen).toBe('Dosya Sorumlusu'); expect(JSON.stringify(g)).not.toContain('Yat su alıyor');
-    const lg = (await o.ist('GET', u, ds)).json(); expect(lg.yanitBekleyen).toBe(1); expect(lg.taraflar.length).toBe(2);
+    const lg = (await o.ist('GET', u, ds)).json(); expect(lg.yanitBekleyen).toBe(1); expect(lg.taraflar.length).toBe((await o.sup.query(`SELECT count(*)::int n FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif AND kullanici_ref IS NOT NULL`, [d.kimlik])).rows[0].n); // YG-1757: açılışta yat sahibi hesabı da taraftır
     await o.ist('POST', u, ds, { metin: 'Fotoğraf iletebilir misiniz?', taraf: o.K.ys });
     const pa = await o.ist('GET', '/api/portal/ana', ys); // YG1565-ADIM
     expect(pa.json().dosyalar?.find((x: { kimlik: string }) => x.kimlik === d.kimlik)?.sonrakiAdim, pa.body).toContain('mesajınız');

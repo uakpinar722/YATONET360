@@ -114,7 +114,8 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
   it('devir kontrol listesi eksiksiz olmalı; devralan onaylar', async () => {
     const c = await o.gir('ds');
     expect((await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste: ['Telefon, şarj ve batarya'] })).statusCode).toBe(400);
-    const r = await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste: ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu'] });
+    expect((await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste: ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu'] })).json().hata).toContain('disk şifrelemesi'); // YG-245
+    const r = await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste: (await o.ist('GET', '/api/nobet/devir', c)).json().liste });
     expect((await o.ist('POST', `/api/nobet/devir/${r.json().kimlik}/onayla`, c)).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/nobet/devir/${r.json().kimlik}/onayla`, await o.gir('oy'))).statusCode).toBe(200);
   });

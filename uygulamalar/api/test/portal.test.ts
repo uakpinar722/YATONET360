@@ -27,7 +27,10 @@ const smsKod = () => sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
 let n = 0;
 const kaydol = async (tel: string, ad = 'Deneme Sahip') => {
   await ist('POST', '/api/kayit/kod', undefined, { telefon: tel });
-  const r = await ist('POST', '/api/kayit/tamamla', undefined, { telefon: tel, kod: smsKod(), ad, eposta: `sahip${++n}@deneme.yatonet.local` });
+  let r = await ist('POST', '/api/kayit/tamamla', undefined, { telefon: tel, kod: smsKod(), ad, eposta: `sahip${++n}@deneme.yatonet.local` });
+  if (r.statusCode === 409) { // YG-1757: dosya açılışında hesap kendiliğinden açıldıysa telefon + SMS koduyla girilir
+    const g = await ist('POST', '/api/kimlik/telefon', undefined, { telefon: tel }); r = await ist('POST', '/api/kimlik/dogrula', ckr(g), { kod: smsKod() });
+  }
   expect(r.statusCode, r.body).toBe(200);
   const c = ckr(r);
   const kimlik = (await ist('GET', '/api/ben', c)).json().kimlik;
@@ -202,6 +205,7 @@ describe('portaldan iptal/devir talebi (YG-108)', () => {
 describe('portal görünürlüğü (YG-459, YG-1565)', () => {
   it('kayıt olan yat sahibi numarasıyla eşleşen dosyayı görür; başkasınınkini görmez; firma ve iç bilgi yoktur', async () => {
     const tel = '+905550100010'; const d = await dosyaAc({ sahipTel: tel });
+    expect((await sup.query(`SELECT 1 FROM kullanici_hesabi WHERE cep_telefonu = $1 AND parola_ozeti IS NULL`, [tel])).rowCount).toBe(1); // YG-1757: hesap açılışta oluşur
     const a = await kaydol(tel); const b = await kaydol('+905550100011');
     const ana = (await ist('GET', '/api/portal/ana', a.c)).json();
     expect(ana.dosyalar.map((x: any) => x.dosyaNo)).toEqual([d.dosyaNo]);

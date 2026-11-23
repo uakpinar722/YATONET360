@@ -23,7 +23,8 @@ const ACIL_ALICILAR = ['Operasyon Müdürü', 'Teknik Müdür', 'Teknik ve Opera
 import { acilEkipBildirimi, omAramaGorevi, tedbirSonrasiGorevler } from './acil_ek.js';
 const ACIL_TURLER = ['Can Güvenliği', 'Su Alma veya Batma', 'Yangın', 'Sürüklenme veya Bağlama Tehlikesi', 'Kirlilik', 'Diğer'];
 const CAN_CEVRE = ['Can Güvenliği', 'Kirlilik'];
-const DEVIR_LISTESI = ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu'];
+// YG-245: kurumsal dizüstü bilgisayarda ekran kilidi ve disk şifrelemesi; kişisel hesap ve kişisel bulut yedeği kullanılmaz (beyan).
+const DEVIR_LISTESI = ['Telefon, şarj ve batarya', 'SIM PIN ve ekran kilidi', 'WhatsApp Business ve kurumsal e-posta oturumu', 'YATONET oturumu', 'Kurumsal dizüstü bilgisayar: ekran kilidi ve disk şifrelemesi açık', 'Kişisel hesap ve kişisel bulut yedeği kullanılmıyor'];
 
 /** YG-1517: olay tarih-saatine denk gelen yürürlükteki vardiya. Çizelge boşsa null. */
 /** YG-240: nöbet saatleri hafta içi 18:00–09:00, Cumartesi 15:00 sonrası, Pazar ve resmî tatil tüm gün; her katmanda (Dosya Sorumlusu, Teknik Uzman, Yönetici) her saat bir vardiyayla kapsanmalıdır. */

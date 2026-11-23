@@ -115,6 +115,27 @@ export async function sahaSorumlusuIhtiyacIsle(db: Pool): Promise<number> {
 }
 
 /** YG-064: dosya ekranındaki yapılacaklar; sıradaki işlem, sorumlu ve eksik kayıtlar. Tamamlandıkça sonraki adım kendiliğinden açılır. */
+/** YG-1757: dosya açılışında yat sahibinin cep telefonuyla parolasız portal hesabı açılır (giriş telefon + SMS kodu); numarada yat sahibi hesabı varsa yalnız bağlanır. */
+export async function yatSahibiHesabi(c: PoolClient, dosya: string): Promise<string | null> {
+  const t = (await c.query(`SELECT x.kimlik, x.taraf_ref, x.kisi_adi_soyadi, x.telefon, x.eposta, x.kullanici_ref, d.yazisma_dili FROM dosya_tarafi x JOIN dosya d ON d.kimlik = x.dosya_ref WHERE x.dosya_ref = $1 AND x.taraf_rolu = 'Yat Sahibi' AND x.aktif AND x.telefon IS NOT NULL ORDER BY x.olusturma_zamani LIMIT 1`, [dosya])).rows[0];
+  if (!t || t.kullanici_ref) return t?.kullanici_ref ?? null;
+  const { kimlikNormalle } = await import('./kimlik.js'); const { GRUP_YAT } = await import('./portal.js');
+  const tel = kimlikNormalle(t.telefon).telefon; if (!tel) return null;
+  const var_ = (await c.query(`SELECT kimlik, kullanici_grubu FROM kullanici_hesabi WHERE cep_telefonu = $1`, [tel])).rows[0];
+  if (var_ && var_.kullanici_grubu !== GRUP_YAT) return null;
+  let h = var_?.kimlik as string | undefined;
+  if (!h) {
+    const ep = t.eposta && !(await c.query(`SELECT 1 FROM kullanici_hesabi WHERE lower(e_posta COLLATE "C") = lower($1 COLLATE "C")`, [t.eposta])).rowCount ? t.eposta : null;
+    h = (await c.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, cep_telefonu, dogrulama_yontemi, tercih_dili) VALUES ('Müşteri/Kurum',$1,$2,$3,$4,$3,'SMS kodu',$5) RETURNING kimlik`,
+      [GRUP_YAT, (t.kisi_adi_soyadi ?? 'Yat Sahibi').trim(), tel, ep, t.yazisma_dili === 'İngilizce' ? 'İngilizce' : 'Türkçe'])).rows[0].kimlik as string;
+    await c.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1,$2)`, [h, await rolId(c, 'Müşteri Portal Kullanıcısı')]);
+    await izYaz(c, { eylem: 'Yat Sahibi Hesabı Açıldı (Dosya Açılışı)', nesneTuru: 'Kullanıcı', nesneKimligi: h, sonuc: 'Başarılı' });
+  }
+  await c.query(`UPDATE dosya_tarafi SET kullanici_ref = $2 WHERE kimlik = $1`, [t.kimlik, h]);
+  if (t.taraf_ref) await c.query(`UPDATE taraf SET kullanici_ref = $2 WHERE kimlik = $1 AND kullanici_ref IS NULL`, [t.taraf_ref, h]);
+  return h;
+}
+
 export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; asama: string | null; oncelik: string; dosya_niteligi: string }) {
   const l: { is: string; sorumlu: string; engel?: boolean; hedef?: string | null; form?: { hedef: string; rol?: string } }[] = [];
   const ekip = new Set((await db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [d.kimlik])).rows.map((r) => r.rol as string));
@@ -382,6 +403,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       const sahip = (await c.query(`SELECT o.* FROM yat y JOIN taraf o ON o.kimlik = y.yat_sahibi_ref WHERE y.kimlik = $1`, [t.yat_ref])).rows[0];
       if (sahip && t.talep_sahibi_turu !== 'Yat Sahibi') await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_ref, taraf_rolu, kisi_adi_soyadi, telefon, eposta, kullanici_ref, olusturan_ref) VALUES ($1,$2,'Yat Sahibi',$3,$4,$5,$6,$7)`, [d.kimlik, sahip.kimlik, sahip.unvan_ad_soyad, sahip.telefon, sahip.eposta, sahip.kullanici_ref, o.kullanici]);
       if (sahip && t.talep_sahibi_turu === 'Yat Sahibi') await c.query(`UPDATE dosya_tarafi SET taraf_ref = $2, kullanici_ref = $3 WHERE kimlik = $1`, [talepTarafi.kimlik, sahip.kimlik, sahip.kullanici_ref]);
+      await yatSahibiHesabi(c, d.kimlik); // YG-1757
       if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigorta_taraf_ref, sigortaci_adi, police_no, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [d.kimlik, t.talep_sahibi_turu === 'Sigorta Şirketi' ? talepTarafi.kimlik : null, sigortaAdi, g.policeNo?.trim() || t.police_no_beyan, g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan, o.kullanici]);
       if (sigortali) await cerceveKontrol(c, d.kimlik, d.dosya_no); // YG-1552
       await (await import('./belge_uret.js')).belgeUret(c, { tur: 'Hasar İhbar ve İlk Kayıt', nesne: d.kimlik, dosya: d.kimlik }); // YG-715
