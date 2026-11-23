@@ -73,6 +73,27 @@ describe('keşif ücreti (YG-864, YG-865, YG-1487)', () => {
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-ucreti`, ts, { sonTarih: '2099-01-01', bolgeDisi: 40 }); expect(r.statusCode, r.body).toBe(200); expect(r.json().tutar).toBe(190);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-ucreti`, ts, { sonTarih: '2099-01-01' })).statusCode).toBe(409);
   });
+  it('Keşif Teklifi ONY-24 ile onaya gider; onayla Ticari Sorumluya ödeme talebi görevi; sigortalıda gitmez (YG-211)', async () => {
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); const ds = await o.gir('ds');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-teklifi`, await o.gir('tu'), {})).statusCode).toBe(403);
+    await o.sup.query(`UPDATE dosya_tarafi SET aktif = false WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-teklifi`, ds, {})).json().hata).toContain('iletişim');
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [d.kimlik, o.K.ds]);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-teklifi`, ds, { bolgeDisi: 40 }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().tutar).toBeGreaterThanOrEqual(190);
+    const ot = (await o.sup.query(`SELECT metin, durum FROM onay_talebi WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
+    expect(ot.durum).toBe('Bekliyor'); expect(ot.metin).toContain('Keşif Teklifi'); expect(ot.metin).not.toContain('[');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-teklifi`, ds, {})).statusCode).toBe(409);
+    { // onay: Box 1 zorunlu; onayla Ticari Sorumluya Keşif Ücreti Ödeme Talebi görevi
+      const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${r.json().kimlik}`])).rows[0].metin; const bel = m.match(/#onay=([\w-]+)/)[1];
+      const ek = (await o.ist('GET', `/api/onay/${bel}`)).json(); const ilk = ek.kutular?.[0]?.ad ?? ek.kutular?.[0];
+      await o.ist('POST', `/api/onay/${bel}/kod`, undefined, { kanal: 'SMS' }); const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
+      const kr = await o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular: ilk ? { [ilk]: true } : {} }); expect(kr.statusCode, kr.body).toBe(200);
+      expect((await o.kart('Keşif Ücreti Ödeme Talebi', d.kimlik)).baslik).toContain('Keşif Ücreti');
+    }
+    const s = await sigortali('Keşif Sigorta 2');
+    expect((await o.ist('POST', `/api/dosya/${s.kimlik}/kesif-teklifi`, await o.gir('ts'), {})).json().hata).toContain('Sigortalı');
+  });
   it('sigortalıda talep değil proforma; teklif olmadan da faturalanır; ikinci kez olmaz', async () => {
     const d = await sigortali('Keşif Sigorta'); const ts = await o.gir('ts');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-ucreti`, ts, { sonTarih: '2099-01-01' })).statusCode).toBe(409);

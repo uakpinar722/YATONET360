@@ -11,6 +11,7 @@ import { gunAy, tutar } from './metin.js';
 import { altNumara } from './sure.js';
 import { parasalZincir, parametre, sonMakam } from './teklif.js';
 import { UUID } from './yat.js';
+import { kutuAyikla, onaySonucKaydet, onayTalebiAc } from './onay.js';
 
 type Db = Pool | PoolClient;
 const R2 = (x: number) => Math.round(Number((x * 100).toPrecision(12))) / 100;
@@ -25,6 +26,13 @@ belgeBagiKaydet('Vergi Dayanağı', async (db, k) => (await mfmMi(db, k) ? 'tama
 export interface KdvSonucu { durum: 'Standart KDV' | 'KDV tevkifatlı' | 'KDV istisnası'; tevkifat: { pay: number; payda: number } | null }
 
 /** YG-878, YG-879, YG-881: KDV durumu kullanıcıdan alınmaz. Sigortaya kesilen faturada istisna yoktur; profil yoksa Standart KDV; istisna yazısı yoksa veya süresi geçtiyse Standart KDV. */
+/** YG-1487: Keşif Teklifi onaylanınca Ticari Sorumluya Keşif Ücreti Ödeme Talebi görevi (ONY-24 doğan görevi; silsile MFM → TİD, limit üstü GMY/CEO). */
+onaySonucKaydet('ONY-24', async (c, t, karar) => {
+  if (karar !== 'Onaylandı' || !t.dosya_ref) return;
+  const no = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [t.dosya_ref])).rows[0]?.dosya_no;
+  await kartAc(c, { tur: 'Keşif Ücreti Ödeme Talebi', kategori: 'gorev', baslik: `${no} · Keşif Ücreti Ödeme Talebini Hazırlayınız`, ozet: 'Keşif Teklifi yat sahibince onaylandı; keşif ücreti keşiften önce ödenir.', sahipRol: await rolId(c, TICARI), nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref });
+});
+
 export async function kdvBelirle(db: Db, dosya: string, muhatap: string, tarih = new Date()): Promise<KdvSonucu> {
   const gun = tarih.toISOString().slice(0, 10);
   if (muhatap === 'Sigorta Şirketi') {
@@ -76,6 +84,29 @@ export function vergiYollari(s: FastifyInstance, b: Baglam) {
     if (!r.rowCount) return y.code(404).send({ hata: 'Bu numarada taraf kaydı bulunamadı.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'KDV İstisna Yazısı', nesneTuru: 'Taraf', nesneKimligi: r.rows[0].kimlik, yeni: { bitis: g.bitis }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
+  });
+
+  // YG-211, YG-1487: sigortasız dosyada Keşif Teklifi (tarife + bölge dışı, KDV dahil) yat sahibine ONY-24 ile SMS kodlu onaya gider.
+  s.post('/dosya/:id/kesif-teklifi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { bolgeDisi?: number };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const d = (await b.db.query(`SELECT dosya_no, dosya_niteligi, yazisma_dili, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+    if (d.dosya_sorumlusu_ref !== o.kullanici && !(await rolVar(o.kullanici, TICARI))) return y.code(403).send({ hata: 'Keşif Teklifini Dosya Sorumlusu veya Ticari Sorumlu gönderir.' });
+    if (d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada yat sahibinden keşif onayı alınmaz.' });
+    if ((await b.db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-24' AND durum IN ('Bekliyor', 'Onaylandı') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Bu dosyada Keşif Teklifi onayı bulunmaktadır.' });
+    const t = (await b.db.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif ORDER BY (telefon IS NOT NULL OR eposta IS NOT NULL) DESC LIMIT 1`, [id])).rows[0];
+    if (!t?.telefon && !t?.eposta) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });
+    const net = R2(await parametre(b.db, 'kesif_ucreti_eur') + (Number(g.bolgeDisi) > 0 ? Number(g.bolgeDisi) : 0));
+    const kdv = (await kdvBelirle(b.db, id, 'Yat Sahibi')).durum === 'KDV istisnası' ? 0 : await parametre(b.db, 'kdv_orani');
+    const dahil = R2(net * (1 + kdv / 100)); const dil = dilKod(d.yazisma_dili);
+    const s0 = (await b.db.query(`SELECT metin FROM sablon_metni WHERE kod = 'ONY-24' AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil])).rows[0];
+    if (!s0) return y.code(409).send({ hata: 'Keşif Teklifi onay metni yürürlükte değildir.' });
+    const { kutular } = kutuAyikla(s0.metin);
+    return islem(async (c) => {
+      const r = await onayTalebiAc(c, { dosya: id, ony: 'ONY-24', dil, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, tutar: tutar(dahil, dil), amount: tutar(dahil, dil), 'bağlantı': b.webAdresi, link: b.webAdresi }, kutular: kutular.map((k, n) => ({ ad: k, zorunlu: n === 0 })), tutar: dahil, taraf: t.kimlik, kullanici: t.kullanici_ref, aliciAd: t.kisi_adi_soyadi, telefon: t.telefon, eposta: t.eposta, belgeAdi: 'Keşif Teklifi', nesneTuru: 'Dosya', nesneKimligi: id, hazirlayan: o.kullanici, webAdresi: b.webAdresi });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Keşif Teklifi Onaya Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { net, dahil }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { kimlik: r.kimlik, tutar: dahil };
+    });
   });
 
   // YG-864, YG-1487: sigortasız dosyada keşif ücreti Ödeme Talebi; bölge dışında ulaşım ve konaklama gerçek tutarla eklenir.

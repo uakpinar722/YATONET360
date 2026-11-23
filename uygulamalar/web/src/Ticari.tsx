@@ -842,6 +842,7 @@ function KesifVeAyriKalem({ dosya, ticari, kalemler, sigortali, yap }: { dosya: 
         {ticari && <><label htmlFor="ka-t">{sigortali ? 'Keşif Bedeli (EUR)' : 'Bölge Dışı Ulaşım ve Konaklama (EUR)'}</label><input id="ka-t" inputMode="decimal" value={t} onChange={(e) => setT(e.target.value)} />
           {sigortali ? <button className="btn2 kucuk" disabled={!(sayi(t) > 0)} onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-faturasi`, { tutar: sayi(t) }), 'Keşif bedeli proforması onaya gönderildi.')}>Keşif Bedeli Proforması</button>
             : <button className="btn2 kucuk" disabled={!son} onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-ucreti`, { sonTarih: son, bolgeDisi: t ? sayi(t) : undefined }), 'Keşif Ücreti talebi onaya gönderildi.')}>Keşif Ücreti Talebi</button>}</>}
+        {!sigortali && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-teklifi`, { bolgeDisi: t ? sayi(t) : undefined }), 'Keşif Teklifi yat sahibinin onayına gönderildi.')}>Keşif Teklifini Gönder</button>}{/* YG-211 */}
         {sigortali && <>
           <label htmlFor="ka-k">Ayrı Kalem Türü</label><select id="ka-k" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Acil Tedbir', 'Keşif Söküm-Montaj', 'Bekleme ve Muhafaza'].map((x) => <option key={x}>{x}</option>)}</select>
           <label htmlFor="ka-a">Kalem Açıklaması</label><input required id="ka-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
