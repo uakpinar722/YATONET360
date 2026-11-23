@@ -1811,6 +1811,11 @@ describe('istenecek belge listesi (YG-1439)', () => {
       expect((await o.ist('POST', '/api/ihbar', c, P({ alternatifFormNo: `ALT-${yil}-9999`, bildirimZamani: z }))).json().hata).toContain('bloğunda değildir');
     }
   });
+  it('yat atık alım hizmetiyle açılan dosyada Operasyon Müdürüne koordinasyon görevi açılır (YG-866)', async () => {
+    const d = await o.dosyaAc({}, { hizmetTuru: 'Yat atık alım hizmeti' });
+    expect((await o.kart('Atık Alım Koordinasyonu', d.kimlik)).baslik).toContain('Yat Atık Alım Hizmeti');
+    const d2 = await o.dosyaAc({}, {}); expect(await o.kart('Atık Alım Koordinasyonu', d2.kimlik)).toBeUndefined();
+  });
   it('mesai dışında dış kanaldan gelen ihbar nöbetçi Dosya Sorumlusuna (YG-240)', async () => {
     const pazar = new Date('2026-11-22T10:00:00Z'); const donem = '2026-11';
     await o.sup.query(`UPDATE nobet_cizelgesi SET durum = 'Yerine Geçti' WHERE donem = $1 AND durum = 'Yürürlükte'`, [donem]);

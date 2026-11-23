@@ -407,6 +407,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigorta_taraf_ref, sigortaci_adi, police_no, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [d.kimlik, t.talep_sahibi_turu === 'Sigorta Şirketi' ? talepTarafi.kimlik : null, sigortaAdi, g.policeNo?.trim() || t.police_no_beyan, g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan, o.kullanici]);
       if (sigortali) await cerceveKontrol(c, d.kimlik, d.dosya_no); // YG-1552
       await (await import('./belge_uret.js')).belgeUret(c, { tur: 'Hasar İhbar ve İlk Kayıt', nesne: d.kimlik, dosya: d.kimlik }); // YG-715
+      // YG-866: atık alımını tesis veya lisanslı firma yapar; LGM koordine eder ve faturalar.
+      if (g.hizmetTuru === 'Yat atık alım hizmeti') await kartAc(c, { tur: 'Atık Alım Koordinasyonu', kategori: 'gorev', baslik: `${d.dosya_no} · Yat Atık Alım Hizmeti`, ozet: 'Atık alımını tesis veya lisanslı firmayla planlayınız; hizmet bedeli fiyat teklifiyle faturalanır.', oncelik: t.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipRol: await rolId(c, 'Operasyon Müdürü'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
       // Açılışı yapan görevli yeni dosya sorumlusu olmaz; atamayı Operasyon Müdürü yapar (YG-047).
       await c.query(`UPDATE is_karti SET nesne_turu = 'Dosya', nesne_kimligi = $2 WHERE nesne_kimligi = $1 AND tur = 'Kritik Öncelik Teyidi'`, [id, d.kimlik]);
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND tur = 'İhbar Açılış Kontrolü' AND durum = 'Bekliyor'`, [id]);

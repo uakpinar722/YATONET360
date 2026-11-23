@@ -291,7 +291,13 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Bekletmede', gerekce: 'Parça bekleniyor' })).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/is-emri/${e}/kapat`, tu, {})).statusCode).not.toBe(200);
     expect((await o.sup.query(`SELECT neden FROM beklemede_isareti WHERE kayit_referansi = $1 AND kaldirilma_zamani IS NULL`, [e])).rows[0]?.neden).toBe('Kabul Bekletmede'); // YG-399
-    expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).statusCode).toBe(200);
+    { // YG-082: garanti tanımlı dosyada kaynak zorunlu; garanti paketin kabul gününde başlar
+      const dr = (await o.sup.query(`SELECT dosya_ref FROM is_emri WHERE kimlik = $1`, [e])).rows[0].dosya_ref;
+      await o.sup.query(`UPDATE dosya SET garanti_tanimli = true, garanti_suresi_ay = 12, garanti_kapsami = 'İşçilik ve malzeme' WHERE kimlik = $1`, [dr]);
+      expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul' })).json().hata).toContain('Garanti kaynağını');
+    }
+    expect((await o.ist('POST', `/api/is-emri/${e}/teknik-kabul`, tu, { sonuc: 'Kabul', garantiKaynagi: 'İşçilik' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT garanti_kaynagi, garanti_baslangic IS NOT NULL b FROM kabul_kaydi WHERE is_emri_ref = $1 AND kabul_turu = 'Teknik Kabul'`, [e])).rows[0]).toEqual({ garanti_kaynagi: 'İşçilik', b: true });
   });
 });
 describe('kontrol noktası (YG-383, YG-389)', () => {

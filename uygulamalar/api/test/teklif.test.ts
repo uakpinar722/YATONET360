@@ -40,6 +40,9 @@ const kesifIsEmri = async (id: string, gonder = true) => {
   await o.sup.query(`INSERT INTO onay_talebi (dosya_ref, ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik) VALUES ($1,'ONY-01','k','m','d','a','+905550002222',$2,'Onaylandı',now())`, [id, `x${Math.random()}`]);
   const r0 = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif' }); expect(r0.json().hata).toContain('Mali limit'); // YG323-KN
   expect((await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'AC', firma, yer: 'Marmaris', kapsam: 'Pervane değişimi' })).json().hata).toContain('esas onarım'); // YG253-ACIL
+  await o.sup.query(`UPDATE dosya SET yurt_disi = true WHERE kimlik = $1`, [id]); // YG-1486: yurt dışında keşfi LGM Teknik Uzmanı yapar
+  expect((await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif', bedel: 0 })).json().hata).toContain('LGM Teknik Uzmanınca');
+  await o.sup.query(`UPDATE dosya SET yurt_disi = false WHERE kimlik = $1`, [id]);
   const r = await o.ist('POST', `/api/dosya/${id}/is-emri`, await o.gir('oy'), { tur: 'KN', firma, yer: 'Marmaris', kapsam: 'Keşif', bedel: 0 });
   expect(r.statusCode, r.body).toBe(200);
   expect((await o.sup.query(`SELECT yeni_limit_eur FROM is_emri_limit_gecmisi WHERE is_emri_ref = $1`, [r.json().kimlik])).rows).toEqual([{ yeni_limit_eur: '0.00' }]);

@@ -106,6 +106,8 @@ export async function bld01Gonder(c: PoolClient, isEmri: string, baglanti: strin
   return true;
 }
 
+export const GARANTI_KAYNAKLARI = ['İşçilik', 'Firma Tedariki', 'Üretici', 'Müşteri Tedariki']; // YG-082
+
 async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; dosya_ref: string; kurulus_ref: string }, simdi = new Date()) {
   const d = (await c.query(`SELECT d.oncelik, e.is_emri_turu FROM dosya d JOIN is_emri e ON e.kimlik = $2 WHERE d.kimlik = $1`, [e.dosya_ref, e.kimlik])).rows[0];
   // YG-326: yanıt sonu Pazar, resmî tatil veya 22:00-08:00 arasına düşerse ilk çalışma günü 12:00'a kayar; Kritikte kaydırma yoktur.
@@ -420,6 +422,8 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     // YG-1548: dalış ve sıcak işte kanıt yoksa iş emri açılmaz; acil işler beklemez.
     { const u = await import('./uyum.js'); for (const ol of u.isEmriUyumOlaylari(g.kapsam!)) { const ue = await u.uyumEngeli(b.db, ol, 'Dosya', id, d.oncelik === 'Kritik'); if (ue) return y.code(409).send({ hata: ue }); } }
     // YG-306: görevlendirme kontrolü; Ret engeller, Koşullu Kabul uyarıyla geçer.
+    // YG-1486: yurt dışındaki yatta keşfi LGM Teknik Uzmanı yapar; firmaya keşif iş emri verilmez.
+    if (g.tur === 'KN' && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND yurt_disi`, [id])).rowCount) return y.code(409).send({ hata: 'Yurt dışındaki yatta keşif LGM Teknik Uzmanınca yapılır; keşif iş emri açılmaz.' });
     // YG-309: işin yürütüleceği tesis firmaya ait olmalıdır.
     const tesis = (g as { tesis?: string }).tesis || null;
     if (tesis && !(UUID.test(tesis) && (await b.db.query(`SELECT 1 FROM firma_tesisi WHERE kimlik = $1 AND kurulus_ref = $2`, [tesis, g.firma])).rowCount)) return y.code(400).send({ hata: 'Tesis seçilen firmaya ait değildir.' });
@@ -728,15 +732,20 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-387: firma işinin teknik kabulü (kısmi kabul dahil) LGM yetkilisince; YG-413: kanıt eksikse kapanmaz; YG-330: tehlikeli atık belgesi.
   s.post('/is-emri/:id/teknik-kabul', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc, gerekce } = (i.body ?? {}) as { sonuc?: string; gerekce?: string };
+    const o = i.oturum!; const e = await lgmIsEmri((i.params as { id: string }).id, o.kullanici); const { sonuc, gerekce, garantiKaynagi } = (i.body ?? {}) as { sonuc?: string; gerekce?: string; garantiKaynagi?: string };
     if (!e) return yok(y);
     if (!(await ekipteMi(e.dosya_ref, o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']))) return y.code(403).send({ hata: 'Teknik kabulü Teknik Uzman verir.' });
     // YG-649: Paket Kabulü iş devam ederken teslim edilen paketi kabul eder; Bekletmede gerekçeyle sonucu erteler.
     if (!['Kabul', 'Koşullu Kabul', 'Paket Kabulü', 'Ret', 'Bekletmede'].includes(sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz: Kabul, Koşullu Kabul, Paket Kabulü, Ret, Bekletmede.' });
+    // YG-082: garanti tanımlı dosyada kabul edilen paketin garantisi kabul gününde başlar; kaynağı seçilir.
+    const garantili = ['Kabul', 'Paket Kabulü'].includes(sonuc ?? '') && Boolean((await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND garanti_tanimli`, [e.dosya_ref])).rowCount);
+    if (garantili && !GARANTI_KAYNAKLARI.includes(garantiKaynagi ?? '')) return y.code(400).send({ hata: `Garanti kaynağını seçiniz: ${GARANTI_KAYNAKLARI.join(', ')}.` });
+    const garantiBaslat = async () => { if (garantili) await b.db.query(`INSERT INTO kabul_kaydi (dosya_ref, is_emri_ref, kabul_turu, garanti_baslangic, garanti_kaynagi, kaydeden_ref) VALUES ($1,$2,$3,(now() AT TIME ZONE 'Europe/Istanbul')::date,$4,$5)`, [e.dosya_ref, e.kimlik, sonuc === 'Paket Kabulü' ? 'Paket Kabulü' : 'Teknik Kabul', garantiKaynagi, o.kullanici]); };
     if (sonuc === 'Paket Kabulü' || sonuc === 'Bekletmede') {
       if (!gerekce?.trim()) return y.code(400).send({ hata: sonuc === 'Paket Kabulü' ? 'Kabul edilen paketi yazınız.' : 'Bekletme gerekçesini yazınız.' });
       if (!['Aktif', 'Tamamlandı'].includes(e.statu)) return y.code(409).send({ hata: 'İş emri aktif veya tamamlanmış olmalıdır.' });
       await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);
+      await garantiBaslat(); // YG-082
       await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: `Teknik Kabul: ${sonuc}`, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       // YG-399: kabul tamamlanamadıysa dosya Bekletmede işaretiyle izlenir (sayaç durmaz; 7 gün hedef).
       if (sonuc === 'Bekletmede' && !(await b.db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND kayit_referansi = $2 AND kaldirilma_zamani IS NULL`, [e.dosya_ref, e.kimlik])).rowCount)
@@ -750,6 +759,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (sonuc === 'Koşullu Kabul') return y.code(400).send({ hata: 'Koşullu kabul açık iş listesiyle ayrı kaydedilir.' });
     const sonuclanmamis = (await b.db.query(`SELECT count(*)::int n FROM is_emri_ilerleme WHERE is_emri_ref = $1 AND NOT dogrulandi`, [e.kimlik])).rows[0].n;
     if (sonuc === 'Kabul' && sonuclanmamis) return y.code(409).send({ hata: 'Kabul için Doğrulanmamış ilerlemenin doğrulanması bekleniyor.' });
+    await garantiBaslat(); // YG-082
     await b.db.query(`UPDATE is_emri SET teknik_kabul_sonucu = $2, teknik_kabul_eden_ref = $3, statu = CASE WHEN $2 = 'Ret' THEN 'Aktif' ELSE statu END, teknik_ret_sayisi = teknik_ret_sayisi + CASE WHEN $2 = 'Ret' THEN 1 ELSE 0 END, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, sonuc, o.kullanici]);
     return { tamam: true };
   });
