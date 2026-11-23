@@ -21,6 +21,7 @@ const TAKYIDAT = ['Yok', 'Rehin / ipotek', 'Haciz', 'İhtiyati tedbir / ihtiyati
 export function YatSahibiAna({ ben }: { ben: Ben }) {
   const [v, setV] = useState<Ana | null>(null); const [hata, setHata] = useState(''); const [form, setForm] = useState(false); const [acik, setAcik] = useState<string | null>(null); const [onay, setOnay] = useState<string | null>(null);
   const yukle = () => istek<Ana>('/portal/ana').then(setV).catch((e) => setHata(e.message));
+  const [hizli, setHizli] = useState<'' | 'yat' | 'garanti'>(''); // YG-1565
   useEffect(() => { void yukle(); }, []);
   if (onay) return <OnayEkrani belirtec={onay} gomulu geri={() => { setOnay(null); void yukle(); }} />;
   if (form) return <HasarBildirimi bitti={() => { setForm(false); void yukle(); }} />;
@@ -52,7 +53,12 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
         </div>
       ))}
       <div className="bolum">Hızlı İşlemler</div>
-      <div className="dugmeler"><button className="btn2" onClick={() => setForm(true)}>Hasar Bildir</button></div>
+      <div className="dugmeler"><button className="btn2" onClick={() => setForm(true)}>Hasar Bildir</button>
+        <button className="btn2" onClick={() => setForm(true)}>Yeni Talep</button>
+        <button className="btn2" onClick={() => setHizli(hizli === 'yat' ? '' : 'yat')}>Yatlarım</button>
+        <button className="btn2" onClick={() => setHizli(hizli === 'garanti' ? '' : 'garanti')}>Garanti Talebi</button></div>
+      {hizli === 'yat' && v && <div className="ozet">{[...new Set(v.dosyalar.map((k) => k.yat))].map((y) => <div key={y}><b>{y}</b> · {v.dosyalar.filter((k) => k.yat === y).length} dosya</div>)}{!v.dosyalar.length && <div className="bos">Kayıtlı yatınız bulunmamaktadır.</div>}</div>}
+      {hizli === 'garanti' && v && <div className="ozet"><div className="not">Garanti talebi tamamlanan dosyanın ayrıntısından iletilir; dosyayı seçiniz.</div>{v.dosyalar.filter((k) => k.renk === 'gri').map((k) => <div key={k.kimlik}>{k.yat} · {k.dosyaNo} <button className="btn2 kucuk" onClick={() => setAcik(k.kimlik)}>Seç</button></div>)}{!v.dosyalar.some((k) => k.renk === 'gri') && <div className="bos">Tamamlanan dosyanız bulunmamaktadır.</div>}</div>}
       <YetkiliAtama />
       <AcilDurumBolumu />
     </>
