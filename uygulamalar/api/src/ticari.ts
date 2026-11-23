@@ -174,6 +174,8 @@ export async function alacakIsle(db: Pool, simdi = new Date()): Promise<number> 
 }
 
 let webAdresi = '';
+const ON_MUHASEBE = ['CEO', 'Genel Müdür Yardımcısı', 'Ticari İşler Direktörü', 'Muhasebe ve Finans Müdürü']; // YG-1080
+const ON_MUHASEBE_HATA = 'Ön muhasebe kayıtları yalnız CEO, Genel Müdür Yardımcısı, Ticari İşler Direktörü ve Muhasebe ve Finans Müdürüne açıktır.';
 /**
  * YG-885: nihai (teknik) kabulden 48 saat geçtiği hâlde proforma hazırlanmamışsa Ticari Sorumluya ve Ticari İşler Direktörüne;
  * muhasebeye iletilen proformanın faturası 48 saatte girilmemişse Muhasebe Hizmetine ve Muhasebe ve Finans Müdürüne bir kez bildirim gider.
@@ -915,10 +917,54 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  // YG-1080, YG-917: ön muhasebe kayıtları yalnız CEO, GMY, Ticari İşler Direktörü ve Muhasebe ve Finans Müdürüne açıktır; resmî defter tutulmaz.
+  const onMuhasebeci = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, ON_MUHASEBE])).rowCount);
+  const TARIH_OK = (x?: string) => /^\d{4}-\d{2}-\d{2}$/.test(x ?? '');
+  s.post('/on-muhasebe/genel-gider', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { tarih?: string; kalem?: string; tutar?: number; belge?: string; aciklama?: string };
+    if (!(await onMuhasebeci(o.kullanici))) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
+    if (!TARIH_OK(g.tarih) || !g.kalem?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Tarih, gider kalemi ve pozitif tutar zorunludur.' });
+    if (g.belge && !UUID.test(g.belge)) return y.code(400).send({ hata: 'Belge geçersizdir.' });
+    const r = (await b.db.query(`INSERT INTO genel_gider (tarih, kalem, tutar_eur, belge_ref, aciklama, giren_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.tarih, g.kalem.trim(), R2(Number(g.tutar)), g.belge ?? null, g.aciklama?.trim() || null, o.kullanici])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Genel Gider Kaydı', nesneTuru: 'Genel Gider', nesneKimligi: r.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
+  s.post('/on-muhasebe/hesap-hareketi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { hesapTuru?: string; hesapAdi?: string; tarih?: string; yon?: string; tutar?: number; aciklama?: string; cariTuru?: string; cari?: string };
+    if (!(await onMuhasebeci(o.kullanici))) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
+    if (!['Banka', 'Kasa'].includes(g.hesapTuru ?? '') || !g.hesapAdi?.trim() || !TARIH_OK(g.tarih) || !['Giriş', 'Çıkış'].includes(g.yon ?? '') || !(Number(g.tutar) > 0) || !g.aciklama?.trim()) return y.code(400).send({ hata: 'Hesap türü ve adı, tarih, yön, pozitif tutar ve açıklama zorunludur.' });
+    if (Boolean(g.cariTuru) !== Boolean(g.cari) || (g.cariTuru && !['Müşteri', 'Sigorta Şirketi', 'Çözüm Ortağı', 'Tedarikçi'].includes(g.cariTuru))) return y.code(400).send({ hata: 'Cari türünü ve cariyi birlikte seçiniz.' });
+    const r = (await b.db.query(`INSERT INTO hesap_hareketi (hesap_turu, hesap_adi, tarih, yon, tutar_eur, aciklama, cari_turu, cari_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [g.hesapTuru, g.hesapAdi.trim(), g.tarih, g.yon, R2(Number(g.tutar)), g.aciklama.trim(), g.cariTuru ?? null, g.cari ?? null, o.kullanici])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Banka/Kasa Hareketi', nesneTuru: 'Hesap Hareketi', nesneKimligi: r.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
+  s.get('/on-muhasebe/hesaplar', oturumlu, async (i, y) => {
+    if (!(await onMuhasebeci(i.oturum!.kullanici))) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
+    return (await b.db.query(`SELECT hesap_turu, hesap_adi, sum(CASE WHEN yon = 'Giriş' THEN tutar_eur ELSE -tutar_eur END)::float bakiye, count(*)::int hareket FROM hesap_hareketi GROUP BY hesap_turu, hesap_adi ORDER BY hesap_turu, hesap_adi`)).rows;
+  });
+  // Cari hareket: müşteri ve sigortada fatura borç, tahsilat alacak; Çözüm Ortağında doğrulanmış hakediş alacak, ödeme borç; elle girilen banka/kasa hareketleri cariye eklenir.
+  s.get('/on-muhasebe/cari', oturumlu, async (i, y) => {
+    const q = (i.query ?? {}) as { tur?: string; ref?: string };
+    if (!(await onMuhasebeci(i.oturum!.kullanici))) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
+    if (!['Müşteri', 'Sigorta Şirketi', 'Çözüm Ortağı', 'Tedarikçi'].includes(q.tur ?? '') || !q.ref?.trim()) return y.code(400).send({ hata: 'Cari türünü ve cariyi seçiniz.' });
+    const satirlar = q.tur === 'Çözüm Ortağı' || q.tur === 'Tedarikçi'
+      ? (await b.db.query(`SELECT * FROM (SELECT h.olusturma_zamani::date tarih, 'Hakediş ' || h.hakedis_no aciklama, 0::numeric borc, h.net alacak FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE e.kurulus_ref::text = $1 AND h.statu IN ('Doğrulandı', 'Ödeme Talimatında', 'Ödendi')
+          UNION ALL SELECT o.planlanan_tarih, 'Ödeme', o.tutar_eur, 0 FROM odeme_talimati o WHERE o.kurulus_ref::text = $1 AND o.durum = 'Ödendi'
+          UNION ALL SELECT t.tarih, 'Fatura ' || t.fatura_no, 0, t.tutar_eur FROM tedarikci_faturasi t WHERE t.kurulus_ref::text = $1
+          UNION ALL SELECT x.tarih, x.aciklama, CASE WHEN x.yon = 'Çıkış' THEN x.tutar_eur ELSE 0 END, CASE WHEN x.yon = 'Giriş' THEN x.tutar_eur ELSE 0 END FROM hesap_hareketi x WHERE x.cari_turu = $2 AND x.cari_ref = $1) s ORDER BY tarih`, [q.ref, q.tur])).rows
+      : (await b.db.query(`SELECT * FROM (SELECT coalesce(f.fatura_tarihi, f.olusturma_zamani::date) tarih, 'Fatura ' || coalesce(f.fatura_no, f.proforma_no) aciklama, f.toplam_eur borc, 0::numeric alacak FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref
+            WHERE f.durum IN ('Faturalandı', 'Kısmi Tahsil', 'Tahsil Edildi') AND (($2 = 'Müşteri' AND y.yat_sahibi_ref::text = $1 AND f.muhatap <> 'Sigorta Şirketi') OR ($2 = 'Sigorta Şirketi' AND f.muhatap = 'Sigorta Şirketi' AND EXISTS (SELECT 1 FROM dosya_sigorta_kaydi k WHERE k.dosya_ref = d.kimlik AND lower(k.sigortaci_adi) = lower($1))))
+          UNION ALL SELECT c.tarih, 'Tahsilat', 0, c.tutar_eur FROM tahsilat c JOIN musteri_faturasi f ON f.kimlik = c.fatura_ref JOIN dosya d ON d.kimlik = f.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref
+            WHERE ($2 = 'Müşteri' AND y.yat_sahibi_ref::text = $1 AND f.muhatap <> 'Sigorta Şirketi') OR ($2 = 'Sigorta Şirketi' AND f.muhatap = 'Sigorta Şirketi' AND EXISTS (SELECT 1 FROM dosya_sigorta_kaydi k WHERE k.dosya_ref = d.kimlik AND lower(k.sigortaci_adi) = lower($1)))
+          UNION ALL SELECT x.tarih, x.aciklama, CASE WHEN x.yon = 'Çıkış' THEN x.tutar_eur ELSE 0 END, CASE WHEN x.yon = 'Giriş' THEN x.tutar_eur ELSE 0 END FROM hesap_hareketi x WHERE x.cari_turu = $2 AND x.cari_ref = $1) s ORDER BY tarih`, [q.ref, q.tur])).rows;
+    let bakiye = 0; const l = satirlar.map((r) => { bakiye = R2(bakiye + Number(r.borc) - Number(r.alacak)); return { tarih: String(r.tarih instanceof Date ? r.tarih.toISOString().slice(0, 10) : r.tarih), aciklama: r.aciklama, borc: Number(r.borc), alacak: Number(r.alacak), bakiye }; });
+    return { satirlar: l, bakiye };
+  });
+
   // YG-850: gelir, maliyet ve nakit hareketleri ayrı satırlar; dosya ve tür süzgeci, satır başına kaynak kayıt.
   s.get('/mali-hareket', oturumlu, async (i, y) => {
     const o = i.oturum!; const q = (i.query ?? {}) as { dosya?: string; tur?: string };
-    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [o.kullanici, ['Muhasebe ve Finans Müdürü', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Genel Müdür Yardımcısı', 'CEO']])).rowCount) return y.code(403).send({ hata: 'Mali hareketleri Muhasebe ve Finans ile ticari yöneticiler görür.' });
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [o.kullanici, ON_MUHASEBE])).rowCount) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
     if (q.dosya && !UUID.test(q.dosya)) return y.code(400).send({ hata: 'Dosya geçersizdir.' });
     if (q.tur && !['Gelir', 'Maliyet', 'Nakit Giriş', 'Nakit Çıkış'].includes(q.tur)) return y.code(400).send({ hata: 'Hareket türünü seçiniz.' });
     const satirlar = (await b.db.query(`SELECT m.tur, m.kaynak, m.kaynak_ref, m.tarih::text, m.tutar_eur::float tutar, m.belge_no, d.dosya_no FROM mali_hareket m LEFT JOIN dosya d ON d.kimlik = m.dosya_ref WHERE ($1::uuid IS NULL OR m.dosya_ref = $1) AND ($2::text IS NULL OR m.tur = $2) ORDER BY m.tarih DESC, m.tur LIMIT 500`, [q.dosya ?? null, q.tur ?? null])).rows;

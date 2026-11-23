@@ -991,7 +991,32 @@ export function SigortaEk2() {
   );
 }
 
-/** YG-850: gelir, maliyet ve nakit hareketleri ayrı satırlarda (yalnız MF ve ticari yöneticiler). */
+/** YG-1080, YG-917: ön muhasebe (genel gider, banka/kasa hareketi, hesap bakiyeleri); yalnız CEO, GMY, TİD ve MF Müdürü. Resmî defter değildir. */
+function OnMuhasebe() {
+  const [h, setH] = useState<{ hesap_turu: string; hesap_adi: string; bakiye: number; hareket: number }[] | null>(null); const [m, setM] = useState('');
+  const [g, setG] = useState({ tarih: '', kalem: '', tutar: '' }); const [x, setX] = useState({ hesapTuru: 'Banka', hesapAdi: '', tarih: '', yon: 'Giriş', tutar: '', aciklama: '' });
+  const yk = () => istek<NonNullable<typeof h>>('/on-muhasebe/hesaplar').then(setH).catch(() => setH(null));
+  useEffect(() => { void yk(); }, []);
+  if (!h) return null;
+  const sayi = (v: string) => Number(v.replace(/\./g, '').replace(',', '.'));
+  const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Ön Muhasebe</div><div className="ozet">{m && <div className="not" role="status">{m}</div>}
+    {h.map((r) => <div key={r.hesap_turu + r.hesap_adi}>{r.hesap_turu} · {r.hesap_adi} · Bakiye {eur(r.bakiye)} · {r.hareket} hareket</div>)}
+    <label htmlFor="om-gt">Gider Tarihi</label><input id="om-gt" type="date" value={g.tarih} onChange={(e) => setG({ ...g, tarih: e.target.value })} />
+    <label htmlFor="om-gk">Gider Kalemi</label><input id="om-gk" value={g.kalem} onChange={(e) => setG({ ...g, kalem: e.target.value })} />
+    <label htmlFor="om-gu">Tutar (EUR)</label><input id="om-gu" inputMode="decimal" value={g.tutar} onChange={(e) => setG({ ...g, tutar: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!g.tarih || !g.kalem.trim() || !(sayi(g.tutar) > 0)} onClick={() => is(istek('/on-muhasebe/genel-gider', { ...g, tutar: sayi(g.tutar) }).then(() => setG({ tarih: '', kalem: '', tutar: '' })), 'Genel gider kaydedildi.')}>Genel Gideri Kaydet</button>
+    <label htmlFor="om-ht">Hesap Türü</label><select id="om-ht" value={x.hesapTuru} onChange={(e) => setX({ ...x, hesapTuru: e.target.value })}><option>Banka</option><option>Kasa</option></select>
+    <label htmlFor="om-ha">Hesap Adı</label><input id="om-ha" value={x.hesapAdi} onChange={(e) => setX({ ...x, hesapAdi: e.target.value })} />
+    <label htmlFor="om-hd">Hareket Tarihi</label><input id="om-hd" type="date" value={x.tarih} onChange={(e) => setX({ ...x, tarih: e.target.value })} />
+    <label htmlFor="om-hy">Yön</label><select id="om-hy" value={x.yon} onChange={(e) => setX({ ...x, yon: e.target.value })}><option>Giriş</option><option>Çıkış</option></select>
+    <label htmlFor="om-hu">Hareket Tutarı (EUR)</label><input id="om-hu" inputMode="decimal" value={x.tutar} onChange={(e) => setX({ ...x, tutar: e.target.value })} />
+    <label htmlFor="om-hc">Açıklama</label><input id="om-hc" value={x.aciklama} onChange={(e) => setX({ ...x, aciklama: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!x.hesapAdi.trim() || !x.tarih || !(sayi(x.tutar) > 0) || !x.aciklama.trim()} onClick={() => is(istek('/on-muhasebe/hesap-hareketi', { ...x, tutar: sayi(x.tutar) }).then(() => setX({ ...x, tutar: '', aciklama: '' })), 'Hareket kaydedildi.')}>Hareketi Kaydet</button>
+  </div></>;
+}
+
+/** YG-850: gelir, maliyet ve nakit hareketleri ayrı satırlarda (yalnız CEO, GMY, TİD ve MF Müdürü). */
 function MaliHareketler() {
   const [v, setV] = useState<{ satirlar: { tur: string; kaynak: string; kaynak_ref: string; tarih: string; tutar: number; belge_no: string | null; dosya_no: string | null }[]; toplam: Record<string, number> } | null>(null); const [tur, setTur] = useState('');
   useEffect(() => { void istek<NonNullable<typeof v>>(`/mali-hareket${tur ? `?tur=${encodeURIComponent(tur)}` : ''}`).then(setV).catch(() => setV(null)); }, [tur]);
@@ -1017,6 +1042,7 @@ export function IdariIslemler() {
       <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
       <MaliHareketler />{/* YG-850 */}
+      <OnMuhasebe />{/* YG-1080, YG-917 */}
       <KurumsalEk2 yap={yap} />
       <MaliParametreler />
       <KartelaMaliyet />

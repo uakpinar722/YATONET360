@@ -70,9 +70,28 @@ describe('mali hareketler (YG-850)', () => {
     await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = current_date WHERE kimlik = $1`, [f, `MH-${Date.now()}`]);
     await o.sup.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, giren_ref) VALUES ($1,$2,200,current_date,'Havale',$3)`, [f, d.kimlik, o.K.ds]);
     expect((await o.ist('GET', `/api/mali-hareket?dosya=${d.kimlik}`, await o.gir('ds'))).statusCode).toBe(403);
-    const r = (await o.ist('GET', `/api/mali-hareket?dosya=${d.kimlik}`, await o.gir('ts'))).json();
+    expect((await o.ist('GET', `/api/mali-hareket?dosya=${d.kimlik}`, await o.gir('ts'))).statusCode).toBe(403); // YG-1080: yalnız CEO, GMY, TİD, MFM
+    const r = (await o.ist('GET', `/api/mali-hareket?dosya=${d.kimlik}`, await o.gir('mfm'))).json();
     expect(r.satirlar.map((x: { tur: string }) => x.tur).sort()).toEqual(['Gelir', 'Nakit Giriş']); expect(r.toplam['Nakit Giriş']).toBe(200);
-    expect((await o.ist('GET', `/api/mali-hareket?tur=Kâr`, await o.gir('ts'))).statusCode).toBe(400);
+    expect((await o.ist('GET', `/api/mali-hareket?tur=Kâr`, await o.gir('mfm'))).statusCode).toBe(400);
+  });
+  it('genel gider, banka/kasa hareketi ve cari ekstre yalnız dört role açık (YG-1080, YG-917)', async () => {
+    const mfm = await o.gir('mfm'); const ts = await o.gir('ts');
+    expect((await o.ist('POST', '/api/on-muhasebe/genel-gider', ts, { tarih: '2026-11-20', kalem: 'Kira', tutar: 1000 })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/on-muhasebe/genel-gider', mfm, { tarih: '2026-11-20', kalem: '', tutar: 1000 })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/on-muhasebe/genel-gider', mfm, { tarih: '2026-11-20', kalem: 'Kira', tutar: 1000 })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/mali-hareket?tur=Maliyet', mfm)).json().satirlar.some((x: { kaynak: string }) => x.kaynak === 'Genel Gider')).toBe(true);
+    const hesap = `Ana Banka ${Date.now()}`;
+    expect((await o.ist('POST', '/api/on-muhasebe/hesap-hareketi', mfm, { hesapTuru: 'Banka', hesapAdi: hesap, tarih: '2026-11-20', yon: 'Giriş', tutar: 500, aciklama: 'Tahsilat', cariTuru: 'Müşteri' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/on-muhasebe/hesap-hareketi', mfm, { hesapTuru: 'Banka', hesapAdi: hesap, tarih: '2026-11-20', yon: 'Giriş', tutar: 500, aciklama: 'Tahsilat' })).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/on-muhasebe/hesap-hareketi', mfm, { hesapTuru: 'Banka', hesapAdi: hesap, tarih: '2026-11-21', yon: 'Çıkış', tutar: 120, aciklama: 'Kira' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/on-muhasebe/hesaplar', mfm)).json().find((x: { hesap_adi: string }) => x.hesap_adi === hesap).bakiye).toBe(380);
+    const { d, taraf } = await kurumsal(); const f = await fatura(d, { toplam: 900, vade: '2026-12-01' });
+    await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = current_date WHERE kimlik = $1`, [f, `CR-${Date.now()}`]);
+    await o.sup.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, giren_ref) VALUES ($1,$2,300,current_date,'Havale',$3)`, [f, d.kimlik, o.K.ds]);
+    const muh = (await o.sup.query(`SELECT muhatap FROM musteri_faturasi WHERE kimlik = $1`, [f])).rows[0].muhatap;
+    if (muh !== 'Sigorta Şirketi') { const c = (await o.ist('GET', `/api/on-muhasebe/cari?tur=Müşteri&ref=${taraf}`, mfm)).json(); expect(c.bakiye).toBeGreaterThanOrEqual(600); }
+    expect((await o.ist('GET', `/api/on-muhasebe/cari?tur=Müşteri&ref=${taraf}`, ts)).statusCode).toBe(403);
   });
 });
 
