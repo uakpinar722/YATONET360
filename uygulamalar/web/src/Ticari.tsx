@@ -656,6 +656,17 @@ function NobetTakvimi() {
   </details>;
 }
 
+/** YG-278: sistem kesintisinde kullanılacak numaralı alternatif kayıt formları. */
+function AlternatifFormBlogu() {
+  const [adet, setAdet] = useState('10'); const [b, setB] = useState<{ kimlik: string; ilk: string; son: string } | null>(null); const [h, setH] = useState('');
+  return <><div className="bolum">Alternatif Kayıt Formu</div><div className="ozet">
+    <label htmlFor="af-a">Form Adedi</label><input id="af-a" type="number" min={1} max={50} value={adet} onChange={(e) => setAdet(e.target.value)} />
+    <button className="btn2 kucuk" onClick={() => { setH(''); void istek<{ kimlik: string; ilk: string; son: string }>('/alternatif-form/blok', { adet: Number(adet) }).then(setB).catch((x) => setH(x.message)); }}>Numara Bloğu Al</button>
+    {b && <div className="not">{b.ilk} – {b.son} · <a href={`/api/alternatif-form/blok/${b.kimlik}/pdf`} target="_blank" rel="noreferrer">Formları Yazdır</a></div>}
+    {h && <div className="hata" role="alert">{h}</div>}
+  </div></>;
+}
+
 export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
   const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null } | null>(null);
   const { yap, Mesaj } = useYap(() => istek<NonNullable<typeof n>>('/nobet/simdi').then(setN));
@@ -666,6 +677,7 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
       <h1>Nöbet ve Acil</h1><Mesaj />
       <div className="not">Nöbet, çağrı üzerine hazır bekleme niteliğindedir; gece fiilen çalışılırsa ertesi günün çalışma düzenini (geç başlama veya serbest zaman) birim amiri belirler.</div>
       {cizelge && <NobetCizelge />}
+      {izinli && <AlternatifFormBlogu />}
       <NobetTeknikTaraf />
       <NobetTakvimi />
       {n && <div className="ozet"><div>{n.mesaiIcinde ? 'Mesai İçi' : 'Mesai Dışı'}</div><div>Nöbetçi Dosya Sorumlusu: {n.dosyaSorumlusu ?? '—'}</div><div>Nöbetçi Teknik Uzman: {n.teknikUzman ?? '—'}</div><div>Yönetici Nöbetçisi: {n.yonetici ?? '—'}</div></div>}

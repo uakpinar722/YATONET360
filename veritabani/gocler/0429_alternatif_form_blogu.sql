@@ -1,0 +1,2 @@
+-- YG-278: kesintide kullanılacak numaralı alternatif kayıt formu blokları (ALT-YYYY-NNNN).
+CREATE TABLE alternatif_form_blogu (kimlik uuid PRIMARY KEY DEFAULT gen_random_uuid(), yil integer NOT NULL, baslangic integer NOT NULL, bitis integer NOT NULL CHECK (bitis >= baslangic), veren_ref text NOT NULL REFERENCES kullanici_hesabi (kimlik), zaman timestamptz NOT NULL DEFAULT now(), UNIQUE (yil, baslangic));

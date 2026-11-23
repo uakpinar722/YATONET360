@@ -186,7 +186,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   // YG-551: Bilgi ve Belge Talebi (BLD-17) ve Ulaşılamama (BLD-18); Dosya Sorumlusu gönderir. Belge adresi operasyon kutusudur (CEO 18.11.2026); BLD-18 telefonu kurumsal hat bildirilene kadar Dosya Sorumlusunun telefonudur.
   const OPERASYON_EPOSTA = 'operasyon@limitglobalmarine.com.tr';
   s.post('/dosya/:id/belge-talebi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belgeler?: string[]; ulasilamadi?: boolean };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belgeler?: string[]; ulasilamadi?: boolean; eksikler?: boolean };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, h.e_posta, h.cep_telefonu FROM dosya d JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1 AND d.dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rows[0];
     if (!d) return y.code(403).send({ hata: 'Belge talebini Dosya Sorumlusu gönderir.' });
@@ -197,9 +197,10 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
       if (!d.cep_telefonu) return y.code(409).send({ hata: 'Telefon numaranız hesabınızda kayıtlı değildir.' });
       await yatTarafinaYaz(b.db, { olay: `bld18:${id}:${gun}`, kod: 'BLD-18', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Bilgilendirme`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, telefon: d.cep_telefonu, phone: d.cep_telefonu } });
     } else {
-      const l = (g.belgeler ?? []).map((x) => String(x).trim()).filter(Boolean);
-      if (!l.length) return y.code(400).send({ hata: 'İstenen belgeleri yazınız.' });
-      await yatTarafinaYaz(b.db, { olay: `bld17:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': OPERASYON_EPOSTA, 'e-mail': OPERASYON_EPOSTA } });
+      // YG-1439: "Eksik Belgeleri İste" sistemin belge listesindeki eksik zorunlu belgeleri tek mesajda ister.
+      const l = g.eksikler ? (await (await import('./portal.js')).belgeListesi(b.db, id)).filter((x) => x.zorunlu && x.durum === 'Eksik').map((x) => x.belge) : (g.belgeler ?? []).map((x) => String(x).trim()).filter(Boolean);
+      if (!l.length) return y.code(g.eksikler ? 409 : 400).send({ hata: g.eksikler ? 'Eksik zorunlu belge bulunmamaktadır.' : 'İstenen belgeleri yazınız.' });
+      await yatTarafinaYaz(b.db, { olay: `${g.eksikler ? 'bld17e' : 'bld17'}:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': OPERASYON_EPOSTA, 'e-mail': OPERASYON_EPOSTA } });
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.ulasilamadi ? 'Ulaşılamama Bildirimi' : 'Belge Talebi Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

@@ -52,8 +52,9 @@ describe('personel ek kayıtları (YG-974, YG-956, YG-947)', () => {
     const idr = await o.gir('idr'); expect((await o.ist('GET', '/api/personel-ek', idr)).json().acikZimmetler.some((x: { kimlik: string }) => x.kimlik === z)).toBe(true);
     expect((await o.ist('POST', `/api/zimmet/${z}/iade`, idr, {})).statusCode).toBe(200); expect((await o.ist('POST', `/api/zimmet/${z}/iade`, idr, {})).statusCode).toBe(409);
     { // YG-223: sistem erişimi olmayan personelde ıslak imzalı zimmet
-      const p = (await o.sup.query(`SELECT kullanici_ref FROM personel_karti LIMIT 1`)).rows[0]?.kullanici_ref as string | undefined;
-      if (p) {
+      await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1,'2026-01-01',$1) ON CONFLICT DO NOTHING`, [o.K.ds]);
+      const p = o.K.ds as string;
+      expect(p).toBeTruthy(); if (p) { // personel kartı yoksa test sessizce geçmesin
         const G = { personel: p, ekipman: 'Telsiz', tarih: '2026-11-02' };
         expect((await o.ist('POST', '/api/zimmet/islak-imza', ds, G)).statusCode).toBe(404);
         expect((await o.ist('POST', '/api/zimmet/islak-imza', idr, G)).statusCode).toBe(400);

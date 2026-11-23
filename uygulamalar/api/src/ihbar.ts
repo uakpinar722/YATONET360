@@ -222,6 +222,36 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-033: form doldurulurken önerilen öncelik.
+  // YG-278: kesinti öncesi nöbet için numaralı alternatif kayıt formu bloğu; numaralar tekildir, boş formlar PDF olarak yazdırılır.
+  s.post('/alternatif-form/blok', ihbarci, async (i, y) => {
+    const adet = Number(((i.body ?? {}) as { adet?: number }).adet ?? 10);
+    if (!Number.isInteger(adet) || adet < 1 || adet > 50) return y.code(400).send({ hata: 'Adet 1 ile 50 arasında olmalıdır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN'); await c.query(`SELECT pg_advisory_xact_lock(hashtext('alternatif_form_blogu'))`);
+      const yil = Number(new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 4));
+      const bas = Number((await c.query(`SELECT coalesce(max(bitis), 0) n FROM alternatif_form_blogu WHERE yil = $1`, [yil])).rows[0].n) + 1;
+      if (bas + adet - 1 > 9999) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Bu yılın numara aralığı dolmuştur.' }); }
+      const k = (await c.query(`INSERT INTO alternatif_form_blogu (yil, baslangic, bitis, veren_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [yil, bas, bas + adet - 1, i.oturum!.kullanici])).rows[0].kimlik;
+      await izYaz(c, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Alternatif Form Bloğu', nesneTuru: 'Alternatif Form Bloğu', nesneKimligi: k, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      const no = (n: number) => `ALT-${yil}-${String(n).padStart(4, '0')}`;
+      return { kimlik: k, ilk: no(bas), son: no(bas + adet - 1) };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  s.get('/alternatif-form/blok/:id/pdf', ihbarci, async (i, y) => {
+    const { id } = i.params as { id: string };
+    const k = UUID.test(id) ? (await b.db.query(`SELECT yil, baslangic, bitis FROM alternatif_form_blogu WHERE kimlik = $1`, [id])).rows[0] : null;
+    if (!k) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    const bos = '________________________________';
+    const alan = ['Bildirim Tarihi ve Saati', 'Kanal (Telefon / WhatsApp / E-posta)', 'Bildiren Adı Soyadı ve Sıfatı', 'Bildiren Telefonu', 'Yat Adı', 'Yatın Konumu', 'Olay ve İhtiyaç', 'Can, Çevre veya Batma Riski (Evet / Hayır)', 'Alınan İlk Önlem', 'Kaydı Alan (Rol)'];
+    const bolumler = [] as import('./pdf.js').Bolum[];
+    for (let n = k.baslangic; n <= k.bitis; n++) bolumler.push({ baslik: `Form No: ALT-${k.yil}-${String(n).padStart(4, '0')}`, tur: 'alanlar', alanlar: alan.map((et) => ({ et, deger: bos, genis: true })) });
+    const ilk = `ALT-${k.yil}-${String(k.baslangic).padStart(4, '0')}`;
+    const pdf = await (await import('./pdf.js')).pdfUret({ ad: 'Alternatif Kayıt Formu', no: ilk, tarih: (await import('./metin.js')).gunAy(new Date()), surum: 'Rev.0', dil: 'tr', bolumler });
+    return y.type('application/pdf').header('Content-Disposition', `inline; filename="${ilk}.pdf"`).send(pdf);
+  });
+
   s.post('/ihbar/oncelik-oner', ihbarci, async (i) => {
     const g = (i.body ?? {}) as { cevaplar?: Record<string, string>; acil?: boolean };
     return { onerilen: await oncelikOner(b.db, g.cevaplar ?? {}, Boolean(g.acil)) };
@@ -234,6 +264,8 @@ export function ihbarYollari(s: FastifyInstance, b: Baglam) {
     if (alt) {
       if (!g.bildirimZamani) return y.code(400).send({ hata: 'Alternatif formdaki bildirim zamanını giriniz.' });
       if ((await b.db.query(`SELECT talep_no FROM talep WHERE lower(alternatif_form_no) = lower($1)`, [alt])).rowCount) return y.code(409).send({ hata: 'Bu alternatif form daha önce aktarılmıştır.' });
+      const an = /^ALT-(\d{4})-(\d{4})$/i.exec(alt); // YG-278: sistemden alınan numara verilmiş bir blokta olmalıdır
+      if (an && !(await b.db.query(`SELECT 1 FROM alternatif_form_blogu WHERE yil = $1 AND $2 BETWEEN baslangic AND bitis`, [Number(an[1]), Number(an[2])])).rowCount) return y.code(409).send({ hata: 'Bu numara verilmiş bir alternatif form bloğunda değildir.' });
     }
     // YG-1438: Dosya Sorumlusu bayrak, özel/ticari kullanım ve klas durumunu girer; yabancı bayrakta Türkiye'de kalış bitişi sorulur.
     if (!g.yat?.yatId && (!g.yat?.bayrak?.trim() || !['Özel', 'Ticari'].includes(g.yat?.kullanim ?? '') || !['Evet', 'Hayır', 'Bilinmiyor'].includes(g.yat?.klas ?? ''))) return y.code(400).send({ hata: 'Bayrak, kullanım (Özel/Ticari) ve klas durumunu (Evet/Hayır/Bilinmiyor) giriniz.' });

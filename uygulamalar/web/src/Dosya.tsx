@@ -542,6 +542,7 @@ function BelgeTalebi({ id, yap }: { id: string; yap: (f: () => Promise<any>, tam
   return <Blok baslik="Belge Talebi">
     <label htmlFor="bt-l">İstenen Belgeler (virgülle ayırınız)</label><input required id="bt-l" value={l} onChange={(e) => setL(e.target.value)} />
     <div className="dugmeler"><button className="btn2" disabled={!l.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { belgeler: l.split(',') }), 'Belge talebi yat sahibine gönderildi.').then(() => setL(''))}>Yat Sahibine Gönder</button>
+      <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { eksikler: true }), 'Eksik belgeler yat sahibinden istendi.')}>Eksik Belgeleri İste</button>{/* YG-1439 */}
       <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { ulasilamadi: true }), 'Ulaşılamama bildirimi gönderildi.')}>Ulaşılamadı Bildir</button></div>
   </Blok>;
 }

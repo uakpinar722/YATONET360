@@ -1802,6 +1802,14 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const t2 = (await o.sup.query(`SELECT alternatif_form_no, bildirim_alinma_zamani FROM talep WHERE kimlik = $1`, [r.json().kimlik])).rows[0];
     expect(t2.alternatif_form_no).toBe(no); expect(new Date(t2.bildirim_alinma_zamani).toISOString()).toBe(z);
     expect((await o.ist('POST', '/api/ihbar', c, P({ alternatifFormNo: no, bildirimZamani: z }))).statusCode).toBe(409);
+    { // numara bloğu ve PDF
+      expect((await o.ist('POST', '/api/alternatif-form/blok', c, { adet: 0 })).statusCode).toBe(400);
+      const r1 = await o.ist('POST', '/api/alternatif-form/blok', c, { adet: 3 }); expect(r1.statusCode, r1.body).toBe(200); const b1 = r1.json(); const b2 = (await o.ist('POST', '/api/alternatif-form/blok', c, { adet: 2 })).json();
+      const sayi = (x: string) => Number(x.slice(-4)); expect(sayi(b1.son) - sayi(b1.ilk)).toBe(2); expect(sayi(b2.ilk)).toBe(sayi(b1.son) + 1);
+      const pdf = await o.ist('GET', `/api/alternatif-form/blok/${b1.kimlik}/pdf`, c); expect(pdf.statusCode).toBe(200); expect(pdf.headers['content-type']).toContain('pdf');
+      const yil = b1.ilk.slice(4, 8);
+      expect((await o.ist('POST', '/api/ihbar', c, P({ alternatifFormNo: `ALT-${yil}-9999`, bildirimZamani: z }))).json().hata).toContain('bloğunda değildir');
+    }
   });
   it('mesai dışında dış kanaldan gelen ihbar nöbetçi Dosya Sorumlusuna (YG-240)', async () => {
     const pazar = new Date('2026-11-22T10:00:00Z'); const donem = '2026-11';
