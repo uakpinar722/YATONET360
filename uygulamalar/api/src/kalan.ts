@@ -412,6 +412,21 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sözleşme Ödeme Vadesi', nesneTuru: 'Parametre', nesneKimligi: String(g.sigortaci ?? g.kurum), yeni: { gun, dayanak: g.dayanak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-1487: sigorta şirketiyle Ek-1 keşif bedeli mutabakatı; keşif bedeli proforması bu kayıttan okunur.
+  s.get('/sigorta-kesif-bedelleri', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
+    return (await b.db.query(`SELECT sigortaci_adi, tutar_eur::float tutar, dayanak FROM sigorta_kesif_bedeli ORDER BY sigortaci_adi`)).rows;
+  });
+  s.post('/sigorta-kesif-bedeli', { preHandler: tamOturumGerekli(b) }, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { sigortaci?: string; tutar?: number; dayanak?: string };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'))).includes(o.kullanici) && !(await rolSahipleri(b.db, await rolId(b.db, 'Ticari İşler Direktörü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Ek-1 keşif bedelini Müşteri ve Paydaş İlişkileri Müdürü veya Ticari İşler Direktörü girer.' });
+    if (!g.sigortaci?.trim()) return y.code(400).send({ hata: 'Sigorta şirketini yazınız.' });
+    const t = Math.round(Number(g.tutar) * 100) / 100; if (!(t > 0)) return y.code(400).send({ hata: 'Keşif bedelini EUR olarak giriniz.' });
+    if (!g.dayanak?.trim()) return y.code(400).send({ hata: 'Dayanağı (Ek-1 maddesi veya mutabakat yazısı) yazınız.' });
+    await b.db.query(`INSERT INTO sigorta_kesif_bedeli (sigortaci_adi, tutar_eur, dayanak, giren_ref) VALUES ($1,$2,$3,$4) ON CONFLICT (lower(sigortaci_adi)) DO UPDATE SET tutar_eur = EXCLUDED.tutar_eur, dayanak = EXCLUDED.dayanak, giren_ref = EXCLUDED.giren_ref, zaman = now()`, [g.sigortaci.trim(), t, g.dayanak.trim(), o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ek-1 Keşif Bedeli', nesneTuru: 'Parametre', nesneKimligi: g.sigortaci.trim(), yeni: { tutar: t, dayanak: g.dayanak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.get('/dosya/:id/kapanis-asamalari', { preHandler: tamOturumGerekli(b) }, async (i, y) => { // YG-073
     const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, i.oturum!.kullanici, id))) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });

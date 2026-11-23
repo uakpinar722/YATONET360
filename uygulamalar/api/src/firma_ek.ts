@@ -926,19 +926,27 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     return { durum: 'Onayda' };
   });
   s.post('/dosya/:id/kaldirma-tasima', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; ekipman?: string; kapasite?: number; agirlik?: number; yeniHasar?: boolean; guzergah?: string; suAlma?: string; hasarAciklama?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; ekipman?: string; kapasite?: number; agirlik?: number; yeniHasar?: boolean; guzergah?: string; suAlma?: string; hasarAciklama?: string; acilRisk?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!['Kaldırma', 'Taşıma', 'Tesis Değişikliği', 'Kara Taşıması', 'Denize İndirme'].includes(g.tur ?? '') || !g.ekipman?.trim()) return y.code(400).send({ hata: 'Tür ve ekipmanı girmenizi rica ederiz.' });
     // YG-376: kara taşımasında güzergâh, denize indirmeden sonra su alma kontrolü, yeni hasarda açıklama zorunludur.
     if (g.tur === 'Kara Taşıması' && !g.guzergah?.trim()) return y.code(400).send({ hata: 'Kara taşımasında güzergâhı (çıkış ve varış yeri) yazınız.' });
     if (g.tur === 'Denize İndirme' && !['Su Alma Yok', 'Su Alma Var'].includes(g.suAlma ?? '')) return y.code(400).send({ hata: 'Denize indirmeden sonra su alma kontrolünün sonucunu seçiniz.' });
     if (g.yeniHasar && !g.hasarAciklama?.trim()) return y.code(400).send({ hata: 'İşlem sırasında oluşan yeni hasarı kısaca tanımlayınız.' });
-    const e = await takyidatTasimaEngeli(b.db, id); if (e) return y.code(409).send({ hata: e });
+    // YG-104: can, çevre veya batma riskinde acil ilk tedbir onayı beklemez; istisna kaydedilir ve Hukuk ve Uyum Direktörüne bildirilir.
+    if (g.acilRisk && !['Can', 'Çevre', 'Batma'].includes(g.acilRisk)) return y.code(400).send({ hata: 'Acil risk türünü seçiniz.' });
+    const e = await takyidatTasimaEngeli(b.db, id); if (e && !g.acilRisk) return y.code(409).send({ hata: e, islem: 'Acil risk varsa türünü seçiniz' });
+    const istisna = e && g.acilRisk ? g.acilRisk : null;
     if (g.tur !== 'Tesis Değişikliği') {
       if (!(Number(g.kapasite) > 0) || !(Number(g.agirlik) > 0)) return y.code(400).send({ hata: 'Ekipman kapasitesi ve yat ağırlığını girmenizi rica ederiz.' });
       if (Number(g.kapasite) < Number(g.agirlik)) return y.code(409).send({ hata: 'Ekipman kapasitesi yat ağırlığını karşılamıyor.' });
     }
-    const r = await b.db.query(`INSERT INTO kaldirma_tasima (dosya_ref, tur, ekipman, kapasite_ton, yat_agirlik_ton, yeni_hasar, kaydeden_ref, guzergah, su_alma_kontrolu, yeni_hasar_aciklama) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [id, g.tur, g.ekipman.trim(), g.kapasite ?? null, g.agirlik ?? null, Boolean(g.yeniHasar), o.kullanici, g.guzergah?.trim() || null, g.tur === 'Denize İndirme' ? g.suAlma : null, g.hasarAciklama?.trim() || null]);
+    const r = await b.db.query(`INSERT INTO kaldirma_tasima (dosya_ref, tur, ekipman, kapasite_ton, yat_agirlik_ton, yeni_hasar, kaydeden_ref, guzergah, su_alma_kontrolu, yeni_hasar_aciklama, acil_istisna) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [id, g.tur, g.ekipman.trim(), g.kapasite ?? null, g.agirlik ?? null, Boolean(g.yeniHasar), o.kullanici, g.guzergah?.trim() || null, g.tur === 'Denize İndirme' ? g.suAlma : null, g.hasarAciklama?.trim() || null, istisna]);
+    if (istisna) {
+      const no = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0].dosya_no; const hud = await rolId(b.db, HUD);
+      await kartAc(b.db, { tur: 'Acil Taşıma Bildirimi', kategori: 'gorev', baslik: `${no} · Tedbirli Yat Acil ${g.tur}`, ozet: `${istisna} riski nedeniyle onay beklenmeden ${g.tur!.toLocaleLowerCase('tr-TR')} yapıldı (${g.ekipman.trim()}); takyidat değerlendirmesini yapınız.`, oncelik: 'Kritik', sahipRol: hud, nesneTuru: 'Dosya', nesneKimligi: id });
+      await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Tedbirli Yat Acil Taşıma', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { tur: g.tur, acilRisk: istisna }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    }
     if (g.suAlma === 'Su Alma Var') { const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]; await kartAc(b.db, { tur: 'Su Alma Tedbiri', kategori: 'gorev', baslik: `${d.dosya_no} · Denize İndirmeden Sonra Su Alma`, ozet: 'Yat tekrar kaldırılmalı veya acil tedbir alınmalıdır.', oncelik: 'Kritik', sahipKullanici: d.dosya_sorumlusu_ref ?? o.kullanici, nesneTuru: 'Dosya', nesneKimligi: id }); }
     if (g.yeniHasar) { const d = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0]; if (d.dosya_sorumlusu_ref) await kartAc(b.db, { tur: 'Uygunsuzluk Kaydı Aç', kategori: 'gorev', baslik: `${d.dosya_no} · Kaldırma ve Taşımada Yeni Hasar`, ozet: g.ekipman.trim(), oncelik: 'Yüksek', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id }); }
     return { kimlik: r.rows[0].kimlik };

@@ -58,6 +58,20 @@ describe('kapılar (YG-473, YG-099)', () => {
   });
 });
 
+describe('ulaşım planı (YG-1486)', () => {
+  it('yurt dışı dosyada randevu sayacı ulaşım planı tarihinden kurulur', async () => {
+    const d = await dosya(); const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/ulasim-plani`;
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    expect((await o.ist('POST', u, ds, { zaman: '2030-01-10T09:00:00Z' })).statusCode).toBe(409);
+    await o.sup.query(`UPDATE dosya SET yurt_disi = true WHERE kimlik = $1`, [d.kimlik]);
+    expect((await o.ist('POST', u, ds, { zaman: 'yarın' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, ds, { zaman: '2030-01-10T09:00:00Z' }); expect(r.statusCode, r.body).toBe(200);
+    const s = (await o.sup.query(`SELECT baslangic FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Randevu İletişimi' AND tamamlanma IS NULL`, [d.kimlik])).rows;
+    expect(s.length).toBe(1); expect(new Date(s[0].baslangic).toISOString()).toBe('2030-01-10T09:00:00.000Z');
+    await o.sup.query(`UPDATE dosya SET yurt_disi = false WHERE kimlik = $1`, [d.kimlik]);
+  });
+});
+
 describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
   it('hazır bildirimi 7 gün; süre geçince BLD-14 ve barınma görevi', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
@@ -72,6 +86,14 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
     await teslimIsle(o.db, new Date(Date.now() + 8 * 86_400_000));
     expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Barınma Gideri' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld14:${d.kimlik}%`])).rowCount).toBeGreaterThan(0);
+    // YG-550: 30. gün ihtar görevi ve risk geçişi, 90. gün tevdi veya satış değerlendirmesi
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Teslim Alınmayan Yat İhtarı' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(0);
+    await teslimIsle(o.db, new Date(Date.now() + 31 * 86_400_000));
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Teslim Alınmayan Yat İhtarı' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
+    expect((await o.sup.query(`SELECT teslim_risk_gecis_zamani FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].teslim_risk_gecis_zamani).not.toBeNull();
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Tevdi veya Satış Değerlendirmesi' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(0);
+    await teslimIsle(o.db, new Date(Date.now() + 91 * 86_400_000)); await teslimIsle(o.db, new Date(Date.now() + 92 * 86_400_000));
+    expect((await o.sup.query(`SELECT 1 FROM is_karti WHERE tur IN ('Tevdi veya Satış Değerlendirmesi', 'Teslim Alınmayan Yat İhtarı') AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(2);
   });
   it('tek hatırlatma, sonra onaysız teslim; fotoğraf zorunlu', async () => {
     const d = await dosya(); const ds = await o.gir('ds');

@@ -83,6 +83,19 @@ export async function teslimIsle(db: Pool, simdi = new Date()): Promise<number> 
     if ((d.telefon || d.eposta) && !d.vefat_isareti) await yatTarafinaYaz(db, { olay: `bld14:${d.kimlik}`, kod: 'BLD-14', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Teslim Daveti`, telefon: d.telefon, eposta: d.eposta, alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi, tarih: tr, date: tr, 'bağlantı': '', link: '' } });
     await kartAc(db, { tur: 'Barınma Gideri', kategori: 'islem', baslik: `${d.dosya_no} · Teslim Alınmayan Yat`, ozet: `${tr} sonrası barınma ve çekek gideri yat sahibine aittir.`, sahipRol: await rolId(db, 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik }); n++;
   }
+  // YG-550: hazır bildiriminden 30. gün yazılı ihtar görevi ve risk geçişi kaydı; 90. gün tevdi veya satış değerlendirmesi (Hukuk ve Uyum Direktörü, Dosya Sorumlusuna bilgi).
+  for (const [gun, anahtar] of [[30, 'teslim_30'], [90, 'teslim_90']] as const) {
+    for (const d of (await db.query(`SELECT d.kimlik, d.dosya_no, d.dosya_sorumlusu_ref, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.teslime_hazir_zamani <= $1::timestamptz - make_interval(days => $2) AND NOT EXISTS (SELECT 1 FROM teslim_kaydi k WHERE k.dosya_ref = d.kimlik AND k.durum LIKE 'Teslim Edildi%')`, [simdi, gun])).rows) {
+      if (!(await birKez(db, anahtar, d.kimlik))) continue;
+      const hud = await rolId(db, 'Hukuk ve Uyum Direktörü');
+      if (gun === 30) {
+        await db.query(`UPDATE dosya SET teslim_risk_gecis_zamani = coalesce(teslim_risk_gecis_zamani, $2) WHERE kimlik = $1`, [d.kimlik, simdi]);
+        await kartAc(db, { tur: 'Teslim Alınmayan Yat İhtarı', kategori: 'gorev', baslik: `${d.dosya_no} · 30. Gün Yazılı İhtar`, ozet: `${d.yat_adi} hazır bildiriminden 30 gün sonra teslim alınmadı; yazılı ihtar hazırlanır, risk geçişi kaydedildi.`, oncelik: 'Yüksek', sahipRol: hud, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+      } else await kartAc(db, { tur: 'Tevdi veya Satış Değerlendirmesi', kategori: 'gorev', baslik: `${d.dosya_no} · 90. Gün Tevdi veya Satış Değerlendirmesi`, ozet: `${d.yat_adi} hazır bildiriminden 90 gün sonra teslim alınmadı; tevdi veya satış yolu değerlendirilir.`, oncelik: 'Yüksek', sahipRol: hud, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+      if (d.dosya_sorumlusu_ref) await (await import('./bildirim.js')).bildir(db, { olay: `${anahtar}:${d.kimlik}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Teslim Alınmayan Yat (${gun}. gün)`, ozet: gun === 30 ? 'Yazılı ihtar görevi Hukuk ve Uyum Direktörüne açıldı.' : 'Tevdi veya satış değerlendirmesi Hukuk ve Uyum Direktörüne açıldı.' });
+      n++;
+    }
+  }
   return n;
 }
 

@@ -19,7 +19,22 @@ export function SozlesmeSureleri() {
     <label htmlFor="ss-o">Öncelik</label><select id="ss-o" value={f.oncelik} onChange={(e) => setF({ ...f, oncelik: e.target.value })}>{['Kritik', 'Yüksek', 'Normal', 'Planlı'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="ss-h">Taahhüt Süresi (Saat)</label><input required id="ss-h" inputMode="decimal" value={f.saat} onChange={(e) => setF({ ...f, saat: e.target.value })} />
     <button className="btn2" disabled={!f.saat || !(f.taraf === 'Sigorta Şirketi' ? f.sigortaci.trim() : f.kurum)} onClick={kaydet}>Süreyi Kaydet</button>
-    <OdemeVadesi kurumlar={k} /></>;
+    <OdemeVadesi kurumlar={k} />
+    <KesifBedeli /></>;
+}
+
+/** YG-1487: sigorta şirketiyle Ek-1 keşif bedeli mutabakatı; keşif bedeli proforması bu tutarla hazırlanır. */
+function KesifBedeli() {
+  const [l, setL] = useState<{ sigortaci_adi: string; tutar: number; dayanak: string }[]>([]); const [m, setM] = useState(''); const [f, setF] = useState({ sigortaci: '', tutar: '', dayanak: '' });
+  const yk = () => istek<typeof l>('/sigorta-kesif-bedelleri').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  const kaydet = () => void istek('/sigorta-kesif-bedeli', { sigortaci: f.sigortaci, tutar: Number(f.tutar.replace(/\./g, '').replace(',', '.')), dayanak: f.dayanak }).then(() => { setM('Ek-1 keşif bedeli kaydedildi.'); setF({ sigortaci: '', tutar: '', dayanak: '' }); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Ek-1 Keşif Bedeli</div>{m && <div className="not" role="status">{m}</div>}
+    <div className="ozet">{l.length === 0 ? <div className="not">Kayıt bulunmamaktadır; keşif bedeli proformada elle girilir.</div> : l.map((x) => <div key={x.sigortaci_adi}>{x.sigortaci_adi} · {x.tutar.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR · {x.dayanak}</div>)}</div>
+    <label htmlFor="kb-s">Sigorta Şirketi</label><input id="kb-s" value={f.sigortaci} onChange={(e) => setF({ ...f, sigortaci: e.target.value })} />
+    <label htmlFor="kb-t">Keşif Bedeli (EUR)</label><input id="kb-t" inputMode="decimal" value={f.tutar} onChange={(e) => setF({ ...f, tutar: e.target.value })} />
+    <label htmlFor="kb-d">Dayanak</label><input id="kb-d" value={f.dayanak} onChange={(e) => setF({ ...f, dayanak: e.target.value })} />
+    <button className="btn2" disabled={!f.sigortaci.trim() || !f.tutar || !f.dayanak.trim()} onClick={kaydet}>Keşif Bedelini Kaydet</button></>;
 }
 
 type V = { kimlik: string; sigortaci_adi: string | null; kurum: string | null; gun: number; dayanak: string };

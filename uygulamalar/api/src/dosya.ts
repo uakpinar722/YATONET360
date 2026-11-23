@@ -67,12 +67,14 @@ const kartKapat = (c: Db, tur: string, nesne: string) => c.query(`UPDATE is_kart
 
 /** YG-047, YG-048, YG-049: Dosya Sorumlusu, Operasyon Yöneticisi, Teknik Uzman ve Teknik Yönetici atanınca dosya Aktif olur ve keşif aşamasına geçer. */
 async function aktifeGecir(c: PoolClient, id: string, yapan: string) {
-  const d = (await c.query(`SELECT kimlik, statu, asama, oncelik, dosya_no, hasar_ilerleyebilir FROM dosya WHERE kimlik = $1`, [id])).rows[0];
+  const d = (await c.query(`SELECT kimlik, statu, asama, oncelik, dosya_no, hasar_ilerleyebilir, yurt_disi, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
   if (d.statu !== 'Açılış Kontrolünde') return;
   const ekip = new Set((await c.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [id])).rows.map((r) => r.rol as string));
   if (!['Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Yönetici'].every((r) => ekip.has(r)) || !(ekip.has('Teknik Uzman') || ekip.has('Sorumlu Teknik Uzman (Koordinatör)'))) return;
   await statuYaz(c, d, { statu: 'Aktif', asama: 'Keşif' }, 'Dosya ekibi tamamlandı', yapan, 'Dosya Sorumlusu');
-  await sureBaslat(c, { tur: 'Randevu İletişimi', oncelik: d.oncelik, baslangic: new Date(), dosya: id });
+  // YG-1486: yurt dışında randevu sayacı ulaşım planı tarihinden başlar; Dosya Sorumlusuna plan görevi açılır.
+  if (!d.yurt_disi) await sureBaslat(c, { tur: 'Randevu İletişimi', oncelik: d.oncelik, baslangic: new Date(), dosya: id });
+  else if (d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Ulaşım Planı', kategori: 'gorev', baslik: `${d.dosya_no} · Ulaşım Planı`, ozet: 'Yurt dışı dosyada randevu sayacı ulaşım planı tarihinden başlar; planı giriniz.', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
   if (d.oncelik !== 'Kritik') await (await import('./kesif_talebi.js')).kesifTalebiHazirla(c, id, d.dosya_no); // YG-1597
   // YG-1596: hasar ilerleyebilir işaretli Yüksek dosyada Teknik Uzman ilk yanıtta görüntülü değerlendirme yapar.
   if (d.hasar_ilerleyebilir && d.oncelik === 'Yüksek') {
@@ -683,6 +685,27 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       return { durum: 'Onaya Gönderildi' };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
+  // YG-1486: yurt dışı dosyada Dosya Sorumlusu ulaşım planı tarihini girer; randevu sayacı bu tarihten kurulur.
+  s.post('/dosya/:id/ulasim-plani', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { zaman?: string };
+    const d = await dosyaGetir(id, o.kullanici);
+    if (!d) return yok(y);
+    if (d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Bu kaydı Dosya Sorumlusu girer.' });
+    if (!d.yurt_disi) return y.code(409).send({ hata: 'Ulaşım planı yurt dışı dosyada girilir.' });
+    const z = g.zaman ? new Date(g.zaman) : null;
+    if (!z || Number.isNaN(z.getTime())) return y.code(400).send({ hata: 'Ulaşım planı tarihini giriniz.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`UPDATE dosya SET ulasim_plani_zamani = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, z]);
+      await (await import('./sure.js')).sureKur(c, { tur: 'Randevu İletişimi', oncelik: d.oncelik, baslangic: z, dosya: id });
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Ulaşım Planı' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [id]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ulaşım Planı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { ulasim_plani_zamani: z.toISOString() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+    return { zaman: z.toISOString() };
   });
 
   // YG-1595: Kritik yalnız acil evrede geçerlidir; risk kontrol altına alınınca kendiliğinden Yüksek olur, keşif Yüksek sürelerle yürür.

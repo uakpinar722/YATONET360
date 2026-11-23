@@ -299,13 +299,16 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-246, YG-247: dijital devir; kontrol listesi tamamlanmadan olmaz; devralan onaylar.
   s.post('/nobet/devir', oturumlu, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { devralan?: string; liste?: string[]; acikOlaylar?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { devralan?: string; liste?: string[]; acikOlaylar?: string; ihbarlar?: { ozet?: string; oncelik?: string; kanal?: string }[] };
     // Nöbet yalnız LGM personeli arasında devredilir; yetki içerikten önce denetlenir (erişim taraması bulgusu).
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Nöbet devri LGM personeli arasında yapılır.' });
     if (!g.devralan || g.devralan === o.kullanici) return y.code(400).send({ hata: 'Devralan kişiyi seçiniz.' });
     if (!(await b.db.query(`SELECT 1 FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü' AND hesap_durumu = 'Aktif'`, [g.devralan])).rowCount) return y.code(400).send({ hata: 'Devralan kişi aktif bir LGM personeli olmalıdır.' });
     if (DEVIR_LISTESI.some((m) => !g.liste?.includes(m))) return y.code(400).send({ hata: `Kontrol listesini tamamlayınız: ${DEVIR_LISTESI.filter((m) => !g.liste?.includes(m)).join(', ')}.` });
-    const r = (await b.db.query(`INSERT INTO nobet_devri (devreden_ref, devralan_ref, kontrol_listesi, acik_olaylar) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [o.kullanici, g.devralan, JSON.stringify(g.liste), g.acikOlaylar ?? null])).rows[0];
+    // YG-246: e-posta veya telefonla gelip dosyaya aktarılmamış ihbarlar devir kaydına girer.
+    const ih = (g.ihbarlar ?? []).map((x) => ({ ozet: String(x.ozet ?? '').trim().slice(0, 400), oncelik: x.oncelik ?? '', kanal: x.kanal ?? '' }));
+    if (ih.some((x) => !x.ozet || !['Kritik', 'Yüksek', 'Normal', 'Planlı'].includes(x.oncelik) || !['E-posta', 'Telefon'].includes(x.kanal))) return y.code(400).send({ hata: 'Aktarılacak ihbarda özet, öncelik ve kanal (E-posta veya Telefon) giriniz.' });
+    const r = (await b.db.query(`INSERT INTO nobet_devri (devreden_ref, devralan_ref, kontrol_listesi, acik_olaylar, devir_ihbarlari) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [o.kullanici, g.devralan, JSON.stringify(g.liste), g.acikOlaylar ?? null, JSON.stringify(ih)])).rows[0];
     await bildir(b.db, { olay: `nobet-devir:${r.kimlik}`, kullanicilar: [g.devralan], baslik: 'Nöbet Devri Onayınızı Bekliyor', acil: true, sms: true });
     return { kimlik: r.kimlik };
   });
@@ -321,8 +324,14 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   s.post('/nobet/devir/:id/onayla', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
-    const r = await b.db.query(`UPDATE nobet_devri SET devralan_onay_zamani = now() WHERE kimlik = $1 AND devralan_ref = $2 AND devralan_onay_zamani IS NULL RETURNING kimlik`, [id, o.kullanici]);
+    const r = await b.db.query(`UPDATE nobet_devri SET devralan_onay_zamani = now() WHERE kimlik = $1 AND devralan_ref = $2 AND devralan_onay_zamani IS NULL RETURNING kimlik, devir_ihbarlari`, [id, o.kullanici]);
     if (!r.rowCount) return yok(y);
+    // YG-246: Kritik ve Yüksek ihbar ilk yanıt süresi içinde, Normal ve Planlı 24 saat içinde dosyaya aktarılır.
+    const { saatBul } = await import('./sure.js');
+    for (const x of r.rows[0].devir_ihbarlari as { ozet: string; oncelik: string; kanal: string }[]) {
+      const saat = ['Kritik', 'Yüksek'].includes(x.oncelik) ? (await saatBul(b.db, 'İlk Yanıt', x.oncelik)) ?? 2 : 24;
+      await kartAc(b.db, { tur: 'Devir İhbar Aktarımı', kategori: 'gorev', baslik: `Devirde Gelen İhbar (${x.kanal}, ${x.oncelik})`, ozet: `${x.ozet} · İhbarı dosyaya aktarınız.`, oncelik: ['Kritik', 'Yüksek'].includes(x.oncelik) ? 'Yüksek' : 'Normal', sonZaman: new Date(Date.now() + saat * 3_600_000), sahipKullanici: o.kullanici, nesneTuru: 'Nöbet Devri', nesneKimligi: id });
+    }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Nöbet Devri Onaylandı', sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

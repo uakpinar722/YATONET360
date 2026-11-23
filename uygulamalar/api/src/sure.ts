@@ -36,7 +36,7 @@ export const SURE_BASLANGIC: Record<string, string> = {
 };
 
 /** YG-043: teklif süresi sistem parametresinden okunur (Yüksek, Normal, Planlı); diğer süreler sabit tablodadır. */
-async function saatBul(db: Db, tur: string, oncelik: string): Promise<number | undefined> {
+export async function saatBul(db: Db, tur: string, oncelik: string): Promise<number | undefined> {
   if (tur === 'Teklif' && SURE_SAAT.Teklif![oncelik] !== undefined) {
     const k = { Yüksek: 'teklif_saat_yuksek', Normal: 'teklif_saat_normal', Planlı: 'teklif_saat_planli' }[oncelik];
     const v = k ? (await db.query(`SELECT deger FROM sistem_parametresi WHERE kod = $1`, [k])).rows[0]?.deger : null;

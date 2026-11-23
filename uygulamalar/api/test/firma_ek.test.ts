@@ -89,6 +89,12 @@ describe('saha kapıları (YG-409, YG-143, YG-142, YG-141)', () => {
     await o.sup.query(`UPDATE yat SET takyidat = '{Haciz}' WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik]);
     expect(await takyidatTasimaEngeli(o.db, d.kimlik)).toContain('Hukuk');
     expect((await o.ist('POST', u, ds, { tur: 'Tesis Değişikliği', ekipman: 'Römork' })).statusCode).toBe(409);
+    { // YG-104: batma riskinde onay beklemeden taşınır, Hukuk ve Uyuma Kritik bildirim
+      expect((await o.ist('POST', u, ds, { tur: 'Tesis Değişikliği', ekipman: 'Römork', acilRisk: 'Kâr' })).statusCode).toBe(400);
+      expect((await o.ist('POST', u, ds, { tur: 'Tesis Değişikliği', ekipman: 'Römork', acilRisk: 'Batma' })).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT oncelik FROM is_karti WHERE tur = 'Acil Taşıma Bildirimi' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].oncelik).toBe('Kritik');
+      expect((await o.sup.query(`SELECT count(*)::int n FROM kaldirma_tasima WHERE dosya_ref = $1 AND acil_istisna = 'Batma'`, [d.kimlik])).rows[0].n).toBe(1);
+    }
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/tasima-onayi`, ds, { gerekce: 'Fırtına' })).statusCode).toBe(200);
     const k = await o.kart('Taşıma Onayı', d.kimlik); await o.karar(k.kimlik, 'hud', 'Onayla');
     expect((await o.ist('POST', u, ds, { tur: 'Tesis Değişikliği', ekipman: 'Römork' })).statusCode).toBe(200);

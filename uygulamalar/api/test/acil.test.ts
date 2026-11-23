@@ -118,6 +118,14 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     const r = await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste: (await o.ist('GET', '/api/nobet/devir', c)).json().liste });
     expect((await o.ist('POST', `/api/nobet/devir/${r.json().kimlik}/onayla`, c)).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/nobet/devir/${r.json().kimlik}/onayla`, await o.gir('oy'))).statusCode).toBe(200);
+    { // YG-246: devirde gelen ihbarlar süreli aktarım görevine dönüşür
+      const liste = (await o.ist('GET', '/api/nobet/devir', c)).json().liste;
+      expect((await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste, ihbarlar: [{ ozet: 'X', oncelik: 'Acil', kanal: 'Telefon' }] })).statusCode).toBe(400);
+      const d2 = (await o.ist('POST', '/api/nobet/devir', c, { devralan: o.K.oy, liste, ihbarlar: [{ ozet: 'Gece e-postası', oncelik: 'Yüksek', kanal: 'E-posta' }, { ozet: 'Telefon notu', oncelik: 'Normal', kanal: 'Telefon' }] })).json().kimlik;
+      expect((await o.ist('POST', `/api/nobet/devir/${d2}/onayla`, await o.gir('oy'))).statusCode).toBe(200);
+      const k = (await o.sup.query(`SELECT oncelik, extract(epoch FROM son_zaman - olusturma_zamani) / 3600 AS saat FROM is_karti WHERE tur = 'Devir İhbar Aktarımı' AND nesne_kimligi = $1 ORDER BY son_zaman`, [d2])).rows;
+      expect(k.length).toBe(2); expect(Number(k[0].saat)).toBeLessThanOrEqual(2.1); expect(Math.round(Number(k[1].saat))).toBe(24);
+    }
   });
 });
 

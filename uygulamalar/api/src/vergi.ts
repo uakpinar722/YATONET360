@@ -131,9 +131,12 @@ export function vergiYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tutar?: number };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await rolVar(o.kullanici, TICARI))) return y.code(403).send({ hata: 'Proformayı Ticari Sorumlu hazırlar.' });
-    const d = (await b.db.query(`SELECT d.dosya_no, d.dosya_niteligi, s.sigorta_hasar_dosya_no FROM dosya d LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE d.kimlik = $1`, [id])).rows[0];
+    const d = (await b.db.query(`SELECT d.dosya_no, d.dosya_niteligi, s.sigorta_hasar_dosya_no, e.tutar_eur::float ek1 FROM dosya d LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik LEFT JOIN sigorta_kesif_bedeli e ON lower(e.sigortaci_adi) = lower(trim(s.sigortaci_adi)) WHERE d.kimlik = $1`, [id])).rows[0];
     if (d.dosya_niteligi !== 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Bu dosya sigorta bağlantılı değildir.' });
     if (!d.sigorta_hasar_dosya_no) return y.code(409).send({ hata: 'Sigortaya fatura için Hasar dosya numarası bekleniyor.' });
+    // YG-1487: Ek-1 mutabakatı varsa tutar kayıttan okunur; farklı tutar girilemez.
+    if (d.ek1 && g.tutar !== undefined && Number(g.tutar) !== d.ek1) return y.code(409).send({ hata: `Ek-1 mutabakatındaki keşif bedeli ${tutar(d.ek1)} EUR'dur.` });
+    if (d.ek1) g.tutar = d.ek1;
     if (!(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Keşif bedelini girmenizi rica ederiz.' });
     if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE dosya_ref = $1 AND aciklama = 'Keşif Bedeli' AND durum <> 'Reddedildi'`, [id])).rowCount) return y.code(409).send({ hata: 'Bu dosyada keşif bedeli proforması bulunmaktadır.' });
     const oran = await parametre(b.db, 'kdv_orani'); const s0 = await kdvBelirle(b.db, id, 'Sigorta Şirketi'); const h = kdvHesapla(Number(g.tutar), 0, oran, s0);

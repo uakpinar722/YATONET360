@@ -620,6 +620,7 @@ function NobetCagrilari() {
 function NobetDevri() {
   const [v, setV] = useState<{ liste: string[]; kisiler: { kimlik: string; ad_soyad: string }[]; bekleyen: { kimlik: string; devreden: string; acik_olaylar: string | null }[] } | null>(null);
   const [f, setF] = useState({ devralan: '', acikOlaylar: '' }); const [s, setS] = useState<string[]>([]);
+  const [ih, setIh] = useState<{ ozet: string; oncelik: string; kanal: string }[]>([]); /* YG-246 */
   const yk = () => istek<NonNullable<typeof v>>('/nobet/devir').then(setV).catch(() => setV(null));
   const { yap, Mesaj } = useYap(yk);
   useEffect(() => { void yk(); }, []);
@@ -630,7 +631,13 @@ function NobetDevri() {
       <label htmlFor="nd-k">Devralan</label><select required id="nd-k" value={f.devralan} onChange={(e) => setF({ ...f, devralan: e.target.value })}><option value="">Seçiniz</option>{v.kisiler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
       {v.liste.map((m) => <label className="kutu" key={m}><input type="checkbox" checked={s.includes(m)} onChange={(e) => setS(e.target.checked ? [...s, m] : s.filter((x) => x !== m))} /><span>{m}</span></label>)}
       <label htmlFor="nd-a">Açık Olaylar</label><input id="nd-a" value={f.acikOlaylar} onChange={(e) => setF({ ...f, acikOlaylar: e.target.value })} />
-      <button className="btn2" disabled={!f.devralan || s.length < v.liste.length} onClick={() => void yap(() => istek('/nobet/devir', { devralan: f.devralan, liste: s, acikOlaylar: f.acikOlaylar || undefined }).then(() => { setF({ devralan: '', acikOlaylar: '' }); setS([]); return { uyari: 'Devir kaydedildi; devralanın onayı bekleniyor.' }; }))}>Nöbeti Devret</button>
+      <div className="not">Dosyaya aktarılmamış e-posta veya telefon ihbarları (Kritik ve Yüksek ilk yanıt süresinde, Normal ve Planlı 24 saatte aktarılır)</div>
+      {ih.map((x, n) => <div className="dugmeler" key={n}><input aria-label="İhbar Özeti" value={x.ozet} onChange={(e) => setIh(ih.map((z, m) => m === n ? { ...z, ozet: e.target.value } : z))} />
+        <select aria-label="Öncelik" value={x.oncelik} onChange={(e) => setIh(ih.map((z, m) => m === n ? { ...z, oncelik: e.target.value } : z))}><option value="">Öncelik</option>{['Kritik', 'Yüksek', 'Normal', 'Planlı'].map((p) => <option key={p}>{p}</option>)}</select>
+        <select aria-label="Kanal" value={x.kanal} onChange={(e) => setIh(ih.map((z, m) => m === n ? { ...z, kanal: e.target.value } : z))}><option value="">Kanal</option><option>E-posta</option><option>Telefon</option></select>
+        <button className="btn2 kucuk" onClick={() => setIh(ih.filter((_, m) => m !== n))}>Çıkar</button></div>)}
+      <button className="btn2 kucuk" onClick={() => setIh([...ih, { ozet: '', oncelik: '', kanal: '' }])}>İhbar Ekle</button>
+      <button className="btn2" disabled={!f.devralan || s.length < v.liste.length} onClick={() => void yap(() => istek('/nobet/devir', { devralan: f.devralan, liste: s, acikOlaylar: f.acikOlaylar || undefined, ihbarlar: ih }).then(() => { setF({ devralan: '', acikOlaylar: '' }); setS([]); setIh([]); return { uyari: 'Devir kaydedildi; devralanın onayı bekleniyor.' }; }))}>Nöbeti Devret</button>
     </div></>;
 }
 
@@ -841,8 +848,8 @@ function KesifVeAyriKalem({ dosya, ticari, kalemler, sigortali, yap }: { dosya: 
     <div className="soru"><span><b className="koyu">Keşif Bedeli ve Ayrı Kalemler</b></span>
       <div className="tam">
         <label htmlFor="ka-s">Son Ödeme Tarihi</label><input required id="ka-s" type="date" value={son} onChange={(e) => setSon(e.target.value)} />
-        {ticari && <><label htmlFor="ka-t">{sigortali ? 'Keşif Bedeli (EUR)' : 'Bölge Dışı Ulaşım ve Konaklama (EUR)'}</label><input id="ka-t" inputMode="decimal" value={t} onChange={(e) => setT(e.target.value)} />
-          {sigortali ? <button className="btn2 kucuk" disabled={!(sayi(t) > 0)} onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-faturasi`, { tutar: sayi(t) }), 'Keşif bedeli proforması onaya gönderildi.')}>Keşif Bedeli Proforması</button>
+        {ticari && <><label htmlFor="ka-t">{sigortali ? 'Keşif Bedeli (EUR; Ek-1 kaydı varsa boş bırakınız)' : 'Bölge Dışı Ulaşım ve Konaklama (EUR)'}</label><input id="ka-t" inputMode="decimal" value={t} onChange={(e) => setT(e.target.value)} />
+          {sigortali ? <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-faturasi`, { tutar: sayi(t) > 0 ? sayi(t) : undefined }), 'Keşif bedeli proforması onaya gönderildi.')}>Keşif Bedeli Proforması</button>
             : <button className="btn2 kucuk" disabled={!son} onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-ucreti`, { sonTarih: son, bolgeDisi: t ? sayi(t) : undefined }), 'Keşif Ücreti talebi onaya gönderildi.')}>Keşif Ücreti Talebi</button>}</>}
         {!sigortali && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${dosya}/kesif-teklifi`, { bolgeDisi: t ? sayi(t) : undefined }), 'Keşif Teklifi yat sahibinin onayına gönderildi.')}>Keşif Teklifini Gönder</button>}{/* YG-211 */}
         {sigortali && <>

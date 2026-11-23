@@ -26,7 +26,7 @@ interface Bekleme { kimlik: string; neden: string; hedef_tarih: string; sayac_du
 interface Konu { kimlik: string; surum?: number; konu_no: string; baslik: string; statu: string; hedef_tarih: string; sahip: string; gecikmis: boolean; asama?: string | null; kabul_olcutu?: string | null; gerekli_belge?: string | null; konu_turu?: string }
 interface Belge { kimlik: string; ad: string; belge_turu: string; surumler: { no: number; durum: string; yururluk?: string | null }[] }
 interface DosyaAyrinti extends DosyaSatir {
-  musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; calisma_durduruldu?: boolean; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean;
+  musteri_turu: string; dosya_niteligi: string; kisa_teknik_tanim: string; zorluk_katsayisi: string; bireysel6502: boolean; rollerim: string[]; izinler: string[]; calisma_durduruldu?: boolean; dosya_sorumlusu_ref: string | null; hasar_ilerleyebilir: boolean; vefat_isareti: boolean; yurt_disi?: boolean; ulasim_plani_zamani?: string | null;
   kapsam_6502?: boolean; gerceklesme?: { fiziksel: number | null; finansal: number | null }; yat: { yat_adi: string; kayit_surumu?: number; klas_durumu?: string | null; klas_kurulusu?: string | null; tabi_kod?: string | null; sicil_limani?: string | null; tur: string | null; marka: string | null; model: string | null; tam_boy_m: string | null; govde_malzemesi: string | null; govde_eslemesi?: { kontrolListesi: string | null; tur: string; branslar: string[] } | null; tahrik_turu: string | null; bayrak: string | null; gecici_kayit: boolean; katalog_teyit: string | null; kimlik?: string; turkiye_kalis_bitis?: string | null; yabanci_yat_belgesi?: string | null; yabanci_yat_belge_no?: string | null; yabanci_yat_belge_gecerlilik?: string | null; gecici_ithalat_bitis?: string | null; kislama_yeri?: string | null; mmsi?: string | null; mulkiyet_turu?: string | null; takyidat?: string[]; lehtar_adi?: string | null; motor_adedi?: number | null; motor_marka_model?: string | null; motor_gucu_hp?: string | null; lehtar_var?: boolean; lehtar_muvafakati_ref?: string | null };
   talep: { talep_sahibi_adi: string; talep_sahibi_turu: string; ihbar_yetki_durumu: string; yat_mevcut_durumu: string };
   musteri_risk_olayi?: string | null; taraflar: { kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string; telefon: string | null; eposta: string | null; tarama_sonucu?: string | null; baslangic_zamani?: string | null }[];
@@ -499,6 +499,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       </Blok>
       {d.statu === 'Kapalı' && <YenidenAc id={id} yap={yap} />}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <BelgeTalebi id={id} yap={yap} />}
+      {d.statu !== 'Kapalı' && d.yurt_disi && d.rollerim.includes('Dosya Sorumlusu') && <UlasimPlani id={id} yap={yap} mevcut={d.ulasim_plani_zamani ?? null} />}{/* YG-1486 */}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <>
         <Blok baslik="Kapanış Kontrolü">
           <label htmlFor="kp-n">Kapanma Nedeni (Kapalı için)</label><select id="kp-n" value={kNeden} onChange={(e) => setKNeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select>
@@ -536,6 +537,16 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
 
 /** Üst arama: eski numara ana dosyaya yönlendirir (YG-024). */
 /** YG-080: kapalı dosya yeni bilgi/olgu, hata veya müşteri bildirimi gerekçesiyle Operasyon Müdürü onayına gönderilerek yeniden açılır. */
+/** YG-1486: yurt dışı dosyada randevu sayacı ulaşım planı tarihinden başlar. */
+function UlasimPlani({ id, yap, mevcut }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void>; mevcut: string | null }) {
+  const [z, setZ] = useState('');
+  return <Blok baslik="Ulaşım Planı">
+    {mevcut && <p>Kayıtlı plan: {new Date(mevcut).toLocaleString('tr-TR')}</p>}
+    <label htmlFor="up-z">Ulaşım Planı Tarihi</label><input id="up-z" type="datetime-local" value={z} onChange={(e) => setZ(e.target.value)} />
+    <div className="dugmeler"><button className="btn2" disabled={!z} onClick={() => void yap(() => istek(`/dosya/${id}/ulasim-plani`, { zaman: new Date(z).toISOString() }), 'Ulaşım planı kaydedildi; randevu sayacı bu tarihten başladı.')}>Kaydet</button></div>
+  </Blok>;
+}
+
 /** YG-551: yat sahibinden belge isteme (BLD-17) ve ulaşılamama bildirimi (BLD-18). */
 function BelgeTalebi({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
   const [l, setL] = useState('');

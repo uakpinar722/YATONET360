@@ -103,6 +103,15 @@ describe('keşif ücreti (YG-864, YG-865, YG-1487)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kesif-faturasi`, ts, { tutar: 500 })).statusCode).toBe(409);
     const k = await o.kart('Proforma', r.json().kimlik); await o.karar(k.kimlik, 'mfm', 'Onaya Gönder');
     expect((await o.karar(k.kimlik, 'tid', 'Onayla')).statusCode).toBe(200);
+    { // YG-1487: Ek-1 mutabakatı varsa tutar kayıttan okunur
+      const e = await sigortali('Keşif Sigorta 3'); const ad = (await o.sup.query(`SELECT sigortaci_adi FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [e.kimlik])).rows[0].sigortaci_adi as string;
+      expect((await o.ist('POST', '/api/sigorta-kesif-bedeli', ts, { sigortaci: ad, tutar: 400, dayanak: 'Ek-1 m.3' })).statusCode).toBe(403);
+      expect((await o.ist('POST', '/api/sigorta-kesif-bedeli', await o.gir('tid'), { sigortaci: ad, tutar: 400, dayanak: 'Ek-1 m.3' })).statusCode).toBe(200);
+      expect((await o.ist('POST', `/api/dosya/${e.kimlik}/kesif-faturasi`, ts, { tutar: 500 })).statusCode).toBe(409);
+      const r2 = await o.ist('POST', `/api/dosya/${e.kimlik}/kesif-faturasi`, ts, {}); expect(r2.statusCode, r2.body).toBe(200);
+      expect((await o.sup.query(`SELECT kdv_haric_eur FROM musteri_faturasi WHERE kimlik = $1`, [r2.json().kimlik])).rows[0].kdv_haric_eur).toBe('400.00');
+      await o.sup.query(`DELETE FROM sigorta_kesif_bedeli WHERE lower(sigortaci_adi) = lower($1)`, [ad]);
+    }
   });
 });
 
