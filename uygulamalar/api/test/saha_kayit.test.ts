@@ -125,6 +125,7 @@ describe('düzeltme, yeniden başlatma, toplantı, eskalasyon (YG-380, YG-262, Y
     expect((await o.ist('POST', `/api/is-emri/${e}/sapma`, await o.gir('tu'), { tur: 'Güvenlik', aciklama: 'Gaz', karar: 'İşi Durdur' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.tm, `is-emri-durdu:${e}%`])).rowCount).toBe(1);
     expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.km, `is-emri-durdu:${e}%`])).rowCount).toBe(0); // Teknik Uzman durdurdu
+    expect((await o.sup.query(`SELECT ozet FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [fK, `bld79:${e}%`])).rows[0]?.ozet).toContain('durdurulmasını'); // YG-1505 BLD-79
   });
   it('Kalite Kontrolörün İşi Durdur kararı Kalite Müdürüne de gider (T-YG1686)', async () => {
     const { e } = await isEmri();

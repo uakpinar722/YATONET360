@@ -28,6 +28,8 @@ kapanisKaydet(TUR, async (c, k, karar) => {
 });
 
 const csv = (v: unknown) => { const s = v === null || v === undefined ? '' : String(v); return /[;"\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+/** YG-736: dışa aktarılan raporun ilk satırları; rapor adı, uygulanan filtre ve üretim zamanı, ardından boş satır. */
+export const csvUstBilgi = (rapor: string, filtre: string) => [`Rapor;${csv(rapor)}`, `Filtre;${csv(filtre)}`, `Üretim Zamanı;${csv(new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }) + ' (Europe/Istanbul)')}`, ''];
 
 /** YG-755: toplu dışa aktarma yalnız Yönetici ve üstü kademelere; rol, alan, kayıt sayısı, biçim ve amaç sınırı; gerekçe; büyük veya hassas aktarım ek onay; indirilen dosya kimliğiyle kayıt. */
 export function disaAktarimYollari(s: FastifyInstance, b: Baglam) {

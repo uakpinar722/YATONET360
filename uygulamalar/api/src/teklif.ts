@@ -705,7 +705,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     { const ce = await cetvelDegistiEngeli(b.db, t.kimlik); if (ce) return y.code(409).send({ hata: ce }); } // YG-156
     if (t.teklif_muhatabi === 'Sigorta Şirketi') {
       const sg = (await b.db.query(`SELECT sigorta_hasar_dosya_no, cerceve_sozlesme_yok FROM dosya_sigorta_kaydi WHERE dosya_ref = $1`, [t.dosya_ref])).rows[0];
-      if (!sg?.sigorta_hasar_dosya_no) return y.code(409).send({ hata: 'Gönderim için Sigorta hasar dosya numarası bekleniyor.' }); // YG-101
+      if (!sg?.sigorta_hasar_dosya_no) return y.code(409).send({ hata: 'Gönderim için Sigorta hasar dosya numarası bekleniyor.', islem: 'Hasar Dosya No Gir', hedef: 'de-hn' }); // YG-101
       if (sg.cerceve_sozlesme_yok && (!t.odeme_vadesi || !t.fatura_bilgisi)) return y.code(409).send({ hata: 'Çerçeve sözleşmesi olmayan dosyada ödeme vadesi ve fatura bilgisi zorunludur.' }); // YG-1552
     }
     const kum = (await dosyaTaahhudu(b.db, t.dosya_ref, t.kimlik)) + Number(t.onay_limit_tutari_eur);
@@ -729,7 +729,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (t.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada teklif gönderimi bekletilmektedir.' });
     const yde = await yatDegeriEngeli(b.db, t.dosya_ref); if (yde) return y.code(409).send({ hata: yde });
     const dil = dilKod(t.yazisma_dili);
-    if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Teklif onayı için Lehtar muvafakati bekleniyor.' });
+    if (t.teklif_muhatabi !== 'Sigorta Şirketi' && await muvafakatKilidi(b.db, t.dosya_ref)) return y.code(409).send({ hata: 'Teklif onayı için Lehtar muvafakati bekleniyor.', islem: 'Muvafakat Belgesini Seç', hedef: 'lm-b' });
     const gun = await parametre(b.db, 'teklif_gecerlilik_gun');
     // K-241: sigortaya giden teklif ikinci teyide kadar gönderilmiş sayılmaz; portala düşmez, süre başlamaz.
     if (t.teklif_muhatabi === 'Sigorta Şirketi') return islem(async (c) => {

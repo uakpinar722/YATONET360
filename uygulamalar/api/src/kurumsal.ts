@@ -13,6 +13,12 @@ const EPOSTA = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ROLLER = ['İzleyici', 'Talep Açan', 'Onaylayan'];
 const GRUP = 'Kurumsal Müşteri'; const ROL = 'Kurumsal Müşteri Kullanıcısı'; const MPM = 'Müşteri ve Paydaş İlişkileri Müdürü';
 
+/** YG-530: kurumsal müşterinin dosyasında durum bildirimi kurumun Onaylayan kullanıcılarına sistem içi ve e-postayla gider; kurumsal değilse 0 döner. */
+export async function kurumsalaBildir(db: Db, dosya: string, g: { olay: string; baslik: string; ozet: string }): Promise<number> {
+  const l = (await db.query(`SELECT u.kullanici_ref FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref JOIN kurumsal_kurum c ON c.taraf_ref = y.yat_sahibi_ref JOIN kurumsal_kullanici u ON u.kurum_ref = c.kimlik JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE d.kimlik = $1 AND d.musteri_turu = 'Kurumsal Müşteri' AND u.rol = 'Onaylayan' AND h.hesap_durumu = 'Aktif'`, [dosya])).rows.map((r) => r.kullanici_ref as string);
+  if (l.length) await bildir(db, { olay: g.olay, kullanicilar: l, baslik: g.baslik, ozet: g.ozet, eposta: true });
+  return l.length;
+}
 export const kurumsalKullanici = async (db: Db, k: string) => (await db.query(`SELECT u.rol, u.onay_siniri, u.yetkili, u.kurum_ref, c.unvan, c.ek2_onay_siniri, c.taraf_ref FROM kurumsal_kullanici u JOIN kurumsal_kurum c ON c.kimlik = u.kurum_ref JOIN kullanici_hesabi h ON h.kimlik = u.kullanici_ref WHERE u.kullanici_ref = $1 AND h.hesap_durumu = 'Aktif'`, [k])).rows[0] as { rol: string; onay_siniri: string | null; yetkili: boolean; kurum_ref: string; unvan: string; ek2_onay_siniri: string; taraf_ref: string } | undefined;
 
 /** YG-1563: İzleyici talep açmaz. Kurumsal hesabı olmayan kullanıcıda kısıt yoktur. */

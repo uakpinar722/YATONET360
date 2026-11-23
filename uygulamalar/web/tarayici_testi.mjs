@@ -175,6 +175,7 @@ try {
   kontrol('dosya ekranı telefonda taşmaz', await tasmaYok(p));
   await p.screenshot({ path: join(CIKTI, 'dosya_ekrani.png'), fullPage: true });
   await p.getByRole('button', { name: '← Dosyalar' }).click();
+  await p.getByLabel('Dosya Ara (Dosya No veya Yat Adı)').fill(yatAd); // liste 50 kayıtlık sayfalanır (YG-1367)
   await p.locator('tbody tr').filter({ hasText: yatAd }).first().waitFor();
   kontrol('dosya tüm dosyalar listesinde görünür', true);
   await p.getByLabel('Ara', { exact: true }).fill(yatAd);

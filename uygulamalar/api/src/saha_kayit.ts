@@ -21,11 +21,18 @@ export const EMNIYET_ALICILAR = ['Teknik Müdür', 'Operasyon Müdürü', 'Tekni
 type Db = Pool | PoolClient;
 
 /** YG-1437: işi durdurma ayrı olaydır, DS, TU ve OY'ye sistem içi ve e-posta. YG-262: emniyet durdurmasında üst alıcılara SMS ile. */
-export async function isDurduBildir(c: Db, e: { kimlik: string; is_emri_no: string; dosya_ref: string }, neden: string, emniyet: boolean, kaliteMudurune = false): Promise<void> {
+export async function isDurduBildir(c: Db, e: { kimlik: string; is_emri_no: string; dosya_ref: string }, neden: string, emniyet: boolean, kaliteMudurune = false, firmaya = true): Promise<void> {
   const ekip = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Teknik Uzman', 'Operasyon Yöneticisi')`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
   const al = [...ekip]; if (emniyet) for (const r of EMNIYET_ALICILAR) al.push(...await rolSahipleri(c, await rolId(c, r)));
   if (kaliteMudurune) al.push(...await rolSahipleri(c, await rolId(c, 'Kalite Müdürü'))); // A42-S1: Kalite Kontrolörün durdurması Kalite Müdürüne de gider
   await bildir(c, { olay: `is-emri-durdu:${e.kimlik}:${Date.now()}`, kullanicilar: [...new Set(al)], baslik: `${emniyet ? 'Emniyet Olayı · ' : ''}İş Durduruldu: ${e.is_emri_no}`, ozet: neden.slice(0, 200), oncelik: emniyet ? 'Kritik' : 'Yüksek', eposta: true, sms: emniyet, acil: true });
+  // YG-1505: işi LGM durdurduysa firmaya BLD-79 (portal + SMS); sonraki adım doğan görevle Dosya Sorumlusuna.
+  if (firmaya) {
+    const f = (await c.query(`SELECT k.kullanici_ref FROM is_emri x JOIN kurulus_kullanici k ON k.kurulus_ref = x.kurulus_ref WHERE x.kimlik = $1`, [e.kimlik])).rows.map((r) => r.kullanici_ref as string);
+    const z = new Date().toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+    if (f.length) { const olay = `bld79:${e.kimlik}:${Date.now()}`; await bildir(c, { olay, kullanicilar: f, baslik: `${e.is_emri_no} · İş Durdurma`, ozet: await (await import('./metin.js')).metinGetir(c, 'BLD-79', 'tr', { 'İş Emri No': e.is_emri_no, 'tarih saat': z }), oncelik: 'Yüksek', sms: true });
+      const no = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0]?.dosya_no; if (no) await (await import('./ihbar.js')).doganGorevAc(c, 'BLD-79', no, olay); }
+  }
 }
 
 /** YG-1445: ek bulguyla durdurulan işte BLD-04 yat sahibine ve sigortalı dosyada sigorta şirketine (teyitli e-posta) gider; iş başına bir kez. */

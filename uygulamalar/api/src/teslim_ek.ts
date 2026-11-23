@@ -223,7 +223,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const d = await dosya(id); const t = await sahip(id);
     if (d.teslime_hazir_zamani) return y.code(409).send({ hata: 'Hazır bildirimi yapılmıştır.' });
     if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Teslime Hazır bildirimini dosyanın Dosya Sorumlusu yapar.' }); // YG-1867
-    if (!(await b.db.query(`SELECT 1 FROM teslim_alici_dogrulama WHERE dosya_ref = $1`, [id])).rowCount) return y.code(409).send({ hata: 'Teslim bildiriminden önce yetkili alıcıyı doğrulayınız.' }); // YG-415
+    if (!(await b.db.query(`SELECT 1 FROM teslim_alici_dogrulama WHERE dosya_ref = $1`, [id])).rowCount) return y.code(409).send({ hata: 'Teslim bildiriminden önce yetkili alıcıyı doğrulayınız.', islem: 'Alıcıyı Doğrula', hedef: 'ta-a' }); // YG-1386 // YG-415
     const son = new Date(Date.now() + TESLIM_GUN * 86_400_000); const gs = son.toISOString().slice(0, 10); const tr = gunAy(son);
     return islem(async (c) => {
       await c.query(`UPDATE dosya SET teslime_hazir_zamani = now(), teslim_son_tarihi = $2 WHERE kimlik = $1`, [id, gs]);

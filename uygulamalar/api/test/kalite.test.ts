@@ -255,6 +255,9 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
     await kaliteSureIsle(o.db); await kaliteSureIsle(o.db);
     expect((await o.sup.query(`SELECT count(*)::int n FROM beklemede_isareti WHERE dosya_ref = $1 AND neden = 'Koşullu Kabul Süresi Doldu'`, [d.kimlik])).rows[0].n).toBe(1);
     expect((await o.sup.query(`SELECT gecikti FROM acik_is_kalemi WHERE kabul_ref = $1`, [k.json().kimlik])).rows[0].gecikti).toBe(true);
+    const ai = (await o.sup.query(`SELECT kimlik FROM acik_is_kalemi WHERE kabul_ref = $1`, [k.json().kimlik])).rows[0].kimlik as string; // YG-1446 BLD-15
+    expect((await o.ist('POST', `/api/acik-is/${ai}/kapat`, await o.gir('ds'), { kanit: await o.belge(d.kimlik, 'ds') })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld15:${ai}%`])).rows[0]?.metin).toContain('tamamlanmıştır');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/nihai-kabul`, await o.gir('ty'))).statusCode).toBe(409);
   });
   it('nihai kabul: bütünleşik test şartı, garanti başlangıcı', async () => {

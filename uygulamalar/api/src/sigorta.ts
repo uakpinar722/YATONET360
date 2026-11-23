@@ -62,6 +62,9 @@ export async function sigortaSureIsle(db: Pool, simdi = new Date()): Promise<num
         const hepsi = (await c.query(`SELECT sira_no FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1`, [t.kimlik])).rows.map((r) => r.sira_no as number);
         await kararUygula(c, t, hepsi, 'Çerçeve Sözleşme Süresi', 'Süre dolumu (5 iş günü)', t.hazirlayan_ref, simdi, true); // SGT-1
         await otomatikKabulKontrolu(c, { kimlik: t.kimlik, teklif_no: t.teklif_no, dosya_ref: t.dosya_ref }, t.dosya_sorumlusu_ref); // YG-062
+        // YG-1505 (D-038): sigortaya "süre dolmuş" denmez; onarım planlamasına başlandığı BLD-73 ile bildirilir.
+        const m73 = await metinGetir(c, 'BLD-73', 'tr', { Kurum: t.sigortaci_adi ?? '', 'Dosya No': t.dosya_no });
+        if (t.eposta) await sigortayaHazirla(c, { dosya: t.dosya_ref, tur: 'BLD-73', nesne: t.kimlik, alici: t.eposta, konu: `${t.dosya_no} Onarım Planlaması`, metin: m73 }); else await sigortaAdresiBekleniyor(c, t.dosya_ref);
         if (t.dosya_sorumlusu_ref) await bildir(c, { olay: `sigorta-sure:${t.kimlik}`, kullanicilar: [t.dosya_sorumlusu_ref], baslik: `Süre Doldu, Kalemler Sigortaca Karşılanacak Sayıldı: ${t.teklif_no}`, ozet: 'Bu bir sigorta onayı değildir; çerçeve sözleşme gereği itiraz edilmeyen kalemler karşılanacak sayılır.', eposta: true }, simdi);
         await izYaz(c, { eylem: 'Sigorta Süre Dolumu Kabulü', nesneTuru: 'Teklif', nesneKimligi: t.kimlik, sonuc: 'Başarılı' });
         await c.query('COMMIT'); n++;

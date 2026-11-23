@@ -336,6 +336,8 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu <> 'Onaylandı'`, [t])).rows[0].n).toBe(0);
     expect((await o.sup.query(`SELECT karar FROM sigorta_onayi WHERE teklif_ref = $1`, [t])).rows[0].karar).toBe('Süre Dolumu Kabulü');
     expect((await o.sup.query(`SELECT onay_kanali FROM sigorta_onayi WHERE teklif_ref = $1`, [t])).rows[0].onay_kanali).toBe('Çerçeve Sözleşme Süresi');
+    const m73 = (await o.sup.query(`SELECT metin FROM sigorta_gonderim WHERE tur = 'BLD-73' AND nesne_kimligi = $1`, [t])).rows[0]?.metin as string; // YG-1505
+    expect(m73).toContain('onarım planlamasına başlanmıştır'); expect(m73).not.toMatch(/süre(si)? dol/i);
     void d;
     const b = await dosyaVeTeklif();
     await o.sup.query(`UPDATE dosya_sigorta_kaydi SET cerceve_sozlesme_yok = true WHERE dosya_ref = $1`, [b.d.kimlik]);

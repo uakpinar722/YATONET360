@@ -533,7 +533,7 @@ describe('fiş aslı (YG-1622)', () => {
     expect((await o.ist('GET', u, await o.gir('ds'))).statusCode).toBe(404);
     const c = await o.gir('mfm'); expect((await o.ist('GET', '/api/muhasebe/tevkifatli?ay=10-2026', c)).statusCode).toBe(400);
     const r = await o.ist('GET', u, c); expect(r.statusCode, r.body).toBe(200); expect(Array.isArray(r.json().faturalar)).toBe(true);
-    const csv = await o.ist('GET', `${u}&bicim=csv`, c); expect(csv.statusCode).toBe(200); expect(csv.headers['content-type']).toContain('text/csv'); expect(csv.body).toContain('Tevkifat (EUR)');
+    const csv = await o.ist('GET', `${u}&bicim=csv`, c); expect(csv.statusCode).toBe(200); expect(csv.headers['content-type']).toContain('text/csv'); expect(csv.body).toContain('Tevkifat (EUR)'); expect(csv.body).toContain('Filtre;Fatura ayı:'); expect(csv.body).toContain('Üretim Zamanı;'); // YG-736
   });
   it('masraf karar sırası: ilk amir, belge kontrolü, son makam; Yöneticinin kendi fişini Müdür Yardımcısı kontrol eder (YG-1621)', async () => {
     const rid = async (ad: string) => (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = $1`, [ad])).rows[0].kimlik as string;

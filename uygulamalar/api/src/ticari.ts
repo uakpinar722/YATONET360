@@ -497,7 +497,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (q.bicim !== 'csv') return { ay: q.ay, faturalar: l, toplamTevkifatEur: Math.round(l.reduce((s, x) => s + Number(x.tevkifat_eur), 0) * 100) / 100 };
     const sayi = (v: unknown) => (v === null || v === undefined ? '' : Number(v).toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
     const h = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const satir = [['Fatura No', 'Fatura Tarihi', 'Dosya No', 'Muhatap', 'KDV Matrahı (EUR)', 'KDV Oranı', 'KDV (EUR)', 'Tevkifat Oranı', 'Tevkifat (EUR)', 'Kur', 'Toplam (TL)', 'KDV (TL)'].map(h).join(';'),
+    const satir = [...(await import('./disa_aktarim.js')).csvUstBilgi('KDV Tevkifatlı Faturalar', `Fatura ayı: ${q.ay!.split('-').reverse().join('.')} · KDV durumu: KDV tevkifatlı`), ['Fatura No', 'Fatura Tarihi', 'Dosya No', 'Muhatap', 'KDV Matrahı (EUR)', 'KDV Oranı', 'KDV (EUR)', 'Tevkifat Oranı', 'Tevkifat (EUR)', 'Kur', 'Toplam (TL)', 'KDV (TL)'].map(h).join(';'),
       ...l.map((x) => [x.fatura_no, x.fatura_tarihi.split('-').reverse().join('.'), x.dosya_no, x.muhatap, sayi(x.kdv_matrahi_eur), x.kdv_orani ?? '', sayi(x.kdv_eur), x.tevkifat_orani ?? '', sayi(x.tevkifat_eur), x.kur ?? '', sayi(x.toplam_tl), sayi(x.kdv_tl)].map(h).join(';'))];
     await izYaz(b.db, { aktor: k, oturum: i.oturum!.oturum, eylem: 'KDV İade Dökümü', nesneTuru: 'Rapor', nesneKimligi: `tevkifat:${q.ay}`, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return y.type('text/csv; charset=utf-8').header('Content-Disposition', `attachment; filename="kdv-tevkifat-${q.ay}.csv"`).send('\uFEFF' + satir.join('\r\n'));
@@ -579,8 +579,9 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
       const yt = (await b.db.query(`SELECT t.telefon, t.eposta, d.dosya_no, d.yazisma_dili, d.musteri_turu, d.vefat_isareti FROM dosya d JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [f.dosya_ref])).rows[0];
       if (yt && !yt.vefat_isareti && yt.musteri_turu !== 'Sigorta Şirketi' && f.muhatap !== 'Sigorta Şirketi') {
         const v = gunAy(vade); const ft = gunAy(g.tarih);
-        await disGonder(b.db, { olay: `bld101:${f.kimlik}`, telefon: yt.telefon, eposta: yt.eposta, konu: `${yt.dosya_no} Faturanız Düzenlendi`, ekler: g.pdf ? [g.pdf] : undefined,
-          metin: await metinGetir(b.db, 'BLD-101', dilKod(yt.yazisma_dili), { 'Dosya No': yt.dosya_no, 'File No': yt.dosya_no, 'fatura no': g.no.trim(), 'invoice no': g.no.trim(), 'fatura tarihi': ft, 'invoice date': ft, vade: v, 'due date': v, 'bağlantı': b.webAdresi, link: b.webAdresi }) });
+        const metin = await metinGetir(b.db, 'BLD-101', dilKod(yt.yazisma_dili), { 'Dosya No': yt.dosya_no, 'File No': yt.dosya_no, 'fatura no': g.no.trim(), 'invoice no': g.no.trim(), 'fatura tarihi': ft, 'invoice date': ft, vade: v, 'due date': v, 'bağlantı': b.webAdresi, link: b.webAdresi });
+        await disGonder(b.db, { olay: `bld101:${f.kimlik}`, telefon: yt.telefon, eposta: yt.eposta, konu: `${yt.dosya_no} Faturanız Düzenlendi`, ekler: g.pdf ? [g.pdf] : undefined, metin });
+        if (yt.musteri_turu === 'Kurumsal Müşteri') await (await import('./kurumsal.js')).kurumsalaBildir(b.db, f.dosya_ref, { olay: `bld101-kurum:${f.kimlik}`, baslik: `${yt.dosya_no} Faturanız Düzenlendi`, ozet: metin }); // YG-530
       }
     }
     // YG-421, K-193: firmaya Fatura Düzenleme Bildirimi (BLD-80).

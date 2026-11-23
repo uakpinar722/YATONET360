@@ -370,6 +370,11 @@ describe('kurumsal Ek-2 (D-135, YG-1070, Çerçeve m.26.4)', () => {
     expect((await o.ist('POST', u, c, g)).statusCode).toBe(409); // temsilci yok
     await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = '+905550003301' WHERE kimlik = $1`, [o.K.tm]);
     await o.sup.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, yetkili, ekleyen_ref) VALUES ($1,$2,'Onaylayan',100,true,$3)`, [o.K.tm, k, o.K.ds]);
+    { const { kurumsalaBildir } = await import('../src/kurumsal.js'); const d = (await o.dosyaAc({}, {})).kimlik as string; // YG-530
+      expect(await kurumsalaBildir(o.db, d, { olay: `kb:${d}`, baslik: 'B', ozet: 'Ö' })).toBe(0);
+      await o.sup.query(`UPDATE yat SET yat_sahibi_ref = $2 FROM dosya x WHERE x.kimlik = $1 AND yat.kimlik = x.yat_ref`, [d, tr]); await o.sup.query(`UPDATE dosya SET musteri_turu = 'Kurumsal Müşteri' WHERE kimlik = $1`, [d]);
+      expect(await kurumsalaBildir(o.db, d, { olay: `kb:${d}`, baslik: 'B', ozet: 'Ö' })).toBe(1);
+      expect((await o.sup.query(`SELECT 1 FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.tm, `kb:${d}`])).rowCount).toBe(1); }
     const r1 = await o.ist('POST', u, c, g); expect(r1.json()).toMatchObject({ surum: 1, durum: 'Onay Bekliyor' });
     expect((await o.ist('POST', u, c, g)).statusCode).toBe(409); // bekleyen var
     expect(await ek2Tanim(o.db, k, 'tr')).toBeNull(); expect(Number((await o.sup.query(`SELECT ek2_onay_siniri s FROM kurumsal_kurum WHERE kimlik = $1`, [k])).rows[0].s)).toBe(100);
@@ -561,7 +566,7 @@ describe('sağlayıcı matrisi, parametreler, dışa aktarım, kalıcı hata (YG
   });
   it('yasal ayıp CSV yalnız Direktör ve üstüne', async () => {
     expect((await o.ist('GET', '/api/rapor/yasal-ayip.csv', await o.gir('mfm'))).statusCode).toBe(404);
-    const r = await o.ist('GET', '/api/rapor/yasal-ayip.csv', await o.gir('tid')); expect(r.statusCode).toBe(200); expect(r.headers['content-type']).toContain('text/csv'); expect(r.body).toContain('Dosya No');
+    const r = await o.ist('GET', '/api/rapor/yasal-ayip.csv', await o.gir('tid')); expect(r.statusCode).toBe(200); expect(r.headers['content-type']).toContain('text/csv'); expect(r.body).toContain('Dosya No'); expect(r.body).toContain('Filtre;Tüm dosyalar'); expect(r.body).toContain('Üretim Zamanı;'); // YG-736
   });
   it('kalıcı gönderim hatası yeniden denenmez, geçici hata yeniden denenir', async () => {
     const { kuyrukIsle } = await import('../src/bildirim.js');
@@ -1652,6 +1657,7 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const g = v.yapilacaklar.find((x: { is: string }) => x.is === 'Dosya Görevi Deneme'); expect(g).toBeTruthy(); expect(g.hedef).toBeTruthy();
     const ata = v.yapilacaklar.filter((x: { is: string }) => x.is === 'Dosya Sorumlusunu Ata' || x.is === 'Teknik Yöneticiyi Ata');
     expect(ata.length).toBeGreaterThan(0); for (const x of ata) expect(x.form).toEqual({ hedef: 'e-r', rol: x.is === 'Dosya Sorumlusunu Ata' ? 'Dosya Sorumlusu' : 'Teknik Yönetici' }); // sıradaki form
+    const hn = v.yapilacaklar.find((x: { is: string }) => x.is.startsWith('Sigorta Hasar Dosya Numarasını Gir')); if (hn) expect(hn.form).toEqual({ hedef: 'de-hn' });
   });
   it('periyodik gözden geçirme kontrol listesi ve karar seçenekleri (YG-1363)', async () => {
     const c = await o.gir('btd'); const ad = `GG Deneme ${Date.now()}`;

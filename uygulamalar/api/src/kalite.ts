@@ -3,7 +3,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir } from './bildirim.js';
 import { dosyaErisimi } from './dosya.js';
-import { rolId } from './ihbar.js';
+import { dilKod, rolId, yatTarafinaYaz } from './ihbar.js';
 import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
@@ -517,7 +517,10 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const k = (await b.db.query(`SELECT a.dosya_ref FROM acik_is_kalemi p JOIN kabul_kaydi a ON a.kimlik = p.kabul_ref WHERE p.kimlik = $1`, [id])).rows[0];
     if (!k || !(await erisim(k.dosya_ref, o.kullanici))) return yok(y);
     if (!kanit || !UUID.test(kanit)) return y.code(400).send({ hata: 'Kapanış kanıtı zorunludur.' });
-    await b.db.query(`UPDATE acik_is_kalemi SET kapanis_kaniti_ref = $2, kapanis_zamani = now() WHERE kimlik = $1`, [id, kanit]);
+    const u = await b.db.query(`UPDATE acik_is_kalemi SET kapanis_kaniti_ref = $2, kapanis_zamani = now() WHERE kimlik = $1 AND kapanis_zamani IS NULL RETURNING tanim`, [id, kanit]);
+    // YG-1446: teslimde açık kalan iş tamamlanınca yat sahibine BLD-15.
+    const s = u.rowCount ? (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, x.telefon, x.eposta FROM dosya d LEFT JOIN dosya_tarafi x ON x.dosya_ref = d.kimlik AND x.taraf_rolu = 'Yat Sahibi' AND x.aktif WHERE d.kimlik = $1 LIMIT 1`, [k.dosya_ref])).rows[0] : null;
+    if (s && !s.vefat_isareti && (s.telefon || s.eposta)) await yatTarafinaYaz(b.db, { olay: `bld15:${id}`, kod: 'BLD-15', dil: dilKod(s.yazisma_dili), konu: `${s.dosya_no} Açık İş Tamamlandı`, telefon: s.telefon, eposta: s.eposta, alanlar: { iş: u.rows[0].tanim, item: u.rows[0].tanim, 'bağlantı': b.webAdresi, link: b.webAdresi, 'Dosya No': s.dosya_no } });
     return { tamam: true };
   });
   // YG-400, YG-401: birden çok sistem grubunda test varsa bütünleşik test olmadan nihai kabul yok; garanti Nihai Kabulle başlar.

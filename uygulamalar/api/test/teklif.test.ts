@@ -798,7 +798,7 @@ describe('keşif talebi ve Firmaya Gönder (YG-1597, YG-042, KSF-1)', () => {
     expect((await o.ist('POST', u, await o.gir('oy'), {})).statusCode).toBe(403);
     const g = await o.ist('POST', u, await o.gir('ds'), {}); expect(g.statusCode, g.body).toBe(200);
     expect((await o.sup.query(`SELECT statu FROM is_emri WHERE kimlik = $1`, [r.kimlik])).rows[0].statu).toBe('Kabul Bekliyor');
-    expect((await o.sup.query(`SELECT ozet FROM bildirim WHERE olay_anahtari = $1 LIMIT 1`, [`is-emri:${r.kimlik}`])).rows[0].ozet).toMatch(/^Kabul son zamanı: .+ Teknik Rapor ve Fiyat Teklifi süresi: kabulden itibaren \d+ saat\.$/); // YG-1518
+    expect((await o.sup.query(`SELECT ozet FROM bildirim WHERE olay_anahtari = $1 LIMIT 1`, [`is-emri:${r.kimlik}`])).rows[0].ozet).toMatch(/^LİMİT GLOBAL MARINE: .+ iş emri tarafınıza iletilmiştir\. .+ Kabul son zamanı: .+ Teknik Rapor ve Fiyat Teklifi süresi: kabulden itibaren \d+ saat\.$/); // YG-1518
     expect((await o.kart('Firmaya Gönder', r.kimlik)).durum).toBe('Tamamlandı');
     const s = (await o.sup.query(`SELECT baslangic, bitis FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Keşif'`, [d.kimlik])).rows[0];
     expect(Date.now() - new Date(s.baslangic).getTime()).toBeLessThan(60_000); expect(new Date(s.bitis).getTime()).toBeGreaterThan(Date.now());

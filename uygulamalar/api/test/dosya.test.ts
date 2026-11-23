@@ -264,6 +264,11 @@ describe('mükerrerlik ve açılış kararı (YG-007, YG-023, YG-030, YG-100)', 
     expect((await ac({ karar: 'Ret' })).statusCode).toBe(400);
     expect((await ac({ karar: 'Ret', gerekce: 'Kapsam dışı' })).statusCode).toBe(200);
     expect((await sup.query(`SELECT statu FROM talep WHERE kimlik = $1`, [t.kimlik])).rows[0].statu).toBe('Kapsam Dışı / Yönlendirme');
+    expect((await sup.query(`SELECT 1 FROM sigorta_gonderim WHERE tur = 'BLD-70' AND nesne_kimligi = $1`, [t.kimlik])).rowCount).toBe(0); // sigortadan gelmedi
+    const s = await ihbar({ sahibiTuru: 'Sigorta Şirketi', yetkiDurumu: 'Doğrulandı', sigortaci: 'Deneme Sigorta', hasarNo: 'H-70', eposta: 'sg70@deneme.yatonet.local' }); // YG-1505 BLD-70
+    expect((await ist('POST', `/api/ihbar/${s.kimlik}/acilis`, c, { ozet: 'Ö', karar: 'Ret', gerekce: 'Kapsam dışı' })).statusCode).toBe(200);
+    const sg = (await sup.query(`SELECT alici, metin FROM sigorta_gonderim WHERE tur = 'BLD-70' AND nesne_kimligi = $1`, [s.kimlik])).rows[0];
+    expect(sg.alici).toBe('sg70@deneme.yatonet.local'); expect(sg.metin).toContain('H-70'); expect(sg.metin).toContain('Deneme Sigorta');
   });
   it('yabancı sigortacı muhatap seçilemez', async () => {
     const t = await ihbar({ sahibiTuru: 'Yabancı Sigortacı / Sörveyör', yetkiDurumu: 'Doğrulandı', sigortaci: 'Foreign' }); const c = await gir('ds');
@@ -585,6 +590,8 @@ describe('yat belgeleri ve kışlama (YG-098)', () => {
     const r = await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { kislama_yeri: 'Göcek Marina', yabanci_yat_belgesi: 'Seyir İzin Belgesi (Transit Log)', yabanci_yat_belge_no: 'TL-1', gecici_ithalat_bitis: '2027-05-01' }, gerekce: 'Ruhsattan', kaynak: 'Ruhsat' });
     expect(r.statusCode, r.body).toBe(200);
     expect((await sup.query(`SELECT kislama_yeri, gecici_ithalat_bitis::text g FROM yat WHERE kimlik = $1`, [yat])).rows[0]).toEqual({ kislama_yeri: 'Göcek Marina', g: '2027-05-01' });
+    expect((await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { sicil_limani: 'Bodrum' }, gerekce: 'Ruhsattan', kaynak: 'Ruhsat' })).statusCode).toBe(200); // YG-1442
+    expect((await sup.query(`SELECT sicil_limani FROM yat WHERE kimlik = $1`, [yat])).rows[0].sicil_limani).toBe('Bodrum');
     expect((await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { mmsi: '27112' }, gerekce: 'G' })).statusCode).toBe(400); // YG-091
     expect((await ist('POST', `/api/yat/${yat}/duzelt`, c, { alanlar: { mmsi: '271123456', motor_adedi: 2, motor_marka_model: 'Volvo Penta D6', motor_gucu_hp: 440 }, gerekce: 'Ruhsattan', kaynak: 'Ruhsat' })).statusCode).toBe(200);
     expect((await sup.query(`SELECT mmsi, motor_adedi FROM yat WHERE kimlik = $1`, [yat])).rows[0]).toEqual({ mmsi: '271123456', motor_adedi: 2 });

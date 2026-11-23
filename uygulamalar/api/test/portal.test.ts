@@ -163,6 +163,7 @@ describe('onay ekranı (YG-466, YG-476, YG-1433)', () => {
     expect((await ist('POST', `/api/dosya/${d.kimlik}/muvafakat`, await gir('opm'), {})).statusCode).toBe(400);
     const kilit = (await sup.query(`SELECT y.lehtar_adi, y.lehtar_muvafakati_ref FROM yat y JOIN dosya d ON d.yat_ref = y.kimlik WHERE d.kimlik = $1`, [d.kimlik])).rows[0];
     expect(kilit).toEqual({ lehtar_adi: 'Deneme Banka', lehtar_muvafakati_ref: null });
+    expect((await sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld07:${d.kimlik}%`])).rows[0]?.metin).toContain('Deneme Banka'); // YG-1446 BLD-07
   });
   it('vefat işaretinde bağlantı kapanır (YG-1477)', async () => {
     const d = await dosyaAc(); const b = await beyanLinki(d.kimlik);

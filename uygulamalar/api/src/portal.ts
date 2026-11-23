@@ -88,6 +88,11 @@ onaySonucKaydet('ONY-11', async (c, t, karar, k) => {
   const f = k.form; const yat = (await c.query(`SELECT d.yat_ref, d.dosya_no FROM dosya d WHERE d.kimlik = $1`, [t.dosya_ref])).rows[0];
   await c.query(`UPDATE yat SET mulkiyet_turu = $2, takyidat = $3, lehtar_adi = $4, beyan_zamani = $5, beyan_eden_ref = $6, guncelleme_zamani = now() WHERE kimlik = $1`, [yat.yat_ref, f.mulkiyet, f.takyidat, f.lehtar?.trim() || null, k.zaman, t.alici_kullanici_ref]);
   await izYaz(c, { aktor: t.alici_kullanici_ref, eylem: 'Mülkiyet ve Takyidat Beyanı', nesneTuru: 'Yat', nesneKimligi: yat.yat_ref, yeni: { mulkiyet: f.mulkiyet, takyidat: f.takyidat }, sonuc: 'Başarılı' });
+  // YG-1446: lehtar beyan edilmiş ve muvafakat yoksa BLD-07 ile muvafakat belgesi istenir.
+  if (await muvafakatKilidi(c, t.dosya_ref)) {
+    const s = (await c.query(`SELECT d.yazisma_dili, d.vefat_isareti, y.yat_adi, x.telefon, x.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi x ON x.dosya_ref = d.kimlik AND x.taraf_rolu = 'Yat Sahibi' AND x.aktif WHERE d.kimlik = $1 LIMIT 1`, [t.dosya_ref])).rows[0];
+    if (s && !s.vefat_isareti && (s.telefon || s.eposta)) await yatTarafinaYaz(c, { olay: `bld07:${t.dosya_ref}`, kod: 'BLD-07', dil: dilKod(s.yazisma_dili), konu: `${yat.dosya_no} Muvafakat`, telefon: s.telefon, eposta: s.eposta, alanlar: { Yat: s.yat_adi, Yacht: s.yat_adi, Lehtar: f.lehtar.trim(), 'Loss payee': f.lehtar.trim(), 'Dosya No': yat.dosya_no } });
+  }
   // YG-104: hacizli veya tedbirli yat Hukuk ve Uyum Direktörünün onayı olmadan taşınmaz; takyidat değerlendirmesi açılır.
   if (f.takyidat.some((x: string) => x === 'Haciz' || x.startsWith('İhtiyati'))) await kartAc(c, { tur: 'Takyidat Değerlendirmesi', baslik: `${yat.dosya_no} · Takyidat Değerlendirmesi`, ozet: f.takyidat.join(', '), oncelik: 'Yüksek', kategori: 'islem', sahipRol: await rolId(c, 'Hukuk ve Uyum Direktörü'), nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref });
   // YG-1463: paylı yatta tek yetkili malik atama adımı.

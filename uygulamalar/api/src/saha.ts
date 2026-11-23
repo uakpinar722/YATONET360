@@ -140,7 +140,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.amac?.trim()) return y.code(400).send({ hata: 'Keşfin amacı ve kapsamı zorunludur.' });
     if (!g.baslangic || !g.bitis || new Date(g.bitis) <= new Date(g.baslangic)) return y.code(400).send({ hata: 'Planlanan başlangıç ve bitişi giriniz.' });
     const tu = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Sorumlu Teknik Uzman (Koordinatör)', 'Teknik Uzman') AND bitis_zamani IS NULL ORDER BY rol DESC LIMIT 1`, [id])).rows[0];
-    if (!tu) return y.code(409).send({ hata: 'Keşif için Teknik Uzman ataması bekleniyor.' });
+    if (!tu) return y.code(409).send({ hata: 'Keşif için Teknik Uzman ataması bekleniyor.', islem: 'Teknik Uzman Ata', hedef: 'e-r' }); // YG-1386
     const liste = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_KESIF_IZINLI_ISLEM'`)).rows.map((r) => r.deger as string);
     if ((g.izinli ?? []).some((x) => !liste.includes(x))) return y.code(400).send({ hata: 'İzinli işlem listeden seçilir.' });
     const r = await islem(async (c) => {

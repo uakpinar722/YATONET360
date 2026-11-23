@@ -94,8 +94,9 @@ export async function firmaUygunlugu(db: Db, firma: string, brans?: string | nul
   return null;
 }
 
+let portalAdresi = ''; // YG-1505: BLD-78 bağlantısı (firmaYollari kurulurken)
 async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; dosya_ref: string; kurulus_ref: string }, simdi = new Date()) {
-  const d = (await c.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0];
+  const d = (await c.query(`SELECT d.oncelik, e.is_emri_turu FROM dosya d JOIN is_emri e ON e.kimlik = $2 WHERE d.kimlik = $1`, [e.dosya_ref, e.kimlik])).rows[0];
   // YG-326: yanıt sonu Pazar, resmî tatil veya 22:00-08:00 arasına düşerse ilk çalışma günü 12:00'a kayar; Kritikte kaydırma yoktur.
   const { bitisKaydir, tatilGunleri } = await import('./sure.js');
   const son = bitisKaydir(new Date(simdi.getTime() + (YANIT_SAAT[d.oncelik] ?? 24) * 3_600_000), d.oncelik, await tatilGunleri(c), await tatilGunleri(c, true)).bitis;
@@ -103,7 +104,9 @@ async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; d
   const kisiler = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [e.kurulus_ref])).rows.map((r) => r.kullanici_ref as string);
   // YG-1518: kabul son zamanı ve kabulden sonraki Teknik Rapor / Fiyat Teklifi süresi bildirimde yazılır.
   const rs = Math.round(((await raporSonZamani(c, d.oncelik, simdi)).getTime() - simdi.getTime()) / 3_600_000);
-  const ozet = `Kabul son zamanı: ${son.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}. Teknik Rapor ve Fiyat Teklifi süresi: kabulden itibaren ${rs} saat.`;
+  const saat = Math.max(1, Math.round((son.getTime() - simdi.getTime()) / 3_600_000)); const TUR: Record<string, string> = { KN: 'Keşif', AC: 'Acil Tedbir', ON: 'Onarım', EK: 'Ek İş', GR: 'Garanti', PH: 'Planlı Hizmet' };
+  const bld78 = await (await import('./metin.js')).metinGetir(c, 'BLD-78', 'tr', { 'İş Emri No': e.is_emri_no, tür: TUR[d.is_emri_turu] ?? d.is_emri_turu, süre: `${saat} saat`, 'bağlantı': portalAdresi }); // YG-1505
+  const ozet = `${bld78} Kabul son zamanı: ${son.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}. Teknik Rapor ve Fiyat Teklifi süresi: kabulden itibaren ${rs} saat.`;
   await bildir(c, { olay: `is-emri:${e.kimlik}`, kullanicilar: kisiler, baslik: `Yeni İş Emri: ${e.is_emri_no}`, ozet, oncelik: d.oncelik, eposta: true, sms: true }, simdi); // YG-328
   // YG-665: iş emri PDF'i firmanın kurumsal adresine ekli gider; fiyat içermez.
   const ep = (await c.query(`SELECT kurumsal_eposta FROM kurulus WHERE kimlik = $1`, [e.kurulus_ref])).rows[0]?.kurumsal_eposta as string | null;
@@ -145,6 +148,7 @@ belgeBagiKaydet('İş Emri', async (db, k, id) => {
 });
 
 export function firmaYollari(s: FastifyInstance, b: Baglam) {
+  portalAdresi = b.webAdresi;
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const islem = async <T>(f: (c: PoolClient) => Promise<T>) => { const c = await b.db.connect(); try { await c.query('BEGIN'); const r = await f(c); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); } };
@@ -605,7 +609,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       await c.query(`UPDATE is_emri SET statu = 'Durduruldu', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, neden!.trim()]);
       const ds = (await c.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].dosya_sorumlusu_ref;
-      await isDurduBildir(c, e, neden!.trim(), false); // YG-1437
+      await isDurduBildir(c, e, neden!.trim(), false, false, false); // YG-1437; firma kendisi durdurdu, BLD-79 gitmez
       if (ds) await kartAc(c, { tur: 'İş Durduruldu', kategori: 'gorev', baslik: `${e.is_emri_no} · Firma İşi Durdurdu`, ozet: neden!.trim().slice(0, 200), oncelik: 'Yüksek', sahipKullanici: ds, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik });
       return { tamam: true };
     });

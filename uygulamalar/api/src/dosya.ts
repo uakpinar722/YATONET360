@@ -132,7 +132,7 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
   for (const x of l) x.hedef ??= hedef ? new Date(hedef).toISOString() : null;
   // YG-1360: ekip atama işinde form (Atanacak Rol) ve rol bilinir; ekran bir adım tamamlanınca sıradakini açar.
   const ATA: Record<string, string> = { 'Dosya Sorumlusunu Ata': 'Dosya Sorumlusu', 'Operasyon Yöneticisini Ata': 'Operasyon Yöneticisi', 'Teknik Uzmanı Ata': 'Teknik Uzman', 'Teknik Yöneticiyi Ata': 'Teknik Yönetici' };
-  for (const x of l) { const r = ATA[x.is] ?? (x.is.startsWith('Saha Sorumlusunu Ata') ? 'Saha Sorumlusu' : undefined); if (r) x.form = { hedef: 'e-r', rol: r }; }
+  for (const x of l) { const r = ATA[x.is] ?? (x.is.startsWith('Saha Sorumlusunu Ata') ? 'Saha Sorumlusu' : undefined); if (r) x.form = { hedef: 'e-r', rol: r }; else if (x.is.startsWith('Sigorta Hasar Dosya Numarasını Gir')) x.form = { hedef: 'de-hn' }; }
   const kartlar = (await db.query(`SELECT k.baslik, k.son_zaman, coalesce(h.ad_soyad, r.rol_adi, '—') sorumlu FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.sahip_kullanici_ref LEFT JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE k.kategori = 'gorev' AND k.durum = 'Bekliyor' AND k.nesne_turu = 'Dosya' AND k.nesne_kimligi = $1 ORDER BY k.son_zaman NULLS LAST LIMIT 10`, [d.kimlik])).rows;
   for (const k of kartlar) l.push({ is: k.baslik, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null });
   return l;
@@ -334,6 +334,11 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         await c.query(`UPDATE talep SET statu = 'Kapsam Dışı / Yönlendirme', kapsam_disi_gerekcesi = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, g.gerekce!.trim()]); // YG-007: numara saklanır.
         await sureBitir(c, { tur: 'İlk Yanıt', talep: id });
         await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
+        // YG-1505 (D-037): sigorta şirketinin görevlendirmesi reddedilirse BLD-70 teyitli e-postayla sigortaya hazırlanır.
+        const st = g.karar === 'Ret' ? (await c.query(`SELECT talep_no, talep_sahibi_turu, talep_sahibi_adi, talep_sahibi_eposta, sigortaci_beyan, sigorta_hasar_dosya_no_beyan FROM talep WHERE kimlik = $1`, [id])).rows[0] : null;
+        if (st && st.talep_sahibi_turu === 'Sigorta Şirketi') { const kurum = st.sigortaci_beyan ?? st.talep_sahibi_adi; const no = st.sigorta_hasar_dosya_no_beyan ?? '---';
+          await (await import('./sigorta_gonderim.js')).sigortayaHazirla(c, { tur: 'BLD-70', nesne: id, alici: st.talep_sahibi_eposta ?? null, konu: `${st.talep_no} Görevlendirme Değerlendirmesi`, sorumlu: o.kullanici,
+            metin: await (await import('./metin.js')).metinGetir(c, 'BLD-70', 'tr', { Kurum: kurum, Institution: kurum, 'Hasar Dosya No': no, 'Claim No': no }) }); }
         await karar(null); await iz(`Açılış Kararı: ${g.karar}`); await c.query('COMMIT');
         return { durum: 'Kapsam Dışı' };
       }
@@ -437,7 +442,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
-    const yat = (await b.db.query(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu, y.tabi_kod, y.kayit_surumu::int, y.tam_boy_m, y.govde_malzemesi, y.tahrik_turu, y.uretim_yili, y.sicil_bilgisi, y.govde_no, y.gecici_kayit, y.katalog_teyit, y.turkiye_kalis_bitis, y.yabanci_yat_belgesi, y.yabanci_yat_belge_no, y.yabanci_yat_belge_gecerlilik::text, y.gecici_ithalat_bitis::text, y.kislama_yeri, y.mmsi, y.motor_adedi, y.motor_marka_model, y.motor_gucu_hp, y.takyidat, y.mulkiyet_turu, (y.lehtar_adi IS NOT NULL OR y.lehtar_ref IS NOT NULL) AS lehtar_var, y.lehtar_muvafakati_ref, y.lehtar_adi, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
+    const yat = (await b.db.query(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.kullanim_amaci, y.klas_durumu, y.klas_kurulusu, y.tabi_kod, y.sicil_limani, y.kayit_surumu::int, y.tam_boy_m, y.govde_malzemesi, y.tahrik_turu, y.uretim_yili, y.sicil_bilgisi, y.govde_no, y.gecici_kayit, y.katalog_teyit, y.turkiye_kalis_bitis, y.yabanci_yat_belgesi, y.yabanci_yat_belge_no, y.yabanci_yat_belge_gecerlilik::text, y.gecici_ithalat_bitis::text, y.kislama_yeri, y.mmsi, y.motor_adedi, y.motor_marka_model, y.motor_gucu_hp, y.takyidat, y.mulkiyet_turu, (y.lehtar_adi IS NOT NULL OR y.lehtar_ref IS NOT NULL) AS lehtar_var, y.lehtar_muvafakati_ref, y.lehtar_adi, coalesce(m.marka, y.marka_diger) AS marka, coalesce(m.model, y.model_diger) AS model FROM yat y LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE y.kimlik = $1`, [d.yat_ref])).rows[0];
     if (yat) yat.govde_eslemesi = (await import('./zorunlu_form.js')).GOVDE_ESLEME[yat.govde_malzemesi ?? ''] ?? null; // YG-1531
     const talep = (await b.db.query(`SELECT talep_no, bildirim_kanali, talep_sahibi_adi, talep_sahibi_turu, ihbar_yetki_durumu, yat_mevcut_durumu, olay_yeri, ilk_yanit_zamani, oncelik_cevaplari FROM talep WHERE kimlik = $1`, [d.talep_ref])).rows[0];
     const taraflar = (await b.db.query(`SELECT t.kimlik, t.taraf_rolu, t.kisi_adi_soyadi, t.telefon, t.eposta, t.talep_sahibi_mi, t.kimlik_dogrulama_durumu, t.baslangic_zamani, r.tckn, r.tarama_sonucu FROM dosya_tarafi t LEFT JOIN taraf r ON r.kimlik = t.taraf_ref WHERE t.dosya_ref = $1 AND t.aktif ORDER BY t.olusturma_zamani`, [id])).rows.map((r) => ({ ...r, tckn: maskeTckn(r.tckn) }));

@@ -70,7 +70,7 @@ export function teknikCizimYollari(s: FastifyInstance, b: Baglam) {
     const d = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
     const n = Number((await b.db.query(`SELECT count(*) n FROM teknik_cizim WHERE dosya_ref = $1`, [id])).rows[0].n) + 1;
     const r = (await b.db.query(`INSERT INTO teknik_cizim (cizim_no, dosya_ref, ad, olcek, belge_ref, genel_notlar, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik, cizim_no`,
-      [`${d.dosya_no}-CZ${String(n).padStart(2, '0')}`, id, g.ad.trim(), g.olcek.trim(), g.belge, g.notlar?.trim() || null, o.kullanici])).rows[0];
+      [`${d.dosya_no}-ÇZ${String(n).padStart(2, '0')}`, id, g.ad.trim(), g.olcek.trim(), g.belge, g.notlar?.trim() || null, o.kullanici])).rows[0];
     await b.db.query(`INSERT INTO teknik_cizim_revizyonu (cizim_ref, rev_no, aciklama, hazirlayan_ref, belge_ref, olcek) VALUES ($1, 0, $2, $3, $4, $5)`, [r.kimlik, 'İlk yayım', o.kullanici, g.belge, g.olcek.trim()]);
     return r;
   });

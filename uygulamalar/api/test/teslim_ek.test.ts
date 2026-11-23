@@ -54,7 +54,8 @@ describe('kapılar (YG-473, YG-099)', () => {
 describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
   it('hazır bildirimi 7 gün; süre geçince BLD-14 ve barınma görevi', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teslime-hazir`, ds, {})).json().hata).toContain('yetkili alıcı'); // YG-415
+    const th = (await o.ist('POST', `/api/dosya/${d.kimlik}/teslime-hazir`, ds, {})).json(); expect(th.hata).toContain('yetkili alıcı'); // YG-415
+    expect([th.islem, th.hedef]).toEqual(['Alıcıyı Doğrula', 'ta-a']); // YG-1386
     const al = (await o.ist('GET', `/api/dosya/${d.kimlik}/teslim-alicilari`, ds)).json() as { kimlik: string; taraf_rolu: string }[];
     const sh = al.find((x) => x.taraf_rolu === 'Yat Sahibi')!; expect(sh).toBeTruthy();
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teslim-alici-dogrula`, ds, { alici: sh.kimlik, yontem: 'Uydurma' })).statusCode).toBe(400);
