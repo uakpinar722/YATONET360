@@ -137,6 +137,16 @@ function GarantiTalebi({ id }: { id: string }) {
   return <div className="ozet">{m && <div className="not" role="status">{m}</div>}<label htmlFor="gt-b">Sorunu Kısaca Yazınız</label><input required id="gt-b" value={b} onChange={(e) => setB(e.target.value)} /><button className="btn2" disabled={!b.trim()} onClick={() => void istek(`/portal/dosya/${id}/garanti-talebi`, { belirti: b }).then(() => { setB(''); setM('Talebiniz Dosya Sorumlunuza iletildi.'); }).catch((x) => setM(x.message))}>Garanti Talebi Gönder</button></div>;
 }
 
+/** YG-1449, ONY-16: yat sahibinin Bilgi Paylaşım İzni; yalnız seçilen taraflar, her zaman güncellenir. */
+function BilgiPaylasimIzni({ id }: { id: string }) {
+  const [v, setV] = useState<{ baslik: string; metin: string; dugme: string; secenekler: string[]; secili: string[] } | null>(null); const [sec, setSec] = useState<string[]>([]); const [m, setM] = useState('');
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/portal/dosya/${id}/bilgi-paylasim`).then((r) => { setV(r); setSec(r.secili); }).catch(() => setV(null)); }, [id]);
+  if (!v) return null;
+  return <><div className="bolum">{v.baslik}</div><div className="ozet">{m && <div className="not" role="status">{m}</div>}<p>{v.metin}</p>
+    {v.secenekler.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={sec.includes(x)} onChange={(e) => setSec(e.target.checked ? [...sec, x] : sec.filter((z) => z !== x))} /><span>{x}</span></label>)}
+    <button className="btn2" onClick={() => void istek(`/portal/dosya/${id}/bilgi-paylasim`, { taraflar: sec }).then(() => setM('Paylaşım izniniz kaydedildi.')).catch((h) => setM(h.message))}>{v.dugme}</button></div></>;
+}
+
 /** YG-108: portaldan iptal veya devir talebi; Dosya Sorumlusuna iletilir. */
 function IptalDevirTalebi({ id }: { id: string }) {
   const [ac, setAc] = useState(false); const [f, setF] = useState({ tur: 'İptal', gerekce: '', devralan: '' }); const [m, setM] = useState('');
@@ -172,6 +182,7 @@ function DosyaOzeti({ id, geri }: { id: string; geri: () => void }) {
       {(d.fotograflar?.length ?? 0) > 0 && <><div className="bolum">İlerleme Fotoğrafları, Videoları ve Belgeleri</div><div className="ozet">{d.fotograflar!.map((f) => <div key={f.kimlik}><a href={`/api/portal/fotograf/${f.kimlik}`}>{f.aciklama}</a> · {tarih(f.onay_zamani)}</div>)}</div></>}
       <div className="bolum">Garanti Talebi</div>
       <GarantiTalebi id={id} />
+      <BilgiPaylasimIzni id={id} />{/* YG-1449, ONY-16 */}
       <IptalDevirTalebi id={id} />
       <div className="bolum">Belgelerim</div>
       <div className="ozet">{d.belgeler.length === 0 ? 'Belge bulunmamaktadır.' : d.belgeler.map((b) => <div key={b.kimlik}><a href={`/api/belge/${b.kimlik}/surum/${b.surum_no}/indir`}>{b.ad}</a></div>)}</div>

@@ -199,6 +199,14 @@ describe('portaldan iptal/devir talebi (YG-108)', () => {
     expect((await ist('POST', u, a.c, { tur: 'Devir', gerekce: 'Yat satıldı', devralan: 'Yeni Sahip' })).statusCode).toBe(200);
     expect((await sup.query(`SELECT 1 FROM is_karti WHERE tur = 'Müşteri İptal/Devir Talebi' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(1);
     expect((await ist('POST', u, a.c, { tur: 'İptal', gerekce: 'G' })).statusCode).toBe(409);
+    { // YG-1449, ONY-16: Bilgi Paylaşım İzni yalnız yat sahibinden; seçilen taraflar kaydedilir
+      const p = `/api/portal/dosya/${d.kimlik}/bilgi-paylasim`;
+      expect((await ist('GET', p, b.c)).statusCode).toBe(404);
+      const g0 = (await ist('GET', p, a.c)).json(); expect(g0.secenekler).toContain('Lehtar'); expect(g0.metin).not.toContain('[');
+      expect((await ist('POST', p, a.c, { taraflar: ['Komşu'] })).statusCode).toBe(400);
+      expect((await ist('POST', p, a.c, { taraflar: ['Lehtar', 'Broker'] })).statusCode).toBe(200);
+      expect((await ist('GET', p, a.c)).json().secili).toEqual(['Lehtar', 'Broker']);
+    }
   });
 });
 

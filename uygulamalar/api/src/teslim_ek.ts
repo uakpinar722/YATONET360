@@ -399,6 +399,27 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-108: yat sahibi portaldan iptal veya devir talebi iletir; talep Dosya Sorumlusuna görev olarak düşer, İptal/Devir tutanağı iç akışla (Operasyon Müdürü onayı) hazırlanır.
+  // YG-1449, ONY-16: Bilgi Paylaşım İzni; yalnız yat sahibi verir, seçilen taraflarla sınırlıdır ve her zaman güncellenir.
+  const PAYLASIM = ['Sörveyör', 'Broker', 'Lehtar', 'Klas Kuruluşu'];
+  const yatSahibiMi = async (dosyaRef: string, k: string) => Boolean((await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [dosyaRef, k])).rowCount);
+  s.get('/portal/dosya/:id/bilgi-paylasim', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await yatSahibiMi(id, o.kullanici))) return yok(y);
+    const dil = dilKod((await b.db.query(`SELECT yazisma_dili FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.yazisma_dili);
+    const s0 = (await b.db.query(`SELECT baslik, metin, dugme FROM sablon_metni WHERE kod = 'ONY-16' AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil])).rows[0];
+    const v = (await b.db.query(`SELECT taraflar, zaman FROM bilgi_paylasim_izni WHERE dosya_ref = $1`, [id])).rows[0];
+    return { baslik: s0?.baslik ?? 'Bilgi Paylaşım İzni', metin: s0?.metin ?? '', dugme: s0?.dugme ?? 'Paylaşıma İzin Veriyorum', secenekler: PAYLASIM, secili: v?.taraflar ?? [], zaman: v?.zaman ?? null };
+  });
+  s.post('/portal/dosya/:id/bilgi-paylasim', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { taraflar?: string[] };
+    if (!UUID.test(id) || !(await yatSahibiMi(id, o.kullanici))) return yok(y);
+    const l = [...new Set(g.taraflar ?? [])];
+    if (l.some((x) => !PAYLASIM.includes(x))) return y.code(400).send({ hata: 'Paylaşım taraflarını listeden seçiniz.' });
+    await b.db.query(`INSERT INTO bilgi_paylasim_izni (dosya_ref, taraflar, veren_ref) VALUES ($1,$2,$3) ON CONFLICT (dosya_ref) DO UPDATE SET taraflar = EXCLUDED.taraflar, veren_ref = EXCLUDED.veren_ref, zaman = now()`, [id, l, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Bilgi Paylaşım İzni', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { taraflar: l }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { taraflar: l };
+  });
+
   s.post('/portal/dosya/:id/iptal-devir-talebi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; gerekce?: string; devralan?: string };
     if (!UUID.test(id) || !(await musteriMi(id, o.kullanici))) return yok(y);
