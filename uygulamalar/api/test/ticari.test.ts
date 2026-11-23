@@ -265,6 +265,26 @@ describe('doğan görev (YG-1465)', () => {
     expect(await doganGorevAc(o.db, 'BLD-08', d.dosyaNo, 'deneme-1465c', t0)).toBe(1);
     expect((await o.kart('Doğan Görev', d.kimlik)).son_zaman).toBeNull();
   });
+  it('doğan görevde yarı sürede sahibine uyarı, dolunca Operasyon Müdürüne bildirim; her eşik bir kez (YG-1465)', async () => {
+    const { doganGorevAc, doganGorevIsle } = await import('../src/ihbar.js');
+    const d = await dosya();
+    await o.sup.query(`UPDATE sablon_metni SET dogan_gorev = 'Dosya Sorumlusu – en kısa sürede (üst sınır: öncelik ilk yanıt süresi) arama' WHERE kod = 'BLD-08' AND dil = 'tr'`);
+    const t0 = new Date('2026-11-18T10:00:00+03:00');
+    expect(await doganGorevAc(o.db, 'BLD-08', d.dosyaNo, 'deneme-1465y', t0)).toBe(1);
+    const k = (await o.sup.query(`SELECT kimlik, son_zaman FROM is_karti WHERE tur = 'Doğan Görev' AND nesne_kimligi = $1 ORDER BY olusturma_zamani DESC LIMIT 1`, [d.kimlik])).rows[0];
+    await o.sup.query(`UPDATE is_karti SET olusturma_zamani = $2 WHERE kimlik = $1`, [k.kimlik, t0]);
+    const son = new Date(k.son_zaman).getTime(); const yari = new Date(t0.getTime() + (son - t0.getTime()) / 2 + 60_000);
+    const say = async (o_: string) => (await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE olay_anahtari = $1`, [`${o_}:${k.kimlik}`])).rows[0].n as number;
+    await doganGorevIsle(o.db, new Date(t0.getTime() + 60_000)); expect(await say('dogan-yari')).toBe(0);
+    await doganGorevIsle(o.db, yari); await doganGorevIsle(o.db, yari); expect(await say('dogan-yari')).toBe(1);
+    await doganGorevIsle(o.db, new Date(son + 60_000)); await doganGorevIsle(o.db, new Date(son + 120_000));
+    expect(await say('dogan-doldu')).toBeGreaterThan(0);
+    const n = await say('dogan-doldu'); await doganGorevIsle(o.db, new Date(son + 180_000)); expect(await say('dogan-doldu')).toBe(n);
+    const { kapanisEksikleri } = await import('../src/saha.js'); // YG-1465: açık doğan görevle dosya kapanmaz
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).toContain('Açık Doğan Görev');
+    await o.sup.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Doğan Görev' AND nesne_kimligi = $1`, [d.kimlik]);
+    expect(await kapanisEksikleri(o.db, { kimlik: d.kimlik }, null)).not.toContain('Açık Doğan Görev');
+  });
 });
 
 describe('tedarikçi fatura düzenleme metni (BLD-97, MTN-1)', () => {
@@ -462,6 +482,10 @@ describe('izin ve masraf (YG-920, YG-921, YG-948, YG-951)', () => {
       const ts = await o.ist('POST', '/api/masraf', c, { ...M, belgeOzeti: 'F920T', taslak: true });
       expect(ts.json().durum).toBe('Taslak'); expect(await o.kart('Masraf Fişi', ts.json().kimlik)).toBeUndefined();
       expect((await o.ist('GET', '/api/masraf/taslaklarim', c)).json().map((x: { kimlik: string }) => x.kimlik)).toContain(ts.json().kimlik);
+      { const { masrafSonTeslim } = await import('../src/ticari.js'); // YG-1628: son teslim fiş + 30 gün 12:00 İstanbul
+        expect(masrafSonTeslim('2026-11-01').toISOString()).toBe('2026-12-01T09:00:00.000Z');
+        const x = (await o.ist('GET', '/api/masraf/taslaklarim', c)).json().find((k: { kimlik: string }) => k.kimlik === ts.json().kimlik);
+        const b = new Date(`${x.fis_tarihi}T00:00:00Z`); b.setUTCDate(b.getUTCDate() + 30); expect(x.son_teslim).toBe(b.toISOString().slice(0, 10)); }
       const { masrafTaslakHatirlat } = await import('../src/ticari.js');
       expect(await masrafTaslakHatirlat(o.db, new Date('2026-11-14T09:00:00Z'))).toBeGreaterThanOrEqual(1);
       expect(await masrafTaslakHatirlat(o.db, new Date('2026-11-13T09:00:00Z'))).toBe(0);

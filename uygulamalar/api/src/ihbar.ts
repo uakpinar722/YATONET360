@@ -75,6 +75,27 @@ export async function doganGorevAc(c: Db, kod: string, dosyaNo: string, olay: st
   return n;
 }
 
+/** YG-1465: doğan görevde sürenin yarısında sahibine uyarı; süre dolunca Operasyon Müdürüne bildirim (görev listede gecikmiş görünür). Her eşik bir kez. */
+export async function doganGorevIsle(db: Pool, simdi = new Date()): Promise<number> {
+  const { rows } = await db.query(`SELECT kimlik, baslik, ozet, oncelik, olusturma_zamani, son_zaman, sahip_kullanici_ref, sahip_rol_ref FROM is_karti WHERE tur = 'Doğan Görev' AND durum IN ('Bekliyor', 'İade Edildi') AND son_zaman IS NOT NULL`);
+  let n = 0;
+  for (const k of rows) {
+    const bas = new Date(k.olusturma_zamani).getTime(); const son = new Date(k.son_zaman).getTime(); const t = simdi.getTime();
+    if (t >= son) {
+      if (!(await birKez(db, 'dogan_gorev_doldu', k.kimlik))) continue;
+      const om = await rolSahipleri(db, await rolId(db, 'Operasyon Müdürü'));
+      if (om.length) await bildir(db, { olay: `dogan-doldu:${k.kimlik}`, kullanicilar: om, baslik: `Süresi Dolan Görev: ${k.baslik}`, ozet: k.ozet, isRef: k.kimlik, oncelik: k.oncelik }, simdi);
+      n++;
+    } else if (son > bas && t >= bas + (son - bas) / 2) {
+      if (!(await birKez(db, 'dogan_gorev_yari', k.kimlik))) continue;
+      const kisiler = k.sahip_kullanici_ref ? [k.sahip_kullanici_ref as string] : k.sahip_rol_ref ? await rolSahipleri(db, k.sahip_rol_ref) : [];
+      if (kisiler.length) await bildir(db, { olay: `dogan-yari:${k.kimlik}`, kullanicilar: kisiler, baslik: `Görev Süresinin Yarısı Doldu: ${k.baslik}`, ozet: k.ozet, isRef: k.kimlik, oncelik: k.oncelik }, simdi);
+      n++;
+    }
+  }
+  return n;
+}
+
 interface IhbarGirdisi {
   bildirimZamani?: string; kanal?: string; sahibiAdi?: string; sahibiTuru?: string; sahibiTuruAciklama?: string; yetkiDurumu?: string; sifat?: string; telefon?: string; eposta?: string; yetkiBeyani?: string;
   yat?: YatGirdisi; yatSahibi?: { ad?: string; telefon?: string; eposta?: string; kisiTuru?: string };

@@ -65,6 +65,9 @@ export function firmaOdemePlani(tahsilatTarihi: Date | null, kabulFaturaTarihi: 
   return plan < azami ? { tarih: plan, tahsilataBagli: true } : { tarih: azami, tahsilataBagli: false };
 }
 
+/** YG-920, YG-1628: masraf fişinin son teslimi fiş tarihinden 30 gün sonra 12:00 (İstanbul); kartta "Son Teslim" olarak görünür. */
+export const masrafSonTeslim = (fisTarihi: string) => new Date(new Date(`${fisTarihi.slice(0, 10)}T12:00:00+03:00`).getTime() + 30 * 86_400_000);
+
 /** YG-920: taslak masraf fişi için ayın son günü ve 14'ünde (İstanbul) hatırlatma; günde bir kez. */
 export async function masrafTaslakHatirlat(db: Pool, simdi = new Date()): Promise<number> {
   const ist = new Date(simdi.getTime() + 3 * 3_600_000); const gun = ist.getUTCDate();
@@ -942,13 +945,13 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     await kartAc(c, { tur: 'Masraf Fişi', baslik: `Masraf Fişi · ${tur}`, ozet: `${tutar(od)} EUR${istisna ? ` · Konaklama sınırı istisnası: ${istisna}` : ''}`, hazirlayan: kullanici, zincir, nesneTuru: 'Masraf', nesneKimligi: id });
   }
   // YG-920: taslak masraf fişleri ve onaya gönderme.
-  s.get('/masraf/taslaklarim', oturumlu, async (i) => (await b.db.query(`SELECT kimlik, masraf_turu, fis_tarihi::text, belge_ozeti, tutar_tl, odenecek_eur, (fis_tarihi + 30 - (now() AT TIME ZONE 'Europe/Istanbul')::date) kalan_gun FROM personel_masraf_fisi WHERE personel_ref = $1 AND durum = 'Taslak' ORDER BY fis_tarihi`, [i.oturum!.kullanici])).rows);
+  s.get('/masraf/taslaklarim', oturumlu, async (i) => (await b.db.query(`SELECT kimlik, masraf_turu, fis_tarihi::text, belge_ozeti, tutar_tl, odenecek_eur, (fis_tarihi + 30 - (now() AT TIME ZONE 'Europe/Istanbul')::date) kalan_gun, (fis_tarihi + 30)::text son_teslim FROM personel_masraf_fisi WHERE personel_ref = $1 AND durum = 'Taslak' ORDER BY fis_tarihi`, [i.oturum!.kullanici])).rows);
   s.post('/masraf/:id/gonder', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id)) return yok(y);
-    const f = (await b.db.query(`SELECT * FROM personel_masraf_fisi WHERE kimlik = $1 AND personel_ref = $2 AND durum = 'Taslak'`, [id, o.kullanici])).rows[0];
+    const f = (await b.db.query(`SELECT *, fis_tarihi::text fis_tarihi_metin FROM personel_masraf_fisi WHERE kimlik = $1 AND personel_ref = $2 AND durum = 'Taslak'`, [id, o.kullanici])).rows[0];
     if (!f) return yok(y);
-    if ((Date.now() - new Date(f.fis_tarihi).getTime()) / 86_400_000 > 30) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
+    if (Date.now() > masrafSonTeslim(f.fis_tarihi_metin).getTime()) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
     return islem(async (c) => {
       await c.query(`UPDATE personel_masraf_fisi SET durum = 'Onayda' WHERE kimlik = $1`, [id]);
       await masrafOnayaGonder(c, o.kullanici, id, f.masraf_turu, Number(f.odenecek_eur), f.istisna_gerekcesi);
@@ -963,7 +966,7 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     if (!g.tur?.trim() || !g.tarih || !(Number(g.tutarTl) > 0) || !(Number(g.kur) > 0)) return y.code(400).send({ hata: 'Tür, tarih, tutar ve kur zorunludur.' });
     if (!g.belgeOzeti?.trim()) return y.code(400).send({ hata: 'Masraf için belge numarasını yazmanızı rica ederiz.' });
     if (g.belgeTuru && !['Kağıt Fiş', 'e-Fatura', 'e-Arşiv'].includes(g.belgeTuru)) return y.code(400).send({ hata: 'Belge türü geçersizdir.' }); // YG-1622
-    if ((Date.now() - new Date(g.tarih).getTime()) / 86_400_000 > 30) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
+    if (!/^\d{4}-\d{2}-\d{2}/.test(g.tarih) || Date.now() > masrafSonTeslim(g.tarih).getTime()) return y.code(409).send({ hata: 'Fiş tarihinden itibaren 30 gün geçmiştir.' });
     // YG-922: şirket aracı tahsis edilmez, yakıt masraf türü değildir; km bedeli Saha Sorumlusuna açıktır, diğer personelde özel araç kullanımı önceden onaylanmış olmalıdır.
     if (/yakıt|akaryakıt/i.test(g.tur)) return y.code(400).send({ hata: 'Şirket aracı tahsis edilmediğinden yakıt masrafı girilmez; özel araçla yolculukta km bedeli kullanılır.' });
     if (g.tur === 'Km') {

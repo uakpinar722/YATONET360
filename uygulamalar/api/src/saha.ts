@@ -28,6 +28,8 @@ export async function kapanisEksikleri(db: PoolClient | Baglam['db'], d: { kimli
   const l: string[] = [];
   if ((await db.query(`SELECT 1 FROM acik_konu WHERE dosya_ref = $1 AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [d.kimlik])).rowCount) l.push('Açık Görev');
   if ((await db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL LIMIT 1`, [d.kimlik])).rowCount) l.push('Beklemede işareti açık');
+  // YG-1465: dışa verilen sözden doğan görev kapanmadan dosya kapanmaz.
+  if ((await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Doğan Görev' AND nesne_kimligi = $1::text AND durum IN ('Bekliyor', 'İade Edildi') LIMIT 1`, [d.kimlik])).rowCount) l.push('Açık Doğan Görev');
   if ((await db.query(`SELECT 1 FROM tedarik_siparisi WHERE dosya_ref = $1 AND statu IN ('Onay Bekliyor', 'Verildi', 'Kısmi Teslim') LIMIT 1`, [d.kimlik])).rowCount) l.push('Açık Tedarik Siparişi'); // YG-416
   if (neden === 'Tamamlandı' && !(await db.query(`SELECT 1 FROM kesif WHERE dosya_ref = $1 AND durum = 'Tamamlandı' LIMIT 1`, [d.kimlik])).rowCount) l.push('Teknik Eksik');
   if (neden === 'Tamamlandı' && (await db.query(`SELECT 1 FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK') LIMIT 1`, [d.kimlik])).rowCount && !(await db.query(`SELECT 1 FROM teslim_kaydi WHERE dosya_ref = $1 AND durum LIKE 'Teslim Edildi%' LIMIT 1`, [d.kimlik])).rowCount) l.push('Kabul Bekliyor'); // YG-148

@@ -51,6 +51,17 @@ describe('personel ek kayıtları (YG-974, YG-956, YG-947)', () => {
     expect((await o.ist('POST', `/api/zimmet/${z}/iade`, ds, {})).statusCode).toBe(404);
     const idr = await o.gir('idr'); expect((await o.ist('GET', '/api/personel-ek', idr)).json().acikZimmetler.some((x: { kimlik: string }) => x.kimlik === z)).toBe(true);
     expect((await o.ist('POST', `/api/zimmet/${z}/iade`, idr, {})).statusCode).toBe(200); expect((await o.ist('POST', `/api/zimmet/${z}/iade`, idr, {})).statusCode).toBe(409);
+    { // YG-223: sistem erişimi olmayan personelde ıslak imzalı zimmet
+      const p = (await o.sup.query(`SELECT kullanici_ref FROM personel_karti LIMIT 1`)).rows[0]?.kullanici_ref as string | undefined;
+      if (p) {
+        const G = { personel: p, ekipman: 'Telsiz', tarih: '2026-11-02' };
+        expect((await o.ist('POST', '/api/zimmet/islak-imza', ds, G)).statusCode).toBe(404);
+        expect((await o.ist('POST', '/api/zimmet/islak-imza', idr, G)).statusCode).toBe(400);
+        const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ($1,'Zimmet','Gizli','Personel',$2,'Sistem',current_date,$3) RETURNING kimlik`, [`Z${Math.random()}`, p, o.K.ds])).rows[0].kimlik;
+        const r = await o.ist('POST', '/api/zimmet/islak-imza', idr, { ...G, belge: bl }); expect(r.statusCode, r.body).toBe(200);
+        expect((await o.sup.query(`SELECT islak_imzali_belge_ref, kaydeden_ref FROM personel_zimmet WHERE kimlik = $1`, [r.json().kimlik])).rows[0].islak_imzali_belge_ref).toBe(bl);
+      }
+    }
   });
   it('nöbet düzenini yalnız birim amiri belirler; aynı nöbete ikinci kayıt olmaz', async () => {
     const G = { personel: o.K.ds, nobetTarihi: '2026-11-01', duzen: 'Geç Başlama', uygulamaTarihi: '2026-11-02' };

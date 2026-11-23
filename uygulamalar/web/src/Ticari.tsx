@@ -984,6 +984,8 @@ export function IdariIslemler() {
   return (
     <>
       <h1>İdari İşlemlerim</h1><Mesaj />
+      {/* YG-1628: izin, masraf, akademi ve karne, idari talep bu sayfada; toplantılar ve duyurular buradan açılır. */}
+      <div className="soru"><button className="btn2 kucuk" onClick={() => window.dispatchEvent(new CustomEvent('sayfa-git', { detail: 'toplanti' }))}>Toplantılara Git</button><button className="btn2 kucuk" onClick={() => window.dispatchEvent(new CustomEvent('sayfa-git', { detail: 'duyuru' }))}>Duyurulara Git</button></div>
       <PersonelIslemlerim yap={yap} />
       <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
@@ -1098,10 +1100,10 @@ export function IdariIslemler() {
 
 /** YG-920: taslak masraf fişleri; kalan giriş günü ve "Onaya Gönder". */
 function MasrafTaslaklari({ yenile, yap }: { yenile: number; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> | void }) {
-  const [l, setL] = useState<{ kimlik: string; masraf_turu: string; fis_tarihi: string; belge_ozeti: string; odenecek_eur: string; kalan_gun: number }[]>([]); const [n, setN] = useState(0);
+  const [l, setL] = useState<{ kimlik: string; masraf_turu: string; fis_tarihi: string; belge_ozeti: string; odenecek_eur: string; kalan_gun: number; son_teslim?: string }[]>([]); const [n, setN] = useState(0);
   useEffect(() => { void istek<typeof l>('/masraf/taslaklarim').then(setL).catch(() => setL([])); }, [yenile, n]);
   if (!l.length) return null;
-  return <><div className="bolum">Taslak Fişlerim</div>{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.masraf_turu} · {x.fis_tarihi.split('-').reverse().join('.')} · {x.belge_ozeti} · {eur(Number(x.odenecek_eur))} · {x.kalan_gun >= 0 ? `Girişe ${x.kalan_gun} gün kaldı` : 'Giriş süresi doldu'}</span>
+  return <><div className="bolum">Taslak Fişlerim</div>{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.masraf_turu} · {x.fis_tarihi.split('-').reverse().join('.')} · {x.belge_ozeti} · {eur(Number(x.odenecek_eur))} · {x.kalan_gun >= 0 ? `Girişe ${x.kalan_gun} gün kaldı` : 'Giriş süresi doldu'}{x.son_teslim ? ` · Son Teslim: ${x.son_teslim.split('-').reverse().join('.')} 12:00` : ''}</span>
     <button className="btn2 kucuk" disabled={x.kalan_gun < 0} onClick={() => void yap(() => istek(`/masraf/${x.kimlik}/gonder`, {}).then(() => { setN(n + 1); return { uyari: 'Fiş onaya gönderildi.' }; }))}>Onaya Gönder</button></div>)}</>;
 }
 

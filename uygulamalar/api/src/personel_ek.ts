@@ -21,6 +21,7 @@ export function personelEkYollari(s: FastifyInstance, b: Baglam) {
     const yetkili = await rolVar(o.kullanici, ZIMMET_ROL);
     return {
       zimmetYetkili: yetkili,
+      personeller: yetkili ? (await b.db.query(`SELECT h.kimlik, h.ad_soyad FROM personel_karti p JOIN kullanici_hesabi h ON h.kimlik = p.kullanici_ref ORDER BY h.ad_soyad LIMIT 500`)).rows : [], // YG-223
       zimmetlerim: (await b.db.query(`SELECT kimlik, ekipman, seri_no, teslim_tarihi::text, iade_zamani FROM personel_zimmet WHERE personel_ref = $1 ORDER BY teslim_tarihi DESC`, [o.kullanici])).rows,
       acikZimmetler: yetkili ? (await b.db.query(`SELECT z.kimlik, z.ekipman, z.seri_no, h.ad_soyad FROM personel_zimmet z JOIN kullanici_hesabi h ON h.kimlik = z.personel_ref WHERE z.iade_zamani IS NULL ORDER BY h.ad_soyad LIMIT 300`)).rows : [],
       serbestZamanlarim: (await b.db.query(`SELECT nobet_tarihi::text, duzen, uygulama_tarihi::text FROM nobet_serbest_zaman WHERE personel_ref = $1 ORDER BY nobet_tarihi DESC LIMIT 50`, [o.kullanici])).rows,
@@ -35,6 +36,17 @@ export function personelEkYollari(s: FastifyInstance, b: Baglam) {
     if (!g.ekipman?.trim() || !TARIH.test(g.tarih ?? '')) return y.code(400).send({ hata: 'Ekipman ve teslim tarihi zorunludur.' });
     const r = await b.db.query(`INSERT INTO personel_zimmet (personel_ref, ekipman, seri_no, teslim_tarihi) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [o.kullanici, g.ekipman.trim(), g.seri?.trim() || null, g.tarih]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Zimmet Beyanı', nesneTuru: 'Zimmet', nesneKimligi: r.rows[0].kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.rows[0].kimlik };
+  });
+  // YG-223: sistem erişimi yoksa ıslak imza istisnası; taranmış belge personel kaydına bağlıdır, kaydeden ayrıca tutulur.
+  s.post('/zimmet/islak-imza', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { personel?: string; ekipman?: string; seri?: string; tarih?: string; belge?: string };
+    if (!(await rolVar(o.kullanici, ZIMMET_ROL))) return yok(y);
+    if (!g.personel?.trim() || !g.ekipman?.trim() || !TARIH.test(g.tarih ?? '')) return y.code(400).send({ hata: 'Personel, ekipman ve teslim tarihi zorunludur.' });
+    if (!g.belge || !UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Personel' AND bag_kimligi = $2`, [g.belge, g.personel])).rowCount) return y.code(400).send({ hata: 'Islak imzalı taranmış zimmet belgesini personel kaydına yükleyip seçiniz.' });
+    if (!(await b.db.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1`, [g.personel])).rowCount) return yok(y);
+    const r = await b.db.query(`INSERT INTO personel_zimmet (personel_ref, ekipman, seri_no, teslim_tarihi, islak_imzali_belge_ref, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.personel, g.ekipman.trim(), g.seri?.trim() || null, g.tarih, g.belge, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Zimmet (Islak İmza)', nesneTuru: 'Zimmet', nesneKimligi: r.rows[0].kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.rows[0].kimlik };
   });
   s.post('/zimmet/:id/iade', oturumlu, async (i, y) => {
