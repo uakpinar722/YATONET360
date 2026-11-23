@@ -54,9 +54,14 @@ export async function belgeMaskeEngeli(db: Db, tur: string, dosya: string, metin
 }
 
 /** YG-1171: dosya belgesi, dosya tarafı olmayan alıcıya ancak onaylı hasar paylaşım talebiyle paylaşılır. */
+const PAYLASIM_GRUBU: Record<string, string> = { Eksper: 'Sörveyör', 'Sörveyör': 'Sörveyör', 'Sigorta Brokeri': 'Broker', 'Yat Brokeri': 'Broker', Lehtar: 'Lehtar', 'Klas Kuruluşu': 'Klas Kuruluşu' };
 export async function hasarPaylasimEngeli(db: Db, bagTuru: string, dosya: string, alici: string): Promise<string | null> {
   if (bagTuru !== 'Dosya') return null;
-  if ((await db.query(`SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1::uuid AND lower(eposta COLLATE "C") = lower($2 COLLATE "C") AND aktif LIMIT 1`, [dosya, alici])).rowCount) return null;
+  // YG-1449, ONY-16: izin kaydı varsa izin kapsamındaki rol grubunda seçilmeyen tarafla paylaşılmaz.
+  const rol = (await db.query(`SELECT taraf_rolu FROM dosya_tarafi WHERE dosya_ref = $1::uuid AND lower(eposta COLLATE "C") = lower($2 COLLATE "C") AND aktif LIMIT 1`, [dosya, alici])).rows[0]?.taraf_rolu as string | undefined;
+  const grup = rol ? PAYLASIM_GRUBU[rol] : undefined;
+  if (grup) { const iz = (await db.query(`SELECT taraflar FROM bilgi_paylasim_izni WHERE dosya_ref = $1::uuid`, [dosya])).rows[0]?.taraflar as string[] | undefined; if (iz && !iz.includes(grup)) return 'Yat sahibi bu tarafla bilgi paylaşımına izin vermemiştir.'; }
+  if (rol) return null;
   if ((await db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1::uuid AND lower(eposta COLLATE "C") = lower($2 COLLATE "C") LIMIT 1`, [dosya, alici])).rowCount) return null; // onay alıcısı (ör. kaptan)
   if ((await db.query(`SELECT 1 FROM hasar_paylasim_talebi WHERE dosya_ref = $1::uuid AND lower(alici COLLATE "C") = lower($2 COLLATE "C") AND durum = 'Onaylandı' LIMIT 1`, [dosya, alici])).rowCount) return null;
   return 'Bu alıcıyla paylaşım için onaylı hasar bilgisi paylaşım talebi bekleniyor.';

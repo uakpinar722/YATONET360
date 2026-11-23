@@ -441,6 +441,15 @@ describe('hasar paylaşım kapısı, yetki süresi, garanti masrafı (YG-1171, Y
     expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'yabanci@d.local')).toContain('bekleniyor');
     expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'SAHIP1@d.local')).toBeNull();
     expect(await hasarPaylasimEngeli(o.db, 'Firma', d.kimlik, 'yabanci@d.local')).toBeNull();
+    { // YG-1449: izin kaydı varsa izin dışı eksperle paylaşılmaz
+      await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, eposta, olusturan_ref) VALUES ($1,'Eksper','E','eksper1@d.local',$2)`, [d.kimlik, o.K.ds]);
+      expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'eksper1@d.local')).toBeNull();
+      await o.sup.query(`INSERT INTO bilgi_paylasim_izni (dosya_ref, taraflar, veren_ref) VALUES ($1,'{Lehtar}',$2)`, [d.kimlik, o.K.ds]);
+      expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'eksper1@d.local')).toContain('izin vermemiştir');
+      expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'SAHIP1@d.local')).toBeNull();
+      await o.sup.query(`UPDATE bilgi_paylasim_izni SET taraflar = '{Lehtar,Sörveyör}' WHERE dosya_ref = $1`, [d.kimlik]);
+      expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'eksper1@d.local')).toBeNull();
+    }
     await o.sup.query(`INSERT INTO hasar_paylasim_talebi (dosya_ref, alici, kapsam, talep_eden_ref, durum) VALUES ($1,'yabanci@d.local','K',$2,'Onaylandı')`, [d.kimlik, o.K.ds]);
     expect(await hasarPaylasimEngeli(o.db, 'Dosya', d.kimlik, 'yabanci@d.local')).toBeNull();
   });
