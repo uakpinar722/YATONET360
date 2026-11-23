@@ -64,6 +64,18 @@ describe('hukuk kararı (YG-820, YG-912, YG-914)', () => {
   });
 });
 
+describe('mali hareketler (YG-850)', () => {
+  it('gelir ve nakit girişi ayrı satırlarda; yetkisiz rol göremez', async () => {
+    const { d } = await kurumsal(); const f = await fatura(d, { toplam: 600, vade: '2026-12-01' });
+    await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = current_date WHERE kimlik = $1`, [f, `MH-${Date.now()}`]);
+    await o.sup.query(`INSERT INTO tahsilat (fatura_ref, dosya_ref, tutar_eur, tarih, kanal, giren_ref) VALUES ($1,$2,200,current_date,'Havale',$3)`, [f, d.kimlik, o.K.ds]);
+    expect((await o.ist('GET', `/api/mali-hareket?dosya=${d.kimlik}`, await o.gir('ds'))).statusCode).toBe(403);
+    const r = (await o.ist('GET', `/api/mali-hareket?dosya=${d.kimlik}`, await o.gir('ts'))).json();
+    expect(r.satirlar.map((x: { tur: string }) => x.tur).sort()).toEqual(['Gelir', 'Nakit Giriş']); expect(r.toplam['Nakit Giriş']).toBe(200);
+    expect((await o.ist('GET', `/api/mali-hareket?tur=Kâr`, await o.gir('ts'))).statusCode).toBe(400);
+  });
+});
+
 describe('teslim öncesi ödeme (YG904-UC-GUN)', () => {
   it('tahmini teslimden 3 iş günü önce bakiye açıksa Ticari Sorumluya bir kez görev', async () => {
     const { d } = await kurumsal(); const f = await fatura(d, { toplam: 700, vade: '2026-11-01' });

@@ -89,6 +89,9 @@ export async function disMetinEngeli(db: Db, g: { telefon?: string | null; epost
 /** YG-1031, YG-1070, YG-1073, YG-1086, YG-1566: Yat Yetkilisi yalnız geçerli belgedeki işlem, limit ve süre içinde onaylar. */
 export const yetkiliOnaylari = async (db: Db, kullanici: string) => (await db.query(`SELECT t.kimlik, t.ony_kod, t.baslik, t.belge_adi, t.son_gecerlilik, d.dosya_no FROM yat_yetkilisi_kaydi y JOIN onay_talebi t ON t.telefon = y.sahip_telefon LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE y.kullanici_ref = $1 AND y.belge_durumu = 'Geçerli' AND y.bitis_tarihi >= current_date AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() AND t.ony_kod = ANY(y.islem_turleri) AND (t.tutar_eur IS NULL OR t.tutar_eur <= coalesce(y.ust_limit_eur, 0)) ORDER BY t.son_gecerlilik`, [kullanici])).rows;
 
+/** YG-1449: tek işlem limitini aşan, yetki kapsamındaki bekleyen onaylar (yetkiliye uyarı; onay yat sahibinde kalır). */
+export const yetkiliLimitAsanlar = async (db: Db, kullanici: string) => (await db.query(`SELECT t.kimlik, t.belge_adi, t.tutar_eur, d.dosya_no, y.ust_limit_eur FROM yat_yetkilisi_kaydi y JOIN onay_talebi t ON t.telefon = y.sahip_telefon LEFT JOIN dosya d ON d.kimlik = t.dosya_ref WHERE y.kullanici_ref = $1 AND y.belge_durumu = 'Geçerli' AND y.bitis_tarihi >= current_date AND t.durum = 'Bekliyor' AND t.son_gecerlilik > now() AND t.ony_kod = ANY(y.islem_turleri) AND t.tutar_eur > coalesce(y.ust_limit_eur, 0) ORDER BY t.son_gecerlilik`, [kullanici])).rows;
+
 /** Onay yetkiliye geçer; kod yetkilinin telefonuna gider, kayıtta asıl alıcı saklanır. */
 export async function yetkiliyeDevret(db: Db, id: string, kullanici: string): Promise<boolean> {
   if (!(await yetkiliOnaylari(db, kullanici)).some((x) => x.kimlik === id)) return false;

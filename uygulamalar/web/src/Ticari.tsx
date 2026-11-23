@@ -991,6 +991,18 @@ export function SigortaEk2() {
   );
 }
 
+/** YG-850: gelir, maliyet ve nakit hareketleri ayrı satırlarda (yalnız MF ve ticari yöneticiler). */
+function MaliHareketler() {
+  const [v, setV] = useState<{ satirlar: { tur: string; kaynak: string; kaynak_ref: string; tarih: string; tutar: number; belge_no: string | null; dosya_no: string | null }[]; toplam: Record<string, number> } | null>(null); const [tur, setTur] = useState('');
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/mali-hareket${tur ? `?tur=${encodeURIComponent(tur)}` : ''}`).then(setV).catch(() => setV(null)); }, [tur]);
+  if (!v) return null;
+  return <><div className="bolum">Mali Hareketler</div><div className="ozet">
+    <label htmlFor="mh-t">Hareket Türü</label><select id="mh-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Tümü</option>{['Gelir', 'Maliyet', 'Nakit Giriş', 'Nakit Çıkış'].map((x) => <option key={x}>{x}</option>)}</select>
+    <div className="not">{Object.entries(v.toplam).map(([k, x]) => `${k}: ${eur(x)}`).join(' · ') || 'Hareket bulunmamaktadır.'}</div>
+    {v.satirlar.slice(0, 100).map((x) => <div key={x.kaynak + x.kaynak_ref}>{x.tarih.split('-').reverse().join('.')} · {x.tur} · {x.kaynak}{x.dosya_no ? ` · ${x.dosya_no}` : ''}{x.belge_no ? ` · ${x.belge_no}` : ''} · {eur(x.tutar)}</div>)}
+  </div></>;
+}
+
 export function IdariIslemler() {
   const { yap, Mesaj } = useYap(() => undefined);
   const [izId, setIzId] = useState(''); const [izB, setIzB] = useState('');
@@ -1004,6 +1016,7 @@ export function IdariIslemler() {
       <PersonelIslemlerim yap={yap} />
       <IkYonetimi yap={yap} />
       <MutabakatRaporlari />
+      <MaliHareketler />{/* YG-850 */}
       <KurumsalEk2 yap={yap} />
       <MaliParametreler />
       <KartelaMaliyet />

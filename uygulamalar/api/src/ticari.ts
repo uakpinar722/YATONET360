@@ -915,6 +915,17 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  // YG-850: gelir, maliyet ve nakit hareketleri ayrı satırlar; dosya ve tür süzgeci, satır başına kaynak kayıt.
+  s.get('/mali-hareket', oturumlu, async (i, y) => {
+    const o = i.oturum!; const q = (i.query ?? {}) as { dosya?: string; tur?: string };
+    if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [o.kullanici, ['Muhasebe ve Finans Müdürü', 'Muhasebe ve Finans Müdür Yardımcısı', 'Muhasebe ve Finans Yöneticisi', 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', 'Ticari İşler Direktörü', 'Genel Müdür Yardımcısı', 'CEO']])).rowCount) return y.code(403).send({ hata: 'Mali hareketleri Muhasebe ve Finans ile ticari yöneticiler görür.' });
+    if (q.dosya && !UUID.test(q.dosya)) return y.code(400).send({ hata: 'Dosya geçersizdir.' });
+    if (q.tur && !['Gelir', 'Maliyet', 'Nakit Giriş', 'Nakit Çıkış'].includes(q.tur)) return y.code(400).send({ hata: 'Hareket türünü seçiniz.' });
+    const satirlar = (await b.db.query(`SELECT m.tur, m.kaynak, m.kaynak_ref, m.tarih::text, m.tutar_eur::float tutar, m.belge_no, d.dosya_no FROM mali_hareket m LEFT JOIN dosya d ON d.kimlik = m.dosya_ref WHERE ($1::uuid IS NULL OR m.dosya_ref = $1) AND ($2::text IS NULL OR m.tur = $2) ORDER BY m.tarih DESC, m.tur LIMIT 500`, [q.dosya ?? null, q.tur ?? null])).rows;
+    const toplam: Record<string, number> = {}; for (const r of satirlar) toplam[r.tur] = R2((toplam[r.tur] ?? 0) + Number(r.tutar));
+    return { satirlar, toplam };
+  });
+
   // YG-920, YG-921: masraf; limit EUR, form TL; 30 gün sınırı; aşan ödenmez; belgesiz ve mükerrer kabul edilmez; 250 EUR üstü TİD.
   // YG-922: Saha Sorumlusu dışındaki personel özel araç kullanımını yolculuktan önce birim amirinin onayına sunar.
   s.post('/ozel-arac-onayi', oturumlu, async (i, y) => {

@@ -322,6 +322,11 @@ describe('yetkili atama (YG-1070, ONY-14)', () => {
     const r2 = await o.ist('POST', `/api/portal/yetkili/${o.K.tu}/atama`, c, { ...g, limit: 500, bilgi: true }); expect(r2.statusCode, r2.body).toBe(200);
     expect((await o.sup.query(`SELECT atama_taslak a FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.tu])).rows[0].a).toMatchObject({ limit: 500, odeme: true, bilgi: true });
     expect((await o.ist('POST', `/api/portal/yetkili/${o.K.tu}/atama`, c, { yatlar: ['Mavi'], islemler: ['ONY-23'], bitis: '2099-01-01' })).statusCode).toBe(400);
+    { // YG-1449: tek işlem limitini aşan onay yetkiliye uyarı olarak listelenir
+      const { yetkiliLimitAsanlar } = await import('../src/yetki_ek.js'); const tur = ((await o.sup.query(`SELECT islem_turleri FROM yat_yetkilisi_kaydi WHERE kullanici_ref = $1`, [o.K.sc])).rows[0].islem_turleri as string[])[0]!;
+      await o.sup.query(`INSERT INTO onay_talebi (ony_kod, baslik, metin, dugme, alici_ad, telefon, belirtec_ozeti, durum, son_gecerlilik, tutar_eur, belge_adi) VALUES ($1,'k','m','d','a',$2,$3,'Bekliyor',now() + interval '1 day',1000,'Limit Deneme')`, [tur, tel, `la${Math.random()}`]);
+      expect((await yetkiliLimitAsanlar(o.db, o.K.sc!)).some((x: { belge_adi: string }) => x.belge_adi === 'Limit Deneme')).toBe(true);
+    }
   });
 });
 

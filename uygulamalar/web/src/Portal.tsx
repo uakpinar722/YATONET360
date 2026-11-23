@@ -36,6 +36,7 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
       {v?.onaylar.filter((o) => o.ony_kod === 'ONY-30').map((o) => <div className="hata" key={o.kimlik} role="alert"><b>⚠ Yata Erişim İzni</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<div>Acil müdahale için ekibin yata erişmesine izin vermeniz istenmektedir.</div><button className="btn" onClick={() => setOnay(o.kimlik)}>İncele</button></div>)}
       <PazarlamaSorusu ben={ben} />
       {v?.yetkili && <Yetkilerim ben={ben} y={v.yetkili} yenile={() => void yukle()} />}
+      {(v as { limitAsan?: { kimlik: string; belge_adi: string | null; dosya_no: string | null; tutar_eur: string }[] } | null)?.limitAsan?.map((x) => <div className="uyari" key={x.kimlik} role="note">⚠ {x.belge_adi ?? 'Onay'}{x.dosya_no ? ` · ${x.dosya_no}` : ''}: tek işlem limitinizi aşmaktadır; onay yat sahibince verilir.</div>)}{/* YG-1449 */}
       {v && v.onaylar.some((o) => o.ony_kod !== 'ONY-30') && <>
         <div className="bolum">Onayınızı Bekleyenler</div>
         {v.onaylar.filter((o) => o.ony_kod !== 'ONY-30').map((o) => <div className="ozet" key={o.kimlik}><b>{o.belge_adi}</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<button className="btn" onClick={() => void istek<{ belirtec: string }>(`/portal/onay/${o.kimlik}/ac`, {}).then((r) => setOnay(r.belirtec)).catch((e) => setHata(e.message))}>İncele ve Onayla</button></div>)}
