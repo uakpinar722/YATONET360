@@ -1608,6 +1608,15 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const ob = (await o.ist('POST', '/api/periyodik-is', c, { ad: `Olay ${Date.now()}`, sahipRol: 'Dosya Sorumlusu', periyotTuru: 'Olaya Bağlı' })).json().kimlik;
     expect((await o.ist('POST', `/api/periyodik-is/${ob}/olay`, await o.gir('ds'), { olay: 'Fırtına uyarısı' })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Periyodik İş' AND nesne_kimligi = $1`, [ob])).rows[0].n).toBe(1);
+    { // YG-534, YG-804: 14 gün kala firma paketi derlenir, önceki karar eklenir
+      const fg = (await o.ist('POST', '/api/periyodik-is', c, { ad: `Firma Sicil Gözden Geçirmesi ${Date.now()}`, sahipRol: 'Firma Yönetimi Müdürü', periyotTuru: 'Yıllık', sonrakiTarih: '2031-03-01' })).json().kimlik;
+      await o.sup.query(`INSERT INTO periyodik_sonuc (periyodik_ref, donem_tarihi, karar, kontroller, aciklama, karar_veren_ref) VALUES ($1,'2030-03-01','Koşullu Sürdür','{}','Önceki dönem',$2)`, [fg, o.K.ds]);
+      const { gozdenGecirmePaketi } = await import('../src/toplanti.js'); await gozdenGecirmePaketi(o.db, { kimlik: fg, ad: 'Firma Sicil Gözden Geçirmesi' }, '2031-03-01');
+      const pk = (await o.sup.query(`SELECT tur, icerik FROM gozden_gecirme_paketi WHERE periyodik_ref = $1 AND donem_tarihi = '2031-03-01'`, [fg])).rows[0];
+      expect(pk.tur).toBe('Firma'); expect(pk.icerik.onceki.karar).toBe('Koşullu Sürdür'); expect(pk.icerik.isHacmi).toBeTruthy(); expect(pk.icerik.belgeSuresi).toBeTruthy();
+      expect((await o.ist('GET', `/api/periyodik-is/${fg}/paket`, await o.gir('ds'))).statusCode).toBe(403);
+      const g = (await o.ist('GET', `/api/periyodik-is/${fg}/paket`, c)).json(); expect(g.tur).toBe('Firma'); expect(g.onceki.aciklama).toBe('Önceki dönem');
+    }
   });
   it('veri düzeltme talebi taraf ve firma kaydında da açılır (YG-1246 taraf)', async () => {
     const d = await o.dosyaAc({}, {}); const yat = (await o.sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;

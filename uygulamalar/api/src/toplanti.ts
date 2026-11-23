@@ -288,6 +288,17 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Periyodik İş Tanımı', nesneTuru: 'Periyodik İş', nesneKimligi: r.kimlik, yeni: g, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.kimlik };
   });
+  // YG-534, YG-804: derlenmiş gözden geçirme paketi; yoksa o an derlenir.
+  s.get('/periyodik-is/:id/paket', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const p = UUID.test(id) ? (await b.db.query(`SELECT kimlik, ad, sahip_rol_ref, sonraki_tarih::text tarih FROM periyodik_is WHERE kimlik = $1`, [id])).rows[0] : undefined;
+    if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
+    if (!(await rolSahipleri(b.db, p.sahip_rol_ref)).includes(o.kullanici) && !(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Paketi işin sahibi rol veya Direktör kademesi görür.' });
+    const v = p.tarih ? (await b.db.query(`SELECT tur, icerik, zaman FROM gozden_gecirme_paketi WHERE periyodik_ref = $1 AND donem_tarihi = $2`, [id, p.tarih])).rows[0] : undefined;
+    if (v) return { donem: p.tarih, tur: v.tur, zaman: v.zaman, ...v.icerik };
+    const icerik = await gozdenGecirmePaketi(b.db, p, p.tarih ?? new Date().toISOString().slice(0, 10));
+    return { donem: p.tarih, tur: /firma|çözüm ortağı/i.test(p.ad) ? 'Firma' : 'Genel', ...icerik };
+  });
   // YG-1363: gözden geçirme kontrol listesiyle yürür ve sabit kararla kapanır; sonuç sahibi rol veya tanımlama yetkilisi tarafından girilir.
   const KONTROL = ['Önceki dönem kararları uygulandı', 'Göstergeler hedefle karşılaştırıldı', 'Riskler ve uygunsuzluklar gözden geçirildi', 'Kaynak ve sorumluluklar yeterli'];
   s.post('/periyodik-is/:id/sonuc', oturumlu, async (i, y) => {
@@ -382,6 +393,22 @@ const PERIYOT_AY: Record<string, number> = { '3 Aylık': 3, '6 Aylık': 6, Yıll
  * YG-534: 30 gün önce sahibine bilgi, 14 gün önce hazırlık görevi, 7 gün ve 24 saat önce hatırlatma; tarih geçerse 72 saat sonra Direktöre, 10 gün sonra GMY'ye.
  * Sistem günde bir çalıştırır; aynı eşik aynı tarih için iki kez işlemez (YG-523).
  */
+/** YG-534, YG-804: gözden geçirme paketi; firma işlerinde karne, belge süresi, uygunsuzluk, şikâyet ve iş hacmi, diğerlerinde açık uygunsuzluk ve şikâyet; önceki kararla birlikte. */
+export async function gozdenGecirmePaketi(db: Pool | PoolClient, p: { kimlik: string; ad: string }, donem: string) {
+  const firma = /firma|çözüm ortağı/i.test(p.ad);
+  const onceki = (await db.query(`SELECT donem_tarihi::text donem, karar, aciklama, kosul FROM periyodik_sonuc WHERE periyodik_ref = $1 ORDER BY zaman DESC LIMIT 1`, [p.kimlik])).rows[0] ?? null;
+  const u = (await db.query(`SELECT sinif, count(*)::int n FROM uygunsuzluk WHERE statu NOT IN ('Kapalı', 'Geçersiz') AND ($1::boolean IS FALSE OR sorumlu_firma_ref IS NOT NULL) GROUP BY sinif ORDER BY sinif`, [firma])).rows;
+  const sk = (await db.query(`SELECT count(*) FILTER (WHERE statu <> 'Kapalı')::int acik, count(*) FILTER (WHERE olusturma_zamani > now() - interval '12 months')::int yil FROM garanti_sikayet WHERE 'Şikâyet' = ANY(kayit_turu)`)).rows[0];
+  const icerik: Record<string, unknown> = { onceki, acikUygunsuzluk: u, sikayet: sk };
+  if (firma) {
+    icerik.karne = (await db.query(`SELECT coalesce(p.risk_derecesi_onerisi, 'Yetersiz Veri') oneri, count(*)::int n FROM (SELECT DISTINCT ON (kurulus_ref) kurulus_ref, risk_derecesi_onerisi FROM performans_donem_puani ORDER BY kurulus_ref, donem_sonu DESC) p GROUP BY 1 ORDER BY 1`)).rows;
+    icerik.belgeSuresi = (await db.query(`SELECT count(*) FILTER (WHERE gecerlilik_bitis < $1::date)::int dolmus, count(*) FILTER (WHERE gecerlilik_bitis >= $1::date AND gecerlilik_bitis < $1::date + 60)::int yaklasan FROM sicil_belgesi`, [donem])).rows[0];
+    icerik.isHacmi = (await db.query(`SELECT count(*)::int is_emri, count(DISTINCT kurulus_ref)::int firma FROM is_emri WHERE olusturma_zamani > now() - interval '12 months'`)).rows[0];
+  }
+  await db.query(`INSERT INTO gozden_gecirme_paketi (periyodik_ref, donem_tarihi, tur, icerik) VALUES ($1,$2,$3,$4) ON CONFLICT (periyodik_ref, donem_tarihi) DO UPDATE SET icerik = EXCLUDED.icerik, zaman = now()`, [p.kimlik, donem, firma ? 'Firma' : 'Genel', JSON.stringify(icerik)]);
+  return icerik;
+}
+
 export async function periyodikIsle(db: Pool, simdi = new Date()): Promise<number> {
   const bugun = new Date(simdi.getTime() + 180 * 60_000).toISOString().slice(0, 10);
   const { rows } = await db.query(`SELECT p.kimlik, p.ad, p.sahip_rol_ref, p.periyot_turu, p.sonraki_tarih::text AS tarih, (p.sonraki_tarih - $1::date) AS kalan FROM periyodik_is p WHERE p.aktif AND p.sonraki_tarih IS NOT NULL AND p.sonraki_tarih - $1::date <= 30`, [bugun]);
@@ -404,7 +431,8 @@ export async function periyodikIsle(db: Pool, simdi = new Date()): Promise<numbe
     };
     if (p.kalan <= 30) await hatir('30g', sahip, 'Yaklaşan Gözden Geçirme');
     if (p.kalan <= 14 && await birKez(db, 'periyodik', anahtar('14g'))) {
-      await kartAc(db, { tur: 'Periyodik Gözden Geçirme', kategori: 'gorev', baslik: `Gözden Geçirme Hazırlığı · ${p.ad}`, ozet: `Tarih: ${tarihYaz}`, sahipRol: p.sahip_rol_ref, sonZaman: new Date(`${p.tarih}T20:59:59Z`), nesneTuru: 'periyodik_is', nesneKimligi: p.kimlik });
+      await gozdenGecirmePaketi(db, p, p.tarih); // YG-534, YG-804
+      await kartAc(db, { tur: 'Periyodik Gözden Geçirme', kategori: 'gorev', baslik: `Gözden Geçirme Hazırlığı · ${p.ad}`, ozet: `Tarih: ${tarihYaz} · Gözden geçirme paketi derlendi.`, sahipRol: p.sahip_rol_ref, sonZaman: new Date(`${p.tarih}T20:59:59Z`), nesneTuru: 'periyodik_is', nesneKimligi: p.kimlik });
       n++;
     }
     if (p.kalan <= 7) await hatir('7g', sahip, 'Gözden Geçirme Hatırlatması');

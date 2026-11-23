@@ -810,6 +810,8 @@ describe('teklif hedef süresi (YG-199)', () => {
     const r = await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, { tarih: '2026-11-05', bulgular: 'b', oneriler: 'o', sure: 3, degerlendirme: 'f', resmiOnay: false }); expect(r.statusCode, r.body).toBe(200);
     const s = (await o.sup.query(`SELECT baslangic_olayi FROM dosya_sure WHERE dosya_ref = $1 AND tur = 'Teklif'`, [d.kimlik])).rows[0];
     expect(s.baslangic_olayi).toContain('Firma Fiyat Teklifi');
+    const tr = (await o.ist('GET', `/api/dosya/${d.kimlik}/teknik-rapor`, await o.gir('ds'))).json(); // YG-427
+    expect(tr.oneri.oneriler).toContain('Tahmini Süre: 3 gün'); expect(tr.oneri.incelenen).toMatch(/^Yat: /);
   });
 });
 

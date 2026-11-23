@@ -306,14 +306,14 @@ export function SigortaGonderimBolumu({ id }: { id: string }) {
   );
 }
 
-interface RaporV { raporlar: { kimlik: string; rapor_no: string; rapor_turu: string; durum: string; kademe: number | null; kademe_sayisi: number | null }[]; firmaRaporu: { rapor_no: string; bulgular: string; onerilen_islemler: string; malzeme_ihtiyaci: string | null; tahmini_sure_gun: number; firma_degerlendirmesi: string } | null; oneri: { bulgular: string; oneriler: string; analiz: string } | null }
+interface RaporV { raporlar: { kimlik: string; rapor_no: string; rapor_turu: string; durum: string; kademe: number | null; kademe_sayisi: number | null }[]; firmaRaporu: { rapor_no: string; bulgular: string; onerilen_islemler: string; malzeme_ihtiyaci: string | null; tahmini_sure_gun: number; firma_degerlendirmesi: string } | null; oneri: { bulgular: string; oneriler: string; analiz: string; incelenen?: string } | null }
 const RAPOR_ALAN: [string, string][] = [['kapsam', 'Görevlendirme Kapsamı'], ['incelenen', 'İncelenen Alan'], ['saha', 'Saha Koşulları'], ['yontem', 'Yöntem ve Ölçüt'], ['bulgular', 'Bulgular'], ['acikSorular', 'Açık Sorular'], ['analiz', 'Analiz ve Risk'], ['oneriler', 'Öneriler'], ['uzmanlik', 'Uzmanlık Sınırı']];
 
 /** YG-200, YG-280: firma girdisi forma kendiliğinden gelir; Teknik Uzman düzeltir. Firma raporu dışa giden rapora yazılmaz. */
 export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }) {
   const [v, setV] = useState<RaporV | null>(null); const [f, setF] = useState<Record<string, string>>({ tur: 'İlk Rapor' }); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
   const [ko, setKo] = useState({ ana: '', alt: '', tali: '', islem: '', birim: 'adet', maliyet: '', gerekce: '' });
-  const yukle = () => istek<RaporV>(`/dosya/${id}/teknik-rapor`).then((r) => { setV(r); if (r.oneri) setF((x) => ({ bulgular: r.oneri!.bulgular, oneriler: r.oneri!.oneriler, analiz: r.oneri!.analiz, ...x })); });
+  const yukle = () => istek<RaporV>(`/dosya/${id}/teknik-rapor`).then((r) => { setV(r); if (r.oneri) setF((x) => ({ bulgular: r.oneri!.bulgular, oneriler: r.oneri!.oneriler, analiz: r.oneri!.analiz, ...(r.oneri!.incelenen ? { incelenen: r.oneri!.incelenen } : {}), ...x })); /* YG-427 */ });
   useEffect(() => { void yukle().catch((x) => setHata((x as Error).message)); }, [id]);
   if (!v) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   const tu = rollerim.includes('Teknik Uzman') || rollerim.includes('Sorumlu Teknik Uzman (Koordinatör)');

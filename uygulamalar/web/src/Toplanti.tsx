@@ -174,6 +174,7 @@ function PeriyodikIsler() {
     <div className="ozet">{v.isler.length === 0 ? <div className="not">Tanımlı periyodik iş bulunmamaktadır.</div> : v.isler.map((x) => <div key={x.kimlik}>{x.ad} · {x.sahip_rol} · {x.periyot_turu === 'Aylık' && x.periyot_ay > 1 ? `${x.periyot_ay} ayda bir` : x.periyot_turu}{x.sonraki_tarih ? ` · Sonraki: ${tr(x.sonraki_tarih)}` : ''}{x.son_karar ? ` · Son karar: ${x.son_karar}` : ''}{x.aktif ? '' : ' · Pasif'}
       {x.aktif && (x.sahibim || v.tanimlar) && x.periyot_turu === 'Olaya Bağlı' && <><label htmlFor={`pi-o-${x.kimlik}`}>Olay</label><input required id={`pi-o-${x.kimlik}`} value={ol[x.kimlik] ?? ''} onChange={(e) => setOl({ ...ol, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!ol[x.kimlik]?.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/olay`, { olay: ol[x.kimlik] }).then(() => { setOl({}); setM('Görev açıldı.'); }).catch((e) => setM(e.message))}>Olayı Kaydet</button></>}
       {x.aktif && (x.sahibim || v.tanimlar) && !['Günlük', 'Haftalık', 'Olaya Bağlı'].includes(x.periyot_turu) && <button className="btn2 kucuk" onClick={() => setAcik(acik === x.kimlik ? '' : x.kimlik)}>Gözden Geçirme Sonucu</button>}
+      {x.aktif && (x.sahibim || v.tanimlar) && !['Günlük', 'Haftalık', 'Olaya Bağlı'].includes(x.periyot_turu) && <GozdenGecirmePaketi id={x.kimlik} />}{/* YG-534, YG-804 */}
       {acik === x.kimlik && <GozdenGecirmeSonucu id={x.kimlik} kontroller={v.kontroller} bitti={() => { setAcik(''); setM('Gözden geçirme sonucu kaydedildi.'); void yk(); }} />}
       {v.tanimlar && <button className="btn2 kucuk" disabled={!gr.trim()} onClick={() => void istek(`/periyodik-is/${x.kimlik}/durum`, { aktif: !x.aktif, gerekce: gr }).then(() => { setGr(''); return yk(); }).catch((e) => setM(e.message))}>{x.aktif ? 'Pasife Al' : 'Etkinleştir'}</button>}</div>)}</div>
     {v.tanimlar && <><label htmlFor="pi-g">Durum Değişikliği Gerekçesi</label><input required id="pi-g" value={gr} onChange={(e) => setGr(e.target.value)} />
@@ -183,6 +184,21 @@ function PeriyodikIsler() {
       {f.periyotTuru === 'Aylık' && <><label htmlFor="pi-p">Kaç Ayda Bir</label><input id="pi-p" inputMode="numeric" value={f.periyotAy} onChange={(e) => setF({ ...f, periyotAy: e.target.value })} /></>}
       {f.periyotTuru !== 'Olaya Bağlı' && <><label htmlFor="pi-t">İlk Tarih</label><input required id="pi-t" type="date" value={f.sonrakiTarih} onChange={(e) => setF({ ...f, sonrakiTarih: e.target.value })} /></>}
       <button className="btn2" disabled={!f.ad.trim() || !f.sahipRol || (f.periyotTuru === 'Aylık' && !(Number(f.periyotAy) > 0)) || (f.periyotTuru !== 'Olaya Bağlı' && !f.sonrakiTarih)} onClick={() => void istek('/periyodik-is', { ...f, periyotAy: Number(f.periyotAy), sonrakiTarih: f.sonrakiTarih || undefined }).then(() => { setF({ ad: '', sahipRol: '', periyotTuru: 'Aylık', periyotAy: '1', sonrakiTarih: '' }); setM('Periyodik iş tanımlandı.'); return yk(); }).catch((e) => setM(e.message))}>Periyodik İş Tanımla</button></>}</>;
+}
+
+/** YG-534, YG-804: türüne göre derlenen gözden geçirme paketi ve önceki karar. */
+type Paket = { donem: string | null; tur: string; onceki: { donem: string; karar: string; aciklama: string; kosul: string | null } | null; acikUygunsuzluk: { sinif: string; n: number }[]; sikayet: { acik: number; yil: number }; karne?: { oneri: string; n: number }[]; belgeSuresi?: { dolmus: number; yaklasan: number }; isHacmi?: { is_emri: number; firma: number } };
+function GozdenGecirmePaketi({ id }: { id: string }) {
+  const [p, setP] = useState<Paket | null>(null); const [m, setM] = useState('');
+  if (!p) return <button className="btn2 kucuk" onClick={() => void istek<Paket>(`/periyodik-is/${id}/paket`).then(setP).catch((e) => setM(e.message))}>Gözden Geçirme Paketi</button>;
+  return <div className="ozet" data-t="gg-paket">{m && <div className="not" role="status">{m}</div>}
+    <div><b>Önceki Karar:</b> {p.onceki ? `${p.onceki.donem.split('-').reverse().join('.')} · ${p.onceki.karar} · ${p.onceki.aciklama}${p.onceki.kosul ? ` · Koşul: ${p.onceki.kosul}` : ''}` : 'İlk gözden geçirme'}</div>
+    <div><b>Açık Uygunsuzluklar:</b> {p.acikUygunsuzluk.length ? p.acikUygunsuzluk.map((x) => `${x.sinif}: ${x.n}`).join(' · ') : 'Yok'}</div>
+    <div><b>Şikâyetler:</b> Açık {p.sikayet.acik} · Son 12 ay {p.sikayet.yil}</div>
+    {p.karne && <div><b>Karne:</b> {p.karne.length ? p.karne.map((x) => `${x.oneri}: ${x.n}`).join(' · ') : 'Kayıt yok'}</div>}
+    {p.belgeSuresi && <div><b>Belge Süreleri:</b> Süresi dolmuş {p.belgeSuresi.dolmus} · 60 gün içinde dolacak {p.belgeSuresi.yaklasan}</div>}
+    {p.isHacmi && <div><b>İş Hacmi (12 ay):</b> {p.isHacmi.is_emri} iş emri · {p.isHacmi.firma} firma</div>}
+  </div>;
 }
 
 /** YG-1363: kontrol listesi ve sabit karar seçenekleri. */

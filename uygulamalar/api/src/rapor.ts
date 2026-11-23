@@ -113,7 +113,10 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const rapor = (await b.db.query(`SELECT t.kimlik, t.rapor_no, t.surum, t.rapor_turu, t.durum, t.son_zaman, k.kademe, cardinality(k.zincir) AS kademe_sayisi FROM teknik_rapor t LEFT JOIN is_karti k ON k.tur = 'Teknik Rapor' AND k.nesne_kimligi = t.kimlik::text WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani DESC`, [id])).rows;
     const firma = (await b.db.query(`SELECT f.kimlik, f.rapor_no, f.inceleme_tarihi::text, f.bulgular, f.onerilen_islemler, f.malzeme_ihtiyaci, f.tahmini_sure_gun, f.firma_degerlendirmesi FROM firma_teknik_raporu f WHERE f.dosya_ref = $1 ORDER BY f.firma_onayi DESC LIMIT 1`, [id])).rows[0] ?? null;
-    return { raporlar: rapor, firmaRaporu: firma, oneri: firma ? { bulgular: firma.bulgular, oneriler: firma.onerilen_islemler, analiz: firma.firma_degerlendirmesi } : null };
+    // YG-427: malzeme ihtiyacı, tahmini süre ve yat bilgisi de forma aktarılır.
+    const yat = (await b.db.query(`SELECT y.yat_adi, coalesce(m.marka || ' ' || m.model, nullif(concat_ws(' ', y.marka_diger, y.model_diger), '')) mm FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE d.kimlik = $1`, [id])).rows[0];
+    const ek = firma ? [firma.malzeme_ihtiyaci ? `Malzeme İhtiyacı: ${firma.malzeme_ihtiyaci}` : '', firma.tahmini_sure_gun ? `Tahmini Süre: ${firma.tahmini_sure_gun} gün` : ''].filter(Boolean).join('\n') : '';
+    return { raporlar: rapor, firmaRaporu: firma, oneri: firma ? { bulgular: firma.bulgular, oneriler: [firma.onerilen_islemler, ek].filter(Boolean).join('\n'), analiz: firma.firma_degerlendirmesi, incelenen: yat ? `Yat: ${yat.yat_adi}${yat.mm ? ` (${yat.mm})` : ''}` : '' } : null };
   });
   s.post('/dosya/:id/teknik-rapor', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as Record<string, string | undefined>;
