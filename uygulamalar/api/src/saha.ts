@@ -72,6 +72,7 @@ kapanisKaydet('Dosya İşlemi', async (c, k, karar, yapan) => {
     await c.query(`UPDATE dosya SET kapanma_nedeni = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.dosya_ref, t.kapanis_nedeni]);
     await statuYaz(c, d, { statu: 'Kapalı', asama: t.asama }, t.gerekce, yapan);
     await bld42(c, t.dosya_ref, t.kapanis_nedeni); // YG-1501
+    if (t.islem_turu === 'İptal' || t.islem_turu === 'Devir') await yatSahibineKapanis(c, t.dosya_ref, 'BLD-11', `bld11:${t.dosya_ref}`, t.islem_turu === 'Devir' ? ['devredilmiştir', 'transferred'] : ['iptal edilmiştir', 'cancelled']); // YG-1446
   }
 });
 
@@ -83,6 +84,15 @@ async function bld42(c: PoolClient, dosya: string, neden: string | null) {
   await yatTarafinaYaz(c, { olay: `bld42:${dosya}`, kod: 'BLD-42', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Dosya Kapanışı`, telefon: d.telefon, eposta: d.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no } });
 }
 
+/** YG-1446: kapanışta yat sahibine onaylı BLD-09 / BLD-11 gider (sigortaya kapanış yalnız BLD-77 – K-185); doğan görev yatTarafinaYaz ile açılır. */
+async function yatSahibineKapanis(c: PoolClient, dosya: string, kod: 'BLD-09' | 'BLD-11', olay: string, durum?: [string, string]) {
+  const d = (await c.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, t.telefon, t.eposta FROM dosya d LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [dosya])).rows[0];
+  if (!d || d.vefat_isareti || (!d.telefon && !d.eposta)) return;
+  const alanlar: Record<string, string> = { 'Dosya No': d.dosya_no, 'File No': d.dosya_no };
+  if (durum) { alanlar['iptal edilmiştir / devredilmiştir'] = durum[0]; alanlar['cancelled / transferred'] = durum[1]; }
+  await yatTarafinaYaz(c, { olay, kod, dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Dosya Kapanışı`, telefon: d.telefon, eposta: d.eposta, alanlar });
+}
+
 kapanisKaydet('Dosya Kapanışı', async (c, k, karar, yapan) => {
   const t = (await c.query(`SELECT t.*, d.statu, d.asama FROM kapanis_kontrolu t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [k.nesne_kimligi])).rows[0];
   if (!t || t.durum !== 'Hazırlandı') return;
@@ -92,6 +102,8 @@ kapanisKaydet('Dosya Kapanışı', async (c, k, karar, yapan) => {
   if (t.cikis_statusu === 'Kapalı') {
     await c.query(`UPDATE dosya SET kapanma_nedeni = $2, kapanis_zamani = now() WHERE kimlik = $1`, [t.dosya_ref, t.kapanma_nedeni]);
     await bld42(c, t.dosya_ref, t.kapanma_nedeni); // YG-1501
+    // YG-1446: teklif onaylanmadığı için kapanan dosyada (son teklif kararı Ret) yat sahibine BLD-09.
+    if (t.kapanma_nedeni === 'Müşteri Vazgeçti' && (await c.query(`SELECT karar FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu = 'Karar' ORDER BY karar_zamani DESC NULLS LAST LIMIT 1`, [t.dosya_ref])).rows[0]?.karar === 'Ret') await yatSahibineKapanis(c, t.dosya_ref, 'BLD-09', `bld09:${t.dosya_ref}`);
     await c.query(`UPDATE paylasim_baglantisi p SET iptal_zamani = now() FROM belge_surum s JOIN belge e ON e.kimlik = s.belge_ref WHERE p.surum_ref = s.kimlik AND p.iptal_zamani IS NULL AND e.bag_turu = 'Dosya' AND e.bag_kimligi = $1::text`, [t.dosya_ref]); // YG-416
   }
   // YG-086: kanuni sorumluluk bitişi teslim + 24 ay; elle değiştirilmez.

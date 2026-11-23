@@ -246,7 +246,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
   const [satir, setSatir] = useState<Satir>({ kod: '', aciklama: '', nitelik: NITELIK[0]!, bedel: BEDEL[1]!, miktar: '1', birim: 'saat' }); const [satirlar, setSatirlar] = useState<Satir[]>([]);
   const [ie, setIe] = useState({ ts: '', yo: '', bag: '', secim: '', tur: 'KN', firma: '', tesis: '', yer: '', kapsam: '', bedel: '', teklif: '', ana: '', sapma: '', ta: false, as: '' }); const [atikOneri, setAtikOneri] = useState<{ oneri: boolean; toplam: number; tehlikeli: number } | null>(null);
   useEffect(() => { setAtikOneri(null); if (ie.teklif) void istek<NonNullable<typeof atikOneri>>(`/dosya/${id}/atik-onerisi?teklif=${ie.teklif}`).then(setAtikOneri).catch(() => setAtikOneri(null)); }, [id, ie.teklif]); /* YG-330 */ const [tesisler, setTesisler] = useState<{ kimlik: string; ad: string; il: string | null; ilce: string | null }[]>([]);
-  useEffect(() => { setTesisler([]); if (ie.firma) void istek<typeof tesisler>(`/firma/${ie.firma}/tesis`).then(setTesisler).catch(() => setTesisler([])); }, [ie.firma]); /* YG-309 */ const [ft, setFt] = useState(''); const [ek, setEk] = useState('');
+  useEffect(() => { setTesisler([]); if (ie.firma) void istek<typeof tesisler>(`/firma/${ie.firma}/tesis`).then(setTesisler).catch(() => setTesisler([])); }, [ie.firma]); /* YG-309 */ const [ft, setFt] = useState(''); const [ek, setEk] = useState(''); const [ov, setOv] = useState(''); const [fb, setFb] = useState(''); // YG-1552
   const [envEksik, setEnvEksik] = useState(''); const [kanal, setKanal] = useState('YATONET 360'); const [yetkili, setYetkili] = useState(''); const [gonderen, setGonderen] = useState(''); const [onayBelge, setOnayBelge] = useState(''); const [sonTarih, setSonTarih] = useState(''); const [fNo, setFNo] = useState(''); const [fTarih, setFTarih] = useState(''); const [fKur, setFKur] = useState(''); const [fKurT, setFKurT] = useState(''); const [thTutar, setThTutar] = useState(''); const [thTarih, setThTarih] = useState('');
   if (!v) return null;
   const ticari = roller.includes('Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)');
@@ -311,8 +311,11 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {ticari && <>
           <label htmlFor="t-f">Firma Fiyat Teklifi</label><select required id="t-f" value={ft} onChange={(e) => setFt(e.target.value)}><option value="">Seçiniz</option>{v.firma.map((f) => <option key={f.kimlik} value={f.kimlik}>{f.teklif_no} · {eur(f.toplam_eur)} · {f.durum}{f.aralik_disi ? ` · Maliyet aralığı dışı: ${f.aralik_disi} kalem` : ''}</option>)}</select>
           {v.teklifler.some((t) => t.statu === 'Karar') && <><label htmlFor="t-a">Ek Fiyat Teklifi İçin Ana Teklif</label><select id="t-a" value={ek} onChange={(e) => setEk(e.target.value)}><option value="">Ek Teklif Değil</option>{v.teklifler.filter((t) => t.statu === 'Karar').map((t) => <option key={t.kimlik} value={t.kimlik}>{t.teklif_no}</option>)}</select></>}
-          <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft, ekTeklif: ek || undefined, acilTedbir: acilT || undefined }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
+          <button className="btn2" disabled={!ft} onClick={() => void yap(() => istek(`/dosya/${id}/teklif`, { firmaTeklifi: ft, ekTeklif: ek || undefined, acilTedbir: acilT || undefined, odemeVadesi: ov.trim() || undefined, faturaBilgisi: fb.trim() || undefined }), 'Teklif hazırlandı.')}>Fiyat Teklifi Hazırla</button>
           <label className="kutu"><input type="checkbox" checked={acilT} onChange={(e) => setAcilT(e.target.checked)} /><span>Acil Tedbir Fiyat Teklifi</span></label>
+          {/* YG-1552: çerçeve sözleşmesi olmayan sigorta dosyasında teklif gönderimi için zorunludur. */}
+          <label htmlFor="t-ov">Ödeme Vadesi</label><input id="t-ov" value={ov} onChange={(e) => setOv(e.target.value)} />
+          <label htmlFor="t-fb">Fatura Bilgisi</label><input id="t-fb" value={fb} onChange={(e) => setFb(e.target.value)} />
           <label htmlFor="t-s">Ödeme Son Tarihi</label><input required id="t-s" type="date" value={sonTarih} onChange={(e) => setSonTarih(e.target.value)} />
         </>}
       </Blok>

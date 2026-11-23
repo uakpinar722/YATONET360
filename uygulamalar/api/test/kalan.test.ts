@@ -96,6 +96,13 @@ describe('vefat, ön kayıt, izin belgesi (YG-1521, YG-344, YG-952)', () => {
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat-temsilci`, await o.gir('ds'), { temsilci: 'T', belge: bl })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/vefat-temsilci`, await o.gir('hud'), { temsilci: 'T', belge: bl })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT vefat_isareti, vefat_temsilci FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]).toEqual({ vefat_isareti: false, vefat_temsilci: 'T' });
+    expect((await o.sup.query(`SELECT 1 FROM sigorta_gonderim WHERE tur = 'BLD-84' AND nesne_kimligi = $1`, [d.kimlik])).rowCount).toBe(0); // YG-1477: sigortasız dosyada BLD-84 yok
+    const s = await o.dosyaAc({ sigortaci: 'SG', hasarNo: 'H84' }, { musteriTuru: 'Sigorta Şirketi' }); await o.sup.query(`UPDATE dosya SET vefat_isareti = true WHERE kimlik = $1`, [s.kimlik]);
+    { const st = (await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, eposta, olusturan_ref) VALUES ($1,'Sigorta Şirketi','S','v84@sg.local',$2) RETURNING kimlik`, [s.kimlik, o.K.ds])).rows[0].kimlik; await o.sup.query(`UPDATE dosya_sigorta_kaydi SET sigorta_taraf_ref = $2 WHERE dosya_ref = $1`, [s.kimlik, st]); }
+    const sb = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('M','K','Gizli','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [s.kimlik, o.K.ds])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/dosya/${s.kimlik}/vefat-temsilci`, await o.gir('hud'), { temsilci: 'T', belge: sb })).statusCode).toBe(200);
+    const g84 = (await o.sup.query(`SELECT metin FROM sigorta_gonderim WHERE tur = 'BLD-84' AND nesne_kimligi = $1`, [s.kimlik])).rows[0];
+    expect(g84.metin).toContain('yeniden başlanmıştır'); expect(g84.metin).not.toMatch(/vefat/i);
   });
   it('MERSİS 16 hane; alanlar kaydedilir', async () => {
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-ON','F','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik; const c = await o.gir('sc');

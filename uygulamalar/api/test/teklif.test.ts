@@ -607,6 +607,18 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     await o.sup.query(`UPDATE kullanici_hesabi SET totp_son_adim = 0 WHERE e_posta = $1`, [FIRMA_EP]);
     const ky = await o.ist('POST', `/api/firma-portal/is-emri/${e.kimlik}/yanit`, firmaC, { yanit: 'Kabul', kod: totpKodu(firmaGizli, suankiAdim()) });
     expect(ky.statusCode, ky.body).toBe(200); expect(ky.json().statu).toBe('Başlangıç Kontrolünde');
+    expect((await o.sup.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld01:${(await o.sup.query(`SELECT teklif_ref FROM is_emri WHERE kimlik = $1`, [e.kimlik])).rows[0].teklif_ref}%`])).rowCount).toBe(0); // YG-1446: sigortalı teklifte BLD-01 gitmez
+    { const { bld01Gonder } = await import('../src/firma.js'); const c = await o.db.connect(); // YG-1446: yat sahibi teklifinde BLD-01
+      try {
+        expect(await bld01Gonder(c, e.kimlik, 'https://x')).toBe(false);
+        await o.sup.query(`UPDATE fiyat_teklifi SET teklif_muhatabi = 'Yat Sahibi' WHERE kimlik = (SELECT teklif_ref FROM is_emri WHERE kimlik = $1)`, [e.kimlik]);
+        await o.sup.query(`UPDATE is_emri SET baslangic_tarihi = '2026-12-07' WHERE kimlik = $1`, [e.kimlik]);
+        const yt = (await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+        expect(await bld01Gonder(c, e.kimlik, 'https://x')).toBe(true);
+        expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld01:${(await o.sup.query(`SELECT teklif_ref FROM is_emri WHERE kimlik = $1`, [e.kimlik])).rows[0].teklif_ref}%`])).rows[0]?.metin).toContain('07.12.2026');
+        await o.sup.query(`UPDATE fiyat_teklifi SET teklif_muhatabi = 'Sigorta Şirketi' WHERE kimlik = (SELECT teklif_ref FROM is_emri WHERE kimlik = $1)`, [e.kimlik]);
+        await o.sup.query(`UPDATE dosya_tarafi SET aktif = false WHERE kimlik = $1`, [yt]);
+      } finally { c.release(); } }
     expect((await o.ist('POST', `/api/is-emri/${e.kimlik}/baslangic`, await o.gir('ds'), { sonuc: 'Başlanabilir', onKosul: ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'] })).statusCode).toBe(403);
     await o.sup.query(`INSERT INTO kalite_plani (dosya_ref, surum, kabul_sinifi, ozet, durum, hazirlayan_ref) VALUES ($1,1,'C','Ö','Onaylı',$2)`, [d.kimlik, o.K.tu]);
     expect((await o.ist('GET', `/api/is-emri/${e.kimlik}/ilerlemeler`, await o.gir('tu'))).json()).toEqual([]);

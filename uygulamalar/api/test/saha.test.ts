@@ -201,9 +201,11 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
   it('devir nedeni Devredildi ve devralan ister; onayla Kapalı olur', async () => {
     const d = await hazir(); const c = await o.gir('ds');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/islem`, c, { ...tutanak, tur: 'Devir', neden: 'Tamamlandı', devralan: 'F' })).statusCode).toBe(400);
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [d.kimlik, o.K.ds]);
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/islem`, c, { ...tutanak, tur: 'Devir', neden: 'Devredildi', devralan: 'Başka Firma' });
     await o.karar((await o.kart('Dosya İşlemi', r.json().kimlik)).kimlik, 'opm', 'Onayla');
     expect((await o.sup.query(`SELECT statu, kapanma_nedeni FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]).toEqual({ statu: 'Kapalı', kapanma_nedeni: 'Devredildi' });
+    expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld11:${d.kimlik}%`])).rows[0]?.metin).toContain('devredilmiştir'); // YG-1446
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/beklemede`, c, {})).statusCode).toBe(409);
   });
   it('kapanış kontrolü: beyan zorunlu, her Hayır işaret üretir; Teknik Kapalı sonra Kapalı; kanuni süre hesaplanır', async () => {
@@ -225,8 +227,11 @@ describe('dosya işlemi, kapanış, yeniden açma, birleştirme (YG-024, YG-075,
     expect((await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('ds'))).json()).not.toHaveProperty('kanuni_sorumluluk_bitis'); // YG-086
     const eksik = await K({ cikis: 'Kapalı', neden: 'Tamamlandı' });
     expect(eksik.statusCode).toBe(409); expect(eksik.json().eksikler).toContain('Teknik Eksik');
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [d.kimlik, o.K.ds]);
+    await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_turu, teklif_muhatabi, kdv_orani, statu, karar, karar_zamani, hazirlayan_ref) VALUES ($1,$2,'Onarım','Yat Sahibi',20,'Karar','Ret',now(),$3)`, [`${d.dosyaNo}-TK10`, d.kimlik, o.K.oy]); // YG-1446 BLD-09: son teklif kararı Ret
     const r2 = await K({ cikis: 'Kapalı', neden: 'Müşteri Vazgeçti' });
     await o.karar((await o.kart('Dosya Kapanışı', r2.json().kimlik)).kimlik, 'opm', 'Onayla');
+    expect((await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld09:${d.kimlik}%`])).rows[0]?.metin).toContain('teklif onaylanmadığından'); // YG-1446
     expect((await o.sup.query(`SELECT statu, kapanma_nedeni FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0]).toEqual({ statu: 'Kapalı', kapanma_nedeni: 'Müşteri Vazgeçti' });
   });
   it('açık konu ve Beklemede kapanışı engeller', async () => {

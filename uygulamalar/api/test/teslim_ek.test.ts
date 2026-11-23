@@ -44,7 +44,14 @@ describe('kapılar (YG-473, YG-099)', () => {
     await o.sup.query(`UPDATE yat SET bayrak = 'Malta', yabanci_yat_belge_gecerlilik = '2020-01-01', turkiye_kalis_bitis = '2099-01-01' WHERE kimlik = $1`, [yt]);
     expect(await yabanciBayrakEngeli(o.db, d.kimlik)).toContain('süresi dolmuş');
     await o.sup.query(`UPDATE yat SET yabanci_yat_belge_gecerlilik = '2099-01-01', turkiye_kalis_bitis = '2030-01-01' WHERE kimlik = $1`, [yt]);
+    await o.sup.query(`UPDATE dosya_tarafi SET aktif = false WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi'`, [d.kimlik]); // YG-1446: iletişimsiz yat sahibinde engel kalır
     expect(await yabanciBayrakEngeli(o.db, d.kimlik, '2031-01-01')).toContain('kalış');
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [d.kimlik, o.K.ds]); // YG-1446 BLD-53
+    expect(await yabanciBayrakEngeli(o.db, d.kimlik, '2031-01-01')).toBeNull();
+    const m53 = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld53:${d.kimlik}:2031-01-01%`])).rows;
+    expect(m53.length).toBeGreaterThan(0); expect(m53[0].metin).toContain('01.01.2031'); expect(m53[0].metin).toContain('01.01.2030');
+    expect(await yabanciBayrakEngeli(o.db, d.kimlik, '2031-01-01')).toBeNull();
+    expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld53:${d.kimlik}:2031-01-01%`])).rows[0].n).toBe(m53.length); // ikinci kez gitmez
     expect(await yabanciBayrakEngeli(o.db, d.kimlik, '2029-01-01')).toBeNull();
     await o.sup.query(`UPDATE yat SET bayrak = 'Türkiye', yabanci_yat_belge_gecerlilik = '2020-01-01' WHERE kimlik = $1`, [yt]);
     expect(await yabanciBayrakEngeli(o.db, d.kimlik)).toBeNull();

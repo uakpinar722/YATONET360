@@ -443,6 +443,9 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       const r = await acKabul(c, { ...d, dosya_ref: dosya }, g.firma!, o.kullanici, Number(g.tahmini ?? 0), new Date());
       await c.query(`UPDATE is_emri SET firma_kabul_zamani = $2 WHERE kimlik = $1`, [r.isEmri, kabul]);
       await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, durum, son_zaman, yanit_zamani, is_emri_ref, elle_kayit) VALUES ($1,$2,$3,'Kabul',now(),$4,$5,$6)`, [no, dosya, g.firma, kabul, r.isEmri, JSON.stringify({ kanal: g.kanal, kisi: g.kisi, talimat: g.talimat, temasSaati: temas?.toISOString() ?? null, kabulSaati: kabul.toISOString(), giren: o.kullanici })]);
+      // YG-1456: firmaya iş emri bağlantısı (BLD-25F, portal + SMS); teyit portal girişindeki kodla yapılır, teyitsiz de iş emri geçerlidir.
+      const fk = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [g.firma])).rows.map((x) => x.kullanici_ref as string);
+      if (fk.length) await bildir(c, { olay: `bld25f:${r.isEmri}`, kullanicilar: fk, baslik: `${r.isEmriNo} · YATONET 360`, ozet: await (await import('./metin.js')).metinGetir(c, 'BLD-25F', 'tr', { 'İş Emri No': r.isEmriNo, 'bağlantı': b.webAdresi }), oncelik: 'Kritik', sms: true, acil: true });
       return r;
     });
   });

@@ -127,6 +127,9 @@ export async function teslimOncesiOdemeIsle(db: Pool, simdi = new Date()): Promi
       AND d.musteri_turu <> 'Sigorta Şirketi' AND NOT coalesce(d.teslim_istisnasi, false)`, [esik, simdi]);
   for (const d of rows) {
     if (!(Number(d.bakiye) > 0) || !(await birKez(db, 'teslim-oncesi-odeme', `${d.kimlik}:${d.teslim}`))) continue;
+    // YG-1446 (D-197): ödeme gecikince yat sahibine BLD-13; tutar yazılmaz, ayrıntı bağlantıdadır.
+    const s = (await db.query(`SELECT y.yat_adi, x.yazisma_dili, x.vefat_isareti, t.telefon, t.eposta FROM dosya x JOIN yat y ON y.kimlik = x.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = x.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE x.kimlik = $1 LIMIT 1`, [d.kimlik])).rows[0];
+    if (s && !s.vefat_isareti && (s.telefon || s.eposta)) await yatTarafinaYaz(db, { olay: `bld13:${d.kimlik}:${d.teslim}`, kod: 'BLD-13', dil: dilKod(s.yazisma_dili), konu: `${d.dosya_no} Teslim Öncesi Ödeme`, telefon: s.telefon, eposta: s.eposta, alanlar: { Yat: s.yat_adi, Yacht: s.yat_adi, 'bağlantı': webAdresi, link: webAdresi } });
     await kartAc(db, { tur: 'Teslim Öncesi Ödeme', kategori: 'gorev', baslik: `${d.dosya_no} · Teslim Öncesi Ödeme Bekleniyor`, ozet: `Tahmini teslim ${d.teslim.split('-').reverse().join('.')}; bekleyen ödeme ${tutar(R2(Number(d.bakiye)))} EUR. Ödemenin teslimden en az 3 iş günü önce hesaba geçmesi gerekir; dekont yeterli değildir, yurt dışı havalede para hesaba geçmeden ödeme tamamlandı işaretlenmez. Müşteriyle iletişime geçmenizi rica ederiz.`, sahipRol: await rolId(db, TICARI), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
     n++;
   }

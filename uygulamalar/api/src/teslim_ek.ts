@@ -52,8 +52,19 @@ export async function yabanciBayrakEngeli(db: Db, dosya: string, hedefBitis?: st
   if (!y?.bayrak || /^(türk|turk|tr$)/i.test(y.bayrak)) return null;
   const bugun = new Date().toISOString().slice(0, 10); const s = (v: Date | string | null) => (v ? new Date(v).toISOString().slice(0, 10) : null);
   if ((s(y.g) && s(y.g)! < bugun) || (s(y.i) && s(y.i)! < bugun)) return 'Yabancı yat belgesinin süresi dolmuştur; iş emri planlanamaz.';
-  if (hedefBitis && s(y.k) && s(y.k)! < hedefBitis) return 'Planlanan bitiş Türkiye’de kalış süresini aşıyor; önce yat sahibine bildirim yapılmalıdır.';
+  if (hedefBitis && s(y.k) && s(y.k)! < hedefBitis && !(await kalisBildir(db, dosya, hedefBitis, y.k))) return 'Planlanan bitiş Türkiye’de kalış süresini aşıyor; önce yat sahibine bildirim yapılmalıdır.';
   return null;
+}
+
+/** YG-1446 (D-063): kalış süresi aşımında yat sahibine BLD-53 kendiliğinden gider (doğan görev: Dosya Sorumlusu arar); gitmişse veya gönderildiyse true. */
+async function kalisBildir(db: Db, dosya: string, hedefBitis: string, kalis: Date | string): Promise<boolean> {
+  const olay = `bld53:${dosya}:${hedefBitis}`;
+  if ((await db.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`${olay}%`])).rowCount) return true;
+  const r = (await db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, y.yat_adi, t.telefon, t.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 ORDER BY (t.telefon IS NOT NULL OR t.eposta IS NOT NULL) DESC LIMIT 1`, [dosya])).rows[0];
+  if (!r || r.vefat_isareti || (!r.telefon && !r.eposta)) return false;
+  const tarih = [gunAy(hedefBitis), gunAy(kalis)];
+  await yatTarafinaYaz(db, { olay, kod: 'BLD-53', dil: dilKod(r.yazisma_dili), konu: `${r.dosya_no} Türkiye’de Kalış Süresi`, telefon: r.telefon, eposta: r.eposta, alanlar: { Yat: r.yat_adi, Yacht: r.yat_adi, tarih, date: tarih, 'Dosya No': r.dosya_no, 'File No': r.dosya_no } });
+  return true;
 }
 
 /** YG-1498, YG-481: yasal bekleme bitişi; hazır bildiriminden 7 gün sonra teslim alınmayan yat. */

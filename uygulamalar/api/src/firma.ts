@@ -95,6 +95,17 @@ export async function firmaUygunlugu(db: Db, firma: string, brans?: string | nul
 }
 
 let portalAdresi = ''; // YG-1505: BLD-78 bağlantısı (firmaYollari kurulurken)
+/** YG-1446 (K-213): yat sahibinin kendi onayladığı teklife dayanan ON iş emri firma tarafından kabul edilince BLD-01 bir kez gider; sigortalı teklifte BLD-38/39 kullanılır. */
+export async function bld01Gonder(c: PoolClient, isEmri: string, baglanti: string): Promise<boolean> {
+  const r = (await c.query(`SELECT e.baslangic_tarihi, e.teklif_ref, d.dosya_no, d.yazisma_dili, d.vefat_isareti, y.yat_adi, t.telefon, t.eposta FROM is_emri e JOIN fiyat_teklifi f ON f.kimlik = e.teklif_ref JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref
+    LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE e.kimlik = $1 AND e.is_emri_turu = 'ON' AND f.teklif_muhatabi = 'Yat Sahibi' ORDER BY (t.telefon IS NOT NULL OR t.eposta IS NOT NULL) DESC LIMIT 1`, [isEmri])).rows[0];
+  if (!r || !r.baslangic_tarihi || r.vefat_isareti || (!r.telefon && !r.eposta)) return false;
+  const tarih = (await import('./metin.js')).gunAy(r.baslangic_tarihi);
+  await yatTarafinaYaz(c, { olay: `bld01:${r.teklif_ref}`, kod: 'BLD-01', dil: dilKod(r.yazisma_dili), konu: `${r.dosya_no} Planlama`, telefon: r.telefon, eposta: r.eposta,
+    alanlar: { Yat: r.yat_adi, Yacht: r.yat_adi, 'Dosya No': r.dosya_no, 'File No': r.dosya_no, tarih, date: tarih, 'bağlantı': baglanti, link: baglanti } });
+  return true;
+}
+
 async function yayimla(c: PoolClient, e: { kimlik: string; is_emri_no: string; dosya_ref: string; kurulus_ref: string }, simdi = new Date()) {
   const d = (await c.query(`SELECT d.oncelik, e.is_emri_turu FROM dosya d JOIN is_emri e ON e.kimlik = $2 WHERE d.kimlik = $1`, [e.dosya_ref, e.kimlik])).rows[0];
   // YG-326: yanıt sonu Pazar, resmî tatil veya 22:00-08:00 arasına düşerse ilk çalışma günü 12:00'a kayar; Kritikte kaydırma yoktur.
@@ -547,6 +558,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE is_emri SET statu = $2, firma_yaniti = $3, firma_kabul_eden_ref = $4, firma_kabul_zamani = now(), cekince_aciklamasi = $5, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, statu, g.yanit, o.kullanici, g.aciklama?.trim() || null]);
       const ds = (await c.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].dosya_sorumlusu_ref;
       if (g.yanit === 'Kabul') await belgeUret(c, { tur: 'İş Emri', nesne: e.kimlik, dosya: e.dosya_ref }); // YG-224: kabul kaydı PDF'e basılır
+      if (g.yanit === 'Kabul') await bld01Gonder(c, e.kimlik, b.webAdresi); // YG-1446
       if (g.yanit !== 'Kabul' && ds) await kartAc(c, { tur: g.yanit === 'Ret' ? 'Firma Değiştir' : 'Firma Çekincesi', kategori: 'gorev', baslik: `${e.is_emri_no} · Firma ${g.yanit}`, ozet: g.aciklama!.trim().slice(0, 200), oncelik: e.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: ds, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Emri Yanıtı: ${g.yanit}`, nesneTuru: 'İş Emri', nesneKimligi: e.kimlik, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Firma Portalı' });
       return { statu };

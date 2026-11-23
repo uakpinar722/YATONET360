@@ -534,6 +534,15 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const r = await b.db.query(`UPDATE dosya SET vefat_isareti = false, vefat_temsilci = $2, vefat_temsilci_belge = $3, guncelleme_zamani = now() WHERE kimlik = $1 AND vefat_isareti`, [id, g.temsilci.trim(), g.belge]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Bu dosyada vefat askısı bulunmamaktadır.' });
     await b.db.query(`UPDATE is_karti k SET durum = 'Tamamlandı', kapanma_zamani = now() FROM musteri_faturasi f WHERE k.tur = 'Vefat Alacak Askısı' AND k.durum = 'Bekliyor' AND k.nesne_kimligi = f.kimlik::text AND f.dosya_ref = $1`, [id]);
+    { // YG-1477 (K-208, K-216): işlemlere yeniden başlandığı sigortaya BLD-84, açık iş emrinin firmasına BLD-85 bildirilir; vefat bilgisi verilmez.
+      const { metinGetir } = await import('./metin.js');
+      const s = (await b.db.query(`SELECT d.dosya_no, s.sigortaci_adi, t.eposta FROM dosya d JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik LEFT JOIN dosya_tarafi t ON t.kimlik = s.sigorta_taraf_ref WHERE d.kimlik = $1`, [id])).rows[0];
+      if (s) { const sg = await import('./sigorta_gonderim.js'); const kurum = s.sigortaci_adi ?? '';
+        if (s.eposta) await sg.sigortayaHazirla(b.db, { dosya: id, tur: 'BLD-84', nesne: id, alici: s.eposta, konu: `${s.dosya_no} İşlemlere Yeniden Başlandı`, metin: await metinGetir(b.db, 'BLD-84', 'tr', { Kurum: kurum, Institution: kurum, 'Dosya No': s.dosya_no, 'File No': s.dosya_no }) });
+        else await sg.sigortaAdresiBekleniyor(b.db, id); }
+      for (const e of (await b.db.query(`SELECT e.kimlik, e.is_emri_no, array_agg(k.kullanici_ref) kullanicilar FROM is_emri e JOIN kurulus_kullanici k ON k.kurulus_ref = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('Taslak', 'İptal', 'Kapalı', 'Yerine Geçti', 'Tamamlandı') GROUP BY e.kimlik, e.is_emri_no`, [id])).rows)
+        await bildir(b.db, { olay: `bld85:${e.kimlik}:${Date.now()}`, kullanicilar: e.kullanicilar, baslik: `${e.is_emri_no} · İşlemlere Yeniden Başlandı`, ozet: await metinGetir(b.db, 'BLD-85', 'tr', { 'İş Emri No': e.is_emri_no }), sms: true });
+    }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vefat Temsilcisi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

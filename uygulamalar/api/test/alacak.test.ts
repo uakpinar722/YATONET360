@@ -70,9 +70,12 @@ describe('teslim öncesi ödeme (YG904-UC-GUN)', () => {
     await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', tahsil_edilen_eur = 0 WHERE kimlik = $1`, [f]);
     await o.sup.query(`UPDATE dosya SET statu = 'Aktif', tahmini_teslim_tarihi = '2026-12-03', teslim_tarihi = NULL, teslim_istisnasi = false WHERE kimlik = $1`, [d.kimlik]);
     const kart = async () => (await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Teslim Öncesi Ödeme' AND nesne_kimligi = $1`, [d.kimlik])).rows;
+    await o.sup.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, telefon, olusturan_ref) VALUES ($1,'Yat Sahibi','Sahip','+905550003333',$2)`, [d.kimlik, o.K.ds]); // YG-1446 BLD-13
     await teslimOncesiOdemeIsle(o.db, new Date('2026-11-27T09:00:00Z')); expect(await kart()).toHaveLength(0);
     await teslimOncesiOdemeIsle(o.db, new Date('2026-11-30T09:00:00Z')); await teslimOncesiOdemeIsle(o.db, new Date('2026-12-01T09:00:00Z'));
     const k = await kart(); expect(k).toHaveLength(1); expect(k[0].ozet).toContain('700,00 EUR'); expect(k[0].ozet).toContain('03.12.2026');
+    const g13 = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld13:${d.kimlik}%`])).rows; // YG-1446
+    expect(g13.length).toBeGreaterThan(0); expect(g13[0].metin).toContain('tamamlanması gereken ödemeye'); expect(g13[0].metin).not.toContain('700');
   });
 });
 
