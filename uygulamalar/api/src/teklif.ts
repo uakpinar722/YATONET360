@@ -12,7 +12,7 @@ import { kartAc } from './is_motoru.js';
 import { kapanisKaydet } from './kapanis.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { rolSahipleri } from './makam.js';
-import { metinGetir, tutar } from './metin.js';
+import { doldur, metinGetir, tutar } from './metin.js';
 import { kutuAyikla, onaySonucKaydet, onayTalebiAc } from './onay.js';
 import { muvafakatKilidi } from './portal.js';
 import { altNumara, sureBitir } from './sure.js';
@@ -263,7 +263,7 @@ async function yatSahibiTeklifKarari(c: Db, teklif: string, onay: boolean, g: { 
   if (ft.musteri_turu === 'Bireysel Müşteri') await c.query(`INSERT INTO on_bilgilendirme_cayma_kaydi (teklif_ref, dosya_ref, on_bilgilendirme_zamani, sozlesme_zamani, cayma_bitis, erken_ifa_onayi) VALUES ($1,$2,$6,$3,$4,$5) ON CONFLICT (teklif_ref) DO NOTHING`, [ft.kimlik, ft.dosya_ref, g.zaman, bitis, g.erken, g.gosterim]); // YG-467: ön bilgilendirme anı = gösterim anı
 }
 
-onaySonucKaydet('ONY-23', async (c, t, karar, k) => {
+for (const ony of ['ONY-23', 'ONY-25']) onaySonucKaydet(ony, async (c, t, karar, k) => { // ONY-25: ek teklif aynı sonuçla işlenir
   if (!t.nesne_kimligi) return;
   const erken = Object.entries(k.kutular).some(([ad, v]) => v && /Cayma süresi içinde/i.test(ad));
   await yatSahibiTeklifKarari(c, t.nesne_kimligi, karar === 'Onaylandı', { zaman: k.zaman, erken, gosterim: t.gosterim_zamani ?? k.zaman, yapan: t.alici_kullanici_ref, kanal: 'YATONET 360' });
@@ -750,14 +750,20 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       if (!sahip) throw Object.assign(new Error('Yat sahibinin iletişim bilgisi kayıtlı değildir.'), { statusCode: 409 });
       // YG-206: sigortaca onaylanmayan kalemlerin teklifi ONY-26 ile onaylanır.
       const anaSigorta = t.ana_teklif_ref ? (await c.query(`SELECT teklif_muhatabi FROM fiyat_teklifi WHERE kimlik = $1`, [t.ana_teklif_ref])).rows[0]?.teklif_muhatabi === 'Sigorta Şirketi' : false;
-      const onyKod = anaSigorta ? 'ONY-26' : 'ONY-23';
+      const ekTeklif = !anaSigorta && Boolean(t.ana_teklif_ref) && t.teklif_turu === 'Ek Fiyat Teklifi'; // D-042, D-062: ek teklif ONY-25
+      const onyKod = anaSigorta ? 'ONY-26' : ekTeklif ? 'ONY-25' : 'ONY-23';
       if (t.musteri_turu === 'Bireysel Müşteri') await belgeUret(c, { tur: 'Ön Bilgilendirme Formu', nesne: t.kimlik, dosya: t.dosya_ref }); // YG-618, YG-619
       const s0 = (await c.query(`SELECT metin FROM sablon_metni WHERE kod = $2 AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil, onyKod])).rows[0];
       const { kutular } = kutuAyikla(s0.metin);
       const toplam = tutar(Number(t.genel_toplam_eur), dil);
-      const bag = { ...alan, 'Teklif No / Sürüm': `${t.teklif_no} Rev.${t.surum_no}`, 'Quotation No / Version': `${t.teklif_no} Rev.${t.surum_no}`, tutar: toplam, amount: toplam };
+      const bag: Record<string, string> = { ...alan, 'Teklif No / Sürüm': `${t.teklif_no} Rev.${t.surum_no}`, 'Quotation No / Version': `${t.teklif_no} Rev.${t.surum_no}`, tutar: toplam, amount: toplam };
+      if (ekTeklif) { // önceki onaylı toplam: dosyada kararı onaylı tekliflerin KDV dahil toplamı
+        const once = Number((await c.query(`SELECT coalesce(sum(genel_toplam_eur), 0) n FROM fiyat_teklifi WHERE dosya_ref = $1 AND kimlik <> $2 AND statu = 'Karar' AND karar IN ('Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü')`, [t.dosya_ref, t.kimlik])).rows[0].n);
+        const on = tutar(once, dil); const yeni = tutar(once + Number(t.genel_toplam_eur), dil);
+        Object.assign(bag, { 'ek tutar': toplam, 'additional amount': toplam, 'önceki toplam': on, 'previous total': on, 'yeni toplam': yeni, 'new total': yeni });
+      }
       await belgeUret(c, { tur: 'Fiyat Teklifi', nesne: t.kimlik, dosya: t.dosya_ref });
-      await onayTalebiAc(c, { dosya: t.dosya_ref, ony: onyKod, dil, alanlar: bag, baslikAlanlari: SIFIRLA_YAT(t), kutular: kutular.map((k, n) => ({ ad: k, zorunlu: n === 0 })), tutar: Number(t.genel_toplam_eur), taraf: sahip.kimlik, kullanici: sahip.kullanici_ref, aliciAd: sahip.kisi_adi_soyadi, telefon: sahip.telefon, eposta: sahip.eposta, belgeAdi: `Fiyat Teklifi ${t.teklif_no}`, hazirlayan: o.kullanici, sigortaHatirlat: t.teklif_muhatabi === 'Yat Sahibi' || t.teklif_muhatabi === 'Kurumsal Müşteri', webAdresi: b.webAdresi, gun, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
+      await onayTalebiAc(c, { dosya: t.dosya_ref, ony: onyKod, dil, alanlar: bag, baslikAlanlari: SIFIRLA_YAT(t), kutular: kutular.map((k, n) => ({ ad: doldur(k, bag), zorunlu: n === 0 })), tutar: Number(t.genel_toplam_eur), taraf: sahip.kimlik, kullanici: sahip.kullanici_ref, aliciAd: sahip.kisi_adi_soyadi, telefon: sahip.telefon, eposta: sahip.eposta, belgeAdi: `Fiyat Teklifi ${t.teklif_no}`, hazirlayan: o.kullanici, sigortaHatirlat: t.teklif_muhatabi === 'Yat Sahibi' || t.teklif_muhatabi === 'Kurumsal Müşteri', webAdresi: b.webAdresi, gun, nesneTuru: 'Teklif', nesneKimligi: t.kimlik });
       return { durum: 'Gönderildi', gecerlilik: bit };
     });
   });

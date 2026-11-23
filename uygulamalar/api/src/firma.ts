@@ -510,7 +510,19 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const f = await firmam(o.kullanici);
     if (!f) return y.code(403).send({ hata: 'Bu sayfa Çözüm Ortağı kullanıcılarına açıktır.' });
     const { rows } = await b.db.query(`SELECT e.*, (SELECT a.is_emri_no FROM is_emri a WHERE a.kimlik = e.ana_is_emri_ref) AS ana_is_emri_no, d.dosya_no, d.oncelik, y.yat_adi, y.tur AS yat_turu, y.tam_boy_m, y.govde_malzemesi FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE e.kurulus_ref = $1 AND e.statu NOT IN ('Taslak', 'İç Onayda', 'İptal', 'Yerine Geçti') ORDER BY e.statu = 'Kabul Bekliyor' DESC, e.yanit_son, e.olusturma_zamani DESC`, [f]);
-    return { isEmirleri: rows.map(firmaGorunum) };
+    // ONY-22 (D-067): ilk girişte onaylı portal rehberi; okununca bir daha gösterilmez.
+    let rehber: { baslik: string; metin: string; dugme: string } | null = null;
+    if (!(await b.db.query(`SELECT 1 FROM kurulus_kullanici WHERE kullanici_ref = $1 AND rehber_okuma_zamani IS NOT NULL LIMIT 1`, [o.kullanici])).rowCount) {
+      const dil = (await b.db.query(`SELECT tercih_dili FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0]?.tercih_dili === 'İngilizce' ? 'en' : 'tr';
+      rehber = (await b.db.query(`SELECT baslik, metin, dugme FROM sablon_metni WHERE kod = 'ONY-22' AND dil = $1 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [dil])).rows[0] ?? null;
+    }
+    return { isEmirleri: rows.map(firmaGorunum), rehber };
+  });
+  s.post('/firma-portal/rehber-okundu', oturumlu, async (i, y) => {
+    const o = i.oturum!; if (!(await firmam(o.kullanici))) return y.code(403).send({ hata: 'Bu sayfa Çözüm Ortağı kullanıcılarına açıktır.' });
+    await b.db.query(`UPDATE kurulus_kullanici SET rehber_okuma_zamani = coalesce(rehber_okuma_zamani, now()) WHERE kullanici_ref = $1`, [o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Portal Rehberi Okundu', nesneTuru: 'Kullanıcı', nesneKimligi: o.kullanici, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
 
   // YG-1574: İşleminizi Bekleyenler; acil iş emri, rapor/fiyat son zamanı, uygunsuzluk yanıtı ve kapatılmamış günlük kayıt; en yakın son zaman önce.

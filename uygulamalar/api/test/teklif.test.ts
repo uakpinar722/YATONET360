@@ -305,6 +305,20 @@ describe('bireysel onay ve cayma (YG-152, YG-466, YG-468)', () => {
     const kod = o.sms.gidenler.at(-1)!.metin.match(/\d{6}/)![0];
     return o.ist('POST', `/api/onay/${bel}/karar`, undefined, { kod, kutular });
   };
+  it('ek fiyat teklifi ONY-25 ile gider; önceki ve yeni toplam yazılır; onayı ana teklif gibi işlenir', async () => {
+    const g = await gonder(); const k0 = (await o.ist('GET', `/api/onay/${g.belirtec}`)).json().kutular?.[0]; const a0 = k0?.ad ?? k0;
+    { const kr = await kararVer(g.belirtec, { [a0]: true }); expect(kr.statusCode, kr.body).toBe(200); }
+    await cetvel(g.d.kimlik);
+    const e = await teklifAc(g.d, 51, { ekTeklif: g.t.kimlik }); await onayla(e.kimlik);
+    const r = await o.ist('POST', `/api/teklif/${e.kimlik}/gonder`, await o.gir('ts')); expect(r.statusCode, r.body).toBe(200);
+    const on = (await o.sup.query(`SELECT kimlik, metin FROM onay_talebi WHERE nesne_kimligi = $1 AND ony_kod = 'ONY-25'`, [e.kimlik])).rows[0];
+    expect(on.metin).toContain('önceki onaylı toplam'); expect(on.metin).not.toContain('[');
+    const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari = $1 LIMIT 1`, [`onay-bag:${on.kimlik}`])).rows[0].metin; const bel = m.match(/#onay=([\w-]+)/)![1]!;
+    const ek = (await o.ist('GET', `/api/onay/${bel}`)).json(); const ilk = ek.kutular?.[0]?.ad ?? ek.kutular?.[0];
+    expect(String(ilk)).not.toContain('[');
+    expect((await kararVer(bel, { [ilk]: true })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT karar FROM fiyat_teklifi WHERE kimlik = $1`, [e.kimlik])).rows[0].karar).toBe('Tam Onay');
+  });
   it('geçerlilik 15 gün; ekran iki kutu, biri zorunlu, ikisi de işaretsiz; tutar KDV dahil; hatırlatma var', async () => {
     const g = await gonder();
     const bek = new Date(Date.now() + 180 * 60_000 + 15 * 86_400_000).toISOString().slice(0, 10);
@@ -596,6 +610,12 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect(r.statusCode).toBe(403); expect(r.json().hata).toContain('Teklif ve Mali');
     await o.sup.query(`UPDATE kurulus_kullanici SET islevler = ARRAY['Teklif ve Mali', 'Saha', 'Kalite', 'Yönetici'] WHERE kullanici_ref = $1`, [k]);
     expect((await o.ist('GET', '/api/firma-portal/kullanicilar', firmaC)).json().kullanicilar.length).toBeGreaterThan(0);
+    { // ONY-22: ilk girişte rehber; okununca gösterilmez
+      await o.sup.query(`UPDATE kurulus_kullanici SET rehber_okuma_zamani = NULL WHERE kullanici_ref = $1`, [k]);
+      const a1 = (await o.ist('GET', '/api/firma-portal/ana', firmaC)).json(); expect(a1.rehber?.metin).toContain('YATONET 360');
+      expect((await o.ist('POST', '/api/firma-portal/rehber-okundu', firmaC, {})).statusCode).toBe(200);
+      expect((await o.ist('GET', '/api/firma-portal/ana', firmaC)).json().rehber).toBeNull();
+    }
   });
   it('tam akış: onay, yayın, firma görünümünde müşteri yok, kod ile kabul, başlangıç, ilerleme, teknik kabul, kapanış', async () => {
     const { d, e } = await onarim();

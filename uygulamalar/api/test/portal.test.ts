@@ -217,6 +217,12 @@ describe('portal görünürlüğü (YG-459, YG-1565)', () => {
     expect(dj.statusCode).toBe(200);
     for (const yasak of ['statu', 'asama', 'zorluk_katsayisi', 'kisa_teknik_tanim']) expect(dj.json()[yasak]).toBeUndefined();
     expect(dj.json().mulkiyet).toHaveProperty('takyidat'); // YG-477
+    { // YG-1449: lehtar varsa muvafakat durumu ONY-12 metniyle
+      await sup.query(`UPDATE yat SET lehtar_adi = 'Deneme Banka' FROM dosya x WHERE x.kimlik = $1 AND yat.kimlik = x.yat_ref`, [d.kimlik]);
+      const mv = (await ist('GET', `/api/portal/dosya/${d.kimlik}`, a.c)).json().muvafakat;
+      expect(mv.metin).toContain('Deneme Banka'); expect(mv.metin).not.toContain('[');
+      await sup.query(`UPDATE yat SET lehtar_adi = NULL FROM dosya x WHERE x.kimlik = $1 AND yat.kimlik = x.yat_ref`, [d.kimlik]);
+    }
     expect((await ist('GET', `/api/dosya/${d.kimlik}`, a.c)).statusCode).toBe(404);
     // Hesaptan açma: bağlantı kaybolsa da onay açılır.
     const o = await ist('POST', `/api/portal/onay/${ana.onaylar[0].kimlik}/ac`, a.c, {});

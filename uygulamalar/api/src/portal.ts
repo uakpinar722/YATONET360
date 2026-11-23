@@ -292,7 +292,13 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     // YG-477: yat sahibi kendi yatının mülkiyet türünü, takyidatını ve lehtarını görür.
     const mulkiyet = (await b.db.query(`SELECT y.mulkiyet_turu, y.takyidat, coalesce(y.lehtar_adi, (SELECT unvan_ad_soyad FROM taraf WHERE kimlik = y.lehtar_ref)) lehtar FROM dosya x JOIN yat y ON y.kimlik = x.yat_ref WHERE x.kimlik = $1`, [d.kimlik])).rows[0] ?? null;
     for (const x of teklifler) if (x.karar === 'Süre Dolumu Kabulü') x.karar = null; // SGT-1: sigorta onayı olarak gösterilmez
-    return { ...(await kart(d, o.kullanici)), mulkiyet, cayma, belgeler, fotograflar, kapsamOzeti, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
+    // YG-1449: lehtar varsa muvafakat durumu onaylı ONY-12 / ONY-13 metniyle gösterilir.
+    let muvafakat: { baslik: string; metin: string } | null = null;
+    { const mv = (await b.db.query(`SELECT coalesce(y.lehtar_adi, (SELECT unvan_ad_soyad FROM taraf WHERE kimlik = y.lehtar_ref)) lehtar, y.lehtar_muvafakati_ref, (SELECT olusturma_zamani FROM belge WHERE kimlik = y.lehtar_muvafakati_ref) z, x.yazisma_dili FROM dosya x JOIN yat y ON y.kimlik = x.yat_ref WHERE x.kimlik = $1`, [d.kimlik])).rows[0];
+      if (mv?.lehtar) { const dil = dilKod(mv.yazisma_dili); const s = (await b.db.query(`SELECT baslik, metin FROM sablon_metni WHERE kod = $1 AND dil = $2 AND durum = 'Yürürlükte' ORDER BY surum DESC LIMIT 1`, [mv.lehtar_muvafakati_ref ? 'ONY-13' : 'ONY-12', dil])).rows[0];
+        const { doldur, gunAy } = await import('./metin.js'); const tarih = mv.z ? gunAy(mv.z) : '';
+        if (s) muvafakat = { baslik: s.baslik, metin: doldur(s.metin, { Lehtar: mv.lehtar, 'Loss payee': mv.lehtar, tarih, date: tarih }) }; } }
+    return { ...(await kart(d, o.kullanici)), mulkiyet, muvafakat, cayma, belgeler, fotograflar, kapsamOzeti, kurtarma, faturalar, teslim, beklemeNotu: await beklemeNotu(b.db, d.kimlik), teklifler: teklifler.map((x) => ({ ...x, kalemler: kalemler.filter((k) => k.teklif_ref === x.kimlik) })) };
   });
 
   // Portal kullanıcısının bekleyen onayı: bağlantıyı kaybetse de hesabından açar (YG-465).

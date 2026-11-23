@@ -469,7 +469,8 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   const [bek, setBek] = useState<{ tur: string; baslik: string; isEmri: string | null; son: string | null; acil: boolean }[]>([]); // YG-1574
   const [foto, setFoto] = useState('');
   useEffect(() => { void istek<{ onDeger: number | null }>('/firma-portal/acil-on-deger').then((r) => { if (r.onDeger !== null) setTahmini((t) => t || String(r.onDeger).replace('.', ',')); }).catch(() => {}); }, []); // YG-1473: acil birim fiyatlarından ön değer
-  const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[] }>('/firma-portal/ana'); setL(r.isEmirleri); setBek(await istek<typeof bek>('/firma-portal/bekleyenler').catch(() => [])); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
+  const [rehber, setRehber] = useState<{ baslik: string; metin: string; dugme: string } | null>(null); // ONY-22
+  const yukle = async () => { const r = await istek<{ isEmirleri: IsEmri[]; rehber?: { baslik: string; metin: string; dugme: string } | null }>('/firma-portal/ana'); setL(r.isEmirleri); setRehber(r.rehber ?? null); setBek(await istek<typeof bek>('/firma-portal/bekleyenler').catch(() => [])); setAc(await istek<AcilCagri[]>('/firma-portal/acil-cagrilar')); if (acik) setAcik(await istek<FirmaAyrinti>(`/firma-portal/is-emri/${acik.kimlik}`)); };
   const { yap, Mesaj } = useYap(yukle);
   useEffect(() => { void yukle().catch(() => setL([])); }, []);
   if (!l) return null;
@@ -521,6 +522,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
   return (
     <>
       <h1>{bolum === 'isemri' ? 'İş Emirleri' : `Hoş Geldiniz, ${ben.adSoyad}`}</h1><Mesaj />
+      {rehber && bolum === 'ana' && <><div className="bolum">{rehber.baslik}</div><div className="ozet"><p>{rehber.metin}</p><button className="btn2" onClick={() => void istek('/firma-portal/rehber-okundu', {}).then(() => setRehber(null))}>{rehber.dugme}</button></div></>}{/* ONY-22, D-067 */}
       <FirmaArama />
       {bolum === 'ana' && <FirmaAcilIslemleri yap={yap} />}
       {bolum === 'ana' && <KurtarmaSonucFirma />}
