@@ -21,7 +21,7 @@ import { PersonelEk } from './PersonelEk';
 import { PoliceListesi } from './FirmaPolice';
 import { PersonelKarne } from './PersonelKarne';
 import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
-import { Akademi, DenemeDegerlendirme } from './Akademi';
+import { Akademi, DenemeDegerlendirme, PeriyodikTakvimim } from './Akademi';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
 import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, ErisimKapatma, IcDenetim, OzDenetim } from './ErisimEtik';
@@ -1079,6 +1079,7 @@ export function IdariIslemler() {
       <GorevTanimim />
       <MemnuniyetGorusme />
       <Akademi />
+      <PeriyodikTakvimim />
       <DenemeDegerlendirme />
       <Guvenlik />
       <ProblemBulgu />

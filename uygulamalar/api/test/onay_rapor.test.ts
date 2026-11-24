@@ -96,9 +96,17 @@ describe('teknik rapor (YG-200, YG-280, YG-428, YG-1518)', () => {
     await o.karar(k.kimlik, 'tmy', 'Onaya Gönder');
     expect((await o.karar(k.kimlik, 'tm', 'Onayla')).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT durum FROM teknik_rapor WHERE kimlik = $1`, [r.json().kimlik])).rows[0].durum).toBe('Onaylı');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, R)).json().hata).toContain('Onaylı rapor değiştirilmez'); // YG-711
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/teknik-rapor`, tu, { ...R, tur: 'Ek Teknik Rapor' })).json().raporNo).toBe(`${d.dosyaNo}-TR02`);
     const e = await o.dosyaAc(); await o.ekipKur(e.kimlik); await o.sup.query(`DELETE FROM teknik_rapor WHERE dosya_ref = $1`, [e.kimlik]);
     expect((await o.ist('POST', `/api/dosya/${e.kimlik}/teknik-rapor`, tu, { ...R, tur: 'Ek Teknik Rapor' })).statusCode).toBe(409);
+    // YG-711: onaylı rapor değişmez; reddedilen raporun yerine yazılan rapor yeni sürümdür, nedeni listeden seçilir
+    const r1 = (await o.ist('POST', `/api/dosya/${e.kimlik}/teknik-rapor`, tu, R)).json().kimlik; await o.sup.query(`UPDATE teknik_rapor SET durum = 'Reddedildi' WHERE kimlik = $1`, [r1]);
+    expect((await o.ist('POST', `/api/dosya/${e.kimlik}/teknik-rapor`, tu, R)).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${e.kimlik}/teknik-rapor`, tu, { ...R, revizyonNedeni: 'Taraf talebi', revizyonAciklamasi: 'X' })).statusCode).toBe(400);
+    const r2 = await o.ist('POST', `/api/dosya/${e.kimlik}/teknik-rapor`, tu, { ...R, revizyonNedeni: 'Yeni teknik bulgu', revizyonAciklamasi: 'Ek ölçüm' }); expect(r2.statusCode, r2.body).toBe(200);
+    expect((await o.sup.query(`SELECT surum, onceki_surum_ref::text o FROM teknik_rapor WHERE kimlik = $1`, [r2.json().kimlik])).rows[0]).toEqual({ surum: 2, o: r1 });
+    expect((await o.sup.query(`SELECT 1 FROM denetim_izi WHERE eylem = 'Teknik Rapor Revizyonu' AND nesne_kimligi = $1`, [r2.json().kimlik])).rowCount).toBe(1);
   });
 });
 describe('kart önerisi (YG-188)', () => {

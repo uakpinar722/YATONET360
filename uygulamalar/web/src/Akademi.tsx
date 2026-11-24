@@ -25,6 +25,20 @@ export function Akademi() {
       <button className="btn2 kucuk" disabled={!rv.ders || !rv.icerik.trim() || !rv.degisiklik.trim()} onClick={() => is(istek(`/akademi/ders/${rv.ders}/revize`, { icerik: rv.icerik, degisiklik: rv.degisiklik }).then(() => setRv({ ders: '', icerik: '', degisiklik: '' })), 'Revizyon yayımlandı.')}>Revizyonu Yayımla</button></>}</>;
 }
 
+/** YG-936: personelin rolüne düşen periyodik iş takvimi; tarihli işler tarih sırasıyla, olaya bağlı işler ayrıca. */
+export function PeriyodikTakvimim() {
+  const [l, setL] = useState<{ kimlik: string; ad: string; sahip_rol: string; periyot_turu: string; sonraki_tarih: string | null; aktif: boolean; sahibim: boolean }[] | null>(null);
+  useEffect(() => { void istek<{ isler: NonNullable<typeof l> }>('/periyodik-isler').then((r) => setL(r.isler.filter((x) => x.sahibim && x.aktif))).catch(() => setL(null)); }, []);
+  if (!l) return null;
+  const tarihli = l.filter((x) => x.sonraki_tarih).sort((a, c) => a.sonraki_tarih!.localeCompare(c.sonraki_tarih!)); const olay = l.filter((x) => !x.sonraki_tarih);
+  const bugun = new Date().toISOString().slice(0, 10);
+  return <><div className="bolum">Periyodik İş Takvimim</div>
+    {l.length === 0 ? <div className="ozet bos">Rolünüze tanımlı periyodik iş bulunmamaktadır.</div> : <div className="ozet">
+      {tarihli.map((x) => <div key={x.kimlik} className={x.sonraki_tarih! < bugun ? 'uyari' : undefined}>{x.sonraki_tarih!.split('-').reverse().join('.')} · {x.ad} · {x.periyot_turu} · {x.sahip_rol}{x.sonraki_tarih! < bugun ? ' · Tarihi geçti' : ''}</div>)}
+      {olay.map((x) => <div key={x.kimlik}>Olaya bağlı · {x.ad} · {x.sahip_rol}</div>)}
+    </div>}</>;
+}
+
 type B = { personel: string; bitis: string; ad: string };
 /** YG-970: deneme süresi değerlendirmesini ilk amir hazırlar. */
 export function DenemeDegerlendirme() {

@@ -30,6 +30,8 @@ export async function raporEngeli(db: Db, dosya: string): Promise<string | null>
   return r.rowCount ? null : 'Teklif için Teknik Yönetici kontrolünden geçmiş Teknik Rapor bekleniyor.';
 }
 
+export const RAPOR_REVIZYON_NEDENLERI = ['Kontrol iadesi', 'Yeni teknik bulgu', 'Ölçüm veya yazım hatası'];
+
 kapanisKaydet('Teknik Rapor', async (c, k, karar) => {
   const durum = karar === 'Onayla' ? 'Onaylı' : karar === 'Reddet' ? 'Reddedildi' : karar === 'Gerekçeyle İade Et' ? 'İade Edildi' : karar === 'Yeniden Gönder' ? 'Kontrolde' : karar === 'Geri Çek' ? 'Geri Çekildi' : null;
   if (durum) await c.query(`UPDATE teknik_rapor SET durum = $2 WHERE kimlik = $1`, [k.nesne_kimligi, durum]);
@@ -111,7 +113,7 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/teknik-rapor', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
-    const rapor = (await b.db.query(`SELECT t.kimlik, t.rapor_no, t.surum, t.rapor_turu, t.durum, t.son_zaman, k.kademe, cardinality(k.zincir) AS kademe_sayisi FROM teknik_rapor t LEFT JOIN is_karti k ON k.tur = 'Teknik Rapor' AND k.nesne_kimligi = t.kimlik::text WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani DESC`, [id])).rows;
+    const rapor = (await b.db.query(`SELECT t.kimlik, t.rapor_no, t.surum, t.rapor_turu, t.durum, t.son_zaman, t.revizyon_nedeni, (SELECT p.rapor_no FROM teknik_rapor p WHERE p.kimlik = t.onceki_surum_ref) onceki_surum, k.kademe, cardinality(k.zincir) AS kademe_sayisi FROM teknik_rapor t LEFT JOIN is_karti k ON k.tur = 'Teknik Rapor' AND k.nesne_kimligi = t.kimlik::text WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani DESC`, [id])).rows;
     const firma = (await b.db.query(`SELECT f.kimlik, f.rapor_no, f.inceleme_tarihi::text, f.bulgular, f.onerilen_islemler, f.malzeme_ihtiyaci, f.tahmini_sure_gun, f.firma_degerlendirmesi FROM firma_teknik_raporu f WHERE f.dosya_ref = $1 ORDER BY f.firma_onayi DESC LIMIT 1`, [id])).rows[0] ?? null;
     // YG-427: malzeme ihtiyacı, tahmini süre ve yat bilgisi de forma aktarılır.
     const yat = (await b.db.query(`SELECT y.yat_adi, coalesce(m.marka || ' ' || m.model, nullif(concat_ws(' ', y.marka_diger, y.model_diger), '')) mm FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE d.kimlik = $1`, [id])).rows[0];
@@ -134,6 +136,10 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     if (!['Uyumlu', 'Kısmen Uyumlu', 'Uyumsuz'].includes(g.beyanUyum ?? '')) return y.code(400).send({ hata: 'Beyan–bulgu uyumunu seçiniz: Uyumlu, Kısmen Uyumlu, Uyumsuz.' });
     if (g.beyanUyum !== 'Uyumlu' && !g.uyumAciklamasi?.trim()) return y.code(400).send({ hata: 'Uyumsuzluğun açıklamasını yazınız.' });
     if ((await b.db.query(`SELECT 1 FROM teknik_rapor WHERE dosya_ref = $1 AND durum IN ('Kontrolde', 'İade Edildi') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Sonuçlanmamış bir rapor vardır.' });
+    // YG-711: onaylı rapor değişmez; reddedilen veya geri çekilen raporun yerine yazılan rapor yeni sürümdür ve nedeni tanımlı listeden seçilir. Taraf talebi revizyon nedeni değildir.
+    if (tur !== 'Ek Teknik Rapor' && (await b.db.query(`SELECT 1 FROM teknik_rapor WHERE dosya_ref = $1 AND rapor_turu = $2 AND durum = 'Onaylı' LIMIT 1`, [id, tur])).rowCount) return y.code(409).send({ hata: 'Onaylı rapor değiştirilmez; yeni bilgi Ek Teknik Rapor ile verilir.' });
+    const oncekiSurum = tur === 'Ek Teknik Rapor' ? undefined : (await b.db.query(`SELECT kimlik, rapor_no, surum, bulgular, oneriler FROM teknik_rapor WHERE dosya_ref = $1 AND rapor_turu = $2 AND durum IN ('Reddedildi', 'Geri Çekildi') ORDER BY surum DESC, olusturma_zamani DESC LIMIT 1`, [id, tur])).rows[0];
+    if (oncekiSurum && (!RAPOR_REVIZYON_NEDENLERI.includes(g.revizyonNedeni ?? '') || !g.revizyonAciklamasi?.trim())) return y.code(400).send({ hata: `Önceki sürüm ${oncekiSurum.rapor_no} vardır; revizyon nedenini (${RAPOR_REVIZYON_NEDENLERI.join(', ')}) ve açıklamasını yazınız. Taraf talebi revizyon nedeni değildir.` });
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no, oncelik, yazisma_dili FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       const f = (await c.query(`SELECT kimlik, bulgular, onerilen_islemler, firma_onayi FROM firma_teknik_raporu WHERE dosya_ref = $1 ORDER BY firma_onayi DESC LIMIT 1`, [id])).rows[0];
@@ -146,6 +152,10 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
       const son = f ? await raporSonZamani(c, d.oncelik, new Date(f.firma_onayi)) : null;
       const r = (await c.query(`INSERT INTO teknik_rapor (rapor_no, rapor_turu, ana_rapor_ref, dosya_ref, dayanak_firma_raporu_ref, kapsam, incelenen_alan, saha_kosullari, yontem_olcut, bulgular, acik_sorular, analiz_risk, oneriler, uzmanlik_siniri, rapor_dili, son_zaman, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`, [no, tur, ana, id, f?.kimlik ?? null, g.kapsam!.trim(), g.incelenen!.trim(), g.saha!.trim(), g.yontem!.trim(), g.bulgular!.trim(), g.acikSorular!.trim(), g.analiz!.trim(), g.oneriler!.trim(), g.uzmanlik!.trim(), d.yazisma_dili ?? 'Türkçe', son, o.kullanici])).rows[0];
       if (onceki.length) await c.query(`UPDATE teknik_rapor SET onceki_raporlar = $2 WHERE kimlik = $1`, [r.kimlik, onceki]); // YG-095
+      if (oncekiSurum) { // YG-711
+        await c.query(`UPDATE teknik_rapor SET surum = $2, onceki_surum_ref = $3, revizyon_nedeni = $4, revizyon_aciklamasi = $5 WHERE kimlik = $1`, [r.kimlik, Number(oncekiSurum.surum) + 1, oncekiSurum.kimlik, g.revizyonNedeni, g.revizyonAciklamasi!.trim()]);
+        await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teknik Rapor Revizyonu', nesneTuru: 'Teknik Rapor', nesneKimligi: r.kimlik, eski: { rapor: oncekiSurum.rapor_no, bulgular: oncekiSurum.bulgular, oneriler: oncekiSurum.oneriler }, yeni: { neden: g.revizyonNedeni, aciklama: g.revizyonAciklamasi!.trim(), bulgular: g.bulgular, oneriler: g.oneriler }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      }
       // YG-732: yapay zekâ taslağı iç kayıt olarak tutulur; giden raporda ve rapor yanıtlarında gösterilmez.
       const yz = (i.body as { yzTaslak?: unknown })?.yzTaslak; if (typeof yz === 'string' && yz.trim()) await c.query(`UPDATE teknik_rapor SET yz_taslagi = $2 WHERE kimlik = $1`, [r.kimlik, yz.trim().slice(0, 50_000)]);
       await c.query(`UPDATE teknik_rapor SET ek_inceleme_gerekir = $2, ek_inceleme_alani = $3 WHERE kimlik = $1`, [r.kimlik, g.ekInceleme === 'Evet', g.ekInceleme === 'Evet' ? g.ekIncelemeAlani!.trim() : null]); // YG-714

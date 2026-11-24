@@ -71,6 +71,11 @@ export function formDogrula(alanlar: FormAlani[], v: Record<string, unknown>): {
     if (a.enFazla && String(d).length > a.enFazla) return { hata: `${a.alan} en fazla ${a.enFazla} karakter olabilir.` };
     veri[a.teknik] = d;
   }
+  // YG-282: "Koşullu: sonuç Uygun Değil ise zorunlu" gibi sonuca bağlı zorunluluk (ör. uygunsuzluk bağı).
+  for (const a of alanlar) {
+    const m = a.kosul ? /sonuç\s+(.+?)(?:\s+ise(?:\s+zorunlu)?)?\s*$/i.exec(a.kosul) : null;
+    if (m && veri.sonuc === m[1] && !(a.teknik in veri)) return { hata: `${a.alan} zorunludur (sonuç ${m[1]}).` };
+  }
   return { veri };
 }
 
@@ -182,7 +187,8 @@ export function genelFormYollari(s: FastifyInstance, b: Baglam) {
     if (f.durum !== 'Açık') return y.code(409).send({ hata: 'Kayıt açık değildir.' });
     const roller = (await b.db.query(`SELECT rol_adi FROM rol`)).rows.map((r) => r.rol_adi as string).filter((r) => rolGecer(f.onaylayan, r));
     const rol = roller.sort((a, c) => (f.onaylayan as string).indexOf(a) - (f.onaylayan as string).indexOf(c))[0];
-    if (!rol) { await b.db.query(`UPDATE form_kaydi SET durum = 'Onaylı', onay_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik]); await gozdenGecirmeIsle(b.db, f.kimlik); return { durum: 'Onaylı' }; }
+    if (!rol) { await b.db.query(`UPDATE form_kaydi SET durum = 'Onaylı', onaylayan_ref = $2, onay_zamani = now(), guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik, o.kullanici]); // YG-282: onaylı kayıtta onaylayan ve zaman boş kalmaz
+      await gozdenGecirmeIsle(b.db, f.kimlik); return { durum: 'Onaylı' }; }
     await b.db.query(`UPDATE form_kaydi SET durum = 'Kontrolde', iade_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik]);
     await kartAc(b.db, { tur: 'Form Onayı', baslik: `${f.kayit_no} · ${f.ad}`, ozet: `Kontrol: ${rol}`, hazirlayan: o.kullanici, zincir: [await rolId(b.db, rol)], nesneTuru: 'Form Kaydı', nesneKimligi: f.kimlik });
     return { durum: 'Kontrolde', gonderilecek: rol };

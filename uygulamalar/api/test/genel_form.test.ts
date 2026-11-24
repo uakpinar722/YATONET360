@@ -26,6 +26,13 @@ describe('Ek II tamamlama (YG-632, YG-633, YG-666, YG-709)', () => {
     const r = (await o.ist('POST', '/api/form-kaydi', ds, { kod: 'FR-MLZ-005', dosya: d.kimlik, veriler: V })).json();
     expect(r.kayit_no).toBe(`${d.dosyaNo}-FR-MLZ-005-01`);
     expect((await o.ist('POST', `/api/form-kaydi/${r.kimlik}/gonder`, ds, {})).json().durum).toBe('Onaylı');
+    expect((await o.sup.query(`SELECT onaylayan_ref, onay_zamani IS NOT NULL z FROM form_kaydi WHERE kimlik = $1`, [r.kimlik])).rows[0]).toEqual({ onaylayan_ref: o.K.ds, z: true }); // YG-282
+    { // YG-282: sonuç Uygun Değil ise uygunsuzluk bağı zorunlu
+      const { formDogrula } = await import('../src/genel_form.js');
+      const al = [{ teknik: 'sonuc', alan: 'Sonuç', tip: 'Liste (tek seçim)', zorunlu: true, kosul: null, aciklama: '', secenekler: [{ id: 'Uygun', etiket: 'Uygun' }, { id: 'Uygun Değil', etiket: 'Uygun Değil' }] }, { teknik: 'uygunsuzluk', alan: 'Uygunsuzluk', tip: 'Referans', zorunlu: false, kosul: 'Koşullu: sonuç Uygun Değil ise zorunlu', aciklama: '' }];
+      expect(formDogrula(al as any, { sonuc: 'Uygun Değil' })).toEqual({ hata: 'Uygunsuzluk zorunludur (sonuç Uygun Değil).' });
+      expect(formDogrula(al as any, { sonuc: 'Uygun' })).toEqual({ veri: { sonuc: 'Uygun' } });
+    }
     expect((await o.ist('POST', `/api/form-kaydi/${r.kimlik}`, ds, { veriler: V })).statusCode).toBe(409);
   });
   it('onaylayanlı form kontrole gider; taslak araç seçilemez; boş şablon üretilir', async () => {
