@@ -230,6 +230,12 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     const g = (await o.ist('GET', `/api/taraf/${t.taraf_no}/iletisim-gecmisi`, await o.gir('opm'))).json();
     expect(g.find((x: { deger: string }) => x.deger === 'yeni@ornek.com').bildirim_hedefi).toBe(true);
     expect(g.find((x: { deger: string }) => x.deger === 'eski@ornek.com').gecerli).toBe(false);
+    { // YG-106: Müşteri Ana Kaydı
+      const a = await o.ist('GET', `/api/taraf/${t.taraf_no}/ana-kayit`, await o.gir('opm')); expect(a.statusCode, a.body).toBe(200);
+      const v = a.json(); expect(v.kimlik.taraf_no).toBe(t.taraf_no); expect(v.kimlik.eposta).toBe('yeni@ornek.com'); expect(v.kimlik.kimlik).toBeUndefined();
+      expect(typeof v.acikAlacakEur).toBe('number'); for (const k of ['faturalar', 'sozlesmeler', 'yetkiBelgeleri', 'yetkililer', 'yatlar', 'dosyalar']) expect(Array.isArray(v[k])).toBe(true);
+      expect((await o.ist('GET', '/api/taraf/YOK-000/ana-kayit', await o.gir('opm'))).statusCode).toBe(404);
+    }
   });
   it('tamlık birlikte: yat sahibi bağı, karar zamanı ve başka dosyaya ait kanıt (YG1251-TAMLIK)', async () => {
     const d = await o.dosyaAc(); const d2 = await o.dosyaAc();

@@ -65,12 +65,27 @@ describe('belge önceliği (YG-617)', () => {
     const d = await o.dosyaAc();
     await o.sup.query(`UPDATE dosya SET musteri_turu = 'Bireysel Müşteri' WHERE kimlik = $1`, [d.kimlik]);
     const b = (await belgeOnceligi(o.db, d.kimlik))!; expect(b.kural).toBe('Tek İş Sözleşmesi'); expect(b.musteri[0]!.belge).toBe('Yat Onarım Sözleşmesi');
+    { // YG-615: iş emri sürümü ve değişiklik protokolü ayrı kayıt olarak görünür
+      const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'BO Firma','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-BO${Date.now()}`, o.K.ds])).rows[0].kimlik;
+      await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, f, o.K.ds]);
+      await o.sup.query(`INSERT INTO degisiklik_protokolu (degisiklik_no, dosya_ref, tur, mevcut, onerilen, kanal, hazirlayan_ref) VALUES ($1,$2,'İlave İş','A','B','YATONET 360',$3)`, [`${d.dosyaNo}-DP01`, d.kimlik, o.K.ds]);
+      const x = (await belgeOnceligi(o.db, d.kimlik))!;
+      expect(x.firma.find((k) => k.belge.startsWith('İş Emri'))!.kayitlar).toEqual([`${d.dosyaNo}-ON01 Rev.1`]);
+      expect(x.musteri.find((k) => k.belge === 'Değişiklik Protokolü')!.kayitlar[0]).toMatch(/-DP01 · İlave İş · Onay Bekliyor/);
+      expect(x.musteri.some((k) => k.belge.startsWith('Teklif Kabulü'))).toBe(true);
+    }
     await o.sup.query(`UPDATE dosya SET musteri_turu = 'Sigorta Şirketi' WHERE kimlik = $1`, [d.kimlik]);
     const c = (await belgeOnceligi(o.db, d.kimlik))!; expect(c.kural).toBe('Çerçeve Sözleşme'); expect(c.musteri[2]!.islev).toMatch(/ana metni değiştirmez/); expect(c.celiski).toMatch(/otomatik tercih yapılmaz/);
     await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
     await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2) ON CONFLICT DO NOTHING`, [d.kimlik, o.K.ds]);
     const ds = await o.gir('ds');
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-celiskisi`, ds, { belgeler: 'Teklif Rev.1 / Ek-2' })).statusCode).toBe(400);
+    { // YG-1179: serbest metne TCKN, IBAN, kart numarası yazılmaz
+      const { kisiselVeriTuru } = await import('../src/serbest_metin.js');
+      expect(kisiselVeriTuru('Kimlik 10000000146 olarak alındı')).toBe('TC kimlik numarası'); expect(kisiselVeriTuru('Sipariş 10000000147')).toBeNull();
+      expect(kisiselVeriTuru('Hesap TR33 0006 1005 1978 6457 8413 26')).toBe('IBAN'); expect(kisiselVeriTuru('Kart 4111 1111 1111 1111')).toBe('kart numarası'); expect(kisiselVeriTuru('Tel +90 555 123 45 67, 12 adet')).toBeNull();
+      expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-celiskisi`, ds, { belgeler: 'Ek-2', konu: 'Yetkili 10000000146 farklı' })).json().hata).toContain('TC kimlik numarası');
+    }
     expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-celiskisi`, ds, { belgeler: 'Teklif Rev.1 / Ek-2', konu: 'Onay sınırı farklı' })).statusCode).toBe(200);
     expect((await o.kart('Belge Çelişkisi İncelemesi', d.kimlik)).durum).toBe('Bekliyor');
   });

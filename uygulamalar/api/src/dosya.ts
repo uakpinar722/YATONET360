@@ -76,6 +76,7 @@ async function aktifeGecir(c: PoolClient, id: string, yapan: string) {
   if (!d.yurt_disi) await sureBaslat(c, { tur: 'Randevu İletişimi', oncelik: d.oncelik, baslangic: new Date(), dosya: id });
   else if (d.dosya_sorumlusu_ref) await kartAc(c, { tur: 'Ulaşım Planı', kategori: 'gorev', baslik: `${d.dosya_no} · Ulaşım Planı`, ozet: 'Yurt dışı dosyada randevu sayacı ulaşım planı tarihinden başlar; planı giriniz.', sahipKullanici: d.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
   if (d.oncelik !== 'Kritik') await (await import('./kesif_talebi.js')).kesifTalebiHazirla(c, id, d.dosya_no); // YG-1597
+  else await (await import('./acil_degerlendirme.js')).acilDegerlendirmeGorevi(c, id, d.dosya_no); // YG-1483
   // YG-1596: hasar ilerleyebilir işaretli Yüksek dosyada Teknik Uzman ilk yanıtta görüntülü değerlendirme yapar.
   if (d.hasar_ilerleyebilir && d.oncelik === 'Yüksek') {
     const tu = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Teknik Uzman','Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL LIMIT 1`, [id])).rows[0];
@@ -404,7 +405,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       const talepTarafi = (await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_rolu, kisi_adi_soyadi, sifat, telefon, eposta, talep_sahibi_mi, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,true,$7) RETURNING kimlik`, [d.kimlik, rol[t.talep_sahibi_turu], t.talep_sahibi_adi, t.talep_sahibi_sifat, t.talep_sahibi_telefon, t.talep_sahibi_eposta, o.kullanici])).rows[0];
       const sahip = (await c.query(`SELECT o.* FROM yat y JOIN taraf o ON o.kimlik = y.yat_sahibi_ref WHERE y.kimlik = $1`, [t.yat_ref])).rows[0];
       if (sahip && t.talep_sahibi_turu !== 'Yat Sahibi') await c.query(`INSERT INTO dosya_tarafi (dosya_ref, taraf_ref, taraf_rolu, kisi_adi_soyadi, telefon, eposta, kullanici_ref, olusturan_ref) VALUES ($1,$2,'Yat Sahibi',$3,$4,$5,$6,$7)`, [d.kimlik, sahip.kimlik, sahip.unvan_ad_soyad, sahip.telefon, sahip.eposta, sahip.kullanici_ref, o.kullanici]);
-      if (sahip && t.talep_sahibi_turu === 'Yat Sahibi') await c.query(`UPDATE dosya_tarafi SET taraf_ref = $2, kullanici_ref = $3 WHERE kimlik = $1`, [talepTarafi.kimlik, sahip.kimlik, sahip.kullanici_ref]);
+      if (sahip && t.talep_sahibi_turu === 'Yat Sahibi') await c.query(`UPDATE dosya_tarafi SET taraf_ref = $2, kullanici_ref = $3, telefon = coalesce(telefon, $4), eposta = coalesce(eposta, $5) WHERE kimlik = $1`, [talepTarafi.kimlik, sahip.kimlik, sahip.kullanici_ref, sahip.telefon, sahip.eposta]); // YG-106: FR-OPS-001 eksikleri ana kayıttan
       await yatSahibiHesabi(c, d.kimlik); // YG-1757
       if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigorta_taraf_ref, sigortaci_adi, police_no, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [d.kimlik, t.talep_sahibi_turu === 'Sigorta Şirketi' ? talepTarafi.kimlik : null, sigortaAdi, g.policeNo?.trim() || t.police_no_beyan, g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan, o.kullanici]);
       if (sigortali) await cerceveKontrol(c, d.kimlik, d.dosya_no); // YG-1552

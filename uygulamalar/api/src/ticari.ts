@@ -1055,6 +1055,29 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     });
   });
 
+  // YG-640: FR-TIC-010 tek form; proforma bu formun içindedir.
+  s.get('/fatura/:id/takip-formu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || o.grup !== 'LGM İç Rolü') return yok(y);
+    const f = (await b.db.query(`SELECT f.*, f.vade::text vade_t, f.fatura_tarihi::text fatura_tarihi_t, f.kur_tarihi::text kur_tarihi_t, t.teklif_no, t.surum_no, d.dosya_no, d.kimlik dosya, h.ad_soyad hazirlayan, (f.fatura_pdf_ref IS NOT NULL) pdf_var FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN fiyat_teklifi t ON t.kimlik = f.teklif_ref JOIN kullanici_hesabi h ON h.kimlik = f.hazirlayan_ref WHERE f.kimlik = $1`, [id])).rows[0];
+    if (!f || !(await dosyaErisimi(b.db, o.kullanici, f.dosya))) return yok(y);
+    const muhatap = f.muhatap === 'Sigorta Şirketi'
+      ? (await b.db.query(`SELECT sigortaci_adi unvan, sigorta_hasar_dosya_no hasar_no FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 LIMIT 1`, [f.dosya])).rows[0] ?? null
+      : (await b.db.query(`SELECT t.unvan_ad_soyad unvan, t.vergi_dairesi, t.vergi_no, concat_ws(', ', t.adres, t.il, t.ulke) adres FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref JOIN taraf t ON t.kimlik = y.yat_sahibi_ref WHERE d.kimlik = $1`, [f.dosya])).rows[0] ?? null;
+    const kabul = (await b.db.query(`SELECT max(olusturma_zamani) z FROM kabul_kaydi WHERE dosya_ref = $1`, [f.dosya])).rows[0].z;
+    const tahsilatlar = (await b.db.query(`SELECT tarih::text, tutar_eur, kanal, referans FROM tahsilat WHERE fatura_ref = $1 ORDER BY tarih, olusturma_zamani`, [id])).rows;
+    const adimlar = (await b.db.query(`SELECT basamak, sorumlu_rol, zaman FROM alacak_takip_adimi WHERE fatura_ref = $1 ORDER BY zaman`, [id])).rows;
+    const kalan = Math.round((Number(f.toplam_eur) - Number(f.tahsil_edilen_eur)) * 100) / 100;
+    const bugun = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Istanbul' })).toISOString().slice(0, 10);
+    const gecikme = f.vade_t && kalan > 0 && f.vade_t < bugun ? Math.round((Date.parse(bugun) - Date.parse(f.vade_t)) / 86_400_000) : 0;
+    return {
+      formKodu: 'FR-TIC-010', dosyaNo: f.dosya_no,
+      proforma: { proformaNo: f.proforma_no, tarih: f.olusturma_zamani, hazirlayan: f.hazirlayan, teklif: f.teklif_no ? `${f.teklif_no} Rev.${f.surum_no}` : null, muhatapTuru: f.muhatap, kdvHaricEur: f.kdv_haric_eur, kdvDurumu: f.kdv_durumu, kdvOrani: f.kdv_orani, tevkifatOrani: f.tevkifat_orani, tevkifatEur: f.tevkifat_eur, kdvEur: f.kdv_eur, toplamEur: f.toplam_eur, aciklama: f.aciklama },
+      muhatap, teknikKabulZamani: kabul,
+      fatura: { durum: f.durum, faturaNo: f.fatura_no, faturaTarihi: f.fatura_tarihi_t, kur: f.kur, kurTarihi: f.kur_tarihi_t, kurKaynagi: f.kur_kaynagi, toplamTl: f.toplam_tl, kdvTl: f.kdv_tl, pdf: f.pdf_var, muhasebeyeIletim: f.muhasebe_iletim_zamani, muhasebeGelis: f.muhasebe_gelis_zamani, gecIslendi: f.gec_islendi },
+      vade: f.vade_t, tahsilEdilenEur: f.tahsil_edilen_eur, kalanEur: kalan, gecikmeGun: gecikme, tahsilatlar, alacakTakip: adimlar,
+    };
+  });
   s.get('/dosya/:id/mali', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);

@@ -158,6 +158,23 @@ describe('acil müsaitlik (YG-273) ve firma yanıtı (YG-1483)', () => {
     expect((await o.ist('POST', `/api/firma/${f}/acil-bilgi`, await o.gir('sc'), { hizmetVerir: true, aramaSirasi: 2 })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT acil_hizmet_verir, acil_arama_sirasi FROM kurulus WHERE kimlik = $1`, [f])).rows[0]).toEqual({ acil_hizmet_verir: true, acil_arama_sirasi: 2 });
   });
+  it('Kritik dosyada acil tedbir değerlendirmesi; uzaktan yöntemde firma ön keşfi, fotoğraf, görüntülü görüşme ve yerinde keşif görevi (YG-1483)', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET oncelik = 'Kritik' WHERE kimlik = $1`, [d.kimlik]); await o.ekipKur(d.kimlik);
+    const k = await o.kart('Acil Tedbir Değerlendirmesi', d.kimlik); expect(k.sahip_kullanici_ref).toBe(o.K.tu); expect(new Date(k.son_zaman).getTime() - Date.now()).toBeLessThanOrEqual(4 * 3_600_000 + 60_000);
+    const u = `/api/dosya/${d.kimlik}/acil-degerlendirme`; const tu = await o.gir('tu');
+    expect((await o.ist('POST', u, await o.gir('ds'), { yontem: 'Yerinde', sonuc: 'S', tedbir: 'T' })).statusCode).toBe(403);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-AD1','AD Firma','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const U = { yontem: 'Uzaktan (Firma Ön Keşfi ve Görüntülü)', firma: f, firmaOzeti: 'Sintine suyu yükseliyor', gorusmeZamani: new Date(Date.now() - 600_000).toISOString(), sonuc: 'Su girişi kıç salmastradan', tedbir: 'Pompa ve geçici sızdırmazlık' };
+    expect((await o.ist('POST', u, tu, { ...U, firmaOzeti: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, tu, U)).json().hata).toContain('fotoğraf');
+    { const bl = await o.belge(d.kimlik, 'ds', 'Yönlendirmeli', 'jpg'); await o.sup.query(`INSERT INTO gorsel_kanit (gorsel_no, dosya_ref, belge_ref, cekim_zamani, ceken_ref, ceken_rol, konum, asama, cekim_kalemi, cekim_turu) VALUES ($1,$2,$3,now(),$4,'Teknik Uzman','Kıç','Keşif','Salmastra','Detay')`, [`${d.dosyaNo}-GK01`, d.kimlik, bl, o.K.ds]); }
+    const r = await o.ist('POST', u, tu, U); expect(r.statusCode, r.body).toBe(200); expect(r.json().yerindeKesif).toBe(true);
+    expect((await o.kart('Acil Tedbir Değerlendirmesi', d.kimlik)).durum).toBe('Tamamlandı');
+    expect((await o.kart('Yerinde Keşif', d.kimlik)).oncelik).toBe('Yüksek');
+    expect((await o.ist('GET', u, tu)).json().kayitlar).toHaveLength(1);
+    const n = await o.dosyaAc({}, {}); await o.ekipKur(n.kimlik);
+    expect((await o.ist('POST', `/api/dosya/${n.kimlik}/acil-degerlendirme`, tu, { yontem: 'Yerinde', sonuc: 'S', tedbir: 'T' })).statusCode).toBe(409);
+  });
   it('süresinde kabul edilmeyen iş emrinde Dosya Sorumlusuna Firma Değiştir görevi', async () => {
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik);
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-Y','Y','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;

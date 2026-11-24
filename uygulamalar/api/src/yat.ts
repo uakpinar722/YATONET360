@@ -192,6 +192,24 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     if (!t) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     return (await b.db.query(`SELECT tur, deger, kaynak, gecerli, bildirim_hedefi, olusturma_zamani, gecersiz_zamani FROM ana_iletisim_gecmisi WHERE kayit_turu = 'Taraf' AND kayit_ref = $1 ORDER BY tur, bildirim_hedefi DESC, olusturma_zamani DESC`, [t.kimlik])).rows;
   });
+  // YG-106: Müşteri Ana Kaydı; kimlik, vergi/MERSİS, KEP, sözleşmeler, sistemce hesaplanan açık alacak, yetki belgeleri, yatlar ve dosyalar.
+  s.get('/taraf/:no/ana-kayit', ihbarci, async (i, y) => {
+    const { no } = i.params as { no: string };
+    const t = (await b.db.query(`SELECT kimlik, taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, tckn, vergi_dairesi, vergi_no, mersis_no, kep_adresi, adres, il, ulke, telefon, eposta, kurumsal_onay_epostasi, durum, pasif, pasif_gerekcesi, tarama_sonucu, tarama_tarihi::text FROM taraf WHERE taraf_no = $1`, [no])).rows[0];
+    if (!t) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
+    const { acikAlacak } = await import('./alacak.js');
+    const q = async (sql: string) => (await b.db.query(sql, [t.kimlik])).rows;
+    return {
+      kimlik: { ...t, kimlik: undefined, tckn: maskeTckn(t.tckn) },
+      acikAlacakEur: await acikAlacak(b.db, t.kimlik),
+      faturalar: await q(`SELECT f.fatura_no, f.proforma_no, d.dosya_no, f.toplam_eur, f.tahsil_edilen_eur, f.vade::text, f.durum FROM musteri_faturasi f JOIN dosya d ON d.kimlik = f.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE y.yat_sahibi_ref = $1 AND f.muhatap <> 'Sigorta Şirketi' AND f.durum IN ('Faturalandı', 'Kısmi Tahsil') ORDER BY f.vade NULLS LAST`),
+      sozlesmeler: await q(`SELECT sozlesme_no, sozlesme_turu, yururluk::text, bitis::text, durum FROM sozlesme_kaydi WHERE taraf_ref = $1 ORDER BY yururluk DESC`),
+      yetkiBelgeleri: await q(`SELECT d.dosya_no, k.yetki_dayanagi_turu, k.belge_duzenleyen, k.belge_tarihi::text, k.gecerlilik_bitisi::text, k.yetkili_islemler FROM yetki_kaydi k JOIN dosya_tarafi t ON t.kimlik = k.dosya_tarafi_ref JOIN dosya d ON d.kimlik = k.dosya_ref WHERE t.taraf_ref = $1 ORDER BY k.belge_tarihi DESC`),
+      yetkililer: t.telefon ? (await b.db.query(`SELECT h.ad_soyad, k.rol, k.belge_durumu, k.bitis_tarihi::text FROM yat_yetkilisi_kaydi k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.sahip_telefon = $1 ORDER BY h.ad_soyad`, [t.telefon])).rows : [],
+      yatlar: await q(`SELECT y.yat_adi, y.tur, y.bayrak, y.tam_boy_m, (SELECT count(*)::int FROM dosya d WHERE d.yat_ref = y.kimlik AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')) acik_dosya FROM yat y WHERE y.yat_sahibi_ref = $1 ORDER BY y.yat_adi`),
+      dosyalar: await q(`SELECT DISTINCT d.dosya_no, d.statu, d.olusturma_zamani FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik WHERE y.yat_sahibi_ref = $1 OR t.taraf_ref = $1 ORDER BY d.olusturma_zamani DESC LIMIT 50`),
+    };
+  });
   // YG-926: taraf pasife alınır (gerekçeyle); pasif yat sahibiyle yeni dosya açılmaz. Operasyon Müdürü veya Müşteri ve Paydaş İlişkileri Müdürü.
   s.post('/taraf/:no/pasif', ihbarci, async (i, y) => {
     const o = i.oturum!; const { no } = i.params as { no: string }; const g = (i.body ?? {}) as { pasif?: boolean; gerekce?: string };

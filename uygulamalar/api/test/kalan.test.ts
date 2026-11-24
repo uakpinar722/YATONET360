@@ -268,7 +268,9 @@ describe('firma adayları, tarama alanı, kapanış (YG-304, YG-916, YG-416)', (
       const ul = (au[1] as any).kimlik as string;
       await o.sup.query(`UPDATE kurulus SET kapasite_is = 1 WHERE kimlik = $1`, [ul]);
       await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON77`, d.kimlik, ul, o.K.ds]);
+      await o.sup.query(`UPDATE is_emri SET hedef_bitis_tarihi = '2099-01-01' WHERE is_emri_no = $1`, [`${d.dosyaNo}-ON77`]); // YG-310
       const x = ((await o.ist('GET', `${u}&katman=Ulusal`, c)).json() as any[]).find((f) => f.ticari_unvan === 'Ulusal Firma'); expect(x.kapasiteDolu).toBe(true); expect(x.uyarilar.join(' ')).toContain('Kapasite dolu');
+      if ((await o.sup.query(`SELECT 1 FROM dosya_sure WHERE dosya_ref = $1 AND tamamlanma IS NULL`, [d.kimlik])).rowCount) { expect(x.planlananGecikme).toBe(true); expect(x.uyarilar.join(' ')).toContain('01.01.2099'); } // YG-310
       expect(((await o.ist('GET', `${u}&katman=Ulusal&yalnizKapasite=1`, c)).json() as any[]).some((f) => f.ticari_unvan === 'Ulusal Firma')).toBe(false);
     }
   });

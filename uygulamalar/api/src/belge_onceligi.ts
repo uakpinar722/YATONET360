@@ -16,22 +16,29 @@ export async function belgeOnceligi(db: Db, dosya: string) {
   const q = async (sql: string) => (await db.query(sql, [dosya])).rows.map((r) => String(r.x));
   const teklif = await q(`SELECT teklif_no || ' Rev.' || surum_no x FROM fiyat_teklifi WHERE dosya_ref = $1 AND statu IN ('Onaylı', 'Gönderildi', 'Karar') ORDER BY teklif_no`);
   const teknik = [...await q(`SELECT rapor_no x FROM teknik_rapor WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY rapor_no`), ...await q(`SELECT 'Kapsam ve Metraj Cetveli ' || coalesce(cetvel_no || ' ', '') || 'Rev.' || surum x FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı'`)];
-  const isEmri = await q(`SELECT is_emri_no || ' Rev.' || surum x FROM is_emri WHERE dosya_ref = $1 ORDER BY is_emri_no`);
+  // YG-615: iş emri dayandığı teklif sürümüyle; teklif kabulü hangi sürüme verildiğiyle; değişiklikler ve çerçeve sözleşme kaydı ayrı kayıt olarak.
+  const isEmri = await q(`SELECT e.is_emri_no || ' Rev.' || e.surum || coalesce(' · Teklif ' || f.teklif_no || ' Rev.' || f.surum_no, '') x FROM is_emri e LEFT JOIN fiyat_teklifi f ON f.kimlik = e.teklif_ref WHERE e.dosya_ref = $1 ORDER BY e.is_emri_no, e.surum`);
+  const kabul = await q(`SELECT f.teklif_no || ' Rev.' || f.surum_no || ' · ' || o.ony_kod || ' · ' || to_char(o.karar_zamani AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY HH24:MI') x FROM onay_talebi o JOIN fiyat_teklifi f ON f.kimlik::text = o.nesne_kimligi WHERE o.dosya_ref = $1 AND o.durum = 'Onaylandı' ORDER BY o.karar_zamani`);
+  const degisiklik = await q(`SELECT degisiklik_no || ' · ' || tur || ' · ' || durum || ' · ' || to_char(olusturma_zamani AT TIME ZONE 'Europe/Istanbul', 'DD.MM.YYYY') x FROM degisiklik_protokolu WHERE dosya_ref = $1 ORDER BY olusturma_zamani`);
+  const firmaCerceve = await q(`SELECT DISTINCT s.sozlesme_turu || ' · yürürlük ' || to_char(s.yururluk, 'DD.MM.YYYY') || ' · ' || s.durum x FROM sozlesme_kaydi s JOIN is_emri e ON e.kurulus_ref = s.kurulus_ref WHERE e.dosya_ref = $1`);
   const cerceve = d.musteri_turu !== 'Bireysel Müşteri';
   const musteri: Kalem[] = cerceve ? [
     { sira: 1, belge: d.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta Çerçeve Sözleşmesi' : 'Kurumsal Müşteri Çerçeve Sözleşmesi', islev: 'Sürekli ilişkinin genel şartları; iş emri ve onayla birlikte okunur', kayitlar: [] },
     { sira: 2, belge: 'Çerçeve Sözleşme Ek-2 (yetki ve kanal)', islev: 'Yetkili, kanal ve onay sınırı; yetki ve tarih doğrulanır', kayitlar: [] },
-    { sira: 3, belge: 'Onay Kaydı (FR-OPS-007)', islev: 'İşe özgü onay; ana metni değiştirmez', kayitlar: [] },
+    { sira: 3, belge: 'Onay Kaydı (FR-OPS-007)', islev: 'İşe özgü onay; ana metni değiştirmez', kayitlar: kabul },
     { sira: 4, belge: 'Teknik Ek', islev: 'Yöntem, metraj, kabul ve test ölçütü; sürüm numarası taşır', kayitlar: teknik },
     { sira: 5, belge: 'Ticari Ek · Fiyat Teklifi (FR-TIC-008)', islev: 'Fiyat ve ödeme koşulları', kayitlar: teklif },
+    { sira: 6, belge: 'Değişiklik Protokolü', islev: 'Kapsam, bedel veya süre değişikliği; tarih ve onay durumu kayıtlı', kayitlar: degisiklik },
   ] : [
     { sira: 1, belge: 'Yat Onarım Sözleşmesi', islev: 'Belirli onarımın bütün koşulları; ekleri açıkça listeler', kayitlar: [] },
     { sira: 2, belge: 'Ticari Ek · Fiyat Teklifi (FR-TIC-008)', islev: 'Sözleşmede listelenen ek; fiyat ve ödeme koşulları', kayitlar: teklif },
     { sira: 3, belge: 'Teknik Ek', islev: 'Sözleşmede listelenen ek; yöntem, metraj, kabul ölçütü; sürüm numarası taşır', kayitlar: teknik },
     { sira: 4, belge: 'Yat Teslim Alma ve Envanter Tutanağı (Ek-2)', islev: 'Sözleşmede listelenen ek; teslim anındaki durum', kayitlar: [] },
+    { sira: 5, belge: 'Teklif Kabulü (YATONET 360 onayı)', islev: 'Hangi teklif sürümünün ne zaman kabul edildiği', kayitlar: kabul },
+    { sira: 6, belge: 'Değişiklik Protokolü', islev: 'Kapsam, bedel veya süre değişikliği; tarih ve onay durumu kayıtlı', kayitlar: degisiklik },
   ];
   const firma: Kalem[] = [
-    { sira: 1, belge: 'Çözüm Ortağı Çerçeve Sözleşmesi', islev: 'Sürekli ilişkinin genel şartları; iş emriyle birlikte okunur', kayitlar: [] },
+    { sira: 1, belge: 'Çözüm Ortağı Çerçeve Sözleşmesi', islev: 'Sürekli ilişkinin genel şartları; iş emriyle birlikte okunur', kayitlar: firmaCerceve },
     { sira: 2, belge: 'Çerçeve Sözleşme Ek-1 (sicilden)', islev: 'Firma bilgileri ve yetkiler', kayitlar: [] },
     { sira: 3, belge: 'İş Emri (FR-OPS-008)', islev: 'Görev, yer, kapsam, süre; ana metni değiştirmez', kayitlar: isEmri },
     { sira: 4, belge: 'Teknik Ek', islev: 'Yöntem raporu, metraj ve kabul ölçütü; sürüm numarası taşır', kayitlar: teknik },

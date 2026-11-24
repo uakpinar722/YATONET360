@@ -22,6 +22,8 @@ import { PoliceListesi } from './FirmaPolice';
 import { PersonelKarne } from './PersonelKarne';
 import { GorevTanimim, MemnuniyetGorusme } from './Memnuniyet';
 import { Akademi, DenemeDegerlendirme, PeriyodikTakvimim } from './Akademi';
+import { MusteriAnaKaydi } from './MusteriAnaKaydi';
+import { FaturaTakipFormu } from './FaturaTakipFormu';
 import { Guvenlik } from './Guvenlik';
 import { ArsivListesi } from './ArsivFirma';
 import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, ErisimKapatma, IcDenetim, OzDenetim } from './ErisimEtik';
@@ -361,6 +363,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
         {m.faturalar.map((f) => (
           <div key={f.kimlik} className="soru">
             <span>{f.proforma_no} · {f.durum} · {eur(f.toplam_eur)}{f.fatura_no ? ` · Fatura: ${f.fatura_no}` : ''}{f.vade ? ` · Vade: ${f.vade.split('-').reverse().join('.')}` : ''}</span>
+            <FaturaTakipFormu id={f.kimlik} />{/* YG-640 */}
             {ticari && <div className="dugmeler">
               {f.durum === 'Proforma' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/muhasebeye`, {}))}>Muhasebeye İlet</button>}
               {f.durum === 'Muhasebeye İletildi' && <><label htmlFor={`f-p-${f.kimlik}`}>Fatura PDF</label><input id={`f-p-${f.kimlik}`} type="file" accept=".pdf" onChange={(e) => { const d = e.target.files?.[0]; if (d) void belgeYukle(d, 'Müşteri Faturası', f.kimlik).then((b) => setFPdf({ ...fPdf, [f.kimlik]: b })).catch(() => {}); }} />{/* YG-884 */}
@@ -1080,6 +1083,7 @@ export function IdariIslemler() {
       <MemnuniyetGorusme />
       <Akademi />
       <PeriyodikTakvimim />
+      <MusteriAnaKaydi />
       <DenemeDegerlendirme />
       <Guvenlik />
       <ProblemBulgu />
@@ -1222,7 +1226,7 @@ function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void
     <label><input type="checkbox" checked={mobil} onChange={(e) => setMobil(e.target.checked)} /> Yalnız mobil ekibi olanlar</label><label><input type="checkbox" checked={uygun} onChange={(e) => setUygun(e.target.checked)} /> Yalnız belgesi geçerli ve uygun olanlar</label><label><input type="checkbox" checked={bos} onChange={(e) => setBos(e.target.checked)} /> Yalnız kapasitesi uygun olanlar</label>
     <div className="dugmeler"><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Bölge')}>Uygun Firmaları Listele</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Komşu')}>Komşu bölgeleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Mobil Ekip')}>Mobil ekipleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Ulusal')}>Ulusal ekipleri göster</button></div>
     {h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve katmanda uygun firma bulunmamaktadır.</div>}
-    {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
+    {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi || (f as { planlananGecikme?: boolean }).planlananGecikme ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
 }
 
 /** YG-1070, D-135: Ek-2 kaydı; her kayıt yeni sürüm, sınır kuruma yansır; PDF kayıttan üretilir. */

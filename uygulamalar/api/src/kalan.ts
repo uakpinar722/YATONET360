@@ -579,14 +579,21 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const mobiller = new Set((await b.db.query(`SELECT DISTINCT kurulus_ref FROM brans_yetkinligi WHERE kapsama = 'Mobil Ekip' AND durum = 'Aktif'`)).rows.map((r) => r.kurulus_ref as string));
     const l = l0.map((f) => ({ ...f, katman: katmanOf(f) })).filter((f) => f.katman && SIRA.indexOf(f.katman) <= ust && (q.yalnizMobil !== '1' || mobiller.has(f.kimlik)));
     // YG-1539: kapasite süzgeci; aktif iş emri sayısı firmanın iş kapasitesine ulaştıysa kapasite dolu sayılır.
-    const kap = new Map((await b.db.query(`SELECT k.kimlik, k.kapasite_is, (SELECT count(*)::int FROM is_emri e WHERE e.kurulus_ref = k.kimlik AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu') AND NOT EXISTS (SELECT 1 FROM is_emri n WHERE n.is_emri_no = e.is_emri_no AND n.surum > e.surum)) aktif FROM kurulus k WHERE k.kimlik = ANY($1)`, [l.map((f) => f.kimlik)])).rows.map((r) => [r.kimlik as string, { kapasite: r.kapasite_is as number | null, aktif: r.aktif as number }]));
+    const kap = new Map((await b.db.query(`SELECT k.kimlik, k.kapasite_is, (SELECT count(*)::int FROM is_emri e WHERE e.kurulus_ref = k.kimlik AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu') AND NOT EXISTS (SELECT 1 FROM is_emri n WHERE n.is_emri_no = e.is_emri_no AND n.surum > e.surum)) aktif,
+        (SELECT min(e.hedef_bitis_tarihi)::text FROM is_emri e WHERE e.kurulus_ref = k.kimlik AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu')) bosalma,
+        (SELECT count(*)::int FROM is_emri e JOIN dosya x ON x.kimlik = e.dosya_ref WHERE e.kurulus_ref = k.kimlik AND e.statu = 'Aktif' AND x.oncelik = 'Kritik') kritik
+      FROM kurulus k WHERE k.kimlik = ANY($1)`, [l.map((f) => f.kimlik)])).rows.map((r) => [r.kimlik as string, { kapasite: r.kapasite_is as number | null, aktif: r.aktif as number, bosalma: r.bosalma as string | null, kritik: r.kritik as number }]));
+    // YG-310: dosyanın açık hedef süresi; firmanın en erken boşalma tarihi bunu aşıyorsa planlanan gecikme.
+    const hd = (await b.db.query(`SELECT (min(s.bitis) AT TIME ZONE 'Europe/Istanbul')::date::text h, (SELECT oncelik FROM dosya WHERE kimlik = $1) o FROM dosya_sure s WHERE s.dosya_ref = $1 AND s.tamamlanma IS NULL`, [id])).rows[0] as { h: string | null; o: string };
+    const gun = (x: string) => x.split('-').reverse().join('.');
     const S = { Kabul: 0, 'Koşullu Kabul': 1, Ret: 2 } as const; const sonuc = [];
     for (const f of l) {
-      const kp = kap.get(f.kimlik) ?? { kapasite: null, aktif: 0 }; const dolu = kp.kapasite !== null && kp.aktif >= kp.kapasite;
+      const kp = kap.get(f.kimlik) ?? { kapasite: null, aktif: 0, bosalma: null, kritik: 0 }; const dolu = kp.kapasite !== null && kp.aktif >= kp.kapasite;
+      const gecikme = dolu && Boolean(kp.bosalma && hd?.h && kp.bosalma > hd.h);
       if (q.yalnizKapasite === '1' && dolu) continue;
       const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); if (q.yalnizUygun === '1' && k.sonuc === 'Ret') continue;
-      const uy = [...k.uyarilar, ...(f.katman !== 'Bölge' ? ['Bölge dışı: varış süresi ve yol, konaklama maliyeti artabilir.'] : []), ...(dolu ? [`Kapasite dolu: ${kp.aktif} aktif iş / ${kp.kapasite} kapasite.`] : [])];
-      sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: uy, kapasite: kp.kapasite, aktifIs: kp.aktif, kapasiteDolu: dolu });
+      const uy = [...k.uyarilar, ...(f.katman !== 'Bölge' ? ['Bölge dışı: varış süresi ve yol, konaklama maliyeti artabilir.'] : []), ...(dolu ? [`Kapasite dolu: ${kp.aktif} aktif iş / ${kp.kapasite} kapasite.`] : []), ...(gecikme ? [`Planlanan gecikme: firma en erken ${gun(kp.bosalma!)} tarihinde boşalır; dosyanın hedefi ${gun(hd.h!)}.`] : []), ...(hd?.o === 'Kritik' && kp.kritik > 0 ? [`Firmanın ${kp.kritik} aktif Kritik işi vardır.`] : [])];
+      sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: uy, kapasite: kp.kapasite, aktifIs: kp.aktif, kapasiteDolu: dolu, planlananGecikme: gecikme });
     }
     return sonuc.sort((a, c) => SIRA.indexOf(a.katman!) - SIRA.indexOf(c.katman!) || S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
   });

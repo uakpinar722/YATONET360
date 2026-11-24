@@ -115,6 +115,12 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     expect((await th({ tutar: 100, kanal: 'Çek' })).statusCode).toBe(400);
     expect((await th({ tutar: 1300 })).statusCode).toBe(409);
     expect((await th({ tutar: 700 })).json()).toEqual({ durum: 'Kısmi Tahsil', kalan: 500 });
+    { // YG-640: FR-TIC-010 tek form
+      const fm = (await o.ist('GET', `/api/fatura/${id}/takip-formu`, c)).json();
+      expect(fm).toMatchObject({ formKodu: 'FR-TIC-010', kalanEur: 500, proforma: { proformaNo: `${d.dosyaNo}-OT01`, muhatapTuru: 'Sigorta Şirketi' }, fatura: { faturaNo: 'ABC2026000000001', pdf: true, gecIslendi: true } });
+      expect(fm.tahsilatlar).toHaveLength(1);
+      expect((await o.ist('GET', `/api/fatura/00000000-0000-0000-0000-000000000000/takip-formu`, c)).statusCode).toBe(404);
+    }
     // YG-1608 (T-YG1608): vadesi geçen fatura tahsilat izlemesinde; yetkisiz rol göremez
     await o.sup.query(`UPDATE musteri_faturasi SET vade = current_date - 3 WHERE kimlik = $1`, [id]);
     expect((await o.ist('GET', '/api/tahsilat-izleme', c)).json().find((x: { kimlik: string }) => x.kimlik === id)).toMatchObject({ kalan: 500, gecikme: 3 });
@@ -163,6 +169,47 @@ describe('proforma ve fatura 48 saat izlemesi (YG-885)', () => {
     expect(await kapsamToplantisiGorevi(o.db, tp)).toBe(true);
     const k = await o.kart('Fiyat Teklifi Hazırla', d.kimlik); expect(k.ozet).toContain('iki seçenekli');
     expect(await kapsamToplantisiGorevi(o.db, tp)).toBe(true); expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+  });
+  it('Kapsam Hazırlık Toplantısı: ön koşul, ortak boşluk, kontrol listesi, aktarım hedefli karar ve görev (YG-1598)', async () => {
+    const d = await dosya(); const { ortakBosluk } = await import('../src/kapsam_toplantisi.js');
+    await o.sup.query(`UPDATE dosya SET ticari_sorumlu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ts]);
+    const ds = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/kapsam-toplantisi`;
+    const v0 = (await o.ist('GET', u, ds)).json(); expect(v0.onKosul.join(' ')).toContain('Firma Teknik Raporu'); expect(v0.kontrolListesi).toHaveLength(7);
+    expect((await o.ist('POST', u, ds, {})).statusCode).toBe(409);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,'KT Firma','Çözüm Ortağı',$2) RETURNING kimlik`, [`S-KT${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const e = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'KN',$2,$3,'M','K','Aktif',$4) RETURNING kimlik`, [`${d.dosyaNo}-KN01`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, tahmini_sure_gun, firma_degerlendirmesi, giren_ref) VALUES ($1,$2,$3,$4,current_date,'b','o',7,'f',$5)`, [`${d.dosyaNo}-FR01`, d.kimlik, e, f, o.K.ds]);
+    const ce = (await o.sup.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref) VALUES ($1,1,'Onaylı',$2) RETURNING kimlik`, [d.kimlik, o.K.tu])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, aciklama, isin_niteligi, bedel_turu, miktar, birim) VALUES ($1,'S1','İşçilik','Onarım','Sabit',2,'Adet')`, [ce]);
+    await o.sup.query(`INSERT INTO firma_fiyat_teklifi (teklif_no, dosya_ref, kurulus_ref, gecerlilik, giren_ref, durum) VALUES ($1,$2,$3,'2099-01-01',$4,'Gönderildi')`, [`FT-KT${Date.now()}`, d.kimlik, f, o.K.ds]);
+    const v1 = (await o.ist('GET', u, ds)).json(); expect(v1.onKosul).toEqual([]); expect(v1.ds).toBe(true);
+    expect(v1.kontrolListesi.find((x: any) => x.madde === 'Teknik Referans').uyari).toBe(true); // kabul ölçütü yok
+    expect(v1.kontrolListesi.find((x: any) => x.madde === 'Ölçüm ve Metraj').uyari).toBe(false);
+    expect(v1.katilimcilar.map((x: any) => x.rol)).toEqual(expect.arrayContaining(['Dosya Sorumlusu', 'Teknik Uzman', 'Ticari Sorumlu']));
+    expect((await o.ist('POST', u, await o.gir('tu'), {})).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/toplanti', ds, { kod: 'TPL-06', dosya: d.kimlik, konu: 'K', baslangic: new Date(Date.now() + 7_200_000).toISOString() })).statusCode).toBe(409);
+    const r = await o.ist('POST', u, ds, { baslangic: new Date(Date.now() + 7_200_000).toISOString() }); expect(r.statusCode, r.body).toBe(200); const tp = r.json().kimlik;
+    expect((await o.sup.query(`SELECT gundem, kontrol_listesi IS NOT NULL k FROM toplanti WHERE kimlik = $1`, [tp])).rows[0]).toMatchObject({ k: true, gundem: expect.stringContaining('⚠ Teknik Referans') });
+    expect((await o.ist('POST', u, ds, {})).statusCode).toBe(409);
+    // İlk ortak boşluk: mesai, Pazar ve zorunlu toplantı dışında
+    expect((await ortakBosluk(o.db, [o.K.ds!], 60, new Date('2030-01-07T06:00:00Z')))!.toISOString()).toBe('2030-01-07T07:00:00.000Z');
+    expect((await ortakBosluk(o.db, [o.K.ds!], 60, new Date('2030-01-05T15:00:00Z')))!.toISOString()).toBe('2030-01-07T06:00:00.000Z');
+    const mt = (await o.sup.query(`INSERT INTO toplanti (tpl_kod, konu, baslangic, sure_dk, duzenleyen_ref, baskan_ref) VALUES ('TPL-10','Dolu','2030-01-07T07:00:00Z',60,$1,$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO toplanti_katilimci (toplanti_ref, kullanici_ref, katilim) VALUES ($1,$2,'Zorunlu')`, [mt, o.K.ds]);
+    expect((await ortakBosluk(o.db, [o.K.ds!], 60, new Date('2030-01-07T06:00:00Z')))!.toISOString()).toBe('2030-01-07T08:00:00.000Z');
+    // Kararlar aktarım hedefiyle; sorumlu sistemce
+    const ku = `/api/kapsam-toplantisi/${tp}/karar`;
+    expect((await o.ist('POST', ku, ds, { metin: 'X', aktarim: 'Yanlış', hedef: '2099-01-01' })).statusCode).toBe(400);
+    expect((await o.ist('POST', ku, await o.gir('tu'), { metin: 'X', aktarim: 'Metraj', hedef: '2099-01-01' })).statusCode).toBe(404);
+    for (const [a, m] of [['Metraj', 'Güverte alanı yeniden ölçülecek'], ['Fiyat Teklifi', 'Teklif iki seçenekli'], ['Bilgi', 'Firma bilgilendirildi']]) { const x = await o.ist('POST', ku, ds, { metin: m, aktarim: a, hedef: '2099-01-01' }); expect(x.statusCode, x.body).toBe(200); }
+    const kr = (await o.sup.query(`SELECT sorumlu_ref FROM toplanti_karar WHERE toplanti_ref = $1 ORDER BY zaman`, [tp])).rows.map((x) => x.sorumlu_ref);
+    expect(kr).toEqual([o.K.tu, o.K.ts, o.K.ds]);
+    await o.sup.query(`UPDATE toplanti SET baslangic = now() - interval '1 hour', tutanak = 'Tutanak' WHERE kimlik = $1`, [tp]);
+    const kp = await o.ist('POST', `/api/toplanti/${tp}/kapat`, ds, {}); expect(kp.statusCode, kp.body).toBe(200);
+    expect((await o.kart('Kapsam Toplantısı Kararı', tp)).sahip_kullanici_ref).toBe(o.K.tu);
+    const fk = await o.kart('Fiyat Teklifi Hazırla', ce); expect(fk.ozet).toContain('iki seçenekli'); expect(fk.ozet).not.toContain('Güverte');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari = $2`, [o.K.ty, `tpl06-bilgi:${tp}`])).rows[0].n).toBe(1);
+    expect((await o.ist('GET', u, ds)).json().kararlar).toHaveLength(3);
   });
   it('ekip süre uyarıları proforma ve fatura bilgisi sürelerini verir (T-YG1610)', async () => {
     const d = await dosya(); await o.sup.query(`INSERT INTO kabul_kaydi (dosya_ref, kabul_turu, kaydeden_ref) VALUES ($1,'Nihai Kabul',$2)`, [d.kimlik, o.K.ty]);

@@ -59,7 +59,8 @@ export async function gundemUret(db: Db, kod: string): Promise<string | null> {
 export async function kapsamToplantisiGorevi(db: Db, toplanti: string): Promise<boolean> {
   const t = (await db.query(`SELECT t.tpl_kod, t.dosya_ref, t.tutanak, d.dosya_no, d.ticari_sorumlu_ref FROM toplanti t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [toplanti])).rows[0];
   if (!t || t.tpl_kod !== 'TPL-06') return false;
-  const kararlar = (await db.query(`SELECT metin FROM toplanti_karar WHERE toplanti_ref = $1 ORDER BY zaman`, [toplanti])).rows.map((r) => r.metin as string);
+  await (await import('./kapsam_toplantisi.js')).kapsamKararlariniAktar(db, toplanti); // YG-1598: Teknik Rapor ve Metraj kararları Teknik Uzmana
+  const kararlar = (await db.query(`SELECT metin FROM toplanti_karar WHERE toplanti_ref = $1 AND (aktarim_hedefi IS NULL OR aktarim_hedefi = 'Fiyat Teklifi') ORDER BY zaman`, [toplanti])).rows.map((r) => r.metin as string);
   const ozet = `Kapsam Hazırlık Toplantısı kararı: ${(kararlar.length ? kararlar.join('; ') : String(t.tutanak ?? '')).slice(0, 250)}`;
   const cetvel = (await db.query(`SELECT kimlik FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum <> 'Yerine Geçti' ORDER BY surum DESC LIMIT 1`, [t.dosya_ref])).rows[0]?.kimlik as string | undefined;
   const nesne = cetvel ?? String(t.dosya_ref);
@@ -151,6 +152,7 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     if (!c && g.dosya && UUID.test(g.dosya) && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [g.dosya, o.kullanici])).rowCount) c = (await b.db.query(`SELECT * FROM toplanti_katalogu WHERE kod = $1 AND dosyaya_bagli`, [g.kod])).rows[0];
     if (g.dosya && (!UUID.test(g.dosya) || !(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1`, [g.dosya])).rowCount)) return y.code(400).send({ hata: 'Bağlanacak dosya bulunamadı.' }); // YG-1408
     if (!c) return y.code(403).send({ hata: 'Bu toplantıyı planlama yetkiniz bulunmamaktadır.' });
+    if (c.kod === 'TPL-06') return y.code(409).send({ hata: 'Kapsam Hazırlık Toplantısı dosya ekranından, ön koşullar tamamlanınca planlanır.' }); // YG-1598
     if (!g.konu?.trim()) return y.code(400).send({ hata: 'Konu zorunludur.' });
     const bas = new Date(g.baslangic ?? '');
     if (isNaN(bas.getTime()) || bas.getTime() < Date.now() - 60_000) return y.code(400).send({ hata: 'Toplantı için ileri bir zaman seçmenizi rica ederiz.' });
