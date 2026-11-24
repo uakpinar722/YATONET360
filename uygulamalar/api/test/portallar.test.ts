@@ -38,6 +38,11 @@ describe('A8 Tesis (YG-297, YG-1575, YG-417, YG-554)', () => {
     const c = await o.gir('ds'); const u = `/api/dosya/${d.kimlik}/tesis-talebi`; const T = { tesis, tur: 'Çekek Randevusu', hedef: '2026-12-01' };
     expect((await o.ist('POST', u, await o.gir('tu'), T)).statusCode).toBe(403);
     expect((await o.ist('POST', u, c, { ...T, tesis: ted })).statusCode).toBe(400);
+    { // YG-1032: Saha Sorumlusu atanmışsa tesis işlemini o açar
+      const ek = (await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Saha Sorumlusu',$3) RETURNING kimlik`, [d.kimlik, o.K.tu, o.K.ds])).rows[0].kimlik;
+      expect((await o.ist('POST', u, c, T)).json().hata).toContain('Saha Sorumlusu');
+      await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE kimlik = $1`, [ek]);
+    }
     const r = await o.ist('POST', u, c, T); expect(r.statusCode, r.body).toBe(200);
     { // YG-1447: hedefi geçmiş yanıtsız işlem kırmızı; Dosya Sorumlusuna bir kez görev
       await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = current_date - 1 WHERE kimlik = $1`, [r.json().kimlik]);

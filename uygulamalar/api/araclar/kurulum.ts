@@ -14,7 +14,7 @@ function kademeBul(ad: string) {
     if (ad === 'Sistem Yöneticisi') return 'Sistem Yöneticisi';
     if (ad.endsWith(son)) return k;
   }
-  const ozel: Record<string, string> = { 'Dosya Sorumlusu': 'Dosya Sorumlusu', 'Saha Sorumlusu': 'Saha Sorumlusu', 'Tedarik Sorumlusu': 'Tedarik Sorumlusu', 'Sicil Sorumlusu': 'Sicil Sorumlusu', 'Bilgi İşlem Destek Sorumlusu': 'Destek Sorumlusu', 'İç Denetçi': 'Denetçi', 'Teknik Uzman': 'Uzman', 'Kalite Uzmanı (Kalite Kontrolör)': 'Kalite Uzmanı', 'İSG Uzmanı': 'İSG Sorumlusu', 'Hukuk ve Uyum Uzmanı': 'Hukuk ve Uyum Uzmanı' };
+  const ozel: Record<string, string> = { 'Dosya Sorumlusu': 'Dosya Sorumlusu', 'Saha Sorumlusu': 'Uzman', 'Tedarik Sorumlusu': 'Tedarik Sorumlusu', 'Sicil Sorumlusu': 'Sicil Sorumlusu', 'Bilgi İşlem Destek Sorumlusu': 'Destek Sorumlusu', 'İç Denetçi': 'Denetçi', 'Teknik Uzman': 'Uzman', 'Kalite Uzmanı (Kalite Kontrolör)': 'Kalite Uzmanı', 'İSG Sorumlusu': 'İSG Sorumlusu', 'Hukuk ve Uyum Uzmanı': 'Hukuk ve Uyum Uzmanı' };
   return ozel[ad] ?? 'Sorumlu';
 }
 

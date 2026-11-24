@@ -361,7 +361,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <RaporBolumu id={id} rollerim={d.rollerim} />
       <TicariBolumu id={id} rollerim={d.rollerim} roller={roller} asama={d.asama} />
       <KaliteBolumu id={id} roller={roller} />
-      <TesisIslemleri id={id} ds={d.rollerim.includes('Dosya Sorumlusu')} />
+      <TesisIslemleri id={id} ds={d.ekip.some((e) => e.rol === 'Saha Sorumlusu') ? d.rollerim.includes('Saha Sorumlusu') : d.rollerim.includes('Dosya Sorumlusu')} />{/* YG-1032 */}
       <TeklifTalebiBolumu id={id} roller={roller} />
       <TedarikBolumu id={id} roller={roller} />
       <Blok baslik="Yat Belgeleri ve Kışlama">

@@ -21,6 +21,14 @@ describe('görev ayrılığı (YG-1036, YG-1037)', () => {
   });
 });
 
+describe('kademe sözlüğü (YG-1016)', () => {
+  it('Saha Sorumlusu Uzmanla aynı kademede; ek kademeler rol adıyla', async () => {
+    const k = Object.fromEntries((await o.sup.query(`SELECT rol_adi, kademe FROM rol WHERE rol_adi IN ('Teknik Uzman', 'Saha Sorumlusu', 'İSG Sorumlusu', 'Kalite Uzmanı (Kalite Kontrolör)', 'İç Denetçi', 'Hukuk ve Uyum Uzmanı', 'Sicil Sorumlusu')`)).rows.map((r) => [r.rol_adi, r.kademe]));
+    expect(k['Saha Sorumlusu']).toBe(k['Teknik Uzman']); expect(k['Teknik Uzman']).toBe('Uzman');
+    expect(k).toMatchObject({ 'İSG Sorumlusu': 'İSG Sorumlusu', 'Kalite Uzmanı (Kalite Kontrolör)': 'Kalite Uzmanı', 'İç Denetçi': 'Denetçi', 'Hukuk ve Uyum Uzmanı': 'Hukuk ve Uyum Uzmanı', 'Sicil Sorumlusu': 'Sicil Sorumlusu' });
+  });
+});
+
 describe('gizlilik (YG-1167, YG-1623)', () => {
   it('firma adı müşteriye, sigorta bilgisi firmaya gitmez; marina serbest', async () => {
     await firma('Gizli Tersane Ltd');

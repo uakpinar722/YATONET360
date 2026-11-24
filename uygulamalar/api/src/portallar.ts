@@ -54,7 +54,9 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tesis?: string; tur?: string; hedef?: string; aciklama?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT d.dosya_no, d.dosya_sorumlusu_ref, y.yat_adi, h.cep_telefonu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1`, [id])).rows[0];
-    if (d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Tesis işlemini Dosya Sorumlusu açar.' });
+    // YG-1032: Saha Sorumlusu atanmışsa tesis işlemini o açar; atanmamışsa Dosya Sorumlusu.
+    const saha = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [id])).rows.map((x) => x.kullanici_ref as string);
+    if (saha.length ? !saha.includes(o.kullanici) : d.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: saha.length ? 'Tesis işlemini dosyanın Saha Sorumlusu açar.' : 'Tesis işlemini Dosya Sorumlusu açar.' });
     if (!g.tesis || !UUID.test(g.tesis) || !TALEP.includes(g.tur ?? '') || !g.hedef) return y.code(400).send({ hata: 'Tesis, işlem türü ve hedef tarihi seçiniz.' });
     const t = (await b.db.query(`SELECT kayit_rolu FROM kurulus WHERE kimlik = $1`, [g.tesis])).rows[0];
     if (t?.kayit_rolu !== 'Tesis') return y.code(400).send({ hata: 'Seçilen kayıt tesis değildir.' });
