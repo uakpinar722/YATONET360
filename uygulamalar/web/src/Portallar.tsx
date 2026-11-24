@@ -441,7 +441,7 @@ export function TedarikciAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' |
   );
 }
 
-interface TesisTalep { kimlik: string; tur: string; hedef_tarih: string; durum: string; tesis_izin_no: string | null; red_gerekcesi: string | null; ticari_unvan: string }
+interface TesisTalep { kimlik: string; tur: string; hedef_tarih: string; durum: string; tesis_izin_no: string | null; red_gerekcesi: string | null; ticari_unvan: string; renk?: string | null }
 
 /** YG-1447: dosya içinde Tesis İşlemleri listesi; açmak Dosya Sorumlusunun işidir. */
 export function TesisIslemleri({ id, ds }: { id: string; ds: boolean }) {
@@ -453,7 +453,7 @@ export function TesisIslemleri({ id, ds }: { id: string; ds: boolean }) {
   return (
     <Blok baslik="Tesis İşlemleri">
       <Mesaj />
-      {l.map((x) => <div key={x.kimlik}>{x.ticari_unvan} · {x.tur} · {tarih(x.hedef_tarih)} · {x.durum}{x.tesis_izin_no ? ` · İzin No: ${x.tesis_izin_no}` : ''}{x.red_gerekcesi ? ` · ${x.red_gerekcesi}` : ''}</div>)}
+      {l.map((x) => <div key={x.kimlik}>{x.renk && <em className={`rozet ${x.renk === 'Kırmızı' ? 'kirmizi' : x.renk === 'Sarı' ? 'sari' : 'yesil'}`}>{x.renk}</em>} {x.ticari_unvan} · {x.tur} · {tarih(x.hedef_tarih)} · {x.durum}{x.tesis_izin_no ? ` · İzin No: ${x.tesis_izin_no}` : ''}{x.red_gerekcesi ? ` · ${x.red_gerekcesi}` : ''}</div>)}
       {ds && <>
         <label htmlFor="tis-t">Tesis</label><select id="tis-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Seçiniz</option>{t.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
         <label htmlFor="tis-u">İşlem</label><select id="tis-u" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Saha Girişi', 'Çalışma İzni', 'Çekek Randevusu', 'Kalış Uzatma'].map((x) => <option key={x}>{x}</option>)}</select>

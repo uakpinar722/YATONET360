@@ -31,6 +31,18 @@ export async function tesisSerbestBirak(c: PoolClient, dosya: string, teslimAlan
   await bildir(c, { olay: `bld24:${dosya}`, kullanicilar: alici, baslik: `${d.yat_adi} · Teslim Onayı`, ozet: await metinGetir(c, 'BLD-24', 'tr', { Yat: d.yat_adi, 'Dosya No': d.dosya_no, 'teslim alan': teslimAlan, kod }), eposta: true, sms: true });
 }
 
+/** YG-1447: hedefe 48 saat kala yanıtlanmamış (sarı) veya hedefi geçmiş / izin verilmemiş (kırmızı) tesis işlemi Dosya Sorumlusuna bir kez görev olarak düşer. */
+export async function tesisTalepIsle(db: Pool): Promise<number> {
+  const { birKez } = await import('./bildirim.js'); let n = 0;
+  const { rows } = await db.query(`SELECT t.kimlik, t.tur, t.hedef_tarih::text hedef, t.durum, k.ticari_unvan, d.dosya_no, d.kimlik dosya, d.dosya_sorumlusu_ref, CASE WHEN t.durum = 'Onaylı' THEN 'Yeşil' WHEN t.durum = 'İzin Verilmedi' OR (t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih < (now() AT TIME ZONE 'Europe/Istanbul')::date) THEN 'Kırmızı' WHEN t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih <= (now() AT TIME ZONE 'Europe/Istanbul' + interval '48 hours')::date THEN 'Sarı' END renk FROM tesis_talebi t JOIN kurulus k ON k.kimlik = t.kurulus_ref JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.durum IN ('Yanıt Bekliyor', 'İzin Verilmedi') AND d.statu = 'Aktif' AND d.dosya_sorumlusu_ref IS NOT NULL`);
+  for (const t of rows) {
+    if (!t.renk || t.renk === 'Yeşil' || !(await birKez(db, 'tesis-talep-renk', `${t.kimlik}:${t.renk}`))) continue;
+    await kartAc(db, { tur: 'Tesis İşlemi Uyarısı', kategori: 'gorev', baslik: `${t.dosya_no} · ${t.tur} (${t.renk})`, ozet: `${t.ticari_unvan}: ${t.durum === 'İzin Verilmedi' ? 'izin verilmedi' : `hedef ${t.hedef.split('-').reverse().join('.')}, tesis yanıtı yok`}. Firmaya sorunuz veya planı güncelleyiniz.`, oncelik: t.renk === 'Kırmızı' ? 'Yüksek' : 'Normal', sahipKullanici: t.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: t.dosya });
+    n++;
+  }
+  return n;
+}
+
 export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
@@ -58,7 +70,7 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/tesis-talepleri', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
-    return (await b.db.query(`SELECT t.kimlik, t.tur, t.hedef_tarih::text, t.durum, t.tesis_izin_no, t.red_gerekcesi, k.ticari_unvan FROM tesis_talebi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani`, [id])).rows;
+    return (await b.db.query(`SELECT t.kimlik, t.tur, t.hedef_tarih::text, t.durum, t.tesis_izin_no, t.red_gerekcesi, k.ticari_unvan, CASE WHEN t.durum = 'Onaylı' THEN 'Yeşil' WHEN t.durum = 'İzin Verilmedi' OR (t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih < (now() AT TIME ZONE 'Europe/Istanbul')::date) THEN 'Kırmızı' WHEN t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih <= (now() AT TIME ZONE 'Europe/Istanbul' + interval '48 hours')::date THEN 'Sarı' END renk FROM tesis_talebi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani`, [id])).rows;
   });
   s.get('/tesis-listesi', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });

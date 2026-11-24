@@ -113,6 +113,10 @@ export async function teslimEngeli(db: Db, dosya: string): Promise<string | null
   if (d.calisma_durduruldu) return 'Çalışmalar durdurulmuştur.';
   const em = await emniyetEngeli(db, dosya); if (em) return em;
   if ((d.takyidat as string[]).some((x) => x === 'Haciz' || x.startsWith('İhtiyati')) && !(await db.query(`SELECT 1 FROM is_karti WHERE tur = 'Takyidat Değerlendirmesi' AND nesne_kimligi = $1 AND durum = 'Tamamlandı'`, [dosya])).rowCount) return 'Takyidatlı yatın teslimi için Hukuk ve Uyum değerlendirmesi bekleniyor.';
+  // YG-1434: kabul testi ve teknik kabul (KK onayı) olmadan teslim başlamaz; ödeme istisnası bu kilidi açmaz.
+  const ka = (await db.query(`SELECT count(*)::int n FROM is_emri WHERE dosya_ref = $1 AND is_emri_turu IN ('ON', 'EK', 'GR') AND statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti') AND coalesce(teknik_kabul_sonucu, '') NOT IN ('Kabul', 'Koşullu Kabul')`, [dosya])).rows[0].n;
+  if (ka) return `Teslim için ${ka} iş emrinin teknik kabulü bekleniyor.`;
+  if ((await db.query(`SELECT 1 FROM test_kaydi t WHERE t.dosya_ref = $1 AND (t.sonuc = 'Başarısız' OR t.durum <> 'Tamamlandı') AND NOT EXISTS (SELECT 1 FROM test_kaydi n WHERE n.onceki_test_ref = t.kimlik) LIMIT 1`, [dosya])).rowCount) return 'Teslim için Başarısız veya tamamlanmamış kabul testinin sonuçlanması bekleniyor.';
   if (d.teslim_istisnasi) return null;
   if (d.musteri_turu === 'Sigorta Şirketi') return null;
   const borc = Number((await db.query(`SELECT coalesce(sum(toplam_eur - tahsil_edilen_eur), 0) - coalesce((SELECT sum(x.tutar_eur) FROM fatura_itirazi x JOIN musteri_faturasi m ON m.kimlik = x.fatura_ref WHERE m.dosya_ref = $1 AND x.durum = 'Açık' AND ($2 <> 'Kurumsal Müşteri' OR m.vade IS NULL OR m.vade <= current_date)), 0) b FROM musteri_faturasi WHERE dosya_ref = $1 AND durum IN ('Faturalandı', 'Kısmi Tahsil') AND ($2 <> 'Kurumsal Müşteri' OR vade IS NULL OR vade <= current_date)`, [dosya, d.musteri_turu])).rows[0].b); // YG-087; K-169: itiraz edilmeyen kısım ödenince teslim

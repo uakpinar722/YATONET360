@@ -94,6 +94,13 @@ describe('nöbet (YG-244, YG-246, YG-1517)', () => {
     await o.karar((await o.kart('Nöbet Çizelgesi', r.json().kimlik)).kimlik, 'opm', 'Onayla');
     expect(await nobetci(o.db, 'Dosya Sorumlusu')).toBe(o.K.ds);
     expect(await nobetci(o.db, 'Teknik Uzman')).toBe(o.K.tu);
+    { // YG-241: branş verilirse o branşta nöbet tutan Teknik Uzman öne alınır
+      const cz = (await o.sup.query(`SELECT cizelge_ref FROM nobet_vardiyasi WHERE kullanici_ref = $1 AND katman = 'Teknik Uzman' AND baslangic = '2020-01-01T00:00:00Z'`, [o.K.tu])).rows[0].cizelge_ref;
+      const ek = (await o.sup.query(`INSERT INTO nobet_vardiyasi (cizelge_ref, katman, kullanici_ref, baslangic, bitis, brans) VALUES ($1,'Teknik Uzman',$2,'2019-01-01T00:00:00Z','2099-01-01T00:00:00Z','Branş Deneme') RETURNING kimlik`, [cz, o.K.ty])).rows[0].kimlik;
+      expect(await nobetci(o.db, 'Teknik Uzman', new Date(), 'Branş Deneme')).toBe(o.K.ty); expect(await nobetci(o.db, 'Teknik Uzman')).toBe(o.K.tu);
+      expect((await o.ist('POST', '/api/acil/cagri', await o.gir('ds'), { ...CAGRI, brans: 'Olmayan Branş' })).statusCode).toBe(400);
+      await o.sup.query(`DELETE FROM nobet_vardiyasi WHERE kimlik = $1`, [ek]);
+    }
     { // T-YG250-NOBET: olağan ihbar yolundan mesai dışında açılan Kritik dosyaya nöbetçi Teknik Uzman atanır
       vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-15T20:00:00Z')); // Pazar 23.00
       try {

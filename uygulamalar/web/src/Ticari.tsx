@@ -677,10 +677,10 @@ function AlternatifFormBlogu() {
 }
 
 export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) => void; izinli: boolean; cizelge: boolean }) {
-  const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null } | null>(null);
+  const [n, setN] = useState<{ mesaiIcinde: boolean; dosyaSorumlusu: string | null; teknikUzman: string | null; yonetici: string | null; branslar?: string[] } | null>(null);
   const { yap, Mesaj } = useYap(() => istek<NonNullable<typeof n>>('/nobet/simdi').then(setN));
   useEffect(() => { void istek<NonNullable<typeof n>>('/nobet/simdi').then(setN).catch(() => {}); }, []);
-  const [f, setF] = useState({ telefon: '', yatAdi: '', konum: '', olay: '', olayTuru: ACIL_TURLER[1]!, musteriTuru: 'Bireysel Müşteri', sigortaci: '' }); const [h112, setH112] = useState(false);
+  const [f, setF] = useState({ telefon: '', yatAdi: '', konum: '', olay: '', olayTuru: ACIL_TURLER[1]!, musteriTuru: 'Bireysel Müşteri', sigortaci: '', brans: '' }); const [h112, setH112] = useState(false);
   return (
     <>
       <h1>Nöbet ve Acil</h1><Mesaj />
@@ -700,6 +700,7 @@ export function NobetAcil({ dosyaAc, izinli, cizelge }: { dosyaAc: (id: string) 
           <label htmlFor="ac-y">Yat</label><input id="ac-y" value={f.yatAdi} onChange={(e) => setF({ ...f, yatAdi: e.target.value })} />
           <label htmlFor="ac-k">Konum</label><input id="ac-k" value={f.konum} onChange={(e) => setF({ ...f, konum: e.target.value })} />
           <label htmlFor="ac-u">Olay Türü</label><select id="ac-u" value={f.olayTuru} onChange={(e) => setF({ ...f, olayTuru: e.target.value })}>{ACIL_TURLER.map((x) => <option key={x}>{x}</option>)}</select>
+          <label htmlFor="ac-b">Gereken Branş (seçilirse o branşın nöbetçi Teknik Uzmanı çağrılır)</label><select id="ac-b" value={f.brans} onChange={(e) => setF({ ...f, brans: e.target.value })}><option value="">Belirsiz</option>{(n?.branslar ?? []).map((x) => <option key={x}>{x}</option>)}</select>{/* YG-241 */}
           <label htmlFor="ac-o">Olay Özeti</label><input id="ac-o" value={f.olay} onChange={(e) => setF({ ...f, olay: e.target.value })} />
           <label htmlFor="ac-m">Müşteri Türü</label><select id="ac-m" value={f.musteriTuru} onChange={(e) => setF({ ...f, musteriTuru: e.target.value })}>{['Bireysel Müşteri', 'Kurumsal Müşteri', 'Sigorta Şirketi'].map((x) => <option key={x}>{x}</option>)}</select>
           {f.musteriTuru === 'Sigorta Şirketi' && <><label htmlFor="ac-s">Sigorta Şirketi</label><input id="ac-s" value={f.sigortaci} onChange={(e) => setF({ ...f, sigortaci: e.target.value })} /></>}

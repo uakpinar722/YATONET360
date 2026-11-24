@@ -97,6 +97,7 @@ await s.listen({ host: '127.0.0.1', port: 3001 });
 const baglam = { db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anahtar: e.YATONET_SIFRELEME_ANAHTARI!, guvenliCerez: false, webAdresi: 'http://127.0.0.1:5173' };
 import { sicilKaliteAylik } from './firma_ek.js';
 import { beklemeMuhafazaIsle } from './bekleme_muhafaza.js';
+import { tesisTalepIsle } from './portallar.js';
 import { hizmetHesabiIsle, isZamanlayici, zamanlanmisIsDenetimi } from './zamanlayici.js';
 // YG-1316: her grup tekil çalışır; çakışma, gecikme ve hata kaydedilir, denetim Sistem Yöneticisine uyarı açar.
 const { zamanla } = isZamanlayici(db, (m) => s.log.error(m));
@@ -106,7 +107,7 @@ zamanla('Bildirim Kuyruğu', 'giden e-posta, SMS ve WhatsApp bildirimleri', 30_0
 zamanla('Onay Hatırlatmaları', 'bekleyen onay hatırlatmaları', 300_000, () => [onayHatirlat(db), import('./ihbar.js').then((m) => m.doganGorevIsle(db))]); // YG-1465: doğan görev yarı süre ve dolum uyarısı
 zamanla('Sistem Ölçümleri', 'sistem izleme ölçümleri ve kapasite uyarıları', 60_000, () => [olcumYaz(db)]);
 zamanla('Toplantı Hatırlatmaları', 'toplantı hatırlatmaları', 60_000, () => [toplantiHatirlat(db)]);
-zamanla('Saatlik Süreç Kontrolleri', 'muhafaza, periyodik iş, mutabakat, teslim, geçici onarım, personel durumu, masraf, İSG raporu, KVKK, yetki, güvenlik olayı, uyum, cayma ve görev ayrılığı görevleri', 3_600_000, () => [beklemeMuhafazaIsle(db, new Date(), baglam.webAdresi), periyodikIsle(db), mutabakatIsle(db), teslimIsle(db), geciciOnarimIsle(db), personelDurumIsle(db), masrafTaslakHatirlat(db), isgAylikRapor(db), konumTemizle(db), kvkkIsle(db), yetkiIsle(db), olayIsle(db), uyumIsle(db), caymaSureIsle(db), gorevAyriligiIsle(db)]);
+zamanla('Saatlik Süreç Kontrolleri', 'muhafaza, periyodik iş, mutabakat, teslim, geçici onarım, personel durumu, masraf, İSG raporu, KVKK, yetki, güvenlik olayı, uyum, cayma ve görev ayrılığı görevleri', 3_600_000, () => [beklemeMuhafazaIsle(db, new Date(), baglam.webAdresi), periyodikIsle(db), mutabakatIsle(db), teslimIsle(db), geciciOnarimIsle(db), personelDurumIsle(db), masrafTaslakHatirlat(db), isgAylikRapor(db), konumTemizle(db), kvkkIsle(db), yetkiIsle(db), olayIsle(db), uyumIsle(db), caymaSureIsle(db), gorevAyriligiIsle(db), tesisTalepIsle(db)]);
 // YG-1274: yedek ve YG-1186: sağlık izleme
 const YEDEK = { veritabani: 'yatonet360', superParola: e.POSTGRES_SUPER_PAROLA!, anahtar: e.YATONET_SIFRELEME_ANAHTARI!, klasor: e.YATONET_YEDEK_KLASORU || join(KOK, '.yedek'), ikinciKlasor: e.YATONET_YEDEK_IKINCI || undefined, depoKok: e.YATONET_DEPO || join(KOK, '.veri', 'belgeler') };
 zamanla('Yedek ve Sağlık İzleme', 'gece yedeği ve sistem sağlık uyarıları', 1_800_000, () => [saglikIzle(db, YEDEK.klasor), yedekIsle(db, YEDEK)]);

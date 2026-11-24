@@ -46,8 +46,9 @@ export async function nobetKapsamaBosluklari(db: Db, donem: string, vardiyalar: 
   return bos;
 }
 
-export async function nobetci(db: Db, katman: 'Dosya Sorumlusu' | 'Teknik Uzman' | 'Yönetici', zaman = new Date()): Promise<string | null> {
-  return (await db.query(`SELECT v.kullanici_ref FROM nobet_vardiyasi v JOIN nobet_cizelgesi c ON c.kimlik = v.cizelge_ref WHERE c.durum = 'Yürürlükte' AND v.katman = $1 AND v.baslangic <= $2 AND v.bitis > $2 ORDER BY v.baslangic DESC LIMIT 1`, [katman, zaman])).rows[0]?.kullanici_ref ?? null;
+export async function nobetci(db: Db, katman: 'Dosya Sorumlusu' | 'Teknik Uzman' | 'Yönetici', zaman = new Date(), brans: string | null = null): Promise<string | null> {
+  // YG-241: branş verilirse o branşta nöbet tutan öne alınır; yoksa yürürlükteki nöbetçi.
+  return (await db.query(`SELECT v.kullanici_ref FROM nobet_vardiyasi v JOIN nobet_cizelgesi c ON c.kimlik = v.cizelge_ref WHERE c.durum = 'Yürürlükte' AND v.katman = $1 AND v.baslangic <= $2 AND v.bitis > $2 ORDER BY (v.brans = $3::text) IS TRUE DESC, v.baslangic DESC LIMIT 1`, [katman, zaman, brans])).rows[0]?.kullanici_ref ?? null;
 }
 
 /** YG-251, YG-252: ilk iş günü 12:00 (Türkiye). */
@@ -146,7 +147,7 @@ export async function acilIsle(db: Pool, simdi = new Date()): Promise<number> {
 }
 
 /** YG-259: acil ihbar (telefon veya portal) beklemeden Kritik dosyaya dönüşür; nöbetçi ekip atanır, sağlayıcı çağrısı ve eskalasyon hemen başlar. */
-async function acilDosyaAc(c: PoolClient, talep: string, g: { konum: string; olay: string; olayTuru: string; yatAdi: string; musteri: string; sigortaci?: string; hatirlatma112?: boolean }, ds: string, yapan: string, simdi: Date, taraf: { rol: string; kullanici?: string }) {
+async function acilDosyaAc(c: PoolClient, talep: string, g: { konum: string; olay: string; olayTuru: string; yatAdi: string; musteri: string; sigortaci?: string; hatirlatma112?: boolean; brans?: string | null }, ds: string, yapan: string, simdi: Date, taraf: { rol: string; kullanici?: string }) {
   const t = (await c.query(`SELECT * FROM talep WHERE kimlik = $1`, [talep])).rows[0];
   const sigortali = g.musteri === 'Sigorta Şirketi';
   const d = (await c.query(`INSERT INTO dosya (dosya_no, talep_ref, yat_ref, bildirim_tarihi, konum, kisa_teknik_tanim, musteri_turu, dosya_niteligi, odeme_sorumlusu, oncelik, onerilen_oncelik, acil_gecici_acilis, eksik_alan_gerekcesi, tamamlama_hedef_tarihi, yazisma_dili, dosya_sorumlusu_ref, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'Kritik','Kritik',true,'Acil kısa kayıt',$10,$11,$12,$13) RETURNING kimlik, dosya_no`,
@@ -160,7 +161,7 @@ async function acilDosyaAc(c: PoolClient, talep: string, g: { konum: string; ola
   if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigortaci_adi, olusturan_ref) VALUES ($1,$2,$3)`, [d.kimlik, g.sigortaci ?? null, yapan]);
   await sureBaslat(c, { tur: 'Sahaya Ulaşma', oncelik: 'Kritik', baslangic: simdi, dosya: d.kimlik });
   // YG-250, YG-251, YG-252: mesai dışında nöbetçi Uzman atanır; Teknik Müdür ilk iş günü 12:00'ye kadar teyit eder; olağan DS'ye devir aynı süre.
-  const tu = await nobetci(c, 'Teknik Uzman', simdi);
+  const tu = await nobetci(c, 'Teknik Uzman', simdi, g.brans ?? null);
   const mesaiDisi = !mesaiIcinde(simdi);
   if (tu) await c.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Teknik Uzman',$3)`, [d.kimlik, tu, yapan]);
   const son12 = ilkIsGunu12(simdi);
@@ -285,7 +286,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
   s.get('/nobet/simdi', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     const ad = async (k: string | null) => (k ? (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [k])).rows[0]?.ad_soyad : null);
-    return { mesaiIcinde: mesaiIcinde(new Date()), dosyaSorumlusu: await ad(await nobetci(b.db, 'Dosya Sorumlusu')), teknikUzman: await ad(await nobetci(b.db, 'Teknik Uzman')), yonetici: await ad(await nobetci(b.db, 'Yönetici')) };
+    return { mesaiIcinde: mesaiIcinde(new Date()), dosyaSorumlusu: await ad(await nobetci(b.db, 'Dosya Sorumlusu')), teknikUzman: await ad(await nobetci(b.db, 'Teknik Uzman')), yonetici: await ad(await nobetci(b.db, 'Yönetici')), branslar: (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_ANA_BRANS' ORDER BY sira`)).rows.map((x) => x.deger as string) };
   });
   // YG-244: günlük nöbet takvimi; yürürlükteki çizelgenin vardiyaları İstanbul gününe göre (bir vardiya birden çok güne yayılabilir).
   s.get('/nobet/takvim', oturumlu, async (i, y) => {
@@ -338,8 +339,9 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-263, YG-253, YG-255: Acil Çağrı; kısa kayıt, dosya geçici açılır, tedbir beklemeden başlar, bildirim anında ve silsilesiz gider.
   s.post('/acil/cagri', { preHandler: izinGerekli(b, 'ihbar.kaydet') }, async (i, y) => {
-    const o = i.oturum!; const g = (i.body ?? {}) as { telefon?: string; ad?: string; sahibiTuru?: string; yatAdi?: string; konum?: string; olay?: string; olayTuru?: string; musteriTuru?: string; hatirlatma112?: boolean; sigortaci?: string };
+    const o = i.oturum!; const g = (i.body ?? {}) as { telefon?: string; ad?: string; sahibiTuru?: string; yatAdi?: string; konum?: string; olay?: string; olayTuru?: string; musteriTuru?: string; hatirlatma112?: boolean; sigortaci?: string; brans?: string };
     if (!ACIL_TURLER.includes(g.olayTuru ?? '')) return y.code(400).send({ hata: 'Olay türünü seçiniz.' });
+    if (g.brans && !(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_ANA_BRANS' AND deger = $1`, [g.brans])).rowCount) return y.code(400).send({ hata: 'Branşı listeden seçiniz.' }); // YG-241
     if (!g.telefon?.trim() || !g.yatAdi?.trim() || !g.konum?.trim() || !g.olay?.trim()) return y.code(400).send({ hata: 'Arayan numara, yat, konum ve olay özeti zorunludur.' });
     const musteri = g.musteriTuru ?? 'Bireysel Müşteri';
     if (!['Bireysel Müşteri', 'Kurumsal Müşteri', 'Sigorta Şirketi'].includes(musteri)) return y.code(400).send({ hata: 'Müşteri türü geçersiz.' });
@@ -350,7 +352,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
       if ('hata' in r) throw Object.assign(new Error(r.hata), { statusCode: 400 });
       await c.query(`UPDATE talep SET mukerrerlik_sonucu = 'Mükerrer değil' WHERE kimlik = $1`, [r.kimlik]);
       await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
-      const { d, cagri } = await acilDosyaAc(c, r.kimlik, { konum: g.konum!, olay: g.olay!, olayTuru: g.olayTuru!, yatAdi: g.yatAdi!, musteri, sigortaci: g.sigortaci, hatirlatma112: g.hatirlatma112 }, ds, o.kullanici, simdi, { rol: 'Kaptan' });
+      const { d, cagri } = await acilDosyaAc(c, r.kimlik, { konum: g.konum!, olay: g.olay!, olayTuru: g.olayTuru!, yatAdi: g.yatAdi!, musteri, sigortaci: g.sigortaci, hatirlatma112: g.hatirlatma112 , brans: g.brans || null }, ds, o.kullanici, simdi, { rol: 'Kaptan' });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Acil Çağrı Açıldı', nesneTuru: 'Dosya', nesneKimligi: d.kimlik, yeni: { tur: g.olayTuru }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: d.kimlik, dosyaNo: d.dosya_no, cagri, uyari112: "Acil durumlarda lütfen önce 112'yi arayınız." };
     });

@@ -39,6 +39,13 @@ describe('A8 Tesis (YG-297, YG-1575, YG-417, YG-554)', () => {
     expect((await o.ist('POST', u, await o.gir('tu'), T)).statusCode).toBe(403);
     expect((await o.ist('POST', u, c, { ...T, tesis: ted })).statusCode).toBe(400);
     const r = await o.ist('POST', u, c, T); expect(r.statusCode, r.body).toBe(200);
+    { // YG-1447: hedefi geçmiş yanıtsız işlem kırmızı; Dosya Sorumlusuna bir kez görev
+      await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = current_date - 1 WHERE kimlik = $1`, [r.json().kimlik]);
+      expect((await o.ist('GET', `/api/dosya/${d.kimlik}/tesis-talepleri`, c)).json().find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).renk).toBe('Kırmızı');
+      const { tesisTalepIsle } = await import('../src/portallar.js'); await tesisTalepIsle(o.db); await tesisTalepIsle(o.db);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Tesis İşlemi Uyarısı' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
+      await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = '2026-12-01' WHERE kimlik = $1`, [r.json().kimlik]);
+    }
     const a = await o.ist('GET', '/api/tesis-portal/ana', tesisC);
     expect(a.statusCode, a.body).toBe(200); expect(a.json().bekleyen).toHaveLength(1);
     for (const y of ['firma_bedeli', 'genel_toplam', 'dosya_no', 'kisa_teknik']) expect(a.body).not.toContain(y);

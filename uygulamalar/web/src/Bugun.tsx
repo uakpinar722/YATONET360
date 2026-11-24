@@ -450,7 +450,20 @@ function OperasyonPano() {
     {!v.mudur && <GozetimNotu dosyalar={v.dosyalar} yenile={() => setGn(gn + 1)} />}
     <div className="bolum">Ekip · Kapasite</div>
     <div className="ozet">{v.ekip.map((e) => <div key={e.ad}>{e.ad} · {e.yuk.toLocaleString('tr-TR')} / {e.ust}{e.yuk >= e.ust ? <Rozet s="kirmizi" c="Kapasite Dolu" /> : e.yuk >= e.ust * 0.8 ? <Rozet s="sari" c="Kapasite %80" /> : ''}</div>)}{v.oneri && <div className="uyari">{v.oneri}</div>}</div>
+    <KarneItirazlari />
   </>;
+}
+
+/** YG-1583: Ekip bölümünde karara bağlanacak personel karne itirazları (Kabul / Kısmi Kabul / Ret, gerekçeyle). */
+function KarneItirazlari() {
+  const [l, setL] = useState<{ kimlik: string; konu: string; donem: string; nihai_puan: string | null; ad_soyad: string }[]>([]); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => void istek<typeof l>('/personel-karne/itiraz-bekleyen').then(setL).catch(() => setL([]));
+  useEffect(yk, []);
+  const karar = (id: string, k: string) => void istek(`/personel-karne/itiraz/${id}/karar`, { karar: k, gerekce: g[id] ?? '' }).then(() => { setM('Karar kaydedildi.'); yk(); }).catch((e) => setM((e as Error).message));
+  return <><div className="bolum">Ekip · Karne İtirazları</div>{m && <div className="not" role="status">{m}</div>}
+    {l.length === 0 ? <Bos m="Karara bağlanacak karne itirazı bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><div className="ust2"><b>{x.ad_soyad} · {x.donem}</b>{x.nihai_puan !== null && <Rozet s="sari" c={`Puan: ${x.nihai_puan}`} />}</div><div className="not">{x.konu}</div>
+      <label htmlFor={`ki-${x.kimlik}`}>Gerekçe</label><input required id={`ki-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />
+      <div className="dugmeler">{['Kabul', 'Kısmi Kabul', 'Ret'].map((k) => <button key={k} className={k === 'Ret' ? 'btn hayir' : k === 'Kabul' ? 'btn evet' : 'btn2'} disabled={!(g[x.kimlik] ?? '').trim()} onClick={() => karar(x.kimlik, k)}>{k}</button>)}</div></div>)}</>;
 }
 
 /** YG-1592: atanan talepte çıkar çatışması bildirimi; talep Tedarik Yöneticisine yeniden atamaya döner. */

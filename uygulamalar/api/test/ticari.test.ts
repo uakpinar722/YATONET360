@@ -346,6 +346,11 @@ describe('teslim kilidi (YG-087, YG-910, YG-216)', () => {
     await o.ist('POST', `/api/dosya/${d.kimlik}/teslim-istisnasi`, await o.gir('ds'), { gerekce: 'Özel durum' });
     await o.karar((await o.kart('Teslim İstisnası', d.kimlik)).kimlik, 'gmy', 'Onayla');
     expect(await teslimEngeli(o.db, d.kimlik)).toBeNull();
+    { // YG-1434: teknik kabulsüz onarım iş emri veya sonuçlanmamış test teslimi kilitler (istisna açmaz)
+      const ie = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) SELECT $1, 'ON', $2, (SELECT kimlik FROM kurulus LIMIT 1), 'Tesis', 'Deneme', 'Tamamlandı', $3 RETURNING kimlik`, [`${d.dosyaNo}-ONT1`, d.kimlik, o.K.ds])).rows[0].kimlik;
+      expect(await teslimEngeli(o.db, d.kimlik)).toContain('teknik kabulü'); await o.sup.query(`UPDATE is_emri SET teknik_kabul_sonucu = 'Kabul' WHERE kimlik = $1`, [ie]);
+      expect(await teslimEngeli(o.db, d.kimlik)).toBeNull();
+    }
     const r = await o.ist('POST', `/api/dosya/${d.kimlik}/teslim`, await o.gir('ds'));
     expect(r.statusCode, r.body).toBe(200);
     const e = (await o.sup.query(`SELECT baslik, metin, kutular FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-27'`, [d.kimlik])).rows[0];
