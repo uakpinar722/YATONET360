@@ -104,7 +104,10 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
     expect(((await o.ist('GET', '/api/muhasebe/proformalar', dsc)).json() as { kimlik: string }[]).some((x) => x.kimlik === id)).toBe(true);
     expect((await o.ist('POST', `/api/fatura/${id}/bilgi`, dsc, B)).json().hata).toContain('PDF');
     await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Kapalı' WHERE kimlik = $1`, [mh]);
-    const f = await o.ist('POST', `/api/fatura/${id}/bilgi`, c, B);
+    expect((await o.ist('POST', `/api/fatura/${id}/bilgi`, c, B)).json().hata).toContain('PDF'); // YG-884
+    const pdf = await o.belge(d.kimlik, 'ts'); await o.sup.query(`UPDATE belge SET bag_turu = 'Müşteri Faturası', bag_kimligi = $2 WHERE kimlik = $1`, [pdf, id]);
+    const f = await o.ist('POST', `/api/fatura/${id}/bilgi`, c, { ...B, pdf, gelis: new Date(Date.now() - 9 * 3_600_000).toISOString() });
+    expect((await o.sup.query(`SELECT gec_islendi FROM musteri_faturasi WHERE kimlik = $1`, [id])).rows[0].gec_islendi).toBe(true);
     expect(f.json()).toEqual({ toplamTl: 48148.08, vade: '2026-12-10' });
     { const g = (await o.sup.query(`SELECT metin, d.musteri_turu FROM gonderim, musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE olay_anahtari LIKE $1 AND m.kimlik = $2 LIMIT 1`, [`bld101:${id}%`, id])).rows[0]; // YG530-BLD101
       if (g) expect(g.metin).toContain('ABC2026000000001'); else expect((await o.sup.query(`SELECT d.musteri_turu, m.muhatap FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.kimlik = $1`, [id])).rows[0].muhatap).toBe('Sigorta Şirketi'); }

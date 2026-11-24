@@ -565,11 +565,15 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT m.kimlik, m.proforma_no, d.dosya_no, m.muhatap, m.kdv_haric_eur, m.kdv_eur, m.toplam_eur, m.durum, m.fatura_no, m.fatura_tarihi::text AS fatura_tarihi FROM musteri_faturasi m JOIN dosya d ON d.kimlik = m.dosya_ref WHERE m.durum = ANY($1) ORDER BY (m.durum = 'Muhasebeye İletildi') DESC, m.proforma_no DESC LIMIT 200`, [MUHASEBE_GORUR])).rows;
   });
   s.post('/fatura/:id/bilgi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const f = await fatura((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { no?: string; tarih?: string; kur?: number; kurTarihi?: string; pdf?: string };
+    const o = i.oturum!; const f = await fatura((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { no?: string; tarih?: string; kur?: number; kurTarihi?: string; pdf?: string; gelis?: string };
     if (!f) return yok(y);
     const muhasebe = await muhasebeHizmetiMi(b.db, o.kullanici); // YG-1025
     if (!muhasebe && !(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Fatura bilgisini Muhasebe Hizmeti veya Ticari Sorumlu girer.' });
-    if (muhasebe && !g.pdf) return y.code(400).send({ hata: 'Fatura PDF dosyasını yüklemenizi rica ederiz.' });
+    if (!g.pdf) return y.code(400).send({ hata: 'Fatura PDF dosyasını yüklemenizi rica ederiz.' }); // YG-884: Ticari Sorumlu da PDF'i dosyaya işler
+    // YG-884: muhasebeden geliş zamanı (girilmezse şimdi); gelecek zaman kabul edilmez.
+    const gelis = g.gelis ? new Date(g.gelis) : new Date();
+    if (Number.isNaN(gelis.getTime()) || gelis.getTime() > Date.now() + 60_000) return y.code(400).send({ hata: 'Faturanın muhasebeden geliş zamanı geçersizdir.' });
+    const gec = !muhasebe && Date.now() - gelis.getTime() > 8 * 3_600_000;
     if (g.pdf && (!UUID.test(g.pdf) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Müşteri Faturası' AND bag_kimligi = $2::text`, [g.pdf, f.kimlik])).rowCount)) return y.code(400).send({ hata: 'Fatura PDF dosyası bu proformaya bağlı olmalıdır.' });
     if (f.durum !== 'Muhasebeye İletildi') return y.code(409).send({ hata: 'Proforma önce muhasebeye iletilmelidir.' });
     if (!g.no?.trim() || !g.tarih) return y.code(400).send({ hata: 'Fatura no ve tarih zorunludur.' });
@@ -586,7 +590,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
     const tevTl = Number(f.kdv_eur) > 0 ? R2((kdvTl * Number(f.tevkifat_eur)) / Number(f.kdv_eur)) : 0;
     const tl = R2(matrahTl + kdvTl - tevTl);
     await (await import('./uyum.js')).uyumOlay(b.db, 'fatura', 'Fatura No', g.no.trim()); // YG-1546
-    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8, fatura_pdf_ref = $9, fatura_giren_ref = $10, kur_kaynagi = $11 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl, g.pdf ?? null, o.kullanici, fk.kaynak]);
+    await b.db.query(`UPDATE musteri_faturasi SET durum = 'Faturalandı', fatura_no = $2, fatura_tarihi = $3, kur = $4, kur_tarihi = $5, toplam_tl = $6, vade = $7, kdv_tl = $8, fatura_pdf_ref = $9, fatura_giren_ref = $10, kur_kaynagi = $11, muhasebe_gelis_zamani = $12, gec_islendi = $13 WHERE kimlik = $1`, [f.kimlik, g.no.trim(), g.tarih, g.kur, g.kurTarihi, tl, vade.toISOString().slice(0, 10), kdvTl, g.pdf ?? null, o.kullanici, fk.kaynak, gelis, gec]);
+    if (gec) await bildir(b.db, { olay: `fatura-gec:${f.kimlik}`, kullanicilar: await rolSahipleri(b.db, await rolId(b.db, 'Muhasebe ve Finans Müdürü')), baslik: `${f.proforma_no} · Fatura 8 Saatten Geç İşlendi`, ozet: `Fatura ${g.no.trim()} muhasebeden ${gelis.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} tarihinde gelmiş, dosyaya 8 saatten geç işlenmiştir.` });
     { // YG-530, BLD-101: yat sahibine fatura düzenlendi bildirimi (PDF ekli); sigortaya ve vefat işaretli dosyaya gitmez.
       const yt = (await b.db.query(`SELECT t.telefon, t.eposta, d.dosya_no, d.yazisma_dili, d.musteri_turu, d.vefat_isareti FROM dosya d JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 LIMIT 1`, [f.dosya_ref])).rows[0];
       if (yt && !yt.vefat_isareti && yt.musteri_turu !== 'Sigorta Şirketi' && f.muhatap !== 'Sigorta Şirketi') {

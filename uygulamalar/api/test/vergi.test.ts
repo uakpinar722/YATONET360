@@ -58,7 +58,8 @@ describe('KDV istisnası (YG-878, YG-881)', () => {
     const t = await teklif(d, 'Yat Sahibi', [['İşçilik', 700], ['Malzeme', 300]]); const ts = await o.gir('ts');
     const r = await o.ist('POST', `/api/teklif/${t}/proforma`, ts); expect(r.statusCode, r.body).toBe(200); expect(r.json()).toMatchObject({ kdvHaric: 1000, kdv: 60, toplam: 1060 });
     await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Muhasebeye İletildi' WHERE kimlik = $1`, [r.json().kimlik]);
-    const fb = await o.ist('POST', `/api/fatura/${r.json().kimlik}/bilgi`, ts, { no: `F${Date.now()}`, tarih: '2026-11-03', kur: 40.1234, kurTarihi: '2026-11-02' }); expect(fb.statusCode, fb.body).toBe(200);
+    const fpdf = async (fatura: string, dosya: string) => { const p = await o.belge(dosya, 'ts'); await o.sup.query(`UPDATE belge SET bag_turu = 'Müşteri Faturası', bag_kimligi = $2 WHERE kimlik = $1`, [p, fatura]); return p; };
+    const fb = await o.ist('POST', `/api/fatura/${r.json().kimlik}/bilgi`, ts, { no: `F${Date.now()}`, tarih: '2026-11-03', kur: 40.1234, kurTarihi: '2026-11-02', pdf: await fpdf(r.json().kimlik, d.kimlik) }); expect(fb.statusCode, fb.body).toBe(200);
     // 300 EUR × 40,1234 = 12.037,02 TL; KDV %20 = 2.407,40 TL; matrah 40.123,40 TL
     expect((await o.sup.query(`SELECT kdv_tl, toplam_tl FROM musteri_faturasi WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ kdv_tl: '2407.40', toplam_tl: '42530.80' });
     await o.sup.query(`UPDATE taraf SET kdv_istisna_bitis = '2020-01-01' WHERE kimlik = $1`, [taraf.kimlik]);
@@ -123,7 +124,8 @@ describe('dış bildirimler ve avans (YG-421, YG-897, YG-908)', () => {
     await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, firma_bedeli_eur, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',800,$4)`, [`${d.dosyaNo}-ON01`, d.kimlik, firma, o.K.ds]);
     const t = await teklif(d, 'Yat Sahibi', [['İşçilik', 1000]]); const ts = await o.gir('ts');
     const r = await o.ist('POST', `/api/teklif/${t}/proforma`, ts); await o.sup.query(`UPDATE musteri_faturasi SET durum = 'Muhasebeye İletildi' WHERE kimlik = $1`, [r.json().kimlik]);
-    expect((await o.ist('POST', `/api/fatura/${r.json().kimlik}/bilgi`, ts, { no: `FB${Date.now()}`, tarih: '2026-11-03', kur: 40.5, kurTarihi: '2026-11-02' })).statusCode).toBe(200);
+    const pdf = await o.belge(d.kimlik, 'ts'); await o.sup.query(`UPDATE belge SET bag_turu = 'Müşteri Faturası', bag_kimligi = $2 WHERE kimlik = $1`, [pdf, r.json().kimlik]);
+    expect((await o.ist('POST', `/api/fatura/${r.json().kimlik}/bilgi`, ts, { no: `FB${Date.now()}`, tarih: '2026-11-03', kur: 40.5, kurTarihi: '2026-11-02', pdf })).statusCode).toBe(200);
     const m80 = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld80:${r.json().kimlik}:%`])).rows[0].metin as string;
     expect(m80).toContain(`${d.dosyaNo}-ON01`); expect(m80).toContain('800,00'); expect(m80).not.toContain('['); expect(m80).not.toContain('§'); expect(m80).toContain('32.400,00 TL'); expect(m80).toContain('Fatura açıklamasına'); // YG-421 Rev.
     expect((await o.ist('POST', '/api/tahsilat', ts, { fatura: r.json().kimlik, tutar: 100, tarih: '2026-11-03', kanal: 'Havale' })).statusCode).toBe(200);

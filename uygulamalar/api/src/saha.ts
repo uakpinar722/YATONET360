@@ -10,7 +10,7 @@ import { kapanisKaydet } from './kapanis.js';
 import { garantiKarneIsle } from './karne.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { onayTalebiAc } from './onay.js';
-import { altNumara, sureBaslat, sureBitir, sureKur, talepNumarasi } from './sure.js';
+import { altNumara, saatBul, sureBaslat, sureBitir, sureKur, talepNumarasi } from './sure.js';
 import { UUID } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
 import { birKez, bildir, disGonder } from './bildirim.js';
@@ -642,9 +642,9 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     return islem(async (c) => {
       const no = await altNumara(c, d.dosya_no, garanti ? 'GK' : 'SK');
       const simdi = new Date();
-      // YG-1417: garanti keşfi Yüksek 48 saat, Normal ve Planlı en geç 72 saat. Kritikte acil evre kuralı geçerlidir.
-      const kesifSaat: Record<string, number | null> = { Kritik: null, Yüksek: 48, Normal: 72, Planlı: 72 };
-      const saat = kesifSaat[g.oncelik!];
+      // YG-1417, YG-085: garanti keşfi genel Keşif hizmet süresine bağlıdır (parametre değişirse izler); Normal ve Planlı en geç 72 saat. Kritikte acil evre kuralı geçerlidir.
+      const genel = g.oncelik === 'Kritik' ? undefined : await saatBul(c, 'Keşif', g.oncelik!);
+      const saat = genel === undefined ? null : ['Normal', 'Planlı'].includes(g.oncelik!) ? Math.min(genel, 72) : genel;
       // YG-1422: yurt dışındaki yatta garanti Türkiye'de yerine getirilir; keşif süresi yat gelene kadar işlemez.
       const kesifSon = garanti && saat && !g.yurtDisi ? new Date(simdi.getTime() + saat * 3_600_000) : null;
       const takip = sikayet ? (await rolSahipleri(c, await rolId(c, 'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı')))[0] : null;

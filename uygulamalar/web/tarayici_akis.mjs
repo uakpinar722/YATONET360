@@ -361,6 +361,7 @@ try {
   await kartKarar(E, 'mfm', pf, 'Onaya Gönder'); await kartKarar(E, 'tid', pf, 'Onayla');
   await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Muhasebeye İlet');
   await pTs.getByLabel('Fatura No (Muhasebeden)', { exact: true }).fill(`F${tek}`); await pTs.getByLabel('Fatura Tarihi', { exact: true }).fill('2026-11-10'); await pTs.getByLabel('TCMB Satış Kuru (yalnız yayın yoksa)', { exact: true }).fill('40,1234'); await pTs.getByLabel('Kur Tarihi', { exact: true }).fill('2026-11-09');
+  await pTs.getByLabel('Fatura PDF', { exact: true }).setInputFiles(dosyaYaz('fatura')); await pTs.waitForTimeout(600);
   await tikla(pTs, 'Fatura Bilgisini Kaydet');
   const top = Number((await sup.query(`SELECT toplam_eur FROM musteri_faturasi WHERE proforma_no = $1`, [pf])).rows[0].toplam_eur);
   await pTs.getByLabel('Tahsilat (EUR)', { exact: true }).fill(String(top).replace('.', ',')); await pTs.getByLabel('Tahsilat Tarihi', { exact: true }).fill('2026-11-20');
