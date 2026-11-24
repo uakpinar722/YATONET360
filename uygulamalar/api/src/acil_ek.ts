@@ -184,8 +184,41 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (o.grup !== LGM) return [];
     const r = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [o.kullanici])).rows.map((z) => z.rol_adi as string);
     const turler = Object.entries(KOMUTA).filter(([, k]) => k.yonetici.some((x) => r.includes(x))).map(([t]) => t); if (!turler.length) return [];
-    const l = (await b.db.query(`SELECT k.kimlik, k.olay_no, k.olay_turu, k.ozet, k.olusturma_zamani, d.dosya_no FROM olay_kaydi k LEFT JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.durum = 'Açık' AND k.ana_olay_ref IS NULL AND k.olay_turu = ANY($1::text[]) ORDER BY k.olusturma_zamani DESC LIMIT 20`, [turler])).rows;
-    return l.map((x) => ({ ...x, bilgilendir: KOMUTA[x.olay_turu]?.bilgi ?? [] }));
+    const l = (await b.db.query(`SELECT k.kimlik, k.olay_no, k.olay_turu, k.ozet, k.olusturma_zamani, d.dosya_no, k.olay_yoneticisi_ref = $2 AS ben, h.ad_soyad AS yonetici, k.sureklilik_seviyesi FROM olay_kaydi k LEFT JOIN dosya d ON d.kimlik = k.dosya_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = k.olay_yoneticisi_ref WHERE k.durum = 'Açık' AND k.ana_olay_ref IS NULL AND k.olay_turu = ANY($1::text[]) ORDER BY k.olusturma_zamani DESC LIMIT 20`, [turler, o.kullanici])).rows;
+    const seviyeler = (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_SUREKLILIK_SEVIYESI' ORDER BY sira`)).rows.map((x) => x.deger as string);
+    return l.map((x) => ({ ...x, bilgilendir: KOMUTA[x.olay_turu]?.bilgi ?? [], seviyeler }));
+  });
+  // YG-264: olay yöneticisi rolündeki kişi olayı devralır; süreklilik seviyesini yalnız devralan kaydeder. İlk müdahale eden ve bilgilendirilecekler haberdar edilir.
+  const olayHaber = async (db: Db, x: { kimlik: string; olay_turu: string; olay_no: string }, anahtar: string, baslik: string, ozet: string) => {
+    const k = KOMUTA[x.olay_turu]!; const al: string[] = []; for (const r of [...(k.ilk ? [k.ilk] : []), ...k.bilgi]) al.push(...await sahipleri(db, r));
+    await bildir(db, { olay: `olay:${x.kimlik}:${anahtar}`, kullanicilar: [...new Set(al)], baslik, ozet, oncelik: 'Yüksek' });
+  };
+  s.post('/olay/:id/devral', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== LGM || !UUID.test(id)) return yok(y);
+    const x = (await b.db.query(`SELECT kimlik, olay_turu, olay_no, olay_yoneticisi_ref FROM olay_kaydi WHERE kimlik = $1 AND durum = 'Açık'`, [id])).rows[0];
+    if (!x) return yok(y);
+    let yetkili = false; for (const r of (KOMUTA[x.olay_turu]?.yonetici ?? []) as string[]) if (((await sahipleri(b.db, r)) as string[]).includes(o.kullanici)) yetkili = true;
+    if (!yetkili) return y.code(403).send({ hata: 'Olayı bu olay türünün Olay Yöneticisi rolü devralır.' });
+    if (x.olay_yoneticisi_ref === o.kullanici) return y.code(409).send({ hata: 'Olayı zaten yönetiyorsunuz.' });
+    await b.db.query(`UPDATE olay_kaydi SET olay_yoneticisi_ref = $2, devralma_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
+    const ad = (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0]?.ad_soyad ?? '';
+    await olayHaber(b.db, x, `devral:${Date.now()}`, `Olay Yöneticisi Devraldı: ${x.olay_no}`, `${x.olay_turu} olayını ${ad} devraldı.`);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Olay Yöneticisi Devraldı', nesneTuru: 'Olay', nesneKimligi: id, eski: { yonetici: x.olay_yoneticisi_ref }, yeni: { yonetici: o.kullanici }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  s.post('/olay/:id/sureklilik', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { seviye } = (i.body ?? {}) as { seviye?: string };
+    if (o.grup !== LGM || !UUID.test(id)) return yok(y);
+    const x = (await b.db.query(`SELECT kimlik, olay_turu, olay_no, olay_yoneticisi_ref, sureklilik_seviyesi FROM olay_kaydi WHERE kimlik = $1 AND durum = 'Açık'`, [id])).rows[0];
+    if (!x) return yok(y);
+    if (x.olay_yoneticisi_ref !== o.kullanici) return y.code(403).send({ hata: 'Süreklilik seviyesini olayı devralan Olay Yöneticisi kaydeder.' });
+    if (!(await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = 'LST_SUREKLILIK_SEVIYESI' AND deger = $1`, [seviye ?? ''])).rowCount) return y.code(400).send({ hata: 'Süreklilik seviyesini seçiniz.' });
+    if (x.sureklilik_seviyesi === seviye) return { tamam: true };
+    await b.db.query(`UPDATE olay_kaydi SET sureklilik_seviyesi = $2, seviye_zamani = now() WHERE kimlik = $1`, [id, seviye]);
+    await olayHaber(b.db, x, `seviye:${Date.now()}`, `Süreklilik Seviyesi: ${x.olay_no}`, `${x.olay_turu}: süreklilik seviyesi ${x.sureklilik_seviyesi ? `${x.sureklilik_seviyesi} → ` : ''}${seviye}.`);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Süreklilik Seviyesi', nesneTuru: 'Olay', nesneKimligi: id, eski: { seviye: x.sureklilik_seviyesi }, yeni: { seviye }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
   });
   // YG-261: olay türüne göre ilk müdahale eden, olay yöneticisi ve bilgilendirilecekler.
   s.post('/olay-komutasi', oturumlu, async (i, y) => {

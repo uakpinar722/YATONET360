@@ -436,7 +436,7 @@ try {
   await sup.query(`INSERT INTO is_emri_kalemi (is_emri_ref, aciklama, miktar, birim) VALUES ($1,'Kalem A',4,'saat')`, [ie2.kimlik]);
   // Bekletme noktası
   const pT2 = await al('tu', E); await dosyaAc(pT2, d2.dosyaNo);
-  await pT2.locator('#kp-e').selectOption(ie2.kimlik); await pT2.locator('#kp-o').fill('Basınç'); await pT2.locator('#kp-k').fill('5 bar');
+  await pT2.locator('#kp-e').selectOption(ie2.kimlik); await pT2.locator('#kp-o').fill('Basınç'); await pT2.locator('#kp-k').fill('5 bar'); await pT2.locator('#kp-d').fill('Firma ekip lideri, Kalite Uzmanı');
   await pT2.locator('#kp-z').fill(new Date(Date.now() + 30 * 3_600_000 + 180 * 60_000).toISOString().slice(0, 16));
   await tikla(pT2, 'Kontrol Noktası Ekle');
   const firmaIlerleme = async (dosya) => { const p = await firmaIsEmri(ie2.is_emri_no); await p.getByLabel('Kalem', { exact: true }).selectOption({ index: 1 }); await p.getByLabel('Miktar', { exact: true }).fill('1'); await p.getByLabel('Kanıt Belgesi', { exact: true }).setInputFiles(dosyaYaz(dosya)); await p.getByText('Dosya yüklendi.').first().waitFor(); await p.getByRole('button', { name: 'İlerleme Kaydet' }).click(); await p.waitForTimeout(500); return p; };

@@ -448,11 +448,13 @@ export function TesisIslemleri({ id, ds }: { id: string; ds: boolean }) {
   const [l, setL] = useState<TesisTalep[]>([]); const [t, setT] = useState<{ kimlik: string; ticari_unvan: string }[]>([]); const [f, setF] = useState({ tesis: '', tur: 'Saha Girişi', hedef: '', aciklama: '' });
   const yukle = () => istek<TesisTalep[]>(`/dosya/${id}/tesis-talepleri`).then(setL);
   const { yap, Mesaj } = useYap(yukle);
-  useEffect(() => { void yukle().catch(() => {}); if (ds) void istek<typeof t>('/tesis-listesi').then(setT).catch(() => {}); }, [id]);
+  const [bu, setBu] = useState<{ ticari_unvan: string; tur: string; bitis: string; dolmus: boolean }[]>([]); /* YG-1447 */
+  useEffect(() => { void yukle().catch(() => {}); if (ds) { void istek<typeof t>('/tesis-listesi').then(setT).catch(() => {}); void istek<typeof bu>(`/dosya/${id}/firma-belge-uyarilari`).then(setBu).catch(() => setBu([])); } }, [id]);
   if (!ds && !l.length) return null;
   return (
     <Blok baslik="Tesis İşlemleri">
       <Mesaj />
+      {bu.map((x, n) => <div key={n} className="uyari">Firma Sicil Belgesi: {x.ticari_unvan} · {x.tur} · {x.dolmus ? 'süresi doldu' : 'süresi doluyor'} ({tarih(x.bitis)})</div>)}
       {l.map((x) => <div key={x.kimlik}>{x.renk && <em className={`rozet ${x.renk === 'Kırmızı' ? 'kirmizi' : x.renk === 'Sarı' ? 'sari' : 'yesil'}`}>{x.renk}</em>} {x.ticari_unvan} · {x.tur} · {tarih(x.hedef_tarih)} · {x.durum}{x.tesis_izin_no ? ` · İzin No: ${x.tesis_izin_no}` : ''}{x.red_gerekcesi ? ` · ${x.red_gerekcesi}` : ''}</div>)}
       {ds && <>
         <label htmlFor="tis-t">Tesis</label><select id="tis-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Seçiniz</option>{t.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>

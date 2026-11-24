@@ -43,6 +43,16 @@ describe('olay komutası (YG-261)', () => {
     // T-YG1584: olay yöneticisi kendi kartını görür, ilk müdahale eden görmez
     const oy = (await o.ist('GET', '/api/olay/yoneticisi-oldugum', await o.gir('bim'))).json(); expect(oy.find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).bilgilendir).toContain('CEO');
     expect((await o.ist('GET', '/api/olay/yoneticisi-oldugum', await o.gir('ds'))).json()).toEqual([]);
+    { // YG-264: olay yöneticisi devralır, süreklilik seviyesini yalnız devralan kaydeder
+      const ol = r.json().kimlik; const bim = await o.gir('bim');
+      expect((await o.ist('POST', `/api/olay/${ol}/devral`, await o.gir('ds'))).statusCode).toBe(403);
+      expect((await o.ist('POST', `/api/olay/${ol}/sureklilik`, bim, { seviye: 'Bölgesel kesinti' })).statusCode).toBe(403);
+      expect((await o.ist('POST', `/api/olay/${ol}/devral`, bim)).statusCode).toBe(200);
+      expect((await o.ist('POST', `/api/olay/${ol}/sureklilik`, bim, { seviye: 'Yok' })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/olay/${ol}/sureklilik`, bim, { seviye: 'Bölgesel kesinti' })).statusCode).toBe(200);
+      const k = (await o.ist('GET', '/api/olay/yoneticisi-oldugum', bim)).json().find((x: { kimlik: string }) => x.kimlik === ol); expect(k).toMatchObject({ ben: true, sureklilik_seviyesi: 'Bölgesel kesinti' }); expect(k.seviyeler).toHaveLength(4);
+      expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND olay_anahtari LIKE $2`, [o.K.gmy, `olay:${ol}:seviye:%`])).rows[0].n).toBe(1);
+    }
     expect((await o.ist('POST', '/api/olay-komutasi', await o.gir('ds'), { tur: 'Yok', ozet: 'X' })).statusCode).toBe(400);
   });
 });

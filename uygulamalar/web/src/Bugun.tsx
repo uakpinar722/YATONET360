@@ -170,7 +170,19 @@ function OlayYoneticisiKarti() {
   if (l.length === 0) return null;
   return <>{l.map((x) => <div key={x.kimlik} className="hata kart-sol" data-t="olay-yoneticisi"><div className="ust2"><b>Olay Yöneticisi: Siz · {x.olay_no}</b><Rozet s="kirmizi" c="Acil" /></div>
     <div className="not">{x.olay_turu}{x.dosya_no ? ` · ${x.dosya_no}` : ''} · {x.ozet}</div>
-    <div className="not">Bilgilendiriniz: {x.bilgilendir.join(', ')}</div></div>)}</>;
+    <div className="not">Bilgilendiriniz: {x.bilgilendir.join(', ')}</div>
+    <OlayYonetimi x={x} yenile={() => void istek<typeof l>('/olay/yoneticisi-oldugum').then(setL).catch(() => setL([]))} /></div>)}</>;
+}
+
+/** YG-264: olayı devralma ve süreklilik seviyesi kaydı. */
+function OlayYonetimi({ x, yenile }: { x: { kimlik: string; ben?: boolean; yonetici?: string | null; sureklilik_seviyesi?: string | null; seviyeler?: string[] }; yenile: () => void }) {
+  const [s, setS] = useState(x.sureklilik_seviyesi ?? ''); const [m, setM] = useState('');
+  const is = (p: Promise<unknown>) => void p.then(() => { setM('Kaydedildi.'); yenile(); }).catch((e) => setM((e as Error).message));
+  return <>{m && <div className="not" role="status">{m}</div>}
+    <div className="not">Olay Yöneticisi: {x.yonetici ?? 'Devralınmadı'}{x.sureklilik_seviyesi ? ` · Süreklilik Seviyesi: ${x.sureklilik_seviyesi}` : ''}</div>
+    {!x.ben ? <button className="btn2 kucuk" onClick={() => is(istek(`/olay/${x.kimlik}/devral`, {}))}>Olayı Devral</button>
+      : <div className="dugmeler"><label htmlFor={`ss-${x.kimlik}`}>Süreklilik Seviyesi</label><select id={`ss-${x.kimlik}`} value={s} onChange={(e) => setS(e.target.value)}><option value="">Seçiniz</option>{(x.seviyeler ?? []).map((v) => <option key={v}>{v}</option>)}</select>
+        <button className="btn2 kucuk" disabled={!s || s === x.sureklilik_seviyesi} onClick={() => is(istek(`/olay/${x.kimlik}/sureklilik`, { seviye: s }))}>Seviyeyi Kaydet</button></div>}</>;
 }
 
 /** YG-1579, YG-246: size devredilen ve henüz onaylanmamış nöbet; açık olaylarla birlikte acil kartların üstünde. */

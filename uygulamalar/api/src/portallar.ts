@@ -72,6 +72,15 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     return (await b.db.query(`SELECT t.kimlik, t.tur, t.hedef_tarih::text, t.durum, t.tesis_izin_no, t.red_gerekcesi, k.ticari_unvan, CASE WHEN t.durum = 'Onaylı' THEN 'Yeşil' WHEN t.durum = 'İzin Verilmedi' OR (t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih < (now() AT TIME ZONE 'Europe/Istanbul')::date) THEN 'Kırmızı' WHEN t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih <= (now() AT TIME ZONE 'Europe/Istanbul' + interval '48 hours')::date THEN 'Sarı' END renk FROM tesis_talebi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani`, [id])).rows;
   });
+  // YG-1447: dosyada açık iş emri olan firmanın son sicil belgesi süresi dolmuş veya 30 gün içinde doluyorsa uyarı.
+  s.get('/dosya/:id/firma-belge-uyarilari', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return (await b.db.query(`SELECT * FROM (SELECT DISTINCT ON (s.kurulus_ref, s.tur) k.ticari_unvan, s.tur, s.gecerlilik_bitis::text bitis, s.gecerlilik_bitis < (now() AT TIME ZONE 'Europe/Istanbul')::date dolmus
+      FROM sicil_belgesi s JOIN kurulus k ON k.kimlik = s.kurulus_ref
+      WHERE s.kurulus_ref IN (SELECT kurulus_ref FROM is_emri WHERE dosya_ref = $1 AND statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti', 'Kapalı')) AND s.gecerlilik_bitis IS NOT NULL
+      ORDER BY s.kurulus_ref, s.tur, s.gecerlilik_bitis DESC) x WHERE x.bitis::date < (now() AT TIME ZONE 'Europe/Istanbul')::date + 30 ORDER BY x.bitis`, [id])).rows;
+  });
   s.get('/tesis-listesi', oturumlu, async (i, y) => {
     if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu sayfa LGM personeline açıktır.' });
     return (await b.db.query(`SELECT kimlik, ticari_unvan FROM kurulus WHERE kayit_rolu = 'Tesis' AND ag_statusu = 'Aktif' ORDER BY ticari_unvan`)).rows;

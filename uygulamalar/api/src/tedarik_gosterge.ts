@@ -40,6 +40,25 @@ export async function tedarikciAylikPerformans(db: Pool, simdi = new Date()): Pr
   return true;
 }
 
+/** YG-1594: aylık yönetim raporu; Tedarik Yönetimi Müdürü "Onaya Gönder" (Teknik ve Operasyon Direktörüne Gönder) → Teknik ve Operasyon Direktörü. */
+export async function tedarikAylikYonetimRaporu(db: Pool, simdi = new Date()): Promise<boolean> {
+  const ist = new Date(simdi.getTime() + 3 * 3_600_000); const bas = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() - 1, 1)); const bit = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1));
+  const donem = bas.toISOString().slice(0, 7);
+  if (!(await birKez(db, 'tedarik-aylik-yonetim-raporu', donem))) return false;
+  const p = [`${donem}-01`, bit.toISOString().slice(0, 10)];
+  const s = (await db.query(`SELECT count(*) FILTER (WHERE s.olusturma_zamani >= $1::date AND s.olusturma_zamani < $2::date)::int acilan,
+      count(*) FILTER (WHERE s.statu NOT IN ('İptal', 'Teslim Alındı') AND s.teslim_tarihi < $2::date)::int geciken
+    FROM tedarik_siparisi s`, p)).rows[0];
+  const m = (await db.query(`SELECT count(*) FILTER (WHERE kabul_karari = 'Karantina')::int karantina, count(*) FILTER (WHERE kabul_karari IN ('Ret', 'İade Edildi'))::int ret
+    FROM malzeme_giris_kabulu WHERE olusturma_zamani >= $1::date AND olusturma_zamani < $2::date`, p)).rows[0];
+  const sup = (await db.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Karantina Kararı' AND olusturma_zamani >= $1::date AND olusturma_zamani < $2::date`, p)).rows[0].n;
+  const g = await tedarikGostergeleri(db);
+  const ozet = [`Açılan sipariş: ${s.acilan}`, `Teslim tarihi geçmiş açık sipariş: ${s.geciken}`, `Karantinaya alınan giriş: ${m.karantina}`, `Ret veya iade: ${m.ret}`, `Karantina kararı: ${sup}`,
+    ...g.map((x) => `${x.ad}: ${x.deger === null ? 'Ölçüm Yok' : `%${x.deger.toLocaleString('tr-TR')}`} (hedef ${x.hedef})`)].join(' · ');
+  await kartAc(db, { tur: 'Tedarik Aylık Yönetim Raporu', kategori: 'onay', baslik: `${donem} · Tedarik Aylık Yönetim Raporu`, ozet: ozet.slice(0, 1500), zincir: [await rolId(db, TYM), await rolId(db, 'Teknik ve Operasyon Direktörü')], nesneTuru: 'Tedarik Raporu', nesneKimligi: donem });
+  return true;
+}
+
 export function tedarikGostergeYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });

@@ -16,6 +16,13 @@ import { pdfUret, type Bolum } from './pdf.js';
 
 type Db = Pool | PoolClient;
 const KK = 'Kalite Uzmanı (Kalite Kontrolör)';
+/** YG-286: test grubuna (form türüne) göre zorunlu ek alanlar. */
+export const TEST_EK_ALANLARI: Record<string, [string, string][]> = {
+  'Gövde ve Yapısal': [['personelYetkinligi', 'NDT Personel Yetkinliği']],
+  'Tesisat ve Yardımcı': [['testSemasi', 'Test Sınırı ve Şeması'], ['devreStatusu', 'Kapanış ve Devre Statüsü']],
+  'Elektrik/Elektronik': [['devreStatusu', 'Kapanış ve Devre Statüsü']], 'Seyir ve Haberleşme': [['devreStatusu', 'Kapanış ve Devre Statüsü']],
+  'Makine ve Tahrik': [['denemeProfili', 'Deneme Profili'], ['isletimKisiti', 'İşletim Kısıtı']],
+};
 const KM = 'Kalite Müdürü';
 
 /** YG-283: A sınıfı işte Minör olamaz; emniyeti etkiliyorsa Kritik; hasar önemi Kritik/Yüksek işte en az Majör. */
@@ -299,18 +306,20 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-315, YG-383, YG-389: kontrol noktası KPnn; davet en az 24 saat, eksper veya klas 48 saat, Kritik dosyada süre aranmaz.
   s.post('/is-emri/:id/kontrol-noktasi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; kalem?: string; ozellik?: string; olcut?: string; zaman?: string; eksperKlas?: boolean };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; kalem?: string; ozellik?: string; olcut?: string; zaman?: string; eksperKlas?: boolean; davetliler?: string };
     if (!UUID.test(id)) return yok(y);
     const e = (await b.db.query(`SELECT e.is_emri_no, e.dosya_ref, d.oncelik FROM is_emri e JOIN dosya d ON d.kimlik = e.dosya_ref WHERE e.kimlik = $1`, [id])).rows[0];
     if (!e || !(await erisim(e.dosya_ref, o.kullanici))) return yok(y);
     if (!['Bekletme', 'Tanıklık', 'Belge İnceleme', 'Gözetim', 'Uygulayıcı Öz Kontrolü', 'Bağımsız Doğrulama'].includes(g.tur ?? '') || !g.ozellik?.trim() || !g.olcut?.trim() || !g.zaman) return y.code(400).send({ hata: 'Tür, kontrol özelliği, kabul ölçütü ve zaman zorunludur.' });
     if (/^\s*uygun görüldü\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Ölçülebilir kabul ölçütü yazınız.' });
+    if (['Bekletme', 'Tanıklık'].includes(g.tur!) && !g.davetliler?.trim()) return y.code(400).send({ hata: 'Davet edilen tarafları yazınız.' }); // YG-329
     const saat = (new Date(g.zaman).getTime() - Date.now()) / 3_600_000;
     if (e.oncelik !== 'Kritik' && ['Bekletme', 'Tanıklık'].includes(g.tur!) && saat < (g.eksperKlas ? 48 : 24)) return y.code(400).send({ hata: `Davet en az ${g.eksperKlas ? 48 : 24} saat önce yapılır.` });
     if (e.oncelik === 'Kritik' && ['Bekletme', 'Tanıklık'].includes(g.tur!) && saat < 2) return y.code(400).send({ hata: 'Kritik öncelikli dosyada davet en az 2 saat önce yapılır.' }); // YG-553
     return islem(async (c) => {
       const no = await altNumara(c, e.is_emri_no, 'KP');
-      const r = (await c.query(`INSERT INTO kontrol_noktasi (kontrol_noktasi_no, is_emri_ref, kalem, nokta_turu, kontrol_ozelligi, kabul_olcutu, planlanan_zaman, eksper_klas, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [no, id, g.kalem ?? null, g.tur, g.ozellik!.trim(), g.olcut!.trim(), g.zaman, Boolean(g.eksperKlas), o.kullanici])).rows[0];
+      const davetli = ['Bekletme', 'Tanıklık'].includes(g.tur!);
+      const r = (await c.query(`INSERT INTO kontrol_noktasi (kontrol_noktasi_no, is_emri_ref, kalem, nokta_turu, kontrol_ozelligi, kabul_olcutu, planlanan_zaman, eksper_klas, olusturan_ref, davet_edilenler, davet_kanali) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [no, id, g.kalem ?? null, g.tur, g.ozellik!.trim(), g.olcut!.trim(), g.zaman, Boolean(g.eksperKlas), o.kullanici, davetli ? g.davetliler!.trim().slice(0, 2000) : null, davetli ? ['YATONET 360 bildirimi', 'SMS', 'E-posta'] : []])).rows[0];
       // YG-553: tanıklık ve bekletme noktası daveti dosya ekibine ve firmaya sistem içi, SMS ve e-postayla gider.
       if (['Bekletme', 'Tanıklık'].includes(g.tur!)) {
         const al = [...(await c.query(`SELECT DISTINCT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((x) => x.kullanici_ref as string),
@@ -423,7 +432,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     });
   });
   s.post('/test/:id/sonuc', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; gerekce?: string; hamVeri?: string; gozlem?: string; durdurma?: string; disRapor?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; gerekce?: string; hamVeri?: string; gozlem?: string; durdurma?: string; disRapor?: string; ek?: Record<string, string> };
     if (!UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT * FROM test_kaydi WHERE kimlik = $1`, [id])).rows[0];
     if (!t || !(await erisim(t.dosya_ref, o.kullanici))) return yok(y);
@@ -434,7 +443,10 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (g.disRapor !== undefined) { if (!ESLE[g.disRapor]) return y.code(400).send({ hata: 'Dış rapor sonucu geçersizdir.' }); if (g.sonuc && g.sonuc !== ESLE[g.disRapor]) return y.code(400).send({ hata: `Dış rapor sonucu "${g.disRapor}" test sonucunda "${ESLE[g.disRapor]}" olarak işlenir.` }); g.sonuc = ESLE[g.disRapor]; }
     if (!['Başarılı', 'Koşullu', 'Başarısız', 'Geçersiz', 'Engellendi'].includes(g.sonuc ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Sonuç ve gerekçe zorunludur.' });
     if (!g.hamVeri || !UUID.test(g.hamVeri)) return y.code(400).send({ hata: 'Ham veri zorunludur.' });
-    await b.db.query(`UPDATE test_kaydi SET sonuc = $2, sonuc_gerekcesi = $3, ham_veri_ref = $4, gozlemler = $5, durdurma_olayi = $6, dis_rapor_sonucu = $7, durum = 'Kontrolde' WHERE kimlik = $1`, [id, g.sonuc, g.gerekce.trim(), g.hamVeri, g.gozlem ?? null, g.durdurma ?? null, g.disRapor ?? null]);
+    const ek = Object.fromEntries((TEST_EK_ALANLARI[t.test_grubu] ?? []).map(([k]) => [k, String(g.ek?.[k] ?? '').trim().slice(0, 2000)]));
+    const eksikEk = (TEST_EK_ALANLARI[t.test_grubu] ?? []).filter(([k]) => !ek[k]).map(([, ad]) => ad);
+    if (eksikEk.length) return y.code(400).send({ hata: `${eksikEk.join(', ')} zorunludur.` }); // YG-286
+    await b.db.query(`UPDATE test_kaydi SET sonuc = $2, sonuc_gerekcesi = $3, ham_veri_ref = $4, gozlemler = $5, durdurma_olayi = $6, dis_rapor_sonucu = $7, durum = 'Kontrolde', personel_yetkinligi = $8, test_semasi = $9, devre_statusu = $10, deneme_profili = $11, isletim_kisiti = $12 WHERE kimlik = $1`, [id, g.sonuc, g.gerekce.trim(), g.hamVeri, g.gozlem ?? null, g.durdurma ?? null, g.disRapor ?? null, ek.personelYetkinligi || null, ek.testSemasi || null, ek.devreStatusu || null, ek.denemeProfili || null, ek.isletimKisiti || null]);
     return { durum: 'Kontrolde' };
   });
   s.post('/test/:id/kontrol', oturumlu, async (i, y) => {

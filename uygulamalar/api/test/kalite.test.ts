@@ -194,9 +194,10 @@ describe('test (YG-286, YG-396, YG-397)', () => {
     const t = await o.ist('POST', u, tu, T);
     expect(t.statusCode, t.body).toBe(200); expect(t.json().testNo).toBe(`${d.dosyaNo}-TS01`);
     const id = t.json().kimlik; const ham = await o.belge(d.kimlik, 'ds');
-    const bitir = async (x: string, sonuc: string) => { expect((await o.ist('POST', `/api/test/${x}/sonuc`, tu, { sonuc, gerekce: 'G', hamVeri: ham })).statusCode).toBe(200); expect((await o.ist('POST', `/api/test/${x}/kontrol`, await o.gir('ty'))).statusCode).toBe(200); return o.ist('POST', `/api/test/${x}/karar`, await o.gir('tm')); };
+    const bitir = async (x: string, sonuc: string) => { expect((await o.ist('POST', `/api/test/${x}/sonuc`, tu, { sonuc, gerekce: 'G', hamVeri: ham, ek: { denemeProfili: 'Liman çıkışı, 30 dk, %75 yük', isletimKisiti: 'Yok' } })).statusCode).toBe(200); expect((await o.ist('POST', `/api/test/${x}/kontrol`, await o.gir('ty'))).statusCode).toBe(200); return o.ist('POST', `/api/test/${x}/karar`, await o.gir('tm')); };
     expect((await o.ist('POST', `/api/test/${id}/sonuc`, await o.gir('ty'), { sonuc: 'Başarısız', gerekce: 'G', hamVeri: ham })).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarısız', gerekce: 'G' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarısız', gerekce: 'G', hamVeri: ham, ek: { denemeProfili: 'P' } })).json().hata).toContain('İşletim Kısıtı'); // YG-286 FR-KLT-007
     expect((await bitir(id, 'Başarısız')).json().sonuc).toBe('Başarısız');
     { const pd = await o.ist('GET', `/api/test/${id}/pdf`, tu); expect(pd.statusCode).toBe(200); expect(pd.headers['content-type']).toContain('pdf'); } // YG-1451
     expect((await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarılı', gerekce: 'G', hamVeri: ham })).statusCode).toBe(409);
@@ -213,12 +214,12 @@ describe('test (YG-286, YG-396, YG-397)', () => {
     const d = await dosya(); const tu = await o.gir('kk'); /* YG-1485: test kaydını Kalite Kontrolör girer */ const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '≤ 80 °C', durdurma: 'Alarm' }; const ham = await o.belge(d.kimlik, 'ds');
     const dx = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, T)).json().kimlik;
     expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', sonuc: 'Başarılı', gerekce: 'G', hamVeri: ham })).json().hata).toContain('Başarısız');
-    expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', gerekce: 'G', hamVeri: ham })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/test/${dx}/sonuc`, tu, { disRapor: 'Uygun Değil', gerekce: 'G', hamVeri: ham, ek: { denemeProfili: 'Liman çıkışı, 30 dk, %75 yük', isletimKisiti: 'Yok' } })).statusCode).toBe(200);
     expect((await o.sup.query(`SELECT sonuc, dis_rapor_sonucu FROM test_kaydi WHERE kimlik = $1`, [dx])).rows[0]).toEqual({ sonuc: 'Başarısız', dis_rapor_sonucu: 'Uygun Değil' });
   });
   it('hazırlayan kontrol edemez, kontrol eden karar veremez', async () => {
     const d = await dosya(); const tu = await o.gir('kk'); /* YG-1485: test kaydını Kalite Kontrolör girer */ const id = (await o.ist('POST', `/api/dosya/${d.kimlik}/test`, tu, { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '5 bar', durdurma: 'D' })).json().kimlik;
-    await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarılı', gerekce: 'G', hamVeri: await o.belge(d.kimlik, 'ds') });
+    await o.ist('POST', `/api/test/${id}/sonuc`, tu, { sonuc: 'Başarılı', gerekce: 'G', hamVeri: await o.belge(d.kimlik, 'ds'), ek: { denemeProfili: 'Liman çıkışı, 30 dk, %75 yük', isletimKisiti: 'Yok' } });
     expect((await o.ist('POST', `/api/test/${id}/kontrol`, tu)).statusCode).toBe(403);
     expect((await o.ist('POST', `/api/test/${id}/kontrol`, await o.gir('ty'))).statusCode).toBe(200);
     expect((await o.ist('POST', `/api/test/${id}/karar`, await o.gir('ty'))).statusCode).toBe(403);
@@ -303,11 +304,13 @@ describe('kabul (YG-281, YG-287, YG-289, YG-400, YG-401)', () => {
 describe('kontrol noktası (YG-383, YG-389)', () => {
   it('davet süresi, A sınıfında iki onay', async () => {
     const d = await dosya(); const e = await isEmri(d); await o.sup.query(`UPDATE is_emri SET kabul_sinifi = 'A' WHERE kimlik = $1`, [e]); const tu = await o.gir('tu'); const u = `/api/is-emri/${e}/kontrol-noktasi`;
-    const K = { tur: 'Bekletme', ozellik: 'Ö', olcut: '5 bar', zaman: new Date(Date.now() + 30 * 3_600_000).toISOString() };
+    const K = { tur: 'Bekletme', ozellik: 'Ö', olcut: '5 bar', zaman: new Date(Date.now() + 30 * 3_600_000).toISOString(), davetliler: 'Firma ekip lideri' };
+    expect((await o.ist('POST', u, tu, { ...K, davetliler: '' })).json().hata).toContain('Davet edilen'); // YG-329
     expect((await o.ist('POST', u, tu, { ...K, eksperKlas: true })).json().hata).toContain('48');
     expect((await o.ist('POST', u, tu, { ...K, olcut: 'Uygun görüldü' })).statusCode).toBe(400);
     const r = await o.ist('POST', u, tu, K);
     expect(r.statusCode, r.body).toBe(200); expect(r.json().no).toMatch(/-KP01$/);
+    expect((await o.sup.query(`SELECT davet_edilenler, davet_kanali FROM kontrol_noktasi WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ davet_edilenler: 'Firma ekip lideri', davet_kanali: ['YATONET 360 bildirimi', 'SMS', 'E-posta'] });
     const id = r.json().kimlik; const kanit = await o.belge(d.kimlik, 'ds'); const su = `/api/kontrol-noktasi/${id}/sonuc`;
     expect((await o.ist('POST', su, tu, { sonuc: 'Uygun', kanit })).statusCode).toBe(403);
     expect((await o.ist('POST', su, await o.gir('ty'), { sonuc: 'Uygun', kanit })).json()).toMatchObject({ serbest: false, bekleyen: ['Kalite Müdürü'] });
@@ -342,6 +345,12 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
       expect((await o.ist('GET', '/api/tedarik/mudurluk-gostergeleri', await o.gir('ds'))).statusCode).toBe(404);
       const { tedarikciAylikPerformans } = await import('../src/tedarik_gosterge.js');
       expect(await tedarikciAylikPerformans(o.db, new Date('2031-05-02T09:00:00+03:00'))).toBe(true); expect(await tedarikciAylikPerformans(o.db, new Date('2031-05-03T09:00:00+03:00'))).toBe(false);
+      { // YG-1594: aylık yönetim raporu ayda bir; Tedarik Yönetimi Müdürü → Teknik ve Operasyon Direktörü
+        const { tedarikAylikYonetimRaporu } = await import('../src/tedarik_gosterge.js');
+        expect(await tedarikAylikYonetimRaporu(o.db, new Date('2031-05-02T09:00:00+03:00'))).toBe(true); expect(await tedarikAylikYonetimRaporu(o.db, new Date('2031-05-20T09:00:00+03:00'))).toBe(false);
+        const yk = (await o.sup.query(`SELECT ozet, zincir FROM is_karti WHERE tur = 'Tedarik Aylık Yönetim Raporu' AND nesne_kimligi = '2031-04'`)).rows[0];
+        expect(yk.ozet).toContain('Zamanında teslim oranı'); expect(yk.zincir).toHaveLength(2);
+      }
       expect(sk.kontroller.find((x: { ad: string }) => x.ad === 'Onaylı Kaynak').sonuc).toBe(true); expect(sk.sonMakam).toBeTruthy();
       expect((await o.ist('GET', `/api/is/${k.kimlik}/siparis-kontrolleri`, await o.gir('ds'))).statusCode).toBe(404);
     }

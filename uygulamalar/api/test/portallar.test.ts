@@ -45,6 +45,7 @@ describe('A8 Tesis (YG-297, YG-1575, YG-417, YG-554)', () => {
       const { tesisTalepIsle } = await import('../src/portallar.js'); await tesisTalepIsle(o.db); await tesisTalepIsle(o.db);
       expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Tesis İşlemi Uyarısı' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
       await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = '2026-12-01' WHERE kimlik = $1`, [r.json().kimlik]);
+      expect(Array.isArray((await o.ist('GET', `/api/dosya/${d.kimlik}/firma-belge-uyarilari`, c)).json())).toBe(true); // YG-1447
     }
     const a = await o.ist('GET', '/api/tesis-portal/ana', tesisC);
     expect(a.statusCode, a.body).toBe(200); expect(a.json().bekleyen).toHaveLength(1);

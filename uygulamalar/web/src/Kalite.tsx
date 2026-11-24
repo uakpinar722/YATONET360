@@ -33,6 +33,8 @@ const KAYNAK = ['Saha gözlemi', 'Ölçüm', 'Ara kontrol', 'Test', 'Doküman in
 const TASARRUF = ['Olduğu Gibi Kabul', 'Düzeltme', 'Yeniden İşleme', 'Ayırma/Karantina', 'İade/Değişim', 'Ret/Hurda'];
 const GRUP = ['Gövde ve Yapısal', 'Makine ve Tahrik', 'Elektrik/Elektronik', 'Tesisat ve Yardımcı', 'Seyir ve Haberleşme', 'İç Mekân ve Donanım', 'Arayüz / Bütünleşik'];
 const SONUC = ['Başarılı', 'Koşullu', 'Başarısız', 'Geçersiz', 'Engellendi'];
+/** YG-286: kalite.ts TEST_EK_ALANLARI ile aynı. */
+const TEST_EK: Record<string, [string, string][]> = { 'Gövde ve Yapısal': [['personelYetkinligi', 'NDT Personel Yetkinliği']], 'Tesisat ve Yardımcı': [['testSemasi', 'Test Sınırı ve Şeması'], ['devreStatusu', 'Kapanış ve Devre Statüsü']], 'Elektrik/Elektronik': [['devreStatusu', 'Kapanış ve Devre Statüsü']], 'Seyir ve Haberleşme': [['devreStatusu', 'Kapanış ve Devre Statüsü']], 'Makine ve Tahrik': [['denemeProfili', 'Deneme Profili'], ['isletimKisiti', 'İşletim Kısıtı']] };
 const KM = 'Kalite Müdürü'; const KK = 'Kalite Uzmanı (Kalite Kontrolör)';
 
 interface KaliteV {
@@ -55,10 +57,10 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [ks, setKs] = useState<Record<string, { karar: string; kanit: string }>>({});
   const [kn, setKn] = useState({ problem: '', dogrudan: '', katki: '', bariyer: '', kokNeden: '', tekrar: '' });
   const [t, setT] = useState({ grup: GRUP[0]!, amac: '', yontem: '', olcut: '', durdurma: '' });
-  const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string; dis: string }>>({});
+  const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string; dis: string; ek?: Record<string, string> }>>({});
   const [gk, setGk] = useState<Record<string, string>>({});
   const [ie, setIe] = useState<{ kimlik: string; is_emri_no: string; statu: string; teknik_kabul?: string | null }[]>([]); const [kpk, setKpk] = useState<Record<string, string>>({});
-  const [kp, setKp] = useState({ isEmri: '', tur: 'Bekletme', ozellik: '', olcut: '', zaman: '', eksperKlas: false }); const [kk, setKk] = useState({ isEmri: '', bitis: '', tanim: '', etki: '', hedef: '', bedel: '', sorumlu: '', mali: '', garanti: '', guvenlik: '', musteri: '' });
+  const [kp, setKp] = useState({ isEmri: '', tur: 'Bekletme', ozellik: '', olcut: '', zaman: '', eksperKlas: false, davetliler: '' }); const [kk, setKk] = useState({ isEmri: '', bitis: '', tanim: '', etki: '', hedef: '', bedel: '', sorumlu: '', mali: '', garanti: '', guvenlik: '', musteri: '' });
   useEffect(() => { void istek<{ isEmirleri: typeof ie }>(`/dosya/${id}/teklifler`).then((r) => setIe(r.isEmirleri)).catch(() => {}); }, [id, v]);
   if (!v) return null;
   const kalite = roller.includes(KM) || roller.includes(KK);
@@ -126,7 +128,8 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
           <label htmlFor="kp-k">Kabul Ölçütü (Ölçülebilir)</label><input id="kp-k" value={kp.olcut} onChange={(e) => setKp({ ...kp, olcut: e.target.value })} />
           <label htmlFor="kp-z">Planlanan Zaman</label><input id="kp-z" type="datetime-local" value={kp.zaman} onChange={(e) => setKp({ ...kp, zaman: e.target.value })} />
           <label className="kutu"><input type="checkbox" checked={kp.eksperKlas} onChange={(e) => setKp({ ...kp, eksperKlas: e.target.checked })} /><span>Eksper veya Klas Katılacak</span></label>
-          <button className="btn2" disabled={!kp.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kp.isEmri}/kontrol-noktasi`, { tur: kp.tur, ozellik: kp.ozellik, olcut: kp.olcut, zaman: kp.zaman && new Date(kp.zaman).toISOString(), eksperKlas: kp.eksperKlas }), 'Kontrol noktası eklendi.')}>Kontrol Noktası Ekle</button>
+          {['Bekletme', 'Tanıklık'].includes(kp.tur) && <><label htmlFor="kp-d">Davet Edilenler (taraf ve kişi)</label><input required id="kp-d" value={kp.davetliler} onChange={(e) => setKp({ ...kp, davetliler: e.target.value })} /></>}{/* YG-329 */}
+          <button className="btn2" disabled={!kp.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kp.isEmri}/kontrol-noktasi`, { tur: kp.tur, ozellik: kp.ozellik, olcut: kp.olcut, zaman: kp.zaman && new Date(kp.zaman).toISOString(), eksperKlas: kp.eksperKlas, davetliler: kp.davetliler || undefined }), 'Kontrol noktası eklendi.')}>Kontrol Noktası Ekle</button>
           <button className="btn2" disabled={!kp.isEmri} onClick={() => void yap(() => istek(`/is-emri/${kp.isEmri}/izin-gerekli`, { gerekli: true }), 'Bu iş emrinde çalışma izni belgesi zorunlu oldu.')}>Çalışma İzni Zorunlu</button>
         </>}
       </Blok>
@@ -143,7 +146,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
         <button className="btn2" disabled={!kk.isEmri || !kk.bedel} onClick={() => void yap(() => istek(`/is-emri/${kk.isEmri}/kosullu-kabul`, { bitis: kk.bitis, kalemler: [{ tanim: kk.tanim, etki: kk.etki, hedef: kk.hedef, sorumlu: kk.sorumlu || undefined, bedel: Number(String(kk.bedel).replace(',', '.')) }], etkiler: { mali: kk.mali, garanti: kk.garanti, guvenlik: kk.guvenlik, musteri: kk.musteri } }), 'Koşullu kabul kaydedildi.')}>Koşullu Kabul Ver</button>
       </Blok>}
       <Blok baslik="Testler">
-        {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '', dis: '' }; return (
+        {v.testler.map((x) => { const a = ts[x.kimlik] ?? { sonuc: 'Başarılı', gerekce: '', ham: '', dis: '' }; const ekA = TEST_EK[x.test_grubu] ?? []; const ekD = a.ek ?? {}; return (
           <div className="soru" key={x.kimlik}>
             <span>{x.test_no} · {x.test_grubu} · Ölçüt: {x.kabul_olcutu} · {x.durum}{x.sonuc ? ` · ${x.sonuc}` : ''}</span>
             {x.sonuc && <a className="btn2 kucuk" href={`/api/test/${x.kimlik}/pdf`} target="_blank" rel="noreferrer">Test Kaydı PDF (Sigorta İsterse)</a>}
@@ -152,7 +155,8 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
               <label htmlFor={`td-${x.kimlik}`}>Dış Rapor Sonucu (varsa)</label><select id={`td-${x.kimlik}`} value={a.dis} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, dis: e.target.value, sonuc: ({ Uygun: 'Başarılı', 'Uygun Değil': 'Başarısız', Belirlenemedi: 'Geçersiz' } as Record<string, string>)[e.target.value] ?? a.sonuc } })}><option value="">Yok</option><option>Uygun</option><option>Uygun Değil</option><option>Belirlenemedi</option></select>
               <label htmlFor={`tg-${x.kimlik}`}>Gerekçe</label><input id={`tg-${x.kimlik}`} value={a.gerekce} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, gerekce: e.target.value } })} />
               <BelgeSec ad="Ham Veri" bagTuru="Dosya" bagKimligi={id} deger={a.ham} sec={(k) => setTs({ ...ts, [x.kimlik]: { ...a, ham: k } })} />
-              <button className="btn2 kucuk" disabled={!a.ham} onClick={() => void yap(() => istek(`/test/${x.kimlik}/sonuc`, { sonuc: a.sonuc, gerekce: a.gerekce, hamVeri: a.ham, disRapor: a.dis || undefined }))}>Sonucu Kaydet</button>
+              {ekA.map(([k, ad]) => <span key={k}><label htmlFor={`te-${k}-${x.kimlik}`}>{ad}</label><textarea required id={`te-${k}-${x.kimlik}`} maxLength={2000} value={ekD[k] ?? ''} onChange={(e) => setTs({ ...ts, [x.kimlik]: { ...a, ek: { ...ekD, [k]: e.target.value } } })} /></span>)}{/* YG-286 */}
+              <button className="btn2 kucuk" disabled={!a.ham || ekA.some(([k]) => !(ekD[k] ?? '').trim())} onClick={() => void yap(() => istek(`/test/${x.kimlik}/sonuc`, { sonuc: a.sonuc, gerekce: a.gerekce, hamVeri: a.ham, disRapor: a.dis || undefined, ek: ekD }))}>Sonucu Kaydet</button>
             </>}
             {x.durum === 'Kontrolde' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/test/${x.kimlik}/kontrol`, {}))}>Kontrol Ettim</button>}
             {x.durum === 'Kararda' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/test/${x.kimlik}/karar`, {}))}>Kararı Ver</button>}
