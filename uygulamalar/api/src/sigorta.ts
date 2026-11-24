@@ -12,6 +12,7 @@ import { metinGetir } from './metin.js';
 import { musteriDurumu } from './portal.js';
 import { UUID } from './yat.js';
 import { Depo } from './depo.js';
+import { GMO_KALEMLERI, parametre, yururlukSurumu } from './teklif.js';
 
 /** YG-1564: sigorta ve eksper Muvafakat, Yasal Bekleme ve Ödeme Bekleniyor durumlarını Beklemede görür. */
 const GIZLI_DURUM = ['Muvafakat Bekleniyor', 'Yasal Bekleme Süresinde', 'Ödeme Bekleniyor'];
@@ -92,6 +93,17 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
     if (!sir && !o.grup.startsWith('Sigorta')) return yok(y);
     if (q.length < 2) return [];
     return (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi, s.sigorta_hasar_dosya_no hasar_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE ${dosyaKosul} AND (tr_norm(d.dosya_no) LIKE '%' || tr_norm($3) || '%' OR tr_norm(y.yat_adi) LIKE '%' || tr_norm($3) || '%' OR tr_norm(s.sigorta_hasar_dosya_no) LIKE '%' || tr_norm($3) || '%') ORDER BY d.acilis_tarihi DESC LIMIT 30`, [sir ?? '', o.kullanici, q])).rows;
+  });
+  // YG-854: kartela sigorta şirketlerine menüdür; yürürlükteki sürümün birim fiyatı (maliyet x fiyat katsayısı) görünür, maliyet görünmez.
+  s.get('/sigorta/kartela', oturumlu, async (i, y) => {
+    const o = i.oturum!; const sir = await sirketim(o.kullanici);
+    if (!sir && !o.grup.startsWith('Sigorta')) return y.code(403).send({ hata: 'Bu sayfa sigorta kullanıcılarına açıktır.' });
+    const q = String((i.query as { q?: string }).q ?? '').trim(); if (q.length < 2) return { kalemler: [] };
+    const sur = await yururlukSurumu(b.db); const kat = await parametre(b.db, 'fiyat_katsayisi');
+    const rows = (await b.db.query(`SELECT k.kod, k.ana_brans, k.alt_brans, k.islem, k.birim, round(k.maliyet_eur * $3::numeric, 2)::text birim_fiyat_eur FROM kartela_kalemi k
+      WHERE k.surum = $1 AND (k.kod ILIKE $2 || '%' OR tr_norm(k.islem) LIKE '%' || tr_norm($2) || '%' OR tr_norm(k.alt_brans) LIKE '%' || tr_norm($2) || '%') ORDER BY k.kod LIMIT 50`, [sur, q, kat])).rows;
+    const yr = (await b.db.query(`SELECT yururluk::text FROM kartela_surumu WHERE surum = $1`, [sur])).rows[0]?.yururluk ?? null;
+    return { surum: sur ?? null, yururluk: yr, kalemler: rows.map((r) => ({ ...r, yatBoyunaGore: GMO_KALEMLERI.includes(r.kod) })) };
   });
   s.get('/sigorta/ana', oturumlu, async (i, y) => {
     const o = i.oturum!; const sir = await sirketim(o.kullanici);

@@ -264,6 +264,13 @@ describe('firma adayları, tarama alanı, kapanış (YG-304, YG-916, YG-416)', (
     await o.sup.query(`INSERT INTO cikar_beyani (kurulus_ref, taraf_ref, aciklama, kaydeden_ref) VALUES ($1,$2,'X',$3)`, [m, ta, o.K.ds]);
     const a2 = (await o.ist('GET', u, c)).json() as { ticari_unvan: string; sonuc: string }[]; expect(a2.at(-1)).toMatchObject({ ticari_unvan: 'Muğla Firma', sonuc: 'Ret' }); expect((await o.ist('GET', `${u}&yalnizUygun=1`, c)).json()).toHaveLength(0);
     expect((await o.ist('GET', u, await o.gir('sc'))).statusCode).toBe(404);
+    { // YG-1539: kapasite süzgeci
+      const ul = (au[1] as any).kimlik as string;
+      await o.sup.query(`UPDATE kurulus SET kapasite_is = 1 WHERE kimlik = $1`, [ul]);
+      await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON77`, d.kimlik, ul, o.K.ds]);
+      const x = ((await o.ist('GET', `${u}&katman=Ulusal`, c)).json() as any[]).find((f) => f.ticari_unvan === 'Ulusal Firma'); expect(x.kapasiteDolu).toBe(true); expect(x.uyarilar.join(' ')).toContain('Kapasite dolu');
+      expect(((await o.ist('GET', `${u}&katman=Ulusal&yalnizKapasite=1`, c)).json() as any[]).some((f) => f.ticari_unvan === 'Ulusal Firma')).toBe(false);
+    }
   });
   it('tarama sonucu yetkisiz role görünmez; açık sipariş kapanışı durdurur', async () => {
     const { alanSuz } = await import('../src/alan.js'); const { kapanisEksikleri } = await import('../src/saha.js');

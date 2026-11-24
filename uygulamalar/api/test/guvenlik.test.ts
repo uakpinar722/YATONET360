@@ -148,6 +148,17 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     for (const [rol, kr] of [['bimy', 'Onaya Gönder'], ['bim', 'Onaya Gönder'], ['btd', 'Onayla']]) { const x = await o.karar(k.kimlik, rol!, kr!); expect(x.statusCode, x.body).toBe(200); }
     expect((await o.sup.query(`SELECT kabul FROM geri_yukleme_testi WHERE kimlik = $1`, [t.kimlik])).rows[0].kabul).toBe('Kabul Edildi');
   });
+  it('yedek işlemi talebi BİM ve Direktör onayıyla yapılır (YG-1277)', async () => {
+    const sy = await o.gir('sy'); const yd = (await o.sup.query(`INSERT INTO yedek_kaydi (tur, durum) VALUES ('Gece Tam','Başarılı') RETURNING kimlik`)).rows[0].kimlik; const u = `/api/yedek/${yd}/islem-talebi`;
+    expect((await o.ist('POST', u, await o.gir('ds'), { islem: 'Silme', gerekce: 'X' })).statusCode).toBe(403);
+    expect((await o.ist('POST', u, sy, { islem: 'Silme' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, sy, { islem: 'Saklama Süresi Değişikliği', gerekce: 'Uzatma' })).statusCode).toBe(400);
+    const r = await o.ist('POST', u, sy, { islem: 'Silme', gerekce: 'Bozuk set' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', u, sy, { islem: 'Silme', gerekce: 'Tekrar' })).statusCode).toBe(409);
+    const k = await o.kart('Yedek İşlem Talebi', r.json().kimlik);
+    for (const [rol, kr] of [['bim', 'Onaya Gönder'], ['btd', 'Onayla']]) { const x = await o.karar(k.kimlik, rol!, kr!); expect(x.statusCode, x.body).toBe(200); }
+    expect((await o.ist('GET', '/api/yedek/islem-talepleri', sy)).json().talepler.find((x: any) => x.kimlik === r.json().kimlik).durum).toBe('Onaylandı');
+  });
   it('olay kaydı önem, adım, zaman çizelgesi, ana olay bağı ve kapanış kanıtı taşır (YG-1285)', async () => {
     const oy = await o.gir('oy'); const c = await o.gir('sy');
     const ana = (await o.ist('POST', '/api/olay-komutasi', oy, { tur: 'BT Kesintisi veya Veri İhlali', ozet: 'Portal erişilemiyor' })).json().kimlik;

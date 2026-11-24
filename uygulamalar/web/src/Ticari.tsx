@@ -30,7 +30,7 @@ import { UcretBandi } from './UcretBandi';
 import { KilitRoller } from './KilitRol';
 import { DenetimPlani, ResmiGazete, SosyalMedya, HukukiMetinler } from './DenetimUyum';
 import { DisaAktarim } from './DisaAktarim';
-import { GeriYukleme } from './GeriYukleme';
+import { GeriYukleme, YedekIslemTalebi } from './GeriYukleme';
 import { Varliklar } from './Varlik';
 import { YonetimRaporu } from './YonetimRaporu';
 import { IcDenetimOrneklem, YonetimEkleri } from './YonetimEkleri';
@@ -546,6 +546,17 @@ interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null
 interface SigortaTeklif { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; genel_toplam_eur: string; sigorta_karar_son: string | null; dosya_no: string }
 interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | null; tahmini_teslim_tarihi: string | null; ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string }[] }
 
+/** YG-854: yürürlükteki kartelanın birim fiyatları sigorta şirketine menü olarak sunulur (KDV hariç, EUR). */
+function SigortaKartela() {
+  const [q, setQ] = useState(''); const [v, setV] = useState<{ surum: string | null; yururluk: string | null; kalemler: { kod: string; ana_brans: string; alt_brans: string; islem: string; birim: string; birim_fiyat_eur: string; yatBoyunaGore: boolean }[] } | null>(null); const [m, setM] = useState('');
+  return <details><summary>Fiyat Kartelası</summary>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="sk-q">İşlem, Branş veya Kod</label><input id="sk-q" value={q} onChange={(e) => setQ(e.target.value)} />
+    <button className="btn2 kucuk" disabled={q.trim().length < 2} onClick={() => void istek<NonNullable<typeof v>>(`/sigorta/kartela?q=${encodeURIComponent(q.trim())}`).then((r) => { setV(r); setM(''); }).catch((e) => setM(e.message))}>Ara</button>
+    {v && <><div className="not">Kartela {v.surum ?? '-'}{v.yururluk ? ` · yürürlük ${tarih(v.yururluk)}` : ''} · birim fiyatlar KDV hariç EUR</div>
+      {v.kalemler.length === 0 ? <div className="ozet bos">Eşleşen kalem bulunmamaktadır.</div> : <div className="tablo"><table className="kartli"><thead><tr><th>Kod</th><th>Branş</th><th>İşlem</th><th>Birim</th><th>Birim Fiyat</th></tr></thead><tbody>{v.kalemler.map((k) => <tr key={k.kod}><td data-ad="Kod">{k.kod}</td><td data-ad="Branş">{k.ana_brans} · {k.alt_brans}</td><td data-ad="İşlem">{k.islem}</td><td data-ad="Birim">{k.birim}</td><td data-ad="Birim Fiyat">{eur(k.birim_fiyat_eur)}{k.yatBoyunaGore ? ' (referans yat; yat boyutuna göre hesaplanır)' : ''}</td></tr>)}</tbody></table></div>}</>}
+  </details>;
+}
+
 /** YG-1568, YG-1571 A4 Sigorta Şirketi: teklif kalemleri seçimli onaylanır; ret düğmesi yoktur; firma adı görünmez. */
 export function SigortaAna({ ben }: { ben: Ben }) {
   const [v, setV] = useState<{ dosyalar: SigortaDosya[]; bekleyen: SigortaTeklif[]; ihbarlar?: { kimlik: string; talepNo: string; yat: string; hasarNo: string | null; durum: string }[] } | null>(null); const [t, setT] = useState<TeklifAyrinti | null>(null); const [sec, setSec] = useState<number[]>([]);
@@ -573,6 +584,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
       {ben.grup.startsWith('Sigorta') && <SigortaIhbar sonra={() => void yukle()} />}
       {ben.grup.startsWith('Sigorta') && <SigortaMutabakat />}
+      <SigortaKartela />
       <div className="bolum">İşleminizi Bekleyenler</div>
       {v.bekleyen.length === 0 && <div className="ozet bos">Bekleyen işlem bulunmamaktadır.</div>}
       {v.bekleyen.map((b) => <div className="ozet" key={b.kimlik}><b>{b.teklif_turu} · {b.dosya_no}</b><div>{eur(b.genel_toplam_eur)}{b.sigorta_karar_son ? ` · Son: ${saat(b.sigorta_karar_son)}` : ''}</div><button className="btn" onClick={() => void istek<TeklifAyrinti>(`/sigorta/teklif/${b.kimlik}`).then((x) => { setT(x); setSec([]); })}>İncele</button></div>)}
@@ -1090,6 +1102,7 @@ export function IdariIslemler() {
       <SigortaPanel />
       <DisaAktarim />
       <GeriYukleme />
+      <YedekIslemTalebi />
       <Varliklar />
       <YonetimPanosu />
       <GorevEsikleri />
@@ -1202,10 +1215,10 @@ function CaymaKaydi({ teklif, yap }: { teklif: string; yap: (f: () => Promise<an
 function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void }) {
   /* YG-1539: katmanlı aday listesi; Bölge varsayılan, düğmelerle Komşu, Mobil Ekip ve Ulusal katmanı açılır. */
   const [b, setB] = useState(''); const [l, setL] = useState<{ kimlik: string; ticari_unvan: string; kapsama: string; katman: string; bolgeDisi: boolean; sonuc: string; engeller: string[]; uyarilar: string[] }[] | null>(null); const [h, setH] = useState('');
-  const [mobil, setMobil] = useState(false); const [uygun, setUygun] = useState(false);
-  const getir = (katman: string) => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}&katman=${encodeURIComponent(katman)}${mobil ? '&yalnizMobil=1' : ''}${uygun ? '&yalnizUygun=1' : ''}`).then(setL).catch((e) => setH(e.message)); };
+  const [mobil, setMobil] = useState(false); const [uygun, setUygun] = useState(false); const [bos, setBos] = useState(false);
+  const getir = (katman: string) => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}&katman=${encodeURIComponent(katman)}${mobil ? '&yalnizMobil=1' : ''}${uygun ? '&yalnizUygun=1' : ''}${bos ? '&yalnizKapasite=1' : ''}`).then(setL).catch((e) => setH(e.message)); };
   return <><label htmlFor={`fa-${dosya}`}>Branş (Uygun Firmaları Listelemek İçin)</label><input required id={`fa-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} />
-    <label><input type="checkbox" checked={mobil} onChange={(e) => setMobil(e.target.checked)} /> Yalnız mobil ekibi olanlar</label><label><input type="checkbox" checked={uygun} onChange={(e) => setUygun(e.target.checked)} /> Yalnız belgesi geçerli ve uygun olanlar</label>
+    <label><input type="checkbox" checked={mobil} onChange={(e) => setMobil(e.target.checked)} /> Yalnız mobil ekibi olanlar</label><label><input type="checkbox" checked={uygun} onChange={(e) => setUygun(e.target.checked)} /> Yalnız belgesi geçerli ve uygun olanlar</label><label><input type="checkbox" checked={bos} onChange={(e) => setBos(e.target.checked)} /> Yalnız kapasitesi uygun olanlar</label>
     <div className="dugmeler"><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Bölge')}>Uygun Firmaları Listele</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Komşu')}>Komşu bölgeleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Mobil Ekip')}>Mobil ekipleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Ulusal')}>Ulusal ekipleri göster</button></div>
     {h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve katmanda uygun firma bulunmamaktadır.</div>}
     {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;

@@ -546,7 +546,17 @@ export function KartelaMaliyet() {
       <label htmlFor="km-n">Kaynak Norm</label><input id="km-n" value={f.kaynak} onChange={(e) => setF({ ...f, kaynak: e.target.value })} />
       <label htmlFor="km-g">Kaldırma Gerekçesi (kalemi kullanımdan kaldırmak için)</label><input required id="km-g" value={kg} onChange={(e) => setKg(e.target.value)} />
       <button className="btn2 kucuk" disabled={!f.kod.trim() || !kg.trim()} onClick={() => { is('/kartela/taslak/kaldir', { kod: f.kod.trim(), gerekce: kg }, 'Kalem taslak sürümden kaldırıldı; sürüm onaylanınca yürürlükten çıkar.'); setKg(''); }}>Kalemi Kullanımdan Kaldır</button>
+      <KartelaToplu yenile={() => void yk()} />
       <div className="dugmeler"><button className="btn2" onClick={() => is('/kartela/taslak/maliyet', { ...f, maliyet: Number(f.maliyet.replace(/\./g, '').replace(',', '.')) }, 'Maliyet kaydedildi.')}>Maliyeti Kaydet</button><button className="btn2" onClick={() => is('/kartela/taslak/onaya-gonder', {}, 'Sürüm CEO onayına gönderildi.')}>Yürürlüğe Almak İçin Onaya Gönder</button></div></>}</>;
+}
+
+/** YG-856: Excel'den toplu maliyet güncellemesi; dört sütun (Kod, Maliyet, Maliyet Tarihi, Kaynak Norm) yapıştırılır. */
+function KartelaToplu({ yenile }: { yenile: () => void }) {
+  const [t, setT] = useState(''); const [m, setM] = useState('');
+  return <details><summary>Excel'den Toplu Güncelleme</summary>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="km-x">Excel Satırları (Kod, Maliyet, Maliyet Tarihi, Kaynak Norm)</label><textarea id="km-x" rows={6} value={t} onChange={(e) => setT(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!t.trim()} onClick={() => void istek<{ islenen: number }>('/kartela/taslak/maliyet-toplu', { metin: t }).then((r) => { setM(`${r.islenen} kalemin maliyeti taslak sürüme işlendi.`); setT(''); yenile(); }).catch((e) => setM(e.message))}>Toplu İşle</button>
+  </details>;
 }
 
 /** YG-1660: Firma Kapsama Raporu (BT ve Firma Yönetimi Direktörü) ve aday raporu (GMY). Yetkisiz rolde görünmez. */

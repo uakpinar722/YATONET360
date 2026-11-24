@@ -27,6 +27,13 @@ kapanisKaydet('Geri Yükleme Testi Sonucu', async (c, k, karar) => {
   await c.query(`UPDATE geri_yukleme_testi SET kabul = $2, kabul_zamani = now() WHERE kimlik = $1 AND kabul = 'Onay Bekliyor'`, [k.nesne_kimligi, karar === 'Onayla' ? 'Kabul Edildi' : 'Reddedildi']);
 });
 
+/** YG-1277: ayrıcalıklı yedek işlemi (indirme, silme, saklama süresi, geri yükleme) Bilgi İşlem Müdürü ve Direktör onayından sonra yapılır. */
+kapanisKaydet('Yedek İşlem Talebi', async (c, k, karar) => {
+  if (karar !== 'Onayla' && karar !== 'Reddet') return;
+  await c.query(`UPDATE yedek_islem_talebi SET durum = $2, karar_zamani = now() WHERE kimlik = $1 AND durum = 'Onay Bekliyor'`, [k.nesne_kimligi, karar === 'Onayla' ? 'Onaylandı' : 'Reddedildi']);
+});
+const YEDEK_ISLEMLERI = ['İndirme', 'Silme', 'Saklama Süresi Değişikliği', 'Geri Yükleme'];
+
 function sifrele(veri: Buffer, a: string) { const iv = randomBytes(12); const c = createCipheriv('aes-256-gcm', anahtarAl(a), iv); const g = Buffer.concat([c.update(veri), c.final()]); return Buffer.concat([iv, c.getAuthTag(), g]); }
 /** Yedek zarfı: iv (12) | GCM etiketi (16) | şifreli gzip. Yazım akış halindedir; etiket yazım bitince 12. bayta yerleştirilir. */
 async function akisYaz(yol: string, a: string, uret: (yaz: (s: string) => Promise<void>) => Promise<void>) {
@@ -190,6 +197,25 @@ export function yedekYollari(s: FastifyInstance, b: Baglam) {
       await c.query('COMMIT');
       return { olayNo: no, olay: ol };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+  // YG-1277: ayrıcalıklı yedek işlemi talebi; talep eden karar veremez, onay zinciri Bilgi İşlem Müdürü → Direktör.
+  s.post('/yedek/:id/islem-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { islem?: string; gerekce?: string; gun?: number };
+    if (!(await rolVar(o.kullanici, [SY, BIM]))) return y.code(403).send({ hata: 'Yedek işlemi talebini Sistem Yöneticisi veya Bilgi İşlem Müdürü açar.' });
+    const k = /^[0-9a-f-]{36}$/i.test(id) ? (await b.db.query(`SELECT kimlik, tur, baslangic FROM yedek_kaydi WHERE kimlik = $1`, [id])).rows[0] : undefined;
+    if (!k) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    if (!YEDEK_ISLEMLERI.includes(g.islem ?? '') || !g.gerekce?.trim()) return y.code(400).send({ hata: 'İşlem ve gerekçe zorunludur.' });
+    const gun = g.islem === 'Saklama Süresi Değişikliği' ? Number(g.gun) : null;
+    if (gun !== null && !(Number.isInteger(gun) && gun > 0)) return y.code(400).send({ hata: 'Yeni saklama süresini gün olarak giriniz.' });
+    if ((await b.db.query(`SELECT 1 FROM yedek_islem_talebi WHERE yedek_ref = $1 AND islem = $2 AND durum = 'Onay Bekliyor'`, [k.kimlik, g.islem])).rowCount) return y.code(409).send({ hata: 'Bu yedek için aynı işlemin talebi onay bekliyor.' });
+    const t = (await b.db.query(`INSERT INTO yedek_islem_talebi (yedek_ref, islem, gerekce, yeni_saklama_gun, talep_eden_ref) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [k.kimlik, g.islem, g.gerekce.trim(), gun, o.kullanici])).rows[0].kimlik as string;
+    await kartAc(b.db, { tur: 'Yedek İşlem Talebi', baslik: `Yedek ${g.islem} Talebi · ${k.tur}`, ozet: `${new Date(k.baslangic).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })} yedeği · ${gun ? `${gun} gün · ` : ''}${g.gerekce.trim()}`.slice(0, 200), oncelik: 'Yüksek', hazirlayan: o.kullanici, zincir: [await rolId(b.db, BIM), await rolId(b.db, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')], nesneTuru: 'Yedek İşlem Talebi', nesneKimligi: t });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yedek İşlemi Talep Edildi', nesneTuru: 'Yedek', nesneKimligi: k.kimlik, yeni: { islem: g.islem, gun }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: t };
+  });
+  s.get('/yedek/islem-talepleri', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, [SY, BIM, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü']))) return y.code(403).send({ hata: 'Yedek işlem taleplerini Sistem Yöneticisi, Bilgi İşlem Müdürü ve Direktör görür.' });
+    return { talepler: (await b.db.query(`SELECT t.kimlik, t.islem, t.gerekce, t.yeni_saklama_gun, t.durum, t.olusturma_zamani, t.karar_zamani, y.tur, y.baslangic FROM yedek_islem_talebi t JOIN yedek_kaydi y ON y.kimlik = t.yedek_ref ORDER BY t.olusturma_zamani DESC LIMIT 60`)).rows };
   });
   s.post('/geri-yukleme-testi', oturumlu, async (i, y) => { // YG-1279: hedeflerle karşılaştırma; kritik süreçler 24 saat kesinti, 4 saat veri kaybı.
     const o = i.oturum!; const g = (i.body ?? {}) as { tur?: string; yedek?: string; kurtarma?: number; kayip?: number; kayitTutarli?: boolean; belge?: boolean; yetki?: boolean; not?: string; surecSinifi?: string; iliski?: boolean; butunluk?: boolean; entegrasyon?: boolean; ornekAkis?: boolean };

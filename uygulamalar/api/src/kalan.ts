@@ -564,7 +564,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-304: atama listesi kapsamadan süzülür, tüm kapılar birlikte değerlendirilir; en yakın veya en ucuz otomatik seçilmez, fiyat ve mesafe sıralamaya girmez.
   s.get('/dosya/:id/firma-adaylari', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const q = (i.query ?? {}) as { brans?: string; katman?: string; yalnizMobil?: string; yalnizUygun?: string }; const brans = q.brans?.trim();
+    const o = i.oturum!; const { id } = i.params as { id: string }; const q = (i.query ?? {}) as { brans?: string; katman?: string; yalnizMobil?: string; yalnizUygun?: string; yalnizKapasite?: string }; const brans = q.brans?.trim();
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!brans) return y.code(400).send({ hata: 'Branşı seçiniz.' });
     const konum = String((await b.db.query(`SELECT konum FROM dosya WHERE kimlik = $1`, [id])).rows[0].konum).toLocaleLowerCase('tr');
@@ -578,8 +578,16 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
       : f.kapsama === 'Komşu' ? (!f.bolge || !dBolge || f.bolge.toLocaleLowerCase('tr') === dBolge.toLocaleLowerCase('tr') || komsular!.has(f.bolge.toLocaleLowerCase('tr')) ? 'Komşu' : null) : f.kapsama;
     const mobiller = new Set((await b.db.query(`SELECT DISTINCT kurulus_ref FROM brans_yetkinligi WHERE kapsama = 'Mobil Ekip' AND durum = 'Aktif'`)).rows.map((r) => r.kurulus_ref as string));
     const l = l0.map((f) => ({ ...f, katman: katmanOf(f) })).filter((f) => f.katman && SIRA.indexOf(f.katman) <= ust && (q.yalnizMobil !== '1' || mobiller.has(f.kimlik)));
+    // YG-1539: kapasite süzgeci; aktif iş emri sayısı firmanın iş kapasitesine ulaştıysa kapasite dolu sayılır.
+    const kap = new Map((await b.db.query(`SELECT k.kimlik, k.kapasite_is, (SELECT count(*)::int FROM is_emri e WHERE e.kurulus_ref = k.kimlik AND e.statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu') AND NOT EXISTS (SELECT 1 FROM is_emri n WHERE n.is_emri_no = e.is_emri_no AND n.surum > e.surum)) aktif FROM kurulus k WHERE k.kimlik = ANY($1)`, [l.map((f) => f.kimlik)])).rows.map((r) => [r.kimlik as string, { kapasite: r.kapasite_is as number | null, aktif: r.aktif as number }]));
     const S = { Kabul: 0, 'Koşullu Kabul': 1, Ret: 2 } as const; const sonuc = [];
-    for (const f of l) { const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); if (q.yalnizUygun === '1' && k.sonuc === 'Ret') continue; sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: f.katman !== 'Bölge' ? [...k.uyarilar, 'Bölge dışı: varış süresi ve yol, konaklama maliyeti artabilir.'] : k.uyarilar }); }
+    for (const f of l) {
+      const kp = kap.get(f.kimlik) ?? { kapasite: null, aktif: 0 }; const dolu = kp.kapasite !== null && kp.aktif >= kp.kapasite;
+      if (q.yalnizKapasite === '1' && dolu) continue;
+      const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); if (q.yalnizUygun === '1' && k.sonuc === 'Ret') continue;
+      const uy = [...k.uyarilar, ...(f.katman !== 'Bölge' ? ['Bölge dışı: varış süresi ve yol, konaklama maliyeti artabilir.'] : []), ...(dolu ? [`Kapasite dolu: ${kp.aktif} aktif iş / ${kp.kapasite} kapasite.`] : [])];
+      sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: uy, kapasite: kp.kapasite, aktifIs: kp.aktif, kapasiteDolu: dolu });
+    }
     return sonuc.sort((a, c) => SIRA.indexOf(a.katman!) - SIRA.indexOf(c.katman!) || S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
   });
 

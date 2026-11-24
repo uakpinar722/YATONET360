@@ -704,6 +704,15 @@ describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
     expect((await o.ist('POST', u, await o.gir('ts'), { kod: k.kod, maliyet: 1, tarih: '2026-11-06', kaynak: 'X' })).statusCode).toBe(404);
     expect((await o.ist('POST', u, c, { kod: k.kod, maliyet: Number(k.maliyet_eur), tarih: '2026-11-06', kaynak: 'Firma teklifi ortalaması' })).statusCode).toBe(200);
     expect((await o.ist('POST', '/api/kartela/taslak/onaya-gonder', c, {})).json().hata).toContain('eksiktir');
+    { // YG-856: Excel'den toplu güncelleme; hatalı satır varsa hiçbiri işlenmez
+      const tu = '/api/kartela/taslak/maliyet-toplu';
+      const h = await o.ist('POST', tu, c, { metin: `Kod\tMaliyet\tTarih\tKaynak\n${k.kod}\t1.234,56\t06.11.2026\tToplu kaynak\nYOK-KOD\t5\t2026-11-06\tX` });
+      expect(h.statusCode).toBe(400); expect(h.json().hatalar[0]).toContain('Satır 3');
+      expect(Number((await o.sup.query(`SELECT maliyet_eur FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [k.kod, sur])).rows[0].maliyet_eur)).toBe(Number(k.maliyet_eur));
+      expect((await o.ist('POST', tu, await o.gir('ts'), { metin: `${k.kod}\t1\t2026-11-06\tX` })).statusCode).toBe(404);
+      const r2 = await o.ist('POST', tu, c, { metin: `${k.kod}\t1.234,56\t06.11.2026\tToplu kaynak` }); expect(r2.statusCode, r2.body).toBe(200); expect(r2.json().islenen).toBe(1);
+      expect((await o.sup.query(`SELECT maliyet_eur::text m, kaynak_norm FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [k.kod, sur])).rows[0]).toEqual({ m: '1234.56', kaynak_norm: 'Toplu kaynak' });
+    }
     // T-YG661: kalem taslaktan gerekçeyle kaldırılır; yürürlükteki sürüm değişmez
     const kl = (await o.sup.query(`SELECT kod FROM kartela_kalemi WHERE surum = $1 AND kod <> $2 ORDER BY kod DESC LIMIT 1`, [sur, k.kod])).rows[0].kod;
     expect((await o.ist('POST', '/api/kartela/taslak/kaldir', c, { kod: kl })).statusCode).toBe(400);

@@ -298,6 +298,13 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
   it('yalnız kendi dosyası; firma ve maliyet görünmez; hasar no ayrı', async () => {
     const { d, t } = await dosyaVeTeklif();
     const a = (await o.ist('GET', '/api/sigorta/ana', sigortaC)).json();
+    { // YG-854: kartela sigorta şirketine menü; birim fiyat = maliyet x katsayı, maliyet görünmez
+      const kr = (await o.ist('GET', '/api/sigorta/kartela?q=HAVUZ', sigortaC)); expect(kr.statusCode, kr.body).toBe(200);
+      const x = kr.json().kalemler[0]; expect(x).toBeTruthy(); expect(x.maliyet_eur).toBeUndefined();
+      const m = (await o.sup.query(`SELECT k.maliyet_eur * p.deger::numeric f FROM kartela_kalemi k, sistem_parametresi p WHERE k.kod = $1 AND k.surum = $2 AND p.kod = 'fiyat_katsayisi'`, [x.kod, kr.json().surum])).rows[0].f;
+      expect(Number(x.birim_fiyat_eur)).toBeCloseTo(Number(m), 2);
+      expect((await o.ist('GET', '/api/sigorta/kartela?q=HAVUZ', await o.gir('ds'))).statusCode).toBe(403);
+    }
     const k = a.dosyalar.find((x: any) => x.dosyaNo === d.dosyaNo);
     expect(k.hasarNo).toMatch(/^H-/); expect(a.bekleyen.some((x: any) => x.kimlik === t)).toBe(true);
     expect(k.ilerleme).toBe(0); expect(k.fotograflar).toEqual([]); expect(k.raporlar).toEqual([]); // YG-460, YG-440

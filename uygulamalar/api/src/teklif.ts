@@ -429,6 +429,33 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kartela Maliyeti', nesneTuru: 'Kartela', nesneKimligi: `${g.kod}@${sur}`, yeni: { maliyet: Number(g.maliyet), tarih: g.tarih, kaynak: g.kaynak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
+  // YG-856: Excel'den toplu güncelleme; sütunlar Kod, Maliyet (EUR), Maliyet Tarihi, Kaynak Norm. Hatalı satır varsa hiçbiri işlenmez.
+  s.post('/kartela/taslak/maliyet-toplu', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { metin?: string };
+    if (!(await kartelaYetkili(o.kullanici))) return yok(y);
+    const sur = await taslak(); if (!sur) return y.code(409).send({ hata: 'Önce taslak sürüm açınız.' });
+    const satirlar = String(g.metin ?? '').split(/\r?\n/).map((l, n) => ({ n: n + 1, h: l.split('\t').map((x) => x.trim()) })).filter((x) => x.h.some(Boolean) && !/^kod$/i.test(x.h[0] ?? ''));
+    if (!satirlar.length) return y.code(400).send({ hata: 'Excel\'den Kod, Maliyet, Maliyet Tarihi ve Kaynak Norm sütunlarını yapıştırınız.' });
+    if (satirlar.length > 2000) return y.code(400).send({ hata: 'Bir seferde en çok 2.000 satır işlenir.' });
+    const mevcut = new Set((await b.db.query(`SELECT kod FROM kartela_kalemi WHERE surum = $1 AND kod = ANY($2)`, [sur, satirlar.map((x) => x.h[0])])).rows.map((r) => r.kod as string));
+    const hatalar: string[] = []; const kayit: { kod: string; maliyet: number; tarih: string; kaynak: string }[] = [];
+    for (const { n, h } of satirlar) {
+      const [kod = '', m = '', t = '', kaynak = ''] = h;
+      const maliyet = Number(/,/.test(m) ? m.replace(/\./g, '').replace(',', '.') : m);
+      const tm = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(t); const tarih = tm ? `${tm[3]}-${tm[2]}-${tm[1]}` : t;
+      if (!mevcut.has(kod)) hatalar.push(`Satır ${n}: ${kod || 'kod boş'} taslak sürümde bulunamadı.`);
+      else if (!(maliyet > 0)) hatalar.push(`Satır ${n}: maliyet pozitif olmalıdır.`);
+      else if (!/^\d{4}-\d{2}-\d{2}$/.test(tarih) || Number.isNaN(Date.parse(tarih))) hatalar.push(`Satır ${n}: maliyet tarihi geçersizdir.`);
+      else if (!kaynak) hatalar.push(`Satır ${n}: kaynak norm zorunludur.`);
+      else kayit.push({ kod, maliyet: Math.round(maliyet * 100) / 100, tarih, kaynak });
+    }
+    if (hatalar.length) return y.code(400).send({ hata: `${hatalar.length} satır hatalı; hiçbir satır işlenmedi. ${hatalar.slice(0, 10).join(' ')}`, hatalar: hatalar.slice(0, 50) });
+    return islem(async (c) => {
+      await c.query(`UPDATE kartela_kalemi k SET maliyet_eur = t.m, maliyet_tarihi = t.d, kaynak_norm = t.s FROM unnest($2::text[], $3::numeric[], $4::date[], $5::text[]) t(a, m, d, s) WHERE k.kod = t.a AND k.surum = $1`, [sur, kayit.map((x) => x.kod), kayit.map((x) => x.maliyet), kayit.map((x) => x.tarih), kayit.map((x) => x.kaynak)]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kartela Maliyeti (Toplu)', nesneTuru: 'Kartela', nesneKimligi: sur, yeni: { satir: kayit.length, kodlar: kayit.slice(0, 200).map((x) => x.kod) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { islenen: kayit.length };
+    });
+  });
   // YG-661: kalemi kullanımdan kaldırma yalnız taslak sürümde, gerekçeyle; CEO sürümü onaylayınca yürürlükten çıkar.
   s.post('/kartela/taslak/kaldir', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; gerekce?: string };
