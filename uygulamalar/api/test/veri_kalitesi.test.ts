@@ -22,7 +22,7 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     const h = (await o.sup.query(`SELECT kimlik, oncelik, durum FROM veri_hatasi WHERE kural_kod = 'VK-01' AND kayit_kimligi = $1`, [d.kimlik])).rows[0];
     expect(h).toMatchObject({ oncelik: 'Orta', durum: 'Açık' });
     const v = (await o.ist('GET', '/api/veri-kalitesi', await o.gir('opm'))).json();
-    expect(v.kumeler.map((k: { kod: string }) => k.kod)).toEqual(['DOSYA', 'FATURA', 'FIRMA', 'TARAF', 'TEDARIKCI', 'YAT']);
+    expect(v.kumeler.map((k: { kod: string }) => k.kod)).toEqual(['DOSYA', 'FATURA', 'FIRMA', 'TARAF', 'TEDARIK', 'YAT']);
     expect(v.sahipOldugu).toContain('DOSYA');
     expect((await o.ist('POST', `/api/veri-hatasi/${h.kimlik}/istisna`, await o.gir('bim'), { gerekce: 'x' })).statusCode).toBe(404);
     await o.sup.query(`UPDATE dosya SET ana_teknik_brans = 'Gövde' WHERE kimlik = $1`, [d.kimlik]);
@@ -167,7 +167,7 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect((await o.sup.query(`SELECT sahip_rol_ref FROM is_karti WHERE kimlik = $1`, [kart])).rows[0].sahip_rol_ref).toBe(kmR);
     expect((await o.sup.query(`SELECT count(*)::int n FROM veri_kumesi WHERE sahip_rol = 'Operasyon Müdürü'`)).rows[0].n).toBe(0);
     expect((await o.ist('GET', '/api/sahiplik', g)).json().moduller).toContainEqual({ modul: 'Veri Kalitesi', sahip: 'Kalite Müdürü' });
-    { const sf = (await o.ist('GET', '/api/sahiplik', g)).json().sifatlar; expect(sf.sistemSahibi).toBe('Bilgi İşlem Müdürü'); expect(sf.surecSahipleri[0]).toEqual({ surec: 'Dosya süreci', sahip: 'Operasyon Müdürü' }); expect(sf.nobetciler).toHaveLength(3); expect(sf.veriSahipleri).toContainEqual({ veri: 'Tedarikçi Sicili', sahip: 'Tedarik Yönetimi Müdürü' }); } // YG-1011, YG-1028, YG-1015
+    { const sf = (await o.ist('GET', '/api/sahiplik', g)).json().sifatlar; expect(sf.sistemSahibi).toBe('Bilgi İşlem Müdürü'); expect(sf.surecSahipleri[0]).toEqual({ surec: 'Dosya süreci', sahip: 'Operasyon Müdürü' }); expect(sf.nobetciler).toHaveLength(3); expect(sf.veriSahipleri).toContainEqual({ veri: 'Firma Sicili', sahip: 'Firma Yönetimi Müdürü' }); expect(sf.veriSahipleri).toContainEqual({ veri: 'Tedarik İşlemleri', sahip: 'Tedarik Yönetimi Müdürü' }); } // YG-1011, YG-1028, YG-1015
   });
   it('dosya durum özeti: açık iş, onayın kimde olduğu, bekleme nedeni, eksikler ve sonraki işlem (YG539-OZET)', async () => {
     const d = await o.dosyaAc(); const opm = await o.gir('opm');

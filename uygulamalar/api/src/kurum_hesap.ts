@@ -58,8 +58,9 @@ kapanisKaydet('Firma Kabul İtirazı', async (c, k, karar) => {
   await bildir(c, { olay: `kurum-itiraz:${t.kimlik}`, kullanicilar: [t.itiraz_eden_ref], baslik: 'Kabul Kararı İtirazı', ozet: karar === 'Onayla' ? 'İtirazınız kabul edildi; başvurunuz yeniden incelenecektir.' : 'İtirazınız kabul edilmedi.' });
 });
 
-/** YG-1660: kurum hesap talebi kurum türüne göre yönlenir; tedarikçi Tedarik Yönetimi, marina/tersane/çekek Firma Yönetimi Müdürlüğüne. Sigorta, broker, acente ve kurumsal müşteri talepleri Müşteri ve Paydaş İlişkileri Müdürlüğünde (kurumsal.ts). */
-const KURUM_YONLENDIRME: Record<string, string> = { 'Tedarikçi': 'Tedarik Yönetimi Müdürü', 'Tesis': 'Firma Yönetimi Müdürü' };
+/** YG-1660 (CEO 25.11.2026 düzeltmesi): kurum hesap talebi kurum türüne göre yönlenir; tedarikçi, marina, tersane ve çekek Firma Yönetimi Müdürlüğüne. Sigorta, broker, acente ve kurumsal müşteri talepleri Müşteri ve Paydaş İlişkileri Müdürlüğünde (kurumsal.ts). */
+// CEO 25.11.2026: tüm dış kaynak firmaların (tedarikçi dahil) kayıt ve sicil işlemleri Firma Yönetimi Müdüründedir; tedarik işlemleri Tedarik Yönetimi Müdüründedir.
+const KURUM_YONLENDIRME: Record<string, string> = { 'Tedarikçi': 'Firma Yönetimi Müdürü', 'Tesis': 'Firma Yönetimi Müdürü' };
 
 export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
   webAdresi = b.webAdresi;
