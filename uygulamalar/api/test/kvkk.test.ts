@@ -176,3 +176,18 @@ describe('saklama planı iş amacı ve bilgi sınıfı (YG-1224)', () => {
     expect(l.find((x: any) => x.kod === 'OZL-10').bilgi_sinifi).toBe('Kritik');
   });
 });
+
+describe('yediemin onayı (YG-104)', () => {
+  it('yediemin yalnız Hukuk ve Uyum Direktörü onayıyla sonuç doğurur', async () => {
+    const { yedieminMi } = await import('../src/yediemin.js');
+    const d = await o.dosyaAc(); const ds = await o.gir('opm'); const u = `/api/dosya/${d.kimlik}/yediemin`;
+    expect((await o.ist('POST', u, ds, { yediemin: 'LGM' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { yediemin: 'Çözüm Ortağı', dayanak: 'İcra dairesi kararı' })).json().hata).toContain('Çözüm Ortağını');
+    const r = await o.ist('POST', u, ds, { yediemin: 'LGM', dayanak: 'İcra dairesi yediemin kararı' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', u, ds, { yediemin: 'LGM', dayanak: 'X' })).statusCode).toBe(409);
+    expect(await yedieminMi(o.db, d.kimlik)).toBeNull();
+    await o.karar((await o.kart('Yediemin Onayı', r.json().kimlik)).kimlik, 'hud', 'Onayla');
+    expect(await yedieminMi(o.db, d.kimlik)).toEqual({ yediemin: 'LGM', kurulus: null });
+    expect((await o.ist('GET', u, ds)).json().talepler[0].durum).toBe('Onaylandı');
+  });
+});
