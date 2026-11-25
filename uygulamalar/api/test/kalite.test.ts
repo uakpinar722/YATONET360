@@ -343,6 +343,22 @@ describe('tedarik (YG-823, YG-404, YG-1589)', () => {
       expect(sk.kontroller[5].sonuc).toBe(true); expect(sk.kritikSinif).toBe('K3'); // T-YG1593-K3
       const gs = (await o.ist('GET', '/api/tedarik/mudurluk-gostergeleri', await o.gir('tym'))).json(); expect(gs.map((x: any) => x.ad)).toContain('Kritik kalem izlenebilirliği (K3–K4)'); // T-YG1593-GOSTERGE
       expect((await o.ist('GET', '/api/tedarik/mudurluk-gostergeleri', await o.gir('ds'))).statusCode).toBe(404);
+      { // T-YG1594-KAYNAK: K4 tek kaynak bağımlılığı, ikinci kaynak planı, muadil gözden geçirme görevi; YG-784 tedarikçi karnesi
+        await o.sup.query(`UPDATE tedarik_siparisi SET kritik_sinif = 'K4' WHERE kimlik = $1`, [id]);
+        const pn = (await o.sup.query(`SELECT uretici_parca_no FROM tedarik_siparisi_kalemi WHERE siparis_ref = $1 ORDER BY satir_no LIMIT 1`, [id])).rows[0].uretici_parca_no;
+        const tym = await o.gir('tym');
+        expect((await o.ist('GET', '/api/tedarik/kaynak-risk', await o.gir('ds'))).statusCode).toBe(404);
+        const kr = (await o.ist('GET', '/api/tedarik/kaynak-risk', tym)).json();
+        expect(kr.tekKaynak.map((x: any) => x.parca)).toContain(pn); expect(kr.muadil.sonraki).toMatch(/-(03|09)$/); expect(Array.isArray(kr.tedarikciler)).toBe(true);
+        expect((await o.ist('POST', '/api/tedarik/kaynak-risk/plan', tym, { parca: pn })).statusCode).toBe(400);
+        expect((await o.ist('POST', '/api/tedarik/kaynak-risk/plan', tym, { parca: pn, plan: 'İkinci yetkili distribütör teklifi alınacak' })).statusCode).toBe(200);
+        expect((await o.ist('GET', '/api/tedarik/kaynak-risk', tym)).json().tekKaynak.find((x: any) => x.parca === pn).plan).toContain('distribütör');
+        const { muadilGozdenGecirmeGorevi, tedarikciKarnesi } = await import('../src/tedarik_gosterge.js');
+        expect(await muadilGozdenGecirmeGorevi(o.db, new Date('2032-05-02T09:00:00+03:00'))).toBe(false);
+        expect(await muadilGozdenGecirmeGorevi(o.db, new Date('2032-09-01T09:00:00+03:00'))).toBe(true); expect(await muadilGozdenGecirmeGorevi(o.db, new Date('2032-09-05T09:00:00+03:00'))).toBe(false);
+        expect(await o.kart('Muadil Liste Gözden Geçirmesi', '2032-09')).toBeTruthy();
+        const kn = await tedarikciKarnesi(o.db, new Date('2099-01-01T00:00:00Z')); expect(kn.every((x) => x.siparis < 3 ? x.puan === null : typeof x.puan === 'number')).toBe(true);
+      }
       const { tedarikciAylikPerformans } = await import('../src/tedarik_gosterge.js');
       expect(await tedarikciAylikPerformans(o.db, new Date('2031-05-02T09:00:00+03:00'))).toBe(true); expect(await tedarikciAylikPerformans(o.db, new Date('2031-05-03T09:00:00+03:00'))).toBe(false);
       { // YG-1594: aylık yönetim raporu ayda bir; Tedarik Yönetimi Müdürü → Teknik ve Operasyon Direktörü

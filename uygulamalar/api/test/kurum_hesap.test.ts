@@ -159,6 +159,21 @@ describe('firma bilgi, banka, itiraz, cari (YG-425, YG-422, K-178)', () => {
     expect((await o.sup.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [f2])).rows[0].kayit_asamasi).toBe('Reddedildi');
     await o.karar((await o.kart('Firma Kabul İtirazı', id)).kimlik, 'btd', 'Onayla');
     expect((await o.sup.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [f2])).rows[0].kayit_asamasi).toBe('İncelemede');
+    expect((await o.sup.query(`SELECT itiraz_karari FROM kurum_kabul_itirazi WHERE kimlik = $1`, [id])).rows[0].itiraz_karari).toBe('Kabul');
+    { // T-YG1662: Kabul / Kısmi Kabul / Ret
+      await o.sup.query(`UPDATE kurulus SET kayit_asamasi = 'Reddedildi' WHERE kimlik = $1`, [f2]);
+      const i2 = (await o.sup.query(`INSERT INTO kurum_kabul_itirazi (kurulus_ref, karar_asamasi, gerekce, itiraz_eden_ref) SELECT kurulus_ref, karar_asamasi, 'İkinci', itiraz_eden_ref FROM kurum_kabul_itirazi WHERE kimlik = $1 RETURNING kimlik`, [id])).rows[0].kimlik;
+      const btd = await o.gir('btd'); const u = `/api/kurum-kabul-itirazi/${i2}/karar`;
+      expect((await o.ist('POST', u, await o.gir('fym'), { karar: 'Kabul', gerekce: 'G' })).statusCode).toBe(404);
+      expect((await o.ist('GET', '/api/kurum-kabul-itirazlari', btd)).json().map((x: any) => x.kimlik)).toContain(i2);
+      expect((await o.ist('POST', u, btd, { karar: 'Onayla', gerekce: 'G' })).statusCode).toBe(400);
+      expect((await o.ist('POST', u, btd, { karar: 'Kısmi Kabul', gerekce: 'G' })).json().hata).toContain('kabul edilen kısmını');
+      const r2 = await o.ist('POST', u, btd, { karar: 'Kısmi Kabul', gerekce: 'Sigorta belgesi yeniden değerlendirilecek', kabulEdilen: 'Sorumluluk sigortası' }); expect(r2.statusCode, r2.body).toBe(200);
+      expect((await o.sup.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [f2])).rows[0].kayit_asamasi).toBe('İncelemede');
+      expect((await o.sup.query(`SELECT itiraz_karari, kabul_edilen_kisim FROM kurum_kabul_itirazi WHERE kimlik = $1`, [i2])).rows[0]).toEqual({ itiraz_karari: 'Kısmi Kabul', kabul_edilen_kisim: 'Sorumluluk sigortası' });
+      expect((await o.kart('İtiraz Sonrası Yeniden İnceleme', f2)).ozet).toContain('Sorumluluk sigortası');
+      expect((await o.ist('POST', u, btd, { karar: 'Ret', gerekce: 'G' })).statusCode).toBe(409);
+    }
   });
   it('cari ekstre firmaya kendi hakedişini verir, müşteri adı ve maliyet dışı bilgi yazmaz; başka kuruma kapalı', async () => {
     const d = await o.dosyaAc();

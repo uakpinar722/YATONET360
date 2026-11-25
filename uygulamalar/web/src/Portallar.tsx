@@ -455,7 +455,7 @@ export function TesisIslemleri({ id, ds }: { id: string; ds: boolean }) {
     <Blok baslik="Tesis İşlemleri">
       <Mesaj />
       {bu.map((x, n) => <div key={n} className="uyari">Firma Sicil Belgesi: {x.ticari_unvan} · {x.tur} · {x.dolmus ? 'süresi doldu' : 'süresi doluyor'} ({tarih(x.bitis)})</div>)}
-      {l.map((x) => <div key={x.kimlik}>{x.renk && <em className={`rozet ${x.renk === 'Kırmızı' ? 'kirmizi' : x.renk === 'Sarı' ? 'sari' : 'yesil'}`}>{x.renk}</em>} {x.ticari_unvan} · {x.tur} · {tarih(x.hedef_tarih)} · {x.durum}{x.tesis_izin_no ? ` · İzin No: ${x.tesis_izin_no}` : ''}{x.red_gerekcesi ? ` · ${x.red_gerekcesi}` : ''}</div>)}
+      {l.map((x) => <div key={x.kimlik}>{x.renk && <em className={`rozet ${x.renk === 'Kırmızı' ? 'kirmizi' : x.renk === 'Sarı' ? 'sari' : 'yesil'}`}>{x.renk}</em>} {x.ticari_unvan} · {x.tur} · {tarih(x.hedef_tarih)} · {x.durum}{x.tesis_izin_no ? ` · İzin No: ${x.tesis_izin_no}` : ''}{x.red_gerekcesi ? ` · ${x.red_gerekcesi}` : ''}{ds && x.durum !== 'Geri Çekildi' && <TesisYazisma id={id} talep={x.kimlik} yap={yap} />}</div>)}
       {ds && <>
         <label htmlFor="tis-t">Tesis</label><select id="tis-t" value={f.tesis} onChange={(e) => setF({ ...f, tesis: e.target.value })}><option value="">Seçiniz</option>{t.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select>
         <label htmlFor="tis-u">İşlem</label><select id="tis-u" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['Saha Girişi', 'Çalışma İzni', 'Çekek Randevusu', 'Kalış Uzatma'].map((x) => <option key={x}>{x}</option>)}</select>
@@ -465,6 +465,22 @@ export function TesisIslemleri({ id, ds }: { id: string; ds: boolean }) {
       </>}
     </Blok>
   );
+}
+
+/** YG-1447: firmadan veya tesisten gelen yazışmanın hızlı girişi (özet, ek, durum, yeni hedef tarih). */
+function TesisYazisma({ id, talep, yap }: { id: string; talep: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
+  const [f, setF] = useState({ kaynak: 'Firma', ozet: '', durum: 'Yanıt Bekliyor', izinNo: '', yeniHedef: '', belge: '' }); const [l, setL] = useState<{ kaynak: string; ozet: string; durum: string; yeni_hedef: string | null; zaman: string; giren: string }[]>([]);
+  const yk = () => istek<typeof l>(`/tesis-talebi/${talep}/yazismalar`).then(setL).catch(() => setL([]));
+  return <details onToggle={(e) => { if ((e.target as HTMLDetailsElement).open) void yk(); }}><summary>Yazışma Gir</summary>
+    {l.map((x, n) => <div key={n} className="not">{new Date(x.zaman).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })} · {x.kaynak} · {x.durum}{x.yeni_hedef ? ` · Yeni hedef ${tarih(x.yeni_hedef)}` : ''} · {x.ozet} · {x.giren}</div>)}
+    <label htmlFor={`ty-k-${talep}`}>Kaynak</label><select id={`ty-k-${talep}`} value={f.kaynak} onChange={(e) => setF({ ...f, kaynak: e.target.value })}><option>Firma</option><option>Tesis</option></select>
+    <label htmlFor={`ty-o-${talep}`}>Yazışma Özeti</label><input required id={`ty-o-${talep}`} value={f.ozet} onChange={(e) => setF({ ...f, ozet: e.target.value })} />
+    <label htmlFor={`ty-d-${talep}`}>Durum</label><select id={`ty-d-${talep}`} value={f.durum} onChange={(e) => setF({ ...f, durum: e.target.value })}>{['Yanıt Bekliyor', 'Onaylı', 'İzin Verilmedi'].map((x) => <option key={x}>{x}</option>)}</select>
+    {f.durum === 'Onaylı' && <><label htmlFor={`ty-i-${talep}`}>Tesis İzin No</label><input id={`ty-i-${talep}`} value={f.izinNo} onChange={(e) => setF({ ...f, izinNo: e.target.value })} /></>}
+    <label htmlFor={`ty-h-${talep}`}>Yeni Hedef Tarih</label><input id={`ty-h-${talep}`} type="date" value={f.yeniHedef} onChange={(e) => setF({ ...f, yeniHedef: e.target.value })} />
+    <BelgeSec ad="Yazışma Eki" bagTuru="Dosya" bagKimligi={id} deger={f.belge} sec={(v) => setF({ ...f, belge: v })} />
+    <button className="btn2 kucuk" disabled={!f.ozet.trim()} onClick={() => void yap(() => istek(`/tesis-talebi/${talep}/yazisma`, { ...f, izinNo: f.izinNo || undefined, yeniHedef: f.yeniHedef || undefined, belge: f.belge || undefined }).then(yk), 'Yazışma kaydedildi.')}>Yazışmayı Kaydet</button>
+  </details>;
 }
 
 interface TeklifTalebi { kimlik: string; talep_no: string; durum: string; gecerlilik: string | null; ticari_unvan: string; kalemler: { urun_tanimi: string; miktar: string; birim: string; birim_fiyat_eur: string | null; teslim_suresi_gun: number | null }[] }

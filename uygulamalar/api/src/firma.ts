@@ -279,9 +279,13 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   s.post('/firma/:id/statu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string; pasifNedeni?: string; kanit?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string; pasifNedeni?: string; kanit?: string; acikDosyaPlani?: string };
     if (!UUID.test(id)) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
+    if (g.ag === 'Askıda' || g.ag === 'Çıkarıldı') { // YG-360: açık işlerin devri, tamamlatılması veya durdurulması planı
+      const acik = (await b.db.query(`SELECT string_agg(is_emri_no, ', ' ORDER BY is_emri_no) l FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu')`, [id])).rows[0]?.l as string | null;
+      if (acik && !g.acikDosyaPlani?.trim()) return y.code(400).send({ hata: `Firmanın açık işleri vardır (${acik}); her biri için devir, tamamlatma veya durdurma planını yazmanızı rica ederiz.` });
+    }
     // YG-357: Pasif yaptırım değildir; yalnız Aktif firmadan firma talebi veya hareketsizlikle geçilir, Pasif'ten Aktif'e dönülür.
     // YG-359: yaptırım basamakları risk oranında atlanabilir; yaptırımdan daha hafif statüye yükseltme doğrulanmış iyileştirme kanıtı ister.
     const mevcut = (await b.db.query(`SELECT ag_statusu FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.ag_statusu as string | null | undefined;
@@ -310,7 +314,27 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!r.rowCount) return yok(y);
     if (g.ag && g.ag !== mevcut) await b.db.query(`UPDATE kurulus SET pasif_nedeni = $2, son_iyilestirme_kaniti_ref = coalesce($3, son_iyilestirme_kaniti_ref) WHERE kimlik = $1`, [id, g.ag === 'Pasif' ? g.pasifNedeni : null, g.kanit && UUID.test(g.kanit) ? g.kanit : null]); // YG-357, YG-359
     if (g.ag === 'Geçici Askıda') await (await import('./firma_ek.js')).askiIsKararlariAc(b.db, id); // YG-1660: her açık iş için ayrı karar
+    if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && g.ag !== mevcut) { // YG-360: CEO ve GMY'ye bilgi
+      const un = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.ticari_unvan;
+      const kisiler = [...await rolSahipleri(b.db, await rolId(b.db, 'CEO')), ...await rolSahipleri(b.db, await rolId(b.db, 'Genel Müdür Yardımcısı'))];
+      await bildir(b.db, { olay: `firma-yaptirim:${id}:${g.ag}`, kullanicilar: kisiler, baslik: `${un} · ${g.ag === 'Askıda' ? 'Kalıcı Askı' : 'Ağdan Çıkarma'} Kararı (Bilgi)`, ozet: `Gerekçe: ${g.gerekce!.trim()}${g.acikDosyaPlani?.trim() ? ` · Açık dosya planı: ${g.acikDosyaPlani.trim()}` : ''}`.slice(0, 1000), oncelik: 'Yüksek' });
+    }
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Firma Statü Önerisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]); // YG-360
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Statü Kararı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: g, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  // YG-360: statü, aşama veya risk derecesi değişikliğini Sicil Sorumlusu gerekçesiyle hazırlar; karar Firma Yönetimi Müdüründedir.
+  s.post('/firma/:id/statu-onerisi', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string };
+    if (!UUID.test(id)) return yok(y);
+    const f = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    if (!g.asama && !g.ag && !g.risk) return y.code(400).send({ hata: 'Önerilen aşama, ağ statüsü veya risk derecesini seçiniz.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Öneri gerekçesini yazmanızı rica ederiz.' });
+    if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Firma Statü Önerisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id])).rowCount) return y.code(409).send({ hata: 'Bu firma için karar bekleyen statü önerisi vardır.' });
+    const oneri = [g.asama && `Aşama: ${g.asama}`, g.ag && `Ağ statüsü: ${g.ag}`, g.risk && `Risk derecesi: ${g.risk}`].filter(Boolean).join(' · ');
+    const yaptirim = g.ag === 'Askıda' || g.ag === 'Çıkarıldı';
+    await kartAc(b.db, { tur: 'Firma Statü Önerisi', kategori: 'gorev', oncelik: 'Yüksek', baslik: `${f.ticari_unvan} · Statü Önerisi`, ozet: `${oneri} · Gerekçe: ${g.gerekce.trim()}`.slice(0, 1000), sahipRol: await rolId(b.db, yaptirim ? 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü' : 'Firma Yönetimi Müdürü'), hazirlayan: o.kullanici, nesneTuru: 'Kuruluş', nesneKimligi: id });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Statü Önerisi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { asama: g.asama, ag: g.ag, risk: g.risk }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
   s.post('/firma/:id/kullanici', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {

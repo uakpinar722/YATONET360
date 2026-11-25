@@ -1,0 +1,3 @@
+-- YG-1662: firmanın kabul kararına itirazında Kabul / Kısmi Kabul / Ret; karar süresi sistem parametresi (0 ise süre işlemez).
+ALTER TABLE kurum_kabul_itirazi ADD COLUMN itiraz_karari text CHECK (itiraz_karari IN ('Kabul', 'Kısmi Kabul', 'Ret')), ADD COLUMN kabul_edilen_kisim text, ADD COLUMN karar_gerekcesi text, ADD COLUMN karar_veren_ref text REFERENCES kullanici_hesabi (kimlik);
+INSERT INTO sistem_parametresi (kod, deger, aciklama) VALUES ('kabul_itirazi_karar_suresi_gun', 0, 'Firma kabul kararı itirazının BT ve Firma Yönetimi Direktörünce karara bağlanma süresi (gün); 0 ise süre işlemez') ON CONFLICT DO NOTHING;

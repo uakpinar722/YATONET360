@@ -292,7 +292,9 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {lgm && <KanitTaleplerim />}
       {ben.roller.some((r) => ['İç Denetçi', 'İç Denetim Müdürü'].includes(r.rol_adi)) && <OrneklemIncelemelerim />}
       {ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı'].includes(r.rol_adi)) && <YurtDisiUygunluk />}
+      {ben.roller.some((r) => r.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü') && <KabulItirazlari />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikGostergeleri />}
+      {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <KaynakRisk mudur={ben.roller.some((r) => r.rol_adi === 'Tedarik Yönetimi Müdürü')} />}
       {ben.roller.some((r) => r.rol_adi === 'Operasyon Müdürü') && <MudurlukGostergeleri />}
       {ben.roller.some((r) => ['Kalite Yöneticisi', 'Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <EksikKontrolKayitlari />}
       {ben.roller.some((r) => ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'].includes(r.rol_adi)) && <KaliteVeriDogrulama />}
@@ -603,6 +605,44 @@ function TedarikGostergeleri() {
   useEffect(() => { void istek<typeof l>('/tedarik/mudurluk-gostergeleri').then(setL).catch(() => setL([])); }, []);
   if (!l.length) return null;
   return <><div className="bolum">Müdürlük Göstergeleri (Son 90 Gün)</div>{l.map((x) => <div key={x.ad} className="soru"><span>{x.ad}: {x.deger === null ? 'Veri yok' : `%${String(x.deger).replace('.', ',')} (${x.pay}/${x.payda})`} · Hedef {x.hedef}</span></div>)}</>;
+}
+
+/** YG-1662: firma kabul kararı itirazları; Kabul / Kısmi Kabul / Ret. */
+function KabulItirazlari() {
+  const [l, setL] = useState<{ kimlik: string; karar_asamasi: string; gerekce: string; ticari_unvan: string; son_zaman: string | null }[]>([]); const [f, setF] = useState<Record<string, { g?: string; k?: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<typeof l>('/kurum-kabul-itirazlari').then(setL).catch(() => setL([]));
+  useEffect(() => { void yk(); }, []);
+  if (!l.length && !m) return null;
+  const karar = (id: string, k: string) => void istek(`/kurum-kabul-itirazi/${id}/karar`, { karar: k, gerekce: f[id]?.g, kabulEdilen: f[id]?.k }).then(() => { setM(`İtiraz kararı kaydedildi: ${k}.`); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kabul Kararı İtirazları</div>{m && <div className="not" role="status">{m}</div>}
+    {l.map((x) => <div key={x.kimlik} className="ozet kart-sol"><b>{x.ticari_unvan} · {x.karar_asamasi} kararına itiraz</b><div>{x.gerekce}</div>{x.son_zaman && <div className="not">Karar son tarihi: {tarih(x.son_zaman)}</div>}
+      <label htmlFor={`ki-g-${x.kimlik}`}>Karar Gerekçesi</label><input required id={`ki-g-${x.kimlik}`} value={f[x.kimlik]?.g ?? ''} onChange={(e) => setF({ ...f, [x.kimlik]: { ...f[x.kimlik], g: e.target.value } })} />
+      <label htmlFor={`ki-k-${x.kimlik}`}>Kabul Edilen Kısım (Kısmi Kabulde)</label><input id={`ki-k-${x.kimlik}`} value={f[x.kimlik]?.k ?? ''} onChange={(e) => setF({ ...f, [x.kimlik]: { ...f[x.kimlik], k: e.target.value } })} />
+      <div className="dugmeler">{['Kabul', 'Kısmi Kabul', 'Ret'].map((k) => <button key={k} className="btn2 kucuk" disabled={!f[x.kimlik]?.g?.trim() || (k === 'Kısmi Kabul' && !f[x.kimlik]?.k?.trim())} onClick={() => karar(x.kimlik, k)}>{k}</button>)}</div></div>)}</>;
+}
+
+/** YG-1594: Kaynak ve Risk (K4 tek kaynak, ikinci kaynak planı, muadil liste Mart/Eylül gözden geçirmesi); YG-784 tedarikçi karnesi. */
+function KaynakRisk({ mudur }: { mudur: boolean }) {
+  type V = { tekKaynak: { parca: string; urun: string; tedarikci: string; siparis: number; muadil: number; plan: string | null }[]; muadil: { son: { donem: string; aciklama: string; yapan: string } | null; sonraki: string; buDonemBekliyor: boolean }; supheli: number; tedarikciler: { kimlik: string; unvan: string; siparis: number; zamanindaOrani: number | null; kabulOrani: number | null; puan: number | null; esik: number | null; esikAlti: boolean }[] };
+  const [v, setV] = useState<V | null>(null); const [p, setP] = useState<Record<string, string>>({}); const [a, setA] = useState(''); const [m, setM] = useState('');
+  const yk = () => istek<V>('/tedarik/kaynak-risk').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const y = (x: number | null) => (x === null ? 'Veri yok' : `%${String(x).replace('.', ',')}`);
+  const donem = (x: string) => x.split('-').reverse().join('.');
+  const plan = (parca: string) => void istek('/tedarik/kaynak-risk/plan', { parca, plan: p[parca] }).then(() => { setM(`${parca} için ikinci kaynak planı kaydedildi.`); return yk(); }).catch((e) => setM(e.message));
+  const gg = () => void istek('/tedarik/muadil-gozden-gecirme', { aciklama: a }).then(() => { setM('Muadil liste gözden geçirmesi kaydedildi.'); setA(''); return yk(); }).catch((e) => setM(e.message));
+  return <details><summary>Kaynak ve Risk ({v.tekKaynak.filter((x) => !x.plan).length + v.tedarikciler.filter((x) => x.esikAlti).length + (v.muadil.buDonemBekliyor ? 1 : 0)})</summary>{m && <div className="not" role="status">{m}</div>}
+    <div className="bolum">K4 Tek Kaynak Bağımlılığı (Son 24 Ay)</div>
+    {v.tekKaynak.length === 0 ? <Bos m="Tek tedarikçiden alınan K4 parça bulunmamaktadır." /> : v.tekKaynak.map((x) => <div key={x.parca} className={x.plan ? 'soru' : 'uyari kart-sol'}><span><b>{x.parca}</b> · {x.urun} · {x.tedarikci} · {x.siparis} sipariş · Onaylı muadil: {x.muadil}</span>
+      {x.plan ? <div className="not">İkinci kaynak planı: {x.plan}</div> : <div className="tam"><label htmlFor={`ik-${x.parca}`}>İkinci Kaynak Planı</label><input id={`ik-${x.parca}`} value={p[x.parca] ?? ''} onChange={(e) => setP({ ...p, [x.parca]: e.target.value })} /><div className="dugmeler"><button className="btn2 kucuk" disabled={!p[x.parca]?.trim()} onClick={() => plan(x.parca)}>Kaydet</button></div></div>}</div>)}
+    <div className="bolum">Muadil Liste Gözden Geçirmesi (Mart / Eylül)</div>
+    <div className="soru"><span>Son gözden geçirme: {v.muadil.son ? `${donem(v.muadil.son.donem)} · ${v.muadil.son.yapan} · ${v.muadil.son.aciklama}` : 'Kayıt yok'} · Sonraki dönem: {donem(v.muadil.sonraki)}</span></div>
+    {v.muadil.buDonemBekliyor && mudur && <div className="ozet kart-sol"><label htmlFor="mgg">Gözden Geçirme Sonucu</label><input required id="mgg" value={a} onChange={(e) => setA(e.target.value)} /><div className="dugmeler"><button className="btn2 kucuk" disabled={!a.trim()} onClick={gg}>Gözden Geçirildi Olarak Kaydet</button></div></div>}
+    <div className="bolum">Tedarikçi Karnesi (Son 180 Gün)</div>
+    {v.supheli > 0 && <div className="uyari">Açık şüpheli ürün bildirimi: {v.supheli}</div>}
+    {v.tedarikciler.length === 0 ? <Bos m="Son 180 günde teslim tarihi gelen sipariş bulunmamaktadır." /> : v.tedarikciler.map((x) => <div key={x.kimlik} className={x.esikAlti ? 'uyari' : 'soru'}><span>{x.unvan} · {x.siparis} sipariş · Zamanında teslim {y(x.zamanindaOrani)} · Kabul {y(x.kabulOrani)} · Puan {x.puan === null ? 'Yetersiz veri (en az 3 sipariş)' : String(x.puan).replace('.', ',')}{x.esikAlti ? ` · Eşik (${x.esik}) altında` : ''}</span></div>)}
+  </details>;
 }
 
 /** YG-1685: Kalite Uzmanı takvimi (7 gün) ve Garanti Yeniden Doğrulama. */

@@ -380,3 +380,16 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     await expect(o.db.query(`DELETE FROM dosya_yazismasi WHERE kimlik = $1`, [m1.kimlik])).rejects.toThrow(); await expect(o.db.query(`UPDATE dosya_yazismasi SET metin = 'x' WHERE kimlik = $1`, [m1.kimlik])).rejects.toThrow();
   });
 });
+
+describe('YG-025 eksik alan tamamlama görevleri', () => {
+  it('açılışta eksik her alan için sorumlu ve hedef tarihli ayrı görev açılır', async () => {
+    const { dosyaEksikleri } = await import('../src/dosya.js');
+    const d = await o.dosyaAc();
+    const eksik = await dosyaEksikleri(o.db, d.kimlik);
+    const k = (await o.sup.query(`SELECT baslik, son_zaman, sahip_kullanici_ref FROM is_karti WHERE tur = 'Eksik Dosya Bilgisi' AND nesne_kimligi = $1 ORDER BY baslik`, [d.kimlik])).rows;
+    expect(k.length).toBe(eksik.length);
+    for (const x of k) { expect(x.son_zaman).not.toBeNull(); expect(x.sahip_kullanici_ref).toBeTruthy(); }
+    const yat = (await o.sup.query(`SELECT y.yat_sahibi_ref FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [d.kimlik])).rows[0].yat_sahibi_ref;
+    if (yat) { await o.sup.query(`UPDATE taraf SET telefon = NULL WHERE kimlik = $1`, [yat]); expect(await dosyaEksikleri(o.db, d.kimlik)).toContain('Yat sahibi telefonu'); }
+  });
+});

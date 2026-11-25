@@ -54,7 +54,7 @@ kapanisKaydet('Firma Kabul İtirazı', async (c, k, karar) => {
   const t = (await c.query(`SELECT * FROM kurum_kabul_itirazi WHERE kimlik = $1 AND durum = 'İncelemede'`, [k.nesne_kimligi])).rows[0];
   if (!t) return;
   if (karar === 'Onayla') await c.query(`UPDATE kurulus SET kayit_asamasi = 'İncelemede', kabul_karar_zamani = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kurulus_ref]);
-  await c.query(`UPDATE kurum_kabul_itirazi SET durum = $2, karar_zamani = now() WHERE kimlik = $1`, [t.kimlik, karar === 'Onayla' ? 'Kabul Edildi' : 'Reddedildi']);
+  await c.query(`UPDATE kurum_kabul_itirazi SET durum = $2, karar_zamani = now(), itiraz_karari = coalesce(itiraz_karari, $3) WHERE kimlik = $1`, [t.kimlik, karar === 'Onayla' ? 'Kabul Edildi' : 'Reddedildi', karar === 'Onayla' ? 'Kabul' : 'Ret']);
   await bildir(c, { olay: `kurum-itiraz:${t.kimlik}`, kullanicilar: [t.itiraz_eden_ref], baslik: 'Kabul Kararı İtirazı', ozet: karar === 'Onayla' ? 'İtirazınız kabul edildi; başvurunuz yeniden incelenecektir.' : 'İtirazınız kabul edilmedi.' });
 });
 
@@ -125,10 +125,44 @@ export function kurumHesapYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const t = (await c.query(`INSERT INTO kurum_kabul_itirazi (kurulus_ref, karar_asamasi, gerekce, itiraz_eden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [u.kimlik, u.kayit_asamasi, gerekce, o.kullanici])).rows[0];
-      await kartAc(c, { tur: 'Firma Kabul İtirazı', baslik: `${u.ticari_unvan} · Kabul Kararı İtirazı`, ozet: gerekce.slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')], nesneTuru: 'Kurum Kabul İtirazı', nesneKimligi: t.kimlik });
+      const gun = Number((await c.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'kabul_itirazi_karar_suresi_gun'`)).rows[0]?.deger ?? 0); // YG-1662
+      await kartAc(c, { tur: 'Firma Kabul İtirazı', baslik: `${u.ticari_unvan} · Kabul Kararı İtirazı`, ozet: gerekce.slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü')], nesneTuru: 'Kurum Kabul İtirazı', nesneKimligi: t.kimlik, sonZaman: gun > 0 ? new Date(Date.now() + gun * 86_400_000) : null });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kabul Kararı İtirazı', nesneTuru: 'Kuruluş', nesneKimligi: u.kimlik, gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Portal' });
       await c.query('COMMIT');
       return { durum: 'İncelemede' };
+    } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
+  });
+
+  // YG-1662: itiraz kararı Kabul / Kısmi Kabul / Ret; Kabul ve Kısmi Kabulde başvuru yeniden incelemeye döner, kabul edilen kısım incelemeye yazılır.
+  const BTD = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü';
+  const btdMi = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = $2`, [k, BTD])).rowCount);
+  s.get('/kurum-kabul-itirazlari', oturumlu, async (i, y) => {
+    if (!(await btdMi(i.oturum!.kullanici))) return yok(y);
+    return (await b.db.query(`SELECT t.kimlik, t.karar_asamasi, t.gerekce, t.olusturma_zamani, u.ticari_unvan, k.son_zaman FROM kurum_kabul_itirazi t JOIN kurulus u ON u.kimlik = t.kurulus_ref
+      LEFT JOIN is_karti k ON k.tur = 'Firma Kabul İtirazı' AND k.nesne_kimligi = t.kimlik::text AND k.durum = 'Bekliyor' WHERE t.durum = 'İncelemede' ORDER BY t.olusturma_zamani`)).rows;
+  });
+  s.post('/kurum-kabul-itirazi/:id/karar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; gerekce?: string; kabulEdilen?: string };
+    if (!UUID.test(id) || !(await btdMi(o.kullanici))) return yok(y);
+    if (!['Kabul', 'Kısmi Kabul', 'Ret'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz: Kabul, Kısmi Kabul veya Ret.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesini yazmanızı rica ederiz.' });
+    if (g.karar === 'Kısmi Kabul' && !g.kabulEdilen?.trim()) return y.code(400).send({ hata: 'Kısmi kabulde itirazın kabul edilen kısmını yazınız.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const t = (await c.query(`SELECT t.*, u.ticari_unvan FROM kurum_kabul_itirazi t JOIN kurulus u ON u.kimlik = t.kurulus_ref WHERE t.kimlik = $1 AND t.durum = 'İncelemede' FOR UPDATE OF t`, [id])).rows[0];
+      if (!t) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'İtiraz karara bağlanmıştır.' }); }
+      const kabul = g.karar !== 'Ret';
+      await c.query(`UPDATE kurum_kabul_itirazi SET durum = $2, itiraz_karari = $3, kabul_edilen_kisim = $4, karar_gerekcesi = $5, karar_veren_ref = $6, karar_zamani = now() WHERE kimlik = $1`, [id, kabul ? 'Kabul Edildi' : 'Reddedildi', g.karar, g.kabulEdilen?.trim() || null, g.gerekce.trim(), o.kullanici]);
+      if (kabul) {
+        await c.query(`UPDATE kurulus SET kayit_asamasi = 'İncelemede', kabul_karar_zamani = NULL, guncelleme_zamani = now() WHERE kimlik = $1`, [t.kurulus_ref]);
+        await kartAc(c, { tur: 'İtiraz Sonrası Yeniden İnceleme', kategori: 'gorev', oncelik: 'Yüksek', baslik: `${t.ticari_unvan} · İtiraz Sonrası Yeniden İnceleme`, ozet: `${g.karar}${g.kabulEdilen?.trim() ? ` · Kabul edilen kısım: ${g.kabulEdilen.trim()}` : ''} · ${g.gerekce.trim()}`.slice(0, 1000), sahipRol: await rolId(c, 'Firma Yönetimi Müdürü'), nesneTuru: 'Kuruluş', nesneKimligi: t.kurulus_ref });
+      }
+      await c.query(`UPDATE is_karti SET durum = $2, kapanma_zamani = now() WHERE tur = 'Firma Kabul İtirazı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id, kabul ? 'Onaylandı' : 'Reddedildi']);
+      await bildir(c, { olay: `kurum-itiraz:${id}`, kullanicilar: [t.itiraz_eden_ref], baslik: 'Kabul Kararı İtirazı', ozet: g.karar === 'Kabul' ? 'İtirazınız kabul edildi; başvurunuz yeniden incelenecektir.' : g.karar === 'Kısmi Kabul' ? `İtirazınız kısmen kabul edildi; başvurunuz kabul edilen kısım yönünden yeniden incelenecektir: ${g.kabulEdilen!.trim()}` : 'İtirazınız kabul edilmedi.' });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kabul İtirazı Kararı', nesneTuru: 'Kuruluş', nesneKimligi: t.kurulus_ref, yeni: { karar: g.karar, kabulEdilen: g.kabulEdilen?.trim() }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { durum: kabul ? 'Kabul Edildi' : 'Reddedildi' };
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
 

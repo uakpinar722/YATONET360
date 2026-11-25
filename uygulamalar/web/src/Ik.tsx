@@ -50,6 +50,65 @@ function IzinKontrol() {
       <div className="not">{tr(x.baslangic)} – {tr(x.bitis)}{x.kalan_bakiye !== null ? ` · Kalan Bakiye: ${x.kalan_bakiye} gün${x.kalan_bakiye >= x.gun ? ' · İzin Bakiyesi Yeterli' : ' · Bakiye Yetersiz'}` : ''}</div></div>)}</>;
 }
 
+/** YG-1615: Personel ve Akademi; sertifika geçerlilikleri, zorunlu ders tamamlama, özel gün rıza durumu. */
+function PersonelAkademi() {
+  const [v, setV] = useState<{ sertifika: { ad_soyad: string; tur: string; ad: string; bitis: string; dolmus: boolean }[]; personel: { ad_soyad: string; personel_durumu: string; zorunlu: number; tamamlanan: number; dogum_rizasi: boolean; ise_giris_rizasi: boolean; evlilik_rizasi: boolean }[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>('/ik/personel-akademi').then(setV).catch(() => setV(null)); }, []);
+  if (!v) return null;
+  const e = (b: boolean) => (b ? 'Var' : 'Yok');
+  return <details><summary>Personel ve Akademi ({v.sertifika.length} sertifika uyarısı)</summary>
+    <div className="bolum">Sertifika Takibi (Dolmuş veya 60 Gün İçinde Dolacak)</div>
+    {v.sertifika.length === 0 ? <div className="ozet bos">Süresi dolan veya dolmak üzere olan sertifika bulunmamaktadır.</div> : v.sertifika.map((x, n) => <div key={n} className={x.dolmus ? 'hata' : 'uyari'}>{x.ad_soyad} · {x.tur} · {x.ad} · {x.dolmus ? 'Süresi doldu' : 'Süresi doluyor'} ({tarih(x.bitis)})</div>)}
+    <div className="bolum">Akademi ve Özel Gün Rızaları</div>
+    {v.personel.map((x, n) => <div key={n} className="soru"><span>{x.ad_soyad} · {x.personel_durumu} · Zorunlu eğitim {x.tamamlanan}/{x.zorunlu} · Doğum günü rızası {e(x.dogum_rizasi)} · İşe giriş yıl dönümü rızası {e(x.ise_giris_rizasi)} · Evlilik yıl dönümü rızası {e(x.evlilik_rizasi)}</span></div>)}
+  </details>;
+}
+
+/** YG-1616: yıllık eğitim planı; gerçekleşme hedef rollerdeki personelin tamamlama oranıdır. */
+function EgitimPlani() {
+  type P = { kimlik: string; egitim_adi: string; hedef_roller: string[]; planlanan_ay: number; ders: string | null; hedef: number; tamamlayan: number; oran: number | null };
+  const [yil, setYil] = useState(new Date().getFullYear()); const [v, setV] = useState<{ planlar: P[]; dersler: { kimlik: string; ad: string }[]; duzenler: boolean } | null>(null);
+  const [f, setF] = useState({ ders: '', ad: '', roller: '', ay: '1', aciklama: '' }); const [m, setM] = useState('');
+  const yk = (y = yil) => istek<NonNullable<typeof v>>(`/ik/egitim-plani?yil=${y}`).then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const AY = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
+  const ekle = () => void istek('/ik/egitim-plani', { yil, ders: f.ders || undefined, ad: f.ad || undefined, roller: f.roller.split(',').map((x) => x.trim()).filter(Boolean), ay: Number(f.ay), aciklama: f.aciklama || undefined }).then(() => { setM('Plan satırı kaydedildi.'); setF({ ders: '', ad: '', roller: '', ay: '1', aciklama: '' }); return yk(); }).catch((e) => setM(e.message));
+  return <details><summary>Yıllık Eğitim Planı · {yil}</summary>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="ep-y">Plan Yılı</label><input id="ep-y" inputMode="numeric" value={yil} onChange={(e) => { const y = Number(e.target.value) || yil; setYil(y); if (String(y).length === 4) void yk(y); }} />
+    {v.planlar.length === 0 ? <div className="ozet bos">Bu yıl için plan satırı bulunmamaktadır.</div> : v.planlar.map((x) => <div key={x.kimlik} className="soru"><span>{AY[x.planlanan_ay - 1]} · {x.egitim_adi}{x.ders ? ' (Akademi)' : ''} · {x.hedef_roller.length ? x.hedef_roller.join(', ') : 'Tüm LGM personeli'} · Gerçekleşme: {x.oran === null ? 'Hedef personel yok' : `%${String(x.oran).replace('.', ',')} (${x.tamamlayan}/${x.hedef})`}</span></div>)}
+    {v.duzenler && <div className="ozet">
+      <label htmlFor="ep-d">Akademi Dersi</label><select id="ep-d" value={f.ders} onChange={(e) => setF({ ...f, ders: e.target.value })}><option value="">Ders bağı yok</option>{v.dersler.map((d) => <option key={d.kimlik} value={d.kimlik}>{d.ad}</option>)}</select>
+      <label htmlFor="ep-a">Eğitim Adı</label><input id="ep-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
+      <label htmlFor="ep-r">Hedef Roller (virgülle; boşsa tüm personel)</label><input id="ep-r" value={f.roller} onChange={(e) => setF({ ...f, roller: e.target.value })} />
+      <label htmlFor="ep-m">Planlanan Ay</label><select id="ep-m" value={f.ay} onChange={(e) => setF({ ...f, ay: e.target.value })}>{AY.map((a, n) => <option key={a} value={n + 1}>{a}</option>)}</select>
+      <label htmlFor="ep-c">Açıklama</label><input id="ep-c" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <button className="btn2" disabled={!f.ders && !f.ad.trim()} onClick={ekle}>Plana Ekle</button>
+    </div>}
+  </details>;
+}
+
+/** YG-1616: personel yan hakları (tutar tutulmaz). */
+function YanHaklar({ l }: { l: Pers[] }) {
+  const [v, setV] = useState<{ kimlik: string; ad_soyad: string; tur: string; aciklama: string | null; baslangic: string; bitis: string | null }[] | null>(null);
+  const [f, setF] = useState({ personel: '', tur: '', aciklama: '', baslangic: '', bitis: '' }); const [bt, setBt] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/ik/yan-hak').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); return yk(); }).catch((e) => setM(e.message));
+  return <details><summary>Yan Haklar ({v.filter((x) => !x.bitis).length} süren)</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.map((x) => <div key={x.kimlik} className="soru"><span>{x.ad_soyad} · {x.tur}{x.aciklama ? ` · ${x.aciklama}` : ''} · {tarih(x.baslangic)}{x.bitis ? ` – ${tarih(x.bitis)}` : ' · Sürüyor'}</span>
+      {!x.bitis && <div className="tam"><label htmlFor={`yh-b-${x.kimlik}`}>Bitiş</label><input id={`yh-b-${x.kimlik}`} type="date" value={bt[x.kimlik] ?? ''} onChange={(e) => setBt({ ...bt, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!bt[x.kimlik]} onClick={() => is(istek(`/ik/yan-hak/${x.kimlik}/sonlandir`, { bitis: bt[x.kimlik] }), 'Yan hak sonlandırıldı.')}>Sonlandır</button></div>}</div>)}
+    <div className="ozet">
+      <label htmlFor="yh-p">Personel</label><select id="yh-p" value={f.personel} onChange={(e) => setF({ ...f, personel: e.target.value })}><option value="">Seçiniz</option>{l.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select>
+      <label htmlFor="yh-t">Yan Hak Türü</label><input id="yh-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })} />
+      <label htmlFor="yh-a">Açıklama</label><input id="yh-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+      <div className="iki-tarih"><div><label htmlFor="yh-s">Başlangıç</label><input id="yh-s" type="date" value={f.baslangic} onChange={(e) => setF({ ...f, baslangic: e.target.value })} /></div><div><label htmlFor="yh-e">Bitiş</label><input id="yh-e" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} /></div></div>
+      <button className="btn2" disabled={!f.personel || !f.tur.trim() || !f.baslangic} onClick={() => is(istek('/ik/yan-hak', { ...f, aciklama: f.aciklama || undefined, bitis: f.bitis || undefined }), 'Yan hak kaydedildi.')}>Yan Hakkı Kaydet</button>
+    </div>
+  </details>;
+}
+
 export function IkYonetimi({ yap }: { yap: Yap }) {
   const [yt, setYt] = useState<{ ik: boolean; isg: boolean; tid: boolean } | null>(null); const [l, setL] = useState<Pers[]>([]); const [k, setK] = useState({ kisi: '', iseGiris: '', brut: '', ek3Yil: '', ek3Serbest: false, vize: '', pasaport: '' }); const [eg, setEg] = useState({ personel: '', tur: 'İSG', ad: '', saat: '', tesis: '', tamamlanma: '', gecerlilik: '' }); const [ay, setAy] = useState(''); const [oz, setOz] = useState<{ kimlik: string; ad_soyad: string; net: number; fazla: number; izin: number; devamsizlik: number; serbestDakika: number; fazlaUcretTl: number }[]>([]); const [ds, setDs] = useState({ personel: '', olayTarihi: '', konu: '', kademe: 'Yazılı Uyarı', savunmaSon: '' }); const [dl, setDl] = useState<{ kimlik: string; ad_soyad: string; konu: string; kademe: string; savunma: string | null; karar: string | null; savunma_son: string | null }[]>([]); const [kr, setKr] = useState<Record<string, string>>({}); const [ay2, setAy2] = useState({ personel: '', tur: 'İşveren Feshi', bildirim: '', son: '', dilekce: '' }); const [al, setAl] = useState<{ kimlik: string; personel_ref: string; ad_soyad: string; tur: string; son_is_gunu: string; odeme_durumu: string; durum: string }[]>([]); const [dt, setDt] = useState<Record<string, { net?: { kidem: { damga: number; net: number } | null; ihbar: { damga: number; netDamgaSonrasi: number } } | null; devir: { kimlik: string; tur: string; aciklama: string; durum: string }[]; engel: string | null; ihbar?: { hafta: number; tutar: number; odeyen: string | null }; kidem?: number | null; uyari?: string | null }>>({}); const [dv, setDv] = useState<Record<string, string>>({}); const [par, setPar] = useState(''); const [kz, setKz] = useState<{ olay_ref: string; isveren: string; ticari_unvan: string | null; son_zaman: string; bilgi_gonderme_zamani: string | null; ozet: string }[]>([]); const [sg, setSg] = useState(''); const [dg, setDg] = useState('');
   const yk = (r: { ik: boolean; isg: boolean }) => {
@@ -64,6 +123,9 @@ export function IkYonetimi({ yap }: { yap: Yap }) {
     {yt.tid && <><div className="bolum">Günlük Harcırah</div><label htmlFor="hr-t">Günlük Tutar (EUR)</label><input required id="hr-t" inputMode="decimal" value={par} onChange={(e) => setPar(e.target.value)} /><button className="btn2" disabled={!par} onClick={() => void yap(() => istek('/ik/parametre', { kod: 'harcirah_gunluk_eur', deger: Number(par.replace(',', '.')) }).then(() => ({ uyari: 'Tutar kaydedildi.' })))}>Kaydet</button></>}
     {yt.ik && <>
       <IzinKontrol />
+      <PersonelAkademi />
+      <EgitimPlani />
+      <YanHaklar l={l} />
       <div className="bolum">Personel Kartı</div>
       <label htmlFor="pk-k">Personel</label>{secici('pk-k', k.kisi, (x) => { const s = l.find((y) => y.kimlik === x); setK({ kisi: x, iseGiris: s?.ise_giris_tarihi ?? '', brut: s?.brut_aylik_tl ?? '', ek3Yil: s?.ek3_yil ? String(s.ek3_yil) : '', ek3Serbest: Boolean(s?.ek3_serbest_zaman), vize: '', pasaport: '' }); })}
       <div className="iki-tarih"><div><label htmlFor="pk-g">İşe Giriş</label><input required id="pk-g" type="date" value={k.iseGiris} onChange={(e) => setK({ ...k, iseGiris: e.target.value })} /></div><div><label htmlFor="pk-b">Brüt Aylık (TL)</label><input id="pk-b" inputMode="decimal" value={k.brut} onChange={(e) => setK({ ...k, brut: e.target.value })} /></div></div>

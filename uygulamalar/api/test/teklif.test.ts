@@ -599,6 +599,14 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
     expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', '2. Kuzey Ege')).toBeNull();
     expect(await firmaUygunlugu(o.db, f, 'Bölge Deneme', '6. Doğu Akdeniz')).toContain('6. Doğu Akdeniz');
     expect((await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { ag: 'Çıkarıldı', gerekce: 'G' })).statusCode).toBe(403);
+    { // T-YG360: Sicil Sorumlusu önerisi Firma Yönetimi Müdürüne görev; karar öneriyi kapatır
+      expect((await o.ist('POST', `/api/firma/${f}/statu-onerisi`, await o.gir('sc'), { risk: 'Yakın İzleme' })).statusCode).toBe(400);
+      const r = await o.ist('POST', `/api/firma/${f}/statu-onerisi`, await o.gir('sc'), { risk: 'Yakın İzleme', gerekce: 'Karne düşüşü' }); expect(r.statusCode, r.body).toBe(200);
+      expect((await o.ist('POST', `/api/firma/${f}/statu-onerisi`, await o.gir('sc'), { risk: 'Yakın İzleme', gerekce: 'Karne düşüşü' })).statusCode).toBe(409);
+      expect((await o.kart('Firma Statü Önerisi', f)).durum).toBe('Bekliyor');
+      expect((await o.ist('POST', `/api/firma/${f}/statu`, await o.gir('fym'), { risk: 'Yakın İzleme', gerekce: 'Öneri uygun' })).statusCode).toBe(200);
+      expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Firma Statü Önerisi' AND nesne_kimligi = $1`, [f])).rows[0].durum).toBe('Tamamlandı');
+    }
   });
   it('firma kullanıcısının işlevi işlemi sınırlar; kurumda en az bir Yönetici kalır (YG994-ISLEV)', async () => {
     const { firmaIslevi } = await import('../src/firma_islev.js');

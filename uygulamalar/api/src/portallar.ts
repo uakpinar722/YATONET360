@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from 'pg';
 import { belgeBagiKaydet } from './belge.js';
 import { bildir } from './bildirim.js';
 import { dosyaErisimi } from './dosya.js';
+import { izYaz } from './denetim.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { coz, totpDogrula } from './kripto.js';
@@ -73,6 +74,35 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     return (await b.db.query(`SELECT t.kimlik, t.tur, t.hedef_tarih::text, t.durum, t.tesis_izin_no, t.red_gerekcesi, k.ticari_unvan, CASE WHEN t.durum = 'Onaylı' THEN 'Yeşil' WHEN t.durum = 'İzin Verilmedi' OR (t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih < (now() AT TIME ZONE 'Europe/Istanbul')::date) THEN 'Kırmızı' WHEN t.durum = 'Yanıt Bekliyor' AND t.hedef_tarih <= (now() AT TIME ZONE 'Europe/Istanbul' + interval '48 hours')::date THEN 'Sarı' END renk FROM tesis_talebi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani`, [id])).rows;
+  });
+  // YG-1447: firmadan veya tesisten gelen yazışmanın hızlı girişi; durum ve hedef tarih değişir, yazışma kaydı tutulur.
+  s.post('/tesis-talebi/:id/yazisma', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kaynak?: string; ozet?: string; durum?: string; izinNo?: string; yeniHedef?: string; belge?: string };
+    if (!UUID.test(id)) return yok(y);
+    const t = (await b.db.query(`SELECT t.*, d.dosya_sorumlusu_ref FROM tesis_talebi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.kimlik = $1`, [id])).rows[0];
+    if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
+    const saha = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [t.dosya_ref])).rows.map((x) => x.kullanici_ref as string);
+    if (t.dosya_sorumlusu_ref !== o.kullanici && !saha.includes(o.kullanici)) return y.code(403).send({ hata: 'Yazışmayı Dosya Sorumlusu veya Saha Sorumlusu girer.' });
+    if (t.durum === 'Geri Çekildi') return y.code(409).send({ hata: 'Geri çekilen işleme yazışma girilmez.' });
+    if (!['Firma', 'Tesis'].includes(g.kaynak ?? '') || !g.ozet?.trim()) return y.code(400).send({ hata: 'Yazışmanın kaynağını ve özetini yazınız.' });
+    const durum = g.durum ?? t.durum;
+    if (!['Yanıt Bekliyor', 'Onaylı', 'İzin Verilmedi'].includes(durum)) return y.code(400).send({ hata: 'Durumu seçiniz: Yanıt Bekliyor, Onaylı veya İzin Verilmedi.' });
+    if (durum === 'Onaylı' && !(g.izinNo?.trim() || t.tesis_izin_no)) return y.code(400).send({ hata: 'Onaylı işlemde tesis izin numarasını yazmanızı rica ederiz.' });
+    if (g.yeniHedef && !/^\d{4}-\d{2}-\d{2}$/.test(g.yeniHedef)) return y.code(400).send({ hata: 'Yeni hedef tarihi geçerli değildir.' });
+    if (g.belge && (!UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.belge, t.dosya_ref])).rowCount)) return y.code(400).send({ hata: 'Ek, dosyaya yüklenmiş bir belge olmalıdır.' });
+    return islem(async (c) => {
+      await c.query(`UPDATE tesis_talebi SET durum = $2, tesis_izin_no = coalesce($3, tesis_izin_no), red_gerekcesi = CASE WHEN $2 = 'İzin Verilmedi' THEN $4 ELSE red_gerekcesi END, hedef_tarih = coalesce($5::date, hedef_tarih) WHERE kimlik = $1`, [id, durum, g.izinNo?.trim() || null, g.ozet!.trim(), g.yeniHedef || null]);
+      await c.query(`INSERT INTO tesis_talebi_yazisma (talep_ref, kaynak, ozet, durum, eski_hedef, yeni_hedef, belge_ref, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [id, g.kaynak, g.ozet!.trim(), durum, g.yeniHedef ? t.hedef_tarih : null, g.yeniHedef || null, g.belge || null, o.kullanici]);
+      if (durum !== 'Yanıt Bekliyor') await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Tesis İşlemi Uyarısı' AND nesne_kimligi = $1 AND durum = 'Bekliyor' AND NOT EXISTS (SELECT 1 FROM tesis_talebi x WHERE x.dosya_ref = $1 AND x.durum = 'Yanıt Bekliyor')`, [t.dosya_ref]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Tesis Yazışması Girildi', nesneTuru: 'Tesis Talebi', nesneKimligi: id, eski: { durum: t.durum, hedef: t.hedef_tarih }, yeni: { durum, hedef: g.yeniHedef ?? null, kaynak: g.kaynak }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      return { durum };
+    });
+  });
+  s.get('/tesis-talebi/:id/yazismalar', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const t = UUID.test(id) ? (await b.db.query(`SELECT dosya_ref FROM tesis_talebi WHERE kimlik = $1`, [id])).rows[0] : undefined;
+    if (!t || o.grup !== 'LGM İç Rolü' || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
+    return (await b.db.query(`SELECT w.kaynak, w.ozet, w.durum, w.eski_hedef::text, w.yeni_hedef::text, w.belge_ref, w.zaman, h.ad_soyad giren FROM tesis_talebi_yazisma w JOIN kullanici_hesabi h ON h.kimlik = w.giren_ref WHERE w.talep_ref = $1 ORDER BY w.zaman DESC`, [id])).rows;
   });
   // YG-1447: dosyada açık iş emri olan firmanın son sicil belgesi süresi dolmuş veya 30 gün içinde doluyorsa uyarı.
   s.get('/dosya/:id/firma-belge-uyarilari', oturumlu, async (i, y) => {

@@ -51,6 +51,16 @@ describe('A8 Tesis (YG-297, YG-1575, YG-417, YG-554)', () => {
       expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Tesis İşlemi Uyarısı' AND nesne_kimligi = $1`, [d.kimlik])).rows[0].n).toBe(1);
       await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = '2026-12-01' WHERE kimlik = $1`, [r.json().kimlik]);
       expect(Array.isArray((await o.ist('GET', `/api/dosya/${d.kimlik}/firma-belge-uyarilari`, c)).json())).toBe(true); // YG-1447
+      { // T-YG1447-YAZISMA: hızlı yazışma girişi; hedef tarih değişir, kayıt tutulur
+        const yu = `/api/tesis-talebi/${r.json().kimlik}/yazisma`;
+        expect((await o.ist('POST', yu, await o.gir('tu'), { kaynak: 'Firma', ozet: 'X' })).statusCode).not.toBe(200);
+        expect((await o.ist('POST', yu, c, { kaynak: 'Firma' })).statusCode).toBe(400);
+        expect((await o.ist('POST', yu, c, { kaynak: 'Firma', ozet: 'Tesis onayladı', durum: 'Onaylı' })).json().hata).toContain('izin numarasını');
+        const w = await o.ist('POST', yu, c, { kaynak: 'Firma', ozet: 'Tesis randevuyu iki gün öteledi', yeniHedef: '2026-12-03' }); expect(w.statusCode, w.body).toBe(200);
+        expect((await o.ist('GET', `/api/dosya/${d.kimlik}/tesis-talepleri`, c)).json().find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).hedef_tarih).toBe('2026-12-03');
+        const yl = (await o.ist('GET', `/api/tesis-talebi/${r.json().kimlik}/yazismalar`, c)).json(); expect(yl[0]).toMatchObject({ kaynak: 'Firma', eski_hedef: '2026-12-01', yeni_hedef: '2026-12-03', durum: 'Yanıt Bekliyor' });
+        await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = '2026-12-01' WHERE kimlik = $1`, [r.json().kimlik]);
+      }
     }
     const a = await o.ist('GET', '/api/tesis-portal/ana', tesisC);
     expect(a.statusCode, a.body).toBe(200); expect(a.json().bekleyen).toHaveLength(1);

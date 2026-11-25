@@ -225,6 +225,24 @@ acilisKancasi(async (c, dosya, _web, yapan) => {
   await kartAc(c, { tur: 'Eksik Klas ve Kullanım Bilgisi', kategori: 'gorev', baslik: `${d.dosya_no} · Eksik Klas ve Kullanım Bilgisi`, ozet: `Eksik: ${eksik.join(', ')}. Bilgiyi kaynağıyla (ruhsat, klas sertifikası, kaptan/yat sahibi beyanı) tamamlamanız rica olunur.`, sahipKullanici: yapan, sonZaman: new Date(Date.now() + 2 * 86_400_000), nesneTuru: 'Yat', nesneKimligi: d.yat_ref });
 });
 
+/** YG-025: dosyada ve yat sahibi kaydında eksik kalan alanlar (yat bilgileri YG-1245 ve YG-096 görevlerindedir). */
+export async function dosyaEksikleri(db: Db, dosya: string): Promise<string[]> {
+  const d = (await db.query(`SELECT d.olay_tarihi, t.kimlik taraf, t.telefon, t.eposta, t.vergi_no, t.tckn, t.kisi_turu FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN taraf t ON t.kimlik = y.yat_sahibi_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
+  if (!d) return [];
+  return [!d.olay_tarihi && 'Olay tarihi', !d.taraf && 'Yat sahibi kaydı', d.taraf && !d.telefon && 'Yat sahibi telefonu', d.taraf && !d.eposta && 'Yat sahibi e-posta adresi',
+    d.taraf && !d.vergi_no && !d.tckn && (d.kisi_turu === 'Tüzel kişi' ? 'Yat sahibi vergi numarası' : 'Yat sahibi TC kimlik veya vergi numarası')].filter(Boolean) as string[];
+}
+// YG-025: her eksik alan için sorumlu (açılışı yapan) ve hedef tarihli ayrı tamamlama görevi; acil geçici açılışta hedef, girilen tamamlama tarihidir.
+acilisKancasi(async (c, dosya, _web, yapan) => {
+  const d = (await c.query(`SELECT dosya_no, acil_gecici_acilis, eksik_alan_gerekcesi, tamamlama_hedef_tarihi::text hedef FROM dosya WHERE kimlik = $1`, [dosya])).rows[0]; if (!d) return;
+  const son = d.acil_gecici_acilis && d.hedef ? new Date(`${d.hedef}T18:00:00+03:00`) : new Date(Date.now() + 2 * 86_400_000);
+  if (d.acil_gecici_acilis && d.eksik_alan_gerekcesi) await kartAc(c, { tur: 'Acil Açılış Eksikleri', kategori: 'gorev', oncelik: 'Yüksek', baslik: `${d.dosya_no} · Acil Açılış Eksiklerini Tamamla`, ozet: `Acil geçici açılış gerekçesi: ${d.eksik_alan_gerekcesi}`.slice(0, 300), sahipKullanici: yapan, sonZaman: son, nesneTuru: 'Dosya', nesneKimligi: dosya });
+  for (const alan of await dosyaEksikleri(c, dosya)) {
+    if ((await c.query(`SELECT 1 FROM is_karti WHERE tur = 'Eksik Dosya Bilgisi' AND nesne_kimligi = $1 AND baslik = $2 AND durum = 'Bekliyor'`, [dosya, `${d.dosya_no} · ${alan}`])).rowCount) continue;
+    await kartAc(c, { tur: 'Eksik Dosya Bilgisi', kategori: 'gorev', baslik: `${d.dosya_no} · ${alan}`, ozet: `${alan} açılışta girilmedi; kaynağıyla tamamlamanız rica olunur.`, sahipKullanici: yapan, sonZaman: son, nesneTuru: 'Dosya', nesneKimligi: dosya });
+  }
+});
+
 /** YG-036: görüş ayrılığında sırayla üst kademeye. Sahibi olmayan kademe atlanır. */
 const DUSURME_KADEMELERI = [['Operasyon Yöneticisi', 'Teknik Yönetici'], ['Operasyon Müdür Yardımcısı', 'Teknik Müdür Yardımcısı'], ['Operasyon Müdürü', 'Teknik Müdür'], ['Teknik ve Operasyon Direktörü']];
 

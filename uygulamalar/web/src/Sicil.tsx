@@ -47,6 +47,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
         <div className="ozet">
           <SicilKarne id={secili} onay={onay} gerekce={gerekce} yap={yap} />
           <KararOnerisi id={secili} yap={yap} sicil={ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu')} asama={l.find((f) => f.kimlik === secili)?.kayit_asamasi} />
+          {['Onaylı', 'Koşullu Onaylı'].includes(l.find((f) => f.kimlik === secili)?.kayit_asamasi ?? '') && <StatuKarari id={secili} yap={yap} sicil={ben.roller.some((r) => r.rol_adi === 'Sicil Sorumlusu')} onay={onay} />}
           {onay && <>
             <label htmlFor="fs-g">Statü Gerekçesi</label><input required id="fs-g" value={gerekce} onChange={(e) => setGerekce(e.target.value)} />
             <button className="btn2" disabled={!gerekce.trim()} onClick={() => void yap(() => istek(`/firma/${secili}/statu`, { asama: 'Onaylı', ag: 'Aktif', gerekce }), 'Firma onaylandı.')}>Onayla ve Aktif Yap</button>
@@ -78,6 +79,23 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
 }
 
 /** YG-1650 (A37): ön inceleme, kanıta bağlı puanlama ve karar önerisi (Firma Yönetimi Yöneticisi → Müdür Yardımcısı → Müdür). */
+/** YG-360: ağ statüsü ve risk derecesi değişikliğini Sicil Sorumlusu önerir; Firma Yönetimi Müdürü (kalıcı askı ve çıkarmada Direktör) karar verir. */
+function StatuKarari({ id, yap, sicil, onay }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void>; sicil: boolean; onay: boolean }) {
+  const [f, setF] = useState({ ag: '', risk: '', gerekce: '', plan: '' });
+  const g = { ag: f.ag || undefined, risk: f.risk || undefined, gerekce: f.gerekce };
+  if (!sicil && !onay) return null;
+  return <>
+    <label htmlFor={`sk-a-${id}`}>Ağ Statüsü</label><select id={`sk-a-${id}`} value={f.ag} onChange={(e) => setF({ ...f, ag: e.target.value })}><option value="">Değişmez</option>{['Aktif', 'Kısıtlı', 'Geçici Askıda', 'Askıda', 'Çıkarıldı'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor={`sk-r-${id}`}>Risk Derecesi</label><select id={`sk-r-${id}`} value={f.risk} onChange={(e) => setF({ ...f, risk: e.target.value })}><option value="">Değişmez</option>{['Tercihli', 'Standart', 'Yakın İzleme'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor={`sk-g-${id}`}>Gerekçe</label><input required id={`sk-g-${id}`} value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+    {onay && (f.ag === 'Askıda' || f.ag === 'Çıkarıldı') && <><label htmlFor={`sk-p-${id}`}>Açık Dosya Planı (devir, tamamlatma veya durdurma)</label><input id={`sk-p-${id}`} value={f.plan} onChange={(e) => setF({ ...f, plan: e.target.value })} /></>}
+    <div className="dugmeler">
+      {sicil && <button className="btn2" disabled={!f.gerekce.trim() || (!f.ag && !f.risk)} onClick={() => void yap(() => istek(`/firma/${id}/statu-onerisi`, g), 'Statü önerisi karar makamına gönderildi.')}>Statü Önerisi Gönder</button>}
+      {onay && <button className="btn2" disabled={!f.gerekce.trim() || (!f.ag && !f.risk)} onClick={() => void yap(() => istek(`/firma/${id}/statu`, { ...g, acikDosyaPlani: f.plan || undefined }), 'Statü kararı kaydedildi.')}>Statü Kararını Kaydet</button>}
+    </div>
+  </>;
+}
+
 function KararOnerisi({ id, yap, sicil, asama }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void>; sicil: boolean; asama?: string }) {
   type O = { kimlik: string; oneri: string; kapsama: string | null; puanlar: { baslik: string; puan: number; kanit: string }[]; gerekce: string; durum: string; hazirlayan: string; makam: string | null };
   const [v, setV] = useState<{ asama: string; son: string | null; oneriler: O[]; hazirlar: boolean; oneriTurleri: string[]; kapsamalar: string[] } | null>(null);

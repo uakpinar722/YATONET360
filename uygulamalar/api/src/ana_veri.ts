@@ -22,6 +22,13 @@ export function telefonBicimi(s: string | null | undefined): string | null {
   return `0${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6, 8)} ${d.slice(8)}`;
 }
 
+/** YG-1338: il ve ilçe adı Türkçe başlık harfiyle (her sözcüğün ilk harfi büyük); boşsa null. */
+export function ilBaslik(s: string | null | undefined): string | null {
+  const t = String(s ?? '').trim().replace(/\s+/g, ' ');
+  if (!t) return null;
+  return t.toLocaleLowerCase('tr-TR').split(/([ -])/).map((p) => (p === ' ' || p === '-' ? p : p.charAt(0).toLocaleUpperCase('tr-TR') + p.slice(1))).join('');
+}
+
 /** YG-1264, YG-1265: bölge tabloları ana veriden yüklenir (dosya depoya alınmaz). */
 export async function bolgeYukle(c: PoolClient, g: { bolgeler: Satir[]; iller: Satir[] }): Promise<{ bolge: number; il: number }> {
   let bolge = 0; let il = 0;
@@ -50,7 +57,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     if ((await c.query(`SELECT 1 FROM kurulus WHERE ana_veri_no = $1`, [no])).rowCount) { atlanan++; continue; }
     const grup = dolu(f['Mükerrer Grubu']); if (grup) mukerrerFirma++;
     await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, kurumsal_telefon, il, ilce, ana_veri_no, adres, web, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,'Çözüm Ortağı','Aday','Pasif',$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [`LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`, ad, dolu(f['Telefon']), dolu(f['Konum İl']), dolu(f['Konum İlçe']), no, dolu(f['Adres']), /^https?:|^www\./i.test(f['Web'] ?? '') ? dolu(f['Web']) : null, grup, grup ? 'Karar bekliyor' : null]);
+      [`LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`, ad, dolu(f['Telefon']), ilBaslik(f['Konum İl']), ilBaslik(f['Konum İlçe']), no, dolu(f['Adres']), /^https?:|^www\./i.test(f['Web'] ?? '') ? dolu(f['Web']) : null, grup, grup ? 'Karar bekliyor' : null]);
     { const tel = telefonBicimi(f['Telefon']); await c.query(`UPDATE kurulus SET bolge = $2, hizmet_kumesi = $3, kurumsal_telefon = coalesce($4, kurumsal_telefon), telefon_kontrol = $5, eski_liste_eslesme = $6, eski_liste_notu = $7, veri_notu = $8 WHERE ana_veri_no = $1`, [no, dolu(f['Bölge']), dolu(f['Hizmet Kümesi']), tel, Boolean(dolu(f['Telefon'])) && !tel, dolu(f['Eski Liste: Bağlama Eşleşmesi']), dolu(f['Eski Liste Notu']), dolu(f['Veri Notu'])]); }
     firma++;
   }
@@ -59,7 +66,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     if (no === null || !ad) continue;
     const karar = dolu(n['Mükerrer Kararı']); const grup = dolu(n['Olası Mükerrer Grubu']);
     const r = await c.query(`INSERT INTO baglama_noktasi (nokta_no, tur, il, ilce, belde, ad, bolge, hizmet_kumesi, teyit_durumu, enlem, boylam, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (nokta_no) DO NOTHING`,
-      [no, dolu(n['Tür']) ?? 'Belirsiz', dolu(n['İl']), dolu(n['İlçe']), dolu(n['Belde / Yerleşim']), ad, dolu(n['Bölge']), dolu(n['Hizmet Kümesi']), dolu(n['Teyit Durumu']), sayi(n['Enlem']), sayi(n['Boylam']), grup, karar === 'Karar bekliyor' ? karar : null]);
+      [no, dolu(n['Tür']) ?? 'Belirsiz', ilBaslik(n['İl']), ilBaslik(n['İlçe']), dolu(n['Belde / Yerleşim']), ad, dolu(n['Bölge']), dolu(n['Hizmet Kümesi']), dolu(n['Teyit Durumu']), sayi(n['Enlem']), sayi(n['Boylam']), grup, karar === 'Karar bekliyor' ? karar : null]);
     if (r.rowCount) { nokta++; if (karar === 'Karar bekliyor') mukerrerNokta++; }
     await c.query(`UPDATE baglama_noktasi SET uyari = $2, son_teyit_tarihi = $3 WHERE nokta_no = $1 AND uyari IS NULL`, [no, dolu(n['Uyarı']), /^\d{4}-\d{2}-\d{2}$/.test(n['Son Teyit Tarihi'] ?? '') ? n['Son Teyit Tarihi'] : null]); // YG-1266
   }

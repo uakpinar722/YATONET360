@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bolgeTuret, telefonBicimi } from '../src/ana_veri.js';
+import { bolgeTuret, ilBaslik, telefonBicimi } from '../src/ana_veri.js';
 import { pazarlamaAdimi, sigortaPortalGorevi } from '../src/sigorta_kurum.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
@@ -11,6 +11,7 @@ afterAll(async () => { await o.kapat(); });
 describe('telefon ve bölge (YG-1258, YG-1264, YG-1265)', () => {
   it('telefon biçimlenir, çözülemeyen null döner', () => {
     expect(telefonBicimi('5333516530')).toBe('0533 351 65 30'); expect(telefonBicimi('0 533 748 15 59')).toBe('0533 748 15 59'); expect(telefonBicimi('+90 212 555 11 22')).toBe('0212 555 11 22'); expect(telefonBicimi('1234')).toBeNull(); expect(telefonBicimi(null)).toBeNull();
+    expect([ilBaslik('MUĞLA'), ilBaslik(' istanbul '), ilBaslik('İZMİR'), ilBaslik('ilica'), ilBaslik('BODRUM-GÜMBET'), ilBaslik('')]).toEqual(['Muğla', 'İstanbul', 'İzmir', 'İlica', 'Bodrum-Gümbet', null]); // YG-1338
   });
   it('firma ilçe eşleşmesinden, yoksa il varsayılanından bölge alır', async () => {
     await o.sup.query(`INSERT INTO bolge_eslesme (il, ilce, bolge, hizmet_kumesi, saha_merkezi) VALUES ('Çanakkale','Biga','1. Marmara','Saros','Tuzla')`);

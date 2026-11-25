@@ -268,3 +268,29 @@ describe('İSG ikiz görev (YG-1690)', () => {
     expect(k.ilk).not.toMatch(/Kalite/);
   });
 });
+
+describe('yıllık eğitim planı ve yan haklar (YG-1616)', () => {
+  it('plan satırı İK Müdüründe; gerçekleşme eğitim kaydından; yan hak kaydı ve sonlandırma', async () => {
+    const ikm = await o.gir('ikm'); const iks = await o.gir('iks');
+    const P = { yil: 2026, ad: 'Temel İSG', roller: ['Dosya Sorumlusu'], ay: 3 };
+    expect((await o.ist('POST', '/api/ik/egitim-plani', iks, P)).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/ik/egitim-plani', ikm, { ...P, roller: ['Yok Böyle Rol'] })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/ik/egitim-plani', ikm, P)).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/ik/egitim-plani', ikm, P)).statusCode).toBe(409);
+    const v = (await o.ist('GET', '/api/ik/egitim-plani?yil=2026', iks)).json();
+    const x = v.planlar.find((p: any) => p.egitim_adi === 'Temel İSG'); expect(x.hedef).toBeGreaterThanOrEqual(1); expect(x.tamamlayan).toBeLessThanOrEqual(x.hedef); expect(typeof x.oran).toBe('number'); expect(v.duzenler).toBe(false);
+    expect((await o.ist('GET', '/api/ik/egitim-plani', await o.gir('ds'))).statusCode).toBe(404);
+    await kart('ds');
+    expect((await o.ist('POST', '/api/ik/yan-hak', iks, { personel: o.K.ds, tur: 'Yemek kartı' })).statusCode).toBe(400);
+    const r = await o.ist('POST', '/api/ik/yan-hak', iks, { personel: o.K.ds, tur: 'Yemek kartı', baslangic: '2026-01-01' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', `/api/ik/yan-hak/${r.json().kimlik}/sonlandir`, iks, { bitis: '2025-01-01' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/ik/yan-hak/${r.json().kimlik}/sonlandir`, iks, { bitis: '2026-06-30' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/ik/yan-hak', ikm)).json().find((y: any) => y.kimlik === r.json().kimlik).bitis).toBe('2026-06-30');
+    { // YG-1615: Personel ve Akademi
+      await o.ist('POST', '/api/ik/egitim', iks, { personel: o.K.ds2, tur: 'Mesleki Belge', ad: 'Yangın Sertifikası', tamamlanma: '2026-01-01', gecerlilik: '2020-01-01' });
+      const pa = await o.ist('GET', '/api/ik/personel-akademi', iks); expect(pa.statusCode, pa.body).toBe(200);
+      expect(pa.json().personel.length).toBeGreaterThan(0); expect(pa.body).not.toContain('dogum_gunu');
+      expect((await o.ist('GET', '/api/ik/personel-akademi', await o.gir('ds'))).statusCode).toBe(404);
+    }
+  });
+});
