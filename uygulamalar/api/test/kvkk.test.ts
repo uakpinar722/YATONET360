@@ -168,3 +168,11 @@ describe('saklama süresi tanımsız gruplar (YG-1227)', () => {
     expect((await o.sup.query(`SELECT metin FROM konum_kaydi WHERE talep_ref = $1 AND metin IN ('Eski', 'Yeni')`, [tal])).rows.map((r) => r.metin)).toEqual(['Yeni']);
   });
 });
+
+describe('saklama planı iş amacı ve bilgi sınıfı (YG-1224)', () => {
+  it('her plan satırı iş amacı ve bilgi sınıfıyla gelir; dış kullanıcıya kapalı', async () => {
+    const l = (await o.ist('GET', '/api/kvkk/saklama-plani', await o.gir('hud'))).json();
+    expect(l.length).toBeGreaterThan(10); expect(l.every((x: any) => x.is_amaci && ['Kamuya Açık', 'Kurumsal', 'Gizli', 'Kritik'].includes(x.bilgi_sinifi))).toBe(true);
+    expect(l.find((x: any) => x.kod === 'OZL-10').bilgi_sinifi).toBe('Kritik');
+  });
+});

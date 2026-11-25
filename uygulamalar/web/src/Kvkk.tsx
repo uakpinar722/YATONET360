@@ -182,6 +182,15 @@ function Yedekler() {
     </div></>;
 }
 
+/** YG-1224: saklama planı (KVKK-07 süreleri; iş amacı KVKK-06 VERBİS işleme amaçlarından, bilgi sınıfı). */
+function SaklamaPlani() {
+  const [l, setL] = useState<{ kod: string; grup: string; is_amaci: string | null; bilgi_sinifi: string | null; sure_ay: number | null; baslangic_olayi: string; sorumlu_unvan: string | null; imha_yontemi: string }[]>([]);
+  useEffect(() => { void istek<typeof l>('/kvkk/saklama-plani').then(setL).catch(() => setL([])); }, []);
+  if (!l.length) return null;
+  const sure = (a: number | null) => (a === null ? 'Süre kayıtta' : a % 12 === 0 ? `${a / 12} yıl` : `${a} ay`);
+  return <details><summary>Saklama Planı ({l.length} veri grubu)</summary>{l.map((x) => <div key={x.kod} className="soru"><span><b>{x.kod}</b> · {x.grup} · {sure(x.sure_ay)} · Başlangıç: {x.baslangic_olayi} · {x.bilgi_sinifi ?? 'Sınıf yok'} · {x.imha_yontemi}{x.sorumlu_unvan ? ` · ${x.sorumlu_unvan}` : ''}{x.is_amaci ? <div className="not">Amaç: {x.is_amaci}</div> : null}</span></div>)}</details>;
+}
+
 export function KvkkEkrani() {
   const { yap, Mesaj } = useYap(); const [y, setY] = useState<{ ihlal: boolean; hud: boolean; uzman: boolean } | null>(null); const [iv, setIv] = useState<Ihlal[]>([]); const [bs, setBs] = useState<Basvuru[]>([]); const [il, setIl] = useState<Liste[]>([]); const [m, setM] = useState<Record<string, string>>({}); const [f, setF] = useState({ ad: '', iletisim: '', kanal: 'KEP', yanitKanali: '', talep: HAK[0]!, alinma: '' });
   const sec = (k: string) => m[k] ?? ''; const yz = (k: string, v: string) => setM({ ...m, [k]: v });
@@ -192,6 +201,7 @@ export function KvkkEkrani() {
   const is = (yol: string, g: object, t: string) => void yap(() => istek(yol, g).then(() => yukle()), t);
   return (<>
     <h1>KVKK ve Uyum</h1><Mesaj />
+    <SaklamaPlani />
     <Yedekler />
     <ZamanlanmisIsler /><ArkaPlanIsleri />
     <BasarisizGonderimler />

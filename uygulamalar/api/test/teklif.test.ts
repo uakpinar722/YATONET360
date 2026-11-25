@@ -988,3 +988,21 @@ describe('bölge katsayısı (YG-856, KS-11)', () => {
     expect(Number((await o.sup.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'kabul_itirazi_karar_suresi_gun'`)).rows[0].deger)).toBe(15); // YG-1662
   });
 });
+
+describe('katalog ad farkı teyidi (YG-1537)', () => {
+  it('bağlanmamış katalog kaydı aday modelle listeye girer; teyitte katalog seri/no modele bağlanır ve durum güncellenir', async () => {
+    const { adFarkiYukle, benzerlik } = await import('../src/katalog_ad_farki.js');
+    expect(benzerlik('70', '70 OPEN')).toBeGreaterThan(0.3);
+    const x = `ADF${Date.now()}`;
+    const m = (await o.sup.query(`INSERT INTO yat_marka_model (marka_kodu, marka, model, durum, fotograf, teknik_veri) VALUES ('MRK-9999', $1, '70 Open', 'Katalog kaydı yok', 'Var', 'Yok') RETURNING kimlik`, [x])).rows[0].kimlik;
+    const r = await adFarkiYukle(o.db, [{ seri: 99, no: 7001, ad: `${x} ${x} 70` }]); expect(r.eklenen).toBe(1);
+    const sc = await o.gir('sc');
+    const l = (await o.ist('GET', '/api/ana-veri/ad-farki', sc)).json(); const s = l.find((z: any) => z.katalog_no === 7001);
+    expect(s.adaylar[0].model).toBe(m);
+    expect((await o.ist('GET', '/api/ana-veri/ad-farki', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/ana-veri/ad-farki/99/7001', sc, { model: m })).statusCode).toBe(400);
+    const t = await o.ist('POST', '/api/ana-veri/ad-farki/99/7001', sc, { model: m, not: 'Yazım farkı; aynı model' }); expect(t.statusCode, t.body).toBe(200);
+    expect((await o.sup.query(`SELECT katalog_seri, katalog_no, durum FROM yat_marka_model WHERE kimlik = $1`, [m])).rows[0]).toEqual({ katalog_seri: 99, katalog_no: '07001', durum: 'Teknik eksik' });
+    expect((await o.ist('POST', '/api/ana-veri/ad-farki/99/7001', sc, { eslesmeYok: true, not: 'X' })).statusCode).toBe(409);
+  });
+});

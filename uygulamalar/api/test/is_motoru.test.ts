@@ -80,13 +80,15 @@ describe('onay zinciri (YG-1637)', () => {
     expect((await bugun(CEO)).onay.map((x: any) => x.kimlik)).not.toContain(id);
     expect((await karar(CEO, id, 'Onayla')).statusCode).toBe(403);
   });
-  it('iki rol taşıyan kişi aynı kaydı iki kez onaylayamaz (YG-990)', async () => {
+  it('art arda kademeleri taşıyan kişinin tek kararı hepsini sayar; ayrı adım ve iz kaydı (YG-168/990, CEO 25.11.2026)', async () => {
     await sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1,$2)`, [K[DEN], R['CEO']]);
-    const id = await iki();
-    await karar(DEN, id, 'Onaya Gönder');
-    expect((await bugun(DEN)).onay.map((x: any) => x.kimlik)).not.toContain(id);
-    expect((await karar(DEN, id, 'Onayla')).statusCode).toBe(403);
-    await sup.query(`DELETE FROM rol_atamasi WHERE kullanici_ref = $1 AND rol_ref = $2`, [K[DEN], R['CEO']]);
+    try {
+      const id = await iki();
+      const r = await karar(DEN, id, 'Onaya Gönder'); expect(r.statusCode, r.body).toBe(200); expect(r.json().durum).toBe('Onaylandı');
+      expect((await sup.query(`SELECT count(*)::int n FROM is_karti_adim WHERE is_ref = $1 AND yapan_ref = $2`, [id, K[DEN]])).rows[0].n).toBe(2);
+      expect((await sup.query(`SELECT count(*)::int n FROM denetim_izi WHERE eylem = 'Birleşik Kademe Kararı' AND nesne_kimligi = $1`, [id])).rows[0].n).toBe(1);
+      expect((await karar(DEN, id, 'Onayla')).statusCode).toBe(409);
+    } finally { await sup.query(`DELETE FROM rol_atamasi WHERE kullanici_ref = $1 AND rol_ref = $2`, [K[DEN], R['CEO']]); }
   });
   it('iade gerekçesi zorunlu; iade hazırlayana döner, yeniden gönderilebilir, önceki karar veren yine karar verir', async () => {
     const id = await iki();

@@ -144,8 +144,10 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       if (!k) return dur(404, 'Kayıt bulunamadı.');
       if (k.ayrik_kullanicilar?.includes(o.kullanici)) return dur(403, 'Görev ayrılığı gereği bu kaydı onaylayamazsınız; teknik kabulü veren kişi ödemeyi onaylamaz.'); // YG-827, YG-1036
       const makam: string | undefined = k.zincir[k.kademe];
-      // YG-990: aynı kişi iki kademeyi taşısa da her kademe ayrı karardır (görev ayrılığı); YG-168 birleşik adım bu kuralla çeliştiği için uygulanmaz.
-      const birlesikSon = k.kademe;
+      // YG-168/990 (CEO 25.11.2026): hazırlayan hiçbir kademede onay veremez; hazırlayan olmayan kişi art arda kademeleri taşıyorsa tek kararı hepsini sayar.
+      // Her kademe adım kaydına ayrı yazılır, izde "kademeler tek kişide" notu kalır ve kayıt aylık görev ayrılığı gözetimine düşer.
+      let birlesikSon = k.kademe;
+      if (k.kategori === 'onay' && k.hazirlayan_ref !== o.kullanici && roller.includes(k.zincir[k.kademe])) while (birlesikSon + 1 < k.zincir.length && roller.includes(k.zincir[birlesikSon + 1])) birlesikSon++;
       const sonMakam = birlesikSon === k.zincir.length - 1;
       // YG-1043: makamın Rol Müfredatı tamamlanmadan o makamda karar verilmez (rolü dersten önce almış olan kişi hariç).
       if (k.kategori === 'onay' && makam && roller.includes(makam) && karar !== 'Geri Çek') {
@@ -201,6 +203,9 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
         } else if (karar === 'Gerekçeyle İade Et') {
           yeni = { durum: 'İade Edildi', kademe: 0, kapanir: false };
           hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `İade Edildi: ${k.baslik}`;
+        } else if (karar === 'Onaya Gönder' && sonMakam && birlesikSon > k.kademe) { // YG-168: son kademeyi de taşıyan kişinin kararı son onaydır
+          yeni = { durum: 'Onaylandı', kademe: birlesikSon, kapanir: true }; kapanisKarari = 'Onayla';
+          hedef = k.hazirlayan_ref ? [k.hazirlayan_ref] : []; baslik = `Onaylandı: ${k.baslik}`;
         } else if (karar === 'Onaya Gönder') {
           if (sonMakam) return dur(400, 'Son makamda "Onayla" veya "Reddet" kullanılır.');
           yeni = { durum: 'Bekliyor', kademe: birlesikSon + 1, kapanir: false };
@@ -222,6 +227,10 @@ export function isYollari(s: FastifyInstance, b: Baglam) {
       await c.query(`UPDATE is_karti SET durum = $2, kademe = $3, kademe_zamani = now(), kapanma_zamani = CASE WHEN $4 THEN now() END WHERE kimlik = $1`, [id, yeni.durum, yeni.kademe, yeni.kapanir]);
       // Silinmez; kararın tamamı adım kaydında kalır (YG-1183).
       await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref, vekaleten) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, k.kademe, karar, g || null, o.kullanici, makam ?? null, Boolean(makam && etkin.find((r) => r.kimlik === makam)?.vekalet)]);
+      if (birlesikSon > k.kademe && ['Onaya Gönder', 'Onayla', 'Reddet'].includes(karar!)) { // YG-168: birleşik kademeler ayrı adım olarak
+        for (let n = k.kademe + 1; n <= birlesikSon; n++) await c.query(`INSERT INTO is_karti_adim (is_ref, kademe, karar, gerekce, yapan_ref, rol_ref, vekaleten) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [id, n, n === birlesikSon && kapanisKarari === 'Onayla' ? 'Onayla' : karar, 'Kademeler tek kişide (YG-168)', o.kullanici, k.zincir[n], Boolean(etkin.find((r) => r.kimlik === k.zincir[n])?.vekalet)]);
+        await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Birleşik Kademe Kararı', nesneTuru: k.tur, nesneKimligi: id, yeni: { kademeler: `${k.kademe + 1}–${birlesikSon + 1}`, not: 'Kademeler tek kişide' }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      }
       await KAPANIS.get(k.tur)?.(c, k, kapanisKarari as never, o.kullanici);
       if (hedef.length) await bildir(c, { olay: `kart-karar:${id}:${(await c.query('SELECT count(*) n FROM is_karti_adim WHERE is_ref = $1', [id])).rows[0].n}`, kullanicilar: hedef.filter((x) => x !== o.kullanici), baslik, ozet: g || k.ozet, isRef: id, oncelik: k.oncelik, eposta: true });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: `İş Kartı: ${karar}`, nesneTuru: k.tur, nesneKimligi: id, eski: { durum: k.durum, kademe: k.kademe }, yeni: { durum: yeni.durum, kademe: yeni.kademe }, gerekce: g || undefined, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

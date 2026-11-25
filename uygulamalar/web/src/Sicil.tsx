@@ -1,3 +1,4 @@
+import { AdFarki } from './AdFarki';
 import { AdayTemas } from './ArsivFirma';
 import { tarih } from './bicim';
 import { AnaVeriMukerrer, KayitBirlestirme } from './AnaVeri';
@@ -37,6 +38,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
         <label htmlFor="fs-t">Kurumsal Telefon</label><input id="fs-t" type="tel" value={yeni.telefon} onChange={(e) => setYeni({ ...yeni, telefon: e.target.value })} />
         <button className="btn2" onClick={() => void yap(async () => { const r = await istek<{ benzerKayit: number }>('/firma', { ...yeni, mersis: yeni.mersis || undefined, telefon: yeni.telefon || undefined }); if (r.benzerKayit) setTimeout(() => setNot(`Kayıt açıldı. Benzer ${r.benzerKayit} kayıt bulundu; mükerrer kararı bekliyor.`)); }, 'Kayıt açıldı.')}>Kayıt Aç</button>
       </div>
+      <AdFarki />
       <div className="bolum">Kayıtlar</div>
       {aday && !arsiv && <div className="not">Aday havuzundaki kayıtlar doğrulanmamıştır ("Doğrulanmadı"); firmayla son temastan 1 yıl sonra imha listesine alınır. Aday bilgisi yalnız sicil işleri için kullanılır, dışarıya verilmez.</div>}
       {l.length === 0 && <div className="ozet bos">Kayıt bulunmamaktadır.</div>}

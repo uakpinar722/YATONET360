@@ -183,6 +183,8 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[]) LIMIT 1`, [k, r])).rowCount);
+  // YG-1224: saklama planı; veri grubu, iş amacı, bilgi sınıfı, süre, başlangıç olayı, sorumlu ve imha yöntemi (LGM personeline açık).
+  s.get('/kvkk/saklama-plani', oturumlu, async (i, y) => (i.oturum!.grup !== 'LGM İç Rolü' ? yok(y) : (await b.db.query(`SELECT kod, grup, is_amaci, bilgi_sinifi, sure_ay, baslangic_olayi, sorumlu_unvan, imha_yontemi, dayanak, otomatik FROM saklama_plani ORDER BY kod`)).rows));
 
   s.get('/kvkk/yetki', oturumlu, async (i) => ({ ihlal: await rolVar(i.oturum!.kullanici, IHLAL_ROL), hud: await rolVar(i.oturum!.kullanici, [HUD]), uzman: await rolVar(i.oturum!.kullanici, [HUU]) }));
 
