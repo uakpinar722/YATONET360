@@ -9,7 +9,7 @@ import { Bildirimler, Bugun, type BugunVeri } from './Bugun';
 import { AramaSonucu, Dosyalar } from './Dosya';
 import { ErisimTalebi, ErisimVeRol } from './Erisim';
 import { Profilim } from './Hesabim';
-import { AcilDurumBolumu, YatSahibiAna } from './Portal';
+import { AcilDurumBolumu, Belgelerim, YatSahibiAna, YeniTalep, YetkilerimSayfasi } from './Portal';
 import { DenetimArama, IhlalBildir, KvkkEkrani } from './Kvkk';
 import { FirmaAna, IdariIslemler, MuhasebeAna, NobetAcil, SigortaAna, SigortaEk2, TedarikciOdemeleri } from './Ticari';
 import { KarneParametreleri, FirmaSicil } from './Sicil';
@@ -29,7 +29,7 @@ import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
 
-type Sayfa = 'teklifgecis' | 'eskalasyon' | 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'belgelerim' | 'yenitalep' | 'yetkilerim' | 'teklifgecis' | 'eskalasyon' | 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean; is_amaci: string | null; sahip_rol: string | null; gozden_gecirme_ay: number | null }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -63,6 +63,9 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   const yenile = useCallback(() => istek<BugunVeri>('/bugun').then((v) => { setVeri(v); setHata(''); }).catch((e) => setHata(e.message)), []);
   useEffect(() => { void yenile(); }, [yenile, sayfa]);
   const git = (s: Sayfa) => setSayfa(s);
+  // YG-1566, YG-1565: yat sahibi ve Yat Yetkilisi alt menüsü.
+  const ysahip = ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri'; const [yyetkili, setYyetkili] = useState(false);
+  useEffect(() => { if (ysahip) void istek<{ yetkili: unknown }>('/portal/ana').then((r) => setYyetkili(Boolean(r.yetkili))).catch(() => {}); }, [ysahip]);
   useEffect(() => { const f = (e: Event) => { setAraQ((e as CustomEvent<string>).detail); setSayfa('ara'); }; window.addEventListener('dosya-git', f); return () => window.removeEventListener('dosya-git', f); }, []); // YG-735
   useEffect(() => { const f = (e: Event) => setSayfa((e as CustomEvent<Sayfa>).detail); window.addEventListener('sayfa-git', f); return () => window.removeEventListener('sayfa-git', f); }, []); // YG-1628
   const menu: { s: Sayfa; ad: string; ik: string; izin?: string }[] = [
@@ -83,7 +86,9 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     ...(ben.roller.some((r) => r.rol_adi === 'Teknik ve Operasyon Direktörü') ? [{ s: 'karnepar' as Sayfa, ad: 'Karne Parametreleri', ik: '⚙' }] : []),
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'firmaisemri' as Sayfa, ad: 'İş Emirleri', ik: '▣' }, { s: 'gunluk' as Sayfa, ad: 'Günlük Kayıt', ik: '✎' }, { s: 'kartela' as Sayfa, ad: 'Fiyat Kartelası', ik: '▤' }] : []),
     ...(ben.grup === 'Tedarikçi' ? [{ s: 'tedsiparis' as Sayfa, ad: 'Siparişler', ik: '▣' }, { s: 'tedteklif' as Sayfa, ad: 'Teklifler', ik: '▤' }] : []),
+    ...(ysahip ? [{ s: 'belgelerim' as Sayfa, ad: 'Belgelerim', ik: '▤' }, { s: 'yenitalep' as Sayfa, ad: 'Yeni Talep', ik: '＋' }] : []),
     { s: 'bildirim', ad: 'Bildirimler', ik: '🔔' },
+    ...(ysahip && yyetkili ? [{ s: 'yetkilerim' as Sayfa, ad: 'Yetkilerim', ik: '✓' }] : []), // yat sahibinde Profil üst çubukta
     ...(ben.grup.startsWith('Broker') ? [{ s: 'yetkibelge' as Sayfa, ad: 'Yetki Belgeleri', ik: '▤' }] : []),
     ...(ben.grup === 'Kurumsal Müşteri' ? [{ s: 'kullanicilarim' as Sayfa, ad: 'Kullanıcılarım', ik: '▦' }] : []),
     ...(ben.grup === 'İş Birliği Firması' ? [{ s: 'kurum' as Sayfa, ad: 'Firma', ik: '▦' }] : ben.grup === 'Tedarikçi' || ben.grup.startsWith('Tesis') ? [{ s: 'kurum' as Sayfa, ad: 'Hesap', ik: '▦' }] : []),
@@ -92,6 +97,9 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   const icerik: Record<Sayfa, ReactNode> = {
     ana: ben.grup.startsWith('Bireysel') || ben.grup === 'Kurumsal Müşteri' ? <YatSahibiAna ben={ben} /> : ben.grup === 'İş Birliği Firması' ? <><FirmaAna ben={ben} /><AcilDurumBolumu /></> : ben.grup.startsWith('Broker') ? <><BrokerAna /><SigortaAna ben={ben} /><AcilDurumBolumu /></> : ben.grup.startsWith('Sigorta') ? <><SigortaAna ben={ben} /><DosyaHaritasi /></> : ben.grup.startsWith('Tesis Yetkilisi') ? <><TesisAna ben={ben} /><AcilDurumBolumu /></> : ben.grup === 'Tedarikçi' ? <TedarikciAna ben={ben} /> : ben.roller.some((r) => r.rol_adi === 'Muhasebe Hizmeti') ? <><MuhasebeAna /><Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} /></> : <Bugun ben={ben} veri={veri} hata={hata} yenile={yenile} />,
     bildirim: <Bildirimler yenile={yenile} />,
+    belgelerim: <Belgelerim />,
+    yenitalep: <YeniTalep bitti={() => git('ana')} />,
+    yetkilerim: <YetkilerimSayfasi ben={ben} />,
     profil: <Profilim />,
     erisim: <ErisimTalebi />,
     erisimrol: <ErisimVeRol />,

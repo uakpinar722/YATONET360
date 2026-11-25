@@ -293,6 +293,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['İç Denetçi', 'İç Denetim Müdürü'].includes(r.rol_adi)) && <OrneklemIncelemelerim />}
       {ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı'].includes(r.rol_adi)) && <YurtDisiUygunluk />}
       {ben.roller.some((r) => r.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü') && <KabulItirazlari />}
+      {ben.roller.some((r) => r.rol_adi === 'Muhasebe ve Finans Müdür Yardımcısı') && <MaliKontrol />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikGostergeleri />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <KaynakRisk mudur={ben.roller.some((r) => r.rol_adi === 'Tedarik Yönetimi Müdürü')} />}
       {ben.roller.some((r) => r.rol_adi === 'Operasyon Müdürü') && <MudurlukGostergeleri />}
@@ -605,6 +606,24 @@ function TedarikGostergeleri() {
   useEffect(() => { void istek<typeof l>('/tedarik/mudurluk-gostergeleri').then(setL).catch(() => setL([])); }, []);
   if (!l.length) return null;
   return <><div className="bolum">Müdürlük Göstergeleri (Son 90 Gün)</div>{l.map((x) => <div key={x.ad} className="soru"><span>{x.ad}: {x.deger === null ? 'Veri yok' : `%${String(x.deger).replace('.', ',')} (${x.pay}/${x.payda})`} · Hedef {x.hedef}</span></div>)}</>;
+}
+
+/** YG-1611: Kontrol Uyarıları ve Banka Eşleştirme (işlem bazında; hesap bakiyeleri YG-1080 gereği dört role kapalı). */
+function MaliKontrol() {
+  const [v, setV] = useState<{ eslesmeyen: { kimlik: string; tarih: string; yon: string; tutar_eur: string; aciklama: string }[]; kurUyusmazligi: { kimlik: string; belge_no: string; kur_tarihi: string; fatura_kuru: number; tcmb_kuru: number }[] } | null>(null);
+  const [f, setF] = useState<Record<string, { t?: string; c?: string; n?: string }>>({}); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/mali-kontrol').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const es = (id: string) => void istek(`/mali-kontrol/eslestir/${id}`, { cariTuru: f[id]?.t ?? 'Müşteri', cari: f[id]?.c, not: f[id]?.n }).then(() => { setM('Hareket eşleştirildi.'); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kontrol Uyarıları</div>{m && <div className="not" role="status">{m}</div>}
+    {v.eslesmeyen.length + v.kurUyusmazligi.length === 0 && <div className="ozet bos">Kontrol uyarısı bulunmamaktadır.</div>}
+    {v.kurUyusmazligi.map((x) => <div key={x.kimlik} className="uyari">Kur uyuşmazlığı · {x.belge_no} · {tarih(x.kur_tarihi)} · Fatura kuru {String(x.fatura_kuru).replace('.', ',')} · TCMB {String(x.tcmb_kuru).replace('.', ',')}</div>)}
+    {v.eslesmeyen.map((x) => <div key={x.kimlik} className="ozet kart-sol"><b>Eşleşmeyen banka hareketi · {tarih(x.tarih)} · {x.yon} · {String(x.tutar_eur).replace('.', ',')} EUR</b><div>{x.aciklama}</div>
+      <label htmlFor={`mk-t-${x.kimlik}`}>Cari Türü</label><select id={`mk-t-${x.kimlik}`} value={f[x.kimlik]?.t ?? 'Müşteri'} onChange={(e) => setF({ ...f, [x.kimlik]: { ...f[x.kimlik], t: e.target.value } })}>{['Müşteri', 'Sigorta Şirketi', 'Çözüm Ortağı', 'Tedarikçi'].map((z) => <option key={z}>{z}</option>)}</select>
+      <label htmlFor={`mk-c-${x.kimlik}`}>Cari Kaydı</label><input id={`mk-c-${x.kimlik}`} value={f[x.kimlik]?.c ?? ''} onChange={(e) => setF({ ...f, [x.kimlik]: { ...f[x.kimlik], c: e.target.value } })} />
+      <label htmlFor={`mk-n-${x.kimlik}`}>Teyit Notu</label><input required id={`mk-n-${x.kimlik}`} value={f[x.kimlik]?.n ?? ''} onChange={(e) => setF({ ...f, [x.kimlik]: { ...f[x.kimlik], n: e.target.value } })} />
+      <div className="dugmeler"><button className="btn2 kucuk" disabled={!f[x.kimlik]?.c?.trim() || !f[x.kimlik]?.n?.trim()} onClick={() => es(x.kimlik)}>Eşleştir</button></div></div>)}</>;
 }
 
 /** YG-1662: firma kabul kararı itirazları; Kabul / Kısmi Kabul / Ret. */

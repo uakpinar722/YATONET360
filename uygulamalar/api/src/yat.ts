@@ -206,7 +206,7 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
       sozlesmeler: await q(`SELECT sozlesme_no, sozlesme_turu, yururluk::text, bitis::text, durum FROM sozlesme_kaydi WHERE taraf_ref = $1 ORDER BY yururluk DESC`),
       yetkiBelgeleri: await q(`SELECT d.dosya_no, k.yetki_dayanagi_turu, k.belge_duzenleyen, k.belge_tarihi::text, k.gecerlilik_bitisi::text, k.yetkili_islemler FROM yetki_kaydi k JOIN dosya_tarafi t ON t.kimlik = k.dosya_tarafi_ref JOIN dosya d ON d.kimlik = k.dosya_ref WHERE t.taraf_ref = $1 ORDER BY k.belge_tarihi DESC`),
       yetkililer: t.telefon ? (await b.db.query(`SELECT h.ad_soyad, k.rol, k.belge_durumu, k.bitis_tarihi::text FROM yat_yetkilisi_kaydi k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.sahip_telefon = $1 ORDER BY h.ad_soyad`, [t.telefon])).rows : [],
-      yatlar: await q(`SELECT y.yat_adi, y.tur, y.bayrak, y.tam_boy_m, (SELECT count(*)::int FROM dosya d WHERE d.yat_ref = y.kimlik AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')) acik_dosya FROM yat y WHERE y.yat_sahibi_ref = $1 ORDER BY y.yat_adi`),
+      yatlar: await q(`SELECT y.kimlik, y.yat_adi, y.tur, y.bayrak, y.tam_boy_m, (SELECT count(*)::int FROM dosya d WHERE d.yat_ref = y.kimlik AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')) acik_dosya FROM yat y WHERE y.yat_sahibi_ref = $1 ORDER BY y.yat_adi`),
       dosyalar: await q(`SELECT DISTINCT d.dosya_no, d.statu, d.olusturma_zamani FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik WHERE y.yat_sahibi_ref = $1 OR t.taraf_ref = $1 ORDER BY d.olusturma_zamani DESC LIMIT 50`),
     };
   });

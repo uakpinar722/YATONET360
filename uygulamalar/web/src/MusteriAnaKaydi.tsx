@@ -1,11 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { eur, tarih } from './bicim';
 
 type Ara = { taraf_no: string; unvan_ad_soyad: string; musteri_turu: string | null; telefon: string | null };
 type K = Record<string, string | number | boolean | null | string[]>;
 interface V { kimlik: K; acikAlacakEur: number; faturalar: K[]; sozlesmeler: K[]; yetkiBelgeleri: K[]; yetkililer: K[]; yatlar: K[]; dosyalar: K[] }
-const SEKME = ['Kimlik', 'Açık Alacak', 'Sözleşmeler', 'Yetki Belgeleri', 'Yatlar', 'Dosyalar'] as const;
+const SEKME = ['Kimlik', 'Açık Alacak', 'Sözleşmeler', 'Yetki Belgeleri', 'Yatlar', 'Yat Kullanım Takvimi', 'Dosyalar'] as const;
+
+/** YG-106: Yat Kullanım Takvimi (12 ay); sistem satırları ve Dosya Sorumlusunun girdiği dönemler; iş ile kullanım çakışması uyarısı. */
+function YatTakvimi({ yatlar }: { yatlar: K[] }) {
+  type T = { yat: string; kislamaYeri: string | null; donemler: { kimlik: string; tur: string; baslangic: string; bitis: string; konum: string | null; aciklama: string | null; giren: string }[]; sistem: { tur: string; baslangic: string | null; bitis: string; aciklama: string | null }[]; uyarilar: string[]; turler: string[] };
+  const [yat, setYat] = useState(String(yatlar[0]?.kimlik ?? '')); const [v, setV] = useState<T | null>(null); const [f, setF] = useState({ tur: 'Kullanım', baslangic: '', bitis: '', konum: '', aciklama: '' }); const [m, setM] = useState('');
+  const yk = (id = yat) => { if (id) void istek<T>(`/yat/${id}/kullanim-takvimi`).then(setV).catch((e) => setM(e.message)); };
+  useEffect(() => yk(), [yat]);
+  if (!yatlar.length) return <div className="bos">Yat yok.</div>;
+  const ar = (a: string | null, b: string) => (a && a !== b ? `${tarih(a)} – ${tarih(b)}` : tarih(b));
+  return <>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="yt-y">Yat</label><select id="yt-y" value={yat} onChange={(e) => setYat(e.target.value)}>{yatlar.map((x) => <option key={String(x.kimlik)} value={String(x.kimlik)}>{String(x.yat_adi)}</option>)}</select>
+    {v && <>
+      {v.uyarilar.map((x, n) => <div key={n} className="uyari">{x}</div>)}
+      {v.kislamaYeri && <div>Kışlama yeri: {v.kislamaYeri}</div>}
+      {[...v.sistem.map((x) => ({ ...x, el: false })), ...v.donemler.map((x) => ({ tur: x.tur, baslangic: x.baslangic, bitis: x.bitis, aciklama: [x.konum, x.aciklama, x.giren].filter(Boolean).join(' · '), el: true }))]
+        .sort((a, b) => (a.baslangic ?? a.bitis).localeCompare(b.baslangic ?? b.bitis)).map((x, n) => <div key={n} className="soru"><span>{ar(x.baslangic, x.bitis)} · {x.tur}{x.aciklama ? ` · ${x.aciklama}` : ''}{x.el ? '' : ' · Sistem'}</span></div>)}
+      <div className="ozet">
+        <label htmlFor="yt-t">Dönem Türü</label><select id="yt-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{v.turler.map((x) => <option key={x}>{x}</option>)}</select>
+        <div className="iki-tarih"><div><label htmlFor="yt-b">Başlangıç</label><input id="yt-b" type="date" value={f.baslangic} onChange={(e) => setF({ ...f, baslangic: e.target.value })} /></div><div><label htmlFor="yt-e">Bitiş</label><input id="yt-e" type="date" value={f.bitis} onChange={(e) => setF({ ...f, bitis: e.target.value })} /></div></div>
+        <label htmlFor="yt-k">Konum</label><input id="yt-k" value={f.konum} onChange={(e) => setF({ ...f, konum: e.target.value })} />
+        <label htmlFor="yt-a">Açıklama</label><input id="yt-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
+        <button className="btn2 kucuk" disabled={!f.baslangic || !f.bitis} onClick={() => void istek(`/yat/${yat}/kullanim-donemi`, f).then(() => { setM('Dönem kaydedildi.'); yk(); }).catch((e) => setM(e.message))}>Dönemi Kaydet</button>
+      </div>
+    </>}
+  </>;
+}
 
 /** YG-106: Müşteri Ana Kaydı; arama, kimlik ve vergi bilgileri, açık alacak, sözleşmeler, yetki belgeleri, yatlar ve dosyalar. */
 export function MusteriAnaKaydi() {
@@ -25,6 +51,7 @@ export function MusteriAnaKaydi() {
       {s === 'Sözleşmeler' && (v.sozlesmeler.length ? v.sozlesmeler.map((x, n) => <div key={n}>{String(x.sozlesme_no ?? 'Numarasız')} · {String(x.sozlesme_turu)} · {tarih(x.yururluk as string)}{x.bitis ? ` – ${tarih(x.bitis as string)}` : ''} · {String(x.durum)}</div>) : <div className="bos">Sözleşme kaydı yok.</div>)}
       {s === 'Yetki Belgeleri' && <>{v.yetkiBelgeleri.map((x, n) => <div key={n}>{String(x.dosya_no)} · {String(x.yetki_dayanagi_turu)} · {String(x.belge_duzenleyen)} · {tarih(x.belge_tarihi as string)}{x.gecerlilik_bitisi ? ` · bitiş ${tarih(x.gecerlilik_bitisi as string)}` : ''}</div>)}{v.yetkililer.map((x, n) => <div key={`y${n}`}>{String(x.ad_soyad)} · {String(x.rol)} · {String(x.belge_durumu)}{x.bitis_tarihi ? ` · bitiş ${tarih(x.bitis_tarihi as string)}` : ''}</div>)}{!v.yetkiBelgeleri.length && !v.yetkililer.length && <div className="bos">Yetki belgesi yok.</div>}</>}
       {s === 'Yatlar' && (v.yatlar.length ? v.yatlar.map((x, n) => <div key={n}>{String(x.yat_adi)}{x.tur ? ` · ${String(x.tur)}` : ''}{x.bayrak ? ` · ${String(x.bayrak)}` : ''}{x.tam_boy_m ? ` · ${String(x.tam_boy_m).replace('.', ',')} m` : ''} · {String(x.acik_dosya)} açık dosya</div>) : <div className="bos">Kayıtlı yat yok.</div>)}
+      {s === 'Yat Kullanım Takvimi' && <YatTakvimi yatlar={v.yatlar} />}
       {s === 'Dosyalar' && (v.dosyalar.length ? v.dosyalar.map((x, n) => <div key={n}>{String(x.dosya_no)} · {String(x.statu)}</div>) : <div className="bos">Dosya yok.</div>)}
     </div>}
   </details>;

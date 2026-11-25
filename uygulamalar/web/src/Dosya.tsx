@@ -17,6 +17,7 @@ import { SahipDevri } from './SahipDevri';
 import { IsDurdur } from './IsDurdur';
 import { KapsamToplantisi } from './KapsamToplantisi';
 import { AcilDegerlendirme } from './AcilDegerlendirme';
+import { GarantiMali } from './GarantiMali';
 import { tarih as gunBicim } from './bicim';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
@@ -361,6 +362,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
       <YatDegeriBolumu id={id} />
       <SigortaGonderimBolumu id={id} />
       <RaporBolumu id={id} rollerim={d.rollerim} />
+      <GarantiMali id={id} />
       {d.oncelik === 'Kritik' && <AcilDegerlendirme id={id} tu={d.rollerim.some((r) => r === 'Teknik Uzman' || r === 'Sorumlu Teknik Uzman (Koordinatör)')} />}
       <KapsamToplantisi id={id} />
       <TicariBolumu id={id} rollerim={d.rollerim} roller={roller} asama={d.asama} />

@@ -877,9 +877,10 @@ describe('Onarım Yöntem Raporu (YG-1454, YNT-1)', () => {
     try {
       const on = () => o.gir('oy').then((k) => o.ist('POST', `/api/dosya/${d.kimlik}/is-emri`, k, { tur: 'ON', teknikSonuc: 'S', firma, yer: 'M', kapsam: 'K', teklif: t.kimlik, bedel: 100 }));
       expect((await on()).json().hata).toContain('Onarım Yöntem Raporu');
-      const u = `/api/dosya/${d.kimlik}/yontem-raporu`; const R = { kapsam: 'K', malzeme: 'Reçine', sira: '1', muadil: ['Pompa Contası'], sinirlar: [{ tur: 'Kompozit Laminasyon ve Kür', sicaklikMin: 15, nemMax: 75 }] };
+      const u = `/api/dosya/${d.kimlik}/yontem-raporu`; const vf = await o.belge(d.kimlik, 'tu', 'Reçine Veri Föyü'); const R = { kapsam: 'K', malzeme: 'Reçine', sira: '1', muadil: ['Pompa Contası'], sinirlar: [{ tur: 'Kompozit Laminasyon ve Kür', sicaklikMin: 15, nemMax: 75 }], veriFoyleri: [{ malzeme: 'Reçine', bolge: 'Kıç', belge: vf }] };
       expect((await o.ist('POST', u, await o.gir('ds'), R)).statusCode).toBe(403);
       const tu = await o.gir('tu'); expect((await o.ist('POST', u, tu, { ...R, sira: '' })).statusCode).toBe(400);
+      expect((await o.ist('POST', u, tu, { ...R, veriFoyleri: [] })).json().hata).toContain('veri föyü'); // YG-133
       expect((await o.ist('POST', u, tu, { ...R, sinirlar: [{ tur: 'X', sicaklikMin: 1 }] })).statusCode).toBe(400);
       const r = await o.ist('POST', u, tu, R); expect(r.statusCode, r.body).toBe(200); expect(r.json().raporNo).toBe(`${d.dosyaNo}-FR-ONR-001-01`);
       expect((await o.ist('POST', u, tu, R)).statusCode).toBe(409);
@@ -968,5 +969,22 @@ describe('paket statüsü (PKT-1, YG-385)', () => {
     const d = await hazir(); const e = (await o.sup.query(`SELECT kimlik FROM is_emri WHERE dosya_ref = $1 LIMIT 1`, [d.kimlik])).rows[0].kimlik; const ds = await o.gir('ds');
     const bak = async (statu: string, kabul: string | null = null) => { await o.sup.query(`UPDATE is_emri SET statu = $2, teknik_kabul_sonucu = $3 WHERE kimlik = $1`, [e, statu, kabul]); return (await o.ist('GET', `/api/dosya/${d.kimlik}/teklifler`, ds)).json().isEmirleri[0].paket_statusu; };
     for (const [s, k, p] of [['Taslak', null, 'Taslak'], ['İç Onayda', null, 'Onay Bekliyor'], ['Kabul Bekliyor', null, 'Onay Bekliyor'], ['Başlangıç Kontrolünde', null, 'Hazır'], ['Aktif', null, 'Uygulamada'], ['Durduruldu', null, 'Uygulamada'], ['Tamamlandı', null, 'Kontrol Bekliyor'], ['Tamamlandı', 'Kabul', 'Kabul'], ['Kapalı', 'Kabul', 'Kapalı'], ['İptal', null, null]] as const) expect(await bak(s, k)).toBe(p);
+  });
+});
+
+describe('bölge katsayısı (YG-856, KS-11)', () => {
+  it('8 bölge 1,00; değişiklik GMY ve CEO onayıyla uygulanır; bölgesiz dosyada 1', async () => { // T-YG856-BOLGE
+    const { bolgeKatsayisi } = await import('../src/bolge_katsayisi.js');
+    const l = (await o.sup.query(`SELECT bolge, katsayi FROM bolge_katsayisi ORDER BY bolge`)).rows; expect(l).toHaveLength(8); expect(l.every((x) => Number(x.katsayi) === 1)).toBe(true);
+    const d = await o.dosyaAc(); expect(await bolgeKatsayisi(o.db, d.kimlik)).toBe(1);
+    const tid = await o.gir('tid');
+    expect((await o.ist('POST', '/api/bolge-katsayisi/talep', await o.gir('ds'), { bolge: '5. Antalya', katsayi: 1.1, gerekce: 'G' })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/bolge-katsayisi/talep', tid, { bolge: '5. Antalya', katsayi: 1, gerekce: 'G' })).statusCode).toBe(409);
+    const r = await o.ist('POST', '/api/bolge-katsayisi/talep', tid, { bolge: '5. Antalya', katsayi: '1,10', gerekce: 'Ulaşım maliyeti' }); expect(r.statusCode, r.body).toBe(200);
+    const k = await o.kart('Bölge Katsayısı Değişikliği', r.json().kimlik); expect(k.zincir).toHaveLength(2);
+    await o.karar(k.kimlik, 'gmy', 'Onaya Gönder'); await o.karar(k.kimlik, 'bceo', 'Onayla');
+    expect(Number((await o.sup.query(`SELECT katsayi FROM bolge_katsayisi WHERE bolge = '5. Antalya'`)).rows[0].katsayi)).toBe(1.1);
+    await o.sup.query(`UPDATE bolge_katsayisi SET katsayi = 1 WHERE bolge = '5. Antalya'`);
+    expect(Number((await o.sup.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'kabul_itirazi_karar_suresi_gun'`)).rows[0].deger)).toBe(15); // YG-1662
   });
 });

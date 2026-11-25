@@ -272,6 +272,9 @@ export function portalYollari(s: FastifyInstance, b: Baglam) {
     const r = await (await import('./ilerleme_rapor.js')).ilerlemeRaporuPdf(b.db, id); if (!r) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });
     return y.header('content-type', 'application/pdf').header('content-disposition', `attachment; filename="${r.dosyaAdi}"`).header('x-content-type-options', 'nosniff').send(r.pdf);
   });
+  // YG-1566, YG-1565: Belgelerim; kullanıcının (yetkilide yetki kapsamındaki) dosyalarının yürürlükteki belgeleri, Kritik sınıf hariç.
+  s.get('/portal/belgelerim', oturumlu, async (i) => (await b.db.query(`SELECT e.kimlik, e.ad, s.surum_no, d.dosya_no, y.yat_adi, e.olusturma_zamani FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik JOIN dosya d ON d.kimlik::text = e.bag_kimligi JOIN yat y ON y.kimlik = d.yat_ref
+      WHERE e.bag_turu = 'Dosya' AND s.durum = 'Yürürlükte' AND e.bilgi_sinifi <> 'Kritik' AND d.birlestirilen_ana_dosya_ref IS NULL AND (${benimDosyalarim}) ORDER BY e.olusturma_zamani DESC LIMIT 200`, [i.oturum!.kullanici])).rows);
   s.get('/portal/dosya/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const red = musteri(o.grup, y); if (red) return red;
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Dosya bulunamadı; dosya bilgisini kontrol etmenizi rica ederiz.' });

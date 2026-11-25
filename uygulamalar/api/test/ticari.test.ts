@@ -656,3 +656,38 @@ describe('fiş aslı (YG-1622)', () => {
     const r2 = await o.ist('POST', u, c, { brans: 'Kompozit', deneyim: 12, kisit: 'Teak döşeme hariç' }); expect(r2.statusCode, r2.body).toBe(200); expect(r2.json().seviye).toBe('Y1');
   });
 });
+
+describe('garanti maliyet, üretici garanti başvurusu ve KDV iade dosyası (YG-899)', () => {
+  it('alan kuralları, onay zinciri ve durum sırası', async () => {
+    const d = await o.dosyaAc(); const ts = await o.gir('ts'); const ds = await o.gir('ds');
+    const u = `/api/dosya/${d.kimlik}/garanti-maliyet`;
+    expect((await o.ist('POST', u, ds, { kalem: 'Parça', tutar: 100, karsilayan: 'LGM' })).statusCode).not.toBe(200);
+    expect((await o.ist('POST', u, ts, { kalem: 'Parça', tutar: 100, karsilayan: 'Üretici' })).json().hata).toContain('mahsup');
+    const r = await o.ist('POST', u, ts, { kalem: 'Parça', tutar: '250,50', karsilayan: 'Üretici', mahsup: 'UGB-01' }); expect(r.statusCode, r.body).toBe(200);
+    const k = await o.kart('Garanti Maliyet Kaydı', r.json().kimlik); await o.karar(k.kimlik, 'tid', 'Onayla');
+    expect((await o.sup.query(`SELECT durum, tutar_eur::float t FROM garanti_maliyet_kaydi WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ durum: 'Onaylandı', t: 250.5 });
+    const ub = `/api/dosya/${d.kimlik}/uretici-garanti-basvurusu`;
+    expect((await o.ist('POST', ub, ts, { marka: 'Volvo Penta', ariza: 'Yağ kaçağı', arizaTarihi: '2026-11-01', uretici: 'Yetkili Servis' })).json().hata).toContain('Seri');
+    const b = await o.ist('POST', ub, ts, { marka: 'Volvo Penta', model: 'D6', seriNo: 'S123', ariza: 'Yağ kaçağı', arizaTarihi: '2026-11-01', uretici: 'Yetkili Servis' }); expect(b.statusCode, b.body).toBe(200);
+    const du = `/api/uretici-garanti-basvurusu/${b.json().kimlik}/durum`;
+    expect((await o.ist('POST', du, ts, { durum: 'Kabul' })).statusCode).toBe(409);
+    expect((await o.ist('POST', du, ts, { durum: 'Gönderildi' })).statusCode).toBe(400);
+    expect((await o.ist('POST', du, ts, { durum: 'Gönderildi', basvuruTarihi: '2026-11-05', kanal: 'E-posta' })).statusCode).toBe(200);
+    expect((await o.ist('POST', du, ts, { durum: 'Kısmen Kabul', kararTarihi: '2026-11-20', karsilanan: 100 })).json().hata).toContain('sonuç notu');
+    expect((await o.ist('POST', du, ts, { durum: 'Kısmen Kabul', kararTarihi: '2026-11-20', karsilanan: 100, sonucNotu: 'İşçilik karşılanmadı' })).statusCode).toBe(200);
+    expect((await o.ist('GET', u, ts)).json().basvurular[0].durum).toBe('Kısmen Kabul');
+    const f = (await o.sup.query(`INSERT INTO musteri_faturasi (dosya_ref, proforma_no, muhatap, kdv_haric_eur, kdv_eur, toplam_eur, durum, hazirlayan_ref) VALUES ($1,$2,'Yat Sahibi',100,20,120,'Faturalandı',$3) RETURNING kimlik`, [d.kimlik, `${d.dosyaNo}-PF99`, o.K.ts])).rows[0].kimlik;
+    const mfm = await o.gir('mfm');
+    expect((await o.ist('POST', '/api/kdv-iade', ts, { donem: '2026-11', faturalar: [], tutar: 1 })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/kdv-iade', mfm, { donem: '2026-11', faturalar: [], tutar: 1000 })).statusCode).toBe(400);
+    if (f) {
+      const kd = await o.ist('POST', '/api/kdv-iade', mfm, { donem: '2026-11', faturalar: [f], tutar: 1000 }); expect(kd.statusCode, kd.body).toBe(200);
+      const il = `/api/kdv-iade/${kd.json().kimlik}/ilerlet`;
+      expect((await o.ist('POST', il, mfm, {})).statusCode).toBe(400);
+      expect((await o.ist('POST', il, mfm, { gonderim: '2026-12-01' })).json().durum).toBe('Mali Müşavirde');
+      expect((await o.ist('POST', il, mfm, { basvuruNo: 'VD-1' })).json().durum).toBe('Başvuruldu');
+      expect((await o.ist('POST', il, mfm, { sonucTutari: 950 })).json().durum).toBe('Sonuçlandı');
+      expect((await o.ist('POST', il, mfm, {})).statusCode).toBe(409);
+    }
+  });
+});

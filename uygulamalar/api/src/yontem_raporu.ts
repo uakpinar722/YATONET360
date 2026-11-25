@@ -79,11 +79,15 @@ export function yontemRaporuYollari(s: FastifyInstance, b: Baglam) {
   });
 
   s.post('/dosya/:id/yontem-raporu', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kapsam?: string; malzeme?: string; sira?: string; eszamanli?: string; cizim?: string; muadil?: string[]; sinirlar?: Partial<Sinir>[] };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kapsam?: string; malzeme?: string; sira?: string; eszamanli?: string; cizim?: string; muadil?: string[]; sinirlar?: Partial<Sinir>[]; veriFoyleri?: { malzeme?: string; bolge?: string; belge?: string }[] };
     if (!UUID.test(id)) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = ANY($3) AND bitis_zamani IS NULL`, [id, o.kullanici, TU])).rowCount) return y.code(403).send({ hata: 'Onarım Yöntem Raporunu Teknik Uzman hazırlar.' });
     if (!g.kapsam?.trim() || !g.malzeme?.trim() || !g.sira?.trim()) return y.code(400).send({ hata: 'Kapsam, malzeme tablosu ve uygulama sırası zorunludur.' });
     if (g.cizim && !UUID.test(g.cizim)) return y.code(400).send({ hata: 'Çizim belgesi geçersizdir.' });
+    // YG-133: her malzeme için veri föyü; föy dosyaya yüklenmiş belge olmalıdır.
+    const foyler = (g.veriFoyleri ?? []).map((x) => ({ malzeme: String(x.malzeme ?? '').trim(), bolge: String(x.bolge ?? '').trim() || null, belge: String(x.belge ?? '') }));
+    if (!foyler.length || foyler.some((x) => !x.malzeme || !UUID.test(x.belge))) return y.code(400).send({ hata: 'Uygulanacak her malzeme için malzeme veri föyünü (dosyaya yüklenmiş belge) seçiniz.' });
+    if (Number((await b.db.query(`SELECT count(DISTINCT kimlik) n FROM belge WHERE kimlik = ANY($1::uuid[]) AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [foyler.map((x) => x.belge), id])).rows[0].n) !== new Set(foyler.map((x) => x.belge)).size) return y.code(400).send({ hata: 'Veri föyü bu dosyaya yüklenmiş bir belge olmalıdır.' });
     const n = (x: unknown) => (x === undefined || x === null || x === '' ? null : Number(x));
     const sinirlar: Sinir[] = (g.sinirlar ?? []).map((x) => ({ tur: x.tur ?? '', sicaklikMin: n(x.sicaklikMin), sicaklikMax: n(x.sicaklikMax), nemMin: n(x.nemMin), nemMax: n(x.nemMax) }));
     for (const x of sinirlar) {
@@ -96,8 +100,8 @@ export function yontemRaporuYollari(s: FastifyInstance, b: Baglam) {
       const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1 FOR UPDATE`, [id])).rows[0];
       if ((await c.query(`SELECT 1 FROM yontem_raporu WHERE dosya_ref = $1 AND durum = 'Onayda'`, [id])).rowCount) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Onay bekleyen rapor vardır.' }); }
       const nn = String(Number((await c.query(`SELECT count(*) n FROM yontem_raporu WHERE dosya_ref = $1`, [id])).rows[0].n) + 1).padStart(2, '0');
-      const r = (await c.query(`INSERT INTO yontem_raporu (rapor_no, dosya_ref, kapsam, malzeme_tablosu, uygulama_sirasi, eszamanli_yapilamaz, cizim_belge_ref, muadil_parcalar, sinirlar, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik, rapor_no`,
-        [`${d.dosya_no}-FR-ONR-001-${nn}`, id, g.kapsam.trim(), g.malzeme.trim(), g.sira.trim(), g.eszamanli?.trim() || null, g.cizim ?? null, (g.muadil ?? []).map((x) => String(x).trim()).filter(Boolean), JSON.stringify(sinirlar), o.kullanici])).rows[0];
+      const r = (await c.query(`INSERT INTO yontem_raporu (rapor_no, dosya_ref, kapsam, malzeme_tablosu, uygulama_sirasi, eszamanli_yapilamaz, cizim_belge_ref, muadil_parcalar, sinirlar, hazirlayan_ref, veri_foyleri) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik, rapor_no`,
+        [`${d.dosya_no}-FR-ONR-001-${nn}`, id, g.kapsam.trim(), g.malzeme.trim(), g.sira.trim(), g.eszamanli?.trim() || null, g.cizim ?? null, (g.muadil ?? []).map((x) => String(x).trim()).filter(Boolean), JSON.stringify(sinirlar), o.kullanici, JSON.stringify(foyler)])).rows[0];
       await kartAc(c, { tur: KART, baslik: `${r.rapor_no} · Onarım Yöntem Raporu`, ozet: g.kapsam.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Müdür')], nesneTuru: 'Onarım Yöntem Raporu', nesneKimligi: r.kimlik });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Onarım Yöntem Raporu Hazırlandı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { no: r.rapor_no }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');

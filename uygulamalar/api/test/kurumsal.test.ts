@@ -62,7 +62,7 @@ describe('Kullanıcılarım (YG-1563)', () => {
     const d = await o.dosyaAc(); await o.sup.query(`UPDATE yat SET yat_sahibi_ref = $2 WHERE kimlik = (SELECT yat_ref FROM dosya WHERE kimlik = $1)`, [d.kimlik, taraf]);
     const iz = (await o.sup.query(`SELECT kimlik FROM kullanici_hesabi WHERE e_posta = 'izle@filo.local'`)).rows[0].kimlik;
     expect((await o.ist('GET', `/api/portal/dosya/${d.kimlik}`, yC)).statusCode).toBe(200);
-    expect((await o.ist('GET', '/api/portal/ana', yC)).json().dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true);
+    expect((await o.ist('GET', '/api/portal/ana', yC)).json().dosyalar.some((x: { kimlik: string }) => x.kimlik === d.kimlik)).toBe(true); expect(Array.isArray((await o.ist('GET', '/api/portal/belgelerim', yC)).json())).toBe(true); // YG-1566
     expect((await o.ist('POST', `/api/kurumsal/kullanici/${yK}/kapat`, yC, { gerekce: 'G' })).statusCode).toBe(409);
     expect((await o.ist('POST', `/api/kurumsal/kullanici/${iz}/kapat`, yC, {})).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/kurumsal/kullanici/${iz}/kapat`, yC, { gerekce: 'Ayrıldı' })).statusCode).toBe(200);

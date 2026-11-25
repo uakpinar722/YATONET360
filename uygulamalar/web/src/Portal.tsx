@@ -75,6 +75,26 @@ export function PortalToplantilar() {
   return <><div className="bolum">Toplantılarım</div>{l.map((t) => <div key={t.kimlik} className="ozet kart-sol"><b>{t.konu}</b><div className="not">{t.dosya_no ? `${t.dosya_no} · ` : ''}{new Date(t.baslangic).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })} · {t.sure_dk} dk{t.gorusme_baglantisi ? <> · <a href={t.gorusme_baglantisi} target="_blank" rel="noreferrer">Görüşmeye Katıl</a></> : ''}</div></div>)}</>;
 }
 
+/** YG-1566, YG-1565: Belgelerim; dosyalarınızın yürürlükteki belgeleri (görüntüleme ve indirme). */
+export function Belgelerim() {
+  const [l, setL] = useState<{ kimlik: string; ad: string; surum_no: number; dosya_no: string; yat_adi: string }[] | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof l>>('/portal/belgelerim').then(setL).catch(() => setL([])); }, []);
+  return <><h1>Belgelerim</h1>{l === null ? null : l.length === 0 ? <div className="ozet bos">Belge bulunmamaktadır.</div> : l.map((b) => <div className="ozet" key={`${b.kimlik}-${b.surum_no}`}><a href={`/api/belge/${b.kimlik}/surum/${b.surum_no}/indir`}>{b.ad}</a><div className="not">{b.yat_adi} · {b.dosya_no}</div></div>)}</>;
+}
+
+/** YG-1566, YG-1565: Yeni Talep; ana ekrandaki talep formuyla aynı (yetkili, yat sahibi adına gönderir). */
+export function YeniTalep({ bitti }: { bitti: () => void }) {
+  return <HasarBildirimi bitti={bitti} />;
+}
+
+/** YG-1566: Yetkilerim sayfası (ana ekrandaki blokla birebir aynı). */
+export function YetkilerimSayfasi({ ben }: { ben: Ben }) {
+  const [v, setV] = useState<Ana | null>(null);
+  const yukle = () => istek<Ana>('/portal/ana').then(setV).catch(() => setV(null));
+  useEffect(() => { void yukle(); }, []);
+  return v?.yetkili ? <Yetkilerim ben={ben} y={v.yetkili} yenile={() => void yukle()} /> : <div className="ozet bos">Yetki kaydınız bulunmamaktadır.</div>;
+}
+
 /** YG-1656: A1, A2, A3, A6, A7 ve A8 ana ekranlarında her zaman görünen Acil Durum bölümü. */
 export function AcilDurumBolumu() {
   return <><PortalToplantilar /><div className="bolum">Acil Durum</div>

@@ -235,6 +235,14 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
       const v = a.json(); expect(v.kimlik.taraf_no).toBe(t.taraf_no); expect(v.kimlik.eposta).toBe('yeni@ornek.com'); expect(v.kimlik.kimlik).toBeUndefined();
       expect(typeof v.acikAlacakEur).toBe('number'); for (const k of ['faturalar', 'sozlesmeler', 'yetkiBelgeleri', 'yetkililer', 'yatlar', 'dosyalar']) expect(Array.isArray(v[k])).toBe(true);
       expect((await o.ist('GET', '/api/taraf/YOK-000/ana-kayit', await o.gir('opm'))).statusCode).toBe(404);
+      { // YG-106: Yat Kullanım Takvimi
+        const yat = (await o.sup.query(`SELECT kimlik FROM yat LIMIT 1`)).rows[0].kimlik; const opm = await o.gir('opm'); const u = `/api/yat/${yat}/kullanim-donemi`;
+        expect((await o.ist('POST', u, opm, { tur: 'Tatil', baslangic: '2027-06-01', bitis: '2027-06-30' })).statusCode).toBe(400);
+        expect((await o.ist('POST', u, opm, { tur: 'Kullanım', baslangic: '2027-06-30', bitis: '2027-06-01' })).statusCode).toBe(400);
+        expect((await o.ist('POST', u, opm, { tur: 'Kiralama', baslangic: '2027-06-01', bitis: '2027-06-30', konum: 'Göcek' })).statusCode).toBe(200);
+        const tk = (await o.ist('GET', `/api/yat/${yat}/kullanim-takvimi`, opm)).json(); expect(tk.donemler.some((x: any) => x.tur === 'Kiralama' && x.konum === 'Göcek')).toBe(true);
+        expect(Array.isArray(tk.sistem)).toBe(true); expect(Array.isArray(tk.uyarilar)).toBe(true);
+      }
     }
   });
   it('tamlık birlikte: yat sahibi bağı, karar zamanı ve başka dosyaya ait kanıt (YG1251-TAMLIK)', async () => {

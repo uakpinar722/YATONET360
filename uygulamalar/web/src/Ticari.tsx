@@ -26,6 +26,8 @@ import { MusteriAnaKaydi } from './MusteriAnaKaydi';
 import { FaturaTakipFormu } from './FaturaTakipFormu';
 import { Guvenlik } from './Guvenlik';
 import { YetkiMatrisi } from './YetkiMatrisi';
+import { BolgeKatsayisi } from './BolgeKatsayisi';
+import { KdvIade } from './GarantiMali';
 import { ArsivListesi } from './ArsivFirma';
 import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, ErisimKapatma, IcDenetim, OzDenetim } from './ErisimEtik';
 import { KurumTalepleri, GelenTalepler } from './KurumTalebi';
@@ -1088,6 +1090,8 @@ export function IdariIslemler() {
       <DenemeDegerlendirme />
       <Guvenlik />
       <YetkiMatrisi />
+      <BolgeKatsayisi />
+      <KdvIade />
       <ProblemBulgu />
       <VeriEnvanteri />
       <VeriSozlugu />

@@ -954,7 +954,8 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   // Cari hareket: müşteri ve sigortada fatura borç, tahsilat alacak; Çözüm Ortağında doğrulanmış hakediş alacak, ödeme borç; elle girilen banka/kasa hareketleri cariye eklenir.
   s.get('/on-muhasebe/cari', oturumlu, async (i, y) => {
     const q = (i.query ?? {}) as { tur?: string; ref?: string };
-    if (!(await onMuhasebeci(i.oturum!.kullanici))) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
+    // YG-1611: cari mutabakat ekstresi Muhasebe ve Finans Müdür Yardımcısına da açıktır (seçilen cari için işlem bazında; hesap bakiyeleri kapalı).
+    if (!(await onMuhasebeci(i.oturum!.kullanici)) && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Muhasebe ve Finans Müdür Yardımcısı'`, [i.oturum!.kullanici])).rowCount) return y.code(403).send({ hata: ON_MUHASEBE_HATA });
     if (!['Müşteri', 'Sigorta Şirketi', 'Çözüm Ortağı', 'Tedarikçi'].includes(q.tur ?? '') || !q.ref?.trim()) return y.code(400).send({ hata: 'Cari türünü ve cariyi seçiniz.' });
     const satirlar = q.tur === 'Çözüm Ortağı' || q.tur === 'Tedarikçi'
       ? (await b.db.query(`SELECT * FROM (SELECT h.olusturma_zamani::date tarih, 'Hakediş ' || h.hakedis_no aciklama, 0::numeric borc, h.net alacak FROM hakedis h JOIN is_emri e ON e.kimlik = h.is_emri_ref WHERE e.kurulus_ref::text = $1 AND h.statu IN ('Doğrulandı', 'Ödeme Talimatında', 'Ödendi')

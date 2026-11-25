@@ -7,7 +7,7 @@ import { sonMakam } from '../src/teklif.js';
 import { alacakIsle, teslimEngeli, teslimOncesiOdemeIsle } from '../src/ticari.js';
 import { ana, ortamKur, PAROLA, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', my: 'Muhasebe ve Finans Yöneticisi', mfm: 'Muhasebe ve Finans Müdürü', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu' };
+const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', my: 'Muhasebe ve Finans Yöneticisi', mfm: 'Muhasebe ve Finans Müdürü', mfmy: 'Muhasebe ve Finans Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', hud: 'Hukuk ve Uyum Direktörü', sc: 'Sicil Sorumlusu' };
 let o: Ortam; let say = 0;
 const kurumsal = async (eklenen = 0) => {
   const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE dosya_ref <> $1 AND bitis_zamani IS NULL`, [d.kimlik]);
@@ -92,6 +92,19 @@ describe('mali hareketler (YG-850)', () => {
     const muh = (await o.sup.query(`SELECT muhatap FROM musteri_faturasi WHERE kimlik = $1`, [f])).rows[0].muhatap;
     if (muh !== 'Sigorta Şirketi') { const c = (await o.ist('GET', `/api/on-muhasebe/cari?tur=Müşteri&ref=${taraf}`, mfm)).json(); expect(c.bakiye).toBeGreaterThanOrEqual(600); }
     expect((await o.ist('GET', `/api/on-muhasebe/cari?tur=Müşteri&ref=${taraf}`, ts)).statusCode).toBe(403);
+    { // T-YG1611: Müdür Yardımcısı eşleşmeyen hareketi eşleştirir, cari ekstreyi görür; bakiyeler ve genel gider kapalı
+      const mfmy = await o.gir('mfmy');
+      expect((await o.ist('GET', '/api/on-muhasebe/hesaplar', mfmy)).statusCode).toBe(403);
+      expect((await o.ist('POST', '/api/on-muhasebe/genel-gider', mfmy, { tarih: '2026-11-20', kalem: 'Kira', tutar: 1 })).statusCode).toBe(403);
+      expect((await o.ist('GET', `/api/on-muhasebe/cari?tur=Müşteri&ref=${taraf}`, mfmy)).statusCode).toBe(200);
+      const h = (await o.sup.query(`SELECT kimlik FROM hesap_hareketi WHERE hesap_adi = $1 AND cari_ref IS NULL ORDER BY tarih LIMIT 1`, [hesap])).rows[0].kimlik;
+      await o.sup.query(`UPDATE hesap_hareketi SET olusturma_zamani = now() - interval '2 days' WHERE kimlik = $1`, [h]);
+      expect((await o.ist('GET', '/api/mali-kontrol', mfmy)).json().eslesmeyen.some((x: any) => x.kimlik === h)).toBe(true);
+      expect((await o.ist('GET', '/api/mali-kontrol', ts)).statusCode).toBe(404);
+      expect((await o.ist('POST', `/api/mali-kontrol/eslestir/${h}`, mfmy, { cariTuru: 'Müşteri', cari: taraf })).statusCode).toBe(400);
+      expect((await o.ist('POST', `/api/mali-kontrol/eslestir/${h}`, mfmy, { cariTuru: 'Müşteri', cari: taraf, not: 'Dekont açıklaması teyit edildi' })).statusCode).toBe(200);
+      expect((await o.ist('POST', `/api/mali-kontrol/eslestir/${h}`, mfmy, { cariTuru: 'Müşteri', cari: taraf, not: 'X' })).statusCode).toBe(409);
+    }
   });
 });
 
