@@ -3,7 +3,7 @@ import { izYaz } from './denetim.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
 
-const IKM = 'İnsan Kaynakları Müdürü'; const IKS = 'İnsan Kaynakları Sorumlusu';
+const IKM = 'İnsan Kaynakları Müdürü'; const IKS = 'İnsan Kaynakları Sorumlusu'; const ISG = 'İSG Sorumlusu'; // YG-1029: İSG eğitim planı satırları
 const TARIH = /^\d{4}-\d{2}-\d{2}$/;
 
 /** YG-1616: yıllık eğitim planı (İnsan Kaynakları Müdürü) ve personel yan hak kaydı (İnsan Kaynakları; tutar tutulmaz). */
@@ -14,7 +14,7 @@ export function ikPlanYollari(s: FastifyInstance, b: Baglam) {
 
   // Gerçekleşme: hedef rollerdeki görevdeki personelden plan yılında dersi beyanla tamamlayan (ders bağlı) veya aynı adlı eğitim kaydı bulunan (ders bağsız) oran.
   s.get('/ik/egitim-plani', oturumlu, async (i, y) => {
-    if (!(await rolVar(i.oturum!.kullanici, [IKM, IKS]))) return yok(y);
+    if (!(await rolVar(i.oturum!.kullanici, [IKM, IKS, ISG]))) return yok(y);
     const yil = Number(((i.query ?? {}) as { yil?: string }).yil) || new Date().getFullYear();
     const l = (await b.db.query(`SELECT p.kimlik, p.yil, p.egitim_adi, p.hedef_roller, p.planlanan_ay, p.aciklama, d.ad ders, p.ders_ref,
         (SELECT count(DISTINCT a.kullanici_ref)::int FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND h.hesap_durumu = 'Aktif' AND (cardinality(p.hedef_roller) = 0 OR r.rol_adi = ANY(p.hedef_roller)) AND h.kullanici_grubu = 'LGM İç Rolü') hedef,
@@ -23,10 +23,10 @@ export function ikPlanYollari(s: FastifyInstance, b: Baglam) {
                ELSE EXISTS (SELECT 1 FROM egitim_kaydi e WHERE e.personel_ref = a.kullanici_ref AND lower(e.ad) = lower(p.egitim_adi) AND extract(year FROM e.tamamlanma_tarihi) = p.yil) END)) tamamlayan
       FROM egitim_plani p LEFT JOIN akademi_ders d ON d.kimlik = p.ders_ref WHERE p.yil = $1 ORDER BY p.planlanan_ay, p.egitim_adi`, [yil])).rows;
     const dersler = (await b.db.query(`SELECT kimlik, ad, tur FROM akademi_ders WHERE aktif ORDER BY ad`)).rows;
-    return { yil, planlar: l.map((x) => ({ ...x, oran: x.hedef ? Math.round((1000 * x.tamamlayan) / x.hedef) / 10 : null })), dersler, duzenler: await rolVar(i.oturum!.kullanici, [IKM]) };
+    return { yil, planlar: l.map((x) => ({ ...x, oran: x.hedef ? Math.round((1000 * x.tamamlayan) / x.hedef) / 10 : null })), dersler, duzenler: await rolVar(i.oturum!.kullanici, [IKM, ISG]) };
   });
   s.post('/ik/egitim-plani', oturumlu, async (i, y) => {
-    const o = i.oturum!; if (!(await rolVar(o.kullanici, [IKM]))) return y.code(403).send({ hata: 'Yıllık eğitim planını İnsan Kaynakları Müdürü hazırlar.' });
+    const o = i.oturum!; if (!(await rolVar(o.kullanici, [IKM, ISG]))) return y.code(403).send({ hata: 'Yıllık eğitim planını İnsan Kaynakları Müdürü hazırlar; İSG eğitimlerini İSG Sorumlusu ekler.' });
     const g = (i.body ?? {}) as { yil?: number; ders?: string; ad?: string; roller?: string[]; ay?: number; aciklama?: string };
     const yil = Number(g.yil); const ay = Number(g.ay);
     if (!Number.isInteger(yil) || yil < 2026 || !Number.isInteger(ay) || ay < 1 || ay > 12) return y.code(400).send({ hata: 'Plan yılını ve planlanan ayı seçiniz.' });

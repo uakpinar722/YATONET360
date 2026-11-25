@@ -24,7 +24,8 @@ export function yonetimPanosuYollari(s: FastifyInstance, b: Baglam) {
 
   s.get('/yonetim-panosu', oturumlu, async (i, y) => {
     const roller = (await b.db.query(`SELECT r.rol_adi, r.kademe, r.rol_sahibi_birim FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.kullanici_gruplari = 'LGM İç Rolü'`, [i.oturum!.kullanici])).rows as { rol_adi: string; kademe: string; rol_sahibi_birim: string }[];
-    const tum = roller.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı');
+    // YG-1029: CEO Asistanı üst yönetim toplantıları için panoyu salt okunur ve tüm kapsamla görür; hedef giremez.
+    const tum = roller.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı' || r.rol_adi === 'CEO Asistanı');
     const birimler = new Set<string>(); for (const r of roller) { if (r.kademe === 'Müdür') birimler.add(r.rol_sahibi_birim); for (const x of BAGLI[r.rol_adi] ?? []) birimler.add(x); }
     if (!tum && !birimler.size) return yok(y);
     const ust = roller.some((r) => r.rol_adi === 'CEO' || r.rol_adi === 'Genel Müdür Yardımcısı');

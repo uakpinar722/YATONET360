@@ -415,7 +415,7 @@ function CalismaIzni({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<a
 
 /** YG-428, YG-429, YG-1518: fiyat içermez; Firma Değerlendirmesi zorunlu; son zaman görünür. */
 function FirmaRapor({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<any>, t?: string) => Promise<any> }) {
-  const [v, setV] = useState<{ rapor: { rapor_no: string } | null; sonZaman: string } | null>(null); const [f, setF] = useState({ tarih: '', bulgular: '', oneriler: '', malzeme: '', sure: '', degerlendirme: '', resmi: '' });
+  const [v, setV] = useState<{ rapor: { rapor_no: string } | null; sonZaman: string } | null>(null); const [f, setF] = useState({ tarih: '', bulgular: '', oneriler: '', malzeme: '', sure: '', degerlendirme: '', resmi: '', miktar: '' }); const [foto, setFoto] = useState<string[]>([]); const [fs, setFs] = useState(''); // YG-427
   const yukle = () => istek<NonNullable<typeof v>>(`/firma-portal/is-emri/${isEmri}/teknik-rapor`).then(setV);
   useEffect(() => { void yap(yukle); }, [isEmri]);
   if (!v) return null;
@@ -428,8 +428,10 @@ function FirmaRapor({ isEmri, yap }: { isEmri: string; yap: (f: () => Promise<an
     <label htmlFor="fr-m">Malzeme İhtiyacı</label><input id="fr-m" value={f.malzeme} onChange={(e) => setF({ ...f, malzeme: e.target.value })} />
     <label htmlFor="fr-s">Tahmini Süre (İş Günü)</label><input id="fr-s" inputMode="numeric" value={f.sure} onChange={(e) => setF({ ...f, sure: e.target.value })} />
     <label htmlFor="fr-r">Önerilen İşlemler İçin Resmî / Klas Onayı Gerekir mi?</label><select id="fr-r" value={f.resmi} onChange={(e) => setF({ ...f, resmi: e.target.value })}><option value="">Seçiniz</option><option>Evet</option><option>Hayır</option></select>
+    <label htmlFor="fr-q">İş Kalemi Miktarları (her satıra: kalem | miktar | birim)</label><textarea id="fr-q" value={f.miktar} onChange={(e) => setF({ ...f, miktar: e.target.value })} />
+    <BelgeSec ad="Rapor Fotoğrafı" bagTuru="İş Emri" bagKimligi={isEmri} deger={fs} sec={(k) => { setFs(''); if (k && !foto.includes(k)) setFoto([...foto, k]); }} />{foto.length > 0 && <div className="not">{foto.length} fotoğraf eklendi.</div>}
     <label htmlFor="fr-d">Firma Değerlendirmesi</label><textarea id="fr-d" value={f.degerlendirme} onChange={(e) => setF({ ...f, degerlendirme: e.target.value })} />
-    <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teknik-rapor`, { ...f, resmi: undefined, sure: Number(f.sure), resmiOnay: f.resmi ? f.resmi === 'Evet' : undefined }).then(yukle), 'Raporunuz iletildi.')}>Raporu Onayla ve Gönder</button>
+    <button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${isEmri}/teknik-rapor`, { ...f, resmi: undefined, miktar: undefined, sure: Number(f.sure), resmiOnay: f.resmi ? f.resmi === 'Evet' : undefined, fotograflar: foto, miktarlar: f.miktar.split('\n').map((s) => s.split('|').map((x) => x.trim())).filter((x) => x[0]).map(([kalem, miktar, birim]) => ({ kalem, miktar, birim })) }).then(yukle), 'Raporunuz iletildi.')}>Raporu Onayla ve Gönder</button>
   </Blok>;
 }
 

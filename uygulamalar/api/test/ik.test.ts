@@ -280,6 +280,7 @@ describe('yıllık eğitim planı ve yan haklar (YG-1616)', () => {
     const v = (await o.ist('GET', '/api/ik/egitim-plani?yil=2026', iks)).json();
     const x = v.planlar.find((p: any) => p.egitim_adi === 'Temel İSG'); expect(x.hedef).toBeGreaterThanOrEqual(1); expect(x.tamamlayan).toBeLessThanOrEqual(x.hedef); expect(typeof x.oran).toBe('number'); expect(v.duzenler).toBe(false);
     expect((await o.ist('GET', '/api/ik/egitim-plani', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/ik/egitim-plani', await o.gir('isg'), { yil: 2026, ad: 'Yüksekte Çalışma', ay: 4 })).statusCode).toBe(200); // YG-1029
     await kart('ds');
     expect((await o.ist('POST', '/api/ik/yan-hak', iks, { personel: o.K.ds, tur: 'Yemek kartı' })).statusCode).toBe(400);
     const r = await o.ist('POST', '/api/ik/yan-hak', iks, { personel: o.K.ds, tur: 'Yemek kartı', baslangic: '2026-01-01' }); expect(r.statusCode, r.body).toBe(200);

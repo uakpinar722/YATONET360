@@ -329,6 +329,7 @@ export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }
       {v.raporlar.length === 0 && <div className="not">Teknik Rapor bulunmamaktadır.</div>}
       {v.raporlar.map((r) => <div key={r.kimlik}>{r.rapor_no} · {r.rapor_turu} · {r.durum}{r.durum === 'Kontrolde' && r.kademe_sayisi ? ` · Kademe ${(r.kademe ?? 0) + 1} / ${r.kademe_sayisi}` : ''}{r.onceki_surum ? ` · Sürüm ${r.surum} (${r.onceki_surum} yerine; ${r.revizyon_nedeni})` : ''}</div>)}
       {tu && v.firmaRaporu && <div className="not">Firma Raporu {v.firmaRaporu.rapor_no} forma aktarıldı; düzeltmeleriniz kayda geçer. Tahmini Süre: {v.firmaRaporu.tahmini_sure_gun} Gün{v.firmaRaporu.malzeme_ihtiyaci ? ` · Malzeme: ${v.firmaRaporu.malzeme_ihtiyaci}` : ''}</div>}
+      {tu && (v.oneri as { fotograflar?: { kimlik: string; ad: string }[] } | null)?.fotograflar?.length ? <div className="not">Firma fotoğrafları (rapora ek): {(v.oneri as unknown as { fotograflar: { kimlik: string; ad: string }[] }).fotograflar.map((x) => x.ad).join(', ')}</div> : null}{/* YG-427 */}
       {tu && <>
         <label htmlFor="rp-t">Rapor Türü</label><select id="rp-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{['İlk Rapor', 'Ek Teknik Rapor', 'Garanti İnceleme Raporu'].map((x) => <option key={x}>{x}</option>)}</select>
         {RAPOR_ALAN.map(([k, ad]) => <div key={k}><label htmlFor={`rp-${k}`}>{ad}</label><textarea id={`rp-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></div>)}

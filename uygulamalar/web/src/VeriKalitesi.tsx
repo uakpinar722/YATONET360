@@ -25,13 +25,18 @@ export function VeriKalitesi() {
 
 /** YG-998: modül ve veri kümesi sahipliği rolle tanımlanır; görev değişiminde CEO veya GMY sahipliği, açık işleri ve istenirse izinleri devreder. */
 export function SahiplikDevri() {
-  type V = { yonetir: boolean; moduller: { modul: string; sahip: string }[]; veriKumeleri: { kod: string; ad: string; sahip: string }[]; devirler: { eski: string; yeni: string; gerekce: string; sayilar: Record<string, number>; zaman: string }[] };
+  type V = { yonetir: boolean; moduller: { modul: string; sahip: string }[]; veriKumeleri: { kod: string; ad: string; sahip: string }[]; devirler: { eski: string; yeni: string; gerekce: string; sayilar: Record<string, number>; zaman: string }[]; sifatlar?: { sistemSahibi: string; surecSahipleri: { surec: string; sahip: string }[]; veriSahipleri: { veri: string; sahip: string }[]; nobetciler: { katman: string; kisi: string | null }[] } };
   const [v, setV] = useState<V | null>(null); const [m, setM] = useState('');
   const [f, setF] = useState({ eskiRol: '', yeniRol: '', gerekce: '', izinler: false }); const [md, setMd] = useState({ modul: '', sahipRol: '' });
   const yk = () => istek<V>('/sahiplik').then(setV).catch(() => setV(null));
   useEffect(() => { void yk(); }, []);
   if (!v) return null;
   return <details><summary>Sahiplik ve Devir</summary>{m && <div className="not" role="status">{m}</div>}
+    {v.sifatlar && <><div className="bolum">Sıfat Rolleri</div>{/* YG-1011, YG-1028 */}
+      <div className="soru"><span>Sistem Sahibi · {v.sifatlar.sistemSahibi}</span></div>
+      {v.sifatlar.surecSahipleri.map((x) => <div key={`s-${x.surec}`} className="soru"><span>Süreç Sahibi · {x.surec} · {x.sahip}</span></div>)}
+      {v.sifatlar.veriSahipleri.map((x) => <div key={`v-${x.veri}`} className="soru"><span>Veri Sahibi · {x.veri} · {x.sahip}</span></div>)}
+      {v.sifatlar.nobetciler.map((x) => <div key={`n-${x.katman}`} className="soru"><span>Nöbetçi · {x.katman} · {x.kisi ?? 'Yürürlükte nöbet yok'}</span></div>)}</>}
     <div className="bolum">Modüller</div>{v.moduller.length === 0 && <div className="ozet bos">Modül sahipliği tanımlanmamıştır.</div>}{v.moduller.map((x) => <div className="ozet" key={x.modul}>{x.modul} · {x.sahip}</div>)}
     <div className="bolum">Veri Kümeleri</div>{v.veriKumeleri.map((x) => <div className="ozet" key={x.kod}>{x.ad} · {x.sahip}</div>)}
     {v.yonetir && <>

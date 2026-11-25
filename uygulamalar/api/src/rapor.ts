@@ -83,17 +83,22 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     return { rapor: r ?? null, sonZaman: await raporSonZamani(b.db, e.oncelik, new Date(e.firma_kabul_zamani ?? e.olusturma_zamani ?? Date.now())) };
   });
   s.post('/firma-portal/is-emri/:id/teknik-rapor', oturumlu, async (i, y) => {
-    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tarih?: string; bulgular?: string; oneriler?: string; malzeme?: string; sure?: number; degerlendirme?: string; resmiOnay?: boolean };
+    const o = i.oturum!; const e = await firmaIsi((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { tarih?: string; bulgular?: string; oneriler?: string; malzeme?: string; sure?: number; degerlendirme?: string; resmiOnay?: boolean; miktarlar?: { kalem?: string; miktar?: number | string; birim?: string }[]; fotograflar?: string[] };
     if (!e) return yok(y);
     if (e.is_emri_turu !== 'KN') return y.code(409).send({ hata: 'Firma Teknik Raporu keşif iş emrinde girilir.' });
     if (!g.tarih || !g.bulgular?.trim() || !g.oneriler?.trim() || !(Number(g.sure) > 0) || !g.degerlendirme?.trim()) return y.code(400).send({ hata: 'İnceleme tarihi, bulgular, önerilen işlemler, tahmini süre ve Firma Değerlendirmesini yazmanızı rica ederiz.' });
     if ((await b.db.query(`SELECT 1 FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu iş emrinin raporu kayıtlıdır.' });
+    // YG-427: iş kalemi miktarları ve iş emrine yüklenmiş fotoğraflar (isteğe bağlı) LGM teknik rapor önerisine aktarılır.
+    const miktarlar = (g.miktarlar ?? []).map((x) => ({ kalem: String(x.kalem ?? '').trim(), miktar: Number(String(x.miktar ?? '').replace(',', '.')), birim: String(x.birim ?? '').trim() })).filter((x) => x.kalem || x.birim);
+    if (miktarlar.some((x) => !x.kalem || !x.birim || !(x.miktar > 0))) return y.code(400).send({ hata: 'Her miktar satırında iş kalemi, pozitif miktar ve birim giriniz.' });
+    const fotograflar = [...new Set((g.fotograflar ?? []).filter((x) => UUID.test(x)))];
+    if (fotograflar.length && Number((await b.db.query(`SELECT count(*) n FROM belge WHERE kimlik = ANY($1::uuid[]) AND bag_turu = 'İş Emri' AND bag_kimligi = $2`, [fotograflar, e.kimlik])).rows[0].n) !== fotograflar.length) return y.code(400).send({ hata: 'Fotoğraflar bu iş emrine yüklenmiş olmalıdır.' });
     // YG-1441: klaslı ya da ticari yatta firma "resmî / klas onayı gerekir mi" sorusunu yanıtlar.
     const kl = (await b.db.query(`SELECT y.klas_durumu, y.kullanim_amaci FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [e.dosya_ref])).rows[0];
     if ((kl?.klas_durumu === 'Evet' || kl?.kullanim_amaci === 'Charter') && typeof g.resmiOnay !== 'boolean') return y.code(400).send({ hata: 'Önerilen işlemler için resmî / klas onayı gerekip gerekmediğini belirtmenizi rica ederiz.' });
     return islem(async (c) => {
       const no = await altNumara(c, e.dosya_no, 'FR');
-      await c.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, malzeme_ihtiyaci, tahmini_sure_gun, firma_degerlendirmesi, giren_ref, resmi_onay_gerekir) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [no, e.dosya_ref, e.kimlik, e.kurulus_ref, g.tarih, g.bulgular!.trim(), g.oneriler!.trim(), g.malzeme?.trim() ?? null, g.sure, g.degerlendirme!.trim(), o.kullanici, typeof g.resmiOnay === 'boolean' ? g.resmiOnay : null]);
+      await c.query(`INSERT INTO firma_teknik_raporu (rapor_no, dosya_ref, is_emri_ref, kurulus_ref, inceleme_tarihi, bulgular, onerilen_islemler, malzeme_ihtiyaci, tahmini_sure_gun, firma_degerlendirmesi, giren_ref, resmi_onay_gerekir, miktarlar, fotograflar) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [no, e.dosya_ref, e.kimlik, e.kurulus_ref, g.tarih, g.bulgular!.trim(), g.oneriler!.trim(), g.malzeme?.trim() ?? null, g.sure, g.degerlendirme!.trim(), o.kullanici, typeof g.resmiOnay === 'boolean' ? g.resmiOnay : null, JSON.stringify(miktarlar), fotograflar]);
       const tu = (await c.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((r) => r.kullanici_ref as string);
       await bildir(c, { olay: `firma-rapor:${e.kimlik}`, kullanicilar: tu, baslik: `${e.dosya_no} · Firma Teknik Raporu Geldi` });
       await teklifSayaciBaslat(c, e.dosya_ref); // YG-199
@@ -114,11 +119,12 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const rapor = (await b.db.query(`SELECT t.kimlik, t.rapor_no, t.surum, t.rapor_turu, t.durum, t.son_zaman, t.revizyon_nedeni, (SELECT p.rapor_no FROM teknik_rapor p WHERE p.kimlik = t.onceki_surum_ref) onceki_surum, k.kademe, cardinality(k.zincir) AS kademe_sayisi FROM teknik_rapor t LEFT JOIN is_karti k ON k.tur = 'Teknik Rapor' AND k.nesne_kimligi = t.kimlik::text WHERE t.dosya_ref = $1 ORDER BY t.olusturma_zamani DESC`, [id])).rows;
-    const firma = (await b.db.query(`SELECT f.kimlik, f.rapor_no, f.inceleme_tarihi::text, f.bulgular, f.onerilen_islemler, f.malzeme_ihtiyaci, f.tahmini_sure_gun, f.firma_degerlendirmesi FROM firma_teknik_raporu f WHERE f.dosya_ref = $1 ORDER BY f.firma_onayi DESC LIMIT 1`, [id])).rows[0] ?? null;
+    const firma = (await b.db.query(`SELECT f.kimlik, f.rapor_no, f.inceleme_tarihi::text, f.bulgular, f.onerilen_islemler, f.malzeme_ihtiyaci, f.tahmini_sure_gun, f.firma_degerlendirmesi, f.miktarlar, (SELECT coalesce(json_agg(json_build_object('kimlik', e.kimlik, 'ad', e.ad) ORDER BY e.ad), '[]') FROM belge e WHERE e.kimlik = ANY(f.fotograflar)) fotograflar FROM firma_teknik_raporu f WHERE f.dosya_ref = $1 ORDER BY f.firma_onayi DESC LIMIT 1`, [id])).rows[0] ?? null;
     // YG-427: malzeme ihtiyacı, tahmini süre ve yat bilgisi de forma aktarılır.
     const yat = (await b.db.query(`SELECT y.yat_adi, coalesce(m.marka || ' ' || m.model, nullif(concat_ws(' ', y.marka_diger, y.model_diger), '')) mm FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN yat_marka_model m ON m.kimlik = y.marka_model_ref WHERE d.kimlik = $1`, [id])).rows[0];
-    const ek = firma ? [firma.malzeme_ihtiyaci ? `Malzeme İhtiyacı: ${firma.malzeme_ihtiyaci}` : '', firma.tahmini_sure_gun ? `Tahmini Süre: ${firma.tahmini_sure_gun} gün` : ''].filter(Boolean).join('\n') : '';
-    return { raporlar: rapor, firmaRaporu: firma, oneri: firma ? { bulgular: firma.bulgular, oneriler: [firma.onerilen_islemler, ek].filter(Boolean).join('\n'), analiz: firma.firma_degerlendirmesi, incelenen: yat ? `Yat: ${yat.yat_adi}${yat.mm ? ` (${yat.mm})` : ''}` : '' } : null };
+    const ek = firma ? [firma.malzeme_ihtiyaci ? `Malzeme İhtiyacı: ${firma.malzeme_ihtiyaci}` : '', firma.tahmini_sure_gun ? `Tahmini Süre: ${firma.tahmini_sure_gun} gün` : '',
+      ...((firma.miktarlar ?? []) as { kalem: string; miktar: number; birim: string }[]).map((x) => `${x.kalem}: ${String(x.miktar).replace('.', ',')} ${x.birim}`)].filter(Boolean).join('\n') : ''; // YG-427: miktarlar
+    return { raporlar: rapor, firmaRaporu: firma, oneri: firma ? { bulgular: firma.bulgular, oneriler: [firma.onerilen_islemler, ek].filter(Boolean).join('\n'), analiz: firma.firma_degerlendirmesi, incelenen: yat ? `Yat: ${yat.yat_adi}${yat.mm ? ` (${yat.mm})` : ''}` : '', fotograflar: firma.fotograflar } : null };
   });
   s.post('/dosya/:id/teknik-rapor', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as Record<string, string | undefined>;

@@ -167,6 +167,7 @@ describe('veri kalitesi (YG-1249, 1252, 1254, 1255)', () => {
     expect((await o.sup.query(`SELECT sahip_rol_ref FROM is_karti WHERE kimlik = $1`, [kart])).rows[0].sahip_rol_ref).toBe(kmR);
     expect((await o.sup.query(`SELECT count(*)::int n FROM veri_kumesi WHERE sahip_rol = 'Operasyon Müdürü'`)).rows[0].n).toBe(0);
     expect((await o.ist('GET', '/api/sahiplik', g)).json().moduller).toContainEqual({ modul: 'Veri Kalitesi', sahip: 'Kalite Müdürü' });
+    { const sf = (await o.ist('GET', '/api/sahiplik', g)).json().sifatlar; expect(sf.sistemSahibi).toBe('Bilgi İşlem Müdürü'); expect(sf.surecSahipleri[0]).toEqual({ surec: 'Dosya süreci', sahip: 'Operasyon Müdürü' }); expect(sf.nobetciler).toHaveLength(3); } // YG-1011, YG-1028
   });
   it('dosya durum özeti: açık iş, onayın kimde olduğu, bekleme nedeni, eksikler ve sonraki işlem (YG539-OZET)', async () => {
     const d = await o.dosyaAc(); const opm = await o.gir('opm');

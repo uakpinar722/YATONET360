@@ -21,6 +21,14 @@ export function sahiplikYollari(s: FastifyInstance, b: Baglam) {
       yonetir: await yonetim(i.oturum!.kullanici),
       moduller: (await b.db.query(`SELECT m.modul, r.rol_adi sahip FROM modul_sahipligi m JOIN rol r ON r.kimlik = m.sahip_rol_ref ORDER BY m.modul`)).rows,
       veriKumeleri: (await b.db.query(`SELECT kod, ad, sahip_rol sahip FROM veri_kumesi ORDER BY kod`)).rows,
+      // YG-1011, YG-1028: sıfat rolleri ayrı hesap rolü değildir; Sistem Sahibi Bilgi İşlem Müdürü, Veri Sahibi veri kümesinin sahibi, Süreç Sahibi modülün sahibi birim
+      // (dosya sürecinde Operasyon Müdürü), Nöbetçi yürürlükteki nöbet çizelgesinden gelir.
+      sifatlar: {
+        sistemSahibi: 'Bilgi İşlem Müdürü',
+        surecSahipleri: [{ surec: 'Dosya süreci', sahip: 'Operasyon Müdürü' }, ...(await b.db.query(`SELECT m.modul surec, r.rol_adi sahip FROM modul_sahipligi m JOIN rol r ON r.kimlik = m.sahip_rol_ref ORDER BY m.modul`)).rows],
+        veriSahipleri: (await b.db.query(`SELECT ad veri, sahip_rol sahip FROM veri_kumesi ORDER BY kod`)).rows,
+        nobetciler: await Promise.all((['Dosya Sorumlusu', 'Teknik Uzman', 'Yönetici'] as const).map(async (k) => { const n = await (await import('./acil.js')).nobetci(b.db, k); return { katman: k, kisi: n ? (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [n])).rows[0]?.ad_soyad ?? null : null }; })),
+      },
       devirler: (await b.db.query(`SELECT e.rol_adi eski, n.rol_adi yeni, d.gerekce, d.izinler_devredildi, d.sayilar, d.zaman FROM sahiplik_devri d JOIN rol e ON e.kimlik = d.eski_rol_ref JOIN rol n ON n.kimlik = d.yeni_rol_ref ORDER BY d.zaman DESC LIMIT 50`)).rows,
     };
   });

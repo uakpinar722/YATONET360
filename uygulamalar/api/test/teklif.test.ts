@@ -782,7 +782,9 @@ describe('firma raporunda resmî / klas onayı sorusu (YG-1441)', () => {
     await o.sup.query(`DELETE FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e]);
     const R = { tarih: '2026-11-05', bulgular: 'b', oneriler: 'o', sure: 3, degerlendirme: 'f' };
     expect((await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, R)).json().hata).toContain('resmî / klas onayı');
-    const r = await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, { ...R, resmiOnay: true }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, { ...R, resmiOnay: true, miktarlar: [{ kalem: 'Jelkot', miktar: 0, birim: 'm²' }] })).statusCode).toBe(400); // YG-427
+    const r = await o.ist('POST', `/api/firma-portal/is-emri/${e}/teknik-rapor`, firmaC, { ...R, resmiOnay: true, miktarlar: [{ kalem: 'Jelkot onarımı', miktar: '2,5', birim: 'm²' }] }); expect(r.statusCode, r.body).toBe(200);
+    const tr = (await o.ist('GET', `/api/dosya/${d.kimlik}/teknik-rapor`, await o.gir('ds'))).json(); expect(tr.oneri.oneriler).toContain('Jelkot onarımı: 2,5 m²'); expect(Array.isArray(tr.oneri.fotograflar)).toBe(true); // YG-427
     expect((await o.sup.query(`SELECT resmi_onay_gerekir FROM firma_teknik_raporu WHERE is_emri_ref = $1`, [e])).rows[0].resmi_onay_gerekir).toBe(true);
   });
 });

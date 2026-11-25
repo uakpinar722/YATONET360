@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { usulsuzlukTara } from '../src/usulsuzluk.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', idm: 'İç Denetim Müdürü', sy: 'Sistem Yöneticisi', tid: 'Ticari İşler Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', hud: 'Hukuk ve Uyum Direktörü' };
+const KADRO = { ceoa: 'CEO Asistanı', ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', idm: 'İç Denetim Müdürü', sy: 'Sistem Yöneticisi', tid: 'Ticari İşler Direktörü', btd: 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü', hud: 'Hukuk ve Uyum Direktörü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test87', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -169,6 +169,7 @@ describe('yönetim panosu (YG-758, YG-759)', () => {
     const op = (await o.ist('GET', '/api/yonetim-panosu', await o.gir('opm'))).json(); expect(op.kapsam).toEqual(['Operasyon Müdürlüğü']);
     expect(op.gostergeler.find((x: { kod: string }) => x.kod === 'acik').deger).toBeGreaterThan(0); expect(op.gostergeler.some((x: { kod: string }) => x.kod === 'tahsilat')).toBe(false);
     const ti = (await o.ist('GET', '/api/yonetim-panosu', await o.gir('tid'))).json(); expect(ti.gostergeler.map((x: { kod: string }) => x.kod)).toEqual(['tahsilat']);
+    const ca = (await o.ist('GET', '/api/yonetim-panosu', await o.gir('ceoa'))).json(); expect(ca.kapsam).toBe('Tümü'); expect(ca.hedefGirer).toBe(false); // YG-1029
   });
 });
 
