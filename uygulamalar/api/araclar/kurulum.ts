@@ -72,7 +72,8 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   let n = 0;
   for (const [adi, birim] of ic) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, ayricalikli_rol, katalog_rolu) VALUES ($1,$2,$3,$4,'LGM İç Rolü',$5,true) ON CONFLICT (rol_adi) DO UPDATE SET rol_sahibi_birim = EXCLUDED.rol_sahibi_birim, kademe = EXCLUDED.kademe, katalog_rolu = true`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, kademeBul(adi), AYRICALIKLI.has(adi)]);
   for (const [adi, birim, grup] of DIS_ROLLER) await c.query(`INSERT INTO rol (kimlik, rol_adi, rol_sahibi_birim, kademe, kullanici_gruplari, katalog_rolu) VALUES ($1,$2,$3,'Dış Kullanıcı',$4,true) ON CONFLICT (rol_adi) DO UPDATE SET katalog_rolu = true`, [`ROL-${String(++n).padStart(3, '0')}`, adi, birim, grup]);
-  for (const [adi, izin] of IZINLER) await c.query(`INSERT INTO rol_izni SELECT kimlik, $2 FROM rol WHERE rol_adi = $1 ON CONFLICT DO NOTHING`, [adi, izin]);
+  // YG-996: onaylı talep ile matristen kaldırılan izin kurulumda geri eklenmez.
+  for (const [adi, izin] of IZINLER) await c.query(`INSERT INTO rol_izni SELECT kimlik, $2 FROM rol r WHERE rol_adi = $1 AND NOT EXISTS (SELECT 1 FROM rol_izni_kaldirilan x WHERE x.rol_ref = r.kimlik AND x.izin = $2) ON CONFLICT DO NOTHING`, [adi, izin]);
   // Hukuki metinler (R\KVKK onaylı belgelerden aktarılır)
   const mk = join(KOK, 'veri', 'metinler');
   for (const f of readdirSync(mk).filter((x) => x.endsWith('.json'))) {

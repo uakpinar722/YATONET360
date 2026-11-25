@@ -91,19 +91,20 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
       </Blok>
       <Blok baslik="Uygunsuzluklar">
         {v.uygunsuzluklar.length === 0 && <div className="not">Uygunsuzluk bulunmamaktadır.</div>}
-        {v.uygunsuzluklar.map((u) => { const a = ks[u.kimlik] ?? { karar: 'Düzeltme', kanit: '' }; return (
+        {v.uygunsuzluklar.map((u) => { const a = ks[u.kimlik] ?? { karar: 'Düzeltme', kanit: '' }; const bt = Boolean((ks[u.kimlik] as { bt?: boolean } | undefined)?.bt); return (
           <div className="soru" key={u.kimlik}>
-            <span>{u.uygunsuzluk_no} · {u.sinif}{u.emniyet_isareti ? ' · Emniyet' : ''} · {u.statu}{u.tasarruf_karari ? ` · ${u.tasarruf_karari}` : ''}</span>
+            <span>{u.uygunsuzluk_no} · {u.sinif}{u.emniyet_isareti ? ' · Emniyet' : ''} · {u.statu}{u.tasarruf_karari ? ` · ${u.tasarruf_karari}` : ''}{(u as { tasarruf_vekaleten?: boolean }).tasarruf_vekaleten ? ' · Vekâleten' : ''}</span>
             <div>{u.gercek_durum}</div>{u.firma_yaniti && <div>Firma Yanıtı: {u.firma_yaniti}</div>}
             {kalite && u.statu !== 'Kapalı' && <>
               <label htmlFor={`t-${u.kimlik}`}>Teknik Tasarruf</label><select id={`t-${u.kimlik}`} value={a.karar} onChange={(e) => setKs({ ...ks, [u.kimlik]: { ...a, karar: e.target.value } })}>{TASARRUF.filter((x) => u.sinif !== 'Kritik' || x !== 'Olduğu Gibi Kabul').map((x) => <option key={x}>{x}</option>)}</select>
-              <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uygunsuzluk/${u.kimlik}/tasarruf`, { karar: a.karar }))}>Kararı Kaydet</button>
+              <label className="kutu"><input type="checkbox" checked={bt} onChange={(e) => setKs({ ...ks, [u.kimlik]: { ...a, bt: e.target.checked } as typeof a })} /><span>Bağımsızlık teyidi: bu işte hazırlayan veya uygulayan değilim (kontrol Kalite Uzmanı yokken size düştüyse, Vekâleten)</span></label>{/* YG-1688 */}
+              <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uygunsuzluk/${u.kimlik}/tasarruf`, { karar: a.karar, bagimsizlikTeyidi: bt || undefined }))}>Kararı Kaydet</button>
               {(u.sinif === 'Kritik' || u.sinif === 'Majör') && <>
                 {(['problem', 'dogrudan', 'katki', 'bariyer', 'kokNeden', 'tekrar'] as const).map((k) => <input key={k} aria-label={{ problem: 'Problem Tanımı', dogrudan: 'Doğrudan Neden', katki: 'Katkı Faktörleri', bariyer: 'Bariyer Analizi', kokNeden: 'Kök Neden', tekrar: 'Tekrar Olasılığı' }[k]} placeholder={{ problem: 'Problem Tanımı', dogrudan: 'Doğrudan Neden', katki: 'Katkı Faktörleri', bariyer: 'Bariyer Analizi', kokNeden: 'Kök Neden', tekrar: 'Tekrar Olasılığı' }[k]} value={kn[k]} onChange={(e) => setKn({ ...kn, [k]: e.target.value })} />)}
                 <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/uygunsuzluk/${u.kimlik}/kok-neden`, kn), 'Kök neden kaydedildi.')}>Kök Nedeni Kaydet</button>
               </>}
               <BelgeSec ad="Kapanış Kanıtı" bagTuru="Dosya" bagKimligi={id} deger={a.kanit} sec={(k) => setKs({ ...ks, [u.kimlik]: { ...a, kanit: k } })} />
-              <button className="btn2 kucuk" disabled={!a.kanit} onClick={() => void yap(() => istek(`/uygunsuzluk/${u.kimlik}/kapat`, { sonuc: 'Uygun', kanit: a.kanit }))}>Doğrula ve Kapat</button>
+              <button className="btn2 kucuk" disabled={!a.kanit} onClick={() => void yap(() => istek(`/uygunsuzluk/${u.kimlik}/kapat`, { sonuc: 'Uygun', kanit: a.kanit, bagimsizlikTeyidi: bt || undefined }))}>Doğrula ve Kapat</button>
             </>}
           </div>
         ); })}

@@ -25,6 +25,7 @@ import { Akademi, DenemeDegerlendirme, PeriyodikTakvimim } from './Akademi';
 import { MusteriAnaKaydi } from './MusteriAnaKaydi';
 import { FaturaTakipFormu } from './FaturaTakipFormu';
 import { Guvenlik } from './Guvenlik';
+import { YetkiMatrisi } from './YetkiMatrisi';
 import { ArsivListesi } from './ArsivFirma';
 import { DegisiklikBiletleri, EtikBildirim, ErisimInceleme, ErisimKapatma, IcDenetim, OzDenetim } from './ErisimEtik';
 import { KurumTalepleri, GelenTalepler } from './KurumTalebi';
@@ -1086,6 +1087,7 @@ export function IdariIslemler() {
       <MusteriAnaKaydi />
       <DenemeDegerlendirme />
       <Guvenlik />
+      <YetkiMatrisi />
       <ProblemBulgu />
       <VeriEnvanteri />
       <VeriSozlugu />

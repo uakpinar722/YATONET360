@@ -220,19 +220,31 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
   const ncr = async (id: string, k: string) => {
     if (!UUID.test(id)) return undefined;
     const n = (await b.db.query(`SELECT * FROM uygunsuzluk WHERE kimlik = $1`, [id])).rows[0];
-    return n && await dosyaErisimi(b.db, k, n.dosya_ref) ? n : undefined;
+    return n && (await dosyaErisimi(b.db, k, n.dosya_ref) || (await rolVar(k, ['Kalite Yöneticisi']) && !(await rolSahipleri(b.db, await rolId(b.db, KK))).length)) ? n : undefined; // YG-1688
+  };
+  // YG-1688: görevde Kalite Uzmanı yoksa karar ilk dolu üst kademe Kalite Yöneticisine düşer; bağımsızlık teyidi zorunlu, karar Vekâleten işaretlenir.
+  const kontrolYetkisi = async (k: string, son: boolean, teyit: unknown): Promise<{ hata?: string; kod?: number; vekaleten: boolean }> => {
+    if (son) return (await rolVar(k, [KM])) ? { vekaleten: false } : { kod: 403, hata: '', vekaleten: false };
+    if (await rolVar(k, [KK, KM])) return { vekaleten: false };
+    if (await rolVar(k, ['Kalite Yöneticisi']) && !(await rolSahipleri(b.db, await rolId(b.db, KK))).length) {
+      if (teyit !== true) return { kod: 400, hata: 'Görevde Kalite Uzmanı bulunmadığından kontrol size düşmüştür; bu işte hazırlayan veya uygulayan olmadığınızı teyit etmeniz (bağımsızlık teyidi) gerekir.', vekaleten: true };
+      return { vekaleten: true };
+    }
+    return { kod: 403, hata: '', vekaleten: false };
   };
   // YG-392, YG-388: tasarrufu Kalite Kontrolör verir; Kritik'te Olduğu Gibi Kabul engelli; son karar Kritik ve Emniyette Kalite Müdüründe.
   s.post('/uygunsuzluk/:id/tasarruf', oturumlu, async (i, y) => {
-    const o = i.oturum!; const n = await ncr((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { karar?: string; bedel?: string; ihbar?: string; mahsup?: string };
+    const o = i.oturum!; const n = await ncr((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { karar?: string; bedel?: string; ihbar?: string; mahsup?: string; bagimsizlikTeyidi?: boolean };
     if (!n) return yok(y);
     const son = n.sinif === 'Kritik' || n.emniyet_isareti;
-    if (!(await rolVar(o.kullanici, son ? [KM] : [KK, KM]))) return y.code(403).send({ hata: son ? 'Son karar Kalite Müdüründedir.' : 'Teknik tasarrufu Kalite Kontrolör verir.' });
+    const yt = await kontrolYetkisi(o.kullanici, son, g.bagimsizlikTeyidi);
+    if (yt.kod) return y.code(yt.kod).send({ hata: yt.hata || (son ? 'Son karar Kalite Müdüründedir.' : 'Teknik tasarrufu Kalite Kontrolör verir.') });
     if (!['Olduğu Gibi Kabul', 'Düzeltme', 'Yeniden İşleme', 'Ayırma/Karantina', 'İade/Değişim', 'Ret/Hurda'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     if (g.karar === 'Olduğu Gibi Kabul' && n.sinif === 'Kritik') return y.code(409).send({ hata: 'Kritik sınıfta Olduğu Gibi Kabul dışında bir karar seçmenizi rica ederiz.' });
     if (n.firma_yeni_hasar && (!g.ihbar || !g.mahsup?.trim())) return y.code(400).send({ hata: 'Firma kaynaklı yeni hasarda sorumluluk ihbar tarihi ve mahsup referansı zorunludur.' });
-    await b.db.query(`UPDATE uygunsuzluk SET tasarruf_karari = $2, tasarruf_onaylayan_ref = $3, bedel_sorumlusu = $4, sorumluluk_ihbar_tarihi = $5, mahsup_referansi = $6, statu = 'İşlemde' WHERE kimlik = $1`, [n.kimlik, g.karar, o.kullanici, g.bedel ?? null, g.ihbar ?? null, g.mahsup?.trim() ?? null]);
-    return { statu: 'İşlemde' };
+    await b.db.query(`UPDATE uygunsuzluk SET tasarruf_karari = $2, tasarruf_onaylayan_ref = $3, bedel_sorumlusu = $4, sorumluluk_ihbar_tarihi = $5, mahsup_referansi = $6, statu = 'İşlemde', tasarruf_vekaleten = $7 WHERE kimlik = $1`, [n.kimlik, g.karar, o.kullanici, g.bedel ?? null, g.ihbar ?? null, g.mahsup?.trim() ?? null, yt.vekaleten]);
+    if (yt.vekaleten) await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vekâleten Teknik Tasarruf', nesneTuru: 'Uygunsuzluk', nesneKimligi: n.kimlik, yeni: { karar: g.karar, bagimsizlikTeyidi: true }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { statu: 'İşlemde', vekaleten: yt.vekaleten };
   });
   // YG-285: kişiye veya yalnız dikkatsizliğe dayalı kök neden kabul edilmez.
   s.post('/uygunsuzluk/:id/kok-neden', oturumlu, async (i, y) => {
@@ -270,10 +282,11 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-284, YG-393: Kalite Kontrolör düzeltmeyi doğrular; yalnız imza veya fotoğrafla kapanmaz; Majör, Kritik, yaygın veya tekrarlayanda kök neden; kapanınca durdurulan iş yeniden açılır.
   s.post('/uygunsuzluk/:id/kapat', oturumlu, async (i, y) => {
-    const o = i.oturum!; const n = await ncr((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { sonuc?: string; kanit?: string };
+    const o = i.oturum!; const n = await ncr((i.params as { id: string }).id, o.kullanici); const g = (i.body ?? {}) as { sonuc?: string; kanit?: string; bagimsizlikTeyidi?: boolean };
     if (!n) return yok(y);
     const son = n.sinif === 'Kritik' || n.emniyet_isareti;
-    if (!(await rolVar(o.kullanici, son ? [KM] : [KK, KM]))) return y.code(403).send({ hata: son ? 'Kritik ve Emniyet işaretlide son karar Kalite Müdüründedir.' : 'Uygunsuzluğu Kalite Kontrolör kapatır.' });
+    const yt = await kontrolYetkisi(o.kullanici, son, g.bagimsizlikTeyidi);
+    if (yt.kod) return y.code(yt.kod).send({ hata: yt.hata || (son ? 'Kritik ve Emniyet işaretlide son karar Kalite Müdüründedir.' : 'Uygunsuzluğu Kalite Kontrolör kapatır.') });
     if (n.statu === 'Kapalı') return y.code(409).send({ hata: 'Uygunsuzluk kapalıdır.' });
     if (n.sinif !== 'Gözlem' && !n.tasarruf_karari) return y.code(409).send({ hata: 'Teknik tasarruf kararı verilmemiştir.' });
     if (!['Uygun', 'Koşullu uygun', 'Ek düzeltme', 'Ret'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Yeniden kontrol sonucunu seçiniz.' });
@@ -283,7 +296,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const tekrar = Boolean(n.sorumlu_firma_ref) && Boolean((await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND dayanak_olcut = $2 AND kimlik <> $3 LIMIT 1`, [n.sorumlu_firma_ref, n.dayanak_olcut, n.kimlik])).rowCount);
     if ((n.sinif === 'Kritik' || n.sinif === 'Majör' || n.yaygin_isareti || tekrar) && !n.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
     return islem(async (c) => {
-      await c.query(`UPDATE uygunsuzluk SET yeniden_kontrol_sonucu = 'Uygun', kapanis_kaniti_ref = $2, kapanis_yetkilisi_ref = $3, statu = 'Kapalı', kapanis_zamani = now() WHERE kimlik = $1`, [n.kimlik, g.kanit, o.kullanici]);
+      await c.query(`UPDATE uygunsuzluk SET yeniden_kontrol_sonucu = 'Uygun', kapanis_kaniti_ref = $2, kapanis_yetkilisi_ref = $3, statu = 'Kapalı', kapanis_zamani = now(), kapanis_vekaleten = $4 WHERE kimlik = $1`, [n.kimlik, g.kanit, o.kullanici, yt.vekaleten]);
+      if (yt.vekaleten) await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Vekâleten Uygunsuzluk Kapanışı', nesneTuru: 'Uygunsuzluk', nesneKimligi: n.kimlik, yeni: { bagimsizlikTeyidi: true }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id }); // YG-1688
       // YG-262: emniyet işaretli uygunsuzlukla duran işi yalnız Teknik Müdür yeniden başlatır.
       if (n.is_durduruldu && n.is_emri_ref && !n.emniyet_isareti) await c.query(`UPDATE is_emri SET statu = 'Aktif', durdurma_nedeni = NULL, guncelleme_zamani = now() WHERE kimlik = $1 AND statu = 'Durduruldu' AND durdurma_nedeni = $2`, [n.is_emri_ref, `Uygunsuzluk ${n.uygunsuzluk_no}`]);
       return { statu: 'Kapalı' };

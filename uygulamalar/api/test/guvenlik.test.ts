@@ -202,3 +202,23 @@ describe('sağlık, olay, tekillik (YG-1186, YG-1281, YG-1283, YG-1310, YG-1237,
     expect((await o.sup.query(`SELECT sonradan_onay FROM yazilim_surumu WHERE kimlik = $1`, [r.json().kimlik])).rows[0].sonradan_onay).toBe('Onaylandı');
   });
 });
+
+describe('yetki matrisi değişiklik süreci (YG-996)', () => {
+  it('gerekçeli talep, rol makamı ve Direktör onayıyla matrise uygulanır; kaldırılan izin kayıtlı kalır', async () => {
+    const sy = await o.gir('sy'); const T = { rol: 'Teknik Uzman', izin: 'firma.kayit', islem: 'Ekle', risk: 'Orta', gerekce: 'Sahada firma belgesi yükleme işlevi eklendi' };
+    expect((await o.ist('POST', '/api/yetki-matrisi/talep', await o.gir('ds'), T)).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/yetki-matrisi/talep', sy, { ...T, gerekce: '' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/yetki-matrisi/talep', sy, { ...T, izin: 'yok.boyle' })).statusCode).toBe(400);
+    const r = await o.ist('POST', '/api/yetki-matrisi/talep', sy, T); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', '/api/yetki-matrisi/talep', sy, T)).statusCode).toBe(409);
+    const k = await o.kart('Yetki Matrisi Değişikliği', r.json().kimlik); expect(k.zincir).toHaveLength(2);
+    expect((await o.karar(k.kimlik, 'tm', 'Onaya Gönder')).statusCode).toBe(200);
+    expect((await o.karar(k.kimlik, 'btd', 'Onayla')).statusCode).toBe(200);
+    const v = (await o.ist('GET', '/api/yetki-matrisi?rol=Teknik Uzman', await o.gir('btd'))).json(); expect(v.rolIzinleri).toContain('firma.kayit');
+    const r2 = await o.ist('POST', '/api/yetki-matrisi/talep', sy, { ...T, islem: 'Kaldır', risk: 'Düşük', gerekce: 'İşlev kaldırıldı' }); expect(r2.statusCode, r2.body).toBe(200);
+    const k2 = await o.kart('Yetki Matrisi Değişikliği', r2.json().kimlik); const a1 = await o.karar(k2.kimlik, 'tm', 'Onaya Gönder'); expect(a1.statusCode, a1.body).toBe(200); const a2 = await o.karar(k2.kimlik, 'btd', 'Onayla'); expect(a2.statusCode, a2.body).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM yetki_matrisi_talebi WHERE kimlik = $1`, [r2.json().kimlik])).rows[0].durum).toBe('Onaylandı');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM rol_izni_kaldirilan x JOIN rol r ON r.kimlik = x.rol_ref WHERE r.rol_adi = 'Teknik Uzman' AND x.izin = 'firma.kayit'`)).rows[0].n).toBe(1);
+    expect((await o.ist('GET', '/api/yetki-matrisi?rol=Teknik Uzman', sy)).json().rolIzinleri).not.toContain('firma.kayit');
+  });
+});

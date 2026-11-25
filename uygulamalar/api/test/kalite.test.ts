@@ -170,6 +170,17 @@ describe('uygunsuzluk (YG-283, YG-284, YG-285, YG-392)', () => {
     const n = (await ncr(d, { sinif: 'Minör', yeniHasar: true })).json().kimlik;
     expect((await o.ist('POST', `/api/uygunsuzluk/${n}/tasarruf`, kk, { karar: 'Düzeltme' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/uygunsuzluk/${n}/tasarruf`, kk, { karar: 'Düzeltme', ihbar: '2026-11-03', mahsup: 'M1' })).statusCode).toBe(200);
+    { // T-YG1688: görevde Kalite Uzmanı yokken Kalite Yöneticisi bağımsızlık teyidiyle Vekâleten karar verir
+      const n2 = (await ncr(d, { sinif: 'Minör' })).json().kimlik; const ky = await o.gir('ky');
+      expect((await o.ist('POST', `/api/uygunsuzluk/${n2}/tasarruf`, ky, { karar: 'Düzeltme' })).statusCode).toBe(404);
+      const kkRol = (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)'`)).rows[0].kimlik;
+      const askiya = (await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Askıda' WHERE rol_ref = $1 AND atama_durumu = 'Aktif' RETURNING kimlik`, [kkRol])).rows.map((x) => x.kimlik);
+      try {
+        expect((await o.ist('POST', `/api/uygunsuzluk/${n2}/tasarruf`, ky, { karar: 'Düzeltme' })).json().hata).toContain('bağımsızlık teyidi');
+        const r = await o.ist('POST', `/api/uygunsuzluk/${n2}/tasarruf`, ky, { karar: 'Düzeltme', bagimsizlikTeyidi: true }); expect(r.statusCode, r.body).toBe(200); expect(r.json().vekaleten).toBe(true);
+        expect((await o.sup.query(`SELECT tasarruf_vekaleten FROM uygunsuzluk WHERE kimlik = $1`, [n2])).rows[0].tasarruf_vekaleten).toBe(true);
+      } finally { await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Aktif' WHERE kimlik = ANY($1::uuid[])`, [askiya]); }
+    }
     await o.sup.query(`UPDATE uygunsuzluk SET hedef_zamani = now() - interval '1 hour' WHERE kimlik = $1`, [n]);
     expect(Array.isArray((await o.ist('GET', '/api/kalite/kritik-uygunsuzluklar', await o.gir('km'))).json())).toBe(true); expect((await o.ist('GET', '/api/kalite/kritik-uygunsuzluklar', await o.gir('ds'))).statusCode).toBe(404); // T-YG1693
     await kaliteSureIsle(o.db); await kaliteSureIsle(o.db);
