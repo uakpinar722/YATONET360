@@ -232,7 +232,7 @@ export async function kuyrukIsle(b: Baglam, simdi = new Date(), limit = 50): Pro
  * YG-1635 sayaçları bu tarihlere dayanır. Olağanüstü Olay Dönemi'nde süreler askıda olduğundan çalışmaz (YG-1629).
  */
 export async function onayHatirlat(db: Pool, simdi = new Date()): Promise<number> {
-  if ((await db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL LIMIT 1`)).rowCount) return 0;
+  if ((await db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL UNION ALL SELECT 1 FROM kesinti WHERE tur = 'Kesinti' AND durum = 'Açık' LIMIT 1`)).rowCount) return 0; // YG-1629; TZ-1: sistem kesintisinde süreler durur
   const { rows } = await db.query(
     `SELECT kimlik, baslik, ozet, oncelik, olusturma_zamani, son_zaman, zincir[kademe + 1] AS makam, kademe FROM is_karti WHERE durum = 'Bekliyor' AND kategori = 'onay' AND son_zaman IS NOT NULL AND son_zaman < $1`, [simdi]);
   let n = 0;

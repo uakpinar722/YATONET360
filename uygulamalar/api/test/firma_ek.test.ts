@@ -243,6 +243,7 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     const r = await o.ist('POST', U, fym, { oneri: 'Onaylı', gerekce: 'Belgeler tam', kapsama: 'Bölge', puanlar: [{ baslik: 'Teknik Yetkinlik', puan: 4, kanit: 'Saha incelemesi' }, { baslik: 'Tesis', puan: 3, kanit: 'Tesis fotoğrafları' }] });
     expect(r.statusCode, r.body).toBe(200);
     const k = await o.kart('Firma Karar Önerisi', r.json().kimlik);
+    { const g = (new Date(k.son_zaman).getTime() - Date.now()) / 86_400_000; expect(g).toBeGreaterThan(4.5); expect(g).toBeLessThan(9); } // TZ-8: 5 iş günü (Pazar ve tatil sayılmaz)
     expect(k.zincir).toEqual([(await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdür Yardımcısı'`)).rows[0].kimlik, (await o.sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdürü'`)).rows[0].kimlik]);
     expect((await o.ist('POST', U, fym, { oneri: 'Onaylı', gerekce: 'G', kapsama: 'Bölge', puanlar: [{ baslik: 'A', puan: 4, kanit: 'B' }] })).statusCode).toBe(409);
     expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Başvuru Belge Kontrolü' AND nesne_kimligi = $1`, [f])).rows[0].durum).toBe('Tamamlandı');

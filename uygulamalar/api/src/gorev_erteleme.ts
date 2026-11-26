@@ -42,6 +42,7 @@ export function gorevErtelemeYollari(s: FastifyInstance, b: Baglam) {
 
 /** Süresi aşılan iç görev bir kez üst kademeye çıkar; sahibi işi yapmaya devam eder. */
 export async function gorevUstKademe(db: Pool, simdi = new Date()): Promise<number> {
+  if ((await db.query(`SELECT 1 FROM kesinti WHERE tur = 'Kesinti' AND durum = 'Açık' LIMIT 1`)).rowCount) return 0; // TZ-1: sistem kesintisinde süreler durur
   const { rows } = await db.query(
     `SELECT k.kimlik, k.baslik, k.oncelik, k.sahip_kullanici_ref, coalesce(k.sahip_rol_ref, (SELECT a.rol_ref FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = k.sahip_kullanici_ref AND a.atama_durumu = 'Aktif' AND r.kullanici_gruplari = 'LGM İç Rolü' ORDER BY a.baslangic_tarihi LIMIT 1)) AS rol
        FROM is_karti k WHERE k.durum = 'Bekliyor' AND k.kategori IN ('islem', 'gorev') AND k.son_zaman < $1 AND k.ust_kademe_zamani IS NULL`, [simdi]);

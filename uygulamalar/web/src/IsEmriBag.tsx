@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { istek } from './api';
+import { istek, kuyrukSayisi } from './api';
 
 type Secenek = { kimlik: string; is_emri_no: string; statu: string; firma: string };
 
@@ -24,4 +24,23 @@ export function Izlenebilirlik({ isEmri }: { isEmri: string }) {
     {h && <div className="hata" role="alert">{h}</div>}
     {v && BASLIK.map(([k, b]) => <div key={k}><b>{b}</b>: {v[k].length ? v[k].map((x) => [x.no, x.ad, x.durum ?? x.sonuc, x.sinir_disi ? 'Sınır Dışı' : null].filter(Boolean).join(' · ')).join('; ') : 'Kayıt yok'}</div>)}
   </details>;
+}
+
+/** YG-925, TZ-2: Ticari Sorumlu "Ticari Serbest Bırakma" adımını Beklemede işaretiyle bekletir; işaret açıkken proforma hazırlanmaz. */
+export function TicariBekletme({ dosya, yap }: { dosya: string; yap: (f: () => Promise<unknown>, tamam?: string) => unknown }) {
+  const [f, setF] = useState({ neden: 'Sigorta Onayı', hedefTarih: '', mesaj: '' });
+  return <details><summary>Ticari Serbest Bırakmayı Beklet</summary>
+    <label htmlFor={`tb-n-${dosya}`}>Bekleme Nedeni</label><select id={`tb-n-${dosya}`} value={f.neden} onChange={(e) => setF({ ...f, neden: e.target.value })}>{['Sigorta Onayı', 'Ödeme', 'Girdi Bekleniyor', 'Yetki Bekleniyor'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor={`tb-h-${dosya}`}>Hedef Tarih</label><input id={`tb-h-${dosya}`} type="date" value={f.hedefTarih} onChange={(e) => setF({ ...f, hedefTarih: e.target.value })} />
+    <label htmlFor={`tb-m-${dosya}`}>Açıklama (İsteğe Bağlı)</label><input id={`tb-m-${dosya}`} value={f.mesaj} onChange={(e) => setF({ ...f, mesaj: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.hedefTarih} onClick={() => void yap(() => istek(`/dosya/${dosya}/ticari-bekletme`, f), 'Ticari serbest bırakma beklemeye alındı.')}>Beklemeye Al</button>
+  </details>;
+}
+
+/** TZ-1: bu tarayıcıda sistem açılınca gönderilmek üzere bekleyen kayıt sayısı. */
+export function KuyrukGostergesi() {
+  const [n, setN] = useState(() => kuyrukSayisi());
+  useEffect(() => { const d = (e: Event) => setN(Number((e as CustomEvent).detail ?? kuyrukSayisi())); window.addEventListener('kuyruk-degisti', d); return () => window.removeEventListener('kuyruk-degisti', d); }, []);
+  if (!n) return null;
+  return <span className="rozet kirmizi" role="status" title="Sistem açılınca sırayla gönderilir">İşlenmeyi bekleyen kayıt: {n}</span>;
 }

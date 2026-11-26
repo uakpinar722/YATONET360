@@ -1,3 +1,4 @@
+import { ResmiBildirimSuresi } from './ResmiBildirimSuresi';
 import { IsEmriSec } from './IsEmriBag';
 import { OnayaGonder } from './Dugme';
 import { eur as eurB } from './bicim';
@@ -142,6 +143,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
       <div className="bolum">Acil Temas Kaydı</div>
       {tem.map((x, n) => <div key={n}>{x.tur} · {x.ozet} · {new Date(x.zaman).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}</div>)}
       <label htmlFor="de-tt">Muhatap</label><select id="de-tt" value={te.tur} onChange={(e) => setTe({ ...te, tur: e.target.value })}>{['112 Arandı', 'Marina Teması', 'Operasyon Müdürü Arandı', 'Refakatli Giriş', 'Sahil Güvenlik', 'Liman Başkanlığı', 'İl Çevre Müdürlüğü'].map((x) => <option key={x}>{x}</option>)}</select>
+      {['Sahil Güvenlik', 'Liman Başkanlığı', 'İl Çevre Müdürlüğü'].includes(te.tur) && <ResmiBildirimSuresi muhatap={te.tur} />}
       <label htmlFor="de-to">Temas Özeti</label><input required id="de-to" value={te.ozet} onChange={(e) => setTe({ ...te, ozet: e.target.value })} />
       <button className="btn2 kucuk" disabled={!te.ozet.trim()} onClick={() => void yap(() => istek(`/acil/${id}/temas`, te), 'Temas kaydedildi.')}>Temas Kaydet</button>
       <div className="bolum">Acil Tedbiri Kapat</div>

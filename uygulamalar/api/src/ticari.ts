@@ -460,11 +460,27 @@ export function ticariYollari(s: FastifyInstance, b: Baglam) {
   });
 
   // YG-884, YG-885, YG-888: proforma; LGM fatura numarası üretmez. Kalemler yalnız onaylı olanlardan; sigorta ve yat sahibi ayrı.
+  // YG-925, YG-068, TZ-2 (CEO 26.11.2026): teknik kabulden sonra proformaya geçiş "Ticari Serbest Bırakma" adımıdır; Ticari Sorumlu bu adıma Beklemede işareti koyar.
+  // Aynı işaret mekanizması (neden, sorumlu, hedef tarih, 10. gün eskalasyonu); dosya statüsü ve sayaçları değişmez; açıkken proforma hazırlanmaz.
+  const TICARI_NEDEN = ['Sigorta Onayı', 'Ödeme', 'Girdi Bekleniyor', 'Yetki Bekleniyor'];
+  s.post('/dosya/:id/ticari-bekletme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; hedefTarih?: string; mesaj?: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Ticari serbest bırakma işaretini Ticari Sorumlu koyar.' });
+    if (!TICARI_NEDEN.includes(g.neden ?? '')) return y.code(400).send({ hata: 'Bekleme nedenini listeden seçiniz.' });
+    if (!g.hedefTarih || g.hedefTarih <= new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Hedef tarih bugünden sonra olmalıdır.' });
+    if ((await b.db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND kayit_turu = 'Ticari Serbest Bırakma' AND neden = $2 AND kaldirilma_zamani IS NULL`, [id, g.neden])).rowCount) return y.code(409).send({ hata: 'Bu nedenle açık işaret vardır.' });
+    const r = (await b.db.query(`INSERT INTO beklemede_isareti (dosya_ref, kayit_turu, neden, sorumlu_ref, hedef_tarih, durum_mesaji, sayac_durur, olusturan_ref) VALUES ($1,'Ticari Serbest Bırakma',$2,$3,$4,$5,false,$3) RETURNING kimlik`, [id, g.neden, o.kullanici, g.hedefTarih, g.mesaj?.trim() || null])).rows[0];
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ticari Serbest Bırakma Beklemede', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { neden: g.neden, hedef: g.hedefTarih }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { kimlik: r.kimlik };
+  });
   s.post('/teklif/:id/proforma', oturumlu, async (i, y) => {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici);
     if (!t) return yok(y);
     if (!(await ticariMi(o.kullanici))) return y.code(403).send({ hata: 'Proformayı Ticari Sorumlu hazırlar.' });
     if (t.statu !== 'Karar' || !['Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü'].includes(t.karar)) return y.code(409).send({ hata: 'Proforma onaylı teklife dayanır.' });
+    { const bk = (await b.db.query(`SELECT neden FROM beklemede_isareti WHERE dosya_ref = $1 AND kayit_turu = 'Ticari Serbest Bırakma' AND kaldirilma_zamani IS NULL LIMIT 1`, [t.dosya_ref])).rows[0]; // TZ-2
+      if (bk) return y.code(409).send({ hata: `Ticari serbest bırakma beklemededir (${bk.neden}); işaret kaldırılınca proforma hazırlanır.` }); }
     if ((await b.db.query(`SELECT 1 FROM musteri_faturasi WHERE teklif_ref = $1 AND durum <> 'Reddedildi'`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklifin proforması vardır; mevcut proformayı kullanmanızı rica ederiz.' }); // YG-886
     if (t.teklif_muhatabi === 'Sigorta Şirketi' && !(await b.db.query(`SELECT 1 FROM dosya_sigorta_kaydi WHERE dosya_ref = $1 AND sigorta_hasar_dosya_no IS NOT NULL`, [t.dosya_ref])).rowCount) return y.code(409).send({ hata: 'Sigortaya fatura için Hasar dosya numarası bekleniyor.' }); // YG-451
     const hk = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı'`, [t.kimlik])).rows[0].t);

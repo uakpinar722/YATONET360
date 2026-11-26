@@ -1708,6 +1708,15 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const opm = await o.gir('opm');
     expect((await o.ist('POST', u, opm, { karar: 'Sürdür', kontroller: {}, aciklama: 'x' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, opm, { karar: 'Değiştir', kontroller: tam, aciklama: 'x' })).statusCode).toBe(400);
+    { // TZ-5: türe özgü soru yalnız onaylıyken listeye girer ve yanıtı zorunludur
+      await o.sup.query(`INSERT INTO gozden_gecirme_sorusu (periyodik_ad, soru, sira) VALUES ($1, 'Taslak soru', 1)`, [ad]);
+      expect((await o.ist('GET', `/api/periyodik-is/${id}/kontrol-listesi`, opm)).json()).not.toContain('Taslak soru');
+      await o.sup.query(`UPDATE gozden_gecirme_sorusu SET onayli = true WHERE periyodik_ad = $1`, [ad]);
+      expect((await o.ist('GET', `/api/periyodik-is/${id}/kontrol-listesi`, opm)).json()).toContain('Taslak soru');
+      expect((await o.ist('POST', u, opm, { karar: 'Değiştir', kontroller: tam, aciklama: 'Yılda bire', yeniPeriyotAy: 12 })).statusCode).toBe(400);
+      tam['Taslak soru'] = 'Evet';
+      expect((await o.ist('POST', '/api/gozden-gecirme-sorulari', opm, { onayla: [] })).statusCode).toBe(403);
+    }
     const r = await o.ist('POST', u, opm, { karar: 'Değiştir', kontroller: tam, aciklama: 'Yılda bire', yeniPeriyotAy: 12 }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT periyot_ay, sonraki_tarih::text t FROM periyodik_is WHERE kimlik = $1`, [id])).rows[0]).toEqual({ periyot_ay: 12, t: '2028-01-15' });
     expect((await o.ist('POST', u, opm, { karar: 'Askıya Al', kontroller: tam, aciklama: 'Gerek kalmadı' })).statusCode).toBe(200);
@@ -1889,5 +1898,47 @@ describe('yatın bulunduğu tesis (YG-331)', () => {
     expect((await o.ist('POST', u, opm, { tesis: 'x' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, opm, { tesis: t })).statusCode).toBe(200);
     expect((await o.ist('GET', u, opm)).json().secili).toMatchObject({ kimlik: t, kural: 'Kısıtlı' });
+  });
+});
+
+describe('test kaydı ayıklama (YG-1259, TZ-4)', () => {
+  it('örüntüye uyan aday işaretlenir; Sicil Sorumlusu ayıklayınca sicil listesinden çıkar, kayıt silinmez', async () => {
+    const { anaVeriYukle, testKaydiSuphesi } = await import('../src/ana_veri.js');
+    expect(testKaydiSuphesi({ ad: 'Deneme Marin' })).toBe(true); expect(testKaydiSuphesi({ ad: 'TEST Yat Servis' })).toBe(true);
+    expect(testKaydiSuphesi({ ad: 'Örnekköy Tersanesi' })).toBe(false); expect(testKaydiSuphesi({ ad: 'Kontest Marine' })).toBe(false);
+    expect(testKaydiSuphesi({ ad: 'A', telefon: '0532 000 00 00' })).toBe(true); expect(testKaydiSuphesi({ ad: 'A', telefon: '0123456789' })).toBe(true);
+    expect(testKaydiSuphesi({ ad: 'A', telefon: '0532 417 22 19' })).toBe(false); expect(testKaydiSuphesi({ ad: 'A', eposta: 'x@example.com' })).toBe(true);
+    const x = Math.floor(Math.random() * 1e8) + 2e8; const ad = `Deneme Firma ${x}`;
+    const c = await o.db.connect(); try { await c.query('BEGIN'); await anaVeriYukle(c, { firmalar: [{ 'Sıra': String(x), 'Firma Adı': ad, 'Kayıt Rolü': 'İB Firması adayı' }], noktalar: [] }); await c.query('COMMIT'); } finally { c.release(); }
+    const sc = await o.gir('sc'); const l = (await o.ist('GET', '/api/ana-veri/test-suphesi', sc)).json() as { kimlik: string; ad: string; tur: string }[];
+    const k = l.find((z) => z.ad === ad); expect(k?.tur).toBe('Firma');
+    expect((await o.ist('GET', '/api/ana-veri/test-suphesi', await o.gir('ds'))).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/ana-veri/test-suphesi/Firma/${k!.kimlik}`, sc, { karar: 'Sil' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/ana-veri/test-suphesi/Firma/${k!.kimlik}`, sc, { karar: 'Ayıklandı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/ana-veri/test-suphesi/Firma/${k!.kimlik}`, sc, { karar: 'Gerçek Kayıt' })).statusCode).toBe(409);
+    expect(((await o.ist('GET', '/api/firma/sicil?aday=1', sc)).json() as { ticari_unvan: string }[]).map((z) => z.ticari_unvan)).not.toContain(ad);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM kurulus WHERE kimlik = $1`, [k!.kimlik])).rows[0].n).toBe(1);
+  });
+});
+
+describe('kapasite istisnası (YG-1667, YG-1668, TZ-7)', () => {
+  it('kapasite doluyken istisna Direktöre 24 saatlik görev olur; kabul yönünde karar engeli uyarıya çevirir, yönlendirme engeli korur', async () => {
+    const { gorevlendirmeKontrolu } = await import('../src/firma_ek.js');
+    const d = await o.dosyaAc(); await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2)`, [d.kimlik, o.K.ds]);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, kapasite_is, olusturan_ref) VALUES ($1,'Dolu Firma','Çözüm Ortağı','Onaylı','Aktif',1,$2) RETURNING kimlik`, [`S-KI${Date.now()}`, o.K.ds])).rows[0].kimlik as string;
+    await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON88`, d.kimlik, f, o.K.ds]);
+    expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 })).engeller.join(' ')).toContain('kapasitesi doludur');
+    const ds = await o.gir('ds'); const tod = await o.gir('tod');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kapasite-istisnasi`, ds, { firma: f })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kapasite-istisnasi`, ds, { firma: f, gerekce: 'Bölgede başka uygun firma yok' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kapasite-istisnasi`, ds, { firma: f, gerekce: 'Tekrar' })).statusCode).toBe(409);
+    const k = await o.kart('Kapasite İstisnası Kararı', r.json().kimlik); expect((new Date(k.son_zaman).getTime() - Date.now()) / 3_600_000).toBeLessThan(24.1);
+    const U = `/api/kapasite-istisnasi/${r.json().kimlik}/karar`;
+    expect((await o.ist('POST', U, ds, { secenek: 'Ek Kaynak veya Alt Yükleniciyle Kabul', aciklama: 'A' })).statusCode).toBe(403);
+    expect((await o.ist('POST', U, tod, { secenek: 'Hedef Süre Uzatılarak Kabul', aciklama: 'A' })).statusCode).toBe(400); // yeni hedef tarih zorunlu
+    expect((await o.ist('POST', U, tod, { secenek: 'Ek Kaynak veya Alt Yükleniciyle Kabul', aciklama: 'Alt yüklenici ekibiyle' })).statusCode).toBe(200);
+    const s = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, tutar: 100 });
+    expect(s.engeller.join(' ')).not.toContain('kapasitesi doludur'); expect(s.uyarilar.join(' ')).toContain('Kapasite istisnası onaylıdır');
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE kimlik = $1`, [k.kimlik])).rows[0].durum).toBe('Tamamlandı');
   });
 });

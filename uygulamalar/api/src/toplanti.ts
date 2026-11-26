@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool, PoolClient } from 'pg';
 import { bildir, birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
+import { rolId } from './ihbar.js';
 import { kapanisKaydet } from './kapanis.js';
 import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
@@ -303,13 +304,37 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
   });
   // YG-1363: gözden geçirme kontrol listesiyle yürür ve sabit kararla kapanır; sonuç sahibi rol veya tanımlama yetkilisi tarafından girilir.
   const KONTROL = ['Önceki dönem kararları uygulandı', 'Göstergeler hedefle karşılaştırıldı', 'Riskler ve uygunsuzluklar gözden geçirildi', 'Kaynak ve sorumluluklar yeterli'];
+  // TZ-5: türe özgü sorular; işin kontrol listesi ortak maddeler + onaylı sorular. Soruları Kalite Müdürü onaylar ve düzenler.
+  const KM = 'Kalite Müdürü';
+  s.get('/periyodik-is/:id/kontrol-listesi', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    const p = UUID.test(id) ? (await b.db.query(`SELECT ad FROM periyodik_is WHERE kimlik = $1`, [id])).rows[0] : undefined; if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı.' });
+    return [...KONTROL, ...(await b.db.query(`SELECT soru FROM gozden_gecirme_sorusu WHERE periyodik_ad = $1 AND onayli AND aktif ORDER BY sira`, [p.ad])).rows.map((r) => r.soru as string)];
+  });
+  s.get('/gozden-gecirme-sorulari', oturumlu, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    const km = (await rolSahipleri(b.db, await rolId(b.db, KM))).includes(i.oturum!.kullanici);
+    if (!km) return { yetkili: false, sorular: [] };
+    return { yetkili: true, sorular: (await b.db.query(`SELECT kimlik, periyodik_ad, soru, sira, onayli, aktif FROM gozden_gecirme_sorusu ORDER BY periyodik_ad, sira`)).rows };
+  });
+  s.post('/gozden-gecirme-sorulari', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { onayla?: string[]; duzenle?: { kimlik: string; soru?: string; aktif?: boolean }[]; ekle?: { periyodikAd: string; soru: string } };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, KM))).includes(o.kullanici)) return y.code(403).send({ hata: 'Gözden geçirme sorularını Kalite Müdürü onaylar ve düzenler.' });
+    for (const d of g.duzenle ?? []) if (UUID.test(d.kimlik)) await b.db.query(`UPDATE gozden_gecirme_sorusu SET soru = coalesce($2, soru), aktif = coalesce($3, aktif), onayli = true, onaylayan_ref = $4, onay_zamani = now() WHERE kimlik = $1`, [d.kimlik, d.soru?.trim() || null, d.aktif ?? null, o.kullanici]);
+    if (g.ekle?.periyodikAd && g.ekle.soru?.trim()) await b.db.query(`INSERT INTO gozden_gecirme_sorusu (periyodik_ad, soru, sira, onayli, onaylayan_ref, onay_zamani) SELECT $1, $2, coalesce(max(sira), 0) + 1, true, $3, now() FROM gozden_gecirme_sorusu WHERE periyodik_ad = $1 ON CONFLICT DO NOTHING`, [g.ekle.periyodikAd, g.ekle.soru.trim(), o.kullanici]);
+    const on = (g.onayla ?? []).filter((x) => UUID.test(x));
+    if (on.length) await b.db.query(`UPDATE gozden_gecirme_sorusu SET onayli = true, onaylayan_ref = $2, onay_zamani = now() WHERE kimlik = ANY($1::uuid[])`, [on, o.kullanici]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Gözden Geçirme Soruları', nesneTuru: 'Gözden Geçirme Sorusu', yeni: { onaylanan: on.length, duzenlenen: (g.duzenle ?? []).length, eklenen: g.ekle ? 1 : 0 }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/periyodik-is/:id/sonuc', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { karar?: string; kontroller?: Record<string, string>; aciklama?: string; kosul?: string; yeniPeriyotAy?: number };
     const p = UUID.test(id) ? (await b.db.query(`SELECT * FROM periyodik_is WHERE kimlik = $1 AND aktif`, [id])).rows[0] : undefined;
     if (!p) return y.code(404).send({ hata: 'Kayıt bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!(await rolSahipleri(b.db, p.sahip_rol_ref)).includes(o.kullanici) && !(await tanimlayan(o.kullanici))) return y.code(403).send({ hata: 'Sonucu işin sahibi rol veya Direktör kademesi girer.' });
     if (!['Sürdür', 'Koşullu Sürdür', 'Değiştir', 'Askıya Al'].includes(g.karar ?? '') || !g.aciklama?.trim()) return y.code(400).send({ hata: 'Karar ve açıklama zorunludur.' });
-    if (KONTROL.some((m) => !['Evet', 'Hayır', 'Uygulanamaz'].includes(g.kontroller?.[m] ?? ''))) return y.code(400).send({ hata: 'Kontrol listesindeki her maddeyi yanıtlayınız.' });
+    const ozel = (await b.db.query(`SELECT soru FROM gozden_gecirme_sorusu WHERE periyodik_ad = $1 AND onayli AND aktif ORDER BY sira`, [p.ad])).rows.map((r) => r.soru as string); // TZ-5: türe özgü onaylı sorular
+    if ([...KONTROL, ...ozel].some((m) => !['Evet', 'Hayır', 'Uygulanamaz'].includes(g.kontroller?.[m] ?? ''))) return y.code(400).send({ hata: 'Kontrol listesindeki her maddeyi yanıtlayınız.' });
     if (g.karar === 'Koşullu Sürdür' && !g.kosul?.trim()) return y.code(400).send({ hata: 'Koşulu yazınız.' });
     if (g.karar === 'Değiştir' && !(Number.isInteger(Number(g.yeniPeriyotAy)) && Number(g.yeniPeriyotAy) > 0)) return y.code(400).send({ hata: 'Değişiklikte yeni periyodu (ay) giriniz.' });
     const c = await b.db.connect();

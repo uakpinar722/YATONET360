@@ -1,3 +1,4 @@
+import { KuyrukGostergesi } from './IsEmriBag';
 import { KayitCakismasi } from './KayitCakismasi';
 import { TakilanAdim } from './TakilanAdim';
 import { useSayfa } from './Sayfalama';
@@ -147,6 +148,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
         <div className="ara-bag">
           <button className="ust-bag" onClick={() => git('mesaj')}>✉ Mesajlar <em className="sayi">{veri?.okunmamisMesaj ?? 0}</em></button>
           {lgm && <button className="ust-bag" onClick={() => git('idari')}>İdari İşlemlerim</button>}
+          <KuyrukGostergesi />
           <button className="ust-bag" onClick={() => setIhlal(!ihlal)}>⚠ Veri İhlali Bildir</button>
           <button className="ust-bag" onClick={() => git('profil')}>☺ Profil</button>
         </div>

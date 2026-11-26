@@ -244,3 +244,16 @@ describe('BT kesintisinde olay komutası ve kurtarma sırası (YG-1282)', () => 
     expect((await o.ist('GET', `/api/olay/${id}/kurtarma`, bim)).json().siradaki).toBe('Ağ');
   });
 });
+
+describe('çevresel olay resmî bildirim süreleri (YG-277, TZ-3)', () => {
+  it('süre girilene kadar boştur; yalnız Hukuk ve Uyum Direktörü dayanakla girer', async () => {
+    const l = (await o.ist('GET', '/api/acil/resmi-bildirim-sureleri', await o.gir('ds'))).json(); expect(l.duzenler).toBe(false);
+    expect(l.sureler.map((x: { muhatap: string }) => x.muhatap).sort()).toEqual(['Liman Başkanlığı', 'Sahil Güvenlik', 'İl Çevre Müdürlüğü'].sort());
+    expect((await o.ist('POST', '/api/acil/resmi-bildirim-suresi', await o.gir('ds'), { muhatap: 'Sahil Güvenlik', saat: 2, dayanak: 'X' })).statusCode).toBe(403);
+    const hud = await o.gir('hud');
+    expect((await o.ist('POST', '/api/acil/resmi-bildirim-suresi', hud, { muhatap: 'Sahil Güvenlik', saat: 2 })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/acil/resmi-bildirim-suresi', hud, { muhatap: 'Başka', saat: 2, dayanak: 'X' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/acil/resmi-bildirim-suresi', hud, { muhatap: 'Sahil Güvenlik', saat: 2, dayanak: 'Deneme dayanağı' })).statusCode).toBe(200);
+    expect(((await o.ist('GET', '/api/acil/resmi-bildirim-sureleri', hud)).json().sureler as { muhatap: string; sure_saat: string }[]).find((x) => x.muhatap === 'Sahil Güvenlik')!.sure_saat).toBe('2');
+  });
+});

@@ -47,6 +47,18 @@ export async function bolgeTuret(db: Pool): Promise<number> {
   return n;
 }
 
+/**
+ * YG-1259, TZ-4 (CEO 26.11.2026): test kaydı şüphesi — adında test/deneme/örnek/xxx geçen, telefonu veya vergi numarası 0000… ya da 123456… örüntülü,
+ * e-postası test/example alan adlı kayıt. İşaretlenen kayıt Sicil Sorumlusu kararına kadar listede "Şüpheli Test Kaydı" görünür; silinmez.
+ */
+export function testKaydiSuphesi(g: { ad?: string | null; telefon?: string | null; vergiNo?: string | null; eposta?: string | null }): boolean {
+  const ad = (g.ad ?? '').toLocaleLowerCase('tr');
+  if (/(^|[^a-zçğıöşü])(test|deneme|örnek|ornek|xxx+)([^a-zçğıöşü]|$)/.test(ad)) return true;
+  for (const n of [g.telefon, g.vergiNo]) { const d = (n ?? '').replace(/\D/g, '').replace(/^(90|0)/, ''); const ayni = (s: string) => s.length >= 6 && /^(\d)\1+$/.test(s); if (ayni(d) || ayni(d.slice(3)) || d.includes('1234567')) return true; }
+  if (/@(test|example|deneme|ornek)\./i.test(g.eposta ?? '')) return true;
+  return false;
+}
+
 /** ANV-1, YG-367: adaylar sicile Aday ve Pasif girer, paydaşlar alınmaz; yeniden çalıştırmak mevcut kaydı değiştirmez. */
 export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktalar: Satir[] }): Promise<{ firma: number; atlanan: number; paydas: number; nokta: number; mukerrerFirma: number; mukerrerNokta: number }> {
   let firma = 0; let atlanan = 0; let paydas = 0; let nokta = 0; let mukerrerFirma = 0; let mukerrerNokta = 0;
@@ -59,6 +71,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     await c.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, kurumsal_telefon, il, ilce, ana_veri_no, adres, web, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,'Çözüm Ortağı','Aday','Pasif',$3,$4,$5,$6,$7,$8,$9,$10)`,
       [`LGM-SC-${String(await sayac(c, 'sicil')).padStart(5, '0')}`, ad, dolu(f['Telefon']), ilBaslik(f['Konum İl']), ilBaslik(f['Konum İlçe']), no, dolu(f['Adres']), /^https?:|^www\./i.test(f['Web'] ?? '') ? dolu(f['Web']) : null, grup, grup ? 'Karar bekliyor' : null]);
     { const tel = telefonBicimi(f['Telefon']); await c.query(`UPDATE kurulus SET bolge = $2, hizmet_kumesi = $3, kurumsal_telefon = coalesce($4, kurumsal_telefon), telefon_kontrol = $5, eski_liste_eslesme = $6, eski_liste_notu = $7, veri_notu = $8 WHERE ana_veri_no = $1`, [no, dolu(f['Bölge']), dolu(f['Hizmet Kümesi']), tel, Boolean(dolu(f['Telefon'])) && !tel, dolu(f['Eski Liste: Bağlama Eşleşmesi']), dolu(f['Eski Liste Notu']), dolu(f['Veri Notu'])]); }
+    if (testKaydiSuphesi({ ad, telefon: f['Telefon'], vergiNo: f['Vergi No'], eposta: f['E-Posta'] })) await c.query(`UPDATE kurulus SET test_suphesi = true WHERE ana_veri_no = $1`, [no]); // TZ-4
     firma++;
   }
   for (const n of g.noktalar) {
@@ -68,6 +81,7 @@ export async function anaVeriYukle(c: PoolClient, g: { firmalar: Satir[]; noktal
     const r = await c.query(`INSERT INTO baglama_noktasi (nokta_no, tur, il, ilce, belde, ad, bolge, hizmet_kumesi, teyit_durumu, enlem, boylam, mukerrer_grubu, mukerrer_karari) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (nokta_no) DO NOTHING`,
       [no, dolu(n['Tür']) ?? 'Belirsiz', ilBaslik(n['İl']), ilBaslik(n['İlçe']), dolu(n['Belde / Yerleşim']), ad, dolu(n['Bölge']), dolu(n['Hizmet Kümesi']), dolu(n['Teyit Durumu']), sayi(n['Enlem']), sayi(n['Boylam']), grup, karar === 'Karar bekliyor' ? karar : null]);
     if (r.rowCount) { nokta++; if (karar === 'Karar bekliyor') mukerrerNokta++; }
+    if (r.rowCount && testKaydiSuphesi({ ad, telefon: n['Telefon'] })) await c.query(`UPDATE baglama_noktasi SET test_suphesi = true WHERE nokta_no = $1`, [no]); // TZ-4
     await c.query(`UPDATE baglama_noktasi SET uyari = $2, son_teyit_tarihi = $3 WHERE nokta_no = $1 AND uyari IS NULL`, [no, dolu(n['Uyarı']), /^\d{4}-\d{2}-\d{2}$/.test(n['Son Teyit Tarihi'] ?? '') ? n['Son Teyit Tarihi'] : null]); // YG-1266
   }
   if ((mukerrerFirma || mukerrerNokta) && await birKez(c, 'ana_veri_mukerrer', 'ilk')) await kartAc(c, { tur: 'Ana Veri Mükerrer Kararı', kategori: 'gorev', baslik: 'Ana Veri · Mükerrer Kararları', ozet: `${mukerrerFirma} firma ve ${mukerrerNokta} bağlama noktası karar bekliyor.`, sahipRol: await rolId(c, 'Sicil Sorumlusu'), nesneTuru: 'Ana Veri', nesneKimligi: 'mukerrer' });

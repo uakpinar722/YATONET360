@@ -14,7 +14,7 @@ export function istek<T>(yol: string, govde?: object): Promise<T> {
   const iz = yol + ' ' + JSON.stringify(govde);
   const var0 = ucustakiler.get(iz); if (var0) return var0 as Promise<T>;
   const anahtar = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-  const p = gonder<T>(yol, govde, anahtar).catch((e) => { if (e instanceof ApiHatasi) throw e; return new Promise<T>((c, r) => setTimeout(() => void gonder<T>(yol, govde, anahtar).then(c, r), 1000)); }).finally(() => ucustakiler.delete(iz));
+  const p = gonder<T>(yol, govde, anahtar).catch((e) => { if (e instanceof ApiHatasi) throw e; return new Promise<T>((c, r) => setTimeout(() => void gonder<T>(yol, govde, anahtar).then(c, (e2) => r(e2 instanceof ApiHatasi ? e2 : kuyrugaAl(yol, govde, anahtar))), 1000)); }).finally(() => ucustakiler.delete(iz));
   ucustakiler.set(iz, p); return p;
 }
 async function gonder<T>(yol: string, govde?: object, anahtar?: string): Promise<T> {
@@ -38,3 +38,30 @@ export interface Ben {
   roller: { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string }[];
 }
 export interface GirisYaniti { asama: 'kod'; yontem: 'uygulama' | 'sms'; kurulumGerekli: boolean; smsAcik: boolean }
+
+/**
+ * TZ-1 (CEO 26.11.2026, YG-063): sunucuya ulaşılamadığında kayıt isteği bu tarayıcıda kuyruğa alınır ve kullanıcıya bildirilir;
+ * sistem açılınca kuyruk aynı işlem anahtarıyla (YG-1310, sunucu ilk yanıtı döner) sırayla gönderilir. Reddedilen kayıt hata listesine düşer.
+ */
+const KUYRUK = 'yatonet_kuyruk'; const KUYRUK_HATA = 'yatonet_kuyruk_hata';
+type Bekleyen = { yol: string; govde: object; anahtar: string; zaman: string };
+const oku = (k: string): Bekleyen[] => { try { return JSON.parse(localStorage.getItem(k) ?? '[]') as Bekleyen[]; } catch { return []; } };
+const yaz = (k: string, l: unknown[]) => { try { localStorage.setItem(k, JSON.stringify(l)); } catch { /* depolama kapalıysa kuyruk tutulamaz */ } };
+function kuyrugaAl(yol: string, govde: object, anahtar: string): ApiHatasi {
+  yaz(KUYRUK, [...oku(KUYRUK), { yol, govde, anahtar, zaman: new Date().toISOString() }]);
+  window.dispatchEvent(new CustomEvent('kuyruk-degisti', { detail: oku(KUYRUK).length }));
+  return new ApiHatasi(0, 'Kaydınız alındı, sistem açılınca işlenecek.');
+}
+export const kuyrukSayisi = () => oku(KUYRUK).length;
+let isleniyor = false;
+export async function kuyruguIsle(): Promise<void> {
+  if (isleniyor || !oku(KUYRUK).length) return; isleniyor = true;
+  try {
+    for (const x of oku(KUYRUK)) {
+      try { await gonder(x.yol, x.govde, x.anahtar); }
+      catch (e) { if (!(e instanceof ApiHatasi)) break; yaz(KUYRUK_HATA, [...oku(KUYRUK_HATA), { ...x, hata: e.message }]); }
+      yaz(KUYRUK, oku(KUYRUK).filter((y) => y.anahtar !== x.anahtar));
+    }
+  } finally { isleniyor = false; window.dispatchEvent(new CustomEvent('kuyruk-degisti', { detail: oku(KUYRUK).length })); }
+}
+if (typeof window !== 'undefined') { window.addEventListener('online', () => void kuyruguIsle()); setInterval(() => void kuyruguIsle(), 30_000); }

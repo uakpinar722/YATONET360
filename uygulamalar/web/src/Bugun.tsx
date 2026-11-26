@@ -1,3 +1,4 @@
+import { KapasiteIstisnaKarar } from './KapasiteIstisnasi';
 import { DosyaBag } from './DosyaBag';
 import { eur, tarih } from './bicim';
 import { useEffect, useState } from 'react';
@@ -294,6 +295,8 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       {ben.roller.some((r) => ['Hukuk ve Uyum Direktörü', 'Hukuk ve Uyum Uzmanı'].includes(r.rol_adi)) && <YurtDisiUygunluk />}
       {ben.roller.some((r) => r.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü') && <KabulItirazlari />}
       {ben.roller.some((r) => r.rol_adi === 'Muhasebe ve Finans Müdür Yardımcısı') && <MaliKontrol />}
+      {ben.roller.some((r) => r.rol_adi === 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)') && <SigortaTutarKontrol />}
+      {ben.roller.some((r) => r.rol_adi === 'Teknik ve Operasyon Direktörü') && <KapasiteIstisnaKarar />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <TedarikGostergeleri />}
       {ben.roller.some((r) => ['Tedarik Müdür Yardımcısı', 'Tedarik Yönetimi Müdürü'].includes(r.rol_adi)) && <KaynakRisk mudur={ben.roller.some((r) => r.rol_adi === 'Tedarik Yönetimi Müdürü')} />}
       {ben.roller.some((r) => r.rol_adi === 'Operasyon Müdürü') && <MudurlukGostergeleri />}
@@ -609,6 +612,23 @@ function TedarikGostergeleri() {
 }
 
 /** YG-1611: Kontrol Uyarıları ve Banka Eşleştirme (işlem bazında; hesap bakiyeleri YG-1080 gereği dört role kapalı). */
+/** YG-1608, TZ-6: Kontrol Bekleyenler — sigorta onay tutarı onaylı teklifin KDV hariç toplamından farklıysa doğrulanır veya gerekçeyle iade edilir. */
+function SigortaTutarKontrol() {
+  type K = { kimlik: string; dosya_no: string; teklif_no: string; onaylanan_tutar_eur: string; teklif_kdv_haric_eur: string; onay_tarihi: string };
+  const [l, setL] = useState<K[] | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const yk = () => istek<{ yetkili: boolean; kayitlar: K[] }>('/ticari/kontrol-bekleyenler').then((r) => setL(r.yetkili ? r.kayitlar : null)).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  const karar = (id: string, k: string) => void istek(`/sigorta-onayi/${id}/tutar-kontrol`, { karar: k, gerekce: g[id] }).then(() => { setM(k === 'Doğrulandı' ? 'Tutar doğrulandı.' : 'Kayıt gerekçeyle iade edildi.'); return yk(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kontrol Bekleyenler</div>{m && <div className="not" role="status">{m}</div>}
+    {l.length === 0 ? <div className="ozet bos">Kontrol bekleyen kaydınız bulunmamaktadır.</div> : l.map((x) => <div key={x.kimlik} className="ozet kart-sol">
+      <b>{x.dosya_no} · {x.teklif_no} · Sigorta Onay Tutarı</b>
+      <div>Onay tutarı {eur(Number(x.onaylanan_tutar_eur))} · Onaylı teklif (KDV hariç) {eur(Number(x.teklif_kdv_haric_eur))} · Onay tarihi {tarih(x.onay_tarihi)}</div>
+      <label htmlFor={`stk-${x.kimlik}`}>İade Gerekçesi (iade edilecekse)</label><input id={`stk-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} />
+      <div className="dugmeler"><button className="btn evet" onClick={() => karar(x.kimlik, 'Doğrulandı')}>Doğrulandı</button><button className="btn hayir" disabled={!g[x.kimlik]?.trim()} onClick={() => karar(x.kimlik, 'Gerekçeyle İade Et')}>Gerekçeyle İade Et</button></div>
+    </div>)}</>;
+}
+
 function MaliKontrol() {
   const [v, setV] = useState<{ eslesmeyen: { kimlik: string; tarih: string; yon: string; tutar_eur: string; aciklama: string }[]; kurUyusmazligi: { kimlik: string; belge_no: string; kur_tarihi: string; fatura_kuru: number; tcmb_kuru: number }[]; odemeListeleri?: { kimlik: string; liste_no: string }[] } | null>(null);
   const [ok, setOk] = useState<Record<string, { kalemler: { tur: string; belge: string; faturaNo: string | null; cari: string; vade: string; brut: number; mahsup: number; tutulan: number; net: number; uyarilar: string[] }[]; toplamNet: number }>>({});

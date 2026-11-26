@@ -86,6 +86,15 @@ describe('ödeme talebi ve fatura (YG-884, YG-885, YG-906)', () => {
   });
   it('tam akış: proforma, onay, muhasebe, fatura bilgisi, kısmi ve tam tahsilat; LGM numara üretmez', async () => {
     const d = await dosya('Sigorta Şirketi'); const t = await teklifVer(d, 'Sigorta Şirketi', 1000); const c = await o.gir('ts');
+    { // TZ-2: Ticari Serbest Bırakma beklemedeyken proforma hazırlanmaz
+      const TB = `/api/dosya/${d.kimlik}/ticari-bekletme`;
+      expect((await o.ist('POST', TB, await o.gir('ds'), { neden: 'Ödeme', hedefTarih: '2099-01-01' })).statusCode).toBe(403);
+      expect((await o.ist('POST', TB, c, { neden: 'Hava', hedefTarih: '2099-01-01' })).statusCode).toBe(400);
+      const bk = await o.ist('POST', TB, c, { neden: 'Girdi Bekleniyor', hedefTarih: '2099-01-01' }); expect(bk.statusCode, bk.body).toBe(200);
+      expect((await o.ist('POST', `/api/teklif/${t}/proforma`, c)).json().hata).toContain('Ticari serbest bırakma');
+      expect((await o.sup.query(`SELECT statu FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].statu).not.toBe('Kontrollü Askıda');
+      await o.sup.query(`UPDATE beklemede_isareti SET kaldirilma_zamani = now() WHERE kimlik = $1`, [bk.json().kimlik]);
+    }
     const p = await o.ist('POST', `/api/teklif/${t}/proforma`, c);
     expect(p.statusCode, p.body).toBe(200);
     expect(p.json()).toMatchObject({ kdvHaric: 1000, kdv: 200, toplam: 1200 }); expect(p.json().proformaNo).toBe(`${d.dosyaNo}-OT01`);

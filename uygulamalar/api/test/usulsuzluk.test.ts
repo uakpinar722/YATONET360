@@ -61,7 +61,14 @@ describe('kesinti ve platform dışı işlem (YG-1368, YG-1284)', () => {
       expect((await o.ist('GET', '/api/kesinti', sy)).json().geriGirisler.find((x: { islem_turu: string }) => x.islem_turu === 'Onay').gecikme_saat).toBeGreaterThanOrEqual(9);
     }
     expect((await o.ist('POST', `/api/gecici-referans/${l[0]!.kimlik}/geri-giris`, ds, { kanal: 'Telefon Kaydı', yetkili: 'Kaptan', ozet: 'Hasar ihbarı', saklama: 'Ofis dolabı A', dosya: d.kimlik, zaman: new Date().toISOString() })).statusCode).toBe(200);
+    // TZ-1: açık kesintide süre uyarıları çalışmaz; kapanışta bekleyen kartın son zamanı kesinti süresi kadar ileri alınır
+    const { onayHatirlat } = await import('../src/bildirim.js');
+    const kart = (await o.sup.query(`INSERT INTO is_karti (tur, kategori, baslik, sahip_kullanici_ref, son_zaman) VALUES ('Deneme Görevi', 'gorev', 'TZ-1', $1, now() + interval '1 hour') RETURNING kimlik, son_zaman`, [o.K.ds])).rows[0];
+    await o.sup.query(`UPDATE kesinti SET baslangic = now() - interval '3 hours' WHERE kimlik = $1`, [k]);
+    expect(await onayHatirlat(o.db, new Date(Date.now() + 10 * 86_400_000))).toBe(0);
     expect((await o.ist('POST', `/api/kesinti/${k}/kapat`, sy, { normallesme: T })).statusCode).toBe(200);
+    const yeni = (await o.sup.query(`SELECT son_zaman FROM is_karti WHERE kimlik = $1`, [kart.kimlik])).rows[0].son_zaman;
+    expect((new Date(yeni).getTime() - new Date(kart.son_zaman).getTime()) / 3_600_000).toBeGreaterThan(2.9);
   });
 });
 

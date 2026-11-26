@@ -46,6 +46,24 @@ export function katalogAdFarkiYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
   const sicil = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, SICIL])).rowCount);
+  // YG-1259, TZ-4 (CEO 26.11.2026): şüpheli test kayıtları; Sicil Sorumlusu "Ayıklandı" (listelerden çıkar, silinmez) veya "Gerçek Kayıt" der.
+  s.get('/ana-veri/test-suphesi', oturumlu, async (i, y) => {
+    if (!(await sicil(i.oturum!.kullanici))) return yok(y);
+    const f = (await b.db.query(`SELECT kimlik::text, 'Firma' tur, sicil_no AS no, ticari_unvan AS ad, kurumsal_telefon AS telefon FROM kurulus WHERE test_suphesi AND test_ayiklama IS NULL ORDER BY sicil_no`)).rows;
+    const n = (await b.db.query(`SELECT kimlik::text, 'Tesis' tur, nokta_no::text AS no, ad, NULL AS telefon FROM baglama_noktasi WHERE test_suphesi AND test_ayiklama IS NULL ORDER BY nokta_no`)).rows;
+    return [...f, ...n];
+  });
+  s.post('/ana-veri/test-suphesi/:tur/:id', oturumlu, async (i, y) => {
+    const o = i.oturum!; const p = i.params as { tur: string; id: string }; const g = (i.body ?? {}) as { karar?: string };
+    if (!(await sicil(o.kullanici))) return yok(y);
+    const tablo = p.tur === 'Firma' ? 'kurulus' : p.tur === 'Tesis' ? 'baglama_noktasi' : null;
+    if (!tablo || !/^[0-9a-f-]{36}$/.test(p.id)) return yok(y);
+    if (!['Ayıklandı', 'Gerçek Kayıt'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçiniz.' });
+    const r = await b.db.query(`UPDATE ${tablo} SET test_ayiklama = $2, test_ayiklayan_ref = $3, test_ayiklama_zamani = now() WHERE kimlik = $1 AND test_suphesi AND test_ayiklama IS NULL`, [p.id, g.karar, o.kullanici]);
+    if (!r.rowCount) return y.code(409).send({ hata: 'Kayıt bulunamadı veya karar verilmiştir.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Test Kaydı Ayıklama', nesneTuru: p.tur, nesneKimligi: p.id, yeni: { karar: g.karar }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.get('/ana-veri/ad-farki', oturumlu, async (i, y) => {
     if (!(await sicil(i.oturum!.kullanici))) return yok(y);
     return (await b.db.query(`SELECT a.katalog_seri, a.katalog_no, a.katalog_adi, a.adaylar, a.sonuc, a.teyit_notu, m.marka, m.model FROM katalog_ad_farki a LEFT JOIN yat_marka_model m ON m.kimlik = a.model_ref ORDER BY a.sonuc <> 'Teyit Bekliyor', a.katalog_seri, a.katalog_no`)).rows;

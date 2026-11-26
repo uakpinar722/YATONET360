@@ -39,6 +39,7 @@ export function Toplantilar() {
         </table></div>
       )}
       <PeriyodikIsler />
+      <GozdenGecirmeSorulari />
     </>
   );
 }
@@ -202,7 +203,9 @@ function GozdenGecirmePaketi({ id }: { id: string }) {
 }
 
 /** YG-1363: kontrol listesi ve sabit karar seçenekleri. */
-function GozdenGecirmeSonucu({ id, kontroller, bitti }: { id: string; kontroller: string[]; bitti: () => void }) {
+function GozdenGecirmeSonucu({ id, kontroller: ortak, bitti }: { id: string; kontroller: string[]; bitti: () => void }) {
+  const [kontroller, setKontroller] = useState<string[]>(ortak); // TZ-5: ortak maddeler + işe özgü onaylı sorular
+  useEffect(() => { void istek<string[]>(`/periyodik-is/${id}/kontrol-listesi`).then(setKontroller).catch(() => setKontroller(ortak)); }, [id]);
   const [k, setK] = useState<Record<string, string>>({}); const [f, setF] = useState({ karar: 'Sürdür', aciklama: '', kosul: '', yeniPeriyotAy: '' }); const [m, setM] = useState('');
   return <div className="ozet">{m && <div className="not" role="status">{m}</div>}
     {kontroller.map((x, n) => <div key={x}><label htmlFor={`gg-${id}-${n}`}>{x}</label><select required id={`gg-${id}-${n}`} value={k[x] ?? ''} onChange={(e) => setK({ ...k, [x]: e.target.value })}><option value="">Seçiniz</option>{['Evet', 'Hayır', 'Uygulanamaz'].map((s) => <option key={s}>{s}</option>)}</select></div>)}
@@ -211,4 +214,32 @@ function GozdenGecirmeSonucu({ id, kontroller, bitti }: { id: string; kontroller
     {f.karar === 'Değiştir' && <><label htmlFor={`gg-${id}-p`}>Yeni Periyot (Ay)</label><input id={`gg-${id}-p`} inputMode="numeric" value={f.yeniPeriyotAy} onChange={(e) => setF({ ...f, yeniPeriyotAy: e.target.value })} /></>}
     <label htmlFor={`gg-${id}-a`}>Açıklama</label><input required id={`gg-${id}-a`} value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
     <button className="btn2 kucuk" disabled={kontroller.some((x) => !k[x]) || !f.aciklama.trim()} onClick={() => void istek(`/periyodik-is/${id}/sonuc`, { karar: f.karar, kontroller: k, aciklama: f.aciklama, kosul: f.kosul || undefined, yeniPeriyotAy: f.yeniPeriyotAy ? Number(f.yeniPeriyotAy) : undefined }).then(bitti).catch((e) => setM(e.message))}>Sonucu Kaydet</button></div>;
+}
+
+type GgSoru = { kimlik: string; periyodik_ad: string; soru: string; sira: number; onayli: boolean; aktif: boolean };
+/** YG-599, YG-1363, TZ-5: Kalite Müdürü türe özgü gözden geçirme sorularını onaylar, düzenler, kaldırır veya ekler. */
+export function GozdenGecirmeSorulari() {
+  const [l, setL] = useState<GgSoru[] | null>(null); const [d, setD] = useState<Record<string, string>>({}); const [ek, setEk] = useState({ periyodikAd: '', soru: '' }); const [m, setM] = useState('');
+  const yk = () => istek<{ yetkili: boolean; sorular: GgSoru[] }>('/gozden-gecirme-sorulari').then((r) => setL(r.yetkili ? r.sorular : null)).catch(() => setL(null));
+  useEffect(() => { void yk(); }, []);
+  if (!l) return null;
+  const gonder = (g: object, ok: string) => void istek('/gozden-gecirme-sorulari', g).then(() => { setM(ok); return yk(); }).catch((e) => setM(e.message));
+  const turler = [...new Set(l.map((x) => x.periyodik_ad))];
+  return <><div className="bolum">Gözden Geçirme Soruları</div>
+    <div className="not">Ortak kontrol maddelerine ek, işe özgü sorulardır; onaylanan soru o işin gözden geçirmesinde yanıtlanması zorunlu madde olur.</div>
+    {m && <div className="not" role="status">{m}</div>}
+    <div className="not">{l.filter((x) => !x.onayli && x.aktif).length} soru onay bekliyor.</div>
+    {l.some((x) => !x.onayli && x.aktif) && <div className="dugmeler"><button className="btn evet kucuk" onClick={() => gonder({ onayla: l.filter((x) => !x.onayli && x.aktif).map((x) => x.kimlik) }, 'Bekleyen sorular onaylandı.')}>Bekleyenlerin Tümünü Onayla</button></div>}
+    {turler.map((tur) => <details key={tur}><summary>{tur} · {l.filter((x) => x.periyodik_ad === tur && x.aktif).length} soru</summary>
+      {l.filter((x) => x.periyodik_ad === tur).map((x) => <div key={x.kimlik} className="soru"><input aria-label={`${tur} soru ${x.sira}`} value={d[x.kimlik] ?? x.soru} onChange={(e) => setD({ ...d, [x.kimlik]: e.target.value })} disabled={!x.aktif} />
+        <span className="not">{!x.aktif ? 'Kaldırıldı' : x.onayli ? 'Onaylı' : 'Taslak'}</span>
+        <div className="dugmeler">{x.aktif && <button className="btn2 kucuk" onClick={() => gonder({ duzenle: [{ kimlik: x.kimlik, soru: d[x.kimlik] ?? x.soru }] }, 'Soru kaydedildi ve onaylandı.')}>Kaydet ve Onayla</button>}
+          {x.aktif && <button className="btn2 kucuk hayir" onClick={() => gonder({ duzenle: [{ kimlik: x.kimlik, aktif: false }] }, 'Soru kaldırıldı.')}>Kaldır</button>}</div></div>)}
+    </details>)}
+    <details><summary>Soru Ekle</summary>
+      <label htmlFor="ggs-t">Periyodik İş</label><select id="ggs-t" value={ek.periyodikAd} onChange={(e) => setEk({ ...ek, periyodikAd: e.target.value })}><option value="">Seçiniz</option>{turler.map((x) => <option key={x}>{x}</option>)}</select>
+      <label htmlFor="ggs-s">Soru</label><input id="ggs-s" value={ek.soru} onChange={(e) => setEk({ ...ek, soru: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!ek.periyodikAd || !ek.soru.trim()} onClick={() => { gonder({ ekle: ek }, 'Soru eklendi.'); setEk({ periyodikAd: '', soru: '' }); }}>Ekle</button>
+    </details>
+  </>;
 }

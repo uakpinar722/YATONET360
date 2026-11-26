@@ -334,6 +334,23 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     return (await b.db.query(`SELECT tur, ozet, zaman FROM acil_temas_kaydi WHERE dosya_ref = $1 ORDER BY zaman DESC`, [dosya])).rows;
   });
 
+  // YG-277, TZ-3 (CEO 26.11.2026): çevresel olayda resmî bildirim süreleri; değer girilmeden "süre parametresi bekleniyor" görünür. Değeri Hukuk ve Uyum Direktörü girer.
+  s.get('/acil/resmi-bildirim-sureleri', oturumlu, async (i, y) => {
+    if (i.oturum!.grup !== 'LGM İç Rolü') return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
+    const l = (await b.db.query(`SELECT muhatap, sure_saat, dayanak FROM resmi_bildirim_suresi ORDER BY muhatap`)).rows;
+    const hud = (await rolSahipleri(b.db, await rolId(b.db, 'Hukuk ve Uyum Direktörü'))).includes(i.oturum!.kullanici);
+    return { duzenler: hud, sureler: l };
+  });
+  s.post('/acil/resmi-bildirim-suresi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { muhatap?: string; saat?: number; dayanak?: string };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, 'Hukuk ve Uyum Direktörü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Resmî bildirim süresini Hukuk ve Uyum Direktörü girer.' });
+    if (!(Number(g.saat) > 0) || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Süre (saat) ve mevzuat dayanağı zorunludur.' });
+    const r = await b.db.query(`UPDATE resmi_bildirim_suresi SET sure_saat = $2, dayanak = $3, giren_ref = $4, guncelleme_zamani = now() WHERE muhatap = $1`, [g.muhatap, Number(g.saat), g.dayanak.trim(), o.kullanici]);
+    if (!r.rowCount) return y.code(400).send({ hata: 'Muhatap geçersizdir.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Resmî Bildirim Süresi', nesneTuru: 'Parametre', nesneKimligi: g.muhatap, yeni: { saat: Number(g.saat), dayanak: g.dayanak.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   // YG-273: arama sırası ve hizmet verme sicilde; müsaitlik ve beyan edilen yanıt süresi firma tarafından güncel tutulur.
   s.post('/firma/:id/acil-bilgi', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { hizmetVerir?: boolean; aramaSirasi?: number };

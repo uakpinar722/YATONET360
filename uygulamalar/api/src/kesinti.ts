@@ -83,6 +83,8 @@ export function kesintiYollari(s: FastifyInstance, b: Baglam) {
     if (acik.length) return y.code(409).send({ hata: `Uzlaştırılmamış geçici referans var: ${acik.map((x) => x.referans).join(', ')}. Kullanılmayanları işaretleyiniz.` });
     if (kul.size) await b.db.query(`UPDATE gecici_referans SET iptal = true WHERE kesinti_ref = $1 AND kimlik = ANY($2::uuid[]) AND dosya_ref IS NULL`, [id, [...kul]]);
     await b.db.query(`UPDATE kesinti SET durum = 'Kapandı', bitis = now(), normallesme = $2, kapatan_ref = $3 WHERE kimlik = $1`, [id, JSON.stringify(n), o.kullanici]);
+    // TZ-1 (CEO 26.11.2026): kesinti boyunca süre sayaçları durmuştur; bekleyen kartların son zamanı kesinti süresi kadar ileri alınır.
+    await b.db.query(`UPDATE is_karti k SET son_zaman = k.son_zaman + (x.bitis - x.baslangic) FROM kesinti x WHERE x.kimlik = $1 AND x.tur = 'Kesinti' AND k.durum = 'Bekliyor' AND k.son_zaman IS NOT NULL AND k.son_zaman > x.baslangic`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kesinti Kapandı', nesneTuru: 'Kesinti', nesneKimligi: id, yeni: n, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

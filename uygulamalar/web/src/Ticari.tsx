@@ -1,4 +1,5 @@
-import { Izlenebilirlik } from './IsEmriBag';
+import { KapasiteIstisnaIste } from './KapasiteIstisnasi';
+import { Izlenebilirlik, TicariBekletme } from './IsEmriBag';
 import { ArayuzMetni } from './ArayuzMetni';
 import { OnayaGonder } from './Dugme';
 import { DurumSayilari } from './DurumSayilari';
@@ -305,6 +306,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
               {t.statu === 'Onaylı' && <button className="btn2 kucuk" onClick={() => void yap(() => istek<{ durum: string }>(`/teklif/${t.kimlik}/gonder`, {}).then((r) => { window.dispatchEvent(new Event('sigorta-gonderim')); return { uyari: r.durum === 'Teyit Bekliyor' ? 'Sigortaya gönderim için iki teyit gereklidir; aşağıdaki bölümden teyit ediniz.' : 'Gönderildi.' }; }))}>Gönder</button>}
               {t.statu === 'Karar' && ticari && <>
                 <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/proforma`, {}), 'Proforma onaya gönderildi.')}>Proforma Hazırla</button>
+                <TicariBekletme dosya={id} yap={yap} />
                 <button className="btn2 kucuk" disabled={!sonTarih} onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/odeme-talebi`, { tur: 'Avans', sonTarih }), 'Ödeme talebi onaya gönderildi.')}>Avans Talebi</button>
               </>}
             </div>
@@ -1239,7 +1241,7 @@ function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void
     <label><input type="checkbox" checked={mobil} onChange={(e) => setMobil(e.target.checked)} /> Yalnız mobil ekibi olanlar</label><label><input type="checkbox" checked={uygun} onChange={(e) => setUygun(e.target.checked)} /> Yalnız belgesi geçerli ve uygun olanlar</label><label><input type="checkbox" checked={bos} onChange={(e) => setBos(e.target.checked)} /> Yalnız kapasitesi uygun olanlar</label>
     <div className="dugmeler"><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Bölge')}>Uygun Firmaları Listele</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Komşu')}>Komşu bölgeleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Mobil Ekip')}>Mobil ekipleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Ulusal')}>Ulusal ekipleri göster</button></div>
     {h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve katmanda uygun firma bulunmamaktadır.</div>}
-    {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi || (f as { planlananGecikme?: boolean }).planlananGecikme ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}</div>)}</>;
+    {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi || (f as { planlananGecikme?: boolean }).planlananGecikme ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}{f.sonuc === 'Ret' && f.engeller.some((e) => /kapasite/i.test(e)) && <KapasiteIstisnaIste dosya={dosya} firma={f.kimlik} />}</div>)}</>;
 }
 
 /** YG-1070, D-135: Ek-2 kaydı; her kayıt yeni sürüm, sınır kuruma yansır; PDF kayıttan üretilir. */

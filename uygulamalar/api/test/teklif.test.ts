@@ -1009,3 +1009,19 @@ describe('katalog ad farkı teyidi (YG-1537)', () => {
     expect((await o.ist('POST', '/api/ana-veri/ad-farki/99/7001', sc, { eslesmeYok: true, not: 'X' })).statusCode).toBe(409);
   });
 });
+
+describe('sigorta onay tutarı kontrolü (YG-1608, TZ-6)', () => {
+  it('teklif ve onaylanan kalem toplamına uymayan onay Ticari Sorumluya düşer; iade gerekçesiz olmaz, kayıt bir kez kontrol edilir', async () => {
+    const ts = await o.gir('ts');
+    const s = (await o.sup.query(`SELECT s.kimlik, s.onaylanan_tutar_eur FROM sigorta_onayi s WHERE s.karar = 'Tam Onay' LIMIT 1`)).rows[0]; expect(s).toBeDefined();
+    const ilk = (await o.ist('GET', '/api/ticari/kontrol-bekleyenler', ts)).json(); expect(ilk.yetkili).toBe(true);
+    expect(ilk.kayitlar.some((x: { kimlik: string }) => x.kimlik === s.kimlik)).toBe(false); // sistemin hesapladığı tutar uyumludur
+    await o.sup.query(`UPDATE sigorta_onayi SET onaylanan_tutar_eur = onaylanan_tutar_eur + 7 WHERE kimlik = $1`, [s.kimlik]);
+    expect((await o.ist('GET', '/api/ticari/kontrol-bekleyenler', ts)).json().kayitlar.some((x: { kimlik: string }) => x.kimlik === s.kimlik)).toBe(true);
+    expect((await o.ist('POST', `/api/sigorta-onayi/${s.kimlik}/tutar-kontrol`, await o.gir('ds'), { karar: 'Doğrulandı' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/sigorta-onayi/${s.kimlik}/tutar-kontrol`, ts, { karar: 'Gerekçeyle İade Et' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/sigorta-onayi/${s.kimlik}/tutar-kontrol`, ts, { karar: 'Gerekçeyle İade Et', gerekce: 'Onay e-postasındaki tutar farklı' })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/sigorta-onayi/${s.kimlik}/tutar-kontrol`, ts, { karar: 'Doğrulandı' })).statusCode).toBe(409);
+    await o.sup.query(`UPDATE sigorta_onayi SET onaylanan_tutar_eur = $2 WHERE kimlik = $1`, [s.kimlik, s.onaylanan_tutar_eur]);
+  });
+});

@@ -132,6 +132,10 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
     }
   }
   if (!(await db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%sigorta%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [g.firma])).rowCount) uyarilar.push('Firmanın sorumluluk sigortası kaydı yoktur.');
+  { // TZ-7 (CEO 26.11.2026): Teknik ve Operasyon Direktörünün kabul yönünde kapasite istisnası varsa kapasite engeli uyarıya döner.
+    const ki = await import('./kapasite_istisnasi.js');
+    if (engeller.some(ki.kapasiteEngeliMi) && await ki.kapasiteIstisnasiVar(db, g.dosya, g.firma)) for (const m of engeller.filter(ki.kapasiteEngeliMi)) { engeller.splice(engeller.indexOf(m), 1); uyarilar.push(`${m} (Kapasite istisnası onaylıdır.)`); }
+  }
   return { sinif, asgari, sonuc: engeller.length ? 'Ret' as const : uyarilar.length ? 'Koşullu Kabul' as const : 'Kabul' as const, engeller, uyarilar };
 }
 
@@ -723,7 +727,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
       const r = (await c.query(`INSERT INTO firma_karar_onerisi (kurulus_ref, oneri, kapsama, puanlar, gerekce, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [id, g.oneri, kabul ? g.kapsama : null, JSON.stringify(puanlar), g.gerekce.trim(), o.kullanici])).rows[0].kimlik;
       await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Başvuru Ön İnceleme' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
       const ort = puanlar.length ? ` · Ortalama Puan ${(puanlar.reduce((a, x) => a + x.puan, 0) / puanlar.length).toFixed(1).replace('.', ',')}` : '';
-      await kartAc(c, { tur: KARAR_ONERI, baslik: `${f.sicil_no} · ${f.ticari_unvan} · Karar Önerisi: ${g.oneri}`, ozet: `${kabul ? `Kapsama: ${g.kapsama}` : g.oneri}${ort} · ${g.gerekce.trim()}`.slice(0, 1500), hazirlayan: o.kullanici, zincir: [await rolId(c, FYMY), await rolId(c, FYM)], nesneTuru: 'Firma Karar Önerisi', nesneKimligi: r });
+      await kartAc(c, { tur: KARAR_ONERI, baslik: `${f.sicil_no} · ${f.ticari_unvan} · Karar Önerisi: ${g.oneri}`, ozet: `${kabul ? `Kapsama: ${g.kapsama}` : g.oneri}${ort} · ${g.gerekce.trim()}`.slice(0, 1500), hazirlayan: o.kullanici, zincir: [await rolId(c, FYMY), await rolId(c, FYM)], sonZaman: await (await import('./teklif.js')).isGunuSonu(c, new Date(), 5) /* TZ-8 (CEO 26.11.2026): aktivasyon kararı 5 iş günü; aşılınca üst kademeye bildirim (onayHatirlat) */, nesneTuru: 'Firma Karar Önerisi', nesneKimligi: r });
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Karar Önerisi Onaya Gönderildi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { oneri: g.oneri, kapsama: g.kapsama }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { kimlik: r, gonderilecek: FYMY };

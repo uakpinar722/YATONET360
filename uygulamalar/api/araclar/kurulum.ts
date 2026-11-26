@@ -147,6 +147,8 @@ export async function kurVeritabani(ad: string, ayar: { superParola: string; uyg
   }
   // YG-1390, YG-1391: arayüz metni kütüphanesi; öneri güncellenir, onaylı İngilizce yeniden onaylanana kadar korunur.
   for (const [tr, en, h] of tsv('arayuz_metinleri.tsv')) await c.query(`INSERT INTO arayuz_metni (tr, en_oneri, hukuki) VALUES ($1, $2, $3) ON CONFLICT (tr) DO UPDATE SET en_oneri = EXCLUDED.en_oneri, hukuki = EXCLUDED.hukuki, guncelleme_zamani = now() WHERE arayuz_metni.en_oneri IS DISTINCT FROM EXCLUDED.en_oneri OR arayuz_metni.hukuki <> EXCLUDED.hukuki`, [tr, en || null, h === 'E']);
+  // TZ-5: türe özgü gözden geçirme soruları taslak olarak yüklenir; onaylı veya düzenlenmiş soruya dokunulmaz.
+  { const sira = new Map<string, number>(); for (const [ad, soru] of tsv('gozden_gecirme_sorulari.tsv')) { const n = (sira.get(ad!) ?? 0) + 1; sira.set(ad!, n); await c.query(`INSERT INTO gozden_gecirme_sorusu (periyodik_ad, soru, sira) VALUES ($1,$2,$3) ON CONFLICT (periyodik_ad, soru) DO NOTHING`, [ad, soru, n]); } }
   // YG-969: katalogdan çıkarılan rol bazlı periyodik iş tanımları (veri/sablon/periyodik_isler.tsv); var olan tanıma dokunulmaz, geçmişte kalan ilk tarih bugünden sonraki ilk döneme ilerletilir.
   const pis = tsv('periyodik_isler.tsv');
   for (const [ad, rol, tur, ilk] of pis) await c.query(`INSERT INTO periyodik_is (ad, sahip_rol_ref, periyot_turu, periyot_ay, sonraki_tarih) SELECT $1, r.kimlik, $3, CASE $3 WHEN '3 Aylık' THEN 3 WHEN '6 Aylık' THEN 6 WHEN 'Yıllık' THEN 12 WHEN 'Sezonluk' THEN 12 ELSE 1 END, $4::date FROM rol r WHERE r.rol_adi = $2 ON CONFLICT (ad) DO NOTHING`, [ad, rol, tur, ilk]);

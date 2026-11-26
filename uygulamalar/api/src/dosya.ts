@@ -281,7 +281,7 @@ kapanisKaydet('Beklemede Uzatma', async (c, k, karar, yapan) => {
 
 /** YG-068, YG-069: 10. günde yükseltme; 45. günde Devam / Askı / Kapanış karar noktası. Otomatik kapanmaz. */
 export async function beklemedeIsle(db: Pool, simdi = new Date()): Promise<number> {
-  if ((await db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL LIMIT 1`)).rowCount) return 0;
+  if ((await db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL UNION ALL SELECT 1 FROM kesinti WHERE tur = 'Kesinti' AND durum = 'Açık' LIMIT 1`)).rowCount) return 0; // YG-1629; TZ-1: sistem kesintisinde süreler durur
   let n = 0;
   const opm = await rolId(db, 'Operasyon Müdürü');
   const { rows } = await db.query(`SELECT b.kimlik, b.dosya_ref, b.neden, b.olusturma_zamani, b.eskalasyon_zamani, d.dosya_no FROM beklemede_isareti b JOIN dosya d ON d.kimlik = b.dosya_ref WHERE b.kaldirilma_zamani IS NULL AND b.gun45_karari IS NULL`);
@@ -302,7 +302,7 @@ export async function beklemedeIsle(db: Pool, simdi = new Date()): Promise<numbe
 
 /** YG-040, YG-041: süre aşımı sorumluya ve Operasyon Müdürüne bildirilir. */
 export async function sureIsle(db: Pool, simdi = new Date()): Promise<number> {
-  if ((await db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL LIMIT 1`)).rowCount) return 0;
+  if ((await db.query(`SELECT 1 FROM olaganustu_donem WHERE bitis IS NULL UNION ALL SELECT 1 FROM kesinti WHERE tur = 'Kesinti' AND durum = 'Açık' LIMIT 1`)).rowCount) return 0; // YG-1629; TZ-1: sistem kesintisinde süreler durur
   const { rows } = await db.query(
     `SELECT s.kimlik, s.tur, coalesce(d.dosya_no, t.talep_no) AS no, coalesce(d.oncelik, t.oncelik) AS oncelik, d.dosya_sorumlusu_ref, t.ilk_sorumlu_ref FROM dosya_sure s LEFT JOIN dosya d ON d.kimlik = s.dosya_ref LEFT JOIN talep t ON t.kimlik = s.talep_ref
       WHERE s.tamamlanma IS NULL AND s.bitis + make_interval(secs => ${DURAK_SN}) < $1 AND coalesce(d.statu, 'Aktif') NOT IN ('Kapalı', 'Teknik Kapalı')`, [simdi]);
