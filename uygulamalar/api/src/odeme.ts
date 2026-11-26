@@ -95,6 +95,25 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
     }));
   });
 
+  // YG-1611: ödeme listesi ön kontrolü; kalem başına fatura no, cari, plan (vade), brüt, mahsup, tutulan ve net tutar ile eksik fatura no ve onaysız banka hesabı uyarısı.
+  s.get('/odeme-listesi/:id/on-kontrol', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await rolVar(i.oturum!.kullanici, [...MUHASEBE, MFMY, TID]))) return yok(y);
+    const l = (await b.db.query(`SELECT liste_no, durum, mukerrerlik_cozumu FROM odeme_listesi WHERE kimlik = $1`, [id])).rows[0]; if (!l) return yok(y);
+    const hesap = async (k: string | null) => (k ? Boolean((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli' LIMIT 1`, [k])).rowCount) : true);
+    const kalemler = [];
+    for (const x of await talimatlar(`t.odeme_listesi_ref = '${id}'`)) {
+      const kur = (await b.db.query(`SELECT kurulus_ref FROM odeme_talimati WHERE kimlik = $1`, [x.kimlik])).rows[0]?.kurulus_ref ?? null;
+      const p = x.h_dosya ? await plan(x.h_dosya, x.olusturma_zamani) : { tarih: x.olusturma_zamani as Date };
+      const net = R2(Number(x.tutar_eur) - Number(x.mahsup_eur ?? 0) - Number(x.tutulan_eur ?? 0));
+      const uyarilar = [!x.firma_fatura_no && 'Fatura numarası yok', !(await hesap(kur)) && 'Geçerli banka hesabı yok', net <= 0 && 'Net tutar sıfır veya eksi'].filter(Boolean);
+      kalemler.push({ tur: 'Firma Ödemesi', belge: x.hakedis_no ?? 'Malzeme Avansı', faturaNo: x.firma_fatura_no, cari: x.ticari_unvan, vade: p.tarih.toISOString().slice(0, 10), brut: Number(x.tutar_eur), mahsup: Number(x.mahsup_eur ?? 0), tutulan: Number(x.tutulan_eur ?? 0), net, uyarilar });
+    }
+    for (const f of (await b.db.query(`SELECT f.fatura_no, f.tarih::text, f.tutar_eur, f.kurulus_ref, k.ticari_unvan FROM tedarikci_faturasi f JOIN kurulus k ON k.kimlik = f.kurulus_ref WHERE f.odeme_listesi_ref = $1 ORDER BY f.tarih`, [id])).rows)
+      kalemler.push({ tur: 'Tedarikçi Faturası', belge: f.fatura_no, faturaNo: f.fatura_no, cari: f.ticari_unvan, vade: f.tarih, brut: Number(f.tutar_eur), mahsup: 0, tutulan: 0, net: Number(f.tutar_eur), uyarilar: (await hesap(f.kurulus_ref)) ? [] : ['Geçerli banka hesabı yok'] });
+    return { listeNo: l.liste_no, durum: l.durum, mukerrerlikCozumu: l.mukerrerlik_cozumu, kalemler, toplamNet: R2(kalemler.reduce((s, k) => s + k.net, 0)) };
+  });
+
   // YG-830: mükerrerlik uyarısı çözülmeden liste onaya gitmez.
   s.post('/odeme-listesi', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { talimatlar?: string[]; faturalar?: string[]; mukerrerlikCozumu?: string };

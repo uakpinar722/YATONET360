@@ -1,5 +1,5 @@
 import { DosyaBag } from './DosyaBag';
-import { tarih } from './bicim';
+import { eur, tarih } from './bicim';
 import { useEffect, useState } from 'react';
 import { istek, type Ben } from './api';
 import { DosyaHaritasi, IsListeleri, KonumPlani } from './IsGorunumu';
@@ -610,7 +610,8 @@ function TedarikGostergeleri() {
 
 /** YG-1611: Kontrol Uyarıları ve Banka Eşleştirme (işlem bazında; hesap bakiyeleri YG-1080 gereği dört role kapalı). */
 function MaliKontrol() {
-  const [v, setV] = useState<{ eslesmeyen: { kimlik: string; tarih: string; yon: string; tutar_eur: string; aciklama: string }[]; kurUyusmazligi: { kimlik: string; belge_no: string; kur_tarihi: string; fatura_kuru: number; tcmb_kuru: number }[] } | null>(null);
+  const [v, setV] = useState<{ eslesmeyen: { kimlik: string; tarih: string; yon: string; tutar_eur: string; aciklama: string }[]; kurUyusmazligi: { kimlik: string; belge_no: string; kur_tarihi: string; fatura_kuru: number; tcmb_kuru: number }[]; odemeListeleri?: { kimlik: string; liste_no: string }[] } | null>(null);
+  const [ok, setOk] = useState<Record<string, { kalemler: { tur: string; belge: string; faturaNo: string | null; cari: string; vade: string; brut: number; mahsup: number; tutulan: number; net: number; uyarilar: string[] }[]; toplamNet: number }>>({});
   const [f, setF] = useState<Record<string, { t?: string; c?: string; n?: string }>>({}); const [m, setM] = useState('');
   const yk = () => istek<NonNullable<typeof v>>('/mali-kontrol').then(setV).catch(() => setV(null));
   useEffect(() => { void yk(); }, []);
@@ -618,6 +619,9 @@ function MaliKontrol() {
   const es = (id: string) => void istek(`/mali-kontrol/eslestir/${id}`, { cariTuru: f[id]?.t ?? 'Müşteri', cari: f[id]?.c, not: f[id]?.n }).then(() => { setM('Hareket eşleştirildi.'); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">Kontrol Uyarıları</div>{m && <div className="not" role="status">{m}</div>}
     {v.eslesmeyen.length + v.kurUyusmazligi.length === 0 && <div className="ozet bos">Kontrol uyarısı bulunmamaktadır.</div>}
+    {(v.odemeListeleri ?? []).map((x) => <div key={x.kimlik} className="ozet kart-sol"><b>Ödeme Listesi Ön Kontrolü · {x.liste_no}</b>{/* YG-1611 */}
+      {!ok[x.kimlik] ? <div className="dugmeler"><button className="btn2 kucuk" onClick={() => void istek<(typeof ok)[string]>(`/odeme-listesi/${x.kimlik}/on-kontrol`).then((r) => setOk({ ...ok, [x.kimlik]: r })).catch((e) => setM(e.message))}>Kalemleri Göster</button></div>
+        : <>{ok[x.kimlik]!.kalemler.map((k, n) => <div key={n} className={k.uyarilar.length ? 'uyari' : 'soru'}><span>{k.tur} · {k.belge} · Fatura {k.faturaNo ?? '—'} · {k.cari} · Vade {tarih(k.vade)} · Brüt {eur(k.brut)} · Mahsup {eur(k.mahsup)} · Tutulan {eur(k.tutulan)} · Net {eur(k.net)}{k.uyarilar.length ? ` · ${k.uyarilar.join(', ')}` : ''}</span></div>)}<div className="not">Toplam net: {eur(ok[x.kimlik]!.toplamNet)}</div></>}</div>)}
     {v.kurUyusmazligi.map((x) => <div key={x.kimlik} className="uyari">Kur uyuşmazlığı · {x.belge_no} · {tarih(x.kur_tarihi)} · Fatura kuru {String(x.fatura_kuru).replace('.', ',')} · TCMB {String(x.tcmb_kuru).replace('.', ',')}</div>)}
     {v.eslesmeyen.map((x) => <div key={x.kimlik} className="ozet kart-sol"><b>Eşleşmeyen banka hareketi · {tarih(x.tarih)} · {x.yon} · {String(x.tutar_eur).replace('.', ',')} EUR</b><div>{x.aciklama}</div>
       <label htmlFor={`mk-t-${x.kimlik}`}>Cari Türü</label><select id={`mk-t-${x.kimlik}`} value={f[x.kimlik]?.t ?? 'Müşteri'} onChange={(e) => setF({ ...f, [x.kimlik]: { ...f[x.kimlik], t: e.target.value } })}>{['Müşteri', 'Sigorta Şirketi', 'Çözüm Ortağı', 'Tedarikçi'].map((z) => <option key={z}>{z}</option>)}</select>

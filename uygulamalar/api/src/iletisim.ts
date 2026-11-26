@@ -55,7 +55,7 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
   s.post('/duyuru', oturumlu, async (i, y) => {
     const o = i.oturum!;
     if (o.grup !== 'LGM İç Rolü') return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
-    const { baslik, govde, zorunlu, kapsam, bitis, tur, hedefGruplar, hedefRoller, hedefBirimler, yayinBaslangic, baslikEn, govdeEn, ekBelge } = (i.body ?? {}) as { baslik?: string; govde?: string; zorunlu?: boolean; kapsam?: string; bitis?: string; tur?: string; hedefGruplar?: string[]; hedefRoller?: string[]; hedefBirimler?: string[]; yayinBaslangic?: string; baslikEn?: string; govdeEn?: string; ekBelge?: string };
+    const { baslik, govde, zorunlu, kapsam, bitis, tur, hedefGruplar, hedefRoller, hedefBirimler, hedefBolgeler, yayinBaslangic, baslikEn, govdeEn, ekBelge } = (i.body ?? {}) as { baslik?: string; govde?: string; zorunlu?: boolean; kapsam?: string; bitis?: string; tur?: string; hedefGruplar?: string[]; hedefRoller?: string[]; hedefBirimler?: string[]; yayinBaslangic?: string; baslikEn?: string; govdeEn?: string; ekBelge?: string ; hedefBolgeler?: string[] };
     // YG-560: hedef grup, rol ve birim tanımlı değerlerden seçilir; rol adı kimliğe çevrilir.
     const liste = (x: unknown) => (Array.isArray(x) ? x.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : []);
     const hRol = liste(hedefRoller).length ? (await b.db.query(`SELECT kimlik FROM rol WHERE rol_adi = ANY($1::text[])`, [liste(hedefRoller)])).rows.map((r) => r.kimlik as string) : [];
@@ -76,8 +76,8 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const { rows } = await c.query(
-        `INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum, tur, hedef_gruplar, hedef_roller, hedef_birimler, yayin_baslangic, baslik_en, govde_en, ek_belge_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING kimlik`,
-        [baslik.trim(), govde?.trim() || null, Boolean(zorunlu), kapsam, o.kullanici, bitis || null, dogrudan ? 'Yayında' : 'Onay Bekliyor', tur ?? 'Genel', liste(hedefGruplar), hRol, liste(hedefBirimler), yayinBaslangic || null, baslikEn?.trim() || null, govdeEn?.trim() || null, ekBelge && /^[0-9a-f-]{36}$/.test(ekBelge) ? ekBelge : null]);
+        `INSERT INTO duyuru (baslik, govde, zorunlu, kapsam, yayimlayan_ref, bitis_zamani, durum, tur, hedef_gruplar, hedef_roller, hedef_birimler, yayin_baslangic, baslik_en, govde_en, ek_belge_ref, hedef_bolgeler) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`,
+        [baslik.trim(), govde?.trim() || null, Boolean(zorunlu), kapsam, o.kullanici, bitis || null, dogrudan ? 'Yayında' : 'Onay Bekliyor', tur ?? 'Genel', liste(hedefGruplar), hRol, liste(hedefBirimler), yayinBaslangic || null, baslikEn?.trim() || null, govdeEn?.trim() || null, ekBelge && /^[0-9a-f-]{36}$/.test(ekBelge) ? ekBelge : null, liste(hedefBolgeler)]); // YG-560
       const id = rows[0].kimlik as string;
       if (!dogrudan) {
         const kart = await kartAc(c, { tur: 'Duyuru Yayımı', baslik: `Dış Duyuru Onayı · ${baslik.trim()}`, ozet: govde?.trim() || undefined, hazirlayan: o.kullanici, zincir: [await onayMakami(c, (ust ?? roller[0]!).kimlik)], nesneTuru: 'duyuru', nesneKimligi: id });
@@ -107,7 +107,7 @@ export function iletisimYollari(s: FastifyInstance, b: Baglam) {
     const ust = roller.some((r) => UST_KADEME.has(r.kademe));
     // YG-560: hedefleme seçenekleri (kullanıcı grubu, rol, birim).
     const secenek = { gruplar: (await b.db.query(`SELECT DISTINCT kullanici_grubu g FROM kullanici_hesabi WHERE kullanici_grubu <> 'Sistem/Hizmet Hesabı' ORDER BY 1`)).rows.map((r) => r.g as string),
-      roller: (await b.db.query(`SELECT rol_adi FROM rol WHERE rol_durumu = 'Aktif' ORDER BY 1`)).rows.map((r) => r.rol_adi as string), birimler: (await b.db.query(`SELECT DISTINCT rol_sahibi_birim b FROM rol ORDER BY 1`)).rows.map((r) => r.b as string) };
+      roller: (await b.db.query(`SELECT rol_adi FROM rol WHERE rol_durumu = 'Aktif' ORDER BY 1`)).rows.map((r) => r.rol_adi as string), birimler: (await b.db.query(`SELECT DISTINCT rol_sahibi_birim b FROM rol ORDER BY 1`)).rows.map((r) => r.b as string), bolgeler: (await b.db.query(`SELECT bolge FROM bolge_katsayisi ORDER BY bolge`)).rows.map((r) => r.bolge as string) }; // YG-560 bölgeler
     if (roller.some((r) => r.rol_adi === 'CEO')) return { kapsamlar: KAPSAM, onaysiz: KAPSAM, ...secenek };
     if (ust) return { kapsamlar: KAPSAM, onaysiz: ['LGM'], ...secenek };
     return roller.some((r) => r.kademe === 'Müdür Yardımcısı') ? { kapsamlar: ['Dış', 'Tümü'], onaysiz: [], ...secenek } : { kapsamlar: [], onaysiz: [] };

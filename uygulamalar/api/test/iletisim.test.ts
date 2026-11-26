@@ -227,6 +227,11 @@ describe('duyuru (YG-560, YG-561)', () => {
     expect((await ist('POST', `/api/duyuru/${id}/okudum`, b)).statusCode).not.toBe(200);
     const r = (await ist('GET', '/api/duyuru/yayimlarim', b)).json().find((x: any) => x.kimlik === id);
     expect(r.hedef).toBe(1);
+    { // YG-560: bölge hedefli duyuru yalnız o bölgedeki kuruluşların kullanıcılarına; LGM personeli bölge süzgecine girmez
+      const bd = (await yeni(b, { baslik: 'Güney Ege Firmaları', hedefBolgeler: ['3. Güney Ege'] })).json().kimlik;
+      expect((await ist('GET', '/api/bugun', c)).json().duyurular.map((x: any) => x.baslik)).not.toContain('Güney Ege Firmaları');
+      expect((await sup.query(`SELECT hedef_bolgeler FROM duyuru WHERE kimlik = $1`, [bd])).rows[0].hedef_bolgeler).toEqual(['3. Güney Ege']);
+    }
   });
   it('eksik başlık ve geçersiz kapsam reddedilir', async () => {
     const b = await gir(BIM);

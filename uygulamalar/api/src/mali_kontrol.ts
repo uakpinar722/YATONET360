@@ -18,7 +18,8 @@ export function maliKontrolYollari(s: FastifyInstance, b: Baglam) {
     const eslesmeyen = (await b.db.query(`SELECT kimlik, tarih::text, yon, tutar_eur, aciklama FROM hesap_hareketi WHERE hesap_turu = 'Banka' AND cari_ref IS NULL AND olusturma_zamani < now() - interval '24 hours' ORDER BY tarih LIMIT 200`)).rows;
     const kur = (await b.db.query(`SELECT f.kimlik, coalesce(f.fatura_no, f.proforma_no) belge_no, f.kur_tarihi::text, f.kur::float fatura_kuru, k.satis::float tcmb_kuru FROM musteri_faturasi f JOIN doviz_kuru k ON k.tarih = f.kur_tarihi AND k.para_birimi = 'EUR'
       WHERE f.kur IS NOT NULL AND abs(f.kur - k.satis) > 0.0001 AND f.durum <> 'İptal' ORDER BY f.kur_tarihi DESC LIMIT 100`)).rows;
-    return { eslesmeyen, kurUyusmazligi: kur };
+    const odemeListeleri = (await b.db.query(`SELECT kimlik, liste_no FROM odeme_listesi WHERE durum = 'Onayda' ORDER BY olusturma_zamani`)).rows; // YG-1611 ön kontrol
+    return { eslesmeyen, kurUyusmazligi: kur, odemeListeleri };
   });
 
   s.post('/mali-kontrol/eslestir/:id', oturumlu, async (i, y) => {
