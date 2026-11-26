@@ -12,6 +12,9 @@ import { rolSahipleri } from './makam.js';
 import { UUID } from './yat.js';
 
 /** YG-1022: dosya veya iş emri üzerindeki başarılı işlemde cihaz konumu gönderildiyse işlem zamanıyla konum izi yazılır. */
+/** YG-490: 1.2.3 biçimindeki sürümleri karşılaştırır (a < b → negatif). */
+export function surumKarsilastir(a: string, b: string): number { const x = a.split('.').map(Number); const y = b.split('.').map(Number); for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) - (y[i] ?? 0); return 0; }
+
 export function konumIziKancasi(s: FastifyInstance, db: Pool) {
   s.addHook('onSend', async (i, y, govde) => { // yanıt gönderilmeden yazılır
     if (i.method !== 'POST' || y.statusCode >= 300 || !i.oturum) return govde;
@@ -58,6 +61,22 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
 
   // YG-498
+  // YG-490: sürüm kontrolü oturum açılmadan yapılır (eski uygulama giriş ekranına gelmeden durdurulur). Değerleri Sistem Yöneticisi girer.
+  s.get('/mobil/surum', async (i, y) => {
+    const p = ((i.query ?? {}) as { platform?: string }).platform;
+    const r = (await b.db.query(`SELECT en_az, guncel, magaza_baglantisi FROM mobil_surum WHERE platform = $1`, [p])).rows[0];
+    return r ? { enAz: r.en_az, guncel: r.guncel, magaza: r.magaza_baglantisi } : y.code(404).send({ hata: 'Platform tanımlı değildir.' });
+  });
+  s.post('/mobil/surum', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { platform?: string; enAz?: string; guncel?: string; magaza?: string };
+    if (!(await rolSahipleri(b.db, await rolId(b.db, 'Sistem Yöneticisi'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Mobil sürüm bilgisini Sistem Yöneticisi girer.' });
+    const v = /^\d+\.\d+\.\d+$/; if (!v.test(g.enAz ?? '') || !v.test(g.guncel ?? '')) return y.code(400).send({ hata: 'Sürümleri 1.2.3 biçiminde yazınız.' });
+    if (surumKarsilastir(g.enAz!, g.guncel!) > 0) return y.code(400).send({ hata: 'En düşük sürüm güncel sürümden büyük olamaz.' });
+    const r = await b.db.query(`UPDATE mobil_surum SET en_az = $2, guncel = $3, magaza_baglantisi = $4, giren_ref = $5, guncelleme_zamani = now() WHERE platform = $1`, [g.platform, g.enAz, g.guncel, g.magaza?.trim() || null, o.kullanici]);
+    if (!r.rowCount) return y.code(400).send({ hata: 'Platform geçersizdir.' });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Mobil Sürüm Tanımı', nesneTuru: 'Mobil Sürüm', nesneKimligi: g.platform, yeni: { enAz: g.enAz, guncel: g.guncel }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
   s.post('/mobil/cihaz', oturumlu, async (i, y) => {
     const o = i.oturum!; const g = (i.body ?? {}) as { platform?: string; belirtec?: string };
     if (!['iOS', 'Android'].includes(g.platform ?? '') || !g.belirtec?.trim()) return y.code(400).send({ hata: 'Platform ve bildirim belirteci zorunludur.' });

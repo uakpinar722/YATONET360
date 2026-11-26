@@ -8,6 +8,7 @@ import { Alert, Platform, SafeAreaView, StatusBar, Text, View } from 'react-nati
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 import { CevrimdisiKuyruk, type Gonderici } from './src/cevrimdisi';
 import { sifreliDepoAc } from './src/depo';
+import { Kilit, SurumKontrolu } from './src/koruma';
 
 const WEB = process.env.EXPO_PUBLIC_YATONET_WEB ?? '';
 /** Web sayfası oturum çereziyle eşitleme ister; sonuç React Native'e döner. */
@@ -56,7 +57,9 @@ export default function App() {
     <SafeAreaView style={{ flex: 1 }}>
       <StatusBar barStyle="dark-content" />
       {(!cevrimici || sayi > 0) && <View style={{ padding: 8, backgroundColor: '#fff3cd' }}><Text style={{ textAlign: 'center' }}>{cevrimici ? `Eşitleniyor: ${sayi} kayıt` : `Çevrimdışı: ${sayi} kayıt bekliyor`}</Text></View>}
-      <WebView ref={web} source={{ uri: WEB }} sharedCookiesEnabled domStorageEnabled onMessage={(e) => void mesaj(e)} />
+      <SurumKontrolu web={WEB}><Kilit>
+        <WebView ref={web} source={{ uri: WEB }} sharedCookiesEnabled domStorageEnabled onMessage={(e) => void mesaj(e)} />
+      </Kilit></SurumKontrolu>
     </SafeAreaView>
   );
 }

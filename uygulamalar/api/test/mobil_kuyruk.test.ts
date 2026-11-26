@@ -23,3 +23,14 @@ describe('çevrimdışı kuyruk (YG-494)', () => {
     for (let i = 0; i < 120; i++) await q.ekle('/a', {}); await q.esitle(); expect(b).toEqual([50, 50, 20]);
   });
 });
+
+describe('eşitlenen kaydın 48 saat saklanması (YG-495)', () => {
+  it('eşitlenen kayıt 48 saat cihazda kalır, sonra kaldırılır; geri yüklemede yeniden gönderilir', async () => {
+    const d = bellek(); let simdi = new Date('2026-11-26T10:00:00Z'); const giden: string[] = [];
+    const q = new CevrimdisiKuyruk(d, async (l) => { giden.push(...l.map((x) => x.kimlik)); return l.map((x) => ({ kimlik: x.kimlik, durum: 'Uygulandı' as const })); }, id, () => simdi);
+    const a = await q.ekle('/y', {}); await q.esitle();
+    expect(d.m.get(a)?.durum).toBe('Uygulandı'); expect(await q.bekleyenSayisi()).toBe(0); expect(await q.sorunlular()).toHaveLength(0);
+    expect(await q.geriYuklemeSonrasiYenidenGonder()).toBe(1); await q.esitle(); expect(giden).toEqual([a, a]);
+    simdi = new Date('2026-11-28T10:00:01Z'); expect(await q.temizle()).toBe(1); expect(d.m.size).toBe(0);
+  });
+});

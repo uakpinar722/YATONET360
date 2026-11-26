@@ -239,3 +239,17 @@ describe('arayüz metni çeviri kütüphanesi (YG-1390, YG-1391)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM arayuz_metni WHERE hukuki AND tr = 'Cayma Hakkımı Kullanmak İstiyorum'`)).rows[0].n).toBe(1);
   });
 });
+
+describe('mobil sürüm kontrolü (YG-490)', () => {
+  it('sürüm bilgisi oturumsuz okunur; yalnız Sistem Yöneticisi girer; en düşük sürüm güncelden büyük olamaz', async () => {
+    const { surumKarsilastir } = await import('../src/mobil.js');
+    expect(surumKarsilastir('0.9.9', '0.10.0')).toBeLessThan(0); expect(surumKarsilastir('1.2.3', '1.2.3')).toBe(0);
+    const r = await o.ist('GET', '/api/mobil/surum?platform=android'); expect(r.statusCode, r.body).toBe(200); expect(r.json().enAz).toMatch(/^\d+\.\d+\.\d+$/);
+    expect((await o.ist('GET', '/api/mobil/surum?platform=symbian')).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/mobil/surum', await o.gir('ds'), { platform: 'android', enAz: '0.1.0', guncel: '0.2.0' })).statusCode).toBe(403);
+    const sy = await o.gir('sy');
+    expect((await o.ist('POST', '/api/mobil/surum', sy, { platform: 'android', enAz: '0.3.0', guncel: '0.2.0' })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/mobil/surum', sy, { platform: 'android', enAz: '0.1.0', guncel: '0.2.0' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/mobil/surum?platform=android')).json().guncel).toBe('0.2.0');
+  });
+});

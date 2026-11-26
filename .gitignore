@@ -25,3 +25,7 @@ Thumbs.db
 
 # Tarayıcı testi ekran görüntüleri
 uygulamalar/web/*.png
+
+# Expo prebuild ile üretilen yerel Android/iOS projeleri (app.json kaynaktır)
+mobil/android/
+mobil/ios/
