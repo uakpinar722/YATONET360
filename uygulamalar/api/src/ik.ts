@@ -391,7 +391,8 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE personel_karti SET personel_durumu = 'Ayrılıyor' WHERE kullanici_ref = $1`, [g.personel]);
     if (g.tur === 'İstifa') { const ib = (await b.db.query(`UPDATE istifa_bildirimi SET durum = 'Ayrılışa Aktarıldı' WHERE personel_ref = $1 AND durum = 'Açık' RETURNING kimlik`, [g.personel])).rows[0]; // YG-976
       if (ib) await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'İstifa Bildirimi' AND nesne_kimligi = $1 AND durum <> 'Tamamlandı'`, [ib.kimlik]); }
-    await bildir(b.db, { olay: `ayrilis-gizlilik:${a.kimlik}`, kullanicilar: [g.personel], baslik: 'Gizlilik Yükümlülüğü Hatırlatması', ozet: 'Okuduğunuzu onaylamanızı rica ederiz.' }); // YG-932
+    { const ad = (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [g.personel])).rows[0]?.ad_soyad ?? '';
+      await bildir(b.db, { olay: `ayrilis-gizlilik:${a.kimlik}`, kullanicilar: [g.personel], baslik: 'Sözleşme Yükümlülükleri Hatırlatması', ozet: await (await import('./metin.js')).metinGetir(b.db, 'BLD-108', 'tr', { 'Ad Soyad': ad, tarih: String(g.son).split('-').reverse().join('.') }) }); } // YG-932, MTN-9 (CEO 26.11.2026)
     const amir = await birimAmiri(b.db, g.personel);
     if (amir) await kartAc(b.db, { tur: 'Personel Devir Listesi', kategori: 'islem', baslik: 'Personel Devir Listesi', ozet: `Son iş günü: ${g.son}`, oncelik: 'Yüksek', sonZaman: new Date(g.son), sahipKullanici: amir, nesneTuru: 'Ayrılış', nesneKimligi: a.kimlik });
     return { kimlik: a.kimlik };

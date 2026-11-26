@@ -145,6 +145,7 @@ describe('firma bilgi, banka, itiraz, cari (YG-425, YG-422, K-178)', () => {
     expect((await o.sup.query(`SELECT gorus FROM firma_hukuk_gorusu WHERE kimlik = $1`, [hg])).rows[0].gorus).toBe('Uygun Değil');
     expect((await o.kart('Firma Hukuk Görüşü', hg)).durum).toBe('Tamamlandı');
     expect((await st()).statusCode).toBe(200); // görüş bağlayıcı değildir
+    { const bl = (await o.sup.query(`SELECT b.ozet FROM bildirim b JOIN kurulus_kullanici k ON k.kullanici_ref = b.kullanici_ref WHERE k.kurulus_ref = $1 AND b.baslik LIKE '%Başvuru Sonucu' ORDER BY b.zaman DESC LIMIT 1`, [f2])).rows[0]; if (bl) { expect(bl.ozet).toContain('kabul edilememiştir'); expect(bl.ozet).not.toContain('['); } } // MTN-4 BLD-104R
     expect((await st()).statusCode).toBe(409); // her karar için yeni görüş
     expect((await o.ist('POST', '/api/kurum/kabul-itiraz', c, {})).statusCode).toBe(400);
     expect((await o.ist('GET', '/api/kurum/hesap', c)).json().itirazEdilebilir).toBe(true);

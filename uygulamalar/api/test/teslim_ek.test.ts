@@ -53,6 +53,8 @@ describe('kapılar (YG-473, YG-099)', () => {
     expect(await yabanciBayrakEngeli(o.db, d.kimlik, '2031-01-01')).toBeNull();
     expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld53:${d.kimlik}:2031-01-01%`])).rows[0].n).toBe(m53.length); // ikinci kez gitmez
     expect(await yabanciBayrakEngeli(o.db, d.kimlik, '2029-01-01')).toBeNull();
+    { const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld-102:${d.kimlik}:%`])).rows; expect(m.length).toBeGreaterThan(0); expect(m[0].metin).toContain('01.01.2099'); expect(m[0].metin).toContain('01.01.2030'); expect(m[0].metin).not.toContain('['); // MTN-3 BLD-102
+      await yabanciBayrakEngeli(o.db, d.kimlik, '2029-01-01'); expect((await o.sup.query(`SELECT count(*)::int n FROM gonderim WHERE olay_anahtari LIKE $1`, [`bld-102:${d.kimlik}:%`])).rows[0].n).toBe(m.length); }
     await o.sup.query(`UPDATE yat SET bayrak = 'Türkiye', yabanci_yat_belge_gecerlilik = '2020-01-01' WHERE kimlik = $1`, [yt]);
     expect(await yabanciBayrakEngeli(o.db, d.kimlik)).toBeNull();
   });
@@ -120,12 +122,12 @@ describe('teslim (YG-481, YG-1435, YG-1498, YG-088)', () => {
   });
   it('Dosya Sorumlusu belge talebi ve ulaşılamama bildirimi gönderir (T-YG551)', async () => {
     const d = await dosya(); const ds = await o.gir('ds');
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: [] })).statusCode).toBe(400);
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, await o.gir('ty'), { belgeler: ['Ruhsat'] })).statusCode).not.toBe(200);
-    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: ['Ruhsat', ' Poliçe '] })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: [], sonTarih: '2099-01-15' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, await o.gir('ty'), { belgeler: ['Ruhsat'], sonTarih: '2099-01-15' })).statusCode).not.toBe(200);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { belgeler: ['Ruhsat', ' Poliçe '], sonTarih: '2099-01-15' })).statusCode).toBe(200);
     const m = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld17:${d.kimlik}%`])).rows[0]?.metin as string;
-    expect(m).toContain('Ruhsat, Poliçe'); expect(m).not.toContain('['); expect(m).toContain('operasyon@limitglobalmarine.com.tr');
-    { const e = await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { eksikler: true }); expect(e.statusCode, e.body).toBe(200); // YG-1439: sistem listesindeki eksik zorunlu belgeler
+    expect(m).toContain('Ruhsat, Poliçe'); expect(m).toContain('15.01.2099'); expect(m).toContain('doğrulama kodu'); expect(m).not.toContain('['); // MTN-5 expect(m).toContain('operasyon@limitglobalmarine.com.tr');
+    { const e = await o.ist('POST', `/api/dosya/${d.kimlik}/belge-talebi`, ds, { eksikler: true, sonTarih: '2099-01-15' }); expect(e.statusCode, e.body).toBe(200); // YG-1439: sistem listesindeki eksik zorunlu belgeler
       const me = (await o.sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld17e:${d.kimlik}%`])).rows[0]?.metin as string;
       expect(me).toContain('Ruhsat / Tonilato veya Tescil Belgesi'); expect(me).not.toContain('['); }
     await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = coalesce(cep_telefonu, '+905550001551') WHERE kimlik = $1`, [o.K.ds]);

@@ -559,11 +559,12 @@ function UlasimPlani({ id, yap, mevcut }: { id: string; yap: (f: () => Promise<a
 
 /** YG-551: yat sahibinden belge isteme (BLD-17) ve ulaşılamama bildirimi (BLD-18). */
 function BelgeTalebi({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam?: string) => Promise<void> }) {
-  const [l, setL] = useState('');
+  const [l, setL] = useState(''); const [st, setSt] = useState('');
   return <Blok baslik="Belge Talebi">
     <label htmlFor="bt-l">İstenen Belgeler (virgülle ayırınız)</label><input required id="bt-l" value={l} onChange={(e) => setL(e.target.value)} />
-    <div className="dugmeler"><button className="btn2" disabled={!l.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { belgeler: l.split(',') }), 'Belge talebi yat sahibine gönderildi.').then(() => setL(''))}>Yat Sahibine Gönder</button>
-      <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { eksikler: true }), 'Eksik belgeler yat sahibinden istendi.')}>Eksik Belgeleri İste</button>{/* YG-1439 */}
+    <label htmlFor="bt-s">Belgelerin İletilmesi İçin Son Tarih</label><input required id="bt-s" type="date" value={st} onChange={(e) => setSt(e.target.value)} />
+    <div className="dugmeler"><button className="btn2" disabled={!l.trim() || !st} onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { belgeler: l.split(','), sonTarih: st }), 'Belge talebi yat sahibine gönderildi.').then(() => setL(''))}>Yat Sahibine Gönder</button>
+      <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { eksikler: true, sonTarih: st }), 'Eksik belgeler yat sahibinden istendi.')}>Eksik Belgeleri İste</button>{/* YG-1439 */}
       <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/belge-talebi`, { ulasilamadi: true }), 'Ulaşılamama bildirimi gönderildi.')}>Ulaşılamadı Bildir</button></div>
   </Blok>;
 }

@@ -98,6 +98,16 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
       return { durum };
     });
   });
+  // MTN-8 (CEO 26.11.2026): "Firmaya sor" hazır mesajı (BLD-107); dosyadaki açık iş emri firmasının kurumsal telefonuna Dosya Sorumlusunun WhatsApp'ından gönderilir.
+  s.get('/tesis-talebi/:id/firmaya-sor', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    const t = UUID.test(id) ? (await b.db.query(`SELECT t.dosya_ref, t.tur, d.dosya_no, y.yat_adi FROM tesis_talebi t JOIN dosya d ON d.kimlik = t.dosya_ref JOIN yat y ON y.kimlik = d.yat_ref WHERE t.kimlik = $1`, [id])).rows[0] : undefined;
+    if (!t || o.grup !== 'LGM İç Rolü' || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
+    const f = (await b.db.query(`SELECT k.ticari_unvan, k.kurumsal_telefon FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.statu NOT IN ('Taslak', 'İptal', 'Yerine Geçti', 'Kapalı') ORDER BY e.olusturma_zamani DESC LIMIT 1`, [t.dosya_ref])).rows[0];
+    if (!f) return y.code(409).send({ hata: 'Dosyada açık iş emri olan firma bulunmamaktadır.' });
+    const metin = await (await import('./metin.js')).metinGetir(b.db, 'BLD-107', 'tr', { Yat: t.yat_adi, 'Dosya No': t.dosya_no, işlem: t.tur });
+    return { firma: f.ticari_unvan, telefon: f.kurumsal_telefon, metin };
+  });
   s.get('/tesis-talebi/:id/yazismalar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const t = UUID.test(id) ? (await b.db.query(`SELECT dosya_ref FROM tesis_talebi WHERE kimlik = $1`, [id])).rows[0] : undefined;

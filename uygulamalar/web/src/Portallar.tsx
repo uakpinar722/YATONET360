@@ -471,7 +471,9 @@ export function TesisIslemleri({ id, ds }: { id: string; ds: boolean }) {
 function TesisYazisma({ id, talep, yap }: { id: string; talep: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
   const [f, setF] = useState({ kaynak: 'Firma', ozet: '', durum: 'Yanıt Bekliyor', izinNo: '', yeniHedef: '', belge: '' }); const [l, setL] = useState<{ kaynak: string; ozet: string; durum: string; yeni_hedef: string | null; zaman: string; giren: string }[]>([]);
   const yk = () => istek<typeof l>(`/tesis-talebi/${talep}/yazismalar`).then(setL).catch(() => setL([]));
+  const sor = () => void istek<{ firma: string; telefon: string | null; metin: string }>(`/tesis-talebi/${talep}/firmaya-sor`).then((r) => { const no = (r.telefon ?? '').replace(/\D/g, '').replace(/^0/, '90'); window.open(`https://wa.me/${no}?text=${encodeURIComponent(r.metin)}`, '_blank', 'noopener'); }).catch((e) => alert(e.message)); // MTN-8 BLD-107
   return <details onToggle={(e) => { if ((e.target as HTMLDetailsElement).open) void yk(); }}><summary>Yazışma Gir</summary>
+    <div className="dugmeler"><button type="button" className="btn2 kucuk" onClick={sor}>Firmaya Sor (WhatsApp)</button></div>
     {l.map((x, n) => <div key={n} className="not">{new Date(x.zaman).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })} · {x.kaynak} · {x.durum}{x.yeni_hedef ? ` · Yeni hedef ${tarih(x.yeni_hedef)}` : ''} · {x.ozet} · {x.giren}</div>)}
     <label htmlFor={`ty-k-${talep}`}>Kaynak</label><select id={`ty-k-${talep}`} value={f.kaynak} onChange={(e) => setF({ ...f, kaynak: e.target.value })}><option>Firma</option><option>Tesis</option></select>
     <label htmlFor={`ty-o-${talep}`}>Yazışma Özeti</label><input required id={`ty-o-${talep}`} value={f.ozet} onChange={(e) => setF({ ...f, ozet: e.target.value })} />

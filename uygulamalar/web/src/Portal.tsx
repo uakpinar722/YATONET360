@@ -269,7 +269,7 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
     <div className="ozet">
       <h2>{t.baslik}</h2>
       {t.dosyaNo && <div className="not">Dosya No: {t.dosyaNo}</div>}
-      {t.metin.split('\n').filter(Boolean).map((p, i) => <p key={i}>{p}</p>)}
+      <OnayMetni metin={t.metin} />{/* YG-1507 */}
       {t.formTuru === 'Teslim Kararı' && <>
         <label htmlFor="o-tk">Teslim Kararı</label><select id="o-tk" value={tkr} onChange={(e) => setTkr(e.target.value)}><option value="Kabul">Kabul</option><option value="Koşullu Kabul">Koşullu Kabul (çekinceli)</option></select>
         {tkr === 'Koşullu Kabul' && <><label htmlFor="o-c">Çekince</label><input id="o-c" value={cek} onChange={(e) => setCek(e.target.value)} /></>}
@@ -291,6 +291,23 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
   );
   if (gomulu) return icerik;
   return <div className="ilk"><div className="ilk-kart"><div className="ilk-bas"><img src="/lgm_yatay_tr.png" alt="LİMİT GLOBAL MARINE" /></div><div className="ilk-ic">{icerik}</div><div className="ilk-dip"><span className="ayrac" aria-hidden="true" /><img src="/yatonet.png" alt="YATONET 360" /></div></div></div>;
+}
+
+/** YG-1507: onaylı beyan metni yapılandırılmış gösterilir; "Onayınıza sunulan belgeler" bağlantılı liste, "Bilmeniz gereken önemli hususlar" numaralı maddeler. Metin değiştirilmez. */
+function OnayMetni({ metin }: { metin: string }) {
+  const BAS_B = /Onayınıza sunulan belgeler:|Documents submitted for your approval:/i; const BAS_H = /Bilmeniz gereken önemli hususlar:|Important points you should know:/i;
+  const baglanti = (s: string) => s.split(/(https?:\/\/\S+)/g).map((x, i) => (/^https?:\/\//.test(x) ? <a key={i} href={x.replace(/[.,;)]+$/, '')} target="_blank" rel="noopener noreferrer">Görüntüle</a> : x));
+  return <>{metin.split('\n').filter(Boolean).map((p, i) => {
+    const b = BAS_B.exec(p); const h = BAS_H.exec(p);
+    if (!b && !h) return <p key={i}>{baglanti(p)}</p>;
+    const ilk = b ? p.slice(0, b.index) : p.slice(0, h!.index);
+    const belgeKismi = b ? p.slice(b.index + b[0].length, h && h.index > b.index ? h.index : undefined) : '';
+    const husus = h ? p.slice(h.index + h[0].length) : ''; const kutuIx = husus.search(/Kutu 1:|Box 1:/);
+    const maddeler = (kutuIx >= 0 ? husus.slice(0, kutuIx) : husus).split(/\(\d\)\s*/).map((x) => x.trim()).filter(Boolean);
+    return <div key={i}>{ilk.trim() && <p>{baglanti(ilk.trim())}</p>}
+      {b && <><b>{b[0].replace(':', '')}</b><ul>{belgeKismi.split(';').map((x) => x.trim().replace(/\.$/, '')).filter(Boolean).map((x, n) => <li key={n}>{baglanti(x)}</li>)}</ul></>}
+      {h && <><b>{h[0].replace(':', '')}</b><ol>{maddeler.map((x, n) => <li key={n}>{x}</li>)}</ol></>}</div>;
+  })}</>;
 }
 
 /** Y1: Yat Sahibi Kaydı: telefon, kod, bilgiler. Koşul, aydınlatma ve izin adımları kayıt sonrası ilk giriş akışında gelir. */

@@ -191,3 +191,15 @@ describe('yediemin onayı (YG-104)', () => {
     expect((await o.ist('GET', u, ds)).json().talepler[0].durum).toBe('Onaylandı');
   });
 });
+
+describe('mirasçıya ilk mesajda KVKK-01 bağlantısı (YG-1477, K-241)', () => {
+  it('aydınlatma metni girişsiz açılır; vefat sonrası temsilci atanmış dosyada ilk mesaja M6 bağlantısı bir kez eklenir', async () => {
+    const r = await o.ist('GET', '/api/acik/aydinlatma/KVKK-01'); expect(r.statusCode, r.body).toBe(200); expect(Array.isArray(r.json().govde)).toBe(true);
+    expect((await o.ist('GET', '/api/acik/aydinlatma/KVKK-05')).statusCode).toBe(404);
+    const { mirasciAydinlatmaEki } = await import('../src/aydinlatma_acik.js');
+    const d = await o.dosyaAc(); expect(await mirasciAydinlatmaEki(o.db, d.dosyaNo, 'tr')).toBe('');
+    await o.sup.query(`UPDATE dosya SET vefat_temsilci = 'Mirasçı Temsilcisi' WHERE kimlik = $1`, [d.kimlik]);
+    const ek = await mirasciAydinlatmaEki(o.db, d.dosyaNo, 'tr'); expect(ek).toContain('http://x/#aydinlatma=KVKK-01'); expect(ek).toContain('6698');
+    expect(await mirasciAydinlatmaEki(o.db, d.dosyaNo, 'tr')).toBe('');
+  });
+});

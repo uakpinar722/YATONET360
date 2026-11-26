@@ -27,7 +27,7 @@ import { ilerlemeEngeli, kabulEngeli, planEngeli } from './kalite.js';
 import { yatDegeriEngeli } from './yat_degeri.js';
 import { izinGerekli } from './yetki.js';
 import { rolSahipleri } from './makam.js';
-import { tutar } from './metin.js';
+import { gunAy, metinGetir, tutar } from './metin.js';
 import { raporSonZamani } from './rapor.js';
 
 type Db = Pool | PoolClient;
@@ -279,9 +279,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
   s.post('/firma/:id/statu', { preHandler: izinGerekli(b, 'firma.onay') }, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string; pasifNedeni?: string; kanit?: string; acikDosyaPlani?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { asama?: string; ag?: string; risk?: string; gerekce?: string; pasifNedeni?: string; kanit?: string; acikDosyaPlani?: string; kosulSonTarih?: string };
     if (!UUID.test(id)) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Karar gerekçesi zorunludur.' });
+    if (g.asama === 'Koşullu Onaylı' && !/^\d{4}-\d{2}-\d{2}$/.test(g.kosulSonTarih ?? '')) return y.code(400).send({ hata: 'Koşulların tamamlanması için son tarihi seçiniz.' }); // MTN-4 BLD-104K
     if (g.ag === 'Askıda' || g.ag === 'Çıkarıldı') { // YG-360: açık işlerin devri, tamamlatılması veya durdurulması planı
       const acik = (await b.db.query(`SELECT string_agg(is_emri_no, ', ' ORDER BY is_emri_no) l FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu')`, [id])).rows[0]?.l as string | null;
       if (acik && !g.acikDosyaPlani?.trim()) return y.code(400).send({ hata: `Firmanın açık işleri vardır (${acik}); her biri için devir, tamamlatma veya durdurma planını yazmanızı rica ederiz.` });
@@ -314,6 +315,19 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!r.rowCount) return yok(y);
     if (g.ag && g.ag !== mevcut) await b.db.query(`UPDATE kurulus SET pasif_nedeni = $2, son_iyilestirme_kaniti_ref = coalesce($3, son_iyilestirme_kaniti_ref) WHERE kimlik = $1`, [id, g.ag === 'Pasif' ? g.pasifNedeni : null, g.kanit && UUID.test(g.kanit) ? g.kanit : null]); // YG-357, YG-359
     if (g.ag === 'Geçici Askıda') await (await import('./firma_ek.js')).askiIsKararlariAc(b.db, id); // YG-1660: her açık iş için ayrı karar
+    { // MTN-4 (CEO 26.11.2026): Çözüm Ortağı yaşam döngüsü bildirimleri (portal + e-posta); kabul kararında BLD-104/104K/104R, yalnız statü değişiminde BLD-105, geçici askıda BLD-106.
+      const f = (await b.db.query(`SELECT ticari_unvan, kayit_rolu, (SELECT string_agg(DISTINCT kapsama, ', ') FROM brans_yetkinligi WHERE kurulus_ref = $1) kapsama FROM kurulus WHERE kimlik = $1`, [id])).rows[0];
+      const alicilar = (await b.db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [id])).rows.map((r) => r.kullanici_ref as string);
+      if (f?.kayit_rolu === 'Çözüm Ortağı' && alicilar.length) {
+        const bugun = new Date(); const itiraz = gunAy(new Date(bugun.getTime() + 15 * 86_400_000)); const gerekce = g.gerekce!.trim();
+        const gonder = async (kod: string, baslik: string, alanlar: Record<string, string>) => bildir(b.db, { olay: `${kod.toLowerCase()}:${id}:${bugun.toISOString().slice(0, 16)}`, kullanicilar: alicilar, baslik: `${f.ticari_unvan} · ${baslik}`, ozet: await metinGetir(b.db, kod, 'tr', { Firma: f.ticari_unvan, ...alanlar }), eposta: true });
+        if (g.asama === 'Onaylı') await gonder('BLD-104', 'Ağa Kabul', { kapsama: f.kapsama ?? '—' });
+        else if (g.asama === 'Koşullu Onaylı') await gonder('BLD-104K', 'Ağa Koşullu Kabul', { koşullar: gerekce, 'son tarih': gunAy(g.kosulSonTarih!), 'itiraz son tarihi': itiraz });
+        else if (g.asama === 'Reddedildi') await gonder('BLD-104R', 'Başvuru Sonucu', { gerekçe: gerekce, 'itiraz son tarihi': itiraz });
+        else if (g.ag === 'Geçici Askıda' && g.ag !== mevcut) await gonder('BLD-106', 'Geçici Askı', { tarih: gunAy(bugun), gerekçe: gerekce });
+        else if (g.ag && g.ag !== mevcut) await gonder('BLD-105', 'Statü Kararı', { tarih: gunAy(bugun), statü: g.ag, gerekçe: gerekce });
+      }
+    }
     if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && g.ag !== mevcut) { // YG-360: CEO ve GMY'ye bilgi
       const un = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.ticari_unvan;
       const kisiler = [...await rolSahipleri(b.db, await rolId(b.db, 'CEO')), ...await rolSahipleri(b.db, await rolId(b.db, 'Genel Müdür Yardımcısı'))];
@@ -321,6 +335,18 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     }
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Firma Statü Önerisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]); // YG-360
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Statü Kararı', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: g, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+  // MTN-4 (CEO 26.11.2026): sicil başvurusunda eksik belgeler firmaya BLD-103 ile bildirilir (portal + e-posta).
+  s.post('/firma/:id/eksik-belge', { preHandler: izinGerekli(b, 'firma.kayit') }, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const l = (((i.body ?? {}) as { belgeler?: string[] }).belgeler ?? []).map((x) => String(x).trim()).filter(Boolean);
+    if (!UUID.test(id)) return yok(y);
+    if (!l.length) return y.code(400).send({ hata: 'Eksik belgeleri yazınız.' });
+    const f = (await b.db.query(`SELECT ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
+    const alicilar = (await b.db.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [id])).rows.map((r) => r.kullanici_ref as string);
+    if (!alicilar.length) return y.code(409).send({ hata: 'Firmanın portal kullanıcısı bulunmamaktadır; eksik belgeleri telefon veya e-postayla bildiriniz.' });
+    await bildir(b.db, { olay: `bld-103:${id}:${new Date().toISOString().slice(0, 16)}`, kullanicilar: alicilar, baslik: `${f.ticari_unvan} · Eksik Belge`, ozet: await metinGetir(b.db, 'BLD-103', 'tr', { liste: l.join(', ') }), eposta: true });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Eksik Belge Bildirimi', nesneTuru: 'Kuruluş', nesneKimligi: id, yeni: { belgeler: l }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });
   // YG-360: statü, aşama veya risk derecesi değişikliğini Sicil Sorumlusu gerekçesiyle hazırlar; karar Firma Yönetimi Müdüründedir.

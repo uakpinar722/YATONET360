@@ -50,10 +50,27 @@ export async function ilaveIsYetkiEngeli(db: Db, dosya: string, tur: string): Pr
 export async function yabanciBayrakEngeli(db: Db, dosya: string, hedefBitis?: string | null): Promise<string | null> {
   const y = (await db.query(`SELECT y.bayrak, y.yabanci_yat_belge_gecerlilik g, y.gecici_ithalat_bitis i, y.turkiye_kalis_bitis k FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [dosya])).rows[0];
   if (!y?.bayrak || /^(türk|turk|tr$)/i.test(y.bayrak)) return null;
-  const bugun = new Date().toISOString().slice(0, 10); const s = (v: Date | string | null) => (v ? new Date(v).toISOString().slice(0, 10) : null);
-  if ((s(y.g) && s(y.g)! < bugun) || (s(y.i) && s(y.i)! < bugun)) return 'Yabancı yat belgesinin süresi dolmuştur; iş emri planlanamaz.';
+  const bugun = new Date().toISOString().slice(0, 10); const s = (v: Date | string | null) => (v ? (typeof v === 'string' ? v.slice(0, 10) : v.toLocaleDateString('sv-SE', { timeZone: 'Europe/Istanbul' })) : null); // tarih alanı İstanbul günüyle (UTC kayması yok)
+  // MTN-3 (CEO 26.11.2026): belge türü ve son tarihi; süresi dolmuşsa BLD-102S, geçerliyse dosya başına bir kez BLD-102.
+  const belge = s(y.g) ? { tr: 'Yabancı Yat Belgesi', en: 'foreign yacht certificate', son: s(y.g)! } : s(y.i) ? { tr: 'Geçici İthalat İzni', en: 'temporary import permit', son: s(y.i)! } : null;
+  if ((s(y.g) && s(y.g)! < bugun) || (s(y.i) && s(y.i)! < bugun)) {
+    const dolan = s(y.g) && s(y.g)! < bugun ? { tr: 'Yabancı Yat Belgesi', en: 'foreign yacht certificate', son: s(y.g)! } : { tr: 'Geçici İthalat İzni', en: 'temporary import permit', son: s(y.i)! };
+    await yabanciBilgilendir(db, dosya, 'BLD-102S', dolan, s(y.k));
+    return 'Yabancı yat belgesinin süresi dolmuştur; iş emri planlanamaz.';
+  }
   if (hedefBitis && s(y.k) && s(y.k)! < hedefBitis && !(await kalisBildir(db, dosya, hedefBitis, y.k))) return 'Planlanan bitiş Türkiye’de kalış süresini aşıyor; önce yat sahibine bildirim yapılmalıdır.';
+  if (belge && s(y.k)) await yabanciBilgilendir(db, dosya, 'BLD-102', belge, s(y.k));
   return null;
+}
+
+/** MTN-3 (YG-099): yabancı bayraklı yatta belge ve kalış bilgilendirmesi (BLD-102) veya belge süresi dolmuş bildirimi (BLD-102S); dosya ve kod başına bir kez. */
+async function yabanciBilgilendir(db: Db, dosya: string, kod: 'BLD-102' | 'BLD-102S', belge: { tr: string; en: string; son: string }, kalis: string | null): Promise<void> {
+  const olay = `${kod.toLowerCase()}:${dosya}:${belge.son}`;
+  if ((await db.query(`SELECT 1 FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`${olay}%`])).rowCount) return;
+  const r = (await db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, y.yat_adi, t.telefon, t.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi t ON t.dosya_ref = d.kimlik AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif WHERE d.kimlik = $1 ORDER BY (t.telefon IS NOT NULL) DESC LIMIT 1`, [dosya])).rows[0];
+  if (!r || r.vefat_isareti || (!r.telefon && !r.eposta)) return;
+  const bs = gunAy(belge.son); const ks = kalis ? gunAy(kalis) : '';
+  await yatTarafinaYaz(db, { olay, kod, dil: dilKod(r.yazisma_dili), konu: `${r.dosya_no} Belge ve Kalış Süresi`, telefon: r.telefon, eposta: r.eposta, alanlar: { Yat: r.yat_adi, Yacht: r.yat_adi, 'Belge türü': belge.tr, 'Document type': belge.en, 'belge sonu': bs, 'document end': bs, 'kalış sonu': ks, 'stay end': ks } });
 }
 
 /** YG-1446 (D-063): kalış süresi aşımında yat sahibine BLD-53 kendiliğinden gider (doğan görev: Dosya Sorumlusu arar); gitmişse veya gönderildiyse true. */
@@ -199,8 +216,9 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
   // YG-551: Bilgi ve Belge Talebi (BLD-17) ve Ulaşılamama (BLD-18); Dosya Sorumlusu gönderir. Belge adresi operasyon kutusudur (CEO 18.11.2026); BLD-18 telefonu kurumsal hat bildirilene kadar Dosya Sorumlusunun telefonudur.
   const OPERASYON_EPOSTA = 'operasyon@limitglobalmarine.com.tr';
   s.post('/dosya/:id/belge-talebi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belgeler?: string[]; ulasilamadi?: boolean; eksikler?: boolean };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { belgeler?: string[]; ulasilamadi?: boolean; eksikler?: boolean; sonTarih?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!g.ulasilamadi && (!/^\d{4}-\d{2}-\d{2}$/.test(g.sonTarih ?? '') || g.sonTarih! < new Date().toISOString().slice(0, 10))) return y.code(400).send({ hata: 'Belgelerin iletilmesi için son tarihi (bugün veya sonrası) seçiniz.' }); // MTN-5
     const d = (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, h.e_posta, h.cep_telefonu FROM dosya d JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1 AND d.dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rows[0];
     if (!d) return y.code(403).send({ hata: 'Belge talebini Dosya Sorumlusu gönderir.' });
     if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmez.' });
@@ -213,7 +231,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
       // YG-1439: "Eksik Belgeleri İste" sistemin belge listesindeki eksik zorunlu belgeleri tek mesajda ister.
       const l = g.eksikler ? (await (await import('./portal.js')).belgeListesi(b.db, id)).filter((x) => x.zorunlu && x.durum === 'Eksik').map((x) => x.belge) : (g.belgeler ?? []).map((x) => String(x).trim()).filter(Boolean);
       if (!l.length) return y.code(g.eksikler ? 409 : 400).send({ hata: g.eksikler ? 'Eksik zorunlu belge bulunmamaktadır.' : 'İstenen belgeleri yazınız.' });
-      await yatTarafinaYaz(b.db, { olay: `${g.eksikler ? 'bld17e' : 'bld17'}:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': OPERASYON_EPOSTA, 'e-mail': OPERASYON_EPOSTA } });
+      await yatTarafinaYaz(b.db, { olay: `${g.eksikler ? 'bld17e' : 'bld17'}:${id}:${gun}`, kod: 'BLD-17', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Belge Talebi`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, liste: l.join(', '), list: l.join(', '), 'e-posta': OPERASYON_EPOSTA, 'e-mail': OPERASYON_EPOSTA, 'son tarih': g.sonTarih!.split('-').reverse().join('.'), deadline: g.sonTarih!.split('-').reverse().join('.') } });
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.ulasilamadi ? 'Ulaşılamama Bildirimi' : 'Belge Talebi Gönderildi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

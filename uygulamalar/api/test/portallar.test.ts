@@ -59,6 +59,7 @@ describe('A8 Tesis (YG-297, YG-1575, YG-417, YG-554)', () => {
         const w = await o.ist('POST', yu, c, { kaynak: 'Firma', ozet: 'Tesis randevuyu iki gün öteledi', yeniHedef: '2026-12-03' }); expect(w.statusCode, w.body).toBe(200);
         expect((await o.ist('GET', `/api/dosya/${d.kimlik}/tesis-talepleri`, c)).json().find((x: { kimlik: string }) => x.kimlik === r.json().kimlik).hedef_tarih).toBe('2026-12-03');
         const yl = (await o.ist('GET', `/api/tesis-talebi/${r.json().kimlik}/yazismalar`, c)).json(); expect(yl[0]).toMatchObject({ kaynak: 'Firma', eski_hedef: '2026-12-01', yeni_hedef: '2026-12-03', durum: 'Yanıt Bekliyor' });
+        { const fs = await o.ist('GET', `/api/tesis-talebi/${r.json().kimlik}/firmaya-sor`, c); expect([200, 409]).toContain(fs.statusCode); if (fs.statusCode === 200) { expect(fs.json().metin).toContain('Çekek Randevusu'); expect(fs.json().metin).not.toContain('['); } } // MTN-8 BLD-107
         await o.sup.query(`UPDATE tesis_talebi SET hedef_tarih = '2026-12-01' WHERE kimlik = $1`, [r.json().kimlik]);
       }
     }
