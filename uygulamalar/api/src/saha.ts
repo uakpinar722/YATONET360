@@ -368,10 +368,12 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const sinirDisi = g.nominal !== undefined && g.tolerans !== undefined && Math.abs(g.deger - g.nominal) > g.tolerans;
     if (sinirDisi && (!g.ikinci || g.ikinci === o.kullanici)) return y.code(400).send({ hata: 'Sınır dışı sonuçta farklı bir ikinci doğrulayan zorunludur.' });
     if (g.gecerlilik === 'Geçersiz' && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Geçersizlik gerekçesi zorunludur.' });
+    if (!(await (await import('./is_emri_bag.js')).isEmriGecerli(b.db, id, ((i.body ?? {}) as { isEmri?: string }).isEmri))) return y.code(400).send({ hata: 'İş emri bu dosyada bulunamadı veya geçerli değildir.' }); // YG-384
     return islem(async (c) => {
       const no = await altNumara(c, d.dosya_no, 'OL', 3);
       await c.query(`INSERT INTO olcum_kaydi (olcum_no, dosya_ref, bulgu_ref, olcum_noktasi, olculen_buyukluk, birim, yontem, cihaz, kalibrasyon_durumu, ham_veri, ozet_deger, nominal_deger, tolerans, gecerlilik, sinir_disi, ikinci_dogrulayan_ref, olcum_zamani, olcen_ref, onceki_ref, gecersizlik_gerekcesi) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
         [no, id, g.bulgu || null, g.nokta!.trim(), g.buyukluk!.trim(), g.birim!.trim(), g.yontem!.trim(), g.cihaz!.trim(), g.kalibrasyon, g.ham, g.deger, g.nominal ?? null, g.tolerans ?? null, g.gecerlilik, sinirDisi, g.ikinci ?? null, g.zaman ? new Date(g.zaman) : new Date(), o.kullanici, g.onceki ?? null, g.gerekce?.trim() || null]);
+      { const ie = ((i.body ?? {}) as { isEmri?: string }).isEmri; if (ie) await c.query(`UPDATE olcum_kaydi SET is_emri_ref = $2 WHERE olcum_no = $1`, [no, ie]); } // YG-384 (yukarıda doğrulandı)
       return { olcumNo: no, sinirDisi };
     });
   });

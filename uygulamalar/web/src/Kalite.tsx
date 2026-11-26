@@ -1,3 +1,4 @@
+import { IsEmriSec } from './IsEmriBag';
 import { OnayaGonder } from './Dugme';
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek } from './api';
@@ -57,7 +58,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
   const [n, setN] = useState({ kaynak: KAYNAK[0]!, yer: '', olcut: '', durum: '', sinif: 'Minör', emniyet: false, belge: '' });
   const [ks, setKs] = useState<Record<string, { karar: string; kanit: string }>>({});
   const [kn, setKn] = useState({ problem: '', dogrudan: '', katki: '', bariyer: '', kokNeden: '', tekrar: '' });
-  const [t, setT] = useState({ grup: GRUP[0]!, amac: '', yontem: '', olcut: '', durdurma: '' });
+  const [t, setT] = useState({ grup: GRUP[0]!, amac: '', yontem: '', olcut: '', durdurma: '' }); const [tIe, setTIe] = useState('');
   const [ts, setTs] = useState<Record<string, { sonuc: string; gerekce: string; ham: string; dis: string; ek?: Record<string, string> }>>({});
   const [gk, setGk] = useState<Record<string, string>>({});
   const [ie, setIe] = useState<{ kimlik: string; is_emri_no: string; statu: string; teknik_kabul?: string | null }[]>([]); const [kpk, setKpk] = useState<Record<string, string>>({});
@@ -170,7 +171,8 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
           <label htmlFor="ts-y">Yöntem</label><input id="ts-y" value={t.yontem} onChange={(e) => setT({ ...t, yontem: e.target.value })} />
           <label htmlFor="ts-o">Kabul Ölçütü (Test Sonrası Değişmez)</label><input id="ts-o" value={t.olcut} onChange={(e) => setT({ ...t, olcut: e.target.value })} />
           <label htmlFor="ts-d">Durdurma Koşulu</label><input id="ts-d" value={t.durdurma} onChange={(e) => setT({ ...t, durdurma: e.target.value })} />
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/test`, t), 'Test planlandı.')}>Testi Planla</button>
+          <IsEmriSec dosya={id} deger={tIe} degisti={setTIe} kimlik="ts-ie" />
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/test`, { ...t, isEmri: tIe || undefined }), 'Test planlandı.')}>Testi Planla</button>
         </>}
       </Blok>
       <KosulUzatma id={id} ds={roller.includes('Dosya Sorumlusu')} />

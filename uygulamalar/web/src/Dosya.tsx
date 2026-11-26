@@ -1,3 +1,4 @@
+import { IsEmriSec } from './IsEmriBag';
 import { OnayaGonder } from './Dugme';
 import { GarantiYanit } from './GarantiYanit';
 import { KontrolListeleri } from './KontrolListeleri';
@@ -247,7 +248,7 @@ function IhbarEkrani({ id, geri }: { id: string; geri: (dosya?: string) => void 
 function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; roller: string[] }) {
   const [d, setD] = useState<DosyaAyrinti | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const [yd, setYd] = useState<Record<string, string> | null>(null); const [tBit, setTBit] = useState<Record<string, string>>({}); const [alt, setAlt] = useState({ tanim: '', gerekce: '' }); const [birA, setBirA] = useState(''); const [birG, setBirG] = useState(''); const [rol, setRol] = useState(''); const [adaylar, setAdaylar] = useState<{ kimlik: string; ad_soyad: string; oran: number | null }[]>([]); const [kisi, setKisi] = useState(''); const [devir, setDevir] = useState('');
-  const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bKanit, setBKanit] = useState('');
+  const [belgeler, setBelgeler] = useState<Belge[]>([]); const [bNeden, setBNeden] = useState(BEKLEME[0]!); const [bSorumlu, setBSorumlu] = useState(''); const [bTarih, setBTarih] = useState(''); const [bIe, setBIe] = useState(''); const [bKanit, setBKanit] = useState('');
   const [oYeni, setOYeni] = useState(''); const [oGerekce, setOGerekce] = useState(''); const [aGerekce, setAGerekce] = useState('');
   const [gnsl, setGnsl] = useState(''); const [drn, setDrn] = useState('');
   const [kTur, setKTur] = useState('İş'); const [kBaslik, setKBaslik] = useState(''); const [kOlcut, setKOlcut] = useState(''); const [kBelge, setKBelge] = useState(''); const [kSahip, setKSahip] = useState(''); const [kTarih, setKTarih] = useState(''); const [boy, setBoy] = useState(''); const [govde, setGovde] = useState(''); const [tahrik, setTahrik] = useState(''); const [kaynak, setKaynak] = useState('Ruhsat');
@@ -349,7 +350,8 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         <label htmlFor="k-s">Sorumlu</label><select id="k-s" value={bSorumlu} onChange={(e) => setBSorumlu(e.target.value)}><option value="">Seçiniz</option>{[...new Map(d.ekip.map((e) => [e.kullanici, e])).values()].map((e) => <option key={e.kullanici} value={e.kullanici}>{e.ad_soyad}</option>)}</select>
         <label htmlFor="k-t">Hedef Tarih</label><input id="k-t" type="date" value={bTarih} onChange={(e) => setBTarih(e.target.value)} />
         <label htmlFor="k-k">Kanıt Belgesi</label><select id="k-k" value={bKanit} onChange={(e) => setBKanit(e.target.value)}><option value="">Seçiniz</option>{belgeler.map((b) => <option key={b.kimlik} value={b.kimlik}>{b.ad}</option>)}</select>
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/beklemede`, { neden: bNeden, sorumlu: bSorumlu, hedefTarih: bTarih, kanitBelge: bKanit }))}>İşareti Aç</button>
+        <IsEmriSec dosya={id} deger={bIe} degisti={setBIe} kimlik="b-ie" />
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/beklemede`, { neden: bNeden, sorumlu: bSorumlu, hedefTarih: bTarih, kanitBelge: bKanit, isEmri: bIe || undefined }))}>İşareti Aç</button>
       </Blok>}
       <Blok baslik="Açık Konular">
         {d.konular.length === 0 && <div className="not">Açık konu bulunmamaktadır.</div>}

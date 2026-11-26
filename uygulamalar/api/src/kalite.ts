@@ -83,7 +83,7 @@ export async function kabulEngeli(db: Db, e: { kimlik: string; dosya_ref: string
   if (acik.some((n) => n.sinif === 'Majör')) return 'Koşullu kabul yalnız Minör açık işler için verilir; Majör uygunsuzluk açıktır.';
   if (sonuc === 'Kabul' && acik.some((n) => n.sinif === 'Minör')) return 'Açık Minör uygunsuzluk varken yalnız koşullu kabul verilir.';
   // Yenilenmemiş son testler bakılır; yeniden test başarılıysa önceki başarısız kayıt kalır ama kapıyı tutmaz.
-  if ((await db.query(`SELECT 1 FROM test_kaydi t WHERE t.dosya_ref = $1 AND (t.sonuc = 'Başarısız' OR t.durum <> 'Tamamlandı') AND NOT EXISTS (SELECT 1 FROM test_kaydi n WHERE n.onceki_test_ref = t.kimlik) LIMIT 1`, [e.dosya_ref])).rowCount) return 'Kabul için Başarısız veya tamamlanmamış testin sonuçlanması bekleniyor.';
+  if ((await db.query(`SELECT 1 FROM test_kaydi t WHERE t.dosya_ref = $1 AND (t.is_emri_ref IS NULL OR t.is_emri_ref = $2) AND (t.sonuc = 'Başarısız' OR t.durum <> 'Tamamlandı') AND NOT EXISTS (SELECT 1 FROM test_kaydi n WHERE n.onceki_test_ref = t.kimlik) LIMIT 1`, [e.dosya_ref, e.kimlik])).rowCount) return 'Kabul için Başarısız veya tamamlanmamış testin sonuçlanması bekleniyor.';
   if (sonuc === 'Kabul' && (await db.query(`SELECT 1 FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı' AND g.durum = 'Açık' LIMIT 1`, [e.dosya_ref])).rowCount) return 'Teknik kabul için kanıta bağlanmamış gerekliliğin tamamlanması bekleniyor.';
   return null;
 }
@@ -438,10 +438,12 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (/^\s*(normal|iyi|uygun|çalışıyor)\s*\.?\s*$/i.test(g.olcut)) return y.code(400).send({ hata: 'Kabul ölçütünü ölçülebilir biçimde yazmanızı rica ederiz.' });
     const cihaz = g.cihazlar ?? [];
     for (const c of (await b.db.query(`SELECT ad, kalibrasyon_tarihi, aralik_ay, kabul, durum, kritik, ara_dogrulama_tarihi FROM olcum_cihazi WHERE kimlik = ANY($1::uuid[])`, [cihaz])).rows) if (!cihazGecerli(c)) return y.code(409).send({ hata: `${c.ad} kalibrasyonu geçersizdir; testte geçerli bir cihaz seçmenizi rica ederiz.` });
+    if (!(await (await import('./is_emri_bag.js')).isEmriGecerli(b.db, id, ((i.body ?? {}) as { isEmri?: string }).isEmri))) return y.code(400).send({ hata: 'İş emri bu dosyada bulunamadı veya geçerli değildir.' }); // YG-384
     return islem(async (c) => {
       const d = (await c.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       const no = await altNumara(c, d.dosya_no, 'TS');
       const r = (await c.query(`INSERT INTO test_kaydi (test_no, dosya_ref, onceki_test_ref, test_grubu, amac_kapsam, yontem, kabul_olcutu, durdurma_kosulu, cihazlar, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [no, id, g.onceki ?? null, g.grup, g.amac!.trim(), g.yontem!.trim(), g.olcut!.trim(), g.durdurma!.trim(), cihaz, o.kullanici])).rows[0];
+      await (await import('./is_emri_bag.js')).isEmriBagla(c, 'test_kaydi', r.kimlik, id, ((i.body ?? {}) as { isEmri?: string }).isEmri); // YG-384
       return { kimlik: r.kimlik, testNo: no };
     });
   });

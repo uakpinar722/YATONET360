@@ -1,3 +1,4 @@
+import { Izlenebilirlik } from './IsEmriBag';
 import { ArayuzMetni } from './ArayuzMetni';
 import { OnayaGonder } from './Dugme';
 import { DurumSayilari } from './DurumSayilari';
@@ -337,6 +338,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
               {e.statu === 'Başlangıç Kontrolünde' && tu && <BaslangicKontrolu kimlik={e.kimlik} yap={yap} />}
               {['Aktif', 'Tamamlandı'].includes(e.statu) && tu && <IlerlemeDogrula isEmri={e.kimlik} />}
               {!['Taslak', 'İç Onayda', 'İptal'].includes(e.statu) && <SahaKayitlari isEmri={e.kimlik} />}
+              {!['Taslak', 'İptal'].includes(e.statu) && <Izlenebilirlik isEmri={e.kimlik} />}
               {e.statu === 'Tamamlandı' && tu && <><label htmlFor={`gk-${e.kimlik}`}>Garanti Kaynağı (garanti tanımlıysa)</label><select id={`gk-${e.kimlik}`} value={gKay[e.kimlik] ?? ''} onChange={(x) => setGKay({ ...gKay, [e.kimlik]: x.target.value })}><option value="">Seçiniz</option>{['İşçilik', 'Firma Tedariki', 'Üretici', 'Müşteri Tedariki'].map((k) => <option key={k}>{k}</option>)}</select>{/* YG-082 */}<button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/teknik-kabul`, { sonuc: 'Kabul', garantiKaynagi: gKay[e.kimlik] || undefined }), 'Teknik kabul kaydedildi.')}>Teknik Kabul</button></>}
               {e.statu === 'Tamamlandı' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/kapat`, {}))}>Kapat</button>}
               {['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'].includes(e.statu) && rollerim.includes('Dosya Sorumlusu') && <FirmaBirakti kimlik={e.kimlik} yap={yap} />}

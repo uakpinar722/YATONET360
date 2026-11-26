@@ -95,9 +95,11 @@ export function tedarikYollari(s: FastifyInstance, b: Baglam) {
     // YG-823: onaylı dosya bütçesi varsa sipariş, gerçekleşen ve açık taahhütle birlikte güncel bütçe + kalan risk rezervini aşamaz.
     { const bt = await (await import('./risk_rezervi.js')).dosyaButcesi(b.db, id);
       if (bt.guncelButce > 0 && R2(bt.bitisTahmini + matrah) > R2(bt.guncelButce + bt.rezervKalan)) return y.code(409).send({ hata: `Sipariş dosya bütçesini aşıyor (bütçe ${tutar(bt.guncelButce)} EUR, tahmini bitiş ${tutar(R2(bt.bitisTahmini + matrah))} EUR); değişiklik kaydı veya risk rezervi kullanım talebi gerekir.` }); }
+    if (!(await (await import('./is_emri_bag.js')).isEmriGecerli(b.db, id, ((i.body ?? {}) as { isEmri?: string }).isEmri))) return y.code(400).send({ hata: 'İş emri bu dosyada bulunamadı veya geçerli değildir.' }); // YG-384
     return islem(async (c) => {
       const no = await disNumara(c, 'SP'); // YG-298: dosya kimliği tedarikçiye görünmez
       const r = (await c.query(`INSERT INTO tedarik_siparisi (siparis_no, dosya_ref, kurulus_ref, tedarikci_teklif_ref, nihai_kullanim_yeri, kdv_haric_eur, kdv_eur, toplam_eur, teslim_tarihi, teslim_yeri, kismi_teslim_izni, kabul_olcutu, secim_gerekcesi, hazirlayan_ref, dil, kritik_sinif, belge_giris_sartlari) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik`, [no, id, g.tedarikci, g.teklifRef!.trim(), g.kullanim!.trim(), matrah, kdv, R2(matrah + kdv), g.teslimTarihi, g.teslimYeri!.trim(), Boolean(g.kismi), g.olcut!.trim(), g.gerekce!.trim(), o.kullanici, g.dil === 'İngilizce' ? 'İngilizce' : 'Türkçe', ks, bs])).rows[0];
+      await (await import('./is_emri_bag.js')).isEmriBagla(c, 'tedarik_siparisi', r.kimlik, id, ((i.body ?? {}) as { isEmri?: string }).isEmri); // YG-384
       let n = 0;
       for (const k of kl) await c.query(`INSERT INTO tedarik_siparisi_kalemi (siparis_ref, satir_no, urun_tanimi, uretici_parca_no, miktar, birim, birim_bedel_eur, toplam_eur, muadil_orijinal_no) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [r.kimlik, ++n, k.tanim!.trim(), k.parcaNo!.trim(), k.miktar, k.birim!.trim(), k.bedel, R2(Number(k.miktar) * Number(k.bedel)), k.muadilOrijinal?.trim() || null]);
       // YG-868: teslim süresi 14 günü aşan parça uzun terminlidir; onay zincirinin sonuna GMY eklenir.

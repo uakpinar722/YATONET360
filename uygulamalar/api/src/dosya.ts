@@ -792,7 +792,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     return { kimlik: r.kimlik, kaynakYetkili: yetkili };
   });
   s.post('/dosya/:id/beklemede', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; sorumlu?: string; hedefTarih?: string; kanitBelge?: string; mesaj?: string; tedarikciKaynakli?: boolean };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; sorumlu?: string; hedefTarih?: string; kanitBelge?: string; mesaj?: string; tedarikciKaynakli?: boolean; isEmri?: string };
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
     if (['Kapalı'].includes(d.statu)) return y.code(409).send({ hata: 'Beklemede işareti açık dosyalarda kullanılır.' });
@@ -803,14 +803,16 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (!g.hedefTarih || g.hedefTarih <= bugun) return y.code(400).send({ hata: 'Hedef tarih bugünden sonra olmalıdır.' });
     if (!g.kanitBelge || !UUID.test(g.kanitBelge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.kanitBelge, id])).rowCount) return y.code(400).send({ hata: 'İşaret için önce kanıt belgesini dosyaya yüklemenizi rica ederiz.' });
     if (g.mesaj && /firma|çözüm ortağı/i.test(g.mesaj)) return y.code(400).send({ hata: 'Durum mesajında firma bilgisine yer vermemenizi rica ederiz.' });
-    const durur = n.aciklama.includes('sayaç işler') ? false : g.neden === 'Parça' ? Boolean(g.tedarikciKaynakli) : true;
-    if ((await b.db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND neden = $2 AND kaldirilma_zamani IS NULL`, [id, g.neden])).rowCount) return y.code(409).send({ hata: 'Bu nedenle açık işaret vardır.' });
+    // YG-068 (PKT-1): işaret iş emrine (paket) de konabilir; dosya statüsü ve dosya sayaçları değişmez, yat tarafına ileti gitmez.
+    if (g.isEmri && !(await (await import('./is_emri_bag.js')).isEmriGecerli(b.db, id, g.isEmri))) return y.code(400).send({ hata: 'İş emri bu dosyada bulunamadı veya geçerli değildir.' });
+    const durur = g.isEmri ? false : n.aciklama.includes('sayaç işler') ? false : g.neden === 'Parça' ? Boolean(g.tedarikciKaynakli) : true;
+    if ((await b.db.query(`SELECT 1 FROM beklemede_isareti WHERE dosya_ref = $1 AND neden = $2 AND kaldirilma_zamani IS NULL AND kayit_referansi IS NOT DISTINCT FROM $3`, [id, g.neden, g.isEmri || null])).rowCount) return y.code(409).send({ hata: 'Bu nedenle açık işaret vardır.' });
     // YG-046: süreyi durduran işaret yalnız Dosya Sorumlusu, dosyanın Operasyon Yöneticisi veya Operasyon Müdürünce konur.
     if (durur && !(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2 UNION ALL SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = 'Operasyon Yöneticisi' AND bitis_zamani IS NULL UNION ALL SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $2 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Operasyon Müdürü' LIMIT 1`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Süreyi durduran Beklemede işaretini Dosya Sorumlusu, Operasyon Yöneticisi veya Operasyon Müdürü koyar.' });
-    const r = (await b.db.query(`INSERT INTO beklemede_isareti (dosya_ref, neden, sorumlu_ref, hedef_tarih, durum_mesaji, kanit_belge_ref, sayac_durur, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING kimlik`, [id, g.neden, g.sorumlu, g.hedefTarih, g.mesaj?.trim() || null, g.kanitBelge, durur, o.kullanici])).rows[0];
+    const r = (await b.db.query(`INSERT INTO beklemede_isareti (dosya_ref, neden, sorumlu_ref, hedef_tarih, durum_mesaji, kanit_belge_ref, sayac_durur, olusturan_ref, kayit_turu, kayit_referansi) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING kimlik`, [id, g.neden, g.sorumlu, g.hedefTarih, g.mesaj?.trim() || null, g.kanitBelge, durur, o.kullanici, g.isEmri ? 'İş Emri' : 'Dosya', g.isEmri || null])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Beklemede İşareti', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { neden: g.neden, hedef: g.hedefTarih }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     // BLD-06: Müşteri kararı ve bilgi dışında yat tarafı bilgilendirilir. Vefat işaretinde otomatik ileti durur (YG-1477).
-    if (!d.vefat_isareti) {
+    if (!d.vefat_isareti && !g.isEmri) {
       const t = (await b.db.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [id])).rows[0];
       if (t) await yatTarafinaYaz(b.db, { olay: `bld06:${r.kimlik}`, kod: 'BLD-06', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Beklemede`, telefon: t.telefon, eposta: t.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, neden: g.neden!.toLocaleLowerCase('tr'), reason: g.neden!, 'bağlantı': b.webAdresi, link: b.webAdresi } });
     }

@@ -1,3 +1,4 @@
+import { IsEmriSec } from './IsEmriBag';
 import { OnayaGonder } from './Dugme';
 import { eur as eurB } from './bicim';
 import { ImzaliNusha } from './ImzaliNusha';
@@ -206,7 +207,7 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
   const [bg, setBg] = useState(''); // YG-1867
   const [yd, setYd] = useState({ mevcut: '', yeni: '' }); // YG-1864
   const [islak, setIslak] = useState(''); // YG-1433
-  const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null);
+  const [on, setOn] = useState({ ony: 'ONY-03', parca: '', tutar: '', zaman: '', kayitNo: '', teklifNo: '', yapilmayanIs: '', teknikEtki: '', kullanimSiniri: '', onerilenKontrol: '' }); const [tes, setTes] = useState({ aliciTuru: 'Yetkili Temsilci', alici: '' }); const [foto, setFoto] = useState(''); const [ka, setKa] = useState({ teslimAlan: 'LGM', envanter: '', anahtarlar: '', sayaclar: '', yakit: '' }); const [kaF, setKaF] = useState(''); const [pa, setPa] = useState(''); const [paIe, setPaIe] = useState(''); const [parca, setParca] = useState<{ kimlik: string; parca_adi: string; sonuc?: string | null; secim: string | null; son_tarih: string }[]>([]); const [hs, setHs] = useState<Record<string, number> | null>(null);
   const [ps, setPs] = useState<Record<string, { foto?: string; sigorta?: string; akibet?: string }>>({});
   const yp = () => istek<typeof parca>(`/dosya/${id}/sokulen-parca`).then(setParca);
   useEffect(() => { void yp().catch(() => {}); }, [id]);
@@ -292,7 +293,8 @@ function TeslimIslemleri({ id, yap }: { id: string; yap: Yap }) {
         {['Hurda', 'Çevresel Bertaraf'].includes(ps[p.kimlik]?.akibet ?? '') && <BelgeSec ad="Sigorta İmha Onayı (sigortalı dosyada)" bagTuru="Dosya" bagKimligi={id} deger={ps[p.kimlik]?.sigorta ?? ''} sec={(x) => setPs({ ...ps, [p.kimlik]: { ...ps[p.kimlik], sigorta: x } })} />}
         <button className="btn2 kucuk" disabled={!ps[p.kimlik]?.foto || !ps[p.kimlik]?.akibet} onClick={() => void yap(() => istek(`/sokulen-parca/${p.kimlik}/sonuc`, { akibet: ps[p.kimlik]?.akibet, foto: ps[p.kimlik]?.foto, sigortaOnay: ps[p.kimlik]?.sigorta || undefined }).then(yp), 'Parça sonucu kaydedildi.')}>Sonucu Kaydet</button></div>}</div>)}
     <label htmlFor="sp-a">Parça Adı</label><input required id="sp-a" value={pa} onChange={(e) => setPa(e.target.value)} />
-    <button className="btn2 kucuk" disabled={!pa.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/sokulen-parca`, { ad: pa }).then(() => { setPa(''); return yp(); }), 'Parça eklendi.')}>Parça Ekle</button>
+    <IsEmriSec dosya={id} deger={paIe} degisti={setPaIe} kimlik="sp-ie" />
+    <button className="btn2 kucuk" disabled={!pa.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/sokulen-parca`, { ad: pa, isEmri: paIe || undefined }).then(() => { setPa(''); return yp(); }), 'Parça eklendi.')}>Parça Ekle</button>
   </>);
 }
 

@@ -418,3 +418,30 @@ describe('uzun terminli parça (YG-868)', () => {
     expect((await o.sup.query(`SELECT uzun_terminli FROM tedarik_siparisi WHERE kimlik = $1`, [uzun.json().kimlik])).rows[0].uzun_terminli).toBe(true);
   });
 });
+
+describe('iş emri izlenebilirliği (YG-384, YG-004; PKT-1 iş paketi = iş emri)', () => {
+  it('test iş emrine bağlanır, başka dosyanın iş emri kabul edilmez; başarısız test yalnız kendi iş emrinin kabulünü tutar', async () => {
+    const d2 = await dosya(); const d = await dosya(); const kk = await o.gir('kk');
+    const e1 = await isEmri(d); const e2 = await isEmri(d); const yabanci = await isEmri(d2);
+    const T = { grup: 'Makine ve Tahrik', amac: 'A', yontem: 'Y', olcut: '5 bar', durdurma: 'D' };
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/test`, kk, { ...T, isEmri: yabanci })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/test`, kk, { ...T, isEmri: e1 }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT is_emri_ref FROM test_kaydi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].is_emri_ref).toBe(e1);
+    expect(await kabulEngeli(o.db, { kimlik: e1, dosya_ref: d.kimlik }, 'Kabul')).toContain('test'); // tamamlanmamış test kendi iş emrini tutar
+    const e2Engel = await kabulEngeli(o.db, { kimlik: e2, dosya_ref: d.kimlik }, 'Kabul'); expect(e2Engel ?? '').not.toMatch(/test/i);
+    const iz = await o.ist('GET', `/api/is-emri/${e1}/izlenebilirlik`, await o.gir('ds')); expect(iz.statusCode, iz.body).toBe(200);
+    expect(iz.json().testler).toHaveLength(1);
+  });
+});
+
+describe('iş emri Beklemede işareti (YG-068; PKT-1)', () => {
+  it('işaret iş emrine konur; dosya sayacı durmaz, dosya statüsü korunur, aynı neden iş emri başına bir kez; başka dosyanın iş emri kabul edilmez', async () => {
+    const d2 = await dosya(); const d = await dosya(); const ds = await o.gir('ds'); const e = await isEmri(d); const yabanci = await isEmri(d2);
+    const B = async (x: object) => o.ist('POST', `/api/dosya/${d.kimlik}/beklemede`, ds, { neden: 'Hava', sorumlu: o.K.ds, hedefTarih: '2099-01-01', kanitBelge: await o.belge(d.kimlik, 'ds'), ...x });
+    expect((await B({ isEmri: yabanci })).statusCode).toBe(400);
+    const r = await B({ isEmri: e }); expect(r.statusCode, r.body).toBe(200); expect(r.json().sayacDurur).toBe(false);
+    expect((await o.sup.query(`SELECT kayit_turu, kayit_referansi FROM beklemede_isareti WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ kayit_turu: 'İş Emri', kayit_referansi: e });
+    expect((await B({ isEmri: e })).statusCode).toBe(409);
+    expect((await B({})).statusCode).toBe(200); // dosya düzeyindeki işaret ayrıdır
+  });
+});
