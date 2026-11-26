@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -16,7 +17,7 @@ export function Entegrasyonlar() {
       {x.durum === 'Üretimde' && v.hazirlar && <div className="tam"><select aria-label="Askı Nedeni" value={a.neden} onChange={(e) => setA({ ...a, neden: e.target.value })}><option>Güvenlik Olayı</option><option>Ciddi Veri Uyuşmazlığı</option></select>{ASKI.map(([k, et]) => <span key={k}><label htmlFor={`ea-${k}-${x.kimlik}`}>{et}</label><input id={`ea-${k}-${x.kimlik}`} value={a[k] ?? ''} onChange={(e) => setA({ ...a, [k]: e.target.value })} /></span>)}<button className="btn2 kucuk" onClick={() => is(istek(`/entegrasyon/${x.kimlik}/askiya-al`, a), 'Bağlantı askıya alındı.')}>Askıya Al</button></div>}
       {x.durum === 'Askıda' && <div className="tam"><label htmlFor={`eo-${x.kimlik}`}>Ölçüt Karşılandı Gerekçesi</label><input id={`eo-${x.kimlik}`} value={a[`o${x.kimlik}`] ?? ''} onChange={(e) => setA({ ...a, [`o${x.kimlik}`]: e.target.value })} /><button className="btn2 kucuk" onClick={() => is(istek(`/entegrasyon/${x.kimlik}/yeniden-ac`, { olcutKarsilandi: true, gerekce: a[`o${x.kimlik}`] }), 'Bağlantı yeniden açıldı.')}>Yeniden Aç</button></div>}</div>)}
     {v.hazirlar && <>{ALAN.map(([k, et]) => <span key={k}><label htmlFor={`en-${k}`}>{et}</label><input id={`en-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></span>)}<label htmlFor="en-bs">Bilgi Sınıfı</label><select id="en-bs" value={f.bilgiSinifi} onChange={(e) => setF({ ...f, bilgiSinifi: e.target.value })}>{v.siniflar.map((x) => <option key={x}>{x}</option>)}</select>
-      <button className="btn2 kucuk" onClick={() => is(istek('/entegrasyon', f), 'Tanım onaya gönderildi.')}>Onaya Gönder</button></>}</details>;
+      <OnayaGonder rol="Bilgi Teknolojileri ve Firma Yönetimi Direktörü" className="btn2 kucuk" onClick={() => is(istek('/entegrasyon', f), 'Tanım onaya gönderildi.')}>Onaya Gönder</OnayaGonder></>}</details>;
 }
 
 /** YG-1309: karantinadaki entegrasyon kayıtları; yetkili karar ve gerekçeyle elle uzlaştırır (en yeni zaman damgası kendiliğinden doğru sayılmaz). */

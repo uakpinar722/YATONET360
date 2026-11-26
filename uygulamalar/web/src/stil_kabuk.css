@@ -146,3 +146,18 @@ table.kapsama td.ks-2 { background: #c8e6c9; color: #1b5e20; }
 .sayilar .sayi { background: #fff; border: 1px solid var(--ciz); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; }
 .sayilar .sayi b { font-size: 22px; color: var(--lac); }
 .sayilar .sayi span { font-size: 12.5px; }
+/* YG-1591: düğme standardı — Onaya Gönder / Onayla yeşil, Gerekçeyle İade Et / Reddet kırmızı; Onaya Gönder'in üstünde Gönderilecek satırı. */
+.btn2.evet { background: #1E6B3A; border-color: #1E6B3A; color: #fff; }
+.btn2.hayir { background: var(--hata); border-color: var(--hata); color: #fff; }
+.onaya-gonder { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin-top: 8px; }
+.onaya-gonder > .btn { margin-top: 0; }
+.onaya-gonder > .btn2.kucuk { margin-top: 0; }
+.dugmeler .onaya-gonder { display: inline-flex; margin-top: 0; }
+.gonderilecek { font-size: 13px; color: var(--gri); }
+/* YG-1370: başlık şeridi — belgelerdeki numaralı başlık şeridinin ekran karşılığı; sayfadaki bölümler sırayla otomatik numaralanır, alttaki kutuya bitişir. */
+main { counter-reset: bolum; }
+main .bolum { counter-increment: bolum; background: var(--lac); color: #fff; font-size: 16.5px; padding: 7px 14px; border-radius: 8px; margin: 22px 0 0; }
+main .bolum::before { content: counter(bolum) ". "; color: var(--abz); }
+main .bolum.numarali::before { content: none; }
+main .bolum:has(+ .ozet) { border-radius: 8px 8px 0 0; }
+main .bolum + .ozet { margin-top: 0; border-top-left-radius: 0; border-top-right-radius: 0; }

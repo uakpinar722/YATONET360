@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
@@ -14,7 +15,7 @@ export function TeknikCizim({ dosya }: { dosya: string }) {
   return <details><summary>Teknik Çizimler · {v.cizimler.length}</summary>{m && <div className="not" role="status">{m}</div>}
     {v.cizimler.map((c) => <div className={c.durum === 'Onaylı' ? 'soru' : 'soru hata'} key={c.kimlik}><span>{c.cizim_no} · {c.ad} · Ölçek {c.olcek} · Rev.{c.revizyon} · {c.durum}</span>
       <div className="dugmeler"><a className="btn2 kucuk" href={`/api/teknik-cizim/${c.kimlik}/pdf`} target="_blank" rel="noreferrer">PDF</a>
-        {c.benim && c.durum === 'Taslak' && <button className="btn2 kucuk" onClick={() => is(istek(`/teknik-cizim/${c.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi: Teknik Yönetici.')}>Onaya Gönder</button>}
+        {c.benim && c.durum === 'Taslak' && <OnayaGonder rol="Teknik Yönetici" className="btn2 kucuk" onClick={() => is(istek(`/teknik-cizim/${c.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi: Teknik Yönetici.')}>Onaya Gönder</OnayaGonder>}
         {v.hazirlar && c.durum === 'Onaylı' && <><label htmlFor={`cz-r-${c.kimlik}`}>Revizyon Açıklaması</label><input id={`cz-r-${c.kimlik}`} value={rv[c.kimlik] ?? ''} onChange={(e) => setRv({ ...rv, [c.kimlik]: e.target.value })} />
           <button className="btn2 kucuk" onClick={() => is(istek(`/teknik-cizim/${c.kimlik}/revizyon`, { aciklama: rv[c.kimlik] }), 'Yeni revizyon taslak olarak açıldı.')}>Revizyon Aç</button></>}</div></div>)}
     {v.hazirlar && <div className="izgara"><b>Yeni Çizim</b>

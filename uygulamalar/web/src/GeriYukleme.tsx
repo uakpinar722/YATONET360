@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { tarihSaat } from './bicim';
 import { istek } from './api';
@@ -28,7 +29,7 @@ export function YedekIslemTalebi() {
     <label htmlFor="yi-i">İşlem</label><select id="yi-i" value={f.islem} onChange={(e) => setF({ ...f, islem: e.target.value })}>{['İndirme', 'Silme', 'Saklama Süresi Değişikliği', 'Geri Yükleme'].map((x) => <option key={x}>{x}</option>)}</select>
     {sure && <><label htmlFor="yi-s">Yeni Saklama Süresi (gün)</label><input required id="yi-s" type="number" min={1} value={f.gun} onChange={(e) => setF({ ...f, gun: e.target.value })} /></>}
     <label htmlFor="yi-g">Gerekçe</label><input required id="yi-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
-    <button className="btn2 kucuk" disabled={!f.yedek || !f.gerekce.trim() || (sure && !f.gun)} onClick={() => void istek(`/yedek/${f.yedek}/islem-talebi`, { islem: f.islem, gerekce: f.gerekce, gun: sure ? Number(f.gun) : undefined }).then(() => { setM('Talep onaya gönderildi.'); setF({ ...f, gerekce: '', gun: '' }); yukle(); }).catch((e) => setM(e.message))}>Onaya Gönder</button>
+    <OnayaGonder rol="Bilgi İşlem Müdürü" className="btn2 kucuk" disabled={!f.yedek || !f.gerekce.trim() || (sure && !f.gun)} onClick={() => void istek(`/yedek/${f.yedek}/islem-talebi`, { islem: f.islem, gerekce: f.gerekce, gun: sure ? Number(f.gun) : undefined }).then(() => { setM('Talep onaya gönderildi.'); setF({ ...f, gerekce: '', gun: '' }); yukle(); }).catch((e) => setM(e.message))}>Onaya Gönder</OnayaGonder>
     {t.length > 0 && <table className="tablo"><thead><tr><th>Yedek</th><th>İşlem</th><th>Gerekçe</th><th>Durum</th></tr></thead><tbody>{t.map((x) => <tr key={x.kimlik}><td>{tarihSaat(x.baslangic)} · {x.tur}</td><td>{x.islem}{x.yeni_saklama_gun ? ` (${x.yeni_saklama_gun} gün)` : ''}</td><td>{x.gerekce}</td><td>{x.durum}</td></tr>)}</tbody></table>}
   </details>;
 }

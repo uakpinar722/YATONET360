@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { GarantiYanit } from './GarantiYanit';
 import { KontrolListeleri } from './KontrolListeleri';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
@@ -48,7 +49,7 @@ const BEKLEME = ['Bilgi', 'Uzman Görüşü', 'Eksper', 'Sigorta Onayı', 'Müş
 /** YG-034, YG-035: renk risk düzeyine göre. YG-1579: Kritik kırmızı, Yüksek sarı, Normal ve Planlı gri. */
 export const Oncelik = ({ o }: { o: string }) => <span className={`oncelik o-${o === 'Kritik' ? 'k' : o === 'Yüksek' ? 'y' : 'g'}`}>{o}</span>;
 const Sayac = ({ s }: { s: Sure }) => s.tamamlanma ? <>Tamamlandı · {saat(s.tamamlanma)}</> : <span className={`sure s-${s.renk === 'kırmızı' ? 'k' : s.renk === 'sarı' ? 's' : 'y'}`}>Son: {saat(s.bitis)}{s.kaydirma_notu ? ` · ${s.kaydirma_notu}` : ''}{s.baslangic_olayi ? ` · Başlangıç: ${saat(s.baslangic)} (${s.baslangic_olayi})` : ''}{s.sozlesme ? ` · Sözleşme Taahhüdü: ${s.sozlesme}` : ''}</span>;
-const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => <><div className="bolum">{baslik}</div><div className="ozet">{children}</div></>;
+const Blok = ({ baslik, children }: { baslik: string; children: ReactNode }) => <><div className={/^\d+\. /.test(baslik) ? 'bolum numarali' : 'bolum'}>{baslik}</div><div className="ozet">{children}</div></>;
 
 export function Dosyalar({ ben, acikDosya, acildi }: { ben: Ben; acikDosya: string | null; acildi: () => void }) {
   const ihbarci = ben.izinler.includes('ihbar.kaydet'); const tumu = ben.izinler.includes('dosya.tum');
@@ -514,7 +515,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         <Blok baslik="Kapanış Kontrolü">
           <label htmlFor="kp-n">Kapanma Nedeni (Kapalı için)</label><select id="kp-n" value={kNeden} onChange={(e) => setKNeden(e.target.value)}><option value="">Seçiniz</option>{KAPANMA.map((x) => <option key={x}>{x}</option>)}</select>
           <label className="kutu"><input type="checkbox" checked={beyan} onChange={(e) => setBeyan(e.target.checked)} /><span>Bu dosyayla ilgili aktarılmamış yazışma yok</span></label>
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kapanis`, { cikis: d.statu === 'Teknik Kapalı' ? 'Kapalı' : 'Teknik Kapalı', neden: kNeden || undefined, yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: beyan }), 'Operasyon Müdürünün onayına gönderildi.')}>{d.statu === 'Teknik Kapalı' ? 'Kapanışı Onaya Gönder' : 'Teknik Kapanışı Onaya Gönder'}</button>
+          <OnayaGonder rol="Operasyon Müdürü" className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kapanis`, { cikis: d.statu === 'Teknik Kapalı' ? 'Kapalı' : 'Teknik Kapalı', neden: kNeden || undefined, yetkiKapsam: true, uygulama: true, testKabul: true, acikKonu: true, garanti: true, arsiv: true, yazismaBeyani: beyan }), 'Operasyon Müdürünün onayına gönderildi.')}>{d.statu === 'Teknik Kapalı' ? 'Kapanışı Onaya Gönder' : 'Teknik Kapanışı Onaya Gönder'}</OnayaGonder>
         </Blok>
         {d.yat.lehtar_var && <Blok baslik="FR-HUK-003 Lehtar Muvafakatı">
           <div className="not">{d.yat.lehtar_muvafakati_ref ? 'Lehtar muvafakati girilmiştir.' : 'Lehtar muvafakati girilmeden teklif onayı açılmaz.'}</div>
@@ -530,7 +531,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
           <label htmlFor="is-y">Yapılan İşler</label><input id="is-y" value={iYapilan} onChange={(e) => setIYapilan(e.target.value)} />
           <label htmlFor="is-a">Açık İşler</label><input id="is-a" value={iAcik} onChange={(e) => setIAcik(e.target.value)} />
           <label htmlFor="is-e">Teslim Edilenler</label><input id="is-e" value={iTeslim} onChange={(e) => setITeslim(e.target.value)} />
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/islem`, { tur: iTur, neden: iNeden || undefined, devralan: iDev || undefined, gerekce: iGer, talepEden: 'Dosya Sorumlusu', yatDurumu: d.talep.yat_mevcut_durumu, yapilan: iYapilan, acik: iAcik, teslim: iTeslim }), 'Operasyon Müdürünün onayına gönderildi.')}>Tutanağı Onaya Gönder</button>
+          <OnayaGonder rol="Operasyon Müdürü" className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/islem`, { tur: iTur, neden: iNeden || undefined, devralan: iDev || undefined, gerekce: iGer, talepEden: 'Dosya Sorumlusu', yatDurumu: d.talep.yat_mevcut_durumu, yapilan: iYapilan, acik: iAcik, teslim: iTeslim }), 'Operasyon Müdürünün onayına gönderildi.')}>Tutanağı Onaya Gönder</OnayaGonder>
         </Blok>
       </>}
       <Blok baslik="Kontrol Listeleri"><KontrolListeleri dosya={id} kayitlar={v.kontrolListeleri} yap={yap} /></Blok>
@@ -574,7 +575,7 @@ function YenidenAc({ id, yap }: { id: string; yap: (f: () => Promise<any>, tamam
   return <Blok baslik="Yeniden Açma Talebi">
     <label htmlFor="ya-t">Gerekçe Türü</label><select required id="ya-t" value={tur} onChange={(e) => setTur(e.target.value)}><option value="">Seçiniz</option>{['Yeni Bilgi', 'Hata', 'Müşteri Bildirimi'].map((x) => <option key={x}>{x}</option>)}</select>
     <label htmlFor="ya-g">Yeniden Açma Gerekçesi</label><textarea required id="ya-g" value={g} onChange={(e) => setG(e.target.value)} />
-    <button className="btn2" disabled={!tur || !g.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/yeniden-ac`, { tur, gerekce: g }), 'Yeniden açma talebi Operasyon Müdürü onayına gönderildi.')}>Onaya Gönder</button>
+    <OnayaGonder rol="Operasyon Müdürü" className="btn2" disabled={!tur || !g.trim()} onClick={() => void yap(() => istek(`/dosya/${id}/yeniden-ac`, { tur, gerekce: g }), 'Yeniden açma talebi Operasyon Müdürü onayına gönderildi.')}>Onaya Gönder</OnayaGonder>
   </Blok>;
 }
 

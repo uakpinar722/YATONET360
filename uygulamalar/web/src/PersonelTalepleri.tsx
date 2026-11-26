@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -16,7 +17,7 @@ export function OzelAracOnayi() {
     <label htmlFor="oa-t">Yolculuk Tarihi</label><input required id="oa-t" type="date" value={f.tarih} onChange={(e) => setF({ ...f, tarih: e.target.value })} />
     <label htmlFor="oa-g">Güzergâh</label><input required id="oa-g" value={f.guzergah} onChange={(e) => setF({ ...f, guzergah: e.target.value })} />
     <label htmlFor="oa-r">Gerekçe</label><input required id="oa-r" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
-    <button className="btn2" disabled={!f.tarih || !f.guzergah.trim() || !f.gerekce.trim()} onClick={() => void istek('/ozel-arac-onayi', f).then(() => { setM('Talebiniz birim amirinizin onayına gönderildi.'); setF({ tarih: '', guzergah: '', gerekce: '' }); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></>;
+    <OnayaGonder rol="Birim Amiriniz" className="btn2" disabled={!f.tarih || !f.guzergah.trim() || !f.gerekce.trim()} onClick={() => void istek('/ozel-arac-onayi', f).then(() => { setM('Talebiniz birim amirinizin onayına gönderildi.'); setF({ tarih: '', guzergah: '', gerekce: '' }); }).catch((e) => setM(e.message))}>Onaya Gönder</OnayaGonder></div></>;
 }
 
 /** YG-976: personel istifasını kendisi bildirir; bildirim zamanı kayda geçer, İnsan Kaynaklarına görev düşer. */

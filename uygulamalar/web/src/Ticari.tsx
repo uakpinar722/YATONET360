@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { DurumSayilari } from './DurumSayilari';
 import { SigortaPanel } from './SigortaPanel';
 import { ArizaBildir } from './Broker';
@@ -276,7 +277,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           {/* YG-196: teknik pay metrajdan ayrı; ölçülemeyen değer kesin metraj gibi gösterilmez. */}
           <div className="iki-tarih"><div><label htmlFor="c-tp">Teknik Pay (Metraja Dahil Değil)</label><input id="c-tp" inputMode="decimal" value={satir.teknikPay ?? ''} onChange={(e) => setSatir({ ...satir, teknikPay: e.target.value })} /></div><div><label className="kutu"><input type="checkbox" checked={Boolean(satir.olculemez)} onChange={(e) => setSatir({ ...satir, olculemez: e.target.checked })} /><span>Ölçülemedi (Tahmini Miktar)</span></label></div></div>
           <button className="btn2" disabled={!satir.aciklama.trim() || !satir.olcut?.trim()} onClick={() => { setSatirlar([...satirlar, satir]); setSatir({ ...satir, aciklama: '', kod: '', olcut: '', teknikPay: '', olculemez: false }); }}>Satır Ekle</button>
-          <button className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim, tur: x.tur || undefined, teknikPay: x.teknikPay ? Number(x.teknikPay.replace(',', '.')) : undefined, olculemez: x.olculemez || undefined })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</button>
+          <OnayaGonder rol="Teknik Yönetici" className="btn2" disabled={!satirlar.length} onClick={() => void yap(() => istek(`/dosya/${id}/cetvel`, { satirlar: satirlar.map((x) => ({ olcut: x.olcut, aciklama: x.aciklama, kartela: x.kod || undefined, nitelik: x.nitelik, bedel: x.bedel, miktar: Number(x.miktar.replace(',', '.')), birim: x.birim, tur: x.tur || undefined, teknikPay: x.teknikPay ? Number(x.teknikPay.replace(',', '.')) : undefined, olculemez: x.olculemez || undefined })) }), 'Teknik Yöneticinin onayına gönderildi.').then(() => setSatirlar([]))}>Cetveli Onaya Gönder</OnayaGonder>
         </>}
       </Blok>
       <Blok baslik="Fiyat Teklifleri">
@@ -290,7 +291,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
           <div key={t.kimlik} className="soru">
             <span>{t.teklif_no} Rev.{t.surum_no} · {t.teklif_muhatabi} · {t.statu}{t.ana_teklif_no ? ` · Bağlı Olduğu Belge: ${t.ana_teklif_no}` : ''}{t.karar ? ` · ${t.karar}` : ''} · {eur(t.genel_toplam_eur)}{t.gecerlilik_bitis_tarihi ? ` · Geçerlilik: ${t.gecerlilik_bitis_tarihi.split('-').reverse().join('.')}` : ''}</span>
             <div className="dugmeler">
-              {ticari && t.statu === 'Taslak' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</button>}
+              {ticari && t.statu === 'Taslak' && <OnayaGonder rol="Muhasebe ve Finans Yöneticisi" className="btn2 kucuk" onClick={() => void yap(() => istek(`/teklif/${t.kimlik}/onaya-gonder`, {}), 'Onaya gönderildi.')}>Onaya Gönder</OnayaGonder>}
               {ticari && t.statu === 'Taslak' && <MasrafKalemi dosya={id} teklif={t.kimlik} yap={yap} />}
               {ticari && t.statu === 'Taslak' && <TeklifMadde teklif={t.kimlik} />}
               {ticari && t.statu === 'Taslak' && <TeklifIndirim teklif={t.kimlik} yap={yap} />}
@@ -368,7 +369,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
             <span>{f.proforma_no} · {f.durum} · {eur(f.toplam_eur)}{f.fatura_no ? ` · Fatura: ${f.fatura_no}` : ''}{f.vade ? ` · Vade: ${f.vade.split('-').reverse().join('.')}` : ''}</span>
             <FaturaTakipFormu id={f.kimlik} />{/* YG-640 */}
             {ticari && <div className="dugmeler">
-              {f.durum === 'Proforma' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/muhasebeye`, {}))}>Muhasebeye İlet</button>}
+              {f.durum === 'Proforma' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/muhasebeye`, {}))}>Muhasebeye Gönder</button>}
               {f.durum === 'Muhasebeye İletildi' && <><label htmlFor={`f-p-${f.kimlik}`}>Fatura PDF</label><input id={`f-p-${f.kimlik}`} type="file" accept=".pdf" onChange={(e) => { const d = e.target.files?.[0]; if (d) void belgeYukle(d, 'Müşteri Faturası', f.kimlik).then((b) => setFPdf({ ...fPdf, [f.kimlik]: b })).catch(() => {}); }} />{/* YG-884 */}
                 <button className="btn2 kucuk" disabled={!fNo || !fTarih || !fPdf[f.kimlik]} onClick={() => void yap(() => istek(`/fatura/${f.kimlik}/bilgi`, { no: fNo, tarih: fTarih, kur: fKur ? Number(fKur.replace(',', '.')) : undefined, kurTarihi: fKurT || undefined, pdf: fPdf[f.kimlik], gelis: fGelis ? new Date(fGelis).toISOString() : undefined }))}>Fatura Bilgisini Kaydet</button></>}
               {['Faturalandı', 'Kısmi Tahsil'].includes(f.durum) && <button className="btn2 kucuk" disabled={!thTutar || !thTarih} onClick={() => void yap(() => istek('/tahsilat', { fatura: f.kimlik, tutar: Number(thTutar.replace(',', '.')), tarih: thTarih, kanal: 'Havale' }))}>Havale Tahsilatı</button>}
@@ -500,7 +501,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
         <label htmlFor="f-k">Onay Kodu</label><input id="f-k" inputMode="numeric" value={kod} onChange={(e) => setKod(e.target.value)} />
         <button className="btn" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/yanit`, { yanit: 'Kabul', kod }))}>Kabul Ediyorum</button>
         <label htmlFor="f-g">Çekince veya Ret Gerekçesi</label><input id="f-g" value={not_} onChange={(e) => setNot_(e.target.value)} />
-        <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/yanit`, { yanit: 'Çekince', aciklama: not_ }))}>Çekince Bildir</button><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/yanit`, { yanit: 'Ret', aciklama: not_ }))}>Reddet</button></div>
+        <div className="dugmeler"><button className="btn2" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/yanit`, { yanit: 'Çekince', aciklama: not_ }))}>Çekince Bildir</button><button className="btn2 hayir" onClick={() => void yap(() => istek(`/firma-portal/is-emri/${acik.kimlik}/yanit`, { yanit: 'Ret', aciklama: not_ }))}>Reddet</button></div>
       </Blok>}
       {acik.statu === 'Aktif' && <Blok baslik="İlerleme">
         <label htmlFor="f-ka">Kalem</label><select id="f-ka" value={kalem} onChange={(e) => setKalem(e.target.value)}><option value="">Seçiniz</option>{acik.kalemler.map((k) => <option key={k.aciklama}>{k.aciklama}</option>)}</select>
@@ -1194,7 +1195,7 @@ function MasrafTaslaklari({ yenile, yap }: { yenile: number; yap: (f: () => Prom
   useEffect(() => { void istek<typeof l>('/masraf/taslaklarim').then(setL).catch(() => setL([])); }, [yenile, n]);
   if (!l.length) return null;
   return <><div className="bolum">Taslak Fişlerim</div>{l.map((x) => <div className="soru" key={x.kimlik}><span>{x.masraf_turu} · {x.fis_tarihi.split('-').reverse().join('.')} · {x.belge_ozeti} · {eur(Number(x.odenecek_eur))} · {x.kalan_gun >= 0 ? `Girişe ${x.kalan_gun} gün kaldı` : 'Giriş süresi doldu'}{x.son_teslim ? ` · Son Teslim: ${x.son_teslim.split('-').reverse().join('.')} 12:00` : ''}</span>
-    <button className="btn2 kucuk" disabled={x.kalan_gun < 0} onClick={() => void yap(() => istek(`/masraf/${x.kimlik}/gonder`, {}).then(() => { setN(n + 1); return { uyari: 'Fiş onaya gönderildi.' }; }))}>Onaya Gönder</button></div>)}</>;
+    <OnayaGonder rol="Birim Amiriniz" className="btn2 kucuk" disabled={x.kalan_gun < 0} onClick={() => void yap(() => istek(`/masraf/${x.kimlik}/gonder`, {}).then(() => { setN(n + 1); return { uyari: 'Fiş onaya gönderildi.' }; }))}>Onaya Gönder</OnayaGonder></div>)}</>;
 }
 
 /** YG-234: bant dışı kalemde gerekçeli Ticari İşler Direktörü onayı. */

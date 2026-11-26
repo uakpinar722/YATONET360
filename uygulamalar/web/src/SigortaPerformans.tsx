@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -13,5 +14,5 @@ export function SigortaPerformans() {
   return <details><summary>Sigortacı Aylık Performans Raporları</summary>{m && <div className="not" role="status">{m}</div>}
     {v.raporlar.length ? v.raporlar.map((r) => <div className="soru" key={r.kimlik}><span>{r.sigortaci_adi} · {r.donem} · {r.durum} · Veri son {z(r.veri_son)} · Rapor son {z(r.hazir_son)}{r.veri ? ` · Dosya ${r.veri.dosyaSayisi} · Kapanan ${r.veri.kapananDosya} · Ortalama süre ${r.veri.ortalamaDosyaSuresiGun ?? '—'} gün · Süre uyumu ${r.veri.sureUyumuYuzde !== null ? `%${r.veri.sureUyumuYuzde}` : '—'} · Şikâyet ${r.veri.sikayet}` : ''}{r.mudur_notu ? ` · ${r.mudur_notu}` : ''}</span>
       <div className="tam">{v.my && r.durum === 'Veri Bekleniyor' && <button className="btn2 kucuk" onClick={() => is(istek(`/sigorta-performans/${r.kimlik}/veri`, {}), 'Veri kaydedildi; Müdüre iletildi.')}>Veriyi Kaydet</button>}
-        {v.mudur && r.durum === 'Hazırlanıyor' && <><label htmlFor={`sp-${r.kimlik}`}>Değerlendirme Notu</label><input id={`sp-${r.kimlik}`} value={g[r.kimlik] ?? ''} onChange={(e) => setG({ ...g, [r.kimlik]: e.target.value })} /><button className="btn2 kucuk" onClick={() => is(istek(`/sigorta-performans/${r.kimlik}/onaya`, { not: g[r.kimlik] }), 'Direktör onayına gönderildi.')}>Onaya Gönder</button></>}</div></div>) : <div className="ozet bos">Rapor bulunmamaktadır.</div>}</details>;
+        {v.mudur && r.durum === 'Hazırlanıyor' && <><label htmlFor={`sp-${r.kimlik}`}>Değerlendirme Notu</label><input id={`sp-${r.kimlik}`} value={g[r.kimlik] ?? ''} onChange={(e) => setG({ ...g, [r.kimlik]: e.target.value })} /><OnayaGonder rol="Strateji ve Kurumsal Gelişim Direktörü" className="btn2 kucuk" onClick={() => is(istek(`/sigorta-performans/${r.kimlik}/onaya`, { not: g[r.kimlik] }), 'Direktör onayına gönderildi.')}>Onaya Gönder</OnayaGonder></>}</div></div>) : <div className="ozet bos">Rapor bulunmamaktadır.</div>}</details>;
 }

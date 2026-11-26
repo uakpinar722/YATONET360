@@ -14,5 +14,5 @@ export function TicariAtamaBekleyenler() {
     {v.bekleyenler.length === 0 && <div className="not">Atama bekleyen dosya bulunmamaktadır.</div>}
     {v.bekleyenler.map((x) => <div className="soru" key={x.kimlik}><span>{x.dosya_no} · {x.yat_adi}</span>
       <label htmlFor={`ta-${x.kimlik}`}>Ticari Sorumlu</label><select required id={`ta-${x.kimlik}`} value={sec[x.kimlik] ?? ''} onChange={(e) => setSec({ ...sec, [x.kimlik]: e.target.value })}><option value="">Seçiniz</option>{v.adaylar.map((a) => <option key={a.kimlik} value={a.kimlik}>{`${a.ad_soyad} · Açık Dosya: ${a.acik_dosya ?? 0}${a.personel_durumu && a.personel_durumu !== 'Görevde' ? ` · ${a.personel_durumu}` : ''}`}</option>)}</select>
-      <button className="btn2 kucuk" disabled={!sec[x.kimlik]} onClick={() => onayla(x.kimlik)}>Onayla</button></div>)}</>;
+      <button className="btn2 kucuk evet" disabled={!sec[x.kimlik]} onClick={() => onayla(x.kimlik)}>Onayla</button></div>)}</>;
 }

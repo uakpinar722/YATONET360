@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { eur, tarih } from './bicim';
@@ -27,7 +28,7 @@ export function GarantiMali({ id }: { id: string }) {
       <label htmlFor="gm-c">Karşılayan</label><select id="gm-c" value={gm.karsilayan} onChange={(e) => setGm({ ...gm, karsilayan: e.target.value })}>{['Çözüm Ortağı', 'Tedarikçi', 'Üretici', 'LGM'].map((x) => <option key={x}>{x}</option>)}</select>
       {gm.karsilayan !== 'LGM' && al(gm, (x) => setGm(x as typeof gm), 'mahsup', 'Mahsup / Rücu Referansı')}
       {al(gm, (x) => setGm(x as typeof gm), 'aciklama', 'Garanti Maliyeti Açıklaması')}
-      <button className="btn2 kucuk" disabled={!gm.tutar || (gm.karsilayan !== 'LGM' && !gm.mahsup.trim())} onClick={() => is(istek(`/dosya/${id}/garanti-maliyet`, { ...gm, garanti: gm.garanti || undefined }), 'Garanti maliyeti Ticari İşler Direktörü onayına gönderildi.')}>Onaya Gönder</button>
+      <OnayaGonder rol="Ticari İşler Direktörü" className="btn2 kucuk" disabled={!gm.tutar || (gm.karsilayan !== 'LGM' && !gm.mahsup.trim())} onClick={() => is(istek(`/dosya/${id}/garanti-maliyet`, { ...gm, garanti: gm.garanti || undefined }), 'Garanti maliyeti Ticari İşler Direktörü onayına gönderildi.')}>Onaya Gönder</OnayaGonder>
     </div>
     <div className="bolum">Üretici Garanti Başvurusu</div>
     {v.basvurular.map((x) => { const s = dg[x.kimlik] ?? {}; const set = (o: Record<string, string>) => setDg({ ...dg, [x.kimlik]: o }); return <div key={x.kimlik} className="ozet kart-sol"><b>{x.basvuru_no} · {x.marka}{x.model ? ` ${x.model}` : ''} · {x.durum}</b>

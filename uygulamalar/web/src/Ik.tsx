@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { tarih } from './bicim';
 import { istek } from './api';
@@ -34,7 +35,7 @@ export function PersonelIslemlerim({ yap }: { yap: Yap }) {
     <div className="bolum">Yurt Dışı Görevlendirme</div>
     <label htmlFor="yd-u">Ülke</label><input required id="yd-u" value={yd.ulke} onChange={(e) => setYd({ ...yd, ulke: e.target.value })} />
     <div className="iki-tarih"><div><label htmlFor="yd-b">Başlangıç</label><input required id="yd-b" type="date" value={yd.baslangic} onChange={(e) => setYd({ ...yd, baslangic: e.target.value })} /></div><div><label htmlFor="yd-s">Bitiş</label><input required id="yd-s" type="date" value={yd.bitis} onChange={(e) => setYd({ ...yd, bitis: e.target.value })} /></div></div>
-    <button className="btn2" disabled={!yd.ulke.trim() || !yd.baslangic || !yd.bitis} onClick={() => void yap(() => istek('/yurtdisi-gorev', yd).then(() => ({ uyari: 'Görevlendirme onaya gönderildi.' })))}>Onaya Gönder</button>
+    <OnayaGonder rol="Birim Amiriniz" className="btn2" disabled={!yd.ulke.trim() || !yd.baslangic || !yd.bitis} onClick={() => void yap(() => istek('/yurtdisi-gorev', yd).then(() => ({ uyari: 'Görevlendirme onaya gönderildi.' })))}>Onaya Gönder</OnayaGonder>
   </>);
 }
 

@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { belgeYukle } from './Kalite';
 import { tarih } from './bicim';
 import { useEffect, useState } from 'react';
@@ -74,7 +75,7 @@ export function DegisiklikBiletleri() {
     {ALAN.map(([k, et]) => <span key={k}><label htmlFor={`dg-${k}`}>{et}</label><input id={`dg-${k}`} value={f[k] ?? ''} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></span>)}
     <label><input type="checkbox" checked={kv} onChange={(e) => setKv(e.target.checked)} /> Kişisel veriye dokunuyor</label>
     {kv && <span><label htmlFor="dg-vs">Veri Sahibi Rol</label><input id="dg-vs" value={f.veriSahibiRol ?? ''} onChange={(e) => setF({ ...f, veriSahibiRol: e.target.value })} /></span>}
-    <button className="btn2 kucuk" disabled={ALAN.some(([k]) => !(f[k] ?? '').trim()) || (kv && !(f.veriSahibiRol ?? '').trim())} onClick={() => void istek<{ biletNo: string }>('/degisiklik-bileti', { ...f, kisiselVeri: kv }).then((r) => { setM(`${r.biletNo} Bilgi İşlem Müdürü onayına gönderildi.`); setF({}); setKv(false); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></details>;
+    <OnayaGonder rol="Bilgi İşlem Müdürü" className="btn2 kucuk" disabled={ALAN.some(([k]) => !(f[k] ?? '').trim()) || (kv && !(f.veriSahibiRol ?? '').trim())} onClick={() => void istek<{ biletNo: string }>('/degisiklik-bileti', { ...f, kisiselVeri: kv }).then((r) => { setM(`${r.biletNo} Bilgi İşlem Müdürü onayına gönderildi.`); setF({}); setKv(false); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</OnayaGonder></details>;
 }
 
 /** YG-1652: Sistem Öz Denetimi; çalışmalar, senaryo sonuçları ve bulgular. Sürüm öncesi ve kural değişikliği sonrası çalışma elle başlatılır. */

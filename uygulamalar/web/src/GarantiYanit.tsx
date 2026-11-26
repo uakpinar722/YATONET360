@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -45,7 +46,7 @@ export function GarantiYanit({ id, yap }: { id: string; yap: (f: () => Promise<a
       <label htmlFor={`gy-i-${id}`}>İnceleme</label><textarea id={`gy-i-${id}`} value={f.inceleme} onChange={(e) => setF({ ...f, inceleme: e.target.value })} />
       <label htmlFor={`gy-l-${id}`}>Yapılan ve Yapılacak İşlemler (her satır: İşlem | Tarih | Durum)</label><textarea id={`gy-l-${id}`} value={f.islemler} onChange={(e) => setF({ ...f, islemler: e.target.value })} />
       {f.varyant === 'Şikâyet Yanıtı' && <><label htmlFor={`gy-d-${id}`}>Düzeltmenin Tamamlandığı Tarih</label><input id={`gy-d-${id}`} type="date" value={f.duzeltme} onChange={(e) => setF({ ...f, duzeltme: e.target.value })} /></>}
-      <button className="btn2 kucuk" disabled={!f.varyant} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/yanit-yazisi`, { varyant: f.varyant, inceleme: f.inceleme, islemler, duzeltmeTarihi: f.duzeltme || undefined }), 'Yanıt yazısı Müşteri ve Paydaş İlişkileri Müdürü onayına gönderildi.').then(yukle)}>Yanıt Yazısını Onaya Gönder</button>
+      <OnayaGonder rol="Müşteri ve Paydaş İlişkileri Müdürü" className="btn2 kucuk" disabled={!f.varyant} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/yanit-yazisi`, { varyant: f.varyant, inceleme: f.inceleme, islemler, duzeltmeTarihi: f.duzeltme || undefined }), 'Yanıt yazısı Müşteri ve Paydaş İlişkileri Müdürü onayına gönderildi.').then(yukle)}>Yanıt Yazısını Onaya Gönder</OnayaGonder>
       {v.yanitVar && !v.itiraz.zaman && <><label htmlFor={`gy-it-${id}`}>Yat Sahibinin İtirazı</label><input required id={`gy-it-${id}`} value={it} onChange={(e) => setIt(e.target.value)} />
         <button className="btn2 kucuk" disabled={!it.trim()} onClick={() => void yap(() => istek(`/garanti-sikayet/${id}/itiraz`, { aciklama: it }), 'İtiraz kaydedildi; üst kademe incelemesine gönderildi.').then(yukle)}>İtirazı Kaydet</button></>}
     </>}

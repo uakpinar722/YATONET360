@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -17,7 +18,7 @@ export function YetkiMatrisi() {
       <label htmlFor="ym-s">İşlem</label><select id="ym-s" value={f.islem} onChange={(e) => setF({ ...f, islem: e.target.value })}><option>Ekle</option><option>Kaldır</option></select>
       <label htmlFor="ym-k">Risk</label><select id="ym-k" value={f.risk} onChange={(e) => setF({ ...f, risk: e.target.value })}>{['Düşük', 'Orta', 'Yüksek'].map((x) => <option key={x}>{x}</option>)}</select>
       <label htmlFor="ym-g">İşlev veya Risk Değişikliği Gerekçesi</label><input required id="ym-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
-      <button className="btn2" disabled={!f.izin || !f.gerekce.trim()} onClick={gonder}>Onaya Gönder</button>
+      <OnayaGonder rol="Rolün Bağlı Olduğu Makam" className="btn2" disabled={!f.izin || !f.gerekce.trim()} onClick={gonder}>Onaya Gönder</OnayaGonder>
     </div>}
     {v.talepler.map((x) => <div key={x.kimlik} className="soru"><span>{x.rol_adi} · {x.izin} · {x.islem} · Risk {x.risk} · {x.durum} · {x.hazirlayan} · {x.gerekce}</span></div>)}
   </details>;

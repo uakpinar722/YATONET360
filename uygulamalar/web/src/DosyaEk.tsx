@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { eur as eurB } from './bicim';
 import { ImzaliNusha } from './ImzaliNusha';
 import { KatalogReferansi } from './KatalogReferansi';
@@ -95,7 +96,7 @@ export function DosyaEkIslemler({ id, teklifler, sigortali, ticari, ds, firmalar
 
       <div className="bolum">Kesin Teslim Tarihi</div>
       <div className="iki-tarih"><div><label htmlFor="de-kst">Kesin Teslim</label><input required id="de-kst" type="date" value={kt.tarih} onChange={(e) => setKt({ ...kt, tarih: e.target.value })} /></div><div><label htmlFor="de-ksb">Gecikme Bedeli (EUR)</label><input required id="de-ksb" inputMode="decimal" value={kt.bedel} onChange={(e) => setKt({ ...kt, bedel: e.target.value })} /></div></div>
-      <div className="dugmeler"><button className="btn2 kucuk" disabled={!kt.tarih || !kt.bedel} onClick={() => void yap(() => istek(`/dosya/${id}/kesin-teslim`, { tarih: kt.tarih, gecikmeBedeli: sayi(kt.bedel) }), 'Kesin teslim tarihi Genel Müdür Yardımcısı onayına gönderildi.')}>Onaya Gönder</button><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/yurt-disi`, {}), 'Yurt dışı işaretlendi; teklif Genel Müdür Yardımcısı onayına gider.')}>Yurt Dışı Yat</button></div>
+      <div className="dugmeler"><OnayaGonder rol="Genel Müdür Yardımcısı" className="btn2 kucuk" disabled={!kt.tarih || !kt.bedel} onClick={() => void yap(() => istek(`/dosya/${id}/kesin-teslim`, { tarih: kt.tarih, gecikmeBedeli: sayi(kt.bedel) }), 'Kesin teslim tarihi Genel Müdür Yardımcısı onayına gönderildi.')}>Onaya Gönder</OnayaGonder><button className="btn2 kucuk" onClick={() => void yap(() => istek(`/dosya/${id}/yurt-disi`, {}), 'Yurt dışı işaretlendi; teklif Genel Müdür Yardımcısı onayına gider.')}>Yurt Dışı Yat</button></div>
 
       <div className="bolum">Değişiklik Protokolü</div>
       {deg.map((x) => <div key={x.degisiklik_no}>{x.degisiklik_no} · {x.tur} · Eski: {x.mevcut} · Yeni: {x.onerilen} · Fark: {eurB(x.bedel_farki_eur)} · Onaylı Kümülatif: {eurB(x.kumulatif_eur)} · {x.ek_sure_gun} gün · {x.kanal} · Sigorta: {x.sigorta_onayi} · {x.durum}</div>)}
@@ -547,7 +548,7 @@ export function KartelaMaliyet() {
       <label htmlFor="km-g">Kaldırma Gerekçesi (kalemi kullanımdan kaldırmak için)</label><input required id="km-g" value={kg} onChange={(e) => setKg(e.target.value)} />
       <button className="btn2 kucuk" disabled={!f.kod.trim() || !kg.trim()} onClick={() => { is('/kartela/taslak/kaldir', { kod: f.kod.trim(), gerekce: kg }, 'Kalem taslak sürümden kaldırıldı; sürüm onaylanınca yürürlükten çıkar.'); setKg(''); }}>Kalemi Kullanımdan Kaldır</button>
       <KartelaToplu yenile={() => void yk()} />
-      <div className="dugmeler"><button className="btn2" onClick={() => is('/kartela/taslak/maliyet', { ...f, maliyet: Number(f.maliyet.replace(/\./g, '').replace(',', '.')) }, 'Maliyet kaydedildi.')}>Maliyeti Kaydet</button><button className="btn2" onClick={() => is('/kartela/taslak/onaya-gonder', {}, 'Sürüm CEO onayına gönderildi.')}>Yürürlüğe Almak İçin Onaya Gönder</button></div></>}</>;
+      <div className="dugmeler"><button className="btn2" onClick={() => is('/kartela/taslak/maliyet', { ...f, maliyet: Number(f.maliyet.replace(/\./g, '').replace(',', '.')) }, 'Maliyet kaydedildi.')}>Maliyeti Kaydet</button><OnayaGonder rol="Genel Müdür Yardımcısı" className="btn2" onClick={() => is('/kartela/taslak/onaya-gonder', {}, 'Sürüm CEO onayına gönderildi.')}>Yürürlüğe Almak İçin Onaya Gönder</OnayaGonder></div></>}</>;
 }
 
 /** YG-856: Excel'den toplu maliyet güncellemesi; dört sütun (Kod, Maliyet, Maliyet Tarihi, Kaynak Norm) yapıştırılır. */

@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { GenelForm } from './GenelForm';
@@ -28,7 +29,7 @@ export function FormKatalogu() {
           {x.durum === 'Yürürlükte' && <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'Yeni Sürüm', gerekce: g[x.kod] }), 'Yeni sürüm taslak olarak açıldı.')}>Yeni Sürüm</button>}
           <button className="btn2 kucuk" onClick={() => is(istek(`/form-katalogu/${x.kod}/durum`, { durum: 'İptal', gerekce: g[x.kod] }), 'İptal edildi; kod yeniden verilmez.')}>İptal Et</button></>}
         {v.degisiklikTalebi && x.durum === 'Yürürlükte' && <>{/* YG-1691: Ek II Değişiklik Talebi */}<label htmlFor={`fk-d-${x.kod}`}>Değişiklik</label><input id={`fk-d-${x.kod}`} value={g[`d${x.kod}`] ?? ''} onChange={(e) => setG({ ...g, [`d${x.kod}`]: e.target.value })} /><label htmlFor={`fk-dg-${x.kod}`}>Gerekçe</label><input id={`fk-dg-${x.kod}`} value={g[`dg${x.kod}`] ?? ''} onChange={(e) => setG({ ...g, [`dg${x.kod}`]: e.target.value })} />
-          <button className="btn2 kucuk" disabled={!g[`d${x.kod}`]?.trim() || !g[`dg${x.kod}`]?.trim()} onClick={() => is(istek(`/form-katalogu/${x.kod}/degisiklik-talebi`, { degisiklik: g[`d${x.kod}`], gerekce: g[`dg${x.kod}`] }), 'Ek II Değişiklik Talebi Risk ve Kalite Direktörü onayına gönderildi.')}>Ek II Değişiklik Talebi · Onaya Gönder</button></>}</div>
+          <OnayaGonder rol="Risk ve Kalite Direktörü" className="btn2 kucuk" disabled={!g[`d${x.kod}`]?.trim() || !g[`dg${x.kod}`]?.trim()} onClick={() => is(istek(`/form-katalogu/${x.kod}/degisiklik-talebi`, { degisiklik: g[`d${x.kod}`], gerekce: g[`dg${x.kod}`] }), 'Ek II Değişiklik Talebi Risk ve Kalite Direktörü onayına gönderildi.')}>Ek II Değişiklik Talebi · Onaya Gönder</OnayaGonder></>}</div>
       {a?.kod === x.kod && <div className="tam">{a.alanlar.length ? a.alanlar.map((l) => <div className="not" key={l.alan}>{l.alan} · {l.tur}{l.bicim ? ` · ${l.bicim}` : ''} · {l.zorunlu}{l.liste ? ` · ${l.liste}` : ''}</div>) : <div className="not">Alan sözlüğünde bu araca bağlı alan yok.</div>}</div>}</div>)}
     <GenelForm />
     {v.yonetir && <div className="izgara"><b>Yeni Araç (taslak doğar)</b>

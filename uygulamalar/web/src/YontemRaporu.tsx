@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { BelgeSec } from './Kalite';
@@ -28,7 +29,7 @@ export function YontemRaporu({ dosya }: { dosya: string }) {
     <button className="btn2 kucuk" onClick={() => setVf([...vf, { malzeme: '', bolge: '', belge: '' }])}>Malzeme Ekle</button>
     <label htmlFor="yr-tur">Proses Türü (Sınır)</label><select id="yr-tur" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}>{TURLER.map((x) => <option key={x}>{x}</option>)}</select>
     {al('sicaklikMin', 'Sıcaklık Alt (°C) ')}{al('sicaklikMax', 'Sıcaklık Üst (°C) ')}{al('nemMin', 'Nem Alt (%) ')}{al('nemMax', 'Nem Üst (%) ')}
-    <button className="btn2 kucuk" disabled={!f.kapsam.trim() || !f.malzeme.trim() || !f.sira.trim() || !vf.some((x) => x.malzeme.trim() && x.belge)} onClick={kaydet}>Onaya Gönder</button></>;
+    <OnayaGonder rol="Teknik Müdür" className="btn2 kucuk" disabled={!f.kapsam.trim() || !f.malzeme.trim() || !f.sira.trim() || !vf.some((x) => x.malzeme.trim() && x.belge)} onClick={kaydet}>Onaya Gönder</OnayaGonder></>;
 }
 
 /** K-192: firmaya ON iş emrinin bağlayıcı eki. */

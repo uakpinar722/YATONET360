@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -12,7 +13,7 @@ export function DenetimPlani() {
   return <details><summary>İç Denetim Planı ve Bulgu Takibi</summary>{m && <div className="not" role="status">{m}</div>}
     {v.planlar.map((p) => <div className="soru" key={p.kimlik}><span>{p.yil} · {p.durum} · {p.surecler.join(', ')}</span></div>)}
     {v.planHazirlar && <><label htmlFor="dp-y">Yıl</label><input id="dp-y" inputMode="numeric" value={f.yil} onChange={(e) => setF({ ...f, yil: e.target.value })} /><label htmlFor="dp-s">Denetlenecek Süreçler (virgülle)</label><input id="dp-s" value={f.surecler} onChange={(e) => setF({ ...f, surecler: e.target.value })} /><label htmlFor="dp-a">Açıklama</label><input id="dp-a" value={f.aciklama} onChange={(e) => setF({ ...f, aciklama: e.target.value })} />
-      <button className="btn2 kucuk" onClick={() => is(istek('/ic-denetim/plan', { yil: Number(f.yil), surecler: f.surecler.split(','), aciklama: f.aciklama }), 'Plan CEO onayına gönderildi.')}>Planı CEO Onayına Sun</button></>}
+      <button className="btn2 kucuk" onClick={() => is(istek('/ic-denetim/plan', { yil: Number(f.yil), surecler: f.surecler.split(','), aciklama: f.aciklama }), 'Plan CEO onayına gönderildi.')}>Planı Onaya Gönder (CEO)</button></>}
     {v.ozet.length > 0 && <div className="not">{v.ozet.map((x) => `${x.sinif}: ${x.acik} açık / ${x.kapandi} kapalı`).join(' · ')}</div>}
     {v.raporlar && <button className="btn2 kucuk" onClick={() => is(istek('/ic-denetim/bulgu-raporu', {}), 'Kapanış durumu CEO\'ya raporlandı.')}>Kapanış Durumunu CEO'ya Raporla</button>}
     {v.bulgular.map((x) => <div className="soru" key={x.kimlik}><span>{x.denetim_no} · {x.sinif} · {x.tanim} · {x.durum}{x.takip_sonucu ? ` · Takip: ${x.takip_sonucu}` : ''}</span>{x.durum === 'Açık' && <div className="tam"><label htmlFor={`bt-${x.kimlik}`}>Takip Notu</label><input id={`bt-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" onClick={() => is(istek(`/ic-denetim/bulgu/${x.kimlik}/takip`, { sonuc: 'Etkin', not: g[x.kimlik] }), 'Bulgu kapandı.')}>Etkin</button><button className="btn2 kucuk" onClick={() => is(istek(`/ic-denetim/bulgu/${x.kimlik}/takip`, { sonuc: 'Etkin Değil', not: g[x.kimlik] }), 'Takip kaydedildi.')}>Etkin Değil</button></div>}</div>)}</details>;
@@ -71,5 +72,5 @@ export function HukukiMetinler() {
       {ac && <>{yurur(ac, 'tr') && <><label htmlFor="hm-tr">Türkçe Metin</label><textarea id="hm-tr" rows={8} value={f.tr} onChange={(e) => setF({ ...f, tr: e.target.value })} /></>}
         {yurur(ac, 'en') && <><label htmlFor="hm-en">İngilizce Metin</label><textarea id="hm-en" rows={8} value={f.en} onChange={(e) => setF({ ...f, en: e.target.value })} /></>}
         <label htmlFor="hm-g">Değişiklik Gerekçesi</label><input required id="hm-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
-        <button className="btn2 kucuk" disabled={!f.gerekce.trim()} onClick={() => void istek<{ surum: string }>(`/hukuki-metin/${encodeURIComponent(ac)}`, f).then((r) => { setM(`${ac} ${r.surum} CEO onayına gönderildi.`); setAc(''); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></>}</>}</details>;
+        <OnayaGonder rol="Genel Müdür Yardımcısı" className="btn2 kucuk" disabled={!f.gerekce.trim()} onClick={() => void istek<{ surum: string }>(`/hukuki-metin/${encodeURIComponent(ac)}`, f).then((r) => { setM(`${ac} ${r.surum} CEO onayına gönderildi.`); setAc(''); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</OnayaGonder></>}</>}</details>;
 }

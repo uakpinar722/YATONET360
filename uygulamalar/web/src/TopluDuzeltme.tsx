@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -16,5 +17,5 @@ export function TopluDuzeltme() {
       {v.hazirlar && x.durum === 'Onaylandı' && <div className="tam">{al(`g${x.kimlik}`, 'Gerçekleşen Kayıt')}{al(`s${x.kimlik}`, 'Sonuç Kontrolü')}{al(`f${x.kimlik}`, 'Fark Açıklaması')}<button className="btn2 kucuk" onClick={() => is(istek(`/toplu-duzeltme/${x.kimlik}/uygulandi`, { gerceklesen: Number(g[`g${x.kimlik}`]), sonucKontrol: g[`s${x.kimlik}`], farkAciklamasi: g[`f${x.kimlik}`] }), 'Uygulama kaydedildi.')}>Uygulandı</button></div>}
       {v.hazirlar && x.durum === 'Uygulandı' && <div className="tam">{ETKI.map(([k, et]) => <span key={k}><label htmlFor={`te-${k}-${x.kimlik}`}>{et}</label><select id={`te-${k}-${x.kimlik}`} value={g[`${k}${x.kimlik}`] ?? ''} onChange={(e) => setG({ ...g, [`${k}${x.kimlik}`]: e.target.value })}><option value="">Seçiniz</option><option>Etkilenmedi</option><option>Uzlaştırıldı</option></select></span>)}<button className="btn2 kucuk" onClick={() => is(istek(`/toplu-duzeltme/${x.kimlik}/kapat`, { etkiler: Object.fromEntries(ETKI.map(([k]) => [k, g[`${k}${x.kimlik}`]])) }), 'Düzeltme kapandı.')}>Kapat</button></div>}</div>)}
     {v.hazirlar && <>{al('veriKumesi', 'Veri Kümesi')}{al('kapsam', 'Kapsam')}{al('gerekce', 'Gerekçe')}{al('ornek', 'Örnek Doğrulama')}{al('yedek', 'Yedek Kimliği')}{al('betikSurumu', 'Betik Sürümü')}{al('betikOzeti', 'Betik SHA-256')}{al('beklenen', 'Beklenen Kayıt Sayısı')}
-      <button className="btn2 kucuk" onClick={() => is(istek('/toplu-duzeltme', { ...g, beklenen: Number(g.beklenen) }), 'Onaya gönderildi.')}>Onaya Gönder</button></>}</details>;
+      <OnayaGonder rol="Bilgi Teknolojileri ve Firma Yönetimi Direktörü" className="btn2 kucuk" onClick={() => is(istek('/toplu-duzeltme', { ...g, beklenen: Number(g.beklenen) }), 'Onaya gönderildi.')}>Onaya Gönder</OnayaGonder></>}</details>;
 }

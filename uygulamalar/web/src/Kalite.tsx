@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek } from './api';
 
@@ -86,7 +87,7 @@ export function KaliteBolumu({ id, roller }: { id: string; roller: string[] }) {
           {v.planlar.length > 0 && <><label htmlFor="p-rg">Revizyon Gerekçesi</label><input id="p-rg" value={p.gerekce} onChange={(e) => setP({ ...p, gerekce: e.target.value })} /></>}
           <label htmlFor="p-g">Gereklilik</label><input id="p-g" value={p.gereklilik} onChange={(e) => setP({ ...p, gereklilik: e.target.value })} />
           <label htmlFor="p-d">Doğrulama Yöntemi</label><input id="p-d" value={p.dogrulama} onChange={(e) => setP({ ...p, dogrulama: e.target.value })} />
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kalite-plani`, { sinif: p.sinif, ozet: p.ozet, risk: p.risk, teknikKaynak: p.teknikKaynak, kaynaklar: p.kaynaklar, kontrolDuzeni: p.kontrolDuzeni, kayitTeslim: p.kayitTeslim, gerekce: p.gerekce || undefined, gereklilikler: [{ gereklilik: p.gereklilik, dogrulama: p.dogrulama }] }), 'Kalite planı onaya gönderildi.')}>Kalite Planını Onaya Gönder</button>
+          <OnayaGonder rol={p.sinif === 'A' ? 'Teknik Müdür' : 'Teknik Yönetici'} className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kalite-plani`, { sinif: p.sinif, ozet: p.ozet, risk: p.risk, teknikKaynak: p.teknikKaynak, kaynaklar: p.kaynaklar, kontrolDuzeni: p.kontrolDuzeni, kayitTeslim: p.kayitTeslim, gerekce: p.gerekce || undefined, gereklilikler: [{ gereklilik: p.gereklilik, dogrulama: p.dogrulama }] }), 'Kalite planı onaya gönderildi.')}>Kalite Planını Onaya Gönder</OnayaGonder>
         </>}
       </Blok>
       <Blok baslik="Uygunsuzluklar">
@@ -234,7 +235,7 @@ export function TedarikBolumu({ id, roller }: { id: string; roller: string[] }) 
         <label htmlFor="sp-ks">Kritik Sınıf</label><select id="sp-ks" value={(f as Record<string, string>).kritikSinif ?? ''} onChange={(e) => setF({ ...f, kritikSinif: e.target.value } as typeof f)}><option value="">Seçiniz</option>{['K1', 'K2', 'K3', 'K4'].map((x) => <option key={x}>{x}</option>)}</select>
         {['K3', 'K4'].includes((f as Record<string, string>).kritikSinif ?? '') && <><label htmlFor="sp-bs">Belge ve Giriş Kontrolü Şartları (sertifika, uygunluk belgesi, giriş kontrolü)</label><input id="sp-bs" value={(f as Record<string, string>).belgeSartlari ?? ''} onChange={(e) => setF({ ...f, belgeSartlari: e.target.value } as typeof f)} /></>}
         {yaz('teklifRef', 'Tedarikçi Teklif No')}{yaz('kullanim', 'Nihai Kullanım Yeri')}{yaz('teslimTarihi', 'Teslim Tarihi', 'date')}{yaz('teslimYeri', 'Teslim Yeri')}{yaz('olcut', 'Kabul Ölçütü')}{yaz('gerekce', 'Seçim Gerekçesi')}{yaz('tanim', 'Ürün')}{yaz('parcaNo', 'Üretici Parça No')}{yaz('miktar', 'Sipariş Miktarı')}{yaz('birim', 'Birim')}{yaz('bedel', 'Birim Bedel (EUR)')}
-        <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/siparis`, { ...f, kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: sayi(f.miktar), birim: f.birim, bedel: sayi(f.bedel) }] }), 'Sipariş onaya gönderildi.')}>Siparişi Onaya Gönder</button>
+        <OnayaGonder rol="Tedarik Yönetimi Müdürü" className="btn2" onClick={() => yap(istek(`/dosya/${id}/siparis`, { ...f, kalemler: [{ tanim: f.tanim, parcaNo: f.parcaNo, miktar: sayi(f.miktar), birim: f.birim, bedel: sayi(f.bedel) }] }), 'Sipariş onaya gönderildi.')}>Siparişi Onaya Gönder</OnayaGonder>
       </>}
     </Blok>
   );

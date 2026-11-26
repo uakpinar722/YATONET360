@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 import { tarih } from './bicim';
@@ -15,7 +16,7 @@ export function Yediemin({ id }: { id: string }) {
       <label htmlFor="ye-y">Yediemin Olacak Taraf</label><select id="ye-y" value={f.yediemin} onChange={(e) => setF({ ...f, yediemin: e.target.value })}><option>LGM</option><option>Çözüm Ortağı</option></select>
       {f.yediemin === 'Çözüm Ortağı' && <><label htmlFor="ye-k">Yediemin Çözüm Ortağı</label><select id="ye-k" value={f.kurulus} onChange={(e) => setF({ ...f, kurulus: e.target.value })}><option value="">Seçiniz</option>{firmalar.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ticari_unvan}</option>)}</select></>}
       <label htmlFor="ye-d">Yediemin Dayanağı (mahkeme veya icra kararı)</label><input id="ye-d" value={f.dayanak} onChange={(e) => setF({ ...f, dayanak: e.target.value })} />
-      <button className="btn2 kucuk" disabled={!f.dayanak.trim() || (f.yediemin === 'Çözüm Ortağı' && !f.kurulus)} onClick={() => void istek(`/dosya/${id}/yediemin`, { ...f, kurulus: f.kurulus || undefined }).then(() => { setM('Talep Hukuk ve Uyum Direktörü onayına gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button>
+      <OnayaGonder rol="Hukuk ve Uyum Direktörü" className="btn2 kucuk" disabled={!f.dayanak.trim() || (f.yediemin === 'Çözüm Ortağı' && !f.kurulus)} onClick={() => void istek(`/dosya/${id}/yediemin`, { ...f, kurulus: f.kurulus || undefined }).then(() => { setM('Talep Hukuk ve Uyum Direktörü onayına gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</OnayaGonder>
     </div>
   </details>;
 }

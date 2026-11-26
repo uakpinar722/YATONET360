@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -16,7 +17,7 @@ export function BolgeKatsayisi() {
       <label htmlFor="bk-b">Bölge</label><select id="bk-b" value={f.bolge} onChange={(e) => setF({ ...f, bolge: e.target.value })}><option value="">Seçiniz</option>{v.bolgeler.map((x) => <option key={x.bolge}>{x.bolge}</option>)}</select>
       <label htmlFor="bk-k">Yeni Katsayı</label><input id="bk-k" inputMode="decimal" value={f.katsayi} onChange={(e) => setF({ ...f, katsayi: e.target.value })} />
       <label htmlFor="bk-g">Gerekçe</label><input required id="bk-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
-      <button className="btn2" disabled={!f.bolge || !f.katsayi || !f.gerekce.trim()} onClick={() => void istek('/bolge-katsayisi/talep', f).then(() => { setM('Talep onaya gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button>
+      <OnayaGonder rol="Genel Müdür Yardımcısı" className="btn2" disabled={!f.bolge || !f.katsayi || !f.gerekce.trim()} onClick={() => void istek('/bolge-katsayisi/talep', f).then(() => { setM('Talep onaya gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</OnayaGonder>
     </div>}
   </details>;
 }

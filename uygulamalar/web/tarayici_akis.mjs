@@ -359,7 +359,7 @@ try {
   await tikla(pTs, 'Proforma Hazırla'); await pTs.locator('[role=alert], .ok, .basari').first().waitFor({ timeout: 15000 }).catch(() => {}); await hataVarsa(pTs, 'Proforma'); await pTs.waitForTimeout(800);
   const pf = (await sup.query(`SELECT proforma_no FROM musteri_faturasi WHERE dosya_ref = $1`, [d.kimlik])).rows[0].proforma_no;
   await kartKarar(E, 'mfm', pf, 'Onaya Gönder'); await kartKarar(E, 'tid', pf, 'Onayla');
-  await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Muhasebeye İlet');
+  await dosyaAc(pTs, d.dosyaNo); await tikla(pTs, 'Muhasebeye Gönder');
   await pTs.getByLabel('Fatura No (Muhasebeden)', { exact: true }).fill(`F${tek}`); await pTs.getByLabel('Fatura Tarihi', { exact: true }).fill('2026-11-10'); await pTs.getByLabel('TCMB Satış Kuru (yalnız yayın yoksa)', { exact: true }).fill('40,1234'); await pTs.getByLabel('Kur Tarihi', { exact: true }).fill('2026-11-09');
   await pTs.getByLabel('Fatura PDF', { exact: true }).setInputFiles(dosyaYaz('fatura')); await pTs.waitForTimeout(600);
   await tikla(pTs, 'Fatura Bilgisini Kaydet');
