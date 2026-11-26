@@ -391,6 +391,7 @@ describe('kurumsal Ek-2 (D-135, YG-1070, Çerçeve m.26.4)', () => {
     expect((await o.ist('POST', u, c, g)).statusCode).toBe(409); // temsilci yok
     await o.sup.query(`UPDATE kullanici_hesabi SET cep_telefonu = '+905550003301' WHERE kimlik = $1`, [o.K.tm]);
     await o.sup.query(`INSERT INTO kurumsal_kullanici (kullanici_ref, kurum_ref, rol, onay_siniri, yetkili, ekleyen_ref) VALUES ($1,$2,'Onaylayan',100,true,$3)`, [o.K.tm, k, o.K.ds]);
+    { const ts = (await o.ist('GET', `/api/kurumsal-kurum/${k}/ek2-taslak`, c)).json(); expect(ts.muhatapAd).toBeTruthy(); expect(ts.fiyatAd).toBe(ts.muhatapAd); expect(ts.limit).toBe('100,00'); expect((await o.ist('GET', `/api/kurumsal-kurum/${k}/ek2-taslak`, await o.gir('ds'))).statusCode).toBe(404); } // YG-1449
     { const { kurumsalaBildir } = await import('../src/kurumsal.js'); const d = (await o.dosyaAc({}, {})).kimlik as string; // YG-530
       expect(await kurumsalaBildir(o.db, d, { olay: `kb:${d}`, baslik: 'B', ozet: 'Ö' })).toBe(0);
       await o.sup.query(`UPDATE yat SET yat_sahibi_ref = $2 FROM dosya x WHERE x.kimlik = $1 AND yat.kimlik = x.yat_ref`, [d, tr]); await o.sup.query(`UPDATE dosya SET musteri_turu = 'Kurumsal Müşteri' WHERE kimlik = $1`, [d]);
@@ -1873,5 +1874,20 @@ describe('yer listesi (YG-1558)', () => {
     const once = await say();
     await o.dosyaAc({ konum: 'Deneme Marina (Bodrum, Muğla)' }); expect(await say()).toBe(once);
     await o.dosyaAc({ konum: 'Bilinmeyen Koy' }); expect(await say()).toBe(once + 1);
+  });
+});
+
+describe('yatın bulunduğu tesis (YG-331)', () => {
+  it('Dosya tesisi seçilir; konumdan öneri gelir; kural ve izin bilgisi görünür', async () => {
+    const sc = await o.gir('sc'); const ad = `Kısıtlı Marina ${Math.random()}`;
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, ag_statusu, olusturan_ref) VALUES ($1,$2,'Tesis','Aktif',$3) RETURNING kimlik`, [`S-BT${Math.random()}`, ad, o.K.ds])).rows[0].kimlik;
+    const t = (await o.ist('POST', `/api/firma/${f}/tesis`, sc, { ad, il: 'Muğla' })).json().kimlik;
+    expect((await o.ist('POST', `/api/firma-tesis/${t}/bilgi`, sc, { kural: 'Kısıtlı' })).statusCode).toBe(200);
+    const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET konum = $2 WHERE kimlik = $1`, [d.kimlik, `${ad} iskele 3`]);
+    const opm = await o.gir('opm'); const u = `/api/dosya/${d.kimlik}/bulundugu-tesis`;
+    const g = (await o.ist('GET', u, opm)).json(); expect(g.oneri.map((x: any) => x.kimlik)).toContain(t); expect(g.secili).toBeNull();
+    expect((await o.ist('POST', u, opm, { tesis: 'x' })).statusCode).toBe(400);
+    expect((await o.ist('POST', u, opm, { tesis: t })).statusCode).toBe(200);
+    expect((await o.ist('GET', u, opm)).json().secili).toMatchObject({ kimlik: t, kural: 'Kısıtlı' });
   });
 });

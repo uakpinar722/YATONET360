@@ -38,6 +38,24 @@ export function baglamaNoktasiYollari(s: FastifyInstance, b: Baglam) {
   const sicilci = async (k: string) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2::text[]) LIMIT 1`, [k, SICIL])).rowCount);
   const say = (x: unknown) => (x === undefined || x === null || x === '' ? null : Number(x));
 
+  // YG-331: yatın bulunduğu tesis; dosya konumundan öneri, Dosya Sorumlusu (dosyaya erişimi olan LGM personeli) seçer.
+  s.get('/dosya/:id/bulundugu-tesis', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const d = (await b.db.query(`SELECT d.konum, d.bulundugu_tesis_ref, t.ad, t.dis_firma_kurali, t.izin_turu, t.izin_gecerlilik::text FROM dosya d LEFT JOIN firma_tesisi t ON t.kimlik = d.bulundugu_tesis_ref WHERE d.kimlik = $1`, [id])).rows[0];
+    const oneri = d?.konum ? (await b.db.query(`SELECT t.kimlik, t.ad, t.il FROM firma_tesisi t WHERE t.aktif AND (lower($1) LIKE '%' || lower(t.ad) || '%' OR lower(t.ad) LIKE '%' || lower($1) || '%') ORDER BY length(t.ad) DESC LIMIT 5`, [d.konum])).rows : [];
+    const tesisler = (await b.db.query(`SELECT t.kimlik, t.ad, t.il, t.ilce FROM firma_tesisi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.aktif AND k.kayit_rolu = 'Tesis' ORDER BY t.ad LIMIT 500`)).rows;
+    return { secili: d?.bulundugu_tesis_ref ? { kimlik: d.bulundugu_tesis_ref, ad: d.ad, kural: d.dis_firma_kurali, izinTuru: d.izin_turu, izinGecerlilik: d.izin_gecerlilik } : null, oneri, tesisler };
+  });
+  s.post('/dosya/:id/bulundugu-tesis', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const tesis = String(((i.body ?? {}) as { tesis?: string }).tesis ?? '');
+    if (o.grup !== 'LGM İç Rolü' || !UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    if (!UUID.test(tesis) || !(await b.db.query(`SELECT 1 FROM firma_tesisi WHERE kimlik = $1 AND aktif`, [tesis])).rowCount) return y.code(400).send({ hata: 'Yatın bulunduğu tesisi seçiniz.' });
+    await b.db.query(`UPDATE dosya SET bulundugu_tesis_ref = $2 WHERE kimlik = $1`, [id, tesis]);
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yatın Bulunduğu Tesis', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { tesis }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return { tamam: true };
+  });
+
   s.get('/firma-tesis/:id/bilgi', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string }; if (i.oturum!.grup !== 'LGM İç Rolü' || !UUID.test(id)) return yok(y);
     return (await b.db.query(`SELECT tesis_turu, dis_firma_kurali, kayit_sarti, giris_ucreti_eur, servis_kurulus_ref, kural_teyit_tarihi::text, travel_lift_ton, vinc_ton, azami_boy_m, kara_park_kapasitesi, kapasite_teyit_tarihi::text, izin_turu, izin_no, izin_gecerlilik::text, enlem, boylam FROM firma_tesisi WHERE kimlik = $1`, [id])).rows[0] ?? yok(y);

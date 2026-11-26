@@ -11,4 +11,6 @@ const kayitlar = sat.map(([s, n, a]) => ({ seri: Number(s), no: Number(n), ad: a
 const e = ortamOku();
 const c = new pg.Client({ host: 'localhost', user: 'postgres', password: e.POSTGRES_SUPER_PAROLA, database: 'yatonet360' });
 await c.connect();
-try { console.log(JSON.stringify(await adFarkiYukle(c as unknown as pg.PoolClient, kayitlar))); } finally { await c.end(); }
+const kf = new URL('../../../veri/katalog_ad_farki_kararlari.tsv', import.meta.url);
+const kararlar = readFileSync(kf, 'utf8').split(/\r?\n/).filter(Boolean).slice(1).map((l) => l.split('\t')).map(([s, n, so, no]) => ({ seri: Number(s), no: Number(n), sonuc: so!, not: no! }));
+try { console.log(JSON.stringify(await adFarkiYukle(c as unknown as pg.PoolClient, kayitlar, kararlar))); } finally { await c.end(); }

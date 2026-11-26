@@ -2275,7 +2275,7 @@ MRK-0085	Bayliner	Element E18 (2016 - 2022)	Hayır	2	02265	Tarihsel Bayliner mot
 MRK-0085	Bayliner	Element E18 (2018 - 2022)	Hayır	2	02266	Element/M serisi açık güverte motor teknesi			Motor, güç ve tahrik seçeneği teknenin model yılına göre doğrulanacak.	Var	Var	Tamam
 MRK-0085	Bayliner	Element E21	Hayır	2	02267	Element/M serisi açık güverte motor teknesi			Motor, güç ve tahrik seçeneği teknenin model yılına göre doğrulanacak.	Var	Var	Tamam
 MRK-0085	Bayliner	Element M15	Hayır	2	02268	Element/M serisi açık güverte motor teknesi			Motor, güç ve tahrik seçeneği teknenin model yılına göre doğrulanacak.	Var	Var	Tamam
-MRK-0085	Bayliner	Element M17 (2018 - 2022)	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0085	Bayliner	Element M17 (2018 - 2022)	Hayır	2	02269					Yok	Yok	Fotoğraf ve teknik eksik
 MRK-0085	Bayliner	Element M17 (2019 - 2027)	Hayır							Yok	Yok	Katalog kaydı yok
 MRK-0085	Bayliner	Element M19	Hayır	2	02271	Element/M serisi açık güverte motor teknesi			Motor, güç ve tahrik seçeneği teknenin model yılına göre doğrulanacak.	Var	Var	Tamam
 MRK-0085	Bayliner	Element XL	Hayır	2	02272	Element/M serisi açık güverte motor teknesi			Motor, güç ve tahrik seçeneği teknenin model yılına göre doğrulanacak.	Var	Var	Tamam
@@ -2541,7 +2541,7 @@ MRK-0086	Beneteau	First 50	Hayır	2	02503	Beneteau First yelkenli tekne	14,99		A
 MRK-0086	Beneteau	First 51	Hayır	2	02504	Beneteau First yelkenli tekne			Arma ve yelken planı tekne yılına göre doğrulanacak.	Var	Var	Tamam
 MRK-0086	Beneteau	First 53	Hayır	2	02505	Beneteau First yelkenli tekne	17,12		Arma ve yelken planı tekne yılına göre doğrulanacak.	Var	Var	Tamam
 MRK-0086	Beneteau	First 53 F 5	Hayır	2	02506	Beneteau First yelkenli tekne			Arma ve yelken planı tekne yılına göre doğrulanacak.	Var	Var	Tamam
-MRK-0086	Beneteau	First 53+5	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0086	Beneteau	First 53+5	Hayır	2	02507					Yok	Yok	Fotoğraf ve teknik eksik
 MRK-0086	Beneteau	First 60	Hayır	2	02508	Beneteau First performans yelkenlisi	18,95		Yelken tahriki; azami yardımcı motor gücü 150 HP (üretici).	Var	Var	Tamam
 MRK-0086	Beneteau	First 210	Hayır	2	02509	Beneteau First yelkenli tekne			Arma, yelken planı ve yardımcı motor tekne özelinde doğrulanacak.	Var	Var	Tamam
 MRK-0086	Beneteau	First 210 Spirit	Hayır	2	02510	Beneteau First yelkenli tekne			Arma, yelken planı ve yardımcı motor tekne özelinde doğrulanacak.	Var	Var	Tamam
@@ -3447,14 +3447,14 @@ MRK-0107	BSC	60 Open	Hayır	3	03441	Üretici B-TEC Open profesyonel serisi				Va
 MRK-0107	BSC	62	Hayır	3	03430	Üretici Tourism serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	66 Tender	Hayır	3	03438	Üretici Tender serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	67	Hayır	3	03431	Üretici Tourism serisi				Var	Yok	Teknik eksik
-MRK-0107	BSC	70	Hayır	3	03442	Üretici B-TEC Open profesyonel serisi				Var	Yok	Teknik eksik
-MRK-0107	BSC	70 Open	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0107	BSC	70	Hayır	3	03432					Yok	Yok	Fotoğraf ve teknik eksik
+MRK-0107	BSC	70 Open	Hayır	3	03442	Üretici B-TEC Open profesyonel serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	71 Tender	Hayır	3	03439	Üretici Tender serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	75 Open	Hayır	3	03443	Üretici B-TEC Open profesyonel serisi	3,09		Dıştan takma; azami 300 HP	Var	Var	Tamam
 MRK-0107	BSC	77 Tender	Hayır	3	03440	Üretici Tender serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	78	Hayır	3	03433	Üretici Tourism serisi				Var	Yok	Teknik eksik
-MRK-0107	BSC	85	Hayır	3	03444	Üretici B-TEC Open profesyonel serisi				Var	Yok	Teknik eksik
-MRK-0107	BSC	85 Open	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0107	BSC	85	Hayır	3	03434					Yok	Yok	Fotoğraf ve teknik eksik
+MRK-0107	BSC	85 Open	Hayır	3	03444	Üretici B-TEC Open profesyonel serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	100 GT	Hayır	3	03435	Üretici Tourism serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	100 Open	Hayır	3	03445	Üretici B-TEC Open profesyonel serisi				Var	Yok	Teknik eksik
 MRK-0107	BSC	B-1	Hayır	3	03425	Üretici B Line	3,10		Test örneği Suzuki DF300B; azami 350 hp	Var	Var	Tamam
@@ -6670,12 +6670,12 @@ MRK-0182	Egemar	Liberty 48	Hayır	5	06651	Motoryat / özel yat			Yakıt / su	Var
 MRK-0183	Elan	31	Hayır	5	06680	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	31S	Hayır	5	06666	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	37	Hayır	5	06681	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0183	Elan	40	Hayır	5	06669	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
+MRK-0183	Elan	40	Hayır	5	06682					Yok	Yok	Fotoğraf ve teknik eksik
 MRK-0183	Elan	210	Hayır	5	06672	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	295	Hayır	5	06668	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	320	Hayır	5	06673	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	333	Hayır	5	06667	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0183	Elan	340	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0183	Elan	340	Hayır	5	06669	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	350	Hayır	5	06670	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	360	Hayır	5	06674	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0183	Elan	400	Hayır	5	06675	Yelkenli / motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
@@ -6854,8 +6854,8 @@ MRK-0198	EVO	R4 Icone	Hayır	5	06854	Motoryat	14,00		IPS	Yok	Kısmi	Fotoğraf ve
 MRK-0198	EVO	R4 WA	Hayır	5	06849	Motoryat	13,11		IPS	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0198	EVO	R4 XT	Hayır	5	06850	Motoryat	13,00		IPS	Yok	Var	Fotoğraf eksik
 MRK-0198	EVO	R4+	Hayır	5	06855	Motoryat	13,00		IPS	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0198	EVO	R6	Hayır	5	06856	Motoryat	18,00		IPS	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0198	EVO	R6 Open	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0198	EVO	R6	Hayır	5	06847					Yok	Yok	Fotoğraf ve teknik eksik
+MRK-0198	EVO	R6 Open	Hayır	5	06856	Motoryat	18,00		IPS	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0198	EVO	R9	Hayır	5	06857	Motoryat	30,00	Alüminyum	Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0198	EVO	T2	Hayır	5	06852	Motoryat	7,14		Jet drive	Yok	Var	Fotoğraf eksik
 MRK-0198	EVO	T3	Hayır	5	06851	Motoryat	11,58		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
@@ -6919,9 +6919,9 @@ MRK-0205	Ferretti	631	Hayır	5	06938	Motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf
 MRK-0205	Ferretti	660	Hayır	5	06943	Motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	680	Hayır	5	06940	Motoryat	21,00		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	681	Hayır	5	06937	Motoryat	21,00		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0205	Ferretti	720	Hayır	5	06906	Motoryat	22,50		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
+MRK-0205	Ferretti	720	Hayır	5	06946					Yok	Yok	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	731	Hayır	5	06936	Motoryat	22,68		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0205	Ferretti	800	Hayır	5	06907	Motoryat	24,47		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
+MRK-0205	Ferretti	800	Hayır	5	06944					Yok	Yok	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	830	Hayır	5	06935	Motoryat	25,30		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	881	Hayır	5	06945	Motoryat	27,00		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	881 RPH	Hayır	5	06931	Motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
@@ -6940,10 +6940,10 @@ MRK-0205	Ferretti	Yachts 650	Hayır	5	06918	Motoryat	19,67		Yakıt / su	Yok	Kıs
 MRK-0205	Ferretti	Yachts 670	Hayır	5	06905	Motoryat	20,24		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 690	Hayır	5	06919	Motoryat	21,07		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 700	Hayır	5	06928	Motoryat			Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
-MRK-0205	Ferretti	Yachts 720	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0205	Ferretti	Yachts 720	Hayır	5	06906	Motoryat	22,50		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 750	Hayır	5	06920	Motoryat	22,75		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 780	Hayır	5	06921	Motoryat	24,01		Şaft tahriki	Yok	Var	Fotoğraf eksik
-MRK-0205	Ferretti	Yachts 800	Hayır							Yok	Yok	Katalog kaydı yok
+MRK-0205	Ferretti	Yachts 800	Hayır	5	06907	Motoryat	24,47		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 850	Hayır	5	06922	Motoryat	26,00		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 860	Hayır	5	06908	Motoryat	26,95		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik
 MRK-0205	Ferretti	Yachts 920	Hayır	5	06923	Motoryat	28,49		Yakıt / su	Yok	Kısmi	Fotoğraf ve teknik eksik

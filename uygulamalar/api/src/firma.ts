@@ -518,7 +518,12 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       } else if (g.tur === 'KN') await (await import('./kesif_talebi.js')).gonderimeHazirla(c, { kimlik: e.kimlik, is_emri_no: no, dosya_ref: id }); // YG-1597
       else await yayimla(c, e);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'İş Emri Oluşturuldu', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { no, tur: g.tur }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-      return { kimlik: e.kimlik, isEmriNo: no };
+      // YG-331: yatın bulunduğu tesiste dış firma kuralı ve işletme izni uyarıları (engel değil).
+      const bt = (await c.query(`SELECT t.ad, t.dis_firma_kurali, t.izin_turu, t.izin_gecerlilik FROM dosya d JOIN firma_tesisi t ON t.kimlik = d.bulundugu_tesis_ref WHERE d.kimlik = $1`, [id])).rows[0];
+      const uyarilar: string[] = [];
+      if (bt && ['Yasak', 'Kısıtlı'].includes(bt.dis_firma_kurali)) uyarilar.push(`Yatın bulunduğu ${bt.ad} tesisinde dış firma kuralı: ${bt.dis_firma_kurali}. Firmanın tesise girişini tesisle teyit ediniz.`);
+      if (bt && (!bt.izin_turu || (bt.izin_gecerlilik && new Date(bt.izin_gecerlilik) < new Date())) && /sıcak|kaynak|boya|zımpara|gövde|antifouling|zehirli boya/i.test(`${g.brans ?? ''} ${g.kapsam ?? ''}`)) uyarilar.push(`${bt.ad} tesisinin işletme izni kayıtlı değil veya süresi geçmiş; sıcak iş, boya, zımpara, gövde ve antifouling işleri için tesisin iznini teyit ediniz.`);
+      return { kimlik: e.kimlik, isEmriNo: no, uyarilar };
     });
   });
 

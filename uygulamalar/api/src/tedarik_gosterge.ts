@@ -78,7 +78,8 @@ export async function tedarikciKarnesi(db: Pool, simdi = new Date()) {
 /** YG-784: karne eşiği altındaki tedarikçi ayda bir Tedarik Yönetimi Müdürüne bildirilir. */
 export async function tedarikciKarneUyarisi(db: Pool, simdi = new Date()): Promise<number> {
   const ay = new Date(simdi.getTime() + 3 * 3_600_000).toISOString().slice(0, 7); let n = 0;
-  const kisiler = (await db.query(`SELECT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = $1`, [TYM])).rows.map((z) => z.kullanici_ref as string);
+  // CEO 26.11.2026: karne takibi Tedarik Yönetimi Müdüründe; sicil kararına dayanak olabileceğinden Firma Yönetimi Müdürü de bilgilenir.
+  const kisiler = (await db.query(`SELECT DISTINCT a.kullanici_ref FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($1::text[])`, [[TYM, 'Firma Yönetimi Müdürü']])).rows.map((z) => z.kullanici_ref as string);
   for (const t of (await tedarikciKarnesi(db, simdi)).filter((x) => x.esikAlti)) {
     if (!(await birKez(db, 'tedarikci-karne-esik', `${t.kimlik}:${ay}`))) continue;
     await bildir(db, { olay: `tedarikci-karne:${t.kimlik}:${ay}`, kullanicilar: kisiler, baslik: `${t.unvan} · Tedarikçi Karnesi Eşik Altında`, ozet: `Son 180 gün: puan ${String(t.puan).replace('.', ',')} (eşik ${t.esik}), zamanında teslim %${String(t.zamanindaOrani ?? 0).replace('.', ',')}, kabul %${String(t.kabulOrani ?? 0).replace('.', ',')}, ${t.siparis} sipariş.`, oncelik: 'Yüksek' }, simdi); n++;

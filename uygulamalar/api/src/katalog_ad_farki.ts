@@ -21,7 +21,10 @@ export function benzerlik(a: string, b: string): number {
  * YG-1537: ana veri modeline bağlanmamış katalog kayıtları teyit listesine alınır; aday modeller aynı markanın "Katalog kaydı yok" modelleri arasından,
  * katalog adında marka sözcükleri çıkarıldıktan sonraki benzerliğe göre (en çok 3) önerilir. Yeniden yüklemede teyit edilmiş satır değişmez.
  */
-export async function adFarkiYukle(db: Db, kayitlar: { seri: number; no: number; ad: string }[]): Promise<{ eklenen: number; bagli: number }> {
+export async function adFarkiYukle(db: Db, kayitlar: { seri: number; no: number; ad: string }[], kararlar: { seri: number; no: number; sonuc: string; not: string }[] = []): Promise<{ eklenen: number; bagli: number; kapanan: number }> {
+  // Ana veri düzeltmesiyle modele bağlanmış katalog kayıtları teyit listesinde Eşleştirildi olarak kapanır.
+  const kapanan = (await db.query(`UPDATE katalog_ad_farki a SET sonuc = 'Eşleştirildi', model_ref = m.kimlik, teyit_zamani = now(), teyit_notu = 'Ana veri katalog bağı düzeltmesiyle bağlandı (CEO 26.11.2026)' FROM yat_marka_model m
+    WHERE a.sonuc = 'Teyit Bekliyor' AND m.katalog_seri = a.katalog_seri AND m.katalog_no::int = a.katalog_no`)).rowCount ?? 0;
   const bagli = new Set((await db.query(`SELECT katalog_seri, katalog_no FROM yat_marka_model WHERE katalog_seri IS NOT NULL`)).rows.map((r) => `${Number(r.katalog_seri)}:${Number(r.katalog_no)}`));
   const yok = (await db.query(`SELECT kimlik, marka, model FROM yat_marka_model WHERE durum = 'Katalog kaydı yok'`)).rows as { kimlik: string; marka: string; model: string }[];
   let eklenen = 0; let b = 0;
@@ -34,7 +37,9 @@ export async function adFarkiYukle(db: Db, kayitlar: { seri: number; no: number;
     const r = await db.query(`INSERT INTO katalog_ad_farki (katalog_seri, katalog_no, katalog_adi, adaylar) VALUES ($1,$2,$3,$4) ON CONFLICT (katalog_seri, katalog_no) DO UPDATE SET katalog_adi = EXCLUDED.katalog_adi, adaylar = EXCLUDED.adaylar, yukleme_zamani = now() WHERE katalog_ad_farki.sonuc = 'Teyit Bekliyor'`, [k.seri, k.no, k.ad, JSON.stringify(adaylar)]);
     eklenen += r.rowCount ?? 0;
   }
-  return { eklenen, bagli: b };
+  // Kayıtlı teyit kararları (veri/katalog_ad_farki_kararlari.tsv): yalnız Eşleşme Yok kararları uygulanır; eşleştirme bağı ana veri dosyasındadır.
+  for (const k of kararlar.filter((x) => x.sonuc === 'Eşleşme Yok')) await db.query(`UPDATE katalog_ad_farki SET sonuc = 'Eşleşme Yok', teyit_zamani = now(), teyit_notu = $3 WHERE katalog_seri = $1 AND katalog_no = $2 AND sonuc = 'Teyit Bekliyor'`, [k.seri, k.no, k.not]);
+  return { eklenen, bagli: b, kapanan };
 }
 
 export function katalogAdFarkiYollari(s: FastifyInstance, b: Baglam) {

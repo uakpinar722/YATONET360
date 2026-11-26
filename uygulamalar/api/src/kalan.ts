@@ -620,6 +620,20 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
   // YG-1070, D-135: A53 Müşteri ve Paydaş İlişkileri Müdürü Ek-2'yi kaydeder; her değişiklik yeni sürüm, sınır kuruma yansır.
   const mpm = (k: string) => rolVar(k, ['Müşteri ve Paydaş İlişkileri Müdürü']);
   s.get('/kurumsal-kurumlar', oturumlu, async (i, y) => (await mpm(i.oturum!.kullanici)) ? (await b.db.query(`SELECT c.kimlik, c.unvan, c.ek2_onay_siniri, (SELECT max(e.surum) FROM kurumsal_ek2 e WHERE e.kurum_ref = c.kimlik AND e.durum = 'Yürürlükte') surum, EXISTS (SELECT 1 FROM kurumsal_ek2 e WHERE e.kurum_ref = c.kimlik AND e.durum = 'Onay Bekliyor') onayda FROM kurumsal_kurum c ORDER BY c.unvan`)).rows : y.code(403).send({ hata: 'Bu listeyi Müşteri ve Paydaş İlişkileri Müdürü görür.' }));
+  // YG-1449: Ek-2 taslağı Yetki ve Onay Sınırı kayıtlarından doldurulur: yetkili kullanıcı sözleşme muhatabı, en yüksek sınırlı Onaylayan fiyat ve ödeme ile teknik kapsam,
+  // Talep Açan teslim yetkilisi, kurum yatlarına atanmış kaptan (Yat Yetkilisi kaydı, limit), yatlar kurumun yatları. Müdür gözden geçirip gönderir.
+  s.get('/kurumsal-kurum/:id/ek2-taslak', oturumlu, async (i, y) => {
+    const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await mpm(i.oturum!.kullanici))) return yok(y);
+    const kr = (await b.db.query(`SELECT c.taraf_ref, t.telefon FROM kurumsal_kurum c JOIN taraf t ON t.kimlik = c.taraf_ref WHERE c.kimlik = $1`, [id])).rows[0]; if (!kr) return yok(y);
+    const ku = (await b.db.query(`SELECT k.rol, k.onay_siniri::float sinir, k.yetkili, h.ad_soyad, concat_ws(' · ', h.e_posta, h.cep_telefonu) iletisim FROM kurumsal_kullanici k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.kurum_ref = $1 AND h.hesap_durumu = 'Aktif' ORDER BY k.olusturma_zamani`, [id])).rows;
+    const muhatap = ku.find((x) => x.yetkili) ?? ku[0]; const onay = ku.filter((x) => x.rol === 'Onaylayan').sort((a, c) => (c.sinir ?? 0) - (a.sinir ?? 0))[0]; const teslim = ku.find((x) => x.rol === 'Talep Açan');
+    const yatlar = (await b.db.query(`SELECT yat_adi FROM yat WHERE yat_sahibi_ref = $1 ORDER BY yat_adi`, [kr.taraf_ref])).rows.map((x) => x.yat_adi as string);
+    const kp = kr.telefon ? (await b.db.query(`SELECT h.ad_soyad, concat_ws(' · ', h.e_posta, h.cep_telefonu) iletisim, (k.atama_taslak->>'limit')::float lim FROM yat_yetkilisi_kaydi k JOIN kullanici_hesabi h ON h.kimlik = k.kullanici_ref WHERE k.sahip_telefon = $1 AND k.rol = 'Yatın Kaptanı' ORDER BY h.ad_soyad LIMIT 1`, [kr.telefon])).rows[0] : undefined;
+    const tl = (x: number | null | undefined) => (x === null || x === undefined ? '' : x.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+    return { muhatapAd: muhatap?.ad_soyad ?? '', muhatapIl: muhatap?.iletisim ?? '', kapsamAd: onay?.ad_soyad ?? '', kapsamIl: onay?.iletisim ?? '', fiyatAd: onay?.ad_soyad ?? '', fiyatIl: onay?.iletisim ?? '', limit: tl(onay?.sinir),
+      teslimAd: teslim?.ad_soyad ?? '', teslimIl: teslim?.iletisim ?? '', kaptanAd: kp?.ad_soyad ?? '', kaptanIl: kp?.iletisim ?? '', kaptanLimit: tl(kp?.lim ?? (kp ? 0 : null)), yatlar: yatlar.join(', ') };
+  });
   s.post('/kurumsal-kurum/:id/ek2', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { satirlar?: Record<string, { ad?: string; iletisim?: string; limit?: number; belge?: string; not?: string }>; dayanak?: string; gunluk?: string; resmi?: string; yatlar?: string[]; islemler?: string[]; bitis?: string; bilgi?: string[] };
     if (!UUID.test(id) || !(await mpm(o.kullanici))) return y.code(403).send({ hata: 'Ek-2’yi Müşteri ve Paydaş İlişkileri Müdürü kaydeder.' });
