@@ -476,7 +476,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const eksik = Number((await b.db.query(`SELECT count(*) n FROM kartela_kalemi WHERE surum = $1 AND (maliyet_eur <= 0 OR maliyet_tarihi IS NULL OR kaynak_norm IS NULL)`, [sur])).rows[0].n);
     if (eksik) return y.code(409).send({ hata: `${eksik} kalemde pozitif maliyet, maliyet tarihi veya kaynak norm eksiktir.` });
     if ((await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Kartela Sürümü' AND nesne_kimligi = $1 AND kapanma_zamani IS NULL`, [sur])).rowCount) return y.code(409).send({ hata: 'Sürüm onaydadır.' });
-    const k = await kartAc(b.db, { tur: 'Kartela Sürümü', baslik: `Kartela ${sur} · Yürürlüğe Alma`, ozet: 'Onayla önceki sürüm arşive düşer.', hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Kartela Sürümü', nesneKimligi: sur });
+    const k = await kartAc(b.db, { tur: 'Kartela Sürümü', baslik: `Kartela ${sur} · Yürürlüğe Alma`, ozet: 'Onayla önceki sürüm arşive düşer.', hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Genel Müdür Yardımcısı'), await rolId(b.db, 'CEO')] /* YG-541: rutin konular CEO'ya GMY üzerinden */, nesneTuru: 'Kartela Sürümü', nesneKimligi: sur });
     return { kart: k };
   });
 

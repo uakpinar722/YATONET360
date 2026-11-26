@@ -62,7 +62,7 @@ describe('kişisel karne (YG-960–968)', () => {
     expect((await o.ist('POST', u, opm, { rol: 'Dosya Sorumlusu', degerler: d.slice(1), gerekce: 'G' })).statusCode).toBe(400);
     const r = await o.ist('POST', u, opm, { rol: 'Dosya Sorumlusu', degerler: d, gerekce: 'G' }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT agirlik::float a FROM karne_gosterge WHERE kimlik = $1`, [gs[0].kimlik])).rows[0].a).toBe(30);
-    expect((await o.karar((await o.kart('Karne Ağırlık Değişikliği', r.json().kimlik)).kimlik, 'cg', 'Onayla')).statusCode).toBe(200);
+    { const kk = (await o.kart('Karne Ağırlık Değişikliği', r.json().kimlik)).kimlik; expect((await o.karar(kk, 'gmy', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(kk, 'cg', 'Onayla')).statusCode).toBe(200); } // YG-541
     expect((await o.sup.query(`SELECT agirlik::float a FROM karne_gosterge WHERE kimlik = $1`, [gs[0].kimlik])).rows[0].a).toBe(25);
   });
 });

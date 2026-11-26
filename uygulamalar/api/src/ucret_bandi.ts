@@ -67,7 +67,7 @@ export function ucretBandiYollari(s: FastifyInstance, b: Baglam) {
     const disi = brut < Number(bant.alt_tl) || brut > Number(bant.ust_tl);
     if (disi && !(g.gerekce ?? '').trim()) return y.code(400).send({ hata: 'Ücret bant dışındadır; CEO onayı için gerekçe yazınız.' });
     const t = (await b.db.query(`INSERT INTO ucret_teklifi (aday_adi, rol_ref, brut_tl, bant_disi, gerekce, durum, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [aday, g.rol, brut, disi, g.gerekce?.trim() || null, disi ? 'CEO Onayında' : 'Geçerli', o.kullanici])).rows[0].kimlik as string;
-    if (disi) await kartAc(b.db, { tur: TUR, baslik: `${TUR}: ${aday}`, ozet: g.gerekce!.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Ücret Teklifi', nesneKimligi: t });
+    if (disi) await kartAc(b.db, { tur: TUR, baslik: `${TUR}: ${aday}`, ozet: g.gerekce!.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Genel Müdür Yardımcısı'), await rolId(b.db, 'CEO')] /* YG-541: rutin konular CEO'ya GMY üzerinden */, nesneTuru: 'Ücret Teklifi', nesneKimligi: t });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ücret Teklifi', nesneTuru: 'Ücret Teklifi', nesneKimligi: t, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: t, durum: disi ? 'CEO Onayında' : 'Geçerli' };
   });

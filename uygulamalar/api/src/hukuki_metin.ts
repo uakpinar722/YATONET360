@@ -38,7 +38,7 @@ export function hukukiMetinYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM hukuki_metin WHERE kod = $1 AND durum = 'Onayda'`, [kod])).rowCount) return y.code(409).send({ hata: 'Bu metnin onayda bekleyen sürümü vardır.' });
     const surum = sonrakiSurum(mevcut.map((m) => m.surum).sort().pop()!);
     for (const m of mevcut) await b.db.query(`INSERT INTO hukuki_metin (kod, dil, surum, baslik, govde, durum, hazirlayan_ref, degisiklik_gerekcesi) VALUES ($1,$2,$3,$4,$5,'Onayda',$6,$7)`, [kod, m.dil, surum, m.baslik, JSON.stringify(g[m.dil]!.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)), o.kullanici, g.gerekce.trim()]);
-    await kartAc(b.db, { tur: TUR, baslik: `${kod} ${surum} · Sabit Hukuki Metin`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Hukuki Metin', nesneKimligi: `${kod}|*|${surum}` });
+    await kartAc(b.db, { tur: TUR, baslik: `${kod} ${surum} · Sabit Hukuki Metin`, ozet: g.gerekce.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Genel Müdür Yardımcısı'), await rolId(b.db, 'CEO')] /* YG-541: rutin konular CEO'ya GMY üzerinden */, nesneTuru: 'Hukuki Metin', nesneKimligi: `${kod}|*|${surum}` });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Hukuki Metin Onaya Gönderildi', nesneTuru: 'Hukuki Metin', nesneKimligi: `${kod}|${surum}`, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { surum };
   });

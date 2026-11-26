@@ -729,6 +729,7 @@ describe('kartela maliyet girişi ve sürüm (YG-1081, YG-859)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM kartela_kalemi WHERE kod = $1 AND surum = $2`, [kl, eski])).rows[0].n).toBe(1);
     await o.sup.query(`UPDATE kartela_kalemi SET maliyet_tarihi = '2026-11-06', kaynak_norm = 'Deneme', maliyet_eur = greatest(maliyet_eur, 1) WHERE surum = $1 AND kod <> $2`, [sur, k.kod]);
     const g = await o.ist('POST', '/api/kartela/taslak/onaya-gonder', c, {}); expect(g.statusCode, g.body).toBe(200);
+    expect((await o.karar(g.json().kart, 'gmy', 'Onaya Gönder')).statusCode).toBe(200); // YG-541
     expect((await o.karar(g.json().kart, 'bceo', 'Onayla')).statusCode).toBe(200);
     const d = (await o.sup.query(`SELECT surum, durum FROM kartela_surumu WHERE surum = ANY($1)`, [[eski, sur]])).rows;
     expect(Object.fromEntries(d.map((x) => [x.surum, x.durum]))).toEqual({ [eski]: 'Arşiv', [sur]: 'Yürürlükte' });

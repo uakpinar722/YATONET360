@@ -47,7 +47,7 @@ describe('ücret bandı (YG-1082)', () => {
     expect((await o.ist('POST', '/api/ucret-teklifi', iks, { aday: 'Aday B', rol: r, brut: 70000 })).statusCode).toBe(400);
     const t = (await o.ist('POST', '/api/ucret-teklifi', iks, { aday: 'Aday B', rol: r, brut: 70000, gerekce: 'Deneyim' })).json(); expect(t.durum).toBe('CEO Onayında');
     expect(JSON.stringify((await o.ist('GET', '/api/ucret-teklifi', iks)).json())).not.toContain('brut_tl');
-    const k = (await o.kart('Bant Dışı Ücret Teklifi', t.kimlik)).kimlik; expect((await o.karar(k, 'cg', 'Onayla')).statusCode).toBe(200);
+    const k = (await o.kart('Bant Dışı Ücret Teklifi', t.kimlik)).kimlik; expect((await o.karar(k, 'gmy', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(k, 'cg', 'Onayla')).statusCode).toBe(200); // YG-541
     expect((await o.sup.query(`SELECT durum FROM ucret_teklifi WHERE kimlik = $1`, [t.kimlik])).rows[0].durum).toBe('Onaylandı');
   });
 });

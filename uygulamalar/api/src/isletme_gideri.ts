@@ -48,7 +48,7 @@ export function isletmeGideriYollari(s: FastifyInstance, b: Baglam) {
     if (asim && !r.includes(DIREKTOR)) return y.code(403).send({ hata: 'Tavanı aşan gideri Bilgi Teknolojileri ve Firma Yönetimi Direktörü gerekçeyle CEO onayına sunar.' });
     if (asim && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Tavan aşılıyor; gerekçe zorunludur.' });
     const k = (await b.db.query(`INSERT INTO yatonet_gideri (ay, kalem, saglayici, tutar_eur, gerekce, durum, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [g.ay, g.kalem.trim(), g.saglayici.trim(), Number(g.tutar), g.gerekce?.trim() || null, asim ? 'Onayda' : 'Kayıtlı', o.kullanici])).rows[0].kimlik;
-    if (asim) await kartAc(b.db, { tur: ONAY, baslik: `${g.ay} · YATONET 360 tavan üstü gider: ${g.kalem.trim()}`, ozet: `${Number(g.tutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR · ${g.gerekce!.trim()}`.slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'YATONET Gideri', nesneKimligi: k });
+    if (asim) await kartAc(b.db, { tur: ONAY, baslik: `${g.ay} · YATONET 360 tavan üstü gider: ${g.kalem.trim()}`, ozet: `${Number(g.tutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} EUR · ${g.gerekce!.trim()}`.slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'Genel Müdür Yardımcısı'), await rolId(b.db, 'CEO')] /* YG-541: rutin konular CEO'ya GMY üzerinden */, nesneTuru: 'YATONET Gideri', nesneKimligi: k });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'YATONET İşletme Gideri', nesneTuru: 'YATONET Gideri', nesneKimligi: k, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: k, durum: asim ? 'Onayda' : 'Kayıtlı' };
   });

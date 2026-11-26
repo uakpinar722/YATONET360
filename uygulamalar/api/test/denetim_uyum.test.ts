@@ -4,7 +4,7 @@ import { sosyalMedyaIsle } from '../src/sosyal_medya.js';
 import { uyumTaramaGorevi } from '../src/uyum_tarama.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ide: 'İç Denetçi', idm: 'İç Denetim Müdürü', cg: 'CEO', hud: 'Hukuk ve Uyum Direktörü', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', skd: 'Strateji ve Kurumsal Gelişim Direktörü', ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü' };
+const KADRO = { ide: 'İç Denetçi', idm: 'İç Denetim Müdürü', cg: 'CEO', gmy: 'Genel Müdür Yardımcısı', hud: 'Hukuk ve Uyum Direktörü', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü', skd: 'Strateji ve Kurumsal Gelişim Direktörü', ds: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test85', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -134,7 +134,7 @@ describe('Sabit Hukuki Metinler (YG-1697)', () => {
     expect((await o.ist('POST', '/api/hukuki-metin/PRT-01', hud, { tr: tr.govde, gerekce: 'G' })).statusCode).toBe(400);
     const r = await o.ist('POST', '/api/hukuki-metin/PRT-01', hud, { tr: `${tr.govde}\nEk madde`, en: `${en.govde}\nAdditional clause`, gerekce: 'Ek madde' }); expect(r.statusCode, r.body).toBe(200);
     const { sonSurum } = await import('../src/adimlar.js'); expect(await sonSurum(o.db, 'PRT-01')).toBe(tr.surum);
-    const k = await o.kart('Hukuki Metin Onayı', `PRT-01|*|${r.json().surum}`); expect((await o.karar(k.kimlik, 'cg', 'Onayla')).statusCode).toBe(200);
+    const k = await o.kart('Hukuki Metin Onayı', `PRT-01|*|${r.json().surum}`); expect((await o.karar(k.kimlik, 'gmy', 'Onaya Gönder')).statusCode).toBe(200); expect((await o.karar(k.kimlik, 'cg', 'Onayla')).statusCode).toBe(200); // YG-541
     expect(await sonSurum(o.db, 'PRT-01')).toBe(r.json().surum);
   });
 });

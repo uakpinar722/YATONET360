@@ -282,7 +282,7 @@ export function personelKarneYollari(s: FastifyInstance, b: Baglam) {
     try {
       await c.query('BEGIN');
       const k = (await c.query(`INSERT INTO karne_agirlik_onerisi (rol_adi, degerler, gerekce, oneren_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [r.ad, JSON.stringify(d), g.gerekce.trim(), o.kullanici])).rows[0];
-      await kartAc(c, { tur: AGIRLIK, baslik: `${r.ad} · Karne Ağırlıkları`, ozet: g.gerekce.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'CEO')], nesneTuru: 'Karne Ağırlığı', nesneKimligi: k.kimlik });
+      await kartAc(c, { tur: AGIRLIK, baslik: `${r.ad} · Karne Ağırlıkları`, ozet: g.gerekce.trim().slice(0, 200), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Genel Müdür Yardımcısı'), await rolId(c, 'CEO')] /* YG-541: rutin konular CEO'ya GMY üzerinden */, nesneTuru: 'Karne Ağırlığı', nesneKimligi: k.kimlik });
       await c.query('COMMIT');
       return { kimlik: k.kimlik };
     } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
