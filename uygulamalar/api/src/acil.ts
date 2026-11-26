@@ -413,6 +413,11 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     // YG-323: AC iş emrinin mali limiti acil tahmini firma tutarıdır; değişiklik limit sürümü olarak izlenir.
     await c.query(`UPDATE is_emri SET firma_bedeli_eur = $2 WHERE dosya_ref = $1 AND is_emri_turu = 'AC' AND statu NOT IN ('İptal', 'Kapalı', 'Yerine Geçti') AND firma_bedeli_eur IS DISTINCT FROM $2`, [dosya, firmaEur]);
     const al = [m.dosya_sorumlusu_ref].filter(Boolean);
+    if (h.durum === 'Ön Uyarı' && m.sinir_durumu === 'Sınır Altında') { // TZ-9: BLD-82 Çözüm Ortağına (portal + SMS)
+      const hat = await (await import('./acil_ek.js')).destekHatti(c);
+      for (const e of (await c.query(`SELECT e.is_emri_no, array_agg(k.kullanici_ref) kullanicilar FROM is_emri e JOIN kurulus_kullanici k ON k.kurulus_ref = e.kurulus_ref WHERE e.dosya_ref = $1 AND e.is_emri_turu = 'AC' AND e.statu NOT IN ('İptal', 'Kapalı', 'Yerine Geçti') GROUP BY e.is_emri_no`, [dosya])).rows)
+        if (hat) await bildir(c, { olay: `bld82:${dosya}:${e.is_emri_no}`, kullanicilar: e.kullanicilar, baslik: `${e.is_emri_no} · Tahmini Tutar Sınıra Yaklaştı`, ozet: await (await import('./metin.js')).metinGetir(c, 'BLD-82', 'tr', { 'İş Emri No': e.is_emri_no, telefon: hat }), sms: true, oncelik: 'Kritik' }, simdi);
+    }
     if (h.durum === 'Ön Uyarı' && m.sinir_durumu === 'Sınır Altında') await bildir(c, { olay: `acil-onuyari:${dosya}`, kullanicilar: al, baslik: `Acil Tutar Ön Uyarı: ${m.dosya_no}`, ozet: `${tutar(h.yansiyan)} EUR`, oncelik: 'Kritik', acil: true }, simdi);
     if (h.durum === 'Onay Bekliyor' && !durumKilitli) {
       if (!mesaiIcinde(simdi)) await omAramaGorevi(c, dosya, m.dosya_no, '2.500,00 EUR aşımı'); // YG-1481

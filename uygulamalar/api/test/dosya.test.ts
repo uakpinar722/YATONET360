@@ -455,7 +455,8 @@ describe('Beklemede (YG-068, YG-069, YG-070, YG-1491)', () => {
     expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Beklemede 45. Gün Kararı' AND nesne_kimligi = $1`, [r.json().kimlik])).rows[0].n).toBe(1);
     expect((await sup.query(`SELECT statu FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].statu).toBe('Aktif');
     expect((await ist('POST', `/api/beklemede/${r.json().kimlik}/karar`, await gir('ds'), { karar: 'Devam' })).statusCode).toBe(403);
-    expect((await ist('POST', `/api/beklemede/${r.json().kimlik}/karar`, await gir('opm'), { karar: 'Kontrollü Askıda' })).statusCode).toBe(200);
+    expect((await ist('POST', `/api/beklemede/${r.json().kimlik}/karar`, await gir('opm'), { karar: 'Kontrollü Askıda' })).statusCode).toBe(400); // TZ-9: yeniden başlama koşulu zorunlu (BLD-10)
+    expect((await ist('POST', `/api/beklemede/${r.json().kimlik}/karar`, await gir('opm'), { karar: 'Kontrollü Askıda', kosul: 'hava koşullarının düzelmesi' })).statusCode).toBe(200);
     expect((await sup.query(`SELECT statu FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].statu).toBe('Kontrollü Askıda');
   });
   it('uzatma 15 gün; ilk üçü Operasyon Müdürü, 4. uzatma Direktör', async () => {

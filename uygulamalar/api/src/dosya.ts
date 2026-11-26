@@ -427,6 +427,14 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       await yatSahibiHesabi(c, d.kimlik); // YG-1757
       if (sigortali) await c.query(`INSERT INTO dosya_sigorta_kaydi (dosya_ref, sigorta_taraf_ref, sigortaci_adi, police_no, sigorta_hasar_dosya_no, olusturan_ref) VALUES ($1,$2,$3,$4,$5,$6)`, [d.kimlik, t.talep_sahibi_turu === 'Sigorta Şirketi' ? talepTarafi.kimlik : null, sigortaAdi, g.policeNo?.trim() || t.police_no_beyan, g.hasarNo?.trim() || t.sigorta_hasar_dosya_no_beyan, o.kullanici]);
       if (sigortali) await cerceveKontrol(c, d.kimlik, d.dosya_no); // YG-1552
+      // TZ-9 BLD-69: sigorta görevlendirmesiyle gelen dosya eksik bilgiyle koşullu açılırsa eksikler sigorta şirketine e-postayla istenir.
+      { const eb = ((i.body ?? {}) as { eksikBilgi?: string }).eksikBilgi?.trim();
+        if (sigortali && g.karar === 'Koşullu Açılış' && eb && t.talep_sahibi_turu === 'Sigorta Şirketi') {
+          const s = (await c.query(`SELECT s.sigortaci_adi, s.sigorta_hasar_dosya_no, x.eposta FROM dosya_sigorta_kaydi s LEFT JOIN dosya_tarafi x ON x.kimlik = s.sigorta_taraf_ref WHERE s.dosya_ref = $1`, [d.kimlik])).rows[0];
+          const sg = await import('./sigorta_gonderim.js'); const { metinGetir } = await import('./metin.js'); const k = s?.sigortaci_adi ?? ''; const hn = s?.sigorta_hasar_dosya_no ?? t.sigorta_hasar_dosya_no_beyan ?? '—';
+          if (s?.eposta) await sg.sigortayaHazirla(c, { dosya: d.kimlik, tur: 'BLD-69', nesne: d.kimlik, alici: s.eposta, konu: `${d.dosya_no} Eksik Bilgi`, metin: await metinGetir(c, 'BLD-69', 'tr', { Kurum: k, Institution: k, 'Hasar Dosya No': hn, 'Claim File No': hn, 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'eksik bilgi/belge': eb, 'missing information/document': eb }) });
+          else await sg.sigortaAdresiBekleniyor(c, d.kimlik);
+        } }
       await (await import('./belge_uret.js')).belgeUret(c, { tur: 'Hasar İhbar ve İlk Kayıt', nesne: d.kimlik, dosya: d.kimlik }); // YG-715
       // YG-866: atık alımını tesis veya lisanslı firma yapar; LGM koordine eder ve faturalar.
       if (g.hizmetTuru === 'Yat atık alım hizmeti') await kartAc(c, { tur: 'Atık Alım Koordinasyonu', kategori: 'gorev', baslik: `${d.dosya_no} · Yat Atık Alım Hizmeti`, ozet: 'Atık alımını tesis veya lisanslı firmayla planlayınız; hizmet bedeli fiyat teklifiyle faturalanır.', oncelik: t.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipRol: await rolId(c, 'Operasyon Müdürü'), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
@@ -848,16 +856,22 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-069: 45. gün kararı. Kontrollü Askıda dosyayı askıya alır; Kapanış ilgili kapanış adımını açar, otomatik kapanmaz.
   s.post('/beklemede/:id/karar', { preHandler: izinGerekli(b, 'dosya.ata.operasyon') }, async (i, y) => {
-    const o = i.oturum!; const r = await beklemedeGetir((i.params as { id: string }).id, o.kullanici); const { karar } = (i.body ?? {}) as { karar?: string };
+    const o = i.oturum!; const r = await beklemedeGetir((i.params as { id: string }).id, o.kullanici); const { karar, kosul } = (i.body ?? {}) as { karar?: string; kosul?: string };
     if (!r) return yok(y);
     if (!['Devam', 'Kontrollü Askıda', 'Kapanış'].includes(karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
+    if (karar === 'Kontrollü Askıda' && !kosul?.trim()) return y.code(400).send({ hata: 'Çalışmalara hangi koşulda yeniden başlanacağını yazınız.' }); // TZ-9 BLD-10
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
       await c.query(`UPDATE beklemede_isareti SET gun45_karari = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [r.kimlik, karar]);
       await kartKapat(c, 'Beklemede 45. Gün Kararı', r.kimlik);
       if (karar === 'Kontrollü Askıda' && r.statu === 'Aktif') await statuYaz(c, { kimlik: r.dosya_ref, statu: r.statu, asama: r.asama }, { statu: 'Kontrollü Askıda', asama: r.asama }, '45. gün kararı', o.kullanici, 'Operasyon Müdürü');
-      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Beklemede 45. Gün Kararı', nesneTuru: 'Dosya', nesneKimligi: r.dosya_ref, yeni: { karar }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      if (karar === 'Kontrollü Askıda' && r.statu === 'Aktif') { // TZ-9: BLD-10 yat sahibine (vefat askısında otomatik ileti durur)
+        const d = (await c.query(`SELECT dosya_no, yazisma_dili, vefat_isareti FROM dosya WHERE kimlik = $1`, [r.dosya_ref])).rows[0];
+        const ts = (await c.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [r.dosya_ref])).rows[0];
+        if (ts && !d.vefat_isareti) await yatTarafinaYaz(c, { olay: `bld10:${r.kimlik}`, kod: 'BLD-10', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Askı`, telefon: ts.telefon, eposta: ts.eposta, alanlar: { 'Dosya No': d.dosya_no, 'File No': d.dosya_no, neden: String(r.neden).toLocaleLowerCase('tr'), reason: String(r.neden), koşul: kosul!.trim(), condition: kosul!.trim(), 'bağlantı': b.webAdresi, link: b.webAdresi } });
+      }
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Beklemede 45. Gün Kararı', nesneTuru: 'Dosya', nesneKimligi: r.dosya_ref, yeni: { karar, kosul }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
     return { tamam: true };

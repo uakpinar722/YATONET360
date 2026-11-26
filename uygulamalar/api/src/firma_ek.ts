@@ -946,6 +946,16 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
       if (Number(g.kapasite) < Number(g.agirlik)) return y.code(409).send({ hata: 'Ekipman kapasitesi yat ağırlığını karşılamıyor.' });
     }
     const r = await b.db.query(`INSERT INTO kaldirma_tasima (dosya_ref, tur, ekipman, kapasite_ton, yat_agirlik_ton, yeni_hasar, kaydeden_ref, guzergah, su_alma_kontrolu, yeni_hasar_aciklama, acil_istisna) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [id, g.tur, g.ekipman.trim(), g.kapasite ?? null, g.agirlik ?? null, Boolean(g.yeniHasar), o.kullanici, g.guzergah?.trim() || null, g.tur === 'Denize İndirme' ? g.suAlma : null, g.hasarAciklama?.trim() || null, istisna]);
+    { // TZ-9 BLD-08: taşıma için izin gerekiyorsa yat sahibine bildirim (vefat askısında otomatik ileti durur)
+      const gx = (i.body ?? {}) as { gerekliIzin?: string; varisYeri?: string };
+      if (gx.gerekliIzin?.trim()) {
+        await b.db.query(`UPDATE kaldirma_tasima SET gerekli_izin = $2, varis_yeri = $3 WHERE kimlik = $1`, [r.rows[0].kimlik, gx.gerekliIzin.trim(), gx.varisYeri?.trim() || null]);
+        const d = (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [id])).rows[0];
+        const ts = (await b.db.query(`SELECT telefon, eposta FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif LIMIT 1`, [id])).rows[0];
+        const yer = gx.varisYeri?.trim() || g.guzergah?.trim() || '—';
+        if (ts && !d.vefat_isareti) { const ih = await import('./ihbar.js'); await ih.yatTarafinaYaz(b.db, { olay: `bld08:${r.rows[0].kimlik}`, kod: 'BLD-08', dil: ih.dilKod(d.yazisma_dili), konu: `${d.dosya_no} Taşıma İzni`, telefon: ts.telefon, eposta: ts.eposta, alanlar: { Yat: d.yat_adi, Yacht: d.yat_adi, yer, place: yer, izin: gx.gerekliIzin.trim(), permit: gx.gerekliIzin.trim(), 'Dosya No': d.dosya_no, 'File No': d.dosya_no, 'bağlantı': b.webAdresi, link: b.webAdresi } }); }
+      }
+    }
     if (istisna) {
       const no = (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [id])).rows[0].dosya_no; const hud = await rolId(b.db, HUD);
       await kartAc(b.db, { tur: 'Acil Taşıma Bildirimi', kategori: 'gorev', baslik: `${no} · Tedbirli Yat Acil ${g.tur}`, ozet: `${istisna} riski nedeniyle onay beklenmeden ${g.tur!.toLocaleLowerCase('tr-TR')} yapıldı (${g.ekipman.trim()}); takyidat değerlendirmesini yapınız.`, oncelik: 'Kritik', sahipRol: hud, nesneTuru: 'Dosya', nesneKimligi: id });

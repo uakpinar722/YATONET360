@@ -167,6 +167,11 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
     const son = new Date(Date.now() + 48 * 3_600_000);
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO fatura_itirazi (fatura_ref, kalem, tutar_eur, gerekce, belge_ref, yanit_son, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [id, g.kalem!.trim(), g.tutar, g.gerekce!.trim(), g.belge && UUID.test(g.belge) ? g.belge : null, son, o.kullanici])).rows[0];
+      if (f.muhatap !== 'Sigorta Şirketi') { // TZ-9: BLD-64 itiraz alındı bildirimi
+        const ts = (await c.query(`SELECT t.telefon, t.eposta, d.yazisma_dili FROM dosya_tarafi t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE t.dosya_ref = $1 AND t.taraf_rolu = 'Yat Sahibi' AND t.aktif LIMIT 1`, [f.dosya_ref])).rows[0];
+        const zm = new Date().toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
+        if (ts) await (await import('./ihbar.js')).yatTarafinaYaz(c, { olay: `bld64:${r.kimlik}`, kod: 'BLD-64', dil: (await import('./ihbar.js')).dilKod(ts.yazisma_dili), konu: `${f.fatura_no} İtiraz`, telefon: ts.telefon, eposta: ts.eposta, alanlar: { 'Kayıt No': f.fatura_no, 'Record No': f.fatura_no, 'tarih saat': zm, 'date time': zm } });
+      }
       await kartAc(c, { tur: 'Fatura İtirazı', kategori: 'islem', baslik: `${f.dosya_no} · Fatura İtirazı`, ozet: `${f.fatura_no} · ${tutar(Number(g.tutar))} EUR`, oncelik: 'Yüksek', sahipRol: await rolId(c, TID), sonZaman: son, nesneTuru: 'Fatura İtirazı', nesneKimligi: r.kimlik });
       return { kimlik: r.kimlik, yanitSon: son.toISOString() };
     });
