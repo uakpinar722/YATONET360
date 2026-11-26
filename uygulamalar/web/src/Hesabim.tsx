@@ -88,7 +88,7 @@ export function Profilim() {
       <h2 className="ara">Dil</h2>
       <div className="satir2">
         {(['tr', 'en'] as const).map((d) => (
-          <button key={d} type="button" className={`secenek orta${p.dil === d ? ' secili-kart' : ''}`} onClick={() => void yap(() => istek('/profil/dil', { dil: d }), 'Dil tercihiniz kaydedilmiştir.')}><b>{d === 'tr' ? 'Türkçe' : 'English'}</b></button>
+          <button key={d} type="button" className={`secenek orta${p.dil === d ? ' secili-kart' : ''}`} onClick={() => void yap(() => istek('/profil/dil', { dil: d }).then((r) => { setTimeout(() => location.reload(), 700); return r; }), 'Dil tercihiniz kaydedilmiştir.')}><b>{d === 'tr' ? 'Türkçe' : 'English'}</b></button>
         ))}
       </div>
 

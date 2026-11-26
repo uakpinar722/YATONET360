@@ -222,3 +222,20 @@ describe('yetki matrisi değişiklik süreci (YG-996)', () => {
     expect((await o.ist('GET', '/api/yetki-matrisi?rol=Teknik Uzman', sy)).json().rolIzinleri).not.toContain('firma.kayit');
   });
 });
+
+describe('arayüz metni çeviri kütüphanesi (YG-1390, YG-1391)', () => {
+  it('öneri hazırlayanda, onay Direktörde; hukuki metnin İngilizcesi yalnız CEO onayıyla; onaylanmayan karşılık sunulmaz', async () => {
+    const sy = await o.gir('sy'); const btd = await o.gir('btd'); const ds = await o.gir('ds');
+    expect((await o.ist('POST', '/api/arayuz-metni/oneri', ds, { tr: 'Deneme Etiketi', en: 'Test Label' })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/arayuz-metni/oneri', sy, { tr: 'Deneme Etiketi', en: 'Test Label' })).statusCode).toBe(200);
+    expect((await o.ist('POST', '/api/arayuz-metni/oneri', sy, { tr: 'Deneme Hukuki', en: 'Test Legal', hukuki: true })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/arayuz-metinleri', ds)).json().en['Deneme Etiketi']).toBeUndefined();
+    expect((await o.ist('POST', '/api/arayuz-metni/onay', ds, { metinler: ['Deneme Etiketi'] })).statusCode).toBe(403);
+    const r = await o.ist('POST', '/api/arayuz-metni/onay', btd, { metinler: ['Deneme Etiketi', 'Deneme Hukuki'] }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().onaylanan).toBe(1); expect(r.json().uyari).toContain('CEO');
+    const s = (await o.ist('GET', '/api/arayuz-metinleri', ds)).json().en; expect(s['Deneme Etiketi']).toBe('Test Label'); expect(s['Deneme Hukuki']).toBeUndefined();
+    expect((await o.ist('POST', '/api/arayuz-metni/oneri', sy, { tr: 'Deneme Etiketi', en: 'Trial Label' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/arayuz-metinleri', ds)).json().en['Deneme Etiketi']).toBe('Test Label'); // yeni öneri onaylanana kadar eski onaylı karşılık
+    expect((await o.sup.query(`SELECT count(*)::int n FROM arayuz_metni WHERE hukuki AND tr = 'Cayma Hakkımı Kullanmak İstiyorum'`)).rows[0].n).toBe(1);
+  });
+});

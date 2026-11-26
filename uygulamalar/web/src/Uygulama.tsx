@@ -10,6 +10,7 @@ import { Davet, IlkAdimlar } from './IlkGiris';
 import { Panel } from './Panel';
 import { OnayEkrani } from './Portal';
 import { EkipKartiDogrula } from './Portallar';
+import { ceviriBaslat, ceviriDurdur } from './ceviri';
 
 const davetBelirteci = () => /^#davet=(.+)$/.exec(location.hash)?.[1] ?? null;
 
@@ -25,6 +26,8 @@ export function Uygulama() {
     .catch((e) => { if (e instanceof ApiHatasi) setBen(null); })
     .finally(() => setHazir(true));
   useEffect(() => { void yenile(); }, []);
+  // YG-1390: tercih dili İngilizce ise onaylı arayüz metinleri uygulanır.
+  useEffect(() => { if (ben?.dil === 'en' && !ben.eksik.length) void istek<{ en: Record<string, string> }>('/arayuz-metinleri').then((r) => ceviriBaslat(r.en)).catch(() => {}); else ceviriDurdur(); }, [ben?.dil, ben?.eksik.length]);
   // Bağlantı, sayfa açıkken aynı sekmeye yapıştırılırsa da karşılanır.
   useEffect(() => {
     const degisti = () => { setDavet(davetBelirteci()); setParola(/^#parola=(.+)$/.exec(location.hash)?.[1] ?? null); };

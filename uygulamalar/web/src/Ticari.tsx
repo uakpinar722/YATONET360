@@ -1,3 +1,4 @@
+import { ArayuzMetni } from './ArayuzMetni';
 import { OnayaGonder } from './Dugme';
 import { DurumSayilari } from './DurumSayilari';
 import { SigortaPanel } from './SigortaPanel';
@@ -1093,6 +1094,7 @@ export function IdariIslemler() {
       <DenemeDegerlendirme />
       <Guvenlik />
       <YetkiMatrisi />
+      <ArayuzMetni />
       <BolgeKatsayisi />
       <KdvIade />
       <ProblemBulgu />
