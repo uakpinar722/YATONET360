@@ -426,9 +426,10 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!(KL_SONUC as readonly string[]).includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Sonucu seçiniz: Evet, Hayır, Uygulanmaz.' });
     if (g.sonuc === 'Hayır' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Hayır yanıtında açıklama zorunludur.' });
     // YG-613: kanıt tanımlı maddede Uygun sonucu, dosyaya yüklenmiş kanıt belgesi olmadan kabul edilmez.
-    const md = (await b.db.query(`SELECT kanit_tanimi, kanit_belge_ref FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde])).rows[0];
+    const md = (await b.db.query(`SELECT kanit_tanimi, kanit_belge_ref, kritik FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde])).rows[0];
     if (!md) return y.code(404).send({ hata: 'Madde bulunamadı.' });
     if (g.kanit && !(UUID.test(g.kanit) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [g.kanit, k.dosya_ref])).rowCount)) return y.code(400).send({ hata: 'Kanıt bu dosyaya yüklenmiş bir belge olmalıdır.' });
+    if (g.sonuc === 'Evet' && md.kritik && !md.kanit_tanimi && !g.kanit && !md.kanit_belge_ref) return y.code(400).send({ hata: 'Kritik madde kanıt ister; kutunun işaretlenmesi kanıt sayılmaz. Kanıt belgesini ekleyiniz.' }); // YG-135
     if (g.sonuc === 'Evet' && md.kanit_tanimi && !g.kanit && !md.kanit_belge_ref) return y.code(400).send({ hata: `Bu madde kanıt ister (${md.kanit_tanimi}); kutunun işaretlenmesi kanıt sayılmaz. Kanıt belgesini ekleyiniz.` });
     const r = await b.db.query(`UPDATE kontrol_listesi_maddesi SET sonuc = $3, aciklama = $4, kanit_belge_ref = coalesce($5, kanit_belge_ref), kanit_kontrol_eden_ref = NULL, kanit_kontrol_zamani = NULL WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde, g.sonuc, g.aciklama?.trim() || null, g.kanit || null]);
     if (!r.rowCount) return y.code(404).send({ hata: 'Madde bulunamadı.' });
@@ -444,7 +445,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (m.some((x) => !x.sonuc)) return y.code(409).send({ hata: 'Tüm maddeleri yanıtlayınız.' });
     if (m.some((x) => x.sonuc === 'Hayır') && !eksikler?.trim()) return y.code(400).send({ hata: 'Hayır yanıtlı madde varken eksikler alanı zorunludur.' });
     // YG-613: hazırlayan dışındaki onaylayan, kanıtlı maddelerin kanıtını kontrol etmiş olarak kayda geçer.
-    if ((await b.db.query(`SELECT 1 FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND sonuc = 'Evet' AND kanit_tanimi IS NOT NULL AND kanit_belge_ref IS NULL LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Kanıtı eksik Evet yanıtlı madde var.' });
+    if ((await b.db.query(`SELECT 1 FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND sonuc = 'Evet' AND (kanit_tanimi IS NOT NULL OR kritik) AND kanit_belge_ref IS NULL LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Kanıtı eksik Evet yanıtlı madde var.' });
     await b.db.query(`UPDATE kontrol_listesi_maddesi SET kanit_kontrol_eden_ref = $2, kanit_kontrol_zamani = now() WHERE kayit_ref = $1 AND kanit_belge_ref IS NOT NULL`, [id, o.kullanici]);
     await b.db.query(`UPDATE kontrol_listesi_kaydi SET statu = 'Tamamlandı', eksikler = $2, onaylayan_ref = $3, onay_zamani = now() WHERE kimlik = $1`, [id, eksikler?.trim() || null, o.kullanici]);
     return { tamam: true };
@@ -461,7 +462,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
       gorseller: await q(`SELECT g.gorsel_no, g.asama, g.cekim_kalemi, g.bolge_kodu, g.cekilemedi_nedeni, g.cekim_zamani, g.belge_ref FROM gorsel_kanit g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani`),
       olcumler: await q(`SELECT olcum_no, olcum_noktasi, olculen_buyukluk, ozet_deger, birim, gecerlilik, sinir_disi FROM olcum_kaydi WHERE dosya_ref = $1 ORDER BY olcum_no`),
-      bolgeler: await q(`SELECT DISTINCT ON (bolge_kodu) bolge_kodu, gorunus, referans_hat, boyuna_konum_m, surum, incelenmedi FROM hasar_bolgesi WHERE dosya_ref = $1 ORDER BY bolge_kodu, surum DESC`),
+      bolgeler: await q(`SELECT DISTINCT ON (bolge_kodu) bolge_kodu, gorunus, referans_hat, boyuna_konum_m, enine_konum_cm, alan_miktar, birim, cizim_isaret, surum, incelenmedi FROM hasar_bolgesi WHERE dosya_ref = $1 ORDER BY bolge_kodu, surum DESC`),
       kontrolListeleri: await q(`SELECT kimlik, kayit_no, kontrol_listesi, statu FROM kontrol_listesi_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani`),
       fotoEksik: await fotoEksikleri(b.db, id),
       garantiKayitlari: (await q(`SELECT kimlik, kayit_no, kayit_turu, statu, oncelik, yanit_son, karar, sikayet_sonucu FROM garanti_sikayet WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`)).filter((g: { kayit_turu: string[] }) => ustKademe || !g.kayit_turu.some((x) => /ayıp/i.test(x))), // YG-1078

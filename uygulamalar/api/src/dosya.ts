@@ -576,7 +576,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         if (g.rol === 'Yedek Kalite Kontrolör' && !diger) return dur(409, 'Önce dosyanın Kalite Kontrolörünü atayınız.');
         if (diger === g.kullanici) return dur(400, 'Yedek Kalite Kontrolör asıl Kalite Kontrolörden farklı olmalıdır.');
       }
-      if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') if (await boyGovdeEksik(c, id)) return dur(409, 'Boy ve gövde malzemesi dolmadan Teknik Uzman atanamaz. Eksik bilgiyi tamamlayınız.');
+      if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') if (await boyGovdeEksik(c, id)) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Boy ve gövde malzemesi dolmadan Teknik Uzman atanamaz. Eksik bilgiyi tamamlayınız.', islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' }); } // YG-1386
       const sinir = KAPASITE[g.rol!]; let uyari: string | null = null;
       if (sinir) {
         const yuk = await kapasiteYuku(c, g.kullanici, g.rol!);
@@ -681,7 +681,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (!(await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND ozet = $2 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id, h])).rowCount)
         await kartAc(b.db, { tur: 'Aşama Kapısı Eksiği', kategori: 'gorev', baslik: `${d.dosya_no} · ${g.asama} Aşamasına Geçiş İçin Eksik`, ozet: h, oncelik: d.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: sahip, nesneTuru: 'Dosya', nesneKimligi: id });
       // YG-067, YG-1386: engel mesajında eksiği tamamlatan düğme; yat bilgisi eksikse yat formu, diğerlerinde yapılacaklar listesindeki görev.
-      return y.code(409).send({ hata: h, ...(h.startsWith('Teklife geçmek için yat bilgisi eksik') ? { islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' } : { islem: 'Eksiği Tamamla', hedef: 'yapilacaklar' }) });
+      return y.code(409).send({ hata: h, ...(h.startsWith('Teklife geçmek için yat bilgisi eksik') ? { islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' } : h.includes('Lehtar muvafakati') ? { islem: 'Muvafakati Gir', hedef: 'lm-b' } : { islem: 'Eksiği Tamamla', hedef: 'yapilacaklar' }) });
     }
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id]); // YG-158
     const c = await b.db.connect();

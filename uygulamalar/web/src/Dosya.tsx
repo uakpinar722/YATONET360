@@ -1,3 +1,5 @@
+import { HasarBolgesi } from './HasarBolgesi';
+import { Olcum } from './Olcum';
 import { IsEmriSec } from './IsEmriBag';
 import { OnayaGonder } from './Dugme';
 import { GarantiYanit } from './GarantiYanit';
@@ -416,6 +418,7 @@ interface Saha {
   kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null; plan_onay_zamani?: string | null; izinli_islemler?: string[]; yapilan_islemler?: string[] }[];
   bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null; teyit_bekliyor?: boolean }[];
   gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
+  bolgeler?: unknown[];
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
   kontrolListeleri: { kimlik: string; kayit_no: string; kontrol_listesi: string; statu: string }[];
   fotoEksik: string[];
@@ -470,6 +473,8 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
     <>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {not && <div className="not" role="status">{not}</div>}
+      <Olcum dosya={id} olcumler={v.olcumler} ekip={d.ekip} yenile={() => void yukle()} />{/* YG-134 */}
+      <HasarBolgesi dosya={id} bolgeler={(v.bolgeler ?? []) as never} yenile={() => void yukle()} />{/* YG-131 */}
       <Blok baslik="Keşif">
         {v.kesifler.map((k) => <div key={k.kimlik}>{saat(k.planlanan_baslangic)} · {k.amac_kapsam} · {k.durum}{k.cikis_durumu ? ` · ${k.cikis_durumu}` : ''}{k.durum === 'Planlandı' && !k.plan_onay_zamani && <> · Plan Teknik Yönetici onayı bekliyor <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/kesif/${k.kimlik}/plan-onay`, {}))}>Planı Onayla</button></>}</div>)}
         {d.statu === 'Aktif' && d.asama === 'Keşif' && !acikKesif && <>

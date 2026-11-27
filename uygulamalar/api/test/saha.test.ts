@@ -174,6 +174,9 @@ describe('ölçüm, bölge, kontrol listesi (YG-131, YG-134, YG-135)', () => {
     expect(k.kayitNo).toBe(`${d.dosyaNo}-KL-ISG-001-01`); expect(k.maddeler.length).toBeGreaterThan(2);
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: k.maddeler[0], sonuc: 'Uygun Değil' })).statusCode).toBe(400);
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: k.maddeler[1], sonuc: 'Uygun' })).json().hata).toMatch(/kanıt sayılmaz/); // YG-613
+    { // YG-135: kritik madde, kanıt tanımı olmasa da kanıt ister
+      const km = k.maddeler[k.maddeler.length - 1]; await o.sup.query(`UPDATE kontrol_listesi_maddesi SET kritik = true, kanit_tanimi = NULL WHERE kayit_ref = $1 AND madde = $2`, [k.kimlik, km]);
+      const r = await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: km, sonuc: 'Evet' }); expect(r.statusCode).toBe(400); expect(r.json().hata).toContain('Kritik madde'); }
     const kanit = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Giriş teyidi','Fotoğraf','Dosya',$1,'Sistem',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.tu])).rows[0].kimlik;
     for (const m of k.maddeler) await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/madde`, c, { madde: m, sonuc: m === k.maddeler[0] ? 'Hayır' : 'Evet', aciklama: 'A', kanit });
     expect((await o.ist('POST', `/api/kontrol-listesi/${k.kimlik}/tamamla`, c, { eksikler: 'E' })).statusCode).toBe(403);
