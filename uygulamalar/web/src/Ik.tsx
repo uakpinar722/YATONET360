@@ -183,6 +183,7 @@ export function IkYonetimi({ yap }: { yap: Yap }) {
       {yt.ik && x.isveren === 'LGM' && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-kazasi/${x.olay_ref}/sgk`, { tarih: new Date().toISOString().slice(0, 10) }).then(() => { yk(yt); return { uyari: 'SGK bildirimi kaydedildi.' }; }))}>SGK Bildirimi Yapıldı</button>}
     </div></div>)}
     <IsgKayitlari yap={yap} />
+    <HesapBirlestirme yap={yap} />
   </>);
 }
 
@@ -211,4 +212,28 @@ function IsgKayitlari({ yap }: { yap: Yap }) {
       <button className="btn2" disabled={!os.konu.trim() || !os.tarih} onClick={() => void yap(() => istek('/isg/osgb', os).then(() => { setOs({ ...os, konu: '', tarih: '' }); void yk(); return { uyari: 'OSGB yazışması kaydedildi.' }; }))}>Kaydet</button>
     </>}
   </>;
+}
+
+type HbKisi = { kimlik: string; ad_soyad: string; e_posta: string };
+type HbOzet = { ad: string; roller: string[]; acikDosyaGorevi: number; bekleyenKart: number; personelKarti: boolean };
+/** YG-1244: mükerrer personel hesaplarını İnsan Kaynakları Müdürü birleştirir; ana hesabı seçer, çelişen alanları görür, gerekirse geri alır. */
+function HesapBirlestirme({ yap }: { yap: Yap }) {
+  const [v, setV] = useState<{ kisiler: HbKisi[]; gecmis: { kimlik: string; ana: string; eski: string; gerekce: string; durum: string; zaman: string }[] } | null>(null);
+  const [f, setF] = useState({ ana: '', eski: '', gerekce: '' }); const [on, setOn] = useState<{ ana: HbOzet; eski: HbOzet; celisenAlanlar: { alan: string; ana: string; eski: string }[] } | null>(null);
+  const yukle = () => istek<NonNullable<typeof v>>('/hesap-birlestirme').then(setV).catch(() => setV(null));
+  useEffect(() => { void yukle(); }, []);
+  if (!v) return null;
+  const sec = (k: 'ana' | 'eski', id: string) => { setF({ ...f, [k]: id }); setOn(null); };
+  const S = (k: 'ana' | 'eski', et: string) => <><label htmlFor={`hb-${k}`}>{et}</label><select id={`hb-${k}`} value={f[k]} onChange={(e) => sec(k, e.target.value)}><option value="">Seçiniz</option>{v.kisiler.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad} · {x.e_posta}</option>)}</select></>;
+  const O = (et: string, x: HbOzet) => <p>{et}: {x.ad} · Roller: {x.roller.join(', ') || '-'} · Açık dosya görevi: {x.acikDosyaGorevi} · Bekleyen iş: {x.bekleyenKart} · Personel kartı: {x.personelKarti ? 'Var' : 'Yok'}</p>;
+  return <details className="ozet"><summary>Mükerrer Personel Hesabı Birleştirme</summary>
+    {S('ana', 'Ana Hesap')}{S('eski', 'Mükerrer Hesap')}
+    <div className="dugmeler"><button className="btn2 kucuk" disabled={!f.ana || !f.eski || f.ana === f.eski} onClick={() => void yap(() => istek<NonNullable<typeof on>>(`/hesap-birlestirme/onizleme?ana=${f.ana}&eski=${f.eski}`).then(setOn))}>Ön İzleme</button></div>
+    {on && <>{O('Ana Hesap', on.ana)}{O('Mükerrer Hesap', on.eski)}
+      {on.celisenAlanlar.length > 0 && <div className="not">Çelişen alanlar (ana hesaptaki değer kalır): {on.celisenAlanlar.map((c) => `${c.alan}: ${c.ana} / ${c.eski}`).join('; ')}</div>}
+      <label htmlFor="hb-g">Gerekçe</label><input id="hb-g" value={f.gerekce} onChange={(e) => setF({ ...f, gerekce: e.target.value })} />
+      <button className="btn2 kucuk" disabled={!f.gerekce.trim()} onClick={() => void yap(() => istek('/hesap-birlestirme', f).then(() => { setF({ ana: '', eski: '', gerekce: '' }); setOn(null); return yukle(); }))}>Birleştir</button></>}
+    {v.gecmis.length > 0 && <div className="tablo"><table className="kartli"><thead><tr><th>Ana Hesap</th><th>Mükerrer Hesap</th><th>Gerekçe</th><th>Durum</th><th>Tarih</th><th></th></tr></thead><tbody>{v.gecmis.map((g) => <tr key={g.kimlik}><td data-etiket="Ana Hesap">{g.ana}</td><td data-etiket="Mükerrer Hesap">{g.eski}</td><td data-etiket="Gerekçe">{g.gerekce}</td><td data-etiket="Durum">{g.durum}</td><td data-etiket="Tarih">{tarih(g.zaman)}</td>
+      <td>{g.durum === 'Ana Kayda Bağlandı' && <button className="btn2 kucuk" onClick={() => { const n = window.prompt('Geri alma gerekçesi'); if (n?.trim()) void yap(() => istek(`/hesap-birlestirme/${g.kimlik}/geri-al`, { gerekce: n }).then(yukle)); }}>Geri Al</button>}</td></tr>)}</tbody></table></div>}
+  </details>;
 }

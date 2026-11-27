@@ -296,3 +296,25 @@ describe('yıllık eğitim planı ve yan haklar (YG-1616)', () => {
     }
   });
 });
+
+describe('mükerrer personel hesabı birleştirme (YG-1244)', () => {
+  it('İnsan Kaynakları Müdürü ana hesabı seçer; güncel bağlar taşınır, eski hesap kapanır; geri alınabilir', async () => {
+    const yeni = async (ad: string, ep: string) => (await o.sup.query(`INSERT INTO kullanici_hesabi (hesap_turu, kullanici_grubu, ad_soyad, kullanici_adi, e_posta, parola_ozeti, dogrulama_yontemi) SELECT 'İç Kullanıcı','LGM İç Rolü',$1,$2,$2,parola_ozeti,'Doğrulama uygulaması (6 haneli kod)' FROM kullanici_hesabi WHERE kimlik = $3 RETURNING kimlik`, [ad, ep, o.K.ikm])).rows[0].kimlik as string;
+    const ana = await yeni('Mükerrer Kişi', `mk1-${Date.now()}@deneme.yatonet.local`); const eski = await yeni('Mükerrer Kişi', `mk2-${Date.now()}@deneme.yatonet.local`);
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi IN ('Teknik Uzman', 'Teknik Yönetici')`, [eski]);
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Teknik Uzman'`, [ana]);
+    const ikm = await o.gir('ikm');
+    expect((await o.ist('POST', '/api/hesap-birlestirme', await o.gir('iks'), { ana, eski, gerekce: 'X' })).statusCode).toBe(404);
+    const on = (await o.ist('GET', `/api/hesap-birlestirme/onizleme?ana=${ana}&eski=${eski}`, ikm)).json();
+    expect(on.eski.roller).toEqual(['Teknik Uzman', 'Teknik Yönetici']); expect(on.celisenAlanlar.map((x: any) => x.alan)).toEqual(['e_posta']);
+    const r = await o.ist('POST', '/api/hesap-birlestirme', ikm, { ana, eski, gerekce: 'Aynı kişiye iki hesap açılmış' }); expect(r.statusCode, r.body).toBe(200);
+    expect(r.json().tasinan.rol.length).toBe(1); expect(r.json().tasinan.rolKapatilan.length).toBe(1);
+    const rol = async (k: string) => (await o.sup.query(`SELECT r.rol_adi FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' ORDER BY 1`, [k])).rows.map((x) => x.rol_adi);
+    expect(await rol(ana)).toEqual(['Teknik Uzman', 'Teknik Yönetici']); expect(await rol(eski)).toEqual([]);
+    expect((await o.sup.query(`SELECT hesap_durumu, birlestirilen_ana_ref FROM kullanici_hesabi WHERE kimlik = $1`, [eski])).rows[0]).toEqual({ hesap_durumu: 'Kapalı', birlestirilen_ana_ref: ana });
+    expect((await o.ist('POST', '/api/hesap-birlestirme', ikm, { ana, eski, gerekce: 'Tekrar' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/hesap-birlestirme/${r.json().kimlik}/geri-al`, ikm, { gerekce: 'Yanlış eşleşme' })).statusCode).toBe(200);
+    expect(await rol(ana)).toEqual(['Teknik Uzman']); expect(await rol(eski)).toEqual(['Teknik Uzman', 'Teknik Yönetici']);
+    expect((await o.sup.query(`SELECT hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [eski])).rows[0].hesap_durumu).toBe('Aktif');
+  });
+});
