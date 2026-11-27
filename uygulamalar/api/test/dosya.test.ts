@@ -603,3 +603,13 @@ describe('yat belgeleri ve kışlama (YG-098)', () => {
     expect((await sup.query(`SELECT mmsi, motor_adedi FROM yat WHERE kimlik = $1`, [yat])).rows[0]).toEqual({ mmsi: '271123456', motor_adedi: 2 });
   });
 });
+
+describe('görev ayrılığı (YG-054)', () => {
+  it('atayan kendini dosya rolüne atamaz; aynı dosyada uygulayan ve kontrol eden aynı kişi olamaz', async () => {
+    const d = await dosyaAc();
+    await sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Operasyon Yöneticisi' ON CONFLICT DO NOTHING`, [K.opm]);
+    const r = await ata(d.kimlik, 'opm', 'Operasyon Yöneticisi', 'opm'); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Görev ayrılığı');
+    await sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Kalite Kontrolör',$3)`, [d.kimlik, K.tu, K.tm]);
+    const r2 = await ata(d.kimlik, 'tu', 'Teknik Uzman', 'tm'); expect(r2.statusCode).toBe(409); expect(r2.json().hata).toContain('uygulayan ve kontrol eden');
+  });
+});
