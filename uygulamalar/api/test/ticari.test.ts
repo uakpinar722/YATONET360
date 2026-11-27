@@ -614,6 +614,9 @@ describe('fiş aslı (YG-1622)', () => {
   it('yıllık izin hakkı kıdemden hesaplanır (YG-948)', async () => {
     const { yillikIzinHakki } = await import('../src/ticari.js');
     expect(yillikIzinHakki('2026-01-10', '2026-12-01')).toBe(0); expect(yillikIzinHakki('2025-01-10', '2026-01-10')).toBe(14);
+    // YG-948, V-1110: 18 ve daha küçük ile 50 ve daha büyük yaşta en az 20 gün; hak doğmadan yaş kuralı uygulanmaz.
+    expect(yillikIzinHakki('2025-01-10', '2026-01-10', '2008-03-01')).toBe(20); expect(yillikIzinHakki('2025-01-10', '2026-01-10', '1976-01-10')).toBe(20);
+    expect(yillikIzinHakki('2025-01-10', '2026-01-10', '1976-01-11')).toBe(14); expect(yillikIzinHakki('2011-01-10', '2026-01-10', '1970-01-01')).toBe(26); expect(yillikIzinHakki('2026-01-10', '2026-12-01', '1960-01-01')).toBe(0);
     expect(yillikIzinHakki('2020-01-10', '2026-01-10')).toBe(20); expect(yillikIzinHakki('2011-01-10', '2026-01-10')).toBe(26); expect(yillikIzinHakki('2021-01-10', '2026-01-10')).toBe(14);
   });
   it('tevkifatlı faturalar aylık listelenir ve KDV iade dökümü alınır (YG-882)', async () => {

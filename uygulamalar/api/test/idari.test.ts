@@ -158,3 +158,28 @@ describe('iade edilen idari talep', () => {
     expect((await o.sup.query(`SELECT durum FROM idari_talep WHERE kimlik = $1`, [t])).rows[0].durum).toBe('İdari İşlerde');
   });
 });
+
+describe('belge onayı ve ıslak imza istisnası (YG-223, YG-1406)', () => {
+  it('kişi YATONET 360 onayı verir; sistem erişimi yoksa hazırlayan ıslak imzalı belgeyi gerekçesiyle yükler', async () => {
+    const idr = await o.gir('idr'); const ds = await o.gir('ds');
+    expect((await o.ist('POST', '/api/imza-beyani', idr, { belgeTuru: 'Tebliğ', konu: 'K', icerik: 'İ', kisi: o.K.idr })).statusCode).toBe(400);
+    expect((await o.ist('POST', '/api/imza-beyani', idr, { belgeTuru: 'Sözleşme', konu: 'K', icerik: 'İ', kisi: o.K.ds })).statusCode).toBe(400);
+    const a = (await o.ist('POST', '/api/imza-beyani', idr, { belgeTuru: 'Tebliğ', konu: 'Çalışma Saatleri', icerik: 'Yeni çalışma saatleri tebliğidir.', kisi: o.K.ds })).json().kimlik;
+    expect((await o.sup.query(`SELECT sahip_kullanici_ref FROM is_karti WHERE tur = 'Belge Onayı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [a])).rows[0].sahip_kullanici_ref).toBe(o.K.ds);
+    expect((await o.ist('GET', '/api/imza-beyanlari', ds)).json().kayitlar.some((x: { kimlik: string; bana: boolean }) => x.kimlik === a && x.bana)).toBe(true);
+    expect((await o.ist('POST', `/api/imza-beyani/${a}/onayla`, idr, {})).statusCode).toBe(404); // hazırlayan onaylayamaz
+    expect((await o.ist('POST', `/api/imza-beyani/${a}/onayla`, ds, {})).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/imza-beyani/${a}/onayla`, ds, {})).statusCode).toBe(404);
+    expect((await o.sup.query(`SELECT durum, onay_oturumu IS NOT NULL o FROM imza_beyani WHERE kimlik = $1`, [a])).rows[0]).toEqual({ durum: 'Onaylandı', o: true });
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Belge Onayı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [a])).rows[0].n).toBe(0);
+    // Islak imza istisnası
+    const z = (await o.ist('POST', '/api/imza-beyani', idr, { belgeTuru: 'Zimmet', konu: 'Telsiz', icerik: 'Telsiz teslimi.', kisi: o.K.opm })).json().kimlik;
+    expect((await o.ist('POST', `/api/imza-beyani/${z}/islak-imza`, idr, { gerekce: 'Sahada, sistem erişimi yok' })).statusCode).toBe(400);
+    const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Islak','K','Gizli','İmza Beyanı',$1,'Sistem',current_date,$2) RETURNING kimlik`, [z, o.K.idr])).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/imza-beyani/${z}/islak-imza`, idr, { belge: bl })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/imza-beyani/${z}/islak-imza`, ds, { belge: bl, gerekce: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/imza-beyani/${z}/islak-imza`, idr, { belge: bl, gerekce: 'Sahada, sistem erişimi yok' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum, islak_gerekce FROM imza_beyani WHERE kimlik = $1`, [z])).rows[0]).toEqual({ durum: 'Islak İmzalı', islak_gerekce: 'Sahada, sistem erişimi yok' });
+    expect((await o.ist('POST', `/api/imza-beyani/${z}/onayla`, await o.gir('opm'), {})).statusCode).toBe(404);
+  });
+});

@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState, type FormEvent } from 'react';
 import { istek } from './api';
 
@@ -6,6 +7,7 @@ interface Tur { kod: string; ad: string; katilimcilar: string; dosyaGerekli?: bo
 interface Kisi { kimlik: string; ad_soyad: string }
 interface Katilimci { kimlik: string; ad_soyad: string; katilim: string; vekil_durumu: string | null; vekil: string | null }
 interface Ayrinti extends Satir {
+  vekilMakami?: string | null;
   gundem: string | null; tutanak: string | null; baskan: string; duzenleyen: string; siklik: string; baskanim: boolean; duzenleyenim: boolean;
   katilimcilar: Katilimci[]; kararlar: { kimlik: string; metin: string; hedef: string; sorumlu: string; karar_turu: string; basari_olcutu: string | null; izleme_donemi: string | null }[];
 }
@@ -124,7 +126,7 @@ function ToplantiAyrinti({ id, kisiler, geri }: { id: string; kisiler: Kisi[]; g
           <label htmlFor="t-v">Vekil Talep Et</label>
           <select required id="t-v" value={vekil} onChange={(e) => setVekil(e.target.value)}><option value="">Seçiniz</option>{kisiler.map((k) => <option key={k.kimlik} value={k.kimlik}>{k.ad_soyad}</option>)}</select>
           <div className="not">Vekil, üst makamınızın en geç toplantıdan 1 saat önce vereceği onayla geçerlidir; onay yoksa mazeretli sayılırsınız.</div>
-          <button className="btn2" disabled={!vekil}>Onaya Gönder</button>
+          {t.vekilMakami ? <OnayaGonder rol={t.vekilMakami} disabled={!vekil} /> : <button className="btn2" disabled={!vekil}>Onaya Gönder</button>}
         </form>
       )}
       <div className="bolum">Kararlar</div>

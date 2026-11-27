@@ -40,7 +40,7 @@ describe('deneme süresi değerlendirmesi (YG-970)', () => {
     const opm = await o.gir('opm'); const u = `/api/deneme/${o.K.ds}/hazirla`;
     expect((await o.ist('POST', u, await o.gir('tod'), { oneri: 'Devam', notlar: 'N' })).statusCode).toBe(404);
     expect((await o.ist('POST', u, opm, { oneri: 'X', notlar: 'N' })).statusCode).toBe(400);
-    expect((await o.ist('GET', '/api/deneme/bekleyen', opm)).json().map((x: { personel: string }) => x.personel)).toContain(o.K.ds);
+    expect((await o.ist('GET', '/api/deneme/bekleyen', opm)).json().map((x: { personel: string }) => x.personel)).toContain(o.K.ds); expect((await o.ist('GET', '/api/deneme/bekleyen', opm)).json().find((x: { personel: string }) => x.personel === o.K.ds)).toHaveProperty('sonraki'); // YG-1591
     expect((await o.ist('POST', u, opm, { oneri: 'Devam', notlar: 'Uygun' })).statusCode).toBe(200);
     expect((await o.kart('Deneme Süresi Değerlendirmesi', o.K.ds!)).durum).toBe('Tamamlandı');
     expect((await o.karar((await o.kart('Deneme Süresi Kararı', o.K.ds!)).kimlik, 'tod', 'Onayla')).statusCode).toBe(200);

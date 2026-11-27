@@ -1,3 +1,4 @@
+import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
@@ -39,7 +40,7 @@ export function PeriyodikTakvimim() {
     </div>}</>;
 }
 
-type B = { personel: string; bitis: string; ad: string };
+type B = { personel: string; bitis: string; ad: string; sonraki: string | null };
 /** YG-970: deneme süresi değerlendirmesini ilk amir hazırlar. */
 export function DenemeDegerlendirme() {
   const [l, setL] = useState<B[]>([]); const [f, setF] = useState<Record<string, { oneri: string; notlar: string }>>({}); const [m, setM] = useState('');
@@ -47,5 +48,6 @@ export function DenemeDegerlendirme() {
   useEffect(() => { void yk(); }, []);
   if (!l.length) return null;
   return <><div className="bolum">Deneme Süresi Değerlendirmeleri</div>{m && <div className="not" role="status">{m}</div>}
-    {l.map((x) => { const a = f[x.personel] ?? { oneri: 'Devam', notlar: '' }; return <div className="soru" key={x.personel}><span>{x.ad} · Bitiş: {x.bitis.split('-').reverse().join('.')}</span><div className="tam"><label htmlFor={`dn-o-${x.personel}`}>Öneri</label><select id={`dn-o-${x.personel}`} value={a.oneri} onChange={(e) => setF({ ...f, [x.personel]: { ...a, oneri: e.target.value } })}><option>Devam</option><option>Sonlandırma</option></select><label htmlFor={`dn-n-${x.personel}`}>Değerlendirme Notu</label><input required id={`dn-n-${x.personel}`} value={a.notlar} onChange={(e) => setF({ ...f, [x.personel]: { ...a, notlar: e.target.value } })} /><button className="btn2 kucuk" disabled={!a.notlar.trim()} onClick={() => void istek(`/deneme/${x.personel}/hazirla`, a).then(() => { setM('Değerlendirme silsileye gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></div></div>; })}</>;
+    {l.map((x) => { const a = f[x.personel] ?? { oneri: 'Devam', notlar: '' }; return <div className="soru" key={x.personel}><span>{x.ad} · Bitiş: {x.bitis.split('-').reverse().join('.')}</span><div className="tam"><label htmlFor={`dn-o-${x.personel}`}>Öneri</label><select id={`dn-o-${x.personel}`} value={a.oneri} onChange={(e) => setF({ ...f, [x.personel]: { ...a, oneri: e.target.value } })}><option>Devam</option><option>Sonlandırma</option></select><label htmlFor={`dn-n-${x.personel}`}>Değerlendirme Notu</label><input required id={`dn-n-${x.personel}`} value={a.notlar} onChange={(e) => setF({ ...f, [x.personel]: { ...a, notlar: e.target.value } })} />{x.sonraki ? <OnayaGonder rol={x.sonraki} className="btn2 kucuk" disabled={!a.notlar.trim()} onClick={() => void istek(`/deneme/${x.personel}/hazirla`, a).then(() => { setM('Değerlendirme silsileye gönderildi.'); return yk(); }).catch((e) => setM(e.message))} />
+      : <button className="btn2 kucuk evet" disabled={!a.notlar.trim()} onClick={() => void istek(`/deneme/${x.personel}/hazirla`, a).then(() => { setM('Değerlendirme sonuçlandı.'); return yk(); }).catch((e) => setM(e.message))}>Onayla</button>}</div></div>; })}</>;
 }

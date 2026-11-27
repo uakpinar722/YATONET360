@@ -57,7 +57,9 @@ export function hesapKurtarmaYollari(s: FastifyInstance, b: Baglam) {
     const g = rows[0].kullanici_grubu as string;
     const yol = g === 'LGM İç Rolü' ? 'Onaya Gönder' : g === 'İş Birliği Firması' || g === 'Tedarikçi' || g.startsWith('Tesis Yetkilisi') ? 'Sicil Sorumlusuna Gönder'
       : g === 'Kurumsal Müşteri' || g.startsWith('Sigorta Şirketi') || g.startsWith('Broker') || g.startsWith('Acente') ? 'Müşteri ve Paydaş İlişkileri Müdürlüğüne Gönder' : null;
-    return { ...rows[0], yol };
+    const tm = yol ? await teyitMakami(b.db, rows[0].kimlik, g) : null; // YG-1591: Gönderilecek
+    const makam = tm ? ((await b.db.query(`SELECT rol_adi FROM rol WHERE kimlik = $1`, [tm.rol])).rows[0]?.rol_adi ?? null) : null;
+    return { ...rows[0], yol, makam };
   });
 
   s.post('/hesap-kurtarma', yetkili, async (i, y) => {

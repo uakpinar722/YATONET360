@@ -339,3 +339,27 @@ describe('sigorta toplu ödemesi (YG-902)', () => {
     expect((await o.ist('GET', `${u}?sigortaci=${encodeURIComponent(SG)}`, ts)).json().faturalar.map((z: { kimlik: string }) => z.kimlik)).toEqual([kb]);
   });
 });
+
+describe('ekipman, sözleşme ve belge birleştirme (YG-1244, V-1112)', () => {
+  it('her türü kendi veri sahibi birleştirir; farklı firmanın ekipmanı birleşmez; geri alınır', async () => {
+    const opm = await o.gir('opm'); const hud = await o.gir('hud');
+    await o.sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) SELECT $1, kimlik FROM rol WHERE rol_adi = 'Firma Yönetimi Müdürü' ON CONFLICT DO NOTHING`, [o.K.tm]); const fym = await o.gir('tm');
+    expect((await o.ist('GET', '/api/birlestirme/turler', fym)).json().map((x: { tur: string }) => x.tur)).toContain('firma_ekipmani');
+    expect((await o.ist('GET', '/api/birlestirme/turler', hud)).json()).toEqual([{ tur: 'sozlesme_kaydi', ad: 'Sözleşme' }]);
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-BE','Ekipmanlı','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const f2 = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ('S-BE2','Başka','Çözüm Ortağı',$1) RETURNING kimlik`, [o.K.ds])).rows[0].kimlik;
+    const ek = async (k: string, ad: string, seri: string) => (await o.sup.query(`INSERT INTO firma_ekipmani (kurulus_ref, ad, seri_no, kaydeden_ref) VALUES ($1,$2,$3,$4) RETURNING kimlik`, [k, ad, seri, o.K.ds])).rows[0].kimlik as string;
+    const a = await ek(f, 'Tork Anahtarı', 'TA-77'); const e = await ek(f, 'Tork anahtari', 'TA 77'); const x = await ek(f2, 'Tork Anahtarı', 'TA-77');
+    expect((await o.ist('GET', '/api/birlestirme/ara?tur=firma_ekipmani&q=tork', fym)).json().length).toBe(3);
+    expect((await o.ist('POST', '/api/birlestirme', opm, { tur: 'firma_ekipmani', ana: a, eski: e, gerekce: 'Aynı alet' })).statusCode).toBe(403);
+    expect((await o.ist('POST', '/api/birlestirme', fym, { tur: 'firma_ekipmani', ana: a, eski: x, gerekce: 'Aynı alet' })).statusCode).toBe(409);
+    expect((await o.ist('GET', `/api/birlestirme/onizleme?tur=firma_ekipmani&ana=${a}&eski=${e}`, fym)).json().celisenAlanlar.map((c: { alan: string }) => c.alan)).toContain('ad');
+    const r = await o.ist('POST', '/api/birlestirme', fym, { tur: 'firma_ekipmani', ana: a, eski: e, gerekce: 'Aynı alet' }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.ist('GET', `/api/birlestirme/yonlendir/firma_ekipmani/${e}`, fym)).json()).toEqual({ kimlik: a, yonlendirildi: true });
+    const g = (await o.ist('GET', '/api/birlestirme', fym)).json(); expect(g[0]).toMatchObject({ tur: 'firma_ekipmani', ana: 'Tork Anahtarı · TA-77' });
+    expect((await o.ist('GET', '/api/birlestirme', hud)).json().some((z: { tur: string }) => z.tur === 'firma_ekipmani')).toBe(false);
+    expect((await o.ist('POST', `/api/birlestirme/${r.json().kimlik}/geri-al`, hud, { gerekce: 'X' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/birlestirme/${r.json().kimlik}/geri-al`, fym, { gerekce: 'Farklı aletler' })).statusCode).toBe(200);
+    expect((await o.ist('GET', `/api/birlestirme/yonlendir/firma_ekipmani/${e}`, fym)).json().yonlendirildi).toBe(false);
+  });
+});

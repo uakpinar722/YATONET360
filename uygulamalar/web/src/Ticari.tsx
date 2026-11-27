@@ -1,3 +1,4 @@
+import { ImzaBeyani } from './ImzaBeyani';
 import { EgitimSenaryolari } from './EgitimSenaryolari';
 import { KapasiteIstisnaIste } from './KapasiteIstisnasi';
 import { Izlenebilirlik, TicariBekletme } from './IsEmriBag';
@@ -1089,6 +1090,7 @@ export function IdariIslemler() {
       <IdariAna />
       <IdariTalep />
       <PersonelEk />
+      <ImzaBeyani />
       <PoliceListesi />
       <PersonelKarne />
       <GorevTanimim />

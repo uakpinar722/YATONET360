@@ -110,7 +110,8 @@ export function akademiYollari(s: FastifyInstance, b: Baglam) {
   s.get('/deneme/bekleyen', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const l = (await b.db.query(`SELECT d.personel_ref, d.bitis_tarihi::text, d.zincir, h.ad_soyad FROM deneme_degerlendirme d JOIN kullanici_hesabi h ON h.kimlik = d.personel_ref WHERE d.durum = 'Hazırlanıyor' AND d.personel_ref <> $1`, [o.kullanici])).rows;
-    const r = []; for (const x of l) if (await hazirlayanMi(o.kullanici, x.zincir)) r.push({ personel: x.personel_ref, bitis: x.bitis_tarihi, ad: x.ad_soyad });
+    const rolAdi = async (k?: string) => (k ? (await b.db.query(`SELECT rol_adi FROM rol WHERE kimlik = $1`, [k])).rows[0]?.rol_adi as string | undefined : undefined) ?? null;
+    const r = []; for (const x of l) if (await hazirlayanMi(o.kullanici, x.zincir)) r.push({ personel: x.personel_ref, bitis: x.bitis_tarihi, ad: x.ad_soyad, sonraki: await rolAdi(x.zincir[1]) }); // YG-1591: Gönderilecek
     return r;
   });
   s.post('/deneme/:personel/hazirla', oturumlu, async (i, y) => {

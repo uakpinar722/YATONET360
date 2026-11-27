@@ -100,7 +100,7 @@ describe('hesap kurtarma (YG-1156, A32-3)', () => {
   it('hesap yalnız tam bilgiyle bulunur', async () => {
     const d = await gir(DES);
     expect((await ist('POST', '/api/hesap-kurtarma/bul', d, { kimlik: SIS })).json().kimlik).toBe(K[SIS]);
-    expect((await ist('POST', '/api/hesap-kurtarma/bul', d, { kimlik: SIS })).json().yol).toBe('Onaya Gönder'); // YG-1699 (A52-Z1)
+    expect((await ist('POST', '/api/hesap-kurtarma/bul', d, { kimlik: SIS })).json().yol).toBe('Onaya Gönder'); // YG-1699 (A52-Z1) expect((await ist('POST', '/api/hesap-kurtarma/bul', d, { kimlik: SIS })).json().makam).toBeTruthy(); // YG-1591
     expect((await ist('POST', '/api/hesap-kurtarma/bul', d, { kimlik: 'yok' + D })).statusCode).toBe(404);
     expect((await ist('POST', '/api/hesap-kurtarma/bul', d, { kimlik: 'sistem' })).statusCode).toBe(400);
   });

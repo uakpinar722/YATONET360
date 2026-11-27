@@ -199,7 +199,9 @@ export function toplantiYollari(s: FastifyInstance, b: Baglam) {
     const t = (await b.db.query(`SELECT t.*, c.ad AS tur, c.siklik, b.ad_soyad AS baskan, d.ad_soyad AS duzenleyen FROM toplanti t JOIN toplanti_katalogu c ON c.kod = t.tpl_kod JOIN kullanici_hesabi b ON b.kimlik = t.baskan_ref JOIN kullanici_hesabi d ON d.kimlik = t.duzenleyen_ref WHERE t.kimlik = $1`, [id])).rows[0];
     const k = await b.db.query(`SELECT h.kimlik, h.ad_soyad, p.katilim, p.vekil_durumu, v.ad_soyad AS vekil FROM toplanti_katilimci p JOIN kullanici_hesabi h ON h.kimlik = p.kullanici_ref LEFT JOIN kullanici_hesabi v ON v.kimlik = p.vekil_ref WHERE p.toplanti_ref = $1 ORDER BY h.ad_soyad`, [id]);
     const r = await b.db.query(`SELECT a.kimlik, a.metin, a.hedef_tarih::text AS hedef, a.karar_turu, a.basari_olcutu, a.izleme_donemi, h.ad_soyad AS sorumlu FROM toplanti_karar a JOIN kullanici_hesabi h ON h.kimlik = a.sorumlu_ref WHERE a.toplanti_ref = $1 ORDER BY a.zaman`, [id]);
-    return { ...t, katilimcilar: k.rows, kararlar: r.rows, baskanim: t.baskan_ref === o.kullanici, duzenleyenim: t.duzenleyen_ref === o.kullanici };
+    const ilk = (await kullaniciRolleri(b.db, o.kullanici))[0]; // YG-1591: vekil talebinin gideceği makam
+    const vekilMakami = ilk ? ((await b.db.query(`SELECT rol_adi FROM rol WHERE kimlik = $1`, [await onayMakami(b.db, ilk.kimlik)])).rows[0]?.rol_adi ?? null) : null;
+    return { ...t, katilimcilar: k.rows, kararlar: r.rows, baskanim: t.baskan_ref === o.kullanici, duzenleyenim: t.duzenleyen_ref === o.kullanici, vekilMakami };
   });
 
   // YG-576, YG-584: karar sorumlu ve tarihle işlenir, sorumlunun Bugün listesine görev düşer.

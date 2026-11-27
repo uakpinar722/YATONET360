@@ -384,18 +384,26 @@ export async function faturaTahsilatIsle(c: Db, g: { fatura: string; tutar: numb
 }
 
 /** YG-948: İş Kanunu m.53 kıdeme göre yıllık izin hakkı; bir yıl tamamlanmadan hak doğmaz. */
-export function yillikIzinHakki(iseGiris: string, tarih: string): number {
-  const g = new Date(`${iseGiris}T00:00:00Z`); const t = new Date(`${tarih}T00:00:00Z`);
+const tamYil = (bas: string, tarih: string) => {
+  const g = new Date(`${bas}T00:00:00Z`); const t = new Date(`${tarih}T00:00:00Z`);
   let yil = t.getUTCFullYear() - g.getUTCFullYear(); if (t.getUTCMonth() < g.getUTCMonth() || (t.getUTCMonth() === g.getUTCMonth() && t.getUTCDate() < g.getUTCDate())) yil--;
-  return yil < 1 ? 0 : yil <= 5 ? 14 : yil < 15 ? 20 : 26;
+  return yil;
+};
+/** YG-948, V-1110: doğum tarihi girilmişse 18 ve daha küçük ile 50 ve daha büyük yaştaki personelin yıllık izni 20 günden az olamaz. */
+export function yillikIzinHakki(iseGiris: string, tarih: string, dogum?: string | null): number {
+  const yil = tamYil(iseGiris, tarih);
+  const hak = yil < 1 ? 0 : yil <= 5 ? 14 : yil < 15 ? 20 : 26;
+  if (!hak || !dogum) return hak;
+  const yas = tamYil(dogum, tarih);
+  return yas <= 18 || yas >= 50 ? Math.max(hak, 20) : hak;
 }
 /** Bakiye kaydı yoksa personel kartındaki işe giriş tarihinden hesaplanarak açılır; hak doğmamışsa null. */
 export async function izinBakiyesi(db: Pool | PoolClient, personel: string, yil: number, tarih: string): Promise<{ hak: number; kullanilan: number } | null> {
   const bk = (await db.query(`SELECT hak, kullanilan FROM izin_bakiyesi WHERE personel_ref = $1 AND yil = $2`, [personel, yil])).rows[0];
   if (bk) return { hak: Number(bk.hak), kullanilan: Number(bk.kullanilan) };
-  const k = (await db.query(`SELECT ise_giris_tarihi::text g FROM personel_karti WHERE kullanici_ref = $1`, [personel])).rows[0];
+  const k = (await db.query(`SELECT ise_giris_tarihi::text g, dogum_tarihi::text d FROM personel_karti WHERE kullanici_ref = $1`, [personel])).rows[0];
   if (!k) return null;
-  const hak = yillikIzinHakki(k.g, tarih); if (!hak) return null;
+  const hak = yillikIzinHakki(k.g, tarih, k.d); if (!hak) return null;
   await db.query(`INSERT INTO izin_bakiyesi (personel_ref, yil, hak) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, [personel, yil, hak]);
   return { hak, kullanilan: 0 };
 }
