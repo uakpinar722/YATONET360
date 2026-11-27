@@ -91,10 +91,30 @@ kapanisKaydet('Acil Tutar Onayı', async (c, k, karar) => {
   if (karar === 'Onayla') await c.query(`UPDATE acil_mudahale SET sinir_durumu = 'Onaylandı' WHERE dosya_ref = $1::uuid`, [k.nesne_kimligi]);
 });
 
-async function sirakiSaglayici(c: PoolClient, dosya: string): Promise<{ kimlik: string; ticari_unvan: string } | undefined> {
-  // YG-266, YG-272: aktif, onaylı, acil hizmet verir; müsait olmayan atlanır; daha önce çağrılan atlanır.
-  return (await c.query(`SELECT u.kimlik, u.ticari_unvan FROM kurulus u WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.acil_hizmet_verir AND u.acil_musaitlik AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND NOT EXISTS (SELECT 1 FROM acil_gorev_cagrisi a WHERE a.dosya_ref = $1 AND a.kurulus_ref = u.kimlik)
-    AND ($2::int <> 1 OR EXISTS (SELECT 1 FROM sozlesme_kaydi s WHERE s.kurulus_ref = u.kimlik AND s.durum = 'Yürürlükte' AND s.yururluk <= current_date AND (s.bitis IS NULL OR s.bitis >= current_date))) ORDER BY u.acil_arama_sirasi NULLS LAST, u.sicil_no LIMIT 1`, [dosya, (await c.query(`SELECT 1 FROM acil_cercevesiz_onay WHERE dosya_ref = $1`, [dosya])).rowCount ? 0 : await parametre(c, 'sozlesme_kapisi')])).rows[0]; // YG-272: Çerçeve Sözleşmesi yürürlükte
+/** YG-271, V-1120: acil çağrı katmanları; bölge dışı katmana geçişte gerekçe sistemce "Bölgede yanıt yok" yazılır. */
+const ACIL_KATMAN = ['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal'] as const;
+const mesafeKm = (a: [number, number], b: [number, number]) => { const r = Math.PI / 180; const x = Math.sin(((b[0] - a[0]) * r) / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(((b[1] - a[1]) * r) / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
+
+async function sirakiSaglayici(c: PoolClient, dosya: string): Promise<{ kimlik: string; ticari_unvan: string; katman: string } | undefined> {
+  // YG-266, YG-272: aktif, onaylı, acil hizmet verir; müsait olmayan atlanır; daha önce çağrılan atlanır; Çerçeve Sözleşmesi yürürlükte.
+  const l = (await c.query(`SELECT u.kimlik, u.ticari_unvan, u.acil_arama_sirasi, u.sicil_no, coalesce(n.enlem, t.enlem)::float enlem, coalesce(n.boylam, t.boylam)::float boylam,
+      (SELECT array_agg(DISTINCT y.kapsama || '|' || coalesce(y.bolge, '')) FROM brans_yetkinligi y WHERE y.kurulus_ref = u.kimlik AND y.durum = 'Aktif') kapsamlar
+    FROM kurulus u LEFT JOIN baglama_noktasi n ON n.kimlik = u.baglama_noktasi_ref
+    LEFT JOIN LATERAL (SELECT enlem, boylam FROM firma_tesisi WHERE kurulus_ref = u.kimlik AND aktif AND enlem IS NOT NULL ORDER BY sira LIMIT 1) t ON true
+    WHERE u.kayit_rolu = 'Çözüm Ortağı' AND u.acil_hizmet_verir AND u.acil_musaitlik AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı') AND NOT EXISTS (SELECT 1 FROM acil_gorev_cagrisi a WHERE a.dosya_ref = $1 AND a.kurulus_ref = u.kimlik)
+    AND ($2::int <> 1 OR EXISTS (SELECT 1 FROM sozlesme_kaydi s WHERE s.kurulus_ref = u.kimlik AND s.durum = 'Yürürlükte' AND s.yururluk <= current_date AND (s.bitis IS NULL OR s.bitis >= current_date)))`,
+    [dosya, (await c.query(`SELECT 1 FROM acil_cercevesiz_onay WHERE dosya_ref = $1`, [dosya])).rowCount ? 0 : await parametre(c, 'sozlesme_kapisi')])).rows;
+  if (!l.length) return undefined;
+  const dBolge = (await (await import('./firma.js')).dosyaBolgesi(c, dosya))?.toLocaleLowerCase('tr') ?? null;
+  const komsu = dBolge ? new Set((await c.query(`SELECT lower(bolge) b FROM komsu_bolge WHERE lower(komsu) = lower($1)`, [dBolge])).rows.map((r) => r.b as string)) : new Set<string>();
+  const nk = (await c.query(`SELECT n.enlem::float e, n.boylam::float b FROM dosya d JOIN baglama_noktasi n ON n.enlem IS NOT NULL AND d.konum IS NOT NULL AND (lower(d.konum) LIKE '%' || lower(n.ad) || '%' OR lower(n.ad) LIKE '%' || lower(d.konum) || '%') WHERE d.kimlik = $1 ORDER BY length(n.ad) DESC LIMIT 1`, [dosya])).rows[0];
+  const yat: [number, number] | null = nk ? [nk.e, nk.b] : null;
+  // Yetkinlik kapsamı girilmemiş sağlayıcı bölge içi sayılır; başka bölgenin bölge kapsamlı sağlayıcısı çağrılmaz.
+  const katman = (k: string[] | null) => !k?.length ? 0 : Math.min(...k.map((x) => { const [kap, b0] = x.split('|'); const b = b0!.toLocaleLowerCase('tr');
+    return kap === 'Bölge' ? (!b || !dBolge || b === dBolge ? 0 : 9) : kap === 'Komşu' ? (!b || !dBolge || b === dBolge || komsu.has(b) ? 1 : 9) : kap === 'Mobil Ekip' ? 2 : kap === 'Ulusal' ? 3 : 9; }));
+  const s = l.map((f) => ({ ...f, k: katman(f.kapsamlar), m: yat && f.enlem != null && f.boylam != null ? mesafeKm(yat, [f.enlem, f.boylam]) : Number.POSITIVE_INFINITY })).filter((f) => f.k < 9)
+    .sort((a, b) => a.k - b.k || a.m - b.m || (a.acil_arama_sirasi ?? 1e9) - (b.acil_arama_sirasi ?? 1e9) || String(a.sicil_no).localeCompare(String(b.sicil_no)));
+  return s[0] ? { kimlik: s[0].kimlik, ticari_unvan: s[0].ticari_unvan, katman: ACIL_KATMAN[s[0].k]! } : undefined;
 }
 
 export async function cagriGonder(c: PoolClient, dosya: string, simdi: Date): Promise<string | null> {
@@ -114,7 +134,7 @@ export async function cagriGonder(c: PoolClient, dosya: string, simdi: Date): Pr
   }
   const no = await altNumara(c, d.dosya_no, 'CA');
   const son = new Date(simdi.getTime() + (await parametre(c, 'acil_cagri_dk')) * 60_000);
-  await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, gonderim, son_zaman) VALUES ($1,$2,$3,$4,$5)`, [no, dosya, f.kimlik, simdi, son]);
+  await c.query(`INSERT INTO acil_gorev_cagrisi (cagri_no, dosya_ref, kurulus_ref, gonderim, son_zaman, katman, genisleme_gerekcesi) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [no, dosya, f.kimlik, simdi, son, f.katman, f.katman === 'Bölge' ? null : 'Bölgede yanıt yok']); // YG-271
   const kisi = (await c.query(`SELECT kullanici_ref FROM kurulus_kullanici WHERE kurulus_ref = $1`, [f.kimlik])).rows.map((r) => r.kullanici_ref as string);
   await bildir(c, { olay: `acil-cagri:${no}`, kullanicilar: kisi, baslik: `Acil Görev Çağrısı: ${no}`, ozet: `Yanıt süresi ${(await parametre(c, 'acil_cagri_dk'))} dakikadır.`, oncelik: 'Kritik', sms: true, acil: true }, simdi);
   return no;

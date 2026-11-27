@@ -339,7 +339,7 @@ function SahaIslemleri({ id, yap }: { id: string; yap: Yap }) {
 /** YG-456: Ticari İşler Direktörü mutabakat raporunu gönderir; ikili teyit sonrası itiraz süresi başlar. */
 /** YG-569, YG-570: dış kanaldan gelen talimat ve kararların özgün metinle kaydı; aktaranın notu ayrı. */
 export function TalimatKayitlari({ id }: { id: string }) {
-  const [l, setL] = useState<{ kimlik: string; kanal: string; tur: string; gonderen: string; alinma_zamani: string; ozgun_metin: string; aktaran_notu: string | null; kaydeden: string; kaynak_yetkili: boolean; kaynak_sonucu: string | null; kaynak_notu: string | null; kaynak_rolu: string | null }[]>([]);
+  const [l, setL] = useState<{ kimlik: string; kanal: string; tur: string; gonderen: string; alinma_zamani: string; ozgun_metin: string; aktaran_notu: string | null; kaydeden: string; kaynak_yetkili: boolean; gec_aktarim?: boolean; aktarim_siniri_saat?: string | null; kaynak_sonucu: string | null; kaynak_notu: string | null; kaynak_rolu: string | null }[]>([]);
   const [taraflar, setTaraflar] = useState<{ kimlik: string; taraf_rolu: string; kisi_adi_soyadi: string }[]>([]); const [kd, setKd] = useState<Record<string, string>>({});
   const [f, setF] = useState({ kanal: 'E-posta', tur: 'Talimat', gonderen: '', zaman: '', metin: '', not: '', kaynakTaraf: '' }); const [bl, setBl] = useState(''); const [m, setM] = useState('');
   const yk = () => istek<{ kayitlar: typeof l; taraflar: typeof taraflar }>(`/dosya/${id}/talimatlar?taraflar=1`).then((r) => { setL(r.kayitlar); setTaraflar(r.taraflar); }).catch(() => setL([]));
@@ -347,6 +347,7 @@ export function TalimatKayitlari({ id }: { id: string }) {
   useEffect(() => { void yk(); }, [id]);
   return <Blok baslik="Talimat ve Karar Kayıtları">{m && <div className="not" role="status">{m}</div>}
     {l.map((x) => <div className="soru" key={x.kimlik}><span><b>{x.tur}</b> · {x.kanal} · {x.gonderen} · {new Date(x.alinma_zamani).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' })}<div>“{x.ozgun_metin}”</div>{x.aktaran_notu && <div className="not">Aktaranın notu: {x.aktaran_notu}</div>}<div className="not">Kaydeden: {x.kaydeden}{x.kaynak_rolu ? ` · Kaynak: ${x.kaynak_rolu}` : ''}</div>
+      {x.gec_aktarim && <div className="uyari">Geç aktarıldı (sınır {String(x.aktarim_siniri_saat ?? '').replace('.', ',')} saat).</div>}
       {x.tur !== 'Bilgi' && !x.kaynak_yetkili && (x.kaynak_sonucu ? <div className="not">Yetkisiz kaynak · {x.kaynak_sonucu}: {x.kaynak_notu}</div> : <><div className="hata">Yetkisiz kaynak: doğrulanmadan aşama geçilemez.</div>
         <label htmlFor={`tk-d-${x.kimlik}`}>Yetkili Taraftan Alınan Teyit veya Gerekçe</label><input required id={`tk-d-${x.kimlik}`} value={kd[x.kimlik] ?? ''} onChange={(e) => setKd({ ...kd, [x.kimlik]: e.target.value })} />
         <div className="dugmeler"><button className="btn2 kucuk" disabled={!kd[x.kimlik]?.trim()} onClick={() => kaynak(x.kimlik, 'Doğrulandı')}>Doğrulandı</button><button className="btn2 kucuk" disabled={!kd[x.kimlik]?.trim()} onClick={() => kaynak(x.kimlik, 'Dikkate Alınmadı')}>Dikkate Alınmadı</button></div></>)}</span></div>)}

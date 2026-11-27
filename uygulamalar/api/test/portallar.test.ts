@@ -105,6 +105,9 @@ describe('A9 Tedarikçi (YG-298, YG-1088, YG-1577)', () => {
     const sid = s.json().kimlik; const kr = await o.kart('Tedarik Siparişi', sid);
     expect((await o.ist('GET', '/api/tedarikci-portal/ana', tedC)).json().siparisler).toHaveLength(0);
     await o.karar(kr.kimlik, 'tym', 'Onaya Gönder'); await o.karar(kr.kimlik, 'to', 'Onaya Gönder'); await o.karar(kr.kimlik, 'tid', 'Onayla');
+    { const u = `/api/tedarik-siparisi/${sid}/islak-imza-kabul`; // YG-224, K-139: ıslak imzalı kabulü yalnız siparişi hazırlayan girer; teslim, gerekçe ve dosya belgesi zorunlu
+      expect((await o.ist('POST', u, await o.gir('tid'), { teslim: '2027-01-05', gerekce: 'X' })).statusCode).toBe(404);
+      expect((await o.ist('POST', u, ts, { gerekce: 'Erişim yok' })).statusCode).toBe(400); expect((await o.ist('POST', u, ts, { teslim: '2027-01-05', gerekce: 'Erişim yok' })).statusCode).toBe(400); }
     const G = { satir: 1, miktar: 2, lot: 'L1', irsaliye: 'İ1', bekletmeYeri: tesis };
     expect((await o.ist('POST', `/api/siparis/${sid}/giris`, ts, G)).json().hata).toContain('kabul');
     const be = await yukle(ted, tedC);

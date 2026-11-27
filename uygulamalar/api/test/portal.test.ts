@@ -168,6 +168,21 @@ describe('onay ekranı (YG-466, YG-476, YG-1433)', () => {
     expect(kilit).toEqual({ lehtar_adi: 'Deneme Banka', lehtar_muvafakati_ref: null });
     expect((await sup.query(`SELECT metin FROM gonderim WHERE olay_anahtari LIKE $1 LIMIT 1`, [`bld07:${d.kimlik}%`])).rows[0]?.metin).toContain('Deneme Banka'); // YG-1446 BLD-07
   });
+  it('leasingde beyan eden kiracı, kiralayan malik olarak kaydedilir; malik ile kullanan farklıysa Dosya Sorumlusuna görev (YG-103)', async () => {
+    const d = await dosyaAc(); const b = await beyanLinki(d.kimlik);
+    await ist('POST', `/api/onay/${b}/kod`, undefined, { kanal: 'SMS' }); const kod = smsKod();
+    const r0 = await ist('POST', `/api/onay/${b}/karar`, undefined, { kod, form: { mulkiyet: 'Finansal kiralama (leasing)', takyidat: ['Yok'] } }); expect(r0.statusCode).toBe(400); expect(r0.json().hata).toContain('Kiralayan');
+    expect((await ist('POST', `/api/onay/${b}/karar`, undefined, { kod, form: { mulkiyet: 'Finansal kiralama (leasing)', takyidat: ['Yok'], lehtar: 'Deneme Leasing AŞ' } })).statusCode).toBe(200);
+    const y = (await sup.query(`SELECT y.kimlik, y.beyan_eden_sifati FROM yat y JOIN dosya d ON d.yat_ref = y.kimlik WHERE d.kimlik = $1`, [d.kimlik])).rows[0];
+    expect(y.beyan_eden_sifati).toBe('Kiracı');
+    expect((await sup.query(`SELECT ad FROM yat_malik WHERE yat_ref = $1`, [y.kimlik])).rows.map((x) => x.ad)).toContain('Deneme Leasing AŞ');
+    const d2 = await dosyaAc(); const b2 = await beyanLinki(d2.kimlik);
+    await ist('POST', `/api/onay/${b2}/kod`, undefined, { kanal: 'SMS' }); const kod2 = smsKod();
+    expect((await ist('POST', `/api/onay/${b2}/karar`, undefined, { kod: kod2, form: { mulkiyet: 'Malik', takyidat: ['Yok'], malikDegil: true } })).statusCode).toBe(400);
+    expect((await ist('POST', `/api/onay/${b2}/karar`, undefined, { kod: kod2, form: { mulkiyet: 'Malik', takyidat: ['Yok'], malikDegil: true, malikAdi: 'Belgedeki Malik' } })).statusCode).toBe(200);
+    expect((await sup.query(`SELECT y.beyan_eden_sifati FROM yat y JOIN dosya d ON d.yat_ref = y.kimlik WHERE d.kimlik = $1`, [d2.kimlik])).rows[0].beyan_eden_sifati).toBe('Kullanan');
+    expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE nesne_kimligi = $1 AND baslik LIKE '%Taraf Yat Belgesindeki Malik Olmalı'`, [d2.kimlik])).rows[0].n).toBe(1);
+  });
   it('vefat işaretinde bağlantı kapanır (YG-1477)', async () => {
     const d = await dosyaAc(); const b = await beyanLinki(d.kimlik);
     await sup.query(`UPDATE dosya SET vefat_isareti = true WHERE kimlik = $1`, [d.kimlik]);

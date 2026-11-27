@@ -410,3 +410,23 @@ describe('çerçevesiz sağlayıcı (YG-271, YG-1667)', () => {
   });
 });
 
+
+describe('katmanlı genişleme (YG-271)', () => {
+  it('bölgede yanıt yoksa çağrı komşu → mobil ekip → ulusal sırasıyla geçer; başka bölgenin bölge kapsamlı sağlayıcısı çağrılmaz; gerekçe sistemce', async () => {
+    await o.sup.query(`UPDATE kurulus SET acil_musaitlik = false WHERE acil_hizmet_verir`);
+    try {
+      const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET secilen_bolge = 'Bodrum' WHERE kimlik = $1`, [d.kimlik]);
+      const firma = async (ad: string, kapsama: string, bolge: string | null) => { const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref, ag_statusu, kayit_asamasi, acil_hizmet_verir, acil_musaitlik) VALUES ($1,$2,'Çözüm Ortağı',$3,'Aktif','Onaylı',true,true) RETURNING kimlik`, [`S-K${Date.now()}${Math.random()}`.slice(0, 30), ad, o.K.opm])).rows[0].kimlik as string;
+        await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama, bolge, durum) VALUES ($1,'MAKINE-01',$2,$3,'Aktif')`, [f, kapsama, bolge]); return f; };
+      const uzak = await firma('Başka Bölge', 'Bölge', 'Antalya'); const ulusal = await firma('Ulusal Ekip', 'Ulusal', null); const mobil = await firma('Mobil Ekip', 'Mobil Ekip', null);
+      const c = await o.db.connect();
+      try {
+        const yanitsiz = () => c.query(`UPDATE acil_gorev_cagrisi SET durum = 'Yanıtsız' WHERE dosya_ref = $1 AND durum = 'Gönderildi'`, [d.kimlik]);
+        await cagriGonder(c, d.kimlik, new Date()); await yanitsiz(); await cagriGonder(c, d.kimlik, new Date()); await yanitsiz(); expect(await cagriGonder(c, d.kimlik, new Date())).toBeNull();
+      } finally { c.release(); }
+      const l = (await o.sup.query(`SELECT kurulus_ref, katman, genisleme_gerekcesi FROM acil_gorev_cagrisi WHERE dosya_ref = $1 ORDER BY gonderim, cagri_no`, [d.kimlik])).rows;
+      expect(l.map((x) => x.kurulus_ref)).toEqual([mobil, ulusal]); expect(l.map((x) => x.katman)).toEqual(['Mobil Ekip', 'Ulusal']);
+      expect(l.every((x) => x.genisleme_gerekcesi === 'Bölgede yanıt yok')).toBe(true); expect(l.some((x) => x.kurulus_ref === uzak)).toBe(false);
+    } finally { await o.sup.query(`UPDATE kurulus SET acil_musaitlik = true WHERE acil_hizmet_verir`); }
+  });
+});

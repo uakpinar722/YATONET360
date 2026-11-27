@@ -1694,10 +1694,16 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const d = await o.dosyaAc({}, {}); const { kartAc } = await import('../src/is_motoru.js');
     await kartAc(o.db, { tur: 'Deneme Görevi', kategori: 'gorev', baslik: 'Dosya Görevi Deneme', sahipKullanici: o.K.opm, sonZaman: new Date(Date.now() + 86_400_000), nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
     const v = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json();
-    const g = v.yapilacaklar.find((x: { is: string }) => x.is === 'Dosya Görevi Deneme'); expect(g).toBeTruthy(); expect(g.hedef).toBeTruthy();
+    const g = v.yapilacaklar.find((x: { is: string }) => x.is === 'Dosya Görevi Deneme'); expect(g).toBeTruthy(); expect(g.hedef).toBeTruthy(); expect(g.form).toBeUndefined();
+    await kartAc(o.db, { tur: 'İlerleme Özetini Gönder', kategori: 'gorev', baslik: 'İlerleme Özeti Deneme', sahipKullanici: o.K.opm, nesneTuru: 'Dosya', nesneKimligi: d.kimlik });
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json().yapilacaklar.find((x: { is: string }) => x.is === 'İlerleme Özeti Deneme').form).toEqual({ hedef: 'io-s' }); // görev kartının formu
     const ata = v.yapilacaklar.filter((x: { is: string }) => x.is === 'Dosya Sorumlusunu Ata' || x.is === 'Teknik Yöneticiyi Ata');
     expect(ata.length).toBeGreaterThan(0); for (const x of ata) expect(x.form).toEqual({ hedef: 'e-r', rol: x.is === 'Dosya Sorumlusunu Ata' ? 'Dosya Sorumlusu' : 'Teknik Yönetici' }); // sıradaki form
     const hn = v.yapilacaklar.find((x: { is: string }) => x.is.startsWith('Sigorta Hasar Dosya Numarasını Gir')); if (hn) expect(hn.form).toEqual({ hedef: 'de-hn' });
+    // YG-064: Aktif dosyada eksik zorunlu formlar kodsuz listelenir.
+    await o.sup.query(`UPDATE dosya SET statu = 'Aktif', asama = 'Keşif' WHERE kimlik = $1`, [d.kimlik]); await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, ara_toplam_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref, gonderim_zamani) VALUES ($1,$2,'Yat Sahibi',20,'Gönderildi',300,360,300,$3,now())`, [`${d.dosyaNo}-YF`, d.kimlik, o.K.opm]);
+    const fl = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json().yapilacaklar.filter((x: { is: string }) => x.is.startsWith('Form Bekleniyor: '));
+    expect(fl.length).toBeGreaterThan(0); expect(JSON.stringify(fl)).not.toMatch(/FR-|RP-|KL-/);
   });
   it('periyodik gözden geçirme kontrol listesi ve karar seçenekleri (YG-1363)', async () => {
     const c = await o.gir('btd'); const ad = `GG Deneme ${Date.now()}`;

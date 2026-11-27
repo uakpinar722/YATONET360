@@ -135,6 +135,12 @@ export async function fotoEksikleri(db: Baglam['db'] | PoolClient, dosya: string
   return eksik;
 }
 
+/** YG-056: Keşif aşamasındaki dosyada, açık keşfin izinli işlemlerinde olmayan söküm veya numune alma kaydedilemez (onarım iş emrine bağlı kayıt hariç). */
+export async function kesifIzinEngeli(db: { query: PoolClient['query'] }, dosya: string, islem: string): Promise<string | null> {
+  const k = (await db.query(`SELECT k.izinli_islemler FROM kesif k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.dosya_ref = $1 AND k.durum = 'Planlandı' AND d.asama = 'Keşif' ORDER BY k.olusturma_zamani DESC LIMIT 1`, [dosya])).rows[0];
+  return k && !((k.izinli_islemler ?? []) as string[]).includes(islem) ? `Keşif planında "${islem}" izni yoktur; bu işlem keşifte yapılamaz, onarım iş emriyle yapılır.` : null;
+}
+
 export function sahaYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Dosya bulunamadı veya erişim yetkiniz yok.' });
@@ -143,6 +149,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   const islem = async <T>(f: (c: PoolClient) => Promise<T>) => { const c = await b.db.connect(); try { await c.query('BEGIN'); const r = await f(c); await c.query('COMMIT'); return r; } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); } };
 
   // YG-056: keşif görevi onarımdan ayrı kayıt ve kapıdır. YG-049: Teknik Uzman atanmadan keşif başlamaz.
+  s.get('/kesif-izinli-islemler', oturumlu, async (i, y) => i.oturum!.grup !== 'LGM İç Rolü' ? y.code(404).send({ hata: 'Bulunamadı.' }) : (await b.db.query(`SELECT deger FROM deger_listesi WHERE liste_kodu = 'LST_KESIF_IZINLI_ISLEM' ORDER BY deger`)).rows.map((r) => r.deger as string));
   s.post('/dosya/:id/kesif', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     const g = (i.body ?? {}) as { amac?: string; sorular?: string; izinli?: string[]; kisit?: string; baslangic?: string; bitis?: string; bulusma?: string; guvenlik?: string; km?: number };
@@ -204,7 +211,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   // YG-056, YG-111, YG-1529, YG-1452: tamamlanırken erişilemeyen alan açık konu olur; asbest/TBT şüphesi işi durdurur; katalog değeri teyit edilir; zorunlu fotoğraf eksiksizdir.
   s.post('/kesif/:id/tamamla', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { tarih?: string; katilimcilar?: string; baslangicDurumu?: string; incelenen?: string; erisilemeyen?: string; hedefTarih?: string; cikis?: string; supheli?: string; kanitSayimi?: boolean };
+    const g = (i.body ?? {}) as { tarih?: string; katilimcilar?: string; baslangicDurumu?: string; incelenen?: string; erisilemeyen?: string; hedefTarih?: string; cikis?: string; supheli?: string; kanitSayimi?: boolean; yapilan?: string[] };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT k.*, d.dosya_no, d.yat_ref, d.oncelik FROM kesif k JOIN dosya d ON d.kimlik = k.dosya_ref WHERE k.kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
@@ -215,6 +222,8 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!['Hazır', 'Koşullu', 'Açık'].includes(g.cikis ?? '')) return y.code(400).send({ hata: 'Çıkış durumunu seçiniz.' });
     if (!['Hayır', 'Evet', 'Bilinmiyor'].includes(g.supheli ?? '')) return y.code(400).send({ hata: 'Asbest ve eski TBT boyası sorusunu yanıtlayınız.' });
     if (!g.kanitSayimi) return y.code(400).send({ hata: 'Kanıt sayımını doğrulayınız.' });
+    { const iz = (k.izinli_islemler ?? []) as string[]; const disi = (Array.isArray(g.yapilan) ? g.yapilan : []).filter((x) => !iz.includes(x)); // YG-056
+      if (disi.length) return y.code(409).send({ hata: `Keşif planında izni olmayan işlem kaydedilemez: ${disi.join(', ')}. Bu işlemler onarım iş emriyle yapılır.` }); }
     if (g.erisilemeyen?.trim() && !g.hedefTarih) return y.code(400).send({ hata: 'Erişilemeyen alan için hedef tarih giriniz; açık konu açılır.' });
     const yat = (await b.db.query(`SELECT katalog_teyit FROM yat WHERE kimlik = $1`, [k.yat_ref])).rows[0];
     if (yat.katalog_teyit === 'Katalogdan – teyit bekliyor') return y.code(409).send({ hata: 'Katalogdan gelen boy ve gövde bilgisini teyit ediniz veya düzeltiniz.' });
@@ -222,6 +231,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (eksik.length) return y.code(409).send({ hata: `Eksik fotoğraf: ${eksik.join(', ')}.`, eksik });
     const durdu = g.supheli !== 'Hayır';
     await islem(async (c) => {
+      await c.query(`UPDATE kesif SET yapilan_islemler = $2 WHERE kimlik = $1`, [id, Array.isArray(g.yapilan) ? [...new Set(g.yapilan)] : []]); // YG-056
       await c.query(`UPDATE kesif SET durum = $2, kesif_tarihi = $3, katilimcilar = $4, baslangic_durumu = $5, incelenen_alanlar = $6, erisilemeyen_alanlar = $7, cikis_durumu = $8, supheli_malzeme = $9, kanit_sayimi = true, saha_cikis_zamani = now(), durdurma_kaydi = $10, guncelleme_zamani = now() WHERE kimlik = $1`,
         [id, durdu ? 'Durduruldu' : 'Tamamlandı', g.tarih, g.katilimcilar?.trim() || null, g.baslangicDurumu?.trim() || null, g.incelenen!.trim(), g.erisilemeyen?.trim() || null, g.cikis, g.supheli, durdu ? 'Asbest veya eski TBT boyası şüphesi; numune ve analiz yönlendirmesi' : null]);
       if (!durdu) await sureBitir(c, { tur: 'Keşif', dosya: k.dosya_ref });
@@ -334,6 +344,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     if (!d) return yok(y);
     if (!(await ekipRolleri(id, o.kullanici)).length) return y.code(403).send({ hata: 'Numune devrini dosya ekibi kaydeder.' });
     if (!g.teslimAlan?.trim() || !g.amac?.trim()) return y.code(400).send({ hata: 'Teslim alan ve devir amacı zorunludur.' });
+    if (!g.numune) { const ke = await kesifIzinEngeli(b.db, id, 'Numune alma'); if (ke) return y.code(409).send({ hata: ke }); } // YG-056: yeni numune
     return islem(async (c) => {
       if (g.numune) {
         const s = (await c.query(`SELECT kimlik, numune_tanimi, alindigi_bolge FROM numune_devri WHERE dosya_ref = $1 AND numune_no = $2 ORDER BY devir_zamani DESC LIMIT 1`, [id, g.numune])).rows[0];
@@ -446,7 +457,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const q = (t: string) => b.db.query(t, [id]).then((r) => r.rows);
     const ustKademe = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.kademe = 'Direktör' OR x.rol_adi IN ('CEO', 'Genel Müdür Yardımcısı')) LIMIT 1`, [o.kullanici])).rowCount);
     return {
-      kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme, plan_onay_zamani FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
+      kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme, plan_onay_zamani, izinli_islemler, yapilan_islemler FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
       bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
       gorseller: await q(`SELECT g.gorsel_no, g.asama, g.cekim_kalemi, g.bolge_kodu, g.cekilemedi_nedeni, g.cekim_zamani, g.belge_ref FROM gorsel_kanit g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani`),
       olcumler: await q(`SELECT olcum_no, olcum_noktasi, olculen_buyukluk, ozet_deger, birim, gecerlilik, sinir_disi FROM olcum_kaydi WHERE dosya_ref = $1 ORDER BY olcum_no`),

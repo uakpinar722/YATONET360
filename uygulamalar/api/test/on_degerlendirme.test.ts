@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RISKLER } from '../src/on_degerlendirme.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
-const KADRO = { ds: 'Dosya Sorumlusu', ds2: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü' };
+const KADRO = { ds: 'Dosya Sorumlusu', ds2: 'Dosya Sorumlusu', opm: 'Operasyon Müdürü', oy: 'Operasyon Yöneticisi' };
 let o: Ortam;
 beforeAll(async () => { o = await ortamKur('yatonet360_test80', KADRO); }, 120_000);
 afterAll(async () => { await o.kapat(); });
@@ -33,5 +33,22 @@ describe('RP-OPS-001 Ön Değerlendirme Raporu (YG-651)', () => {
     expect((await o.ist('POST', u, ds, { ...G, sonuc: 'Uzman Görüşü Gerekli' })).statusCode).toBe(400);
     const r = await o.ist('POST', u, ds, { ...G, sonuc: 'Uzman Görüşü Gerekli', bekleme: { sorumlu: o.K.ds, hedefTarih: '2099-01-01' } }); expect(r.statusCode, r.body).toBe(200);
     expect((await o.sup.query(`SELECT neden, kayit_turu FROM beklemede_isareti WHERE dosya_ref = $1 AND kaldirilma_zamani IS NULL`, [d])).rows).toEqual([{ neden: 'Uzman Görüşü', kayit_turu: 'Ön Değerlendirme' }]);
+  });
+  it('kalite kontrolü olumsuzsa rapor Onaylı işaretlenmez; düzeltme yeni sürümle yapılır (YG-038)', async () => {
+    const d = (await o.dosyaAc({}, {})).kimlik as string; await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d, o.K.ds]);
+    expect((await o.ata(d, 'oy', 'Operasyon Yöneticisi', 'opm')).statusCode).toBe(200);
+    const ds = await o.gir('ds'); const oy = await o.gir('oy'); const u = `/api/dosya/${d}/on-degerlendirme`; const on = (await o.sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d])).rows[0].oncelik as string;
+    const G: Record<string, unknown> = { sonBilgi: '2026-11-01', kaynaklar: 'K', yeterlilik: 'Yeterli', yeterlilikGerekcesi: 'G', uzmanliklar: 'U', sonuc: 'Yerinde Keşif Gerekli', yontem: 'Keşif', oncelikTeyidi: on, kapsam: 'K', kronoloji: 'K', olgular: 'O', beyanlar: 'B', sonrakiAdim: 'S', acikKonular: 'A', risk: Object.fromEntries(RISKLER.map((r) => [r, 'Hayır'])) };
+    expect((await o.ist('POST', u, ds, G)).json().surum).toBe(1);
+    expect((await o.kart('Ön Değerlendirme Kalite Kontrolü', d)).sahip_kullanici_ref).toBe(o.K.oy);
+    expect((await o.ist('GET', u, oy)).json().kontrolEdebilir).toBe(true); expect((await o.ist('GET', u, ds)).json().kontrolEdebilir).toBeFalsy();
+    expect((await o.ist('POST', `${u}/1/kalite-kontrol`, ds, { sonuc: 'Uygun' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `${u}/1/kalite-kontrol`, oy, { sonuc: 'Uygun Değil' })).statusCode).toBe(400);
+    { const rk = await o.ist('POST', `${u}/1/kalite-kontrol`, oy, { sonuc: 'Uygun Değil', not: 'Kronoloji eksik' }); expect(rk.json().onayli, rk.body).toBe(false); }
+    expect((await o.ist('POST', `${u}/1/kalite-kontrol`, oy, { sonuc: 'Uygun' })).statusCode).toBe(409);
+    await expect(o.sup.query(`UPDATE on_degerlendirme SET onayli = true WHERE dosya_ref = $1 AND surum = 1`, [d])).rejects.toThrow();
+    expect((await o.ist('POST', u, ds, { ...G, kronoloji: 'Tam kronoloji' })).json().surum).toBe(2);
+    expect((await o.ist('POST', `${u}/2/kalite-kontrol`, oy, { sonuc: 'Uygun' })).json().onayli).toBe(true);
+    expect((await o.sup.query(`SELECT surum, onayli FROM on_degerlendirme WHERE dosya_ref = $1 ORDER BY surum`, [d])).rows).toEqual([{ surum: 1, onayli: false }, { surum: 2, onayli: true }]);
   });
 });

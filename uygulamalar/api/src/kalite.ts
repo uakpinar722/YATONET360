@@ -33,6 +33,18 @@ export function sinifEngeli(sinif: string, kabulSinifi: string | null, hasarOnem
   return null;
 }
 
+/** YG-281, V-1115: kalite planı kabul sınıfı hasar önemine göre asgari sınıfın altına indirilemez. Taşıyıcı yapı (gövde), emniyet (yangın) ve ana sistem
+ * (makine, tahrik, manevra) branşlı onaylı kalem, Kritik önemli bulgu veya Kritik risk A; Yüksek önem veya risk en az B ister (A en yüksek). */
+export const A_SINIFI_BRANSLAR = ['CELIK-01', 'ALUMINYUM-01', 'METAL-01', 'KOMPOZIT-01', 'AHSAP-01', 'YANGIN-01', 'MAKINE-01', 'TAHRIK-01', 'MANEVRA-01'];
+export async function asgariKabulSinifi(db: { query: PoolClient['query'] }, dosya: string, risk: string | null): Promise<{ sinif: 'A' | 'B' | null; neden: string | null }> {
+  const br = (await db.query(`SELECT DISTINCT split_part(k.kartela_kodu, '.', 1) b FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi t ON t.kimlik = k.teklif_ref WHERE t.dosya_ref = $1 AND k.onay_durumu = 'Onaylandı' AND k.kartela_kodu IS NOT NULL`, [dosya])).rows.map((r) => r.b as string);
+  const on = new Set((await db.query(`SELECT DISTINCT hasar_onem_derecesi o FROM bulgu WHERE dosya_ref = $1`, [dosya])).rows.map((r) => r.o as string));
+  if (br.some((x) => A_SINIFI_BRANSLAR.includes(x))) return { sinif: 'A', neden: 'taşıyıcı yapı, emniyet veya ana sistem işi' };
+  if (on.has('Kritik') || risk === 'Kritik') return { sinif: 'A', neden: 'Kritik önem veya risk' };
+  if (on.has('Yüksek') || risk === 'Yüksek') return { sinif: 'B', neden: 'Yüksek önem veya risk' };
+  return { sinif: null, neden: null };
+}
+
 /** YG-284, YG-395: Minör 120 saat düzeltme, Majör 48 saat düzeltici plan; Kritik ve Emniyette iş derhal durur. */
 export function ncrHedefi(sinif: string, simdi = new Date()): Date | null {
   const s = sinif === 'Minör' ? 120 : sinif === 'Majör' ? 48 : null;
@@ -156,6 +168,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!['Düşük', 'Orta', 'Yüksek', 'Kritik'].includes(g.risk ?? '')) return y.code(400).send({ hata: 'Risk seviyesini seçiniz: Düşük, Orta, Yüksek, Kritik.' });
     if (!g.teknikKaynak?.trim()) return y.code(400).send({ hata: 'Teknik kaynağı (standart, üretici kılavuzu, klas kuralı) yazınız.' });
     if ((await b.db.query(`SELECT 1 FROM kalite_plani WHERE dosya_ref = $1`, [id])).rowCount && !g.gerekce?.trim()) return y.code(400).send({ hata: 'Yeni sürüm için revizyon gerekçesini yazınız.' });
+    { const as = await asgariKabulSinifi(b.db, id, g.risk ?? null); if (as.sinif && g.sinif! > as.sinif) return y.code(400).send({ hata: `Bu dosyada kabul sınıfı en az ${as.sinif} olmalıdır (${as.neden}).` }); } // YG-281
     const satir = g.gereklilikler ?? [];
     if (!satir.length || satir.some((x) => !x.gereklilik?.trim() || !x.dogrulama?.trim())) return y.code(400).send({ hata: 'Her gereklilik en az bir doğrulamaya bağlanır.' });
     return islem(async (c) => {

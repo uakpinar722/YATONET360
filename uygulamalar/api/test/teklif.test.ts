@@ -625,6 +625,18 @@ describe('iş emri ve firma portalı (YG-291, YG-294, YG-314, YG-325, YG-386)', 
       expect((await o.ist('GET', '/api/firma-portal/ana', firmaC)).json().rehber).toBeNull();
     }
   });
+  it('firmanın sistem erişimi yoksa Dosya Sorumlusu ıslak imzalı kabul belgesini gerekçesiyle kaydeder', async () => {
+    const { d, e } = await onarim();
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]); const ds = await o.gir('ds');
+    const u = `/api/is-emri/${e.kimlik}/islak-imza-kabul`;
+    expect((await o.ist('POST', u, await o.gir('opm'), { gerekce: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, ds, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', u, ds, { gerekce: 'Firmanın portal erişimi yok' })).statusCode).toBe(400);
+    const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, belge_tarihi, olusturan_ref) VALUES ('Islak Kabul','K','Gizli','Dosya',$1,'Elden',current_date,$2) RETURNING kimlik`, [d.kimlik, o.K.ds])).rows[0].kimlik;
+    const r = await o.ist('POST', u, ds, { gerekce: 'Firmanın portal erişimi yok', belge: bl }); expect(r.statusCode, r.body).toBe(200);
+    expect((await o.sup.query(`SELECT statu, firma_yaniti, islak_imza_belge_ref FROM is_emri WHERE kimlik = $1`, [e.kimlik])).rows[0]).toEqual({ statu: 'Başlangıç Kontrolünde', firma_yaniti: 'Kabul', islak_imza_belge_ref: bl });
+    expect((await o.ist('POST', u, ds, { gerekce: 'Tekrar', belge: bl })).statusCode).toBe(409);
+  });
   it('tam akış: onay, yayın, firma görünümünde müşteri yok, kod ile kabul, başlangıç, ilerleme, teknik kabul, kapanış', async () => {
     const { d, e } = await onarim();
     const j = (await o.ist('GET', `/api/firma-portal/is-emri/${e.kimlik}`, firmaC)).json();
@@ -1025,3 +1037,4 @@ describe('sigorta onay tutarı kontrolü (YG-1608, TZ-6)', () => {
     await o.sup.query(`UPDATE sigorta_onayi SET onaylanan_tutar_eur = $2 WHERE kimlik = $1`, [s.kimlik, s.onaylanan_tutar_eur]);
   });
 });
+

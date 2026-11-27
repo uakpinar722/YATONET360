@@ -445,3 +445,20 @@ describe('iş emri Beklemede işareti (YG-068; PKT-1)', () => {
     expect((await B({})).statusCode).toBe(200); // dosya düzeyindeki işaret ayrıdır
   });
 });
+
+describe('kabul sınıfı asgarisi (YG-281)', () => {
+  it('Kritik risk veya taşıyıcı yapı işi A, Yüksek risk en az B ister', async () => {
+    const { asgariKabulSinifi } = await import('../src/kalite.js');
+    const sahte = (br: string[], on: string[]) => ({ query: (async (sql: string) => ({ rows: sql.includes('kartela_kodu') ? br.map((b) => ({ b })) : on.map((o) => ({ o })) })) as never });
+    expect((await asgariKabulSinifi(sahte(['KOMPOZIT-01'], []), 'x', 'Düşük')).sinif).toBe('A');
+    expect((await asgariKabulSinifi(sahte(['BOYA-01'], ['Yüksek']), 'x', 'Düşük')).sinif).toBe('B');
+    expect((await asgariKabulSinifi(sahte([], ['Kritik']), 'x', null)).sinif).toBe('A');
+    expect((await asgariKabulSinifi(sahte([], ['Orta']), 'x', 'Orta')).sinif).toBeNull();
+    const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); const tu = await o.gir('tu');
+    const G = [{ gereklilik: 'Laminasyon', dogrulama: 'Görsel' }];
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'B', ozet: 'Ö', risk: 'Kritik', teknikKaynak: 'ISO 12215', gereklilikler: G });
+    expect(r.statusCode).toBe(400); expect(r.json().hata).toContain('en az A');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'C', ozet: 'Ö', risk: 'Yüksek', teknikKaynak: 'ISO 12215', gereklilikler: G })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kalite-plani`, tu, { sinif: 'B', ozet: 'Ö', risk: 'Yüksek', teknikKaynak: 'ISO 12215', gereklilikler: G })).statusCode).toBe(200);
+  });
+});

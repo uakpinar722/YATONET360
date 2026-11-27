@@ -377,3 +377,16 @@ describe('bulgu teyidi (YG-128)', () => {
     expect((await o.sup.query(`SELECT bilgi_turu, teyit_bekliyor FROM bulgu WHERE kimlik = $1`, [bk.kimlik])).rows[0]).toMatchObject({ bilgi_turu: 'Beyan', teyit_bekliyor: false });
   });
 });
+
+describe('keşifte izinli işlemler (YG-056)', () => {
+  it('izinli listede olmayan söküm, numune ve işlem keşifte kaydedilemez', async () => {
+    const d = await hazir(); const k = (await kesifAc(d.kimlik, { izinli: ['Numune alma'] })).json().kimlik; const c = await o.gir('tu');
+    expect((await o.ist('GET', '/api/kesif-izinli-islemler', c)).json()).toContain('Söküm');
+    const sp = await o.ist('POST', `/api/dosya/${d.kimlik}/sokulen-parca`, c, { ad: 'Pompa' }); expect(sp.statusCode).toBe(409); expect(sp.json().hata).toContain('Söküm');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/numune-devri`, c, { tanim: 'Boya', bolge: 'Kıç', teslimAlan: 'Laboratuvar', amac: 'Analiz' })).statusCode).not.toBe(409);
+    await genelFoto(d.kimlik);
+    const r = await o.ist('POST', `/api/kesif/${k}/tamamla`, c, { ...TAMAM, yapilan: ['Numune alma', 'Çalıştırma'] }); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Çalıştırma');
+    expect((await o.ist('POST', `/api/kesif/${k}/tamamla`, c, { ...TAMAM, yapilan: ['Numune alma'] })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT yapilan_islemler FROM kesif WHERE kimlik = $1`, [k])).rows[0].yapilan_islemler).toEqual(['Numune alma']);
+  });
+});

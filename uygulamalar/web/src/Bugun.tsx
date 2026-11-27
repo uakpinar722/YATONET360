@@ -1,3 +1,4 @@
+import { BelgeSec } from './Kalite';
 import { KapasiteIstisnaKarar } from './KapasiteIstisnasi';
 import { DosyaBag } from './DosyaBag';
 import { eur, tarih } from './bicim';
@@ -20,6 +21,15 @@ const TZ = 'Europe/Istanbul';
 const sonYazi = (s: string) => new Date(s).toLocaleString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: TZ }).replace(',', '');
 
 /** YG-1635: 5 güne kadar saat, üzeri gün. Süresi geçen kırmızı; renk yanıp sönmez. */
+/** YG-224, K-139: tedarikçinin sistem erişimi yoksa siparişi hazırlayan ıslak imzalı kabul belgesini kaydeder. */
+function SiparisIslakKabul({ kimlik, dosya }: { kimlik: string; dosya: string }) {
+  const [g, setG] = useState(''); const [bl, setBl] = useState(''); const [ts, setTs] = useState(''); const [m, setM] = useState('');
+  return <details><summary>Tedarikçinin Sistem Erişimi Yok · Islak İmzalı Kabul</summary>{m && <div className="not" role="status">{m}</div>}<BelgeSec ad="Islak İmzalı Sipariş Kabulü" bagTuru="Dosya" bagKimligi={dosya} deger={bl} sec={setBl} />
+    <label htmlFor={`sik-t-${kimlik}`}>Taahhüt Edilen Teslim Tarihi</label><input id={`sik-t-${kimlik}`} type="date" value={ts} onChange={(e) => setTs(e.target.value)} />
+    <label htmlFor={`sik-g-${kimlik}`}>Gerekçe</label><input id={`sik-g-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!g.trim() || !bl || !ts} onClick={() => void istek(`/tedarik-siparisi/${kimlik}/islak-imza-kabul`, { gerekce: g.trim(), belge: bl, teslim: ts }).then(() => setM('Islak imzalı kabul kaydedildi.')).catch((e) => setM(e.message))}>Kabulü Kaydet</button></details>;
+}
+
 export function kalan(s: string, simdi = Date.now(), baslangic?: string): { yazi: string; sinif: string; yanip?: string } {
   const ms = new Date(s).getTime() - simdi;
   if (ms < 0) { const dk = Math.ceil(-ms / 60_000); return { yazi: `${Math.floor(dk / 60)} Saat ${dk % 60} Dakika Geçti`, sinif: 'kirmizi', yanip: 'yanip-gecti' }; }
@@ -371,7 +381,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
 
 /** YG-1590: Yeni Malzeme Talepleri, Tedarik Uyarıları ve Siparişlerim. */
 function TedarikSorumlusuPano() {
-  const [v, setV] = useState<{ talepler: { kimlik: string; kayit_no: string; dosya_no: string | null; oncelik: string }[]; siparisler: { kimlik: string; siparis_no: string; statu: string; tedarikci_kabul: string | null; teslim_tarihi: string; makam: string | null }[]; uyarilar: { siparis_no: string; tur: string }[] } | null>(null);
+  const [v, setV] = useState<{ talepler: { kimlik: string; kayit_no: string; dosya_no: string | null; oncelik: string }[]; siparisler: { kimlik: string; siparis_no: string; statu: string; tedarikci_kabul: string | null; teslim_tarihi: string; dosya_ref?: string | null; benim?: boolean; makam: string | null }[]; uyarilar: { siparis_no: string; tur: string }[] } | null>(null);
   useEffect(() => { void istek<NonNullable<typeof v>>('/tedarik-sorumlusu-pano').then(setV).catch(() => setV(null)); }, []);
   if (!v) return null;
   return <>
@@ -380,7 +390,7 @@ function TedarikSorumlusuPano() {
     <div className="bolum">Tedarik Uyarıları</div>
     {v.uyarilar.length === 0 ? <Bos m="Tedarik uyarısı bulunmamaktadır." /> : v.uyarilar.map((u, i) => <div key={i} className="ozet kart-sol"><b>{u.siparis_no}</b> · {u.tur}</div>)}
     <div className="bolum">Siparişlerim</div>
-    {v.siparisler.length === 0 ? <Bos m="Açık siparişiniz bulunmamaktadır." /> : v.siparisler.map((s) => <div key={s.kimlik} className="ozet kart-sol"><b>{s.siparis_no}</b> · {s.makam ? `${s.makam} Kontrolünde` : s.statu}{s.tedarikci_kabul ? ` · Tedarikçi: ${s.tedarikci_kabul}` : ''} · Teslim: {s.teslim_tarihi.split('-').reverse().join('.')}</div>)}
+    {v.siparisler.length === 0 ? <Bos m="Açık siparişiniz bulunmamaktadır." /> : v.siparisler.map((s) => <div key={s.kimlik} className="ozet kart-sol"><b>{s.siparis_no}</b> · {s.makam ? `${s.makam} Kontrolünde` : s.statu}{s.tedarikci_kabul ? ` · Tedarikçi: ${s.tedarikci_kabul}` : ''} · Teslim: {s.teslim_tarihi.split('-').reverse().join('.')}{s.statu === 'Verildi' && !s.tedarikci_kabul && s.benim && s.dosya_ref && <SiparisIslakKabul kimlik={s.kimlik} dosya={s.dosya_ref} />}</div>)}
   </>;
 }
 

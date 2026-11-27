@@ -235,6 +235,14 @@ function FirmaBirakti({ kimlik, yap }: { kimlik: string; yap: (f: () => Promise<
     <button className="btn2 kucuk" disabled={!g.trim()} onClick={() => void yap(() => istek(`/is-emri/${kimlik}/firma-birakti`, { gerekce: g.trim() }), 'İş emri kapatıldı; firma değiştirme görevi açıldı.')}>Firma İşi Bıraktı</button></>;
 }
 
+/** YG-224, K-139: firmanın sistem erişimi yoksa ıslak imzalı kabul belgesi gerekçesiyle kaydedilir. */
+function IslakKabul({ kimlik, dosya, yap }: { kimlik: string; dosya: string; yap: (f: () => Promise<unknown>, m?: string) => Promise<unknown> }) {
+  const [g, setG] = useState(''); const [bl, setBl] = useState('');
+  return <details><summary>Firmanın Sistem Erişimi Yok · Islak İmzalı Kabul</summary><BelgeSec ad="Islak İmzalı Kabul" bagTuru="Dosya" bagKimligi={dosya} deger={bl} sec={setBl} />
+    <label htmlFor={`ik-${kimlik}`}>Gerekçe</label><input required id={`ik-${kimlik}`} value={g} onChange={(e) => setG(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!g.trim() || !bl} onClick={() => void yap(() => istek(`/is-emri/${kimlik}/islak-imza-kabul`, { gerekce: g.trim(), belge: bl }), 'Islak imzalı kabul kaydedildi.')}>Kabulü Kaydet</button></details>;
+}
+
 /** YG-368: ön koşullar; eksikte Koşullu ve gerekçe. */
 function BaslangicKontrolu({ kimlik, yap }: { kimlik: string; yap: (f: () => Promise<unknown>, m?: string) => Promise<unknown> }) {
   const ON = ['Saha Erişimi', 'Güvenlik İzni', 'Enerji Kesme', 'Çizim ve Üretici Verisi', 'Müşteri Malı', 'Malzeme', 'Ekipman', 'Onaylar', 'İSG Koordinasyonu Yapıldı', 'Absorban ve Bariyer Mevcut'];
@@ -346,6 +354,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
               {e.statu === 'Tamamlandı' && tu && <><label htmlFor={`gk-${e.kimlik}`}>Garanti Kaynağı (garanti tanımlıysa)</label><select id={`gk-${e.kimlik}`} value={gKay[e.kimlik] ?? ''} onChange={(x) => setGKay({ ...gKay, [e.kimlik]: x.target.value })}><option value="">Seçiniz</option>{['İşçilik', 'Firma Tedariki', 'Üretici', 'Müşteri Tedariki'].map((k) => <option key={k}>{k}</option>)}</select>{/* YG-082 */}<button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/teknik-kabul`, { sonuc: 'Kabul', garantiKaynagi: gKay[e.kimlik] || undefined }), 'Teknik kabul kaydedildi.')}>Teknik Kabul</button></>}
               {e.statu === 'Tamamlandı' && rollerim.includes('Dosya Sorumlusu') && <button className="btn2 kucuk" onClick={() => void yap(() => istek(`/is-emri/${e.kimlik}/kapat`, {}))}>Kapat</button>}
               {['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'].includes(e.statu) && rollerim.includes('Dosya Sorumlusu') && <FirmaBirakti kimlik={e.kimlik} yap={yap} />}
+              {e.statu === 'Kabul Bekliyor' && rollerim.includes('Dosya Sorumlusu') && <IslakKabul kimlik={e.kimlik} dosya={id} yap={yap} />}
             </div>
           </div>
         ))}

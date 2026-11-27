@@ -96,7 +96,7 @@ export function tedarikDagitimYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (!(await roller(o.kullanici)).includes(TS)) return yok(y);
     const talepler = (await b.db.query(`SELECT f.kimlik, f.kayit_no, d.dosya_no, coalesce(d.oncelik, 'Normal') oncelik, t.zaman FROM tedarik_dagitim t JOIN form_kaydi f ON f.kimlik = t.form_ref LEFT JOIN dosya d ON d.kimlik = f.dosya_ref
       WHERE t.sorumlu_ref = $1 AND EXISTS (SELECT 1 FROM is_karti k WHERE k.tur = 'Malzeme Talebi' AND k.nesne_kimligi = f.kimlik::text AND k.durum = 'Bekliyor') ORDER BY t.zaman`, [o.kullanici])).rows;
-    const siparisler = (await b.db.query(`SELECT s.kimlik, s.siparis_no, s.statu, s.tedarikci_kabul, s.teslim_tarihi::text, (SELECT x.rol_adi FROM is_karti k JOIN rol x ON x.kimlik = k.zincir[k.kademe + 1] WHERE k.tur = 'Tedarik Siparişi' AND k.nesne_kimligi = s.kimlik::text AND k.durum = 'Bekliyor' LIMIT 1) makam
+    const siparisler = (await b.db.query(`SELECT s.kimlik, s.siparis_no, s.statu, s.tedarikci_kabul, s.teslim_tarihi::text, s.dosya_ref, s.hazirlayan_ref = $1 AS benim, (SELECT x.rol_adi FROM is_karti k JOIN rol x ON x.kimlik = k.zincir[k.kademe + 1] WHERE k.tur = 'Tedarik Siparişi' AND k.nesne_kimligi = s.kimlik::text AND k.durum = 'Bekliyor' LIMIT 1) makam
       FROM tedarik_siparisi s WHERE s.hazirlayan_ref = $1 AND s.statu NOT IN ('Kapalı', 'İptal') ORDER BY s.olusturma_zamani DESC LIMIT 50`, [o.kullanici])).rows;
     const uyarilar = [
       ...(await b.db.query(`SELECT s.siparis_no, 'Karantinada Ürün' tur FROM malzeme_giris_kabulu m JOIN tedarik_siparisi s ON s.kimlik = m.siparis_ref WHERE m.kabul_karari = 'Karantina' AND s.hazirlayan_ref = $1`, [o.kullanici])).rows,

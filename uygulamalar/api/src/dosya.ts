@@ -157,8 +157,16 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
   // YG-1360: ekip atama işinde form (Atanacak Rol) ve rol bilinir; ekran bir adım tamamlanınca sıradakini açar.
   const ATA: Record<string, string> = { 'Dosya Sorumlusunu Ata': 'Dosya Sorumlusu', 'Operasyon Yöneticisini Ata': 'Operasyon Yöneticisi', 'Teknik Uzmanı Ata': 'Teknik Uzman', 'Teknik Yöneticiyi Ata': 'Teknik Yönetici' };
   for (const x of l) { const r = ATA[x.is] ?? (x.is.startsWith('Saha Sorumlusunu Ata') ? 'Saha Sorumlusu' : undefined); if (r) x.form = { hedef: 'e-r', rol: r }; else if (x.is.startsWith('Sigorta Hasar Dosya Numarasını Gir')) x.form = { hedef: 'de-hn' }; }
-  const kartlar = (await db.query(`SELECT k.baslik, k.son_zaman, coalesce(h.ad_soyad, r.rol_adi, '—') sorumlu FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.sahip_kullanici_ref LEFT JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE k.kategori = 'gorev' AND k.durum = 'Bekliyor' AND k.nesne_turu = 'Dosya' AND k.nesne_kimligi = $1 ORDER BY k.son_zaman NULLS LAST LIMIT 10`, [d.kimlik])).rows;
-  for (const k of kartlar) l.push({ is: k.baslik, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null });
+  // YG-064, YG-636, V-1113: Aktif dosyada eksik zorunlu ve duruma bağlı formlar (kod gösterilmez); istisnası kayıtlı form listelenmez.
+  if (d.statu === 'Aktif') {
+    const SORUMLU = (kod: string) => (/^(RP-RAP-002|FR-ONR-012|FR-KLT|KL-TEK|FR-ONR-00[3-9])/.test(kod) ? 'Teknik Uzman' : /^FR-TIC-00[348]/.test(kod) ? 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)' : 'Dosya Sorumlusu');
+    for (const f of (await (await import('./zorunlu_form.js')).zorunluFormlar(db, d.kimlik)).filter((x) => !x.var && !['FR-OPS-009', 'FR-OPS-002'].includes(x.kod)))
+      l.push({ is: `Form Bekleniyor: ${f.ad.split(' · ')[0]}`, sorumlu: SORUMLU(f.kod), hedef: hedef ? new Date(hedef).toISOString() : null });
+  }
+  const kartlar = (await db.query(`SELECT k.tur, k.baslik, k.son_zaman, coalesce(h.ad_soyad, r.rol_adi, '—') sorumlu FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.sahip_kullanici_ref LEFT JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE k.kategori = 'gorev' AND k.durum = 'Bekliyor' AND k.nesne_turu = 'Dosya' AND k.nesne_kimligi = $1 ORDER BY k.son_zaman NULLS LAST LIMIT 10`, [d.kimlik])).rows;
+  // YG-1360: dosya ekranında formu bulunan görev kartları da formuyla gelir; adım tamamlanınca ekran sıradakini açar.
+  const KART_FORMU: Record<string, string> = { 'İlerleme Özetini Gönder': 'io-s', 'Teslim Süresi Değerlendirmesi': 'ts-s', 'Teslim Süresi Değerlendirmesi Gecikti': 'ts-s' };
+  for (const k of kartlar) l.push({ is: k.baslik, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null, ...(KART_FORMU[k.tur] ? { form: { hedef: KART_FORMU[k.tur]! } } : {}) });
   return l;
 }
 
@@ -669,7 +677,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       const sahip = d.dosya_sorumlusu_ref ?? o.kullanici;
       if (!(await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND ozet = $2 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id, h])).rowCount)
         await kartAc(b.db, { tur: 'Aşama Kapısı Eksiği', kategori: 'gorev', baslik: `${d.dosya_no} · ${g.asama} Aşamasına Geçiş İçin Eksik`, ozet: h, oncelik: d.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: sahip, nesneTuru: 'Dosya', nesneKimligi: id });
-      return y.code(409).send({ hata: h });
+      // YG-067, YG-1386: engel mesajında eksiği tamamlatan düğme; yat bilgisi eksikse yat formu, diğerlerinde yapılacaklar listesindeki görev.
+      return y.code(409).send({ hata: h, ...(h.startsWith('Teklife geçmek için yat bilgisi eksik') ? { islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' } : { islem: 'Eksiği Tamamla', hedef: 'yapilacaklar' }) });
     }
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id]); // YG-158
     const c = await b.db.connect();
@@ -762,7 +771,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
   s.get('/dosya/:id/talimatlar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
-    const kayitlar = (await b.db.query(`SELECT t.kimlik, t.kanal, t.tur, t.gonderen, t.alinma_zamani, t.ozgun_metin, t.belge_ref, t.aktaran_notu, h.ad_soyad kaydeden, t.kayit_zamani, t.kaynak_yetkili, t.kaynak_sonucu, t.kaynak_notu, (SELECT x.taraf_rolu FROM dosya_tarafi x WHERE x.kimlik = t.kaynak_taraf_ref) kaynak_rolu FROM talimat_kaydi t JOIN kullanici_hesabi h ON h.kimlik = t.kaydeden_ref WHERE t.dosya_ref = $1 ORDER BY t.alinma_zamani DESC`, [id])).rows;
+    const kayitlar = (await b.db.query(`SELECT t.kimlik, t.kanal, t.tur, t.gonderen, t.alinma_zamani, t.ozgun_metin, t.belge_ref, t.aktaran_notu, h.ad_soyad kaydeden, t.kayit_zamani, t.gec_aktarim, t.aktarim_siniri_saat, t.kaynak_yetkili, t.kaynak_sonucu, t.kaynak_notu, (SELECT x.taraf_rolu FROM dosya_tarafi x WHERE x.kimlik = t.kaynak_taraf_ref) kaynak_rolu FROM talimat_kaydi t JOIN kullanici_hesabi h ON h.kimlik = t.kaydeden_ref WHERE t.dosya_ref = $1 ORDER BY t.alinma_zamani DESC`, [id])).rows;
     // YG-158: kaynak seçimi için dosyanın aktif tarafları (sistem kimliği gösterilmez).
     if (i.query && (i.query as { taraflar?: string }).taraflar) return { kayitlar, taraflar: (await b.db.query(`SELECT kimlik, taraf_rolu, kisi_adi_soyadi FROM dosya_tarafi WHERE dosya_ref = $1 AND aktif ORDER BY taraf_rolu`, [id])).rows };
     return kayitlar;
@@ -792,13 +801,21 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     // YG-158: kaynak Yat Sahibi ya da geçerli yetki kaydı olan taraf değilse kayıt yetkisiz kaynak sayılır.
     if (g.kaynakTaraf && (!UUID.test(g.kaynakTaraf) || !(await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE kimlik = $1 AND dosya_ref = $2 AND aktif`, [g.kaynakTaraf, id])).rowCount)) return y.code(400).send({ hata: 'Gönderen taraf bu dosyada kayıtlı değildir.' });
     const yetkili = Boolean(g.kaynakTaraf && (await b.db.query(`SELECT 1 FROM dosya_tarafi x WHERE x.kimlik = $1 AND x.taraf_rolu = 'Yat Sahibi' UNION SELECT 1 FROM yetki_kaydi k WHERE k.dosya_tarafi_ref = $1 AND k.yetki_durumu = 'Geçerli' AND (k.gecerlilik_bitisi IS NULL OR k.gecerlilik_bitisi >= current_date) LIMIT 1`, [g.kaynakTaraf])).rowCount);
-    const r = (await b.db.query(`INSERT INTO talimat_kaydi (dosya_ref, kanal, tur, gonderen, alinma_zamani, ozgun_metin, belge_ref, aktaran_notu, kaydeden_ref, kaynak_taraf_ref, kaynak_yetkili) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING kimlik`, [id, g.kanal, g.tur ?? 'Talimat', g.gonderen.trim(), g.zaman, g.metin.trim(), g.belge || null, g.not?.trim() || null, o.kullanici, g.kaynakTaraf || null, yetkili || (g.tur ?? 'Talimat') === 'Bilgi'])).rows[0];
+    // YG-568, V-1119: aktarım sınırı Kritik ve Yüksekte ilk yanıt süresi, Normal ve Planlıda 24 saattir; aşılırsa kayıt geç aktarım olarak işaretlenir.
+    const onc = (await b.db.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.oncelik as string;
+    const sinir = onc === 'Kritik' || onc === 'Yüksek' ? (await import('./sure.js')).SURE_SAAT['İlk Yanıt']![onc]! : 24;
+    const gec = (Date.now() - new Date(g.zaman).getTime()) / 3_600_000 > sinir;
+    const r = (await b.db.query(`INSERT INTO talimat_kaydi (dosya_ref, kanal, tur, gonderen, alinma_zamani, ozgun_metin, belge_ref, aktaran_notu, kaydeden_ref, kaynak_taraf_ref, kaynak_yetkili, aktarim_siniri_saat, gec_aktarim) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING kimlik`, [id, g.kanal, g.tur ?? 'Talimat', g.gonderen.trim(), g.zaman, g.metin.trim(), g.belge || null, g.not?.trim() || null, o.kullanici, g.kaynakTaraf || null, yetkili || (g.tur ?? 'Talimat') === 'Bilgi', sinir, gec])).rows[0];
     if (!yetkili && (g.tur ?? 'Talimat') !== 'Bilgi') {
       const ds = (await b.db.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
       if (ds?.dosya_sorumlusu_ref) await kartAc(b.db, { tur: 'Yetkisiz Kaynak Talimatı', kategori: 'gorev', baslik: `${ds.dosya_no} · Yetkisiz Kaynaktan ${g.tur ?? 'Talimat'}: Kaynağı Doğrulayınız`, ozet: `${g.gonderen.trim()} · ${g.kanal}`, oncelik: 'Yüksek', sahipKullanici: ds.dosya_sorumlusu_ref, nesneTuru: 'Dosya', nesneKimligi: id });
     }
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Talimat Kaydı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { kanal: g.kanal, tur: g.tur ?? 'Talimat', gonderen: g.gonderen, kaynakYetkili: yetkili }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
-    return { kimlik: r.kimlik, kaynakYetkili: yetkili };
+    if (gec) { // YG-568: geç aktarım dosyanın Operasyon Yöneticisine bildirilir
+      const d2 = (await b.db.query(`SELECT d.dosya_no, array_agg(a.kullanici_ref) FILTER (WHERE a.rol = 'Operasyon Yöneticisi') oy FROM dosya d LEFT JOIN dosya_ekibi_atamasi a ON a.dosya_ref = d.kimlik AND a.bitis_zamani IS NULL WHERE d.kimlik = $1 GROUP BY d.dosya_no`, [id])).rows[0];
+      if (d2?.oy?.length) await bildir(b.db, { olay: `gec-aktarim:${r.kimlik}`, kullanicilar: d2.oy, baslik: `${d2.dosya_no} · Bilgi Geç Aktarıldı`, ozet: `${g.kanal} · ${g.gonderen.trim()} · aktarım sınırı ${String(sinir).replace('.', ',')} saat`, oncelik: 'Yüksek' });
+    }
+    return { kimlik: r.kimlik, kaynakYetkili: yetkili, gecAktarim: gec, aktarimSiniriSaat: sinir };
   });
   s.post('/dosya/:id/beklemede', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { neden?: string; sorumlu?: string; hedefTarih?: string; kanitBelge?: string; mesaj?: string; tedarikciKaynakli?: boolean; isEmri?: string };

@@ -508,7 +508,7 @@ describe('süre aşımı ve açık konu (YG-040, YG-059)', () => {
   it('Uygulama, Kontrol ve Teslim aşama kapıları (YG065-KAPI)', async () => {
     await sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await dosyaAc(); await ekipKur(d.kimlik); const c = await gir('ds');
     await sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, statu = 'Aktif', asama = 'Onay' WHERE kimlik = $1`, [d.kimlik, K.ds]);
-    const r1 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Uygulama', gerekce: 'x' }); expect(r1.statusCode).toBe(409); expect(r1.json().hata).toContain('onaylanmış bir fiyat teklifi');
+    const r1 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Uygulama', gerekce: 'x' }); expect(r1.statusCode).toBe(409); expect(r1.json().hata).toContain('onaylanmış bir fiyat teklifi'); expect(r1.json()).toMatchObject({ islem: 'Eksiği Tamamla', hedef: 'yapilacaklar' }); // YG-067
     await sup.query(`UPDATE dosya SET asama = 'Uygulama' WHERE kimlik = $1`, [d.kimlik]);
     const r2 = await ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Kontrol', gerekce: 'x' }); expect(r2.statusCode).toBe(409); expect(r2.json().hata).toContain('yayımlanmış bir iş emri');
     await sup.query(`UPDATE dosya SET asama = 'Kontrol' WHERE kimlik = $1`, [d.kimlik]);
@@ -569,6 +569,11 @@ describe('talimat ve karar kaydı (YG-569, YG-570)', () => {
     expect(r.statusCode, r.body).toBe(200);
     const l = (await ist('GET', `/api/dosya/${d.kimlik}/talimatlar`, c)).json();
     expect(l[0]).toMatchObject({ kanal: 'WhatsApp Grubu', tur: 'Karar', ozgun_metin: 'Yarın 10:00 çekeğe alınsın.', aktaran_notu: 'Grup kararı' });
+    // YG-568: aktarım sınırı önceliğe göredir (Normal ve Planlıda 24 saat, Kritik ve Yüksekte ilk yanıt süresi); aşılırsa geç aktarım işaretlenir.
+    const on = (await sup.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].oncelik as string; const sn = on === 'Kritik' ? 0.5 : on === 'Yüksek' ? 2 : 24;
+    expect(r.json()).toMatchObject({ gecAktarim: sn < 1, aktarimSiniriSaat: sn });
+    const gc = await ist('POST', `/api/dosya/${d.kimlik}/talimat`, c, { kanal: 'E-posta', tur: 'Bilgi', gonderen: 'Kaptan', zaman: new Date(Date.now() - 30 * 3_600_000).toISOString(), metin: 'Eski bilgi' }); expect(gc.json().gecAktarim).toBe(true);
+    expect((await ist('GET', `/api/dosya/${d.kimlik}/talimatlar`, c)).json().some((x: { gec_aktarim: boolean }) => x.gec_aktarim)).toBe(true);
   });
 });
 

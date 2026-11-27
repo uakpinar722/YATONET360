@@ -266,11 +266,13 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
     if (!r.ok) throw new Error(j.hata ?? 'Yükleme tamamlanamadı.');
     setBKanit(j.belge);
   };
+  // YG-1360: formu açar (kapalı bölümleri açar, alana kaydırır ve odaklar).
+  const formAc = (h: string) => setTimeout(() => { const el = document.getElementById(h); if (!el) return; for (let p = el.closest('details'); p; p = p.parentElement?.closest('details') ?? null) p.open = true; el.scrollIntoView({ block: 'center' }); el.focus(); }, 0);
   useEffect(() => {
     if (!sonrakiForm || !d) return; setSonrakiForm(false);
     const s = d.yapilacaklar.find((x) => x.form && document.getElementById(x.form.hedef) && (!x.form.rol || document.querySelector(`#${x.form.hedef} option[value="${x.form.rol}"]`)));
     if (!s?.form) return; if (s.form.rol) { setRol(s.form.rol); setKisi(''); }
-    const h = s.form.hedef; setTimeout(() => { const el = document.getElementById(h); if (!el) return; for (let p = el.closest('details'); p; p = p.parentElement?.closest('details') ?? null) p.open = true; el.scrollIntoView({ block: 'center' }); el.focus(); }, 0);
+    formAc(s.form.hedef);
   }, [sonrakiForm, d]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!d) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   const ds = d.rollerim.includes('Dosya Sorumlusu');
@@ -293,7 +295,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
         {d.sigorta && <div>Sigorta: {d.sigorta.sigortaci_adi ?? '—'} · Hasar Dosya No: {d.sigorta.sigorta_hasar_dosya_no ?? '—'}</div>}
         {d.sigorta && <SigortaEposta id={id} eposta={d.sigorta.eposta} ek3={d.sigorta.onay_yetkilisi_eposta} yenile={yukle} />}
       </div>
-      {d.yapilacaklar.length > 0 && <Blok baslik="Yapılacaklar">{d.yapilacaklar.map((y, n) => <div key={`${y.is}-${n}`} className={y.engel ? 'uyari' : ''}>{y.is} · {y.sorumlu}{y.hedef ? ` · Hedef: ${saat(y.hedef)}` : ''}</div>)}</Blok>}
+      {d.yapilacaklar.length > 0 && <div id="yapilacaklar" tabIndex={-1}><Blok baslik="Yapılacaklar">{d.yapilacaklar.map((y, n) => <div key={`${y.is}-${n}`} className={y.engel ? 'uyari' : ''}>{y.is} · {y.sorumlu}{y.hedef ? ` · Hedef: ${saat(y.hedef)}` : ''}{y.form && <> <button className="btn2 kucuk" onClick={() => { if (y.form!.rol) { setRol(y.form!.rol); setKisi(''); } formAc(y.form!.hedef); }}>Formu Aç</button></>}</div>)}</Blok></div>}
       {d.sureler.length > 0 && <Blok baslik="Süreler">{d.sureler.map((s) => <div key={s.tur}>{s.tur}: <Sayac s={s} /></div>)}</Blok>}
       {d.gerceklesme && (d.gerceklesme.fiziksel !== null || d.gerceklesme.finansal !== null) && <div className="ozet" data-t="gerceklesme">Fiziksel İlerleme: %{String(d.gerceklesme.fiziksel ?? 0).replace('.', ',')} · Finansal Gerçekleşme: {d.gerceklesme.finansal === null ? '—' : `%${String(d.gerceklesme.finansal).replace('.', ',')}`}</div>}
       <Blok baslik="Yat">
@@ -411,7 +413,7 @@ function DosyaEkrani({ id, geri, roller }: { id: string; geri: () => void; rolle
 }
 
 interface Saha {
-  kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null; plan_onay_zamani?: string | null }[];
+  kesifler: { kimlik: string; amac_kapsam: string; durum: string; planlanan_baslangic: string; cikis_durumu: string | null; plan_onay_zamani?: string | null; izinli_islemler?: string[]; yapilan_islemler?: string[] }[];
   bulgular: { kimlik: string; bulgu_no: string; konum_referansi: string; bolge_kodu: string | null; aciklama: string; hasar_onem_derecesi: string; bulgu_etiketi: string; yonlendirme: string; beyanla_celisen: boolean; tam_ziya_onerisi: boolean; sigortaciya_bildirim_zamani: string | null; teyit_bekliyor?: boolean }[];
   gorseller: { gorsel_no: string | null; asama: string; cekim_kalemi: string; bolge_kodu: string | null; cekilemedi_nedeni: string | null }[];
   olcumler: { olcum_no: string; olcum_noktasi: string; olculen_buyukluk: string; ozet_deger: string; birim: string; gecerlilik: string; sinir_disi: boolean }[];
@@ -447,6 +449,8 @@ function GarantiKarar({ id, yap }: { id: string; yap: (f: () => Promise<any>, ta
 /** YG-056, YG-127, YG-1452: keşif, bulgu, yönlendirmeli fotoğraf; YG-075, YG-148: kapanış ve tutanak; YG-1425: garanti ve şikâyet. */
 function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; belgeler: Belge[]; yenile: () => void }) {
   const [v, setV] = useState<Saha | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
+  const [izinli, setIzinli] = useState<string[]>([]); const [yapilan, setYapilan] = useState<string[]>([]); const [izinliListe, setIzinliListe] = useState<string[]>([]); // YG-056
+  useEffect(() => { void istek<string[]>('/kesif-izinli-islemler').then(setIzinliListe).catch(() => {}); }, []);
   const [amac, setAmac] = useState(''); const [kBas, setKBas] = useState(''); const [kBit, setKBit] = useState(''); const [inc, setInc] = useState(''); const [cikis, setCikis] = useState('Hazır'); const [sup, setSup] = useState('Hayır'); const [sayim, setSayim] = useState(false); const [eris, setEris] = useState(''); const [erisT, setErisT] = useState('');
   const [bTur, setBTur] = useState('İlk Gözlem'); const [bTy, setBTy] = useState<Record<string, { tur: string; ger: string }>>({});
   const [bKonum, setBKonum] = useState(''); const [bBolge, setBBolge] = useState(''); const [bAcik, setBAcik] = useState(''); const [bOnem, setBOnem] = useState('Orta'); const [bHedef, setBHedef] = useState('');
@@ -461,6 +465,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
   const yap = async (f: () => Promise<any>, tamam?: string) => { setHata(''); setNot(''); try { await f(); if (tamam) setNot(tamam); await yukle(); yenile(); } catch (x) { setHata((x as Error).message); } };
   if (!v) return hata ? <div className="hata" role="alert">{hata}</div> : null;
   const acikKesif = v.kesifler.find((k) => k.durum === 'Planlandı');
+  const izinliSecenek = izinliListe;
   return (
     <>
       {hata && <div className="hata" role="alert">{hata}</div>}
@@ -470,7 +475,8 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         {d.statu === 'Aktif' && d.asama === 'Keşif' && !acikKesif && <>
           <label htmlFor="ks-a">Keşfin Amacı ve Kapsamı</label><input id="ks-a" value={amac} onChange={(e) => setAmac(e.target.value)} />
           <div className="iki-tarih"><div><label htmlFor="ks-b">Başlangıç</label><input id="ks-b" type="datetime-local" value={kBas} onChange={(e) => setKBas(e.target.value)} /></div><div><label htmlFor="ks-s">Bitiş</label><input id="ks-s" type="datetime-local" value={kBit} onChange={(e) => setKBit(e.target.value)} /></div></div>
-          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kesif`, { amac, baslangic: new Date(kBas).toISOString(), bitis: new Date(kBit).toISOString() }))}>Keşif Görevi Aç</button>
+          <fieldset><legend>Keşifte İzinli İşlemler</legend>{izinliSecenek.map((x) => <label key={x} className="kutu"><input type="checkbox" checked={izinli.includes(x)} onChange={(e) => setIzinli(e.target.checked ? [...izinli, x] : izinli.filter((z) => z !== x))} /><span>{x}</span></label>)}</fieldset>
+          <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/kesif`, { amac, baslangic: new Date(kBas).toISOString(), bitis: new Date(kBit).toISOString(), izinli }))}>Keşif Görevi Aç</button>
         </>}
         {acikKesif && <>
           {v.fotoEksik.length > 0 && <div className="uyari">Eksik Fotoğraf: {v.fotoEksik.join(', ')}</div>}
@@ -479,8 +485,9 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
           {eris && <><label htmlFor="ks-et">Açık Konu Hedef Tarihi</label><input id="ks-et" type="date" value={erisT} onChange={(e) => setErisT(e.target.value)} /></>}
           <label htmlFor="ks-c">Çıkış Durumu</label><select id="ks-c" value={cikis} onChange={(e) => setCikis(e.target.value)}>{['Hazır', 'Koşullu', 'Açık'].map((x) => <option key={x}>{x}</option>)}</select>
           <label htmlFor="ks-t">Asbest veya Eski TBT Boyası Şüphesi Var mı?</label><select id="ks-t" value={sup} onChange={(e) => setSup(e.target.value)}>{['Hayır', 'Bilinmiyor', 'Evet'].map((x) => <option key={x}>{x}</option>)}</select>
+          <fieldset><legend>Keşifte Yapılan İşlemler (yalnız izinli olanlar)</legend>{(acikKesif.izinli_islemler ?? []).length === 0 && <div className="not">Bu keşifte söküm, numune, çalıştırma veya parça değişimi izni yoktur.</div>}{(acikKesif.izinli_islemler ?? []).map((x) => <label key={x} className="kutu"><input type="checkbox" checked={yapilan.includes(x)} onChange={(e) => setYapilan(e.target.checked ? [...yapilan, x] : yapilan.filter((z) => z !== x))} /><span>{x}</span></label>)}</fieldset>
           <label className="kutu"><input type="checkbox" checked={sayim} onChange={(e) => setSayim(e.target.checked)} /><span>Kanıt Sayımı Yapıldı</span></label>
-          <button className="btn2" onClick={() => void yap(() => istek(`/kesif/${acikKesif.kimlik}/tamamla`, { tarih: new Date().toISOString(), incelenen: inc, erisilemeyen: eris || undefined, hedefTarih: erisT || undefined, cikis, supheli: sup, kanitSayimi: sayim }))}>Keşfi Tamamla</button>
+          <button className="btn2" onClick={() => void yap(() => istek(`/kesif/${acikKesif.kimlik}/tamamla`, { tarih: new Date().toISOString(), incelenen: inc, erisilemeyen: eris || undefined, hedefTarih: erisT || undefined, cikis, supheli: sup, kanitSayimi: sayim, yapilan }))}>Keşfi Tamamla</button>
         </>}
       </Blok>
       <BelgeListesi dosya={id} />

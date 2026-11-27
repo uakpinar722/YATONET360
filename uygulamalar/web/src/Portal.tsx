@@ -256,10 +256,10 @@ function HasarBildirimi({ bitti }: { bitti: () => void }) {
 export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomulu?: boolean; geri?: () => void }) {
   const [tkr, setTkr] = useState('Kabul'); const [cek, setCek] = useState('');
   const [t, setT] = useState<OnayEkran | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState(''); const [kutu, setKutu] = useState<Record<string, boolean>>({}); const [kod, setKod] = useState(''); const [son, setSon] = useState<{ durum: string; onayKodu: string } | null>(null);
-  const [m, setM] = useState(''); const [tk, setTk] = useState<string[]>([]); const [lehtar, setLehtar] = useState('');
+  const [m, setM] = useState(''); const [tk, setTk] = useState<string[]>([]); const [lehtar, setLehtar] = useState(''); const [malikDegil, setMalikDegil] = useState(false); const [malikAdi, setMalikAdi] = useState(''); // YG-103
   useEffect(() => { void istek<OnayEkran>(`/onay/${belirtec}`).then(setT).catch((e) => setHata(e.message)); }, [belirtec]);
   const kodIste = async (kanal: string) => { setHata(''); setNot(''); try { await istek(`/onay/${belirtec}/kod`, { kanal }); setNot(kanal === 'E-posta' ? 'Kod e-posta adresinize gönderilmiştir.' : `Kod ••${t?.telefonSonu ?? ''} ile biten telefonunuza gönderilmiştir.`); } catch (x) { setHata((x as Error).message); void istek<OnayEkran>(`/onay/${belirtec}`).then(setT).catch(() => {}); } };
-  const karar = async () => { setHata(''); try { setSon(await istek<{ durum: string; onayKodu: string }>(`/onay/${belirtec}/karar`, { kod, kutular: kutu, form: t?.formTuru === 'Teslim Kararı' ? { teslimKarar: tkr, cekince: cek } : t?.formTuru ? { mulkiyet: m, takyidat: tk, lehtar } : undefined })); } catch (x) { setHata((x as Error).message); } };
+  const karar = async () => { setHata(''); try { setSon(await istek<{ durum: string; onayKodu: string }>(`/onay/${belirtec}/karar`, { kod, kutular: kutu, form: t?.formTuru === 'Teslim Kararı' ? { teslimKarar: tkr, cekince: cek } : t?.formTuru ? { mulkiyet: m, takyidat: tk, lehtar, malikDegil, malikAdi } : undefined })); } catch (x) { setHata((x as Error).message); } };
   const tumKutu = (t?.kutular ?? []).every((k) => !k.zorunlu || kutu[k.ad]);
   const icerik = !t ? (hata ? <div className="hata" role="alert">{hata}</div> : null) : son ? (
     <div className="ozet"><h2>Onayınız Alınmıştır</h2><div>Onay Kodu: <b>{son.onayKodu}</b></div><div>Değerli onayınız için teşekkür ederiz.</div>{geri && <button className="btn" onClick={geri}>Ana Sayfaya Dön</button>}</div>
@@ -277,7 +277,10 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
       {t.formTuru === 'Mülkiyet Beyanı' && <>
         <label htmlFor="o-m">Mülkiyet Türü</label><select id="o-m" value={m} onChange={(e) => setM(e.target.value)}><option value="">Seçiniz</option>{MULKIYET.map((x) => <option key={x}>{x}</option>)}</select>
         <label>Takyidat</label>{TAKYIDAT.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={tk.includes(x)} onChange={(e) => setTk((o) => (e.target.checked ? [...o, x] : o.filter((y) => y !== x)))} /><span>{x}</span></label>)}
-        {m !== 'Malik' && m !== '' && <><label htmlFor="o-l">Lehtar</label><input id="o-l" value={lehtar} onChange={(e) => setLehtar(e.target.value)} /></>}
+        {m !== 'Malik' && m !== '' && <><label htmlFor="o-l">{m === 'Finansal kiralama (leasing)' ? 'Kiralayan (Leasing) Şirketi · Lehtar' : 'Lehtar'}</label><input id="o-l" value={lehtar} onChange={(e) => setLehtar(e.target.value)} /></>}
+        {m === 'Finansal kiralama (leasing)' && <div className="not">Leasingde siz kiracı olarak taraf olursunuz; kiralayan şirket malik olarak ayrıca kaydedilir.</div>}
+        {m !== '' && m !== 'Finansal kiralama (leasing)' && <><label className="kutu"><input type="checkbox" checked={malikDegil} onChange={(e) => setMalikDegil(e.target.checked)} /><span>Yat belgesinde malik olarak ben yazılı değilim (yatı kullanıyorum)</span></label>
+          {malikDegil && <><label htmlFor="o-ma">Yat Belgesindeki Malik</label><input id="o-ma" value={malikAdi} onChange={(e) => setMalikAdi(e.target.value)} /></>}</>}
       </>}
       {t.kutular.map((k) => <label className="kutu" key={k.ad}><input type="checkbox" checked={Boolean(kutu[k.ad])} onChange={(e) => setKutu((o) => ({ ...o, [k.ad]: e.target.checked }))} /><span>{k.ad}</span></label>)}
       {not && <div className="not" role="status">{not}</div>}

@@ -80,7 +80,8 @@ onayFormKaydet('Mülkiyet Beyanı', async (_db, _t, f) => {
   if (!MULKIYET.includes(f?.mulkiyet)) return 'Mülkiyet türünü seçiniz.';
   if (!Array.isArray(f?.takyidat) || !f.takyidat.length || f.takyidat.some((x: string) => !TAKYIDAT.includes(x))) return 'Takyidat bilgisini seçiniz.';
   if (f.takyidat.includes('Yok') && f.takyidat.length > 1) return '"Yok" seçeneğini tek başına işaretlemenizi rica ederiz.';
-  if ((f.mulkiyet !== 'Malik' || f.takyidat.includes('Rehin / ipotek')) && f.mulkiyet !== 'Miras (elbirliği)' && f.mulkiyet !== 'Paylı' && !f.lehtar?.trim()) return 'Lehtar adını yazınız.';
+  if ((f.mulkiyet !== 'Malik' || f.takyidat.includes('Rehin / ipotek')) && f.mulkiyet !== 'Miras (elbirliği)' && f.mulkiyet !== 'Paylı' && !f.lehtar?.trim()) return f.mulkiyet === 'Finansal kiralama (leasing)' ? 'Kiralayan (leasing) şirketinin adını yazınız.' : 'Lehtar adını yazınız.';
+  if (f.mulkiyet !== 'Finansal kiralama (leasing)' && f.malikDegil && !String(f.malikAdi ?? '').trim()) return 'Yat belgesinde malik olarak yazılı kişinin adını yazınız.'; // YG-103
   return null;
 });
 onaySonucKaydet('ONY-11', async (c, t, karar, k) => {
@@ -93,6 +94,13 @@ onaySonucKaydet('ONY-11', async (c, t, karar, k) => {
     const s = (await c.query(`SELECT d.yazisma_dili, d.vefat_isareti, y.yat_adi, x.telefon, x.eposta FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_tarafi x ON x.dosya_ref = d.kimlik AND x.taraf_rolu = 'Yat Sahibi' AND x.aktif WHERE d.kimlik = $1 LIMIT 1`, [t.dosya_ref])).rows[0];
     if (s && !s.vefat_isareti && (s.telefon || s.eposta)) await yatTarafinaYaz(c, { olay: `bld07:${t.dosya_ref}`, kod: 'BLD-07', dil: dilKod(s.yazisma_dili), konu: `${yat.dosya_no} Muvafakat`, telefon: s.telefon, eposta: s.eposta, alanlar: { Yat: s.yat_adi, Yacht: s.yat_adi, Lehtar: f.lehtar.trim(), 'Loss payee': f.lehtar.trim(), 'Dosya No': yat.dosya_no } });
   }
+  // YG-103, V-1117: leasingde beyan eden kiracıdır, malik (kiralayan) ayrı malik kaydıdır; malik ile kullanan farklıysa taraf yat belgesindeki malik olmalıdır.
+  { const leasing = f.mulkiyet === 'Finansal kiralama (leasing)'; const kullanan = !leasing && Boolean(f.malikDegil);
+    const malikAdi = leasing ? f.lehtar?.trim() : kullanan ? String(f.malikAdi).trim() : null;
+    await c.query(`UPDATE yat SET beyan_eden_sifati = $2 WHERE kimlik = $1`, [yat.yat_ref, leasing ? 'Kiracı' : kullanan ? 'Kullanan' : 'Malik']);
+    const ekleyen = t.alici_kullanici_ref ?? (await c.query(`SELECT dosya_sorumlusu_ref r FROM dosya WHERE kimlik = $1`, [t.dosya_ref])).rows[0]?.r;
+    if (malikAdi && ekleyen && !(await c.query(`SELECT 1 FROM yat_malik WHERE yat_ref = $1 AND lower(ad) = lower($2)`, [yat.yat_ref, malikAdi])).rowCount) await c.query(`INSERT INTO yat_malik (yat_ref, ad, ekleyen_ref) VALUES ($1,$2,$3)`, [yat.yat_ref, malikAdi, ekleyen]);
+    if (kullanan) await kartAc(c, { tur: 'Eksik Bilgi', kategori: 'gorev', baslik: `${yat.dosya_no} · Taraf Yat Belgesindeki Malik Olmalı`, ozet: `Beyanı veren yatı kullanan kişidir; yat belgesindeki malik (${malikAdi}) dosyada taraf olarak kaydedilmeli ve onaylar ona yöneltilmelidir.`, sahipRol: await rolId(c, 'Dosya Sorumlusu'), nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref }); }
   // YG-104: hacizli veya tedbirli yat Hukuk ve Uyum Direktörünün onayı olmadan taşınmaz; takyidat değerlendirmesi açılır.
   if (f.takyidat.some((x: string) => x === 'Haciz' || x.startsWith('İhtiyati'))) await kartAc(c, { tur: 'Takyidat Değerlendirmesi', baslik: `${yat.dosya_no} · Takyidat Değerlendirmesi`, ozet: f.takyidat.join(', '), oncelik: 'Yüksek', kategori: 'islem', sahipRol: await rolId(c, 'Hukuk ve Uyum Direktörü'), nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref });
   // YG-1463: paylı yatta tek yetkili malik atama adımı.

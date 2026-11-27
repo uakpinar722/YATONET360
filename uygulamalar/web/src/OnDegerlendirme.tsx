@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
-type V = { sonuclar: { deger: string; aciklama: string }[]; oncelikler: string[]; mevcutOncelik: string; ekip: { kimlik: string; ad_soyad: string }[]; riskler: string[]; duzenleyebilir: boolean; surumler: { surum: number; olusturma_zamani: string }[] };
+type V = { sonuclar: { deger: string; aciklama: string }[]; oncelikler: string[]; mevcutOncelik: string; ekip: { kimlik: string; ad_soyad: string }[]; riskler: string[]; duzenleyebilir: boolean; kontrolEdebilir?: boolean; surumler: { surum: number; olusturma_zamani: string; kalite_kontrol_sonucu?: string | null; kalite_kontrol_notu?: string | null; onayli?: boolean }[] };
 const ALAN: [string, string, boolean?][] = [['kapsam', 'Görevlendirme Kapsamı ve Karar Sınırı'], ['kronoloji', 'Olay Özeti ve Kronoloji'], ['kaynaklar', 'İncelenen Kaynaklar'], ['olgular', 'Doğrulanmış Olgular'], ['beyanlar', 'Beyanlar, Gözlemler ve Varsayımlar'], ['yeterlilikGerekcesi', 'Bilgi Yeterliliği Gerekçesi ve Eksik Listesi'], ['uzmanliklar', 'Gerekli Uzmanlıklar'], ['etkilenen', 'Etkilenen Sistemler', true], ['yontem', 'Yöntem Kararı'], ['yontemGerekcesi', 'Yöntem Gerekçesi', true], ['sonrakiAdim', 'Sonraki Adım'], ['acikKonular', 'Açık Konular']];
 
 /** YG-651: RP-OPS-001 Ön Değerlendirme sekmesi; her kayıt yeni sürümdür. */
 export function OnDegerlendirme({ dosya }: { dosya: string }) {
-  const [v, setV] = useState<V | null>(null); const [f, setF] = useState<Record<string, string>>({ yeterlilik: 'Yeterli' }); const [r, setR] = useState<Record<string, string>>({}); const [b, setB] = useState<{ sorumlu?: string; hedefTarih?: string }>({}); const [m, setM] = useState('');
+  const [v, setV] = useState<V | null>(null); const [f, setF] = useState<Record<string, string>>({ yeterlilik: 'Yeterli' }); const [r, setR] = useState<Record<string, string>>({}); const [b, setB] = useState<{ sorumlu?: string; hedefTarih?: string }>({}); const [m, setM] = useState(''); const [kk, setKk] = useState('');
   const yk = () => istek<V>(`/dosya/${dosya}/on-degerlendirme`).then(setV).catch(() => setV(null));
   useEffect(() => { void yk(); }, [dosya]);
   if (!v) return null;
-  return <details><summary>Ön Değerlendirme Raporu{v.surumler.length ? ` · Rev.${v.surumler[0]!.surum}` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
+  const son = v.surumler[0];
+  return <details><summary>Ön Değerlendirme Raporu{son ? ` · Rev.${son.surum}${son.onayli ? ' · Onaylı' : son.kalite_kontrol_sonucu === 'Uygun Değil' ? ' · Kalite Kontrolü Olumsuz' : ' · Kalite Kontrolü Bekliyor'}` : ''}</summary>{m && <div className="not" role="status">{m}</div>}
+    {son?.kalite_kontrol_sonucu === 'Uygun Değil' && <div className="uyari">Kalite kontrolü olumsuz: {son.kalite_kontrol_notu}. Düzeltilmiş bilgiyle yeni sürüm kaydediniz.</div>}
+    {son && v.kontrolEdebilir && <div className="kart"><label htmlFor="od-kk">Kalite Kontrolü Gerekçesi (Uygun Değil ise zorunlu)</label><input id="od-kk" value={kk} onChange={(e) => setKk(e.target.value)} />
+      <button className="btn2 kucuk evet" onClick={() => void istek(`/dosya/${dosya}/on-degerlendirme/${son.surum}/kalite-kontrol`, { sonuc: 'Uygun', not: kk || undefined }).then(() => { setM('Rapor Onaylı.'); return yk(); }).catch((e) => setM(e.message))}>Uygun · Onaylı</button>
+      <button className="btn2 kucuk hayir" disabled={!kk.trim()} onClick={() => void istek(`/dosya/${dosya}/on-degerlendirme/${son.surum}/kalite-kontrol`, { sonuc: 'Uygun Değil', not: kk }).then(() => { setM('Rapor düzeltmeye gönderildi.'); return yk(); }).catch((e) => setM(e.message))}>Uygun Değil</button></div>}
     {v.duzenleyebilir && <><label htmlFor="od-t">Esas Alınan Son Bilgi Tarihi</label><input id="od-t" type="date" value={f.sonBilgi ?? ''} onChange={(e) => setF({ ...f, sonBilgi: e.target.value })} />
       <label htmlFor="od-y">Bilgi Yeterliliği</label><select id="od-y" value={f.yeterlilik} onChange={(e) => setF({ ...f, yeterlilik: e.target.value })}><option>Yeterli</option><option>Kısmen Yeterli</option><option>Yetersiz</option></select>
       <label htmlFor="od-sonuc">Ön Değerlendirme Sonucu</label><select id="od-sonuc" value={f.sonuc ?? ''} onChange={(e) => setF({ ...f, sonuc: e.target.value, ...(e.target.value === 'Acil Müdahale Gerekli' ? { oncelikTeyidi: 'Kritik' } : {}) })}><option value="">Seçiniz</option>{v.sonuclar.map((x) => <option key={x.deger} value={x.deger} title={x.aciklama}>{x.deger}</option>)}</select>
