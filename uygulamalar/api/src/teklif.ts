@@ -532,7 +532,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const muhatap = g.muhatap ?? (d.odeme_yat_sahibine_zamani ? 'Yat Sahibi' : d.musteri_turu === 'Sigorta Şirketi' ? 'Sigorta Şirketi' : d.musteri_turu === 'Kurumsal Müşteri' ? 'Kurumsal Müşteri' : 'Yat Sahibi'); // YG-892
     if (!['Sigorta Şirketi', 'Yat Sahibi', 'Kurumsal Müşteri'].includes(muhatap)) return y.code(400).send({ hata: 'Muhatap geçersiz.' });
     const cetvel = (await b.db.query(`SELECT kimlik FROM kapsam_cetveli WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
-    if (!cetvel) return y.code(409).send({ hata: 'Teklif için Onaylı kapsam cetveli bekleniyor.' });
+    if (!cetvel) return y.code(409).send({ hata: 'Teklif için Onaylı kapsam cetveli bekleniyor.', islem: 'Kapsam Cetveline Git', hedef: 'kapsam-cetveli' }); // YG-1386
     if (!g.firmaTeklifi || !UUID.test(g.firmaTeklifi)) return y.code(400).send({ hata: 'Firma fiyat teklifini seçiniz.' });
     const ft = (await b.db.query(`SELECT * FROM firma_fiyat_teklifi WHERE kimlik = $1 AND dosya_ref = $2 AND durum IN ('Gönderildi', 'Seçildi')`, [g.firmaTeklifi, id])).rows[0];
     if (!ft) return y.code(404).send({ hata: 'Firma teklifi bulunamadı.' });

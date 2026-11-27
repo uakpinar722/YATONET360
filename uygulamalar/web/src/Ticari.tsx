@@ -277,6 +277,7 @@ export function TicariBolumu({ id, rollerim, roller, asama }: { id: string; roll
       <Mesaj />
       {ticari && <TicariOzet id={id} />}
       {ticari && <OdemeYatSahibine id={id} />}
+      <div id="kapsam-cetveli" tabIndex={-1} />{/* YG-1386: takılan adım hedefi */}
       <Blok baslik="Kapsam ve Metraj Cetveli">
         {v.cetveller.map((c) => <div key={c.kimlik}>Rev.{c.surum} · {c.satir} satır · {c.durum}</div>)}
         {tu && <>
@@ -1254,7 +1255,7 @@ function FirmaAdaylari({ dosya, sec }: { dosya: string; sec: (k: string) => void
   const getir = (katman: string) => { setH(''); void istek<NonNullable<typeof l>>(`/dosya/${dosya}/firma-adaylari?brans=${encodeURIComponent(b.trim())}&katman=${encodeURIComponent(katman)}${mobil ? '&yalnizMobil=1' : ''}${uygun ? '&yalnizUygun=1' : ''}${bos ? '&yalnizKapasite=1' : ''}`).then(setL).catch((e) => setH(e.message)); };
   return <><label htmlFor={`fa-${dosya}`}>Branş (Uygun Firmaları Listelemek İçin)</label><input required id={`fa-${dosya}`} value={b} onChange={(e) => setB(e.target.value)} />
     <label><input type="checkbox" checked={mobil} onChange={(e) => setMobil(e.target.checked)} /> Yalnız mobil ekibi olanlar</label><label><input type="checkbox" checked={uygun} onChange={(e) => setUygun(e.target.checked)} /> Yalnız belgesi geçerli ve uygun olanlar</label><label><input type="checkbox" checked={bos} onChange={(e) => setBos(e.target.checked)} /> Yalnız kapasitesi uygun olanlar</label>
-    <div className="dugmeler"><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Bölge')}>Uygun Firmaları Listele</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Komşu')}>Komşu bölgeleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Mobil Ekip')}>Mobil ekipleri göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Ulusal')}>Ulusal ekipleri göster</button></div>
+    <div className="dugmeler"><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Bölge')}>Uygun Firmaları Listele</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Komşu')}>Komşu Bölgeleri Göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Mobil Ekip')}>Mobil Ekipleri Göster</button><button className="btn2 kucuk" disabled={!b.trim()} onClick={() => getir('Ulusal')}>Ulusal Ekipleri Göster</button></div>
     {h && <div className="hata" role="alert">{h}</div>}{l && l.length === 0 && <div className="not">Bu branş ve katmanda uygun firma bulunmamaktadır.</div>}
     {l?.map((f) => <div key={f.kimlik} className={f.bolgeDisi || (f as { planlananGecikme?: boolean }).planlananGecikme ? 'uyari' : undefined}>{f.ticari_unvan} · {f.katman} · {f.sonuc}{[...f.engeller, ...f.uyarilar].length ? ` · ${[...f.engeller, ...f.uyarilar].join(' ')}` : ''} {f.sonuc !== 'Ret' && <button className="lnk" onClick={() => sec(f.kimlik)}>Seç</button>}{f.sonuc === 'Ret' && f.engeller.some((e) => /kapasite/i.test(e)) && <KapasiteIstisnaIste dosya={dosya} firma={f.kimlik} />}</div>)}</>;
 }

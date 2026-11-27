@@ -10,11 +10,11 @@ import { suankiAdim, totpKodu } from '../src/kripto.js';
 import { ana, ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operasyon Müdürü', tu: 'Teknik Uzman', ty: 'Teknik Yönetici', tm: 'Teknik Müdür', ts: 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)', mfm: 'Muhasebe ve Finans Müdürü', mfy: 'Muhasebe ve Finans Müdür Yardımcısı', fmy: 'Firma Yönetimi Müdür Yardımcısı', tid: 'Ticari İşler Direktörü', gmy: 'Genel Müdür Yardımcısı', fym: 'Firma Yönetimi Müdürü', sc: 'Sicil Sorumlusu', ik: 'İnsan Kaynakları Sorumlusu', my: 'Muhasebe ve Finans Yöneticisi' };
-let o: Ortam; let firma: string; let firmaC: string;
+let o: Ortam; let firma: string; let firmaC: string; let tkSay = 10; // teklif numarası sayaçla: aynı dosyada çakışma olmaz
 const IBAN_OK = 'TR330006100519786457841326';
 
 const teklifVer = async (d: { kimlik: string; dosyaNo: string }, muhatap: string, tutar = 1000, statu = 'Karar', karar = 'Tam Onay') => {
-  const kdv = Math.round(tutar * 20) / 100; const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,$3,20,$4,$5,$6,$7,$8,$6,$9) RETURNING kimlik`, [`${d.dosyaNo}-TK${Math.floor(Math.random() * 90 + 10)}`, d.kimlik, muhatap, statu, karar, tutar, kdv, tutar + kdv, o.K.ts])).rows[0];
+  const kdv = Math.round(tutar * 20) / 100; const t = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, karar, ara_toplam_eur, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref) VALUES ($1,$2,$3,20,$4,$5,$6,$7,$8,$6,$9) RETURNING kimlik`, [`${d.dosyaNo}-TK${++tkSay}`, d.kimlik, muhatap, statu, karar, tutar, kdv, tutar + kdv, o.K.ts])).rows[0];
   await o.sup.query(`INSERT INTO fiyat_teklifi_kalemi (teklif_ref, sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu) VALUES ($1,1,'K','Onarım','İşçilik',1,'saat',$2,$2,'Onaylandı')`, [t.kimlik, tutar]);
   return t.kimlik as string;
 };

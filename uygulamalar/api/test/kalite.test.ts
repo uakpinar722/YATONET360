@@ -8,7 +8,8 @@ const KADRO = { ds: 'Dosya Sorumlusu', oy: 'Operasyon Yöneticisi', opm: 'Operas
 let o: Ortam; let firma: string; let tedarikci: string;
 const ileri = (g: number) => new Date(Date.now() + 180 * 60_000 + g * 86_400_000).toISOString().slice(0, 10);
 const dosya = async () => { await o.sup.query(`UPDATE dosya_ekibi_atamasi SET bitis_zamani = now() WHERE bitis_zamani IS NULL`); const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); for (const [k, r] of [['kk', 'Kalite Kontrolör'], ['ts', 'Tedarik Sorumlusu']]) await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,$3,$4)`, [d.kimlik, o.K[k!], r, o.K.oy]); return d; };
-const isEmri = async (d: { kimlik: string; dosyaNo: string }, statu = 'Aktif', tur = 'ON') => (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,$2,$3,$4,'Y','K',1000,$5,$6) RETURNING kimlik`, [`${d.dosyaNo}-${tur}${Math.floor(Math.random() * 90 + 10)}`, tur, d.kimlik, firma, statu, o.K.oy])).rows[0].kimlik as string;
+let ieSay = 10; // iş emri numarası rastgele değil sayaçla: aynı dosyada çakışma olmaz
+const isEmri = async (d: { kimlik: string; dosyaNo: string }, statu = 'Aktif', tur = 'ON') => (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, firma_bedeli_eur, statu, hazirlayan_ref) VALUES ($1,$2,$3,$4,'Y','K',1000,$5,$6) RETURNING kimlik`, [`${d.dosyaNo}-${tur}${++ieSay}`, tur, d.kimlik, firma, statu, o.K.oy])).rows[0].kimlik as string;
 const ncr = async (d: { kimlik: string }, x: object, kim = 'kk') => o.ist('POST', `/api/dosya/${d.kimlik}/uygunsuzluk`, await o.gir(kim), { kaynak: 'Ara kontrol', yer: 'Y', olcut: `Ö${Math.random()}`, durum: 'Fark', belge: await o.belge(d.kimlik, 'ds'), ...x });
 
 beforeAll(async () => {
