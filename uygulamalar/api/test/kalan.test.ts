@@ -1948,3 +1948,17 @@ describe('kapasite istisnası (YG-1667, YG-1668, TZ-7)', () => {
     expect((await o.sup.query(`SELECT durum FROM is_karti WHERE kimlik = $1`, [k.kimlik])).rows[0].durum).toBe('Tamamlandı');
   });
 });
+
+describe('aday firmalarda uzaklık ve varış (YG-1539)', () => {
+  it('yata uzaklığa göre sıralanır; Kritik dosyada tahmini varış öncelik süresini aşan firma uyarıyla gelir', async () => {
+    const d = await o.dosyaAc({}, {}); await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2)`, [d.kimlik, o.K.ds]); await o.sup.query(`UPDATE dosya SET konum = 'Uzaklık Marina', oncelik = 'Kritik' WHERE kimlik = $1`, [d.kimlik]);
+    const nokta = async (no: number, ad: string, e: number, b: number) => (await o.sup.query(`INSERT INTO baglama_noktasi (nokta_no, tur, il, ad, enlem, boylam) VALUES ($1,'Marina','Muğla',$2,$3,$4) RETURNING kimlik`, [no, ad, e, b])).rows[0].kimlik as string;
+    await nokta(98001, 'Uzaklık Marina', 37.03, 27.42); const yakin = await nokta(98002, 'Yakın Liman', 37.05, 27.45); const uzak = await nokta(98003, 'Uzak Liman', 41.0, 29.0);
+    const fk = async (ad: string, n: string) => { const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref, baglama_noktasi_ref) VALUES ($1,$2,'Çözüm Ortağı','Onaylı','Aktif',$3,$4) RETURNING kimlik`, [`S-UZ${ad.length}${Date.now()}`, ad, o.K.ds, n])).rows[0].kimlik as string;
+      await o.sup.query(`INSERT INTO brans_yetkinligi (kurulus_ref, ana_brans, kapsama) VALUES ($1,'BranşUzak','Ulusal')`, [f]); return f; };
+    await fk('Uzak Firma', uzak); await fk('Yakın Firma', yakin);
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/firma-adaylari?brans=Bran%C5%9FUzak&katman=Ulusal`, await o.gir('ds'))).json() as { ticari_unvan: string; mesafeKm: number; varisAsimi: boolean; uyarilar: string[] }[];
+    expect(l.map((x) => x.ticari_unvan)).toEqual(['Yakın Firma', 'Uzak Firma']); expect(l[0]!.mesafeKm).toBeLessThan(10); expect(l[1]!.mesafeKm).toBeGreaterThan(300);
+    expect(l[0]!.varisAsimi).toBe(false); expect(l[1]!.varisAsimi).toBe(true); expect(l[1]!.uyarilar.join(' ')).toContain('Tahmini varış');
+  });
+});

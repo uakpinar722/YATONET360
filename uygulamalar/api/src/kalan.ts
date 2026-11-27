@@ -1,3 +1,4 @@
+import { firmaKonumu, mesafeKm, yatKonumu } from './konum.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
@@ -571,6 +572,8 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const l0 = (await b.db.query(`SELECT u.kimlik, u.ticari_unvan, y.kapsama, y.bolge FROM brans_yetkinligi y JOIN kurulus u ON u.kimlik = y.kurulus_ref WHERE y.ana_brans = $1 AND y.durum = 'Aktif' AND u.kayit_rolu = 'Çözüm Ortağı' AND u.ag_statusu = 'Aktif' AND u.kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [brans])).rows;
     // YG-1539: katmanlar Bölge (varsayılan), Komşu, Mobil Ekip, Ulusal; istenen katmana kadar birikimli listelenir.
     const SIRA = ['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal']; const ust = Math.max(0, SIRA.indexOf(q.katman ?? 'Bölge'));
+    const yk = await yatKonumu(b.db, id); const hiz = Number((await b.db.query(`SELECT deger FROM sistem_parametresi WHERE kod = 'ortalama_yol_hizi_kmsa'`)).rows[0]?.deger ?? 60);
+    const oncelik = (await b.db.query(`SELECT oncelik FROM dosya WHERE kimlik = $1`, [id])).rows[0]?.oncelik as string; const hedefSaat = (await import('./sure.js')).SURE_SAAT['Sahaya Ulaşma']?.[oncelik] ?? null;
     // Komşu Bölge Tablosu: Komşu kapsamlı firma yalnız kendi bölgesi veya komşu bölgesindeki dosyada listelenir (dosya bölgesi belirlenemezse listelenir).
     const dBolge = await (await import('./firma.js')).dosyaBolgesi(b.db, id);
     const komsular = dBolge ? new Set((await b.db.query(`SELECT lower(bolge) b FROM komsu_bolge WHERE lower(komsu) = lower($1)`, [dBolge])).rows.map((r) => r.b as string)) : null;
@@ -593,9 +596,12 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
       if (q.yalnizKapasite === '1' && dolu) continue;
       const k = await gorevlendirmeKontrolu(b.db, { firma: f.kimlik, dosya: id, brans }); if (q.yalnizUygun === '1' && k.sonuc === 'Ret') continue;
       const uy = [...k.uyarilar, ...(f.katman !== 'Bölge' ? ['Bölge dışı: varış süresi ve yol, konaklama maliyeti artabilir.'] : []), ...(dolu ? [`Kapasite dolu: ${kp.aktif} aktif iş / ${kp.kapasite} kapasite.`] : []), ...(gecikme ? [`Planlanan gecikme: firma en erken ${gun(kp.bosalma!)} tarihinde boşalır; dosyanın hedefi ${gun(hd.h!)}.`] : []), ...(hd?.o === 'Kritik' && kp.kritik > 0 ? [`Firmanın ${kp.kritik} aktif Kritik işi vardır.`] : [])];
-      sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: uy, kapasite: kp.kapasite, aktifIs: kp.aktif, kapasiteDolu: dolu, planlananGecikme: gecikme });
+      // YG-1539, V-1130: yata kuş uçuşu uzaklık ve ortalama yol hızıyla tahmini varış; öncelik varış süresini aşarsa sarı satır.
+      const fk = await firmaKonumu(b.db, f.kimlik); const km = yk && fk ? Math.round(mesafeKm(yk, fk)) : null; const varis = km !== null ? Math.round((km / hiz) * 10) / 10 : null;
+      const varisAsimi = varis !== null && hedefSaat !== null && varis > hedefSaat; if (varisAsimi) uy.push(`Tahmini varış ${String(varis).replace('.', ',')} saat; öncelik varış süresi ${String(hedefSaat).replace('.', ',')} saattir.`);
+      sonuc.push({ kimlik: f.kimlik, ticari_unvan: f.ticari_unvan, kapsama: f.kapsama, katman: f.katman, bolgeDisi: f.katman !== 'Bölge', sonuc: k.sonuc, engeller: k.engeller, uyarilar: uy, kapasite: kp.kapasite, aktifIs: kp.aktif, kapasiteDolu: dolu, planlananGecikme: gecikme, mesafeKm: km, tahminiVarisSaat: varis, varisAsimi });
     }
-    return sonuc.sort((a, c) => SIRA.indexOf(a.katman!) - SIRA.indexOf(c.katman!) || S[a.sonuc] - S[c.sonuc] || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
+    return sonuc.sort((a, c) => SIRA.indexOf(a.katman!) - SIRA.indexOf(c.katman!) || S[a.sonuc] - S[c.sonuc] || (a.mesafeKm ?? 1e9) - (c.mesafeKm ?? 1e9) || a.ticari_unvan.localeCompare(c.ticari_unvan, 'tr'));
   });
 
   // YG-1070: yat sahibi kendisini gösteren yetkili kayıtlarını görür ve atar. Kaptanda limit girilmezse sıfırdır.
