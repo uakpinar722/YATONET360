@@ -1,3 +1,4 @@
+import { EgitimSenaryolari } from './EgitimSenaryolari';
 import { KapasiteIstisnaIste } from './KapasiteIstisnasi';
 import { Izlenebilirlik, TicariBekletme } from './IsEmriBag';
 import { ArayuzMetni } from './ArayuzMetni';
@@ -1094,6 +1095,7 @@ export function IdariIslemler() {
       <MemnuniyetGorusme />
       <Akademi />
       <PeriyodikTakvimim />
+      <EgitimSenaryolari />
       <MusteriAnaKaydi />
       <DenemeDegerlendirme />
       <Guvenlik />

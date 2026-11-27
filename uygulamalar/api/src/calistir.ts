@@ -90,7 +90,9 @@ import { sahaSorumlusuIhtiyacIsle } from './dosya.js';
 import { acikKonuGecikmeIsle } from './dosya.js';
 
 const e = ortamOku();
-const db = new pg.Pool({ host: 'localhost', port: 5432, user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: 'yatonet360' });
+process.env.YATONET_ORTAM = e.YATONET_ORTAM ?? 'gelistirme'; // YG-1398: dış ileti engeli .env.local'deki ortam değerini de görür
+if (e.YATONET_ORTAM === 'egitim') (await import('./egitim.js')).egitimCanliBagla(new pg.Pool({ host: 'localhost', port: 5432, user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: 'yatonet360', max: 2 })); // V-1109: yalnız egitim_basarisi yazılır
+const db = new pg.Pool({ host: 'localhost', port: 5432, user: 'yatonet_uygulama', password: e.YATONET_DB_PAROLA, database: e.YATONET_ORTAM === 'egitim' ? 'yatonet360_egitim' : 'yatonet360' }); // YG-1398: eğitim ortamı ayrı veritabanında
 const s = await sunucuKur({ db, sms: new DenemeKutusu(), eposta: denemeEpostaKutusu(), anahtar: e.YATONET_SIFRELEME_ANAHTARI!, guvenliCerez: e.YATONET_ORTAM === 'uretim', webAdresi: 'http://127.0.0.1:5173' });
 await s.listen({ host: '127.0.0.1', port: 3001 });
 // YG-523: zamanlanmış işler; hata bir sonraki turu durdurmaz.

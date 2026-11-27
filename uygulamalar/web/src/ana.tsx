@@ -8,6 +8,6 @@ import './stil.css';
 import './stil_ilk.css';
 import './stil_kabuk.css';
 import { Bekleme } from './Bekleme';
-import { Uygulama } from './Uygulama';
+import { EgitimSeridi, Uygulama } from './Uygulama';
 
-createRoot(document.getElementById('kok')!).render(<><Uygulama /><Bekleme /></>);
+createRoot(document.getElementById('kok')!).render(<><EgitimSeridi /><Uygulama /><Bekleme /></>);

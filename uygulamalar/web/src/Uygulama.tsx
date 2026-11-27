@@ -14,6 +14,14 @@ import { ceviriBaslat, ceviriDurdur } from './ceviri';
 
 const davetBelirteci = () => /^#davet=(.+)$/.exec(location.hash)?.[1] ?? null;
 
+/** YG-1399: eğitim ortamında bütün ekranlarda kalıcı EĞİTİM işareti. */
+export function EgitimSeridi() {
+  const [e, setE] = useState(false);
+  useEffect(() => { void fetch('/api/ortam').then((r) => r.json()).then((j) => setE(j.ortam === 'egitim')).catch(() => {}); }, []);
+  if (!e) return null;
+  return <div role="status" style={{ position: 'sticky', top: 0, zIndex: 50, background: '#b42318', color: '#fff', textAlign: 'center', padding: '6px 12px', fontWeight: 700, letterSpacing: '.05em' }}>EĞİTİM · Bu ortamdaki kayıtlar gerçek değildir; dışarıya ileti, bildirim veya ödeme gitmez.</div>;
+}
+
 export function Uygulama() {
   const [ben, setBen] = useState<Ben | null>(null);
   const [hazir, setHazir] = useState(false);

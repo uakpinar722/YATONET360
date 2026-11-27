@@ -253,3 +253,50 @@ describe('mobil sürüm kontrolü (YG-490)', () => {
     expect((await o.ist('GET', '/api/mobil/surum?platform=android')).json().guncel).toBe('0.2.0');
   });
 });
+
+describe('eğitim ortamı (YG-1398, YG-1399)', () => {
+  it('ortam bilgisi oturumsuz okunur; eğitim ortamında dış ileti üretilmez', async () => {
+    expect((await o.ist('GET', '/api/ortam')).json().ortam).not.toBe('egitim');
+    const { disGonder } = await import('../src/bildirim.js'); const once = process.env.YATONET_ORTAM;
+    process.env.YATONET_ORTAM = 'egitim';
+    try {
+      expect((await o.ist('GET', '/api/ortam')).json().ortam).toBe('egitim');
+      const n0 = (await o.sup.query(`SELECT count(*)::int n FROM gonderim`)).rows[0].n;
+      expect(await disGonder(o.db, { olay: `egitim-${Date.now()}`, telefon: '+905320000000', eposta: 'x@ornek.com', konu: 'K', metin: 'M' })).toBe(true);
+      const n1 = (await o.sup.query(`SELECT count(*)::int n FROM gonderim`)).rows[0].n; expect(n1).toBe(n0);
+    } finally { if (once === undefined) delete process.env.YATONET_ORTAM; else process.env.YATONET_ORTAM = once; }
+  });
+  it('senaryo puanlanır, engellenecek adımda sistem durdurur, sıfırlanır; üç başarı olmadan yeni personel ilk dosyaya atanamaz (YG-1399, YG-1400)', async () => {
+    type Sc = { metin: string; dogru?: boolean; durdurur?: string }; type Ad = { secenekler: Sc[] };
+    const c = await o.gir('sy'); const k = o.K.sy;
+    const l = (await o.ist('GET', '/api/egitim/senaryolar', c)).json(); expect(l.kapi).toBe(3); expect(l.basarili).toBe(0);
+    const sn = (await o.sup.query(`SELECT kod, adimlar FROM egitim_senaryosu WHERE aktif ORDER BY sira`)).rows as { kod: string; adimlar: Ad[] }[];
+    expect(sn.length).toBeGreaterThanOrEqual(6); expect(l.senaryolar.map((x: { kod: string }) => x.kod)).toEqual(sn.map((x) => x.kod));
+    const oyna = async (s: (typeof sn)[number], yanlis: boolean) => {
+      const b = (await o.ist('POST', `/api/egitim/senaryo/${s.kod}/basla`, c, {})).json(); expect(b.adim.no).toBe(1); expect(JSON.stringify(b)).not.toMatch(/"dogru"|durdurur/);
+      let r; for (const a of s.adimlar) { const n = a.secenekler.findIndex((x) => (yanlis ? Boolean(x.durdurur) : Boolean(x.dogru))); r = (await o.ist('POST', `/api/egitim/deneme/${b.deneme}/cevap`, c, { secim: n })).json(); }
+      return r;
+    };
+    const y = await oyna(sn[0]!, true); expect(y.sonuc.durum).toBe('Kaldı'); expect(y.puan).toBe(0); expect(y.durdurma).toBe(sn[0]!.adimlar.length); expect(y.sistemMesaji).toBeTruthy();
+    // Sıfırlama: süren deneme kapanır, yeni deneme ilk adımdan başlar.
+    const b1 = (await o.ist('POST', `/api/egitim/senaryo/${sn[1]!.kod}/basla`, c, {})).json(); await o.ist('POST', `/api/egitim/deneme/${b1.deneme}/cevap`, c, { secim: 0 });
+    expect((await o.ist('POST', `/api/egitim/deneme/${b1.deneme}/cevap`, c, { secim: 99 })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/egitim/senaryo/${sn[1]!.kod}/sifirla`, c, {})).statusCode).toBe(200);
+    const b2 = (await o.ist('POST', `/api/egitim/senaryo/${sn[1]!.kod}/basla`, c, {})).json(); expect(b2.deneme).not.toBe(b1.deneme); expect(b2.adim.no).toBe(1); expect(b2.puan).toBe(0);
+    expect((await o.ist('POST', `/api/egitim/deneme/${b1.deneme}/cevap`, c, { secim: 0 })).statusCode).toBe(404);
+    // Başka kullanıcının denemesine erişilemez; dış kullanıcı uçları göremez.
+    expect((await o.ist('POST', `/api/egitim/deneme/${b2.deneme}/cevap`, await o.gir('ds'), { secim: 0 })).statusCode).toBe(404);
+    // Kapı: bugün işe giren ve hiç dosyada görev almamış kişi üç başarılı senaryo olmadan atanamaz.
+    await o.sup.query(`INSERT INTO personel_karti (kullanici_ref, ise_giris_tarihi, guncelleyen_ref) VALUES ($1, current_date, $1) ON CONFLICT (kullanici_ref) DO UPDATE SET ise_giris_tarihi = current_date`, [k]);
+    const { egitimKapisi } = await import('../src/egitim.js');
+    expect(await egitimKapisi(o.db, k!)).toMatch(/3 eğitim senaryosunu.*tamamlanan: 0/);
+    for (const s of sn.slice(2, 5)) expect((await oyna(s, false)).sonuc.durum).toBe('Geçti');
+    expect((await o.ist('GET', '/api/egitim/senaryolar', c)).json().basarili).toBe(3);
+    expect((await o.sup.query(`SELECT count(*)::int n FROM egitim_basarisi b JOIN kullanici_hesabi h ON lower(h.e_posta) = lower(b.eposta) WHERE h.kimlik = $1`, [k])).rows[0].n).toBe(3);
+    expect(await egitimKapisi(o.db, k!)).toBeNull();
+    // Canlı (üretim) ortamda senaryolar açılmaz.
+    const once = process.env.YATONET_ORTAM; process.env.YATONET_ORTAM = 'uretim';
+    try { expect((await o.ist('GET', '/api/egitim/senaryolar', c)).statusCode).toBe(404); } finally { if (once === undefined) delete process.env.YATONET_ORTAM; else process.env.YATONET_ORTAM = once; }
+    await o.sup.query(`UPDATE personel_karti SET ise_giris_tarihi = '2020-01-01' WHERE kullanici_ref = $1`, [k]);
+  });
+});

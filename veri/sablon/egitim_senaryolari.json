@@ -1,0 +1,198 @@
+[
+  {
+    "kod": "EGT-01", "sira": 1, "ad": "Yanlış Kademeden Onay", "sure_dk": 10,
+    "ozet": "Onay kartının hangi makamda verildiğini ve makam dışı onay girişiminin nasıl durdurulduğunu uygular.",
+    "dosya": { "no": "EGT-0001", "yat": "Eğitim Yatı Mavi", "olay": "Sancak jeneratöründe arıza" },
+    "adimlar": [
+      { "rol": "Operasyon Yöneticisi", "durum": "EGT-0001 dosyasındaki onay kartı Operasyon Müdürü makamına düşmüştür. Operasyon Müdürü bugün izinlidir ve kart sizin ekranınızda görünmemektedir.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Kartın bağlantısını isteyip onayı kendim veririm.", "durdurur": "Bu onay sizin makamınızda değildir; sistem işlemi durdurdu." },
+          { "metin": "Kart Operasyon Müdürünün makamında kalır; vekâlet tanımlıysa vekil onaylar, son zaman geçerse üst makama bildirim gider. Dosya Sorumlusuna bilgi veririm.", "dogru": true },
+          { "metin": "Onay gelmediği için işe onaysız başlanmasını söylerim." }
+        ],
+        "aciklama": "Onay yalnız kartın bulunduğu makamda verilir. Son zaman geçince sistem üst makama hatırlatma gönderir; vekâlet tanımlıysa kart vekilde görünür." },
+      { "rol": "Operasyon Müdürü", "durum": "İzinden döndünüz. Aynı dosyada Teknik ve Operasyon Direktörü makamına ait ikinci bir onay kartı vardır; kartın özetini dosya ekranında görebiliyorsunuz.", "soru": "Bu kart için ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Direktörün kartını da ben onaylarım; ben de yöneticiyim.", "durdurur": "Bu onay sizin makamınızda değildir; sistem işlemi durdurdu." },
+          { "metin": "Kendi makamımdaki kartı onaylarım; Direktörün kartına işlem yapmam.", "dogru": true },
+          { "metin": "İki kartı da reddederim, dosya baştan başlasın." }
+        ],
+        "aciklama": "Her kademe yalnız kendi makamındaki kartı sonuçlandırır. Üst kademenin kartı alt kademeden onaylanamaz." },
+      { "rol": "Operasyon Müdürü", "durum": "Kendi makamınızdaki kartta teklif tutarı, kartta yazan tutardan farklı görünüyor.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Farkı not edip onaylarım; sonra düzeltilir." },
+          { "metin": "Kartı gerekçe yazarak hazırlayana iade ederim.", "dogru": true },
+          { "metin": "Tutarı kart üzerinde kendim değiştiririm.", "durdurur": "Onay kartındaki tutar onaylayan tarafından değiştirilemez; sistem işlemi durdurdu." }
+        ],
+        "aciklama": "Onaylayan içeriği değiştirmez; tutarsızlıkta gerekçeli iade eder, hazırlayan düzeltip yeniden gönderir." }
+    ]
+  },
+  {
+    "kod": "EGT-02", "sira": 2, "ad": "İskonto Onayı", "sure_dk": 10,
+    "ozet": "İndirim talebinin kim tarafından açıldığını ve %5 üstü indirimin CEO onayına çıktığını uygular.",
+    "dosya": { "no": "EGT-0002", "yat": "Eğitim Yatı Rüzgâr", "olay": "Pervane şaftı titreşimi" },
+    "adimlar": [
+      { "rol": "Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)", "durum": "EGT-0002 teklifi taslaktadır; ara toplam 18.400,00 EUR. Yat sahibi %8 indirim istemektedir.", "soru": "İndirimi nasıl uygularsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Teklifteki birim fiyatları %8 düşürerek indirimi kendim uygularım.", "durdurur": "İndirim yalnız gerekçeli indirim talebiyle uygulanır; sistem işlemi durdurdu." },
+          { "metin": "Gerekçeli indirim talebi açarım.", "dogru": true },
+          { "metin": "Ticari İşler Direktöründen indirimi onaylamasını isterim." }
+        ],
+        "aciklama": "İndirim talebini Ticari Sorumlu gerekçesiyle açar. Ticari İşler Direktörüne iskonto yetkisi verilmemiştir." },
+      { "rol": "Genel Müdür Yardımcısı", "durum": "%8 indirim talebi size düştü.", "soru": "Talep nasıl sonuçlanır?", "puan": 20,
+        "secenekler": [
+          { "metin": "Onaylarım; talep kapanır.", "durdurur": "%5 üzerindeki indirim CEO onayı olmadan uygulanamaz; sistem işlemi durdurdu." },
+          { "metin": "Görüşümü yazarım; talep CEO onayına çıkar.", "dogru": true },
+          { "metin": "Talebi %5'e düşürüp onaylarım." }
+        ],
+        "aciklama": "İndirim talebi tutardan bağımsız önce Genel Müdür Yardımcısına çıkar. %5'e kadar Genel Müdür Yardımcısı karar verir; %5 üzerinde görüşüyle CEO'ya gider." },
+      { "rol": "Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)", "durum": "Başka bir yat sahibi %12 indirim istemektedir.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "%12 indirim talebi açarım.", "durdurur": "İndirim oranı %1–%10 arasında tam sayı olmalıdır; sistem işlemi durdurdu." },
+          { "metin": "Talep edilebilecek en yüksek oranın %10 olduğunu bilerek yat sahibine dönüş yapılması için gerekçeli talebi bu sınır içinde hazırlarım.", "dogru": true },
+          { "metin": "İki ayrı %6 indirim talebi açarım." }
+        ],
+        "aciklama": "İndirim oranı %1 ile %10 arasında tam sayıdır; sınır dışı oran sistemde açılamaz." },
+      { "rol": "Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)", "durum": "EGT-0002 teklifi yat sahibine gönderildikten sonra yat sahibi ek indirim istedi.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Gönderilmiş teklife indirim talebi açarım.", "durdurur": "İndirim talebi taslak teklifte açılır; sistem işlemi durdurdu." },
+          { "metin": "Teklifin revize edilmesi sürecini başlatırım; indirim yeni taslakta talep edilir.", "dogru": true },
+          { "metin": "İndirimi faturada uygularım." }
+        ],
+        "aciklama": "Gönderilmiş teklif kilitlidir; indirim yalnız taslak teklifte talep edilir." }
+    ]
+  },
+  {
+    "kod": "EGT-03", "sira": 3, "ad": "Tahsilatsız Firma Ödemesi", "sure_dk": 10,
+    "ozet": "Çözüm Ortağı ödemesinin teknik kabul, firma faturası ve müşteri tahsilatına bağlı olduğunu uygular.",
+    "dosya": { "no": "EGT-0003", "yat": "Eğitim Yatı Liman", "olay": "Güverte kaplaması hasarı" },
+    "adimlar": [
+      { "rol": "Muhasebe ve Finans Yöneticisi", "durum": "Çözüm Ortağı faturasını gönderdi; teknik kabul henüz tamamlanmadı.", "soru": "Ödeme için ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Faturayı aldığım için ödemeyi başlatırım.", "durdurur": "Teknik kabul tamamlanmadan Çözüm Ortağı ödemesi başlatılamaz; sistem işlemi durdurdu." },
+          { "metin": "Teknik kabulün tamamlanmasını beklerim.", "dogru": true },
+          { "metin": "Ödemenin yarısını avans olarak yaparım." }
+        ],
+        "aciklama": "Çözüm Ortağı ödemesinin ön koşulları teknik kabulün tamamlanması ve firma faturasının alınmasıdır." },
+      { "rol": "Muhasebe ve Finans Yöneticisi", "durum": "Teknik kabul tamamlandı, firma faturası alındı; yat sahibinden henüz tahsilat gelmedi.", "soru": "Ödeme kalemi hangi durumdadır?", "puan": 20,
+        "secenekler": [
+          { "metin": "Vade işlemeye başlar; vadesinde öderim.", "durdurur": "Müşteri tahsilatı gelmeden ödeme Vade İşliyor durumuna geçmez; sistem işlemi durdurdu." },
+          { "metin": "Ödeme kalemi tahsilata bağlı olarak bekler.", "dogru": true },
+          { "metin": "Ödemeyi LGM kasasından yaparım." }
+        ],
+        "aciklama": "Ödeme kaleminde tahsilata bağlı işareti bulunur; müşteri tahsilatı gelmeden vade işlemez." },
+      { "rol": "Muhasebe ve Finans Yöneticisi", "durum": "Yat sahibi tutarın %60'ını ödedi.", "soru": "Çözüm Ortağına ne kadar ödenebilir?", "puan": 20,
+        "secenekler": [
+          { "metin": "Tutarın tamamı.", "durdurur": "Ödeme tahsilat oranını aşıyor; kalan tahsilat bekleniyor." },
+          { "metin": "Tahsilat oranına kadar; kalan kısım tahsilat geldikçe ödenir.", "dogru": true },
+          { "metin": "Hiçbir tutar; tahsilat tamamlanmadan ödeme yapılmaz." }
+        ],
+        "aciklama": "Ödeme, tahsil edilen oranı aşamaz; kalan kısım tahsilat geldikçe ödenir." }
+    ]
+  },
+  {
+    "kod": "EGT-04", "sira": 4, "ad": "Firma Kimliği Açıklama", "sure_dk": 10,
+    "ozet": "Çözüm Ortağı kimliğinin yalnız mahkeme veya yetkili resmî makamın talebinde, iki ayrı kişinin işlemiyle açıklandığını uygular.",
+    "dosya": { "no": "EGT-0004", "yat": "Eğitim Yatı Martı", "olay": "Elektrik panosu yangını" },
+    "adimlar": [
+      { "rol": "Dosya Sorumlusu", "durum": "Yat sahibi e-postayla işi yapan firmanın adını ve telefonunu istiyor.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Firmanın adını ve telefonunu gönderirim.", "durdurur": "Firma kimliği yalnız mahkeme veya yetkili resmî makamın yasal talebinde açıklanır; sistem işlemi durdurdu." },
+          { "metin": "Firma kimliğinin paylaşılmadığını, işin LGM koordinasyonunda yürüdüğünü bildiririm.", "dogru": true },
+          { "metin": "Yalnız firmanın adını gönderirim." }
+        ],
+        "aciklama": "Çözüm Ortağı kimliği gizlidir; açıklama yalnız mahkeme veya yetkili resmî makamın yasal talebinde yapılır." },
+      { "rol": "Hukuk ve Uyum Uzmanı", "durum": "Mahkemeden firma kimliğini isteyen yazı geldi.", "soru": "Talebi nasıl hazırlarsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Yazıyı yüklemeden, yalnız makamı seçerek talep açarım.", "durdurur": "Firma, makam, dayanak, belge ve açıklama düzeyi zorunludur." },
+          { "metin": "Firma, makam, dayanak, mahkeme yazısı ve açıklama düzeyiyle talep hazırlarım.", "dogru": true },
+          { "metin": "Firma bilgisini doğrudan mahkemeye gönderirim." }
+        ],
+        "aciklama": "Talebi Hukuk ve Uyum Uzmanı hazırlar; firma, makam, dayanak, belge ve açıklama düzeyi zorunludur." },
+      { "rol": "Hukuk ve Uyum Uzmanı", "durum": "Talebi hazırladınız. Hukuk ve Uyum Direktörü bugün yoğun.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Talebi kendim onaylayıp açıklamayı yaparım.", "durdurur": "Firma kimliği tek onayla açıklanamaz; onay Hukuk ve Uyum Direktörü makamındadır." },
+          { "metin": "Talep Hukuk ve Uyum Direktörünün onayına gider; onay gelmeden açıklama yapılmaz.", "dogru": true },
+          { "metin": "Firmayı arayıp kendisinin mahkemeye başvurmasını isterim." }
+        ],
+        "aciklama": "Hazırlayan ve onaylayan ayrı kişidir; onay Hukuk ve Uyum Direktörüne aittir." },
+      { "rol": "Hukuk ve Uyum Direktörü", "durum": "Talep size düştü. Mahkeme yazısı yalnız firmanın unvanını istiyor.", "soru": "Açıklama düzeyi ne olur?", "puan": 20,
+        "secenekler": [
+          { "metin": "Unvan, iletişim bilgileri ve bütün iş geçmişi.", "durdurur": "Açıklama, talepte yazan düzeyle sınırlıdır; sistem işlemi durdurdu." },
+          { "metin": "Yalnız istenen düzey: firma unvanı.", "dogru": true },
+          { "metin": "Hiçbir bilgi verilmez." }
+        ],
+        "aciklama": "Açıklama düzeyi ve onay kaydı tutulur; istenenden fazlası açıklanmaz." }
+    ]
+  },
+  {
+    "kod": "EGT-05", "sira": 5, "ad": "Yetki Belgesiz Broker Onayı", "sure_dk": 10,
+    "ozet": "Broker, acente, yat brokeri ve kaptanın onayının yat sahibinin yetki belgesinin kapsam, limit ve süresine bağlı olduğunu uygular.",
+    "dosya": { "no": "EGT-0005", "yat": "Eğitim Yatı Poyraz", "olay": "Su yapıcı arızası" },
+    "adimlar": [
+      { "rol": "Dosya Sorumlusu", "durum": "Broker teklifi onaylamak istiyor; yat sahibinin yetki belgesi sisteme ulaşmadı.", "soru": "Broker ne yapabilir?", "puan": 20,
+        "secenekler": [
+          { "metin": "Broker teklifi onaylar; belge sonra gelir.", "durdurur": "Yetki belgeniz sisteme ulaşana kadar onay veremezsiniz. Onay işlemleri yat sahibine gönderilir." },
+          { "metin": "Broker dosyayı, teknik raporu ve teklifi görür; onay yat sahibine gider.", "dogru": true },
+          { "metin": "Broker dosyayı hiç göremez." }
+        ],
+        "aciklama": "Yetki belgesi olmadan broker dosyayı, teknik raporu ve fiyat teklifini görüntüler; onay veremez, onaylar yat sahibine gider." },
+      { "rol": "Dosya Sorumlusu", "durum": "Yetki belgesi geçerli; tek işlem üst limiti 10.000,00 EUR. Teklif 14.500,00 EUR.", "soru": "Onayı kim verir?", "puan": 20,
+        "secenekler": [
+          { "metin": "Broker; belge geçerli.", "durdurur": "Tutar yetki belgesindeki tek işlem üst limitini aşıyor; onay yat sahibine gönderilir." },
+          { "metin": "Yat sahibi; tutar broker limitini aşıyor.", "dogru": true },
+          { "metin": "Dosya Sorumlusu yat sahibi adına onaylar." }
+        ],
+        "aciklama": "Broker yalnız yetki belgesinde yazılı kapsam, limit ve süre içinde onay verir." },
+      { "rol": "Dosya Sorumlusu", "durum": "Brokerin yetki belgesinin süresi doldu; broker yenilenmiş belgeyi yükledi.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Yüklendiği için belge kendiliğinden geçerli olur." },
+          { "metin": "Yenilenmiş belgeyi doğrulayıp yeni yetki kaydını açarım.", "dogru": true },
+          { "metin": "Süresi dolmuş belgeyle onaylara devam edilir.", "durdurur": "Süresi dolmuş yetki belgesiyle onay verilemez; sistem işlemi durdurdu." }
+        ],
+        "aciklama": "Yenilenmiş belge yüklenince Dosya Sorumlusuna Yetki Belgesi Yenileme Kontrolü görevi düşer; belgeyi doğrulayıp yeni yetki kaydını açar." }
+    ]
+  },
+  {
+    "kod": "EGT-06", "sira": 6, "ad": "Uçtan Uca Hasar Dosyası", "sure_dk": 20,
+    "ozet": "Sanal bir teknik hasar dosyasını rol değiştirerek ihbardan Çözüm Ortağı görevlendirmesine kadar yürütür.",
+    "dosya": { "no": "EGT-0006", "yat": "Eğitim Yatı Yıldız", "olay": "Sintine pompası arızası, garanti süresindeki ekipman" },
+    "adimlar": [
+      { "rol": "Dosya Sorumlusu", "durum": "Yat sahibi telefonla sintine pompası arızasını bildirdi.", "soru": "İlk işiniz nedir?", "puan": 20,
+        "secenekler": [
+          { "metin": "İhbarı sisteme kaydederim; dosya ve sayaçlar sistemde başlar.", "dogru": true },
+          { "metin": "Hemen bir firmayı arayıp yata gönderirim.", "durdurur": "Dosya açılmadan görevlendirme yapılamaz; sistem işlemi durdurdu." },
+          { "metin": "Yat sahibinden yazılı dilekçe isterim." }
+        ],
+        "aciklama": "İş ihbar kaydıyla başlar; görevlendirme dosya üzerinden yapılır." },
+      { "rol": "Operasyon Müdürü", "durum": "Dosyaya ekip atanacak. Teknik Uzman adayının kapasitesi doludur.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Kapasiteye bakmadan atarım.", "durdurur": "Kişinin kapasitesi doludur; başka birini seçiniz." },
+          { "metin": "Kapasitesi uygun başka bir Teknik Uzman seçerim.", "dogru": true },
+          { "metin": "Dosyayı bekletirim." }
+        ],
+        "aciklama": "Kapasitesi dolu kişi atanamaz; olağanüstü dönem dışında kapasite kilidi uygulanır." },
+      { "rol": "Teknik Uzman", "durum": "Pompa üretici garantisi sürmektedir. Önerilen firma bu markanın yetkili servisi değildir.", "soru": "Görevlendirme ne olur?", "puan": 20,
+        "secenekler": [
+          { "metin": "Önerilen firma görevlendirilir; daha hızlıdır.", "durdurur": "Garanti süresindeki ekipmanda iş yalnız yetkili servise verilir." },
+          { "metin": "Markanın yetkili servisi olan bir Çözüm Ortağı seçilir.", "dogru": true },
+          { "metin": "Garanti dikkate alınmaz." }
+        ],
+        "aciklama": "Garanti süresindeki ekipmanda iş yalnız yetkili servise verilir." },
+      { "rol": "Teknik Uzman", "durum": "Yetkili servis olan firmanın bu yat sahibiyle çıkar çatışması beyanı vardır.", "soru": "Ne yaparsınız?", "puan": 20,
+        "secenekler": [
+          { "metin": "Beyanı yok sayarak görevlendiririm.", "durdurur": "Firmanın bu yat sahibiyle çıkar çatışması beyanı vardır." },
+          { "metin": "Çıkar çatışması olmayan başka bir yetkili servis seçerim.", "dogru": true },
+          { "metin": "Yat sahibinden izin alıp görevlendiririm." }
+        ],
+        "aciklama": "Çıkar çatışması beyanı olan firma o yat sahibinin işinde görevlendirilemez." },
+      { "rol": "Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)", "durum": "Teklif hazır; yat sahibi sigortalıdır ve sigorta şirketinin kararı henüz gelmedi.", "soru": "Teklif nasıl ilerler?", "puan": 20,
+        "secenekler": [
+          { "metin": "Teklifi yat sahibine onaya gönderirim; sigortanın onayladığı ve onaylamadığı kalemler kararla birlikte ayrıca bildirilir.", "dogru": true },
+          { "metin": "Sigorta kararı gelmeden onarıma başlatırım.", "durdurur": "Onay olmadan iş emri başlatılamaz; sistem işlemi durdurdu." },
+          { "metin": "Teklifi göndermem." }
+        ],
+        "aciklama": "Onarım, onay alınmadan başlamaz; sigortanın onaylamadığı kalemler yat sahibine ayrı teklif olarak sunulur." }
+    ]
+  }
+]

@@ -557,6 +557,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       { const be = await (await import('./ik.js')).personelBelgeEngeli(c, g.kullanici); if (be) return dur(409, be); } // YG-941
       { const pd = (await c.query(`SELECT personel_durumu FROM personel_karti WHERE kullanici_ref = $1`, [g.kullanici])).rows[0]?.personel_durumu as string | undefined; // YG-1479: yoktaki kişiye yeni dosya rolü verilmez
         if (pd && ['İzinli', 'Raporlu', 'Ayrılıyor', 'Ayrıldı'].includes(pd)) return dur(409, `Seçilen kişi şu an ${pd}; vekilini veya başka birini seçiniz.`); }
+      { const ek = await (await import('./egitim.js')).egitimKapisi(c, g.kullanici); if (ek) return dur(409, ek); } // YG-1399, V-1109
       if (g.rol === 'Yedek Sorumlu' && d.dosya_sorumlusu_ref === g.kullanici) return dur(400, 'Yedek sorumlu Dosya Sorumlusundan farklı olmalıdır.');
       if (g.rol === 'Dosya Sorumlusu' && d.yedek_sorumlu_ref === g.kullanici) return dur(400, 'Dosya Sorumlusu yedek sorumluyla aynı olamaz.');
       if (g.rol === 'Yedek Kalite Kontrolör' || g.rol === 'Kalite Kontrolör') { // YG-1687: yedek kontrolör asıl kontrolörden farklıdır
