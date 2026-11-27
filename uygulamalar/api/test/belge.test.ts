@@ -249,7 +249,7 @@ describe('metin kütüphanesi (YG-626, YG-692, YG-1446)', () => {
     await expect(metinGetir(db, 'YOK', 'tr')).rejects.toThrow(/bulunamadı/);
     expect(doldur('[a]', { a: '1' })).toBe('1');
     expect((await sup.query(`SELECT count(*)::int n FROM sablon_metni WHERE tur = 'Bildirim' AND dil = 'tr'`)).rows[0].n).toBe(122); // +10 MTN-3–MTN-9: BLD-102, 102S, 103, 104, 104K, 104R, 105, 106, 107, 108 (CEO 26.11.2026); +1 BLD-101 (CEO 22.11.2026); +2 BM-1/BM-2 (CEO 21.11.2026); 13 metin: +8 bildirim (CEO 17.11.2026); BLD-97, BLD-98 (CEO 18.11.2026); BLD-63-IT (CEO 19.11.2026)
-    expect((await sup.query(`SELECT count(*)::int n FROM sablon_metni WHERE tur = 'Onay' AND dil = 'tr'`)).rows[0].n).toBe(31); // +ONY-31, ONY-09Y (CEO 17.11.2026)
+    expect((await sup.query(`SELECT count(*)::int n FROM sablon_metni WHERE tur = 'Onay' AND dil = 'tr'`)).rows[0].n).toBe(32); // +ONY-31, ONY-09Y (CEO 17.11.2026); +ONY-11M (CEO 27.11.2026)
   });
   it('kurulum tekrarı onaylı metni çoğaltmaz, uygulama hesabı metni değiştiremez', async () => {
     await expect(db.query(`UPDATE sablon_metni SET metin = 'x'`)).rejects.toThrow();

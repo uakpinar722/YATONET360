@@ -75,7 +75,7 @@ export function onayYollari(s: FastifyInstance, b: Baglam) {
   };
   const GECERSIZ = 'Bu onay bağlantısı geçersizdir.';
   const ekran = (t: Record<string, any>) => ({
-    baslik: t.baslik, metin: t.metin, dugme: t.dugme, dil: t.dil, kutular: t.kutular, formTuru: t.form_turu, durum: t.durum, onyKod: t.ony_kod, belgeAdi: t.belge_adi, dosyaNo: t.dosya_no ?? null, sonGecerlilik: t.son_gecerlilik,
+    baslik: t.baslik, metin: t.metin, dugme: t.dugme, dil: t.dil, kutular: t.kutular, formTuru: t.form_turu, secenekler: t.secenekler ?? null, durum: t.durum, onyKod: t.ony_kod, belgeAdi: t.belge_adi, dosyaNo: t.dosya_no ?? null, sonGecerlilik: t.son_gecerlilik,
     // YG-479, K-168: SMS iki kez ulaşmazsa veya yurt dışı numarada e-posta kodu seçilebilir.
     epostaKodu: Boolean(t.eposta) && (t.sms_gonderim_sayisi >= 2 || Boolean(t.sms_hata_zamani) || !t.telefon || !String(t.telefon).startsWith('+90')),
     telefonSonu: t.telefon ? String(t.telefon).slice(-2) : null,

@@ -11,7 +11,7 @@ interface Kart { kimlik: string; dosyaNo: string; yat: string; durum: string; re
 interface OnayKart { kimlik: string; baslik: string; belge_adi: string; dosya_no: string | null }
 interface Yetkili { rol: string; sahip_ad: string; belge_durumu: string; ust_limit_eur: string | null; bitis_tarihi: string | null; odeme_yetkisi: boolean }
 interface Ana { yetkili: Yetkili | null; onaylar: (OnayKart & { ony_kod?: string })[]; dosyalar: Kart[]; talepler: Kart[] }
-interface OnayEkran { baslik: string; metin: string; dugme: string; kutular: { ad: string; zorunlu?: boolean }[]; formTuru: string | null; durum: string; epostaKodu: boolean; telefonSonu: string | null; dosyaNo: string | null; onyKod: string }
+interface OnayEkran { baslik: string; metin: string; dugme: string; kutular: { ad: string; zorunlu?: boolean }[]; formTuru: string | null; durum: string; epostaKodu: boolean; telefonSonu: string | null; dosyaNo: string | null; onyKod: string; dil?: string; secenekler?: { kimlik: string; ad: string }[] | null }
 
 const Durum = ({ k }: { k: Kart }) => <span className={`m-durum m-${k.renk === 'kırmızı' ? 'k' : k.renk === 'sarı' ? 's' : k.renk === 'gri' ? 'g' : 'y'}`}>{k.durum}</span>;
 const MULKIYET = ['Malik', 'Finansal kiralama (leasing)', 'Kredi / ipotekli', 'Miras (elbirliği)', 'Paylı'];
@@ -256,10 +256,11 @@ function HasarBildirimi({ bitti }: { bitti: () => void }) {
 export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomulu?: boolean; geri?: () => void }) {
   const [tkr, setTkr] = useState('Kabul'); const [cek, setCek] = useState('');
   const [t, setT] = useState<OnayEkran | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState(''); const [kutu, setKutu] = useState<Record<string, boolean>>({}); const [kod, setKod] = useState(''); const [son, setSon] = useState<{ durum: string; onayKodu: string } | null>(null);
-  const [m, setM] = useState(''); const [tk, setTk] = useState<string[]>([]); const [lehtar, setLehtar] = useState(''); const [malikDegil, setMalikDegil] = useState(false); const [malikAdi, setMalikAdi] = useState(''); // YG-103
+  const [m, setM] = useState(''); const [tk, setTk] = useState<string[]>([]); const [lehtar, setLehtar] = useState(''); const [secMalik, setSecMalik] = useState(''); // YG-1463
+  const [malikDegil, setMalikDegil] = useState(false); const [malikAdi, setMalikAdi] = useState(''); // YG-103
   useEffect(() => { void istek<OnayEkran>(`/onay/${belirtec}`).then(setT).catch((e) => setHata(e.message)); }, [belirtec]);
   const kodIste = async (kanal: string) => { setHata(''); setNot(''); try { await istek(`/onay/${belirtec}/kod`, { kanal }); setNot(kanal === 'E-posta' ? 'Kod e-posta adresinize gönderilmiştir.' : `Kod ••${t?.telefonSonu ?? ''} ile biten telefonunuza gönderilmiştir.`); } catch (x) { setHata((x as Error).message); void istek<OnayEkran>(`/onay/${belirtec}`).then(setT).catch(() => {}); } };
-  const karar = async () => { setHata(''); try { setSon(await istek<{ durum: string; onayKodu: string }>(`/onay/${belirtec}/karar`, { kod, kutular: kutu, form: t?.formTuru === 'Teslim Kararı' ? { teslimKarar: tkr, cekince: cek } : t?.formTuru ? { mulkiyet: m, takyidat: tk, lehtar, malikDegil, malikAdi } : undefined })); } catch (x) { setHata((x as Error).message); } };
+  const karar = async () => { setHata(''); try { setSon(await istek<{ durum: string; onayKodu: string }>(`/onay/${belirtec}/karar`, { kod, kutular: kutu, form: t?.formTuru === 'Teslim Kararı' ? { teslimKarar: tkr, cekince: cek } : t?.formTuru === 'Yetkili Malik Seçimi' ? { malik: secMalik } : t?.formTuru ? { mulkiyet: m, takyidat: tk, lehtar, malikDegil, malikAdi } : undefined })); } catch (x) { setHata((x as Error).message); } };
   const tumKutu = (t?.kutular ?? []).every((k) => !k.zorunlu || kutu[k.ad]);
   const icerik = !t ? (hata ? <div className="hata" role="alert">{hata}</div> : null) : son ? (
     <div className="ozet"><h2>Onayınız Alınmıştır</h2><div>Onay Kodu: <b>{son.onayKodu}</b></div><div>Değerli onayınız için teşekkür ederiz.</div>{geri && <button className="btn" onClick={geri}>Ana Sayfaya Dön</button>}</div>
@@ -274,6 +275,7 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
         <label htmlFor="o-tk">Teslim Kararı</label><select id="o-tk" value={tkr} onChange={(e) => setTkr(e.target.value)}><option value="Kabul">Kabul</option><option value="Koşullu Kabul">Koşullu Kabul (çekinceli)</option></select>
         {tkr === 'Koşullu Kabul' && <><label htmlFor="o-c">Çekince</label><input id="o-c" value={cek} onChange={(e) => setCek(e.target.value)} /></>}
       </>}
+      {t.formTuru === 'Yetkili Malik Seçimi' && <><label htmlFor="o-ym">{t.dil === 'en' ? 'Authorised Owner' : 'Yetkili Malik'}</label><select id="o-ym" value={secMalik} onChange={(e) => setSecMalik(e.target.value)}><option value="">{t.dil === 'en' ? 'Select' : 'Seçiniz'}</option>{(t.secenekler ?? []).map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad}</option>)}</select></>}
       {t.formTuru === 'Mülkiyet Beyanı' && <>
         <label htmlFor="o-m">Mülkiyet Türü</label><select id="o-m" value={m} onChange={(e) => setM(e.target.value)}><option value="">Seçiniz</option>{MULKIYET.map((x) => <option key={x}>{x}</option>)}</select>
         <label>Takyidat</label>{TAKYIDAT.map((x) => <label className="kutu" key={x}><input type="checkbox" checked={tk.includes(x)} onChange={(e) => setTk((o) => (e.target.checked ? [...o, x] : o.filter((y) => y !== x)))} /><span>{x}</span></label>)}

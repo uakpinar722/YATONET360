@@ -1,3 +1,4 @@
+import { NedenBaglantisi } from './Neden';
 import { BelgeSec } from './Kalite';
 import { KapasiteIstisnaKarar } from './KapasiteIstisnasi';
 import { DosyaBag } from './DosyaBag';
@@ -101,6 +102,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
     <div className="ozet kart-sol">
       <KartUst k={k} />
       {k.vekaleten && <div><Rozet s="gri" c="Vekâleten" /></div>}
+      <NedenBaglantisi tur={k.tur} />{/* YG-1387 */}
       <div className="not">Kademe {k.kademe + 1} / {k.kademe_sayisi}{k.hazirlayan_adi ? ` · Hazırlayan: ${k.hazirlayan_adi}` : ''}</div>
       {k.arz_notlari && <div className="not">Önceki Kademe Notları: {k.arz_notlari}</div>}
       {k.tur === 'Tedarik Siparişi' && <SiparisKontrolleri id={k.kimlik} />}
@@ -951,6 +953,18 @@ function EkipSureleri() {
     {l.length === 0 ? <Bos m="Ekip süre uyarısı bulunmamaktadır." /> : l.map((x) => { const kl = kalan(x.son); return <div key={`${x.kimlik}-${x.baslik}`} className="ozet kart-sol"><div className="ust2"><b>{x.baslik}</b><Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} /></div></div>; })}</>;
 }
 
+/** YG-546: 15. gün yazılı ihtarı; son ödeme tarihi ve gönderim kanalı Ticari İşler Direktörünce girilir, PDF yeni sekmede açılır. */
+function IhtarUret({ fatura }: { fatura: string }) {
+  const [son, setSon] = useState(''); const [kanal, setKanal] = useState('E-posta'); const [dil, setDil] = useState('tr'); const [m, setM] = useState('');
+  const uret = async () => { setM(''); const r = await fetch(`/api/fatura/${fatura}/yazili-ihtar`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Yatonet': '1' }, credentials: 'same-origin', body: JSON.stringify({ son, kanal, dil }) });
+    if (!r.ok) { setM(((await r.json().catch(() => ({}))) as { hata?: string }).hata ?? 'İhtar üretilemedi.'); return; } window.open(URL.createObjectURL(await r.blob()), '_blank'); setM('Yazılı ihtar üretildi ve kayda geçti.'); };
+  return <details><summary>Yazılı İhtar Üret</summary>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor={`ih-s-${fatura}`}>Son Ödeme Tarihi</label><input id={`ih-s-${fatura}`} type="date" value={son} onChange={(e) => setSon(e.target.value)} />
+    <label htmlFor={`ih-k-${fatura}`}>Gönderim Kanalı</label><select id={`ih-k-${fatura}`} value={kanal} onChange={(e) => setKanal(e.target.value)}>{['E-posta', 'Posta', 'Noter', 'PDF (elden)'].map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor={`ih-d-${fatura}`}>Dil</label><select id={`ih-d-${fatura}`} value={dil} onChange={(e) => setDil(e.target.value)}><option value="tr">Türkçe</option><option value="en">İngilizce</option></select>
+    <button className="btn2 kucuk" disabled={!son} onClick={() => void uret()}>İhtarı Üret</button></details>;
+}
+
 /** YG-1608: vadesi geçen faturalar (gecikme günü, son takip basamağı, yazılı ihtar zamanı). */
 function TahsilatIzleme() {
   const [l, setL] = useState<{ kimlik: string; dosya_no: string; fatura_no: string; muhatap: string; vade: string; kalan: number; gecikme: number; basamak: string | null; ihtar: string | null }[] | null>(null);
@@ -959,7 +973,7 @@ function TahsilatIzleme() {
   return <><div className="bolum">Tahsilat</div>
     {l.length === 0 ? <Bos m="Vadesi geçen faturanız bulunmamaktadır." /> : l.map((x) => <div key={x.kimlik} className={`ozet kart-sol${x.gecikme >= 30 ? ' hata' : ''}`}>
       <div className="ust2"><b>{x.dosya_no} · {x.fatura_no}</b><Rozet s={x.gecikme >= 15 ? 'kirmizi' : 'sari'} c={`${x.gecikme} Gün Gecikti`} /></div>
-      <div className="not">{x.muhatap} · Vade: {x.vade.split('-').reverse().join('.')} · Kalan: {x.kalan.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR{x.basamak ? ` · Takip: ${x.basamak}` : ''}{x.ihtar ? ` · Yazılı İhtar: ${sonYazi(x.ihtar)}` : ''}</div></div>)}</>;
+      <div className="not">{x.muhatap} · Vade: {x.vade.split('-').reverse().join('.')} · Kalan: {x.kalan.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} EUR{x.basamak ? ` · Takip: ${x.basamak}` : ''}{x.ihtar ? ` · Yazılı İhtar: ${sonYazi(x.ihtar)}` : ''}</div>{x.gecikme >= 15 && x.muhatap !== 'Sigorta Şirketi' && <IhtarUret fatura={x.kimlik} />}</div>)}</>;
 }
 
 /** YG-1579, YG-1585: Planlı İşler, 7 günlük Takvim (Bugün, Yarın, tarih ve gün adı) ve Son 72 Saatte Tamamlananlar. */

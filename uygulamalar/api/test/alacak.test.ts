@@ -363,3 +363,15 @@ describe('ekipman, sözleşme ve belge birleştirme (YG-1244, V-1112)', () => {
     expect((await o.ist('GET', `/api/birlestirme/yonlendir/firma_ekipmani/${e}`, fym)).json().yonlendirildi).toBe(false);
   });
 });
+
+describe('yazılı ihtar (YG-546)', () => {
+  it('Ticari İşler Direktörü vadesi geçmiş faturada son ödeme tarihli ihtar PDF üretir; vadesi gelmemiş faturada üretilmez', async () => {
+    const { d } = await kurumsal(); const tid = await o.gir('tid'); const ileri = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    const f = await fatura(d, { toplam: 1234.56, vade: '2026-01-01' }); const g = await fatura(d, { toplam: 500, vade: '2099-01-01' });
+    expect((await o.ist('POST', `/api/fatura/${f}/yazili-ihtar`, await o.gir('ds'), { son: ileri, kanal: 'E-posta' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/fatura/${g}/yazili-ihtar`, tid, { son: ileri, kanal: 'E-posta' })).statusCode).toBe(409);
+    expect((await o.ist('POST', `/api/fatura/${f}/yazili-ihtar`, tid, { kanal: 'E-posta' })).statusCode).toBe(400);
+    const r = await o.ist('POST', `/api/fatura/${f}/yazili-ihtar`, tid, { son: ileri, kanal: 'E-posta' }); expect(r.statusCode, r.body).toBe(200); expect(r.headers['content-type']).toContain('pdf');
+    expect((await o.ist('GET', `/api/fatura/${f}/yazili-ihtarlar`, tid)).json()[0]).toMatchObject({ son: ileri, kanal: 'E-posta', kalan_eur: '1234.56' });
+  });
+});

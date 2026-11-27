@@ -1,3 +1,4 @@
+import { NedenMetinleri } from './Neden';
 import { ImzaBeyani } from './ImzaBeyani';
 import { EgitimSenaryolari } from './EgitimSenaryolari';
 import { KapasiteIstisnaIste } from './KapasiteIstisnasi';
@@ -1132,6 +1133,7 @@ export function IdariIslemler() {
       <ResmiGazete />
       <SosyalMedya />
       <HukukiMetinler />
+      <NedenMetinleri />
       <SigortaPanel />
       <DisaAktarim />
       <GeriYukleme />

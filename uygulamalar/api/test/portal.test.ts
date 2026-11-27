@@ -183,6 +183,27 @@ describe('onay ekranı (YG-466, YG-476, YG-1433)', () => {
     expect((await sup.query(`SELECT y.beyan_eden_sifati FROM yat y JOIN dosya d ON d.yat_ref = y.kimlik WHERE d.kimlik = $1`, [d2.kimlik])).rows[0].beyan_eden_sifati).toBe('Kullanan');
     expect((await sup.query(`SELECT count(*)::int n FROM is_karti WHERE nesne_kimligi = $1 AND baslik LIKE '%Taraf Yat Belgesindeki Malik Olmalı'`, [d2.kimlik])).rows[0].n).toBe(1);
   });
+  it('paylı yatta malikler SMS kodlu ekranda yetkili maliki seçer; oybirliğinde onay ve fatura muhatabı ona geçer (YG-1463)', async () => {
+    const d = await dosyaAc(); const c = await gir('ds');
+    await sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Dosya Sorumlusu',$2)`, [d.kimlik, K.ds]);
+    const yat = (await sup.query(`SELECT yat_ref FROM dosya WHERE kimlik = $1`, [d.kimlik])).rows[0].yat_ref;
+    const taraf = async (ad: string, tel: string) => (await sup.query(`INSERT INTO taraf (taraf_no, kisi_turu, musteri_turu, unvan_ad_soyad, taraf_rolleri, telefon, olusturan_ref) VALUES ($1,'Gerçek kişi','Bireysel Müşteri',$2,'{Yat Sahibi}',$3,$4) RETURNING kimlik`, [`TR-YM${Date.now()}${ad.length}`, ad, tel, K.ds])).rows[0].kimlik as string;
+    const t1 = await taraf('Birinci Malik', '+905550002201'); const t2 = await taraf('İkinci Malik', '+905550002202');
+    const malik = async (ad: string, tr: string) => (await sup.query(`INSERT INTO yat_malik (yat_ref, ad, taraf_ref, pay_orani, ekleyen_ref) VALUES ($1,$2,$3,50,$4) RETURNING kimlik`, [yat, ad, tr, K.ds])).rows[0].kimlik as string;
+    const m1 = await malik('Birinci Malik', t1); await malik('İkinci Malik', t2);
+    { const rb = await ist('POST', `/api/dosya/${d.kimlik}/yetkili-malik-beyani`, c, {}); expect(rb.json().gonderilen, rb.body).toBe(2); }
+    expect((await ist('POST', `/api/dosya/${d.kimlik}/yetkili-malik-beyani`, c, {})).statusCode).toBe(409);
+    const linkler = (await sup.query(`SELECT g.metin FROM onay_talebi t JOIN gonderim g ON g.olay_anahtari = 'onay-bag:' || t.kimlik WHERE t.dosya_ref = $1 AND t.ony_kod = 'ONY-11M'`, [d.kimlik])).rows.map((r) => (r.metin as string).match(/#onay=([\w-]+)/)![1]!);
+    expect(linkler).toHaveLength(2);
+    const e = (await ist('GET', `/api/onay/${linkler[0]}`)).json(); expect(e.formTuru).toBe('Yetkili Malik Seçimi'); expect(e.secenekler).toHaveLength(2);
+    for (const bl of linkler) {
+      await ist('POST', `/api/onay/${bl}/kod`, undefined, { kanal: 'SMS' }); const kod = smsKod();
+      expect((await ist('POST', `/api/onay/${bl}/karar`, undefined, { kod, form: { malik: 'yok' } })).statusCode).toBe(400);
+      const r = await ist('POST', `/api/onay/${bl}/karar`, undefined, { kod, form: { malik: m1 } }); expect(r.statusCode, r.body).toBe(200);
+    }
+    expect((await sup.query(`SELECT yetkili FROM yat_malik WHERE kimlik = $1`, [m1])).rows[0].yetkili).toBe(true);
+    expect((await sup.query(`SELECT taraf_ref, sifat FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif`, [d.kimlik])).rows[0]).toEqual({ taraf_ref: t1, sifat: 'Yetkili Malik' });
+  });
   it('vefat işaretinde bağlantı kapanır (YG-1477)', async () => {
     const d = await dosyaAc(); const b = await beyanLinki(d.kimlik);
     await sup.query(`UPDATE dosya SET vefat_isareti = true WHERE kimlik = $1`, [d.kimlik]);

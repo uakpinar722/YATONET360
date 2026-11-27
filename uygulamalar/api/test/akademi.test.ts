@@ -47,3 +47,15 @@ describe('deneme süresi değerlendirmesi (YG-970)', () => {
     expect((await o.sup.query(`SELECT durum, oneri FROM deneme_degerlendirme WHERE personel_ref = $1`, [o.K.ds])).rows[0]).toEqual({ durum: 'Sonuçlandı', oneri: 'Devam' });
   });
 });
+
+describe('Neden? metinleri (YG-1387)', () => {
+  it('Hukuk ve Uyum hazırlar, CEO onaylar; onaylanmadan gösterilmez', async () => {
+    const hd = await o.gir('hd'); const ds = await o.gir('ds');
+    expect((await o.ist('POST', '/api/neden-metni', ds, { tur: 'Kalite Planı', metin: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', '/api/neden-metni', hd, { tur: 'Kalite Planı', metin: 'Gerekçe deneme metni', belgeBolumu: 'Bölüm 1' })).json().durum).toBe('Onayda');
+    expect((await o.ist('POST', '/api/neden-metni', hd, { tur: 'Kalite Planı', metin: 'İkinci' })).statusCode).toBe(409);
+    expect((await o.ist('GET', '/api/neden?tur=Kalite%20Plan%C4%B1', ds)).json().metin).toBeNull();
+    const k = await o.kart('Neden Metni Onayı', 'Kalite Planı|1'); expect((await o.karar(k.kimlik, 'cg', 'Onayla')).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/neden?tur=Kalite%20Plan%C4%B1', ds)).json()).toEqual({ metin: 'Gerekçe deneme metni', belgeBolumu: 'Bölüm 1' });
+  });
+});
