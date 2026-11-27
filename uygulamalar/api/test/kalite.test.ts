@@ -335,6 +335,20 @@ describe('kontrol noktası (YG-383, YG-389)', () => {
     }
   });
 });
+describe('vekâleten kontrol noktası (YG-1688)', () => {
+  it('görevde Kalite Uzmanı yokken Kalite Yöneticisi bağımsızlık teyidiyle vekâleten serbest bırakır', async () => {
+    const d = await dosya(); const e = await isEmri(d); await o.sup.query(`UPDATE is_emri SET kabul_sinifi = 'C' WHERE kimlik = $1`, [e]); const tu = await o.gir('tu');
+    const r = await o.ist('POST', `/api/is-emri/${e}/kontrol-noktasi`, tu, { tur: 'Bekletme', ozellik: 'Ö', olcut: '5 bar', zaman: new Date(Date.now() + 30 * 3_600_000).toISOString(), davetliler: 'Firma ekip lideri' });
+    const su = `/api/kontrol-noktasi/${r.json().kimlik}/sonuc`; const kanit = await o.belge(d.kimlik, 'ds'); const ky = await o.gir('ky'); await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Yedek Kalite Kontrolör',$3)`, [d.kimlik, o.K.ky, o.K.opm]);
+    expect((await o.ist('POST', su, ky, { sonuc: 'Uygun', kanit })).statusCode).toBe(403);
+    await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Askıda' WHERE rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)') AND atama_durumu = 'Aktif'`);
+    try {
+      const r1 = await o.ist('POST', su, ky, { sonuc: 'Uygun', kanit }); expect(r1.statusCode).toBe(400); expect(r1.json().hata).toContain('bağımsızlık teyidi');
+      const r2 = await o.ist('POST', su, ky, { sonuc: 'Uygun', kanit, bagimsizlikTeyidi: true }); expect(r2.statusCode, r2.body).toBe(200); expect(r2.json()).toMatchObject({ serbest: true, vekaleten: true });
+      expect((await o.sup.query(`SELECT vekaleten FROM kontrol_noktasi WHERE kimlik = $1`, [r.json().kimlik])).rows[0].vekaleten).toBe(true);
+    } finally { await o.sup.query(`UPDATE rol_atamasi SET atama_durumu = 'Aktif' WHERE rol_ref = (SELECT kimlik FROM rol WHERE rol_adi = 'Kalite Uzmanı (Kalite Kontrolör)') AND atama_durumu = 'Askıda'`); }
+  });
+});
 describe('tedarik (YG-823, YG-404, YG-1589)', () => {
   const S = () => ({ tedarikci, teklifRef: 'T1', kullanim: 'Ana makine', teslimTarihi: ileri(10), teslimYeri: 'Depo', olcut: 'Ö', gerekce: 'G', kritikSinif: 'K3', belgeSartlari: 'Üretici sertifikası ve uygunluk belgesi; girişte seri no ve görsel kontrol', kalemler: [{ tanim: 'Pompa', parcaNo: 'P1', miktar: 2, birim: 'adet', bedel: 100 }] });
   it('avans alınmadan sipariş yok; zincir; lotsuz giriş yok; fazla teslim yok; eşleştirme mükerrer değil', async () => {

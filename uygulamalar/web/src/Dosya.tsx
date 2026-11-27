@@ -1,3 +1,4 @@
+import { YatEkipmani, type Ekipman } from './YatEkipmani';
 import { HasarBolgesi } from './HasarBolgesi';
 import { Olcum } from './Olcum';
 import { IsEmriSec } from './IsEmriBag';
@@ -454,6 +455,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
   const [v, setV] = useState<Saha | null>(null); const [hata, setHata] = useState(''); const [not, setNot] = useState('');
   const [izinli, setIzinli] = useState<string[]>([]); const [yapilan, setYapilan] = useState<string[]>([]); const [izinliListe, setIzinliListe] = useState<string[]>([]); // YG-056
   useEffect(() => { void istek<string[]>('/kesif-izinli-islemler').then(setIzinliListe).catch(() => {}); }, []);
+  const [ekipmanlar, setEkipmanlar] = useState<Ekipman[]>([]); const [bEk, setBEk] = useState(''); // YG-001
   const [amac, setAmac] = useState(''); const [kBas, setKBas] = useState(''); const [kBit, setKBit] = useState(''); const [inc, setInc] = useState(''); const [cikis, setCikis] = useState('Hazır'); const [sup, setSup] = useState('Hayır'); const [sayim, setSayim] = useState(false); const [eris, setEris] = useState(''); const [erisT, setErisT] = useState('');
   const [bTur, setBTur] = useState('İlk Gözlem'); const [bTy, setBTy] = useState<Record<string, { tur: string; ger: string }>>({});
   const [bKonum, setBKonum] = useState(''); const [bBolge, setBBolge] = useState(''); const [bAcik, setBAcik] = useState(''); const [bOnem, setBOnem] = useState('Orta'); const [bHedef, setBHedef] = useState('');
@@ -473,6 +475,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
     <>
       {hata && <div className="hata" role="alert">{hata}</div>}
       {not && <div className="not" role="status">{not}</div>}
+      <YatEkipmani dosya={id} degisti={setEkipmanlar} />{/* YG-001 */}
       <Olcum dosya={id} olcumler={v.olcumler} ekip={d.ekip} yenile={() => void yukle()} />{/* YG-134 */}
       <HasarBolgesi dosya={id} bolgeler={(v.bolgeler ?? []) as never} yenile={() => void yukle()} />{/* YG-131 */}
       <Blok baslik="Keşif">
@@ -511,7 +514,8 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
         <label htmlFor="bg-a">Açıklama</label><input id="bg-a" value={bAcik} onChange={(e) => setBAcik(e.target.value)} />
         <label htmlFor="bg-bt">Bilgi Türü</label><select id="bg-bt" value={bTur} onChange={(e) => setBTur(e.target.value)}>{['İlk Gözlem', 'Doğrulanmış Olgu', 'Beyan', 'Teknik Varsayım', 'Çelişkili Bilgi'].map((x) => <option key={x} value={x}>{x === 'Çelişkili Bilgi' ? 'Çelişkili Bilgi (beyan ile gözlem ayrıştırılamıyor, teyit bekler)' : x}</option>)}</select>
         <label htmlFor="bg-h">Hedef Tarih</label><input id="bg-h" type="date" value={bHedef} onChange={(e) => setBHedef(e.target.value)} />
-        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/bulgu`, { konum: bKonum, bolge: bBolge || undefined, aciklama: bAcik, etiket: 'Hasar', bilgiTuru: bTur, onem: bOnem, yonlendirme: 'Onarım', sorumlu: d.ekip.find((e) => e.rol.includes('Teknik Uzman'))?.kullanici, hedefTarih: bHedef }))}>Bulgu Ekle</button>
+        {ekipmanlar.length > 0 && <><label htmlFor="b-ek">Ekipman</label><select id="b-ek" value={bEk} onChange={(e) => setBEk(e.target.value)}><option value="">Ekipmana bağlı değil</option>{ekipmanlar.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ekipman_no} · {x.ad}</option>)}</select></>}
+        <button className="btn2" onClick={() => void yap(() => istek(`/dosya/${id}/bulgu`, { konum: bKonum, bolge: bBolge || undefined, aciklama: bAcik, etiket: 'Hasar', bilgiTuru: bTur, onem: bOnem, yonlendirme: 'Onarım', sorumlu: d.ekip.find((e) => e.rol.includes('Teknik Uzman'))?.kullanici, hedefTarih: bHedef, ekipman: bEk || undefined }))}>Bulgu Ekle</button>
       </Blok>
       <Blok baslik="Yönlendirmeli Fotoğraf">
         {KALEMLER.map((k) => { const y = v.gorseller.find((g) => g.cekim_kalemi === k); return <div key={k}>{y ? '✔' : '○'} {k}{y?.gorsel_no ? ` · ${y.gorsel_no}` : ''}{y?.cekilemedi_nedeni ? ` · ${y.cekilemedi_nedeni}` : ''}</div>; })}

@@ -393,3 +393,17 @@ describe('keşifte izinli işlemler (YG-056)', () => {
     expect((await o.sup.query(`SELECT yapilan_islemler FROM kesif WHERE kimlik = $1`, [k])).rows[0].yapilan_islemler).toEqual(['Numune alma']);
   });
 });
+
+describe('yat ekipmanı (YG-001)', () => {
+  it('ekipman tekil kimlikle kaydedilir; bulgu ekipmana bağlanır; başka yatın ekipmanı reddedilir; ekipman izi', async () => {
+    const d = await hazir(); const c = await o.gir('tu');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekipman`, c, { ad: 'Jeneratör' })).statusCode).toBe(400);
+    const e = await o.ist('POST', `/api/dosya/${d.kimlik}/ekipman`, c, { sistem: 'Elektrik', ad: 'Jeneratör', marka: 'M', seriNo: 'JN-1' }); expect(e.statusCode, e.body).toBe(200); expect(e.json().ekipmanNo).toBe('EK-001');
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/ekipman`, c, { sistem: 'Elektrik', ad: 'Jeneratör 2', seriNo: 'jn-1' })).statusCode).toBe(409);
+    const b = await bulgu(d.kimlik, { ekipman: e.json().kimlik }); expect(b.statusCode, b.body).toBe(200);
+    const d2 = await hazir(); const e2 = (await o.ist('POST', `/api/dosya/${d2.kimlik}/ekipman`, c, { sistem: 'Makine', ad: 'Pompa' })).json().kimlik;
+    expect((await bulgu(d.kimlik, { ekipman: e2 })).statusCode).toBe(400);
+    const iz = (await o.ist('GET', `/api/ekipman/${e.json().kimlik}/iz`, c)).json(); expect(iz.ekipman.seriNo).toBe('JN-1'); expect(iz.bulgular).toHaveLength(1);
+    expect((await o.ist('GET', `/api/dosya/${d.kimlik}/ekipman`, c)).json()[0]).toMatchObject({ ekipman_no: 'EK-001', bulgu: 1 });
+  });
+});

@@ -358,7 +358,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     });
   });
   s.post('/kontrol-noktasi/:id/sonuc', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; katilim?: string; kanit?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { sonuc?: string; katilim?: string; kanit?: string; bagimsizlikTeyidi?: boolean };
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT n.*, e.dosya_ref, e.kabul_sinifi FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE n.kimlik = $1`, [id])).rows[0];
     if (!k || !(await erisim(k.dosya_ref, o.kullanici))) return yok(y);
@@ -370,6 +370,9 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const p = (await b.db.query(`SELECT kabul_sinifi FROM kalite_plani WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [k.dosya_ref])).rows[0];
     const gereken = SERBEST_ROLLERI[k.kabul_sinifi ?? p?.kabul_sinifi ?? 'D']!;
     const benimRol = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2)`, [o.kullanici, gereken])).rows.map((r) => r.rol_adi as string);
+    // YG-1688, V-1125: görevde Kalite Uzmanı yokken Kalite Uzmanının payına düşen serbest bırakma Kalite Yöneticisine vekâleten düşer; bağımsızlık teyidi zorunludur.
+    let vekaleten = false;
+    if (gereken.includes(KK) && !benimRol.includes(KK)) { const yt = await kontrolYetkisi(o.kullanici, false, g.bagimsizlikTeyidi); if (yt.vekaleten) { if (yt.hata) return y.code(yt.kod!).send({ hata: yt.hata }); benimRol.push(KK); vekaleten = true; } }
     if (!benimRol.length) return y.code(403).send({ hata: `Bu noktayı ${gereken.join(' ve ')} serbest bırakır.` });
     if ((await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND teknik_kabul_eden_ref = $2`, [k.is_emri_ref, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Görev ayrılığı gereği teknik kabulü veren kalite kontrolünü doğrulayamaz.' }); // YG-1037
     // YG-382: kanıt dosyaya bağlı olmalı; incelenen yürürlükteki sürüm ve kullanılan ölçüt sonuçla birlikte kaydedilir.
@@ -394,7 +397,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     const onay = [...new Set([...(k.onaylar as string[]), ...benimRol])];
     const tam = gereken.every((r) => onay.includes(r));
     await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4, onaylar = $5, serbest_birakma_zamani = CASE WHEN $6::boolean THEN now() END WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null, JSON.stringify(onay), tam]);
-    return { sonuc: g.sonuc, serbest: tam, bekleyen: gereken.filter((r) => !onay.includes(r)) };
+    if (vekaleten) { await b.db.query(`UPDATE kontrol_noktasi SET vekaleten = true WHERE kimlik = $1`, [id]); await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kontrol Noktası Serbest Bırakma (Vekâleten)', nesneTuru: 'Kontrol Noktası', nesneKimligi: id, yeni: { sonuc: g.sonuc, bagimsizlikTeyidi: true }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id }); }
+    return { sonuc: g.sonuc, serbest: tam, bekleyen: gereken.filter((r) => !onay.includes(r)), vekaleten };
   });
 
   // YG-1451: RP-RAP-003 Test Kaydı standart akışta dışa gitmez; sigorta şirketi istediğinde LGM personeli PDF'i üretir.

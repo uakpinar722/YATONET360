@@ -349,12 +349,14 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-482: sökülen parça listesi; sigortalıda seçim önce sigorta talimatıyla (30 gün).
   s.post('/dosya/:id/sokulen-parca', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; konum?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ad?: string; konum?: string; ekipman?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!g.ad?.trim()) return y.code(400).send({ hata: 'Parça adını yazmanızı rica ederiz.' });
+    if (!(await (await import('./yat_ekipman.js')).ekipmanYataAit(b.db, id, g.ekipman))) return y.code(400).send({ hata: 'Ekipman bu yatta kayıtlı değildir.' }); // YG-001
     if (!(await (await import('./is_emri_bag.js')).isEmriGecerli(b.db, id, ((i.body ?? {}) as { isEmri?: string }).isEmri))) return y.code(400).send({ hata: 'İş emri bu dosyada bulunamadı veya geçerli değildir.' }); // YG-384
     if (!((i.body ?? {}) as { isEmri?: string }).isEmri) { const ke = await (await import('./saha.js')).kesifIzinEngeli(b.db, id, 'Söküm'); if (ke) return y.code(409).send({ hata: ke }); } // YG-056
     const r = await b.db.query(`INSERT INTO sokulen_parca (dosya_ref, parca_adi, konum, son_tarih, giren_ref) VALUES ($1,$2,$3,(now() AT TIME ZONE 'Europe/Istanbul')::date + $4::int,$5) RETURNING kimlik`, [id, g.ad.trim(), g.konum?.trim() || null, PARCA_GUN, o.kullanici]);
+    if (g.ekipman) await b.db.query(`UPDATE sokulen_parca SET ekipman_ref = $2 WHERE kimlik = $1`, [r.rows[0].kimlik, g.ekipman]); // YG-001
     await (await import('./is_emri_bag.js')).isEmriBagla(b.db, 'sokulen_parca', r.rows[0].kimlik, id, ((i.body ?? {}) as { isEmri?: string }).isEmri); // YG-384
     return { kimlik: r.rows[0].kimlik };
   });

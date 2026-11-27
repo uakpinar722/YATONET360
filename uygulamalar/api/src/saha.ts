@@ -256,12 +256,13 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/dosya/:id/bulgu', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string };
-    const g = (i.body ?? {}) as { konum?: string; bolge?: string; aciklama?: string; etiket?: string; bilgiTuru?: string; onem?: string; islevEtkisi?: string; brans?: string; yonlendirme?: string; sorumlu?: string; hedefTarih?: string; beyanlaCelisen?: boolean; tamZiya?: boolean; anaBulgu?: string };
+    const g = (i.body ?? {}) as { konum?: string; bolge?: string; aciklama?: string; etiket?: string; bilgiTuru?: string; onem?: string; islevEtkisi?: string; brans?: string; yonlendirme?: string; sorumlu?: string; hedefTarih?: string; beyanlaCelisen?: boolean; tamZiya?: boolean; anaBulgu?: string; ekipman?: string };
     const d = await getir(id, o.kullanici);
     if (!d) return yok(y);
     if (!(await ekipRolleri(id, o.kullanici)).some((r) => ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)', 'Saha Sorumlusu', 'Teknik Yönetici'].includes(r))) return y.code(403).send({ hata: 'Bulguyu teknik ekip girer.' });
     if (!g.konum?.trim() || BAGLAMSIZ.test(g.konum.trim())) return y.code(400).send({ hata: 'Konum referansını bölge veya referans hattına göre yazmanızı rica ederiz.' });
     if (!g.aciklama?.trim()) return y.code(400).send({ hata: 'Bulgu açıklaması zorunludur.' });
+    if (!(await (await import('./yat_ekipman.js')).ekipmanYataAit(b.db, id, g.ekipman))) return y.code(400).send({ hata: 'Ekipman bu yatta kayıtlı değildir.' }); // YG-001
     const lst = async (k: string, v?: string) => Boolean((await b.db.query(`SELECT 1 FROM deger_listesi WHERE liste_kodu = $1 AND deger = $2`, [k, v ?? ''])).rowCount);
     if (!(await lst('LST_BULGU_ETIKETI', g.etiket)) || !(await lst('LST_BILGI_TURU', g.bilgiTuru)) || !(await lst('LST_HASAR_ONEMI', g.onem)) || !(await lst('LST_BULGU_YONLENDIRME', g.yonlendirme))) return y.code(400).send({ hata: 'Etiket, bilgi türü, önem ve yönlendirme listeden seçilir.' });
     if (!g.sorumlu || !g.hedefTarih || !(await dosyaErisimi(b.db, g.sorumlu, id))) return y.code(400).send({ hata: 'Yönlendirme sorumlusu ve hedef tarihi zorunludur.' });
@@ -270,6 +271,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
       const k = (await c.query(`INSERT INTO bulgu (bulgu_no, dosya_ref, kesif_ref, konum_referansi, bolge_kodu, ana_bulgu_ref, aciklama, bulgu_etiketi, bilgi_turu, hasar_onem_derecesi, islev_etkisi, teknik_brans, yonlendirme, yonlendirme_sorumlu_ref, yonlendirme_hedef_tarihi, beyanla_celisen, tam_ziya_onerisi, olusturan_ref)
         VALUES ($1,$2,(SELECT kimlik FROM kesif WHERE dosya_ref = $2 AND durum = 'Planlandı' ORDER BY olusturma_zamani DESC LIMIT 1),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING kimlik, bulgu_no`,
         [no, id, g.konum!.trim(), g.bolge?.trim() || null, g.anaBulgu || null, g.aciklama!.trim(), g.etiket, g.bilgiTuru, g.onem, g.islevEtkisi?.trim() || null, g.brans?.trim() || null, g.yonlendirme, g.sorumlu, g.hedefTarih, Boolean(g.beyanlaCelisen), Boolean(g.tamZiya), o.kullanici])).rows[0];
+      if (g.ekipman) await c.query(`UPDATE bulgu SET ekipman_ref = $2 WHERE bulgu_no = $1 AND dosya_ref = $3`, [no, g.ekipman, id]); // YG-001
       const oneriS = ONEM_ONCELIK[g.onem!]!;
       const mevcut = d.onerilen_oncelik;
       if (!mevcut || ONCELIK_SIRA.indexOf(oneriS) > ONCELIK_SIRA.indexOf(mevcut)) await c.query(`UPDATE dosya SET onerilen_oncelik = $2 WHERE kimlik = $1`, [id, oneriS]);
@@ -459,7 +461,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const ustKademe = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND (x.kademe = 'Direktör' OR x.rol_adi IN ('CEO', 'Genel Müdür Yardımcısı')) LIMIT 1`, [o.kullanici])).rowCount);
     return {
       kesifler: await q(`SELECT kimlik, amac_kapsam, durum, planlanan_baslangic, planlanan_bitis, cikis_durumu, supheli_malzeme, plan_onay_zamani, izinli_islemler, yapilan_islemler FROM kesif WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
-      bulgular: await q(`SELECT kimlik, bulgu_no, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
+      bulgular: await q(`SELECT kimlik, bulgu_no, ekipman_ref, konum_referansi, bolge_kodu, aciklama, hasar_onem_derecesi, bulgu_etiketi, bilgi_turu, yonlendirme, tam_ziya_onerisi, beyanla_celisen, sigortaciya_bildirim_zamani, teyit_bekliyor FROM bulgu WHERE dosya_ref = $1 ORDER BY bulgu_no`),
       gorseller: await q(`SELECT g.gorsel_no, g.asama, g.cekim_kalemi, g.bolge_kodu, g.cekilemedi_nedeni, g.cekim_zamani, g.belge_ref FROM gorsel_kanit g WHERE g.dosya_ref = $1 ORDER BY g.olusturma_zamani`),
       olcumler: await q(`SELECT olcum_no, olcum_noktasi, olculen_buyukluk, ozet_deger, birim, gecerlilik, sinir_disi FROM olcum_kaydi WHERE dosya_ref = $1 ORDER BY olcum_no`),
       bolgeler: await q(`SELECT DISTINCT ON (bolge_kodu) bolge_kodu, gorunus, referans_hat, boyuna_konum_m, enine_konum_cm, alan_miktar, birim, cizim_isaret, surum, incelenmedi FROM hasar_bolgesi WHERE dosya_ref = $1 ORDER BY bolge_kodu, surum DESC`),
