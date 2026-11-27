@@ -338,3 +338,18 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
   });
 });
 
+
+describe('saha penceresi ve bağımlılık (YG-310)', () => {
+  it('kapasitede yalnız çakışan işler sayılır; bağımlı olunan işin bitişi başlangıçtan sonraysa planlanan gecikme', async () => {
+    const d = await o.dosyaAc({}, {});
+    const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref, kapasite_is) VALUES ($1,'Pencere Firma','Çözüm Ortağı','Onaylı','Aktif',$2,1) RETURNING kimlik`, [`S-PN${Date.now()}`, o.K.ds])).rows[0].kimlik;
+    const ie = (await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref, baslangic_tarihi, hedef_bitis_tarihi) VALUES ($1,'ON',$2,$3,'Y','K','Aktif',$4,'2027-01-01','2027-01-10') RETURNING kimlik`, [`${d.dosyaNo}-ON91`, d.kimlik, f, o.K.ds])).rows[0].kimlik;
+    const kp = (x: string[]) => x.some((m) => /kapasite/i.test(m));
+    expect(kp((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik })).engeller)).toBe(true);
+    expect(kp((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, baslangic: '2027-01-05', bitis: '2027-01-20' })).engeller)).toBe(true);
+    expect(kp((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, baslangic: '2027-02-01', bitis: '2027-02-05' })).engeller)).toBe(false);
+    const b = await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, baslangic: '2027-01-05', bitis: '2027-02-05', onceki: ie });
+    expect(b.uyarilar.join(' ')).toContain('Planlanan gecikme');
+    expect((await gorevlendirmeKontrolu(o.db, { firma: f, dosya: d.kimlik, baslangic: '2027-02-01', bitis: '2027-02-05', onceki: ie })).uyarilar.join(' ')).not.toContain('Planlanan gecikme');
+  });
+});

@@ -96,7 +96,10 @@ export function gorevSinifi(g: { tutar?: number | null; cokBrans?: boolean; anaS
 /** YG-334: klas kuruluşuna bildirim, işe başlamadan 48 saat önce; tarih yoksa son zaman konmaz. */
 export const klasBildirimSonu = (baslangic?: string | null): Date | undefined => (baslangic ? new Date(new Date(baslangic).getTime() - 48 * 3_600_000) : undefined);
 
-export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: string; brans?: string | null; tutar?: number | null; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean ; tesis?: string | null }) {
+/** YG-310, V-1131: saha penceresi verilmişse kapasitede yalnız bu aralıkla çakışan işler sayılır (tarihi girilmemiş iş çakışıyor sayılır). */
+const pencereKosulu = (p: number) => `AND ($${p}::date IS NULL OR coalesce(baslangic_tarihi, '-infinity'::date) <= $${p + 1}::date) AND ($${p}::date IS NULL OR coalesce(hedef_bitis_tarihi, 'infinity'::date) >= $${p}::date)`;
+export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: string; brans?: string | null; tutar?: number | null; cokBrans?: boolean; anaSistem?: boolean; kritik?: boolean ; tesis?: string | null; baslangic?: string | null; bitis?: string | null; onceki?: string | null }) {
+  const pb = g.baslangic || null; const pt = g.bitis || g.baslangic || null;
   const engeller: string[] = []; const uyarilar: string[] = []; const { sinif, asgari } = gorevSinifi(g);
   const f = (await db.query(`SELECT risk_derecesi, kapasite_is FROM kurulus WHERE kimlik = $1`, [g.firma])).rows[0];
   if (g.brans) {
@@ -120,15 +123,15 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
   const oryEksik = Number((await db.query(`SELECT count(*) n FROM firma_personeli p WHERE p.kurulus_ref = $1 AND p.aktif AND EXISTS (SELECT 1 FROM akademi_ders d WHERE d.aktif AND d.tur = 'Saha Oryantasyonu' AND NOT EXISTS (SELECT 1 FROM firma_oryantasyon o WHERE o.ders_ref = d.kimlik AND o.surum = d.surum AND o.personel_ref = p.kimlik))`, [g.firma])).rows[0].n);
   if (oryEksik) uyarilar.push(`Saha oryantasyonunu almamış ${oryEksik} personel vardır.`);
   if (sureli.length) uyarilar.push(`İSG eğitimi veya yetki belgesi süresi geçmiş personel vardır: ${sureli.map((x) => x.ad_soyad).join(', ')}.`);
-  if (f?.kapasite_is && Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma])).rows[0].n) >= f.kapasite_is) engeller.push('Firmanın beyan ettiği iş kapasitesi doludur.'); // YG-303: dolu kapasitede seçilemez
+  if (f?.kapasite_is && Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif') ${pencereKosulu(2)}`, [g.firma, pb, pt])).rows[0].n) >= f.kapasite_is) engeller.push('Firmanın beyan ettiği iş kapasitesi doludur.'); // YG-303: dolu kapasitede seçilemez
   // YG-309: branş ve görev sınıfı bazındaki kapasite; sınıfa özel satır yoksa branşın genel satırı (tüm sınıflar ve tesisler toplamı) esas alınır.
   if (g.brans) {
     const kp = (await db.query(`SELECT sum(es_zamanli_is)::int n FROM firma_kapasitesi WHERE kurulus_ref = $1 AND ana_brans = $2 AND (gorev_sinifi = $3 OR (gorev_sinifi IS NULL AND NOT EXISTS (SELECT 1 FROM firma_kapasitesi x WHERE x.kurulus_ref = $1 AND x.ana_brans = $2 AND x.gorev_sinifi = $3)))`, [g.firma, g.brans, sinif])).rows[0].n;
-    if (kp) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans])).rows[0].n); if (ak >= kp) engeller.push(`Firmanın ${g.brans} branşındaki ${sinif} kapasitesi doludur (${ak}/${kp}).`); }
+    if (kp) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif') ${pencereKosulu(3)}`, [g.firma, g.brans, pb, pt])).rows[0].n); if (ak >= kp) engeller.push(`Firmanın ${g.brans} branşındaki ${sinif} kapasitesi doludur (${ak}/${kp}).`); }
     // Tesis seçildiyse o tesisin kendi kapasite satırı ayrıca denetlenir.
     if (g.tesis) {
       const tk = (await db.query(`SELECT sum(es_zamanli_is)::int n FROM firma_kapasitesi WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND (gorev_sinifi IS NULL OR gorev_sinifi = $4)`, [g.firma, g.brans, g.tesis, sinif])).rows[0].n;
-      if (tk) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif')`, [g.firma, g.brans, g.tesis])).rows[0].n); if (ak >= tk) engeller.push(`Seçilen tesisteki ${g.brans} kapasitesi doludur (${ak}/${tk}).`); }
+      if (tk) { const ak = Number((await db.query(`SELECT count(*) n FROM is_emri WHERE kurulus_ref = $1 AND ana_brans = $2 AND tesis_ref = $3 AND statu IN ('Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif') ${pencereKosulu(4)}`, [g.firma, g.brans, g.tesis, pb, pt])).rows[0].n); if (ak >= tk) engeller.push(`Seçilen tesisteki ${g.brans} kapasitesi doludur (${ak}/${tk}).`); }
     }
   }
   if (!(await db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND tur ILIKE '%sigorta%' AND (gecerlilik_bitis IS NULL OR gecerlilik_bitis >= current_date) LIMIT 1`, [g.firma])).rowCount) uyarilar.push('Firmanın sorumluluk sigortası kaydı yoktur.');
@@ -136,6 +139,9 @@ export async function gorevlendirmeKontrolu(db: Db, g: { firma: string; dosya: s
     const ki = await import('./kapasite_istisnasi.js');
     if (engeller.some(ki.kapasiteEngeliMi) && await ki.kapasiteIstisnasiVar(db, g.dosya, g.firma)) for (const m of engeller.filter(ki.kapasiteEngeliMi)) { engeller.splice(engeller.indexOf(m), 1); uyarilar.push(`${m} (Kapasite istisnası onaylıdır.)`); }
   }
+  // YG-310: bağımlı olunan iş emrinin hedef bitişi yeni işin başlangıcından sonraysa planlanan gecikme uyarısı.
+  if (g.onceki && pb) { const on = (await db.query(`SELECT is_emri_no, hedef_bitis_tarihi::text b FROM is_emri WHERE kimlik = $1 AND dosya_ref = $2`, [g.onceki, g.dosya])).rows[0];
+    if (on?.b && on.b > pb) uyarilar.push(`Planlanan gecikme: bağımlı olunan ${on.is_emri_no} iş emrinin hedef bitişi (${on.b.split('-').reverse().join('.')}) bu işin başlangıcından sonradır.`); }
   return { sinif, asgari, sonuc: engeller.length ? 'Ret' as const : uyarilar.length ? 'Koşullu Kabul' as const : 'Kabul' as const, engeller, uyarilar };
 }
 
