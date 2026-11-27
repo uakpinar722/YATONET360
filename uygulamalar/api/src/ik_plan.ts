@@ -67,7 +67,7 @@ export function ikPlanYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (!(await rolVar(o.kullanici, [IKM, IKS]))) return y.code(403).send({ hata: 'Yan hak kaydını İnsan Kaynakları girer.' });
     const g = (i.body ?? {}) as { personel?: string; tur?: string; aciklama?: string; baslangic?: string; bitis?: string };
     if (!g.personel || !g.tur?.trim() || !TARIH.test(g.baslangic ?? '') || (g.bitis && !TARIH.test(g.bitis))) return y.code(400).send({ hata: 'Personeli, yan hak türünü ve başlangıç tarihini giriniz.' });
-    if (g.bitis && g.bitis < g.baslangic!) return y.code(400).send({ hata: 'Bitiş tarihi başlangıçtan önce olamaz.' });
+    if (g.bitis && g.bitis < g.baslangic!) return y.code(400).send({ hata: 'Bitiş tarihini başlangıç tarihinden sonra girmenizi rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM personel_karti WHERE kullanici_ref = $1`, [g.personel])).rowCount) return y.code(400).send({ hata: 'Personel kartı bulunamadı.' });
     const r = (await b.db.query(`INSERT INTO personel_yan_hak (personel_ref, tur, aciklama, baslangic, bitis, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [g.personel, g.tur.trim(), g.aciklama?.trim() || null, g.baslangic, g.bitis || null, o.kullanici])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yan Hak Kaydı', nesneTuru: 'Personel', nesneKimligi: g.personel, yeni: { tur: g.tur.trim(), baslangic: g.baslangic, bitis: g.bitis ?? null }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

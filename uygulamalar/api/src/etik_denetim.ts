@@ -67,7 +67,7 @@ export function etikDenetimYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { surec?: string; kapsam?: string; cikarYok?: boolean; sonOnIkiAyGorevYok?: boolean };
     const r = await roller(o.kullanici); if (!r.includes(ID) && !r.includes(IDM)) return yok(y);
     if (!g.surec?.trim() || !g.kapsam?.trim() || g.cikarYok !== true) return y.code(400).send({ hata: 'Süreç, kapsam ve çıkar çatışması beyanı zorunludur.' });
-    if (g.sonOnIkiAyGorevYok !== true) return y.code(409).send({ hata: 'Son 12 ayda görev aldığınız veya sorumlu olduğunuz süreci denetleyemezsiniz.' });
+    if (g.sonOnIkiAyGorevYok !== true) return y.code(409).send({ hata: 'Bağımsızlık gereği son 12 ayda görev aldığınız veya sorumlu olduğunuz sürecin başka bir denetçi tarafından denetlenmesini rica ederiz.' });
     const no = `DNT-${new Date().getFullYear()}-${String(await sayac(b.db, 'ic_denetim')).padStart(4, '0')}`;
     const t = (await b.db.query(`INSERT INTO ic_denetim (denetim_no, surec, kapsam, denetci_ref, vekaleten) VALUES ($1,$2,$3,$4,$5) RETURNING kimlik`, [no, g.surec.trim(), g.kapsam.trim(), o.kullanici, r.includes(IDM)])).rows[0];
     return { kimlik: t.kimlik, no };

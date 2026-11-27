@@ -174,7 +174,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { dosya: id } = i.params as { dosya: string }; const rol = ((i.body ?? {}) as { alici?: string }).alici === 'Kaptan' ? 'Kaptan' : 'Yat Sahibi';
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = await dosya(id);
-    if (rol !== 'Kaptan' && d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada tedbir hemen uygulanır; onay ekranı gönderilmez.' }); // YG-472: kaptan izni (ONY-31) her dosyada
+    if (rol !== 'Kaptan' && d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada tedbir hemen uygulanmaktadır; onay ekranı gönderilmesine gerek yoktur.' }); // YG-472: kaptan izni (ONY-31) her dosyada
     const t = (await b.db.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = $2 AND aktif LIMIT 1`, [id, rol])).rows[0];
     if (!t) return y.code(409).send({ hata: `${rol} kaydı bulunamadı.` });
     return islem(async (c) => {
@@ -195,7 +195,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     const t = UUID.test(g.alici ?? '') ? (await b.db.query(`SELECT kimlik, taraf_rolu, kisi_adi_soyadi, EXISTS (SELECT 1 FROM yetki_kaydi k WHERE k.dosya_tarafi_ref = dosya_tarafi.kimlik) yetkili FROM dosya_tarafi WHERE kimlik = $1 AND dosya_ref = $2 AND aktif AND taraf_rolu IN ('Yat Sahibi', 'Yetkili Temsilci')`, [g.alici, id])).rows[0] : undefined;
     if (!t) return y.code(400).send({ hata: 'Teslim alacak kişiyi dosyadaki yat sahibi veya yetkili temsilciler arasından seçiniz.' });
     if (!['Kimlik Belgesi', 'Yetki Belgesi', 'Portal Hesabı', 'Kayıtlı Telefonla Geri Arama'].includes(g.yontem ?? '')) return y.code(400).send({ hata: 'Doğrulama yöntemini seçiniz.' });
-    if (t.taraf_rolu === 'Yetkili Temsilci' && !t.yetkili) return y.code(409).send({ hata: 'Yetkili temsilcinin yetki kaydı doğrulanmadan teslim alıcısı olarak onaylanamaz.' });
+    if (t.taraf_rolu === 'Yetkili Temsilci' && !t.yetkili) return y.code(409).send({ hata: 'Teslim alıcısı onayı için önce yetkili temsilcinin yetki kaydının doğrulanmasını rica ederiz.' });
     await b.db.query(`INSERT INTO teslim_alici_dogrulama (dosya_ref, dosya_tarafi_ref, yontem, aciklama, dogrulayan_ref) VALUES ($1,$2,$3,$4,$5)`, [id, t.kimlik, g.yontem, g.aciklama?.trim() || null, o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Teslim Alıcısı Doğrulandı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { alici: t.kisi_adi_soyadi, rol: t.taraf_rolu, yontem: g.yontem }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
@@ -221,7 +221,7 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (!g.ulasilamadi && (!/^\d{4}-\d{2}-\d{2}$/.test(g.sonTarih ?? '') || g.sonTarih! < new Date().toISOString().slice(0, 10))) return y.code(400).send({ hata: 'Belgelerin iletilmesi için son tarihi (bugün veya sonrası) seçiniz.' }); // MTN-5
     const d = (await b.db.query(`SELECT d.dosya_no, d.yazisma_dili, d.vefat_isareti, h.e_posta, h.cep_telefonu FROM dosya d JOIN kullanici_hesabi h ON h.kimlik = d.dosya_sorumlusu_ref WHERE d.kimlik = $1 AND d.dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rows[0];
     if (!d) return y.code(403).send({ hata: 'Belge talebini Dosya Sorumlusu gönderir.' });
-    if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmez.' });
+    if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmemektedir.' });
     const t = await sahip(id); if (!t || (!t.telefon && !t.eposta)) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });
     const gun = new Date().toISOString().slice(0, 16);
     if (g.ulasilamadi) {
@@ -249,9 +249,9 @@ export function teslimEkYollari(s: FastifyInstance, b: Baglam) {
     if (fotolar.length !== secili.length) return y.code(400).send({ hata: 'Fotoğraflar bu dosyanın görsel kayıtlarından seçilir.' });
     if (fotolar.length) { const h = await (await import('./gorsel_gizlilik.js')).hassasEkEngeli(b.db, fotolar.map((f) => f.surum)); if (h) return y.code(409).send({ hata: h }); }
     const d = (await b.db.query(`SELECT d.dosya_no, d.hizmet_turu, d.ilerleme_yuzdesi, d.tahmini_teslim_tarihi::text teslim, d.yazisma_dili, d.vefat_isareti, y.yat_adi FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.kimlik = $1`, [id])).rows[0];
-    if (/kurtarma/i.test(d.hizmet_turu ?? '')) return y.code(409).send({ hata: 'Kurtarma dosyasında İlerleme Özeti gönderilmez.' });
+    if (/kurtarma/i.test(d.hizmet_turu ?? '')) return y.code(409).send({ hata: 'Kurtarma dosyasında İlerleme Özeti gönderilmesi öngörülmemektedir.' });
     const t = await sahip(id); if (!t || (!t.telefon && !t.eposta)) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });
-    if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmez.' });
+    if (d.vefat_isareti) return y.code(409).send({ hata: 'Vefat işaretli dosyada otomatik ileti gönderilmemektedir.' });
     const tr = gunAy(new Date()); const oran = String(Math.floor(Number(d.ilerleme_yuzdesi ?? 0))); const tes = d.teslim ? gunAy(d.teslim) : '-';
     const ek = await ilerlemeOzetiPdf(b, o.kullanici, id, d, { tarih: tr, oran, teslim: tes, sonraki: g.sonrakiAdim.trim(), fotolar }); // YG-555: RP-RAP-006
     await yatTarafinaYaz(b.db, { olay: `bld93:${id}:${new Date().toISOString().slice(0, 10)}`, kod: 'BLD-93', dil: dilKod(d.yazisma_dili), konu: `${d.dosya_no} Müşteri İlerleme Özeti`, telefon: t.telefon, eposta: t.eposta, ekler: [ek],

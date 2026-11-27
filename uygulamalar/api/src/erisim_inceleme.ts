@@ -139,7 +139,7 @@ export function erisimIncelemeYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     const k = (await b.db.query(`SELECT k.*, e.rol_ref makam, e.kimlik inceleme, e.paket FROM erisim_inceleme_kalemi k JOIN erisim_inceleme e ON e.kimlik = k.inceleme_ref WHERE k.kimlik = $1 AND e.durum = 'Açık'`, [id])).rows[0];
     if (!k || !(await rolSahipleri(b.db, k.makam)).includes(o.kullanici)) return yok(y);
-    if (k.kullanici_ref === o.kullanici) return y.code(403).send({ hata: 'Kendi erişiminiz için karar veremezsiniz.' });
+    if (k.kullanici_ref === o.kullanici) return y.code(403).send({ hata: 'Kendi erişiminizle ilgili kararın başka bir yetkili tarafından verilmesini rica ederiz.' });
     if (!KARARLAR.includes(g.karar ?? '') || (g.karar !== 'Koru' && !g.gerekce?.trim()) || (g.karar === 'Süre Uzat' && !/^\d{4}-\d{2}-\d{2}$/.test(g.yeniBitis ?? ''))) return y.code(400).send({ hata: 'Karar geçersizdir; Koru dışında gerekçe, süre uzatmada yeni bitiş zorunludur.' });
     // YG-1645: pakette Müdür Yardımcısı öneri yazar; karar Bilgi İşlem Müdürü onayıyla uygulanır.
     if (k.paket) {
@@ -197,10 +197,10 @@ export function erisimIncelemeYollari(s: FastifyInstance, b: Baglam) {
     s.post(`/guvenlik/hesap/:id/${yol}`, oturumlu, async (i, y) => {
       const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerekce?: string };
       if (!(await yetkiliMi(o.kullanici, YONETICI))) return yok(y);
-      if (id === o.kullanici) return y.code(403).send({ hata: 'Kendi hesabınız için işlem yapamazsınız.' });
+      if (id === o.kullanici) return y.code(403).send({ hata: 'Kendi hesabınızla ilgili işlemin başka bir yetkili tarafından yapılmasını rica ederiz.' });
       if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
       const u = await b.db.query(`UPDATE kullanici_hesabi SET hesap_durumu = $2, kapanma_zamani = CASE WHEN $2 = 'Kapalı' THEN now() ELSE kapanma_zamani END WHERE kimlik = $1 AND hesap_durumu <> 'Kapalı' RETURNING kimlik`, [id, durum]);
-      if (!u.rowCount) return y.code(409).send({ hata: 'Kapalı hesap değiştirilemez veya hesap bulunamadı.' });
+      if (!u.rowCount) return y.code(409).send({ hata: 'Hesap kapalıdır veya bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
       if (durum !== 'Aktif') await b.db.query(`UPDATE oturum SET bitis_zamani = now(), bitis_nedeni = 'Güvenlik sınırlaması' WHERE kullanici_ref = $1 AND bitis_zamani IS NULL`, [id]);
       await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem, nesneTuru: 'Kullanıcı', nesneKimligi: id, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { tamam: true };

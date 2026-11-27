@@ -40,7 +40,7 @@ export function kurtarmaMaliYollari(s: FastifyInstance, b: Baglam) {
     const f = (await b.db.query(`SELECT * FROM kurtarma_saglayici_faturasi WHERE kimlik = $1`, [id])).rows[0];
     if (!f || !(await dosyaErisimi(b.db, o.kullanici, f.dosya_ref))) return yok(y);
     if (!(await rolVar(o.kullanici, MFM))) return y.code(403).send({ hata: 'Sağlayıcı ödemesini Muhasebe ve Finans Müdürü kaydeder.' });
-    if (f.kaydeden_ref === o.kullanici) return y.code(403).send({ hata: 'Faturayı kaydeden kişi ödemeyi kaydedemez.' });
+    if (f.kaydeden_ref === o.kullanici) return y.code(403).send({ hata: 'Görev ayrılığı gereği ödemenin faturayı kaydeden dışında bir yetkili tarafından kaydedilmesini rica ederiz.' });
     if (f.durum !== 'Kontrolde') return y.code(409).send({ hata: 'Bu fatura için ödeme kaydı yapılmıştır.' });
     if (!g.referans?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '')) return y.code(400).send({ hata: 'Banka referansı ve ödeme tarihi zorunludur.' });
     const lgm = Number((await b.db.query(`SELECT coalesce(sum(k.tutar_eur), 0) t FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi t ON t.kimlik = k.teklif_ref WHERE t.dosya_ref = $1 AND k.onay_durumu = 'Onaylandı' AND k.bedel_turu = ANY($2::text[])`, [f.dosya_ref, KURTARMA_BEDEL])).rows[0].t);

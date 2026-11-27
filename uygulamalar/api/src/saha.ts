@@ -200,7 +200,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const ty = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Yönetici' AND bitis_zamani IS NULL LIMIT 1`, [k.dosya_ref])).rows[0]?.kullanici_ref;
     const rolde = Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = 'Teknik Yönetici'`, [o.kullanici])).rowCount);
     if (ty ? ty !== o.kullanici : !rolde) return y.code(403).send({ hata: 'Keşif planını dosyanın Teknik Yöneticisi onaylar.' });
-    if (k.olusturan_ref === o.kullanici) return y.code(403).send({ hata: 'Planı hazırlayan onaylayamaz.' });
+    if (k.olusturan_ref === o.kullanici) return y.code(403).send({ hata: 'Planın, hazırlayan dışında bir yetkili tarafından onaylanmasını rica ederiz.' });
     if (k.plan_onay_zamani || k.durum !== 'Planlandı') return y.code(409).send({ hata: 'Keşif planı onay beklemiyor.' });
     await b.db.query(`UPDATE kesif SET plan_onaylayan_ref = $2, plan_onay_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Keşif Planı Onayı' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id]);
@@ -308,7 +308,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     // YG-381: iş kalemi dosyanın teklifinden seçilir; aynı görsel başka iş kaleminin kanıtı olamaz.
     if (g.isKalemi) {
       if (!UUID.test(g.isKalemi) || !(await b.db.query(`SELECT 1 FROM fiyat_teklifi_kalemi k JOIN fiyat_teklifi f ON f.kimlik = k.teklif_ref WHERE k.kimlik = $1 AND f.dosya_ref = $2`, [g.isKalemi, id])).rowCount) return y.code(400).send({ hata: 'İş kalemi bu dosyanın teklifinden seçilir.' });
-      if ((await b.db.query(`SELECT 1 FROM gorsel_kanit WHERE belge_ref = $1 AND is_kalemi_ref IS NOT NULL AND is_kalemi_ref <> $2 LIMIT 1`, [g.belge, g.isKalemi])).rowCount) return y.code(409).send({ hata: 'Bu görsel başka bir iş kaleminin kanıtıdır; aynı görsel farklı işte kanıt olarak kullanılamaz.' });
+      if ((await b.db.query(`SELECT 1 FROM gorsel_kanit WHERE belge_ref = $1 AND is_kalemi_ref IS NOT NULL AND is_kalemi_ref <> $2 LIMIT 1`, [g.belge, g.isKalemi])).rowCount) return y.code(409).send({ hata: 'Bu görsel başka bir iş kaleminin kanıtıdır; bu iş için ayrı bir görsel yüklemenizi rica ederiz.' });
     }
     const rol = (await ekipRolleri(id, o.kullanici))[0] ?? null;
     // YG-503: çekim zamanı sunucu saatine göre doğrulanır. Cihaz gönderim anındaki saatini bildirir; fark 5 dakikayı aşarsa çekim zamanı farkla düzeltilir.
@@ -318,7 +318,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const fark = Number.isNaN(cz) ? null : Math.round((simdi - cz) / 1000);
     const cekim = Number.isNaN(z) ? simdi : z + (fark !== null && Math.abs(fark) > 300 ? fark * 1000 : 0);
     const dogrulama = Number.isNaN(z) ? 'Sunucu Saati' : fark === null ? 'Doğrulanamadı' : Math.abs(fark) > 300 ? 'Sapma Düzeltildi' : 'Doğrulandı';
-    if (cekim > simdi + 300_000) return y.code(400).send({ hata: 'Çekim zamanı ileri bir tarih olamaz; cihaz saatini kontrol ediniz.' });
+    if (cekim > simdi + 300_000) return y.code(400).send({ hata: 'Çekim zamanı ileri bir tarih görünmektedir; cihaz saatini kontrol etmenizi rica ederiz.' });
     if (yerelSira !== null) { // çevrim dışı kuyruk yeniden gönderirse aynı kayıt döner
       const v = (await b.db.query(`SELECT gorsel_no FROM gorsel_kanit WHERE dosya_ref = $1 AND ceken_ref = $2 AND yerel_sira_no = $3`, [id, o.kullanici, yerelSira])).rows[0];
       if (v) return { gorselNo: v.gorsel_no, tekrar: true };
@@ -431,7 +431,7 @@ export function sahaYollari(s: FastifyInstance, b: Baglam) {
     const md = (await b.db.query(`SELECT kanit_tanimi, kanit_belge_ref, kritik FROM kontrol_listesi_maddesi WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde])).rows[0];
     if (!md) return y.code(404).send({ hata: 'Madde bulunamadı.' });
     if (g.kanit && !(UUID.test(g.kanit) && (await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2::text`, [g.kanit, k.dosya_ref])).rowCount)) return y.code(400).send({ hata: 'Kanıt bu dosyaya yüklenmiş bir belge olmalıdır.' });
-    if (g.sonuc === 'Evet' && md.kritik && !md.kanit_tanimi && !g.kanit && !md.kanit_belge_ref) return y.code(400).send({ hata: 'Kritik madde kanıt ister; kutunun işaretlenmesi kanıt sayılmaz. Kanıt belgesini ekleyiniz.' }); // YG-135
+    if (g.sonuc === 'Evet' && md.kritik && !md.kanit_tanimi && !g.kanit && !md.kanit_belge_ref) return y.code(400).send({ hata: 'Kritik madde kanıt ister; kutunun işaretlenmesi kanıt sayılmaz. Kanıt belgesini eklemenizi rica ederiz.' }); // YG-135
     if (g.sonuc === 'Evet' && md.kanit_tanimi && !g.kanit && !md.kanit_belge_ref) return y.code(400).send({ hata: `Bu madde kanıt ister (${md.kanit_tanimi}); kutunun işaretlenmesi kanıt sayılmaz. Kanıt belgesini ekleyiniz.` });
     const r = await b.db.query(`UPDATE kontrol_listesi_maddesi SET sonuc = $3, aciklama = $4, kanit_belge_ref = coalesce($5, kanit_belge_ref), kanit_kontrol_eden_ref = NULL, kanit_kontrol_zamani = NULL WHERE kayit_ref = $1 AND madde = $2`, [id, g.madde, g.sonuc, g.aciklama?.trim() || null, g.kanit || null]);
     if (!r.rowCount) return y.code(404).send({ hata: 'Madde bulunamadı.' });

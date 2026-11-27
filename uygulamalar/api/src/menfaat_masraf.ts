@@ -56,7 +56,7 @@ export function menfaatMasrafYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string };
     if (!UUID.test(id) || !(await rolVar(o.kullanici, MFY))) return yok(y);
     const r = await b.db.query(`UPDATE personel_masraf_fisi SET asil_teslim_zamani = now(), asil_teslim_alan_ref = $2 WHERE kimlik = $1 AND belge_turu = 'Kağıt Fiş' AND asil_teslim_zamani IS NULL RETURNING kimlik`, [id, o.kullanici]);
-    if (!r.rowCount) return y.code(409).send({ hata: 'Bu fiş için teslim kaydı alınamaz.' });
+    if (!r.rowCount) return y.code(409).send({ hata: 'Bu fiş teslim kaydına uygun durumda değildir; fişin durumunu kontrol etmenizi rica ederiz.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Fiş Aslı Teslim Alındı', nesneTuru: 'Masraf', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
   });

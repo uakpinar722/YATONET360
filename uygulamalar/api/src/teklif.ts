@@ -489,7 +489,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const ekip = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND bitis_zamani IS NULL`, [id, o.kullanici])).rowCount;
     if (!ekip) return y.code(403).send({ hata: 'Kapsam ve metraj cetvelini Teknik Uzman hazırlar.' });
     // YG-195: onay bekleyen değişiklik kaydı sonuçlanmadan yeni kapsam sürümü onaya sunulamaz.
-    if ((await b.db.query(`SELECT 1 FROM degisiklik_protokolu WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Onay bekleyen değişiklik kaydı sonuçlanmadan yeni kapsam sürümü hazırlanamaz.' });
+    if ((await b.db.query(`SELECT 1 FROM degisiklik_protokolu WHERE dosya_ref = $1 AND durum = 'Onay Bekliyor' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Yeni kapsam sürümü için önce onay bekleyen değişiklik kaydının sonuçlanmasını rica ederiz.' });
     if (!g.satirlar?.length) return y.code(400).send({ hata: 'En az bir satır giriniz.' });
     // YG-182: genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.
     if (g.satirlar.some((x) => /genel\s*gider|risk\s*pay/i.test(`${x.aciklama ?? ''} ${x.kod ?? ''}`))) return y.code(400).send({ hata: 'Genel gider ve risk payı ayrı satır olarak yazılmaz; birim fiyatlara dahildir.' });
@@ -872,7 +872,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     if (!['Onaylandı', 'Reddedildi'].includes(g.karar ?? '')) return y.code(400).send({ hata: 'Kararı seçmenizi rica ederiz.' });
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Yat sahibinin sisteme erişememe nedenini yazınız.' });
     const zaman = g.imzaTarihi ? new Date(g.imzaTarihi) : null;
-    if (!zaman || Number.isNaN(zaman.getTime()) || zaman > new Date() || zaman < new Date(t.gonderim_zamani ?? 0)) return y.code(400).send({ hata: 'İmza tarihini giriniz; tarih teklifin gönderiminden önce veya ileri bir tarih olamaz.' });
+    if (!zaman || Number.isNaN(zaman.getTime()) || zaman > new Date() || zaman < new Date(t.gonderim_zamani ?? 0)) return y.code(400).send({ hata: 'İmza tarihini girmenizi rica ederiz; tarih teklifin gönderiminden sonra ve bugün veya geçmiş bir tarih olmalıdır.' });
     if (!(await dosyaBelgesi(g.belge, t.dosya_ref))) return y.code(400).send({ hata: 'Islak imzalı taranmış teklifi dosyaya yükleyip seçiniz.' });
     if (await bilgiBelgesiMi(b.db, g.belge!)) return y.code(409).send({ hata: BILGI_HATA });
     return islem(async (c) => {
@@ -1006,7 +1006,7 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const t = await teklifGetir((i.params as { id: string }).id, o.kullanici); const { neden } = (i.body ?? {}) as { neden?: string };
     if (!t) return yok(y);
     if (t.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Revizyonu teklifi hazırlayan açar.' });
-    if (!neden?.trim() || /^(tutar|toplam)/i.test(neden.trim())) return y.code(400).send({ hata: 'Revizyon nedeni zorunludur; yalnız toplam tutar değişikliği gerekçe sayılmaz.' });
+    if (!neden?.trim() || /^(tutar|toplam)/i.test(neden.trim())) return y.code(400).send({ hata: 'Revizyon nedeni zorunludur; toplam tutar değişikliğinin nedenini de açıklamanızı rica ederiz.' });
     if (t.statu === 'Yerine Geçti') return y.code(409).send({ hata: 'Bu sürüm yerine geçmiştir.' });
     return islem(async (c) => {
       const yeni = (await c.query(`INSERT INTO fiyat_teklifi (teklif_no, surum_no, onceki_surum_ref, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, revizyon_nedeni, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, genel_toplam_eur, onay_limit_tutari_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, bildirilen_sure_gun) SELECT teklif_no, surum_no + 1, kimlik, teklif_turu, ana_teklif_ref, dosya_ref, cetvel_ref, $2, teklif_muhatabi, teklif_dili, ara_toplam_eur, opsiyon_toplami_eur, kdv_orani, kdv_tutari_eur, ara_toplam_eur * (1 + kdv_orani / 100), ara_toplam_eur, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, bildirilen_sure_gun FROM fiyat_teklifi WHERE kimlik = $1 RETURNING kimlik, surum_no`, [t.kimlik, neden.trim()])).rows[0];

@@ -90,7 +90,7 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
   s.post('/yayin-seti/:id/test-edildi', oturumlu, async (i, y) => {
     const { id } = i.params as { id: string }; if (!UUID.test(id) || !(await rolde(i.oturum!.kullanici, BT))) return yok(y);
     const e = await testEksikleri(b.db, id); if (e.length) return y.code(409).send({ hata: `Test tamamlanmadı: ${e.join('; ')}`, eksik: e });
-    if (!(await b.db.query(`UPDATE yayin_seti SET durum = 'Test Edildi' WHERE kimlik = $1 AND ortam = 'Test' AND durum = 'Hazırlandı'`, [id])).rowCount) return y.code(409).send({ hata: 'Bu set test edildi olarak işaretlenemez.' });
+    if (!(await b.db.query(`UPDATE yayin_seti SET durum = 'Test Edildi' WHERE kimlik = $1 AND ortam = 'Test' AND durum = 'Hazırlandı'`, [id])).rowCount) return y.code(409).send({ hata: 'Bu set test edildi işaretine uygun durumda değildir; setin durumunu kontrol etmenizi rica ederiz.' });
     await iz(i, 'Yayın Seti Test Edildi', 'Yayın Seti', id); return { tamam: true };
   });
   // Hazırlayan kendi setini üretime onaylayamaz; onay sonrası izleme görevi açılır (YG-1137).
@@ -100,7 +100,7 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
     const ts = (await b.db.query(`SELECT test_edilen_ref FROM yayin_seti WHERE kimlik = $1`, [id])).rows[0]?.test_edilen_ref as string | null;
     const oz = await (await import('./oz_denetim.js')).surumOzDenetimEngeli(b.db, [id, ts ?? '']); if (oz) return y.code(409).send({ hata: oz });
     const r = (await b.db.query(`UPDATE yayin_seti SET durum = 'Üretimde', onaylayan_ref = $2, uretim_zamani = now() WHERE kimlik = $1 AND ortam = 'Üretim' AND durum = 'Onayda' AND hazirlayan_ref <> $2 RETURNING surum`, [id, o.kullanici])).rows[0];
-    if (!r) return y.code(409).send({ hata: 'Set onayda değil veya hazırlayan kendi setini onaylayamaz.' });
+    if (!r) return y.code(409).send({ hata: 'Set onayda değildir veya seti hazırlayan sizsiniz; onayın başka bir yetkili tarafından verilmesini rica ederiz.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Üretime Alma Onayı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     await kartAc(b.db, { tur: 'Üretim Sonrası İzleme', kategori: 'gorev', baslik: `${r.surum} · Üretim Sonrası İzleme`, ozet: `${IZLEME_ALANI.join(', ')} sonuçlarını kaydediniz.`, sahipRol: await rolId(b.db, 'Sistem Yöneticisi'), sonZaman: new Date(Date.now() + 2 * 86_400_000), nesneTuru: 'Yayın Seti', nesneKimligi: id });
     await iz(i, 'Üretime Alındı', 'Yayın Seti', id); return { tamam: true };
@@ -181,9 +181,9 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { hesapAdi?: string; saglayici?: string; kisi?: string; kapsam?: string[]; cokFaktorlu?: boolean; destekYontemi?: string; altSaglayicilar?: string[]; sozlesmeBitis?: string };
     if (!(await rolde(o.kullanici, BT))) return yok(y);
     if (!dolu(g.hesapAdi) || !dolu(g.saglayici) || !dolu(g.kisi) || !g.kapsam?.filter(dolu).length || !/^\d{4}-\d{2}-\d{2}$/.test(g.sozlesmeBitis ?? '')) return y.code(400).send({ hata: 'Hesap adı, sağlayıcı, isimli kişi, yetki kapsamı ve sözleşme bitişi zorunludur.' });
-    if (g.cokFaktorlu !== true) return y.code(400).send({ hata: 'Dış hizmet hesabı çok faktörlü kimlik doğrulama olmadan açılmaz.' });
+    if (g.cokFaktorlu !== true) return y.code(400).send({ hata: 'Güvenliğiniz için dış hizmet hesabı çok faktörlü kimlik doğrulamayla açılmaktadır; doğrulamayı tanımlamanızı rica ederiz.' });
     if (!['Onaylı Uzak Erişim Aracı', 'LGM Gözetiminde Ekran Paylaşımı', 'Yerinde'].includes(g.destekYontemi ?? '')) return y.code(400).send({ hata: 'Onaylı destek yöntemini seçiniz.' });
-    if (g.kapsam.some((k) => /tüm|hepsi|yönetici|admin|\*/i.test(k))) return y.code(400).send({ hata: 'Yetki kapsamı dar tanımlanmalıdır; tüm sistem veya yönetici yetkisi verilmez.' });
+    if (g.kapsam.some((k) => /tüm|hepsi|yönetici|admin|\*/i.test(k))) return y.code(400).send({ hata: 'Güvenliğiniz için yetki kapsamını dar tanımlamanızı rica ederiz; tüm sistem veya yönetici yetkisi bu yolla verilmemektedir.' });
     const r = (await b.db.query(`INSERT INTO hizmet_hesabi (hesap_adi, saglayici, kisi, kapsam, cok_faktorlu, destek_yontemi, alt_saglayicilar, sozlesme_bitis, kaydeden_ref) VALUES ($1,$2,$3,$4,true,$5,$6,$7,$8) ON CONFLICT (hesap_adi) DO NOTHING RETURNING kimlik`, [g.hesapAdi!.trim(), g.saglayici!.trim(), g.kisi!.trim(), g.kapsam.filter(dolu).map((x) => x.trim()), g.destekYontemi, (g.altSaglayicilar ?? []).filter(dolu).map((x) => x.trim()), g.sozlesmeBitis, o.kullanici])).rows[0];
     if (!r) return y.code(409).send({ hata: 'Bu hesap adı kullanılmaktadır.' });
     await kartAc(b.db, { tur: 'Hizmet Hesabı Onayı', kategori: 'gorev', baslik: `${g.saglayici!.trim()} · ${g.hesapAdi!.trim()} · Hesap Onayı`, sahipRol: await rolId(b.db, 'Bilgi İşlem Müdürü'), nesneTuru: 'Hizmet Hesabı', nesneKimligi: r.kimlik });
@@ -191,7 +191,7 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
   });
   s.post('/hizmet-hesabi/:id/onay', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; if (!UUID.test(id) || !(await rolde(o.kullanici, ONAY))) return yok(y);
-    if (!(await b.db.query(`UPDATE hizmet_hesabi SET durum = 'Aktif', onaylayan_ref = $2 WHERE kimlik = $1 AND durum = 'Onayda' AND kaydeden_ref <> $2`, [id, o.kullanici])).rowCount) return y.code(409).send({ hata: 'Hesap onayda değil veya kaydeden kendi kaydını onaylayamaz.' });
+    if (!(await b.db.query(`UPDATE hizmet_hesabi SET durum = 'Aktif', onaylayan_ref = $2 WHERE kimlik = $1 AND durum = 'Onayda' AND kaydeden_ref <> $2`, [id, o.kullanici])).rowCount) return y.code(409).send({ hata: 'Hesap onayda değildir veya kaydı kendiniz girdiniz; onayın başka bir yetkili tarafından verilmesini rica ederiz.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Hizmet Hesabı Onayı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     await iz(i, 'Hizmet Hesabı Onaylandı', 'Hizmet Hesabı', id); return { tamam: true };
   });
@@ -222,7 +222,7 @@ export function surumHizmetYollari(s: FastifyInstance, b: Baglam) {
   s.post('/dis-erisim/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { onay?: boolean };
     if (!UUID.test(id) || !(await rolde(o.kullanici, ONAY))) return yok(y);
-    if (!(await b.db.query(`UPDATE dis_erisim_izni SET durum = $3, onaylayan_ref = $2 WHERE kimlik = $1 AND durum = 'Onayda' AND talep_eden_ref <> $2 AND bitis > now()`, [id, o.kullanici, g.onay ? 'Aktif' : 'Reddedildi'])).rowCount) return y.code(409).send({ hata: 'Talep onayda değil, süresi geçmiş veya talep eden kendi talebini onaylayamaz.' });
+    if (!(await b.db.query(`UPDATE dis_erisim_izni SET durum = $3, onaylayan_ref = $2 WHERE kimlik = $1 AND durum = 'Onayda' AND talep_eden_ref <> $2 AND bitis > now()`, [id, o.kullanici, g.onay ? 'Aktif' : 'Reddedildi'])).rowCount) return y.code(409).send({ hata: 'Talep onayda değildir, süresi geçmiştir veya talebi kendiniz açtınız; onayın başka bir yetkili tarafından verilmesini rica ederiz.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Dış Erişim Onayı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     await iz(i, g.onay ? 'Dış Erişim Onaylandı' : 'Dış Erişim Reddedildi', 'Dış Erişim', id); return { tamam: true };
   });

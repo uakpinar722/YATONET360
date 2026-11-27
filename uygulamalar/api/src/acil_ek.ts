@@ -427,10 +427,10 @@ export function acilEkYollari(s: FastifyInstance, b: Baglam) {
     const k = (await b.db.query(`SELECT * FROM kurtarma_operasyonu WHERE kimlik = $1`, [id])).rows[0];
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
     if (k.baslama_zamani) return y.code(409).send({ hata: 'Operasyon başlamıştır.' });
-    if (!k.acil && (!k.yat_sahibi_onay_zamani || !k.firma_onay_zamani || !k.koordinator_onay_zamani)) return y.code(409).send({ hata: 'Üç tarafın kodlu onayı tamamlanmadan iş başlamaz.' });
+    if (!k.acil && (!k.yat_sahibi_onay_zamani || !k.firma_onay_zamani || !k.koordinator_onay_zamani)) return y.code(409).send({ hata: 'Üç tarafın kodlu onayı tamamlandığında iş başlayacaktır.' });
     if (DALIS.includes(k.hizmet_turu)) {
       const ok = [g.limanIzni, g.dalisPlani, g.enerjiIzolasyonu].every((x) => x && UUID.test(x));
-      if (!ok) return y.code(409).send({ hata: 'Liman izni, dalış planı ve enerji izolasyonu kaydı olmadan dalış görevi başlatılamaz.' });
+      if (!ok) return y.code(409).send({ hata: 'Liman izni, dalış planı ve enerji izolasyonu kaydı tamamlandığında güvenliğiniz için dalış görevi başlatılabilir.' });
     }
     await b.db.query(`UPDATE kurtarma_operasyonu SET baslama_zamani = now(), liman_izni_belge = $2, dalis_plani_belge = $3, enerji_izolasyon_belge = $4 WHERE kimlik = $1`, [id, g.limanIzni ?? null, g.dalisPlani ?? null, g.enerjiIzolasyonu ?? null]);
     return { tamam: true };

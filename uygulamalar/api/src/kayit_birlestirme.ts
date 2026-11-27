@@ -57,7 +57,7 @@ export function kayitBirlestirmeYollari(s: FastifyInstance, b: Baglam) {
     const tur = g.tur;
     const [a, e] = [await satir(tur, g.ana), await satir(tur, g.eski)];
     if (!a || !e || a.birlestirilen_ana_ref || e.birlestirilen_ana_ref) return y.code(404).send({ hata: 'Kayıt bulunamadı veya daha önce birleştirilmiş.' });
-    if (tur === 'firma_ekipmani' && a.kurulus_ref !== e.kurulus_ref) return y.code(409).send({ hata: 'Farklı firmaların ekipmanı birleştirilemez.' });
+    if (tur === 'firma_ekipmani' && a.kurulus_ref !== e.kurulus_ref) return y.code(409).send({ hata: 'Yalnız aynı firmanın ekipman kayıtlarını birleştirmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

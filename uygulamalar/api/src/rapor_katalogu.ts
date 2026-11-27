@@ -83,7 +83,7 @@ export function raporKataloguYollari(s: FastifyInstance, b: Baglam) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(g.yururluk ?? '') || g.yururluk! < bugun()) return y.code(400).send({ hata: 'Yürürlük tarihi bugün veya sonrası olmalıdır.' });
     if (eski && (!dolu(g.degisiklikNotu) || !dolu(g.karsilastirmaEtkisi))) return y.code(400).send({ hata: 'Yeni sürümde değişiklik notu ve önceki dönemlerle karşılaştırma etkisi zorunludur.' });
     if (!(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1`, [g.sahipRol!.trim()])).rowCount) return y.code(400).send({ hata: 'Sahip, Rol Kataloğundaki bir rol olmalıdır.' });
-    if ((await b.db.query(`SELECT 1 FROM rapor_tanimi WHERE lower(ad) = lower($1) AND kod <> $2 AND durum <> 'Yerine Geçti'`, [g.ad!.trim(), g.kod])).rowCount) return y.code(409).send({ hata: 'Aynı ad başka bir rapor veya göstergede kullanılmaktadır; aynı ad farklı hesapla kullanılamaz.' });
+    if ((await b.db.query(`SELECT 1 FROM rapor_tanimi WHERE lower(ad) = lower($1) AND kod <> $2 AND durum <> 'Yerine Geçti'`, [g.ad!.trim(), g.kod])).rowCount) return y.code(409).send({ hata: 'Aynı ad başka bir rapor veya göstergede kullanılmaktadır; farklı hesap için başka bir ad seçmenizi rica ederiz.' });
     if ((await b.db.query(`SELECT 1 FROM rapor_tanimi WHERE kod = $1 AND durum = 'Planlandı'`, [g.kod])).rowCount) return y.code(409).send({ hata: 'Bu kodun yürürlüğü bekleyen bir sürümü vardır.' });
     const surum = (eski?.surum ?? 0) + 1; const hemen = g.yururluk === bugun() || !eski;
     const c = await b.db.connect();

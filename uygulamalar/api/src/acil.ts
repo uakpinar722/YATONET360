@@ -469,7 +469,7 @@ export function acilYollari(s: FastifyInstance, b: Baglam) {
     if (!g.firma || !g.kanal?.trim() || !g.kisi?.trim() || !g.talimat?.trim()) return y.code(400).send({ hata: 'Firma, kanal, kişi ve talimat zorunludur.' });
     // YG-1456: temas saati ve firmanın kabul saati ayrı alandır; girilmezse kayıt anı esas alınır.
     const temas = g.temasSaati ? new Date(g.temasSaati) : null; const kabul = g.kabulSaati ? new Date(g.kabulSaati) : new Date();
-    if ((temas && Number.isNaN(temas.getTime())) || Number.isNaN(kabul.getTime()) || kabul.getTime() > Date.now() + 300_000 || (temas && temas > kabul)) return y.code(400).send({ hata: 'Temas ve kabul saati geçerli olmalı; kabul saati temastan önce ve ileri bir tarih olamaz.' });
+    if ((temas && Number.isNaN(temas.getTime())) || Number.isNaN(kabul.getTime()) || kabul.getTime() > Date.now() + 300_000 || (temas && temas > kabul)) return y.code(400).send({ hata: 'Temas ve kabul saatini geçerli girmenizi rica ederiz; kabul saati temastan sonra ve bugün veya geçmiş bir tarih olmalıdır.' });
     // YG-272: elle kabulde de firma sicilde aktif, onaylı Çözüm Ortağı ve Çerçeve Sözleşmesi yürürlükte olmalıdır.
     if (!UUID.test(g.firma) || !(await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND kayit_rolu = 'Çözüm Ortağı' AND ag_statusu = 'Aktif' AND kayit_asamasi IN ('Onaylı', 'Koşullu Onaylı')`, [g.firma])).rowCount) return y.code(409).send({ hata: 'Acil iş yalnız sicilde aktif ve onaylı Çözüm Ortağına verilir.' });
     { const se = await (await import('./alacak.js')).sozlesmeEngeli(b.db, g.firma); if (se) return y.code(409).send({ hata: se }); }

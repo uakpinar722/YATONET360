@@ -237,7 +237,7 @@ export function sahaKayitYollari(s: FastifyInstance, b: Baglam) {
     if (g.ekTest !== undefined) {
       const et = UUID.test(g.ekTest) ? (await b.db.query(`SELECT sonuc FROM test_kaydi WHERE kimlik = $1 AND dosya_ref = $2`, [g.ekTest, e.dosya_ref])).rows[0] : undefined;
       if (!et) return y.code(400).send({ hata: 'Ek test bu dosyanın test kayıtları arasından seçilmelidir.' });
-      if (!et.sonuc && g.karar !== 'İşi Durdur') return y.code(409).send({ hata: 'Ek test sonucu girilmeden sapma kararı verilemez; gerekirse işi durdurunuz.' });
+      if (!et.sonuc && g.karar !== 'İşi Durdur') return y.code(409).send({ hata: 'Ek test sonucunu girdikten sonra sapma kararı verebilirsiniz; gerekirse işi durdurunuz.' });
     }
     const c = await b.db.connect();
     try {

@@ -293,7 +293,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (g.ag && g.ag !== mevcut) {
       const SIRA = ['Aktif', 'Kısıtlı', 'Geçici Askıda', 'Askıda', 'Çıkarıldı'];
       if (g.ag === 'Pasif') {
-        if (mevcut !== 'Aktif') return y.code(409).send({ hata: 'Pasif statüsüne yalnız Aktif firmadan geçilir; yaptırım statüsündeki firma Pasif yapılmaz.' });
+        if (mevcut !== 'Aktif') return y.code(409).send({ hata: 'Pasif statüsüne yalnız Aktif firmadan geçilmektedir; yaptırım statüsündeki firma için önce yaptırımın sonuçlanmasını rica ederiz.' });
         if (!['Firma Talebi', 'Hareketsizlik'].includes(g.pasifNedeni ?? '')) return y.code(400).send({ hata: 'Pasif nedenini seçiniz: Firma Talebi veya Hareketsizlik.' });
       } else if (mevcut && mevcut !== 'Pasif' && SIRA.indexOf(g.ag) >= 0 && SIRA.indexOf(mevcut) > 0 && SIRA.indexOf(g.ag) < SIRA.indexOf(mevcut)) {
         if (mevcut === 'Çıkarıldı') return y.code(409).send({ hata: 'Ağdan çıkarılan firma yeniden aday kaydıyla başvurur.' });
@@ -303,10 +303,10 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     // YG-361: kayıt aşaması doğrulanmadan (İncelemede) Onaylı veya Koşullu Onaylı yapılamaz.
     if ((g.asama === 'Onaylı' || g.asama === 'Koşullu Onaylı')) {
       const as = (await b.db.query(`SELECT kayit_asamasi FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.kayit_asamasi as string | undefined;
-      if (as && !['İncelemede', 'Onaylı', 'Koşullu Onaylı'].includes(as)) return y.code(409).send({ hata: 'Firma belgeleri doğrulanıp kayıt İncelemede aşamasına alınmadan onaylanamaz.' });
+      if (as && !['İncelemede', 'Onaylı', 'Koşullu Onaylı'].includes(as)) return y.code(409).send({ hata: 'Onay için önce firma belgelerinin doğrulanıp kaydın İncelemede aşamasına alınmasını rica ederiz.' });
     }
     // YG-361: açık Emniyet işaretli uygunsuzluğu olan firmaya Tercihli risk derecesi verilmez.
-    if (g.risk === 'Tercihli' && (await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND emniyet_isareti AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık emniyet uygunsuzluğu bulunan firmaya Tercihli risk derecesi verilemez.' });
+    if (g.risk === 'Tercihli' && (await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND emniyet_isareti AND statu NOT IN ('Kapalı', 'Geçersiz') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Açık emniyet uygunsuzluğu kapanmadan firmaya Tercihli risk derecesi verilmesi mümkün değildir; önce uygunsuzluğun kapanmasını rica ederiz.' });
     // YG-1659, K-178: Koşullu Onaylı ve Reddedildi önerisinde Hukuk ve Uyum görüşü alınır; bağlayıcı değildir, kademe sayılmaz.
     if ((g.asama === 'Koşullu Onaylı' || g.asama === 'Reddedildi') && !(await b.db.query(`UPDATE firma_hukuk_gorusu SET durum = 'Kullanıldı' WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi' RETURNING kimlik`, [id, g.asama])).rowCount) return y.code(409).send({ hata: 'Hukuk ve Uyum görüşü bekleniyor.' });
     if ((g.ag === 'Askıda' || g.ag === 'Çıkarıldı') && !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND r.rol_adi = 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü'`, [o.kullanici])).rowCount) return y.code(403).send({ hata: 'Kalıcı askı ve ağdan çıkarma Direktör kararıdır.' });
@@ -473,7 +473,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     { const u = await import('./uyum.js'); for (const ol of u.isEmriUyumOlaylari(g.kapsam!)) { const ue = await u.uyumEngeli(b.db, ol, 'Dosya', id, d.oncelik === 'Kritik'); if (ue) return y.code(409).send({ hata: ue }); } }
     // YG-306: görevlendirme kontrolü; Ret engeller, Koşullu Kabul uyarıyla geçer.
     // YG-1486: yurt dışındaki yatta keşfi LGM Teknik Uzmanı yapar; firmaya keşif iş emri verilmez.
-    if (g.tur === 'KN' && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND yurt_disi`, [id])).rowCount) return y.code(409).send({ hata: 'Yurt dışındaki yatta keşif LGM Teknik Uzmanınca yapılır; keşif iş emri açılmaz.' });
+    if (g.tur === 'KN' && (await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND yurt_disi`, [id])).rowCount) return y.code(409).send({ hata: 'Yurt dışındaki yatta keşif LGM Teknik Uzmanınca yapılmaktadır; keşif iş emri açılmasına gerek yoktur.' });
     // YG-309: işin yürütüleceği tesis firmaya ait olmalıdır.
     const tesis = (g as { tesis?: string }).tesis || null;
     if (tesis && !(UUID.test(tesis) && (await b.db.query(`SELECT 1 FROM firma_tesisi WHERE kimlik = $1 AND kurulus_ref = $2`, [tesis, g.firma])).rowCount)) return y.code(400).send({ hata: 'Tesis seçilen firmaya ait değildir.' });
@@ -501,7 +501,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
       // YG-324: yalnız onaylanan paketler seçilir.
       kalemler = (await b.db.query(`SELECT k.kimlik, k.aciklama, k.miktar, k.birim, k.satir_ref, coalesce(s.teknik_pay, 0) teknik_pay, k.olculemez FROM fiyat_teklifi_kalemi k LEFT JOIN kapsam_satiri s ON s.kimlik = k.satir_ref WHERE k.teklif_ref = $1 AND k.onay_durumu = 'Onaylandı' AND k.bedel_turu <> 'Masraf' AND ($2::int[] IS NULL OR k.sira_no = ANY($2)) ORDER BY k.sira_no` /* YG-1770: tesis bedeli (Masraf) iş emrine girmez */, [g.teklif, g.siralar ?? null])).rows;
       if (!kalemler.length) return y.code(409).send({ hata: 'Seçilebilecek onaylı kalem yoktur.' });
-      if (g.bedel === undefined) return y.code(400).send({ hata: 'Mali limit boş olan iş emri yayımlanmaz.' }); // YG-323
+      if (g.bedel === undefined) return y.code(400).send({ hata: 'Mali limiti girdikten sonra iş emrini yayımlayabilirsiniz.' }); // YG-323
     }
     // YG-211: sigortasız dosyada keşif, Keşif ve Söküm İzni onaylanmadan KN iş emri açılmaz.
     if (g.tur === 'KN' && d.dosya_niteligi !== 'Sigorta bağlantılı' && !(await b.db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod IN ('ONY-01', 'ONY-24') AND durum = 'Onaylandı'`, [id])).rowCount) return y.code(409).send({ hata: 'Keşif iş emri için yat sahibinin keşif izni bekleniyor.' });
@@ -720,7 +720,7 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     if (!e) return yok(y);
     const ds = (await b.db.query(`SELECT dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [e.dosya_ref])).rows[0].dosya_sorumlusu_ref;
     if (ds !== o.kullanici) return y.code(403).send({ hata: 'Firmanın işi bıraktığını Dosya Sorumlusu kaydeder.' });
-    if (!['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'].includes(e.statu)) return y.code(409).send({ hata: 'İş emri bu durumda kapatılamaz.' });
+    if (!['Kabul Bekliyor', 'Başlangıç Kontrolünde', 'Aktif', 'Çekinceli', 'Durduruldu'].includes(e.statu)) return y.code(409).send({ hata: 'İş emri bu durumda kapatmaya uygun değildir; iş emrinin durumunu kontrol etmenizi rica ederiz.' });
     if (!gerekce) return y.code(400).send({ hata: 'Gerekçe zorunludur.' });
     return islem(async (c) => {
       await c.query(`UPDATE is_emri SET statu = 'İptal', durdurma_nedeni = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [e.kimlik, `Firma işi bıraktı: ${gerekce}`]);

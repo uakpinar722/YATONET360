@@ -83,7 +83,7 @@ export function sureklilikOrtamYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (!(await roller(o.kullanici)).some((x) => BT.includes(x))) return yok(y);
     const g = (i.body ?? {}) as { ortam?: string; amac?: string; veriKapsami?: string; veriSahibiRol?: string; maskelemeYontemi?: string; geriDondurulemez?: boolean; disBaglantiKapali?: boolean; erisimBitis?: string };
     if (!['Test', 'Eğitim', 'Geliştirme'].includes(g.ortam ?? '') || !g.amac?.trim() || !g.veriKapsami?.trim() || !g.veriSahibiRol?.trim() || !g.maskelemeYontemi?.trim()) return y.code(400).send({ hata: 'Ortam, amaç, veri kapsamı, veri sahibi ve maskeleme yöntemi zorunludur.' });
-    if (g.geriDondurulemez !== true) return y.code(400).send({ hata: 'Üretim verisi alt ortama yalnız geri döndürülemez maskelemeyle kopyalanır.' });
+    if (g.geriDondurulemez !== true) return y.code(400).send({ hata: 'Güvenliğiniz için üretim verisi alt ortama yalnız geri döndürülemez maskelemeyle kopyalanmaktadır.' });
     if (g.disBaglantiKapali !== true) return y.code(400).send({ hata: 'Alt ortamın dış bağlantıları (e-posta, SMS, entegrasyonlar) kapalı olmalıdır.' });
     const bitis = g.erisimBitis ?? ''; const azami = new Date(Date.now() + 3 * 3_600_000 + 30 * 86_400_000).toISOString().slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(bitis) || bitis > azami || bitis < new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Erişim bitişi bugünden itibaren en çok 30 gün olmalıdır.' });
@@ -97,7 +97,7 @@ export function sureklilikOrtamYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; if (!UUID.test(id)) return yok(y);
     const g = (i.body ?? {}) as { onay?: boolean; gerekce?: string }; const r = await roller(o.kullanici);
     const k = (await b.db.query(`SELECT * FROM alt_ortam_kopyasi WHERE kimlik = $1 AND durum = 'Onayda'`, [id])).rows[0]; if (!k) return yok(y);
-    if (k.talep_eden_ref === o.kullanici) return y.code(403).send({ hata: 'Talep eden kendi talebini onaylayamaz.' });
+    if (k.talep_eden_ref === o.kullanici) return y.code(403).send({ hata: 'Talebinizin onayı başka bir yetkiliye aittir.' });
     const alan = r.includes(k.veri_sahibi_rol) && !k.veri_sahibi_onay_ref ? 'veri_sahibi_onay_ref' : r.some((x) => GUVENLIK.includes(x)) && !k.guvenlik_onay_ref ? 'guvenlik_onay_ref' : null;
     if (!alan) return yok(y);
     if (!g.onay) { if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Ret gerekçesi zorunludur.' }); await b.db.query(`UPDATE alt_ortam_kopyasi SET durum = 'Reddedildi' WHERE kimlik = $1`, [id]); await iz(i, 'Alt Ortam Veri Kopyası Reddedildi', 'Alt Ortam Kopyası', id, g.gerekce); return { durum: 'Reddedildi' }; }

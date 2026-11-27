@@ -137,7 +137,7 @@ export function yatYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tarafNo?: string; devirTarihi?: string; dayanak?: string };
     if (!UUID.test(id)) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     if (!g.tarafNo?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.devirTarihi ?? '') || !g.dayanak?.trim()) return y.code(400).send({ hata: 'Yeni sahibin taraf numarası, devir tarihi ve dayanak belge (satış sözleşmesi, ruhsat vb.) zorunludur.' });
-    if (g.devirTarihi! > new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Devir tarihi ileri bir tarih olamaz.' });
+    if (g.devirTarihi! > new Date().toISOString().slice(0, 10)) return y.code(400).send({ hata: 'Devir tarihini bugün veya geçmiş bir tarih olarak girmenizi rica ederiz.' });
     const yt = (await b.db.query(`SELECT yat_adi, yat_sahibi_ref FROM yat WHERE kimlik = $1`, [id])).rows[0]; if (!yt) return y.code(404).send({ hata: 'Yat kaydı bulunamadı; bilgileri kontrol etmenizi rica ederiz.' });
     const t = (await b.db.query(`SELECT kimlik, unvan_ad_soyad FROM taraf WHERE taraf_no = $1 AND durum = 'Aktif'`, [g.tarafNo.trim()])).rows[0];
     if (!t) return y.code(400).send({ hata: 'Bu numarada aktif taraf kaydı bulunamadı.' });

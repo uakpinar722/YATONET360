@@ -117,6 +117,7 @@ zamanla('Belge ve Bütçe Dönemi', 'belge yürürlük, bütçe dönemi, müsait
 zamanla('Dosya Süreleri', 'dosya süre uyarıları ve eskalasyonları', 60_000, () => [sureIsle(db)]);
 // YG-1652: sistem öz denetimi; sıklık gününde 02:00'de.
 zamanla('Sistem Öz Denetimi', 'sistem öz denetim raporu', 3_600_000, () => [import('./oz_denetim.js').then((m) => m.ozDenetimZamanla(db))]);
+zamanla('Neden? Metni Görevleri', 'öncelikli onay işleri için Neden? metni hazırlık görevleri (HG-2)', 3_600_000, () => [import('./neden_metni.js').then((m) => m.nedenGorevleriAc(db))]);
 zamanla('Ana Veri Etkisi', 'ana veri değişikliği görevleri', 3_600_000, () => [import('./ana_veri_etki.js').then((m) => m.anaVeriEtkiIsle(db))]); // YG-1240
 zamanla('Beklemedeki Dosyalar', 'beklemedeki dosya ve belge süresi görevleri', 3_600_000, () => [beklemedeIsle(db), import('./dosya.js').then((m) => m.belgeSuresiIsle(db))]); // YG-1440
 zamanla('Teklif ve Sözleşme Süreleri', 'teklif geçerlilik ve sözleşme süre uyarıları', 3_600_000, () => [teklifSureIsle(db), sozlesmeSureIsle(db)]); // YG-147

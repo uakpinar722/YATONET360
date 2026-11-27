@@ -67,7 +67,7 @@ export function vergiYollari(s: FastifyInstance, b: Baglam) {
     if (!(await mfmMi(b.db, o.kullanici))) return y.code(403).send({ hata: 'Vergi profilini Muhasebe ve Finans Müdürü kaydeder.' });
     if (!g.sigortaci?.trim() || !g.yururluk || !['Standart KDV', 'KDV tevkifatlı'].includes(g.uygulama ?? '')) return y.code(400).send({ hata: 'Sigorta şirketi, KDV uygulaması ve yürürlük tarihini girmenizi rica ederiz.' });
     if (g.uygulama === 'KDV tevkifatlı' && !(Number(g.pay) > 0 && Number(g.payda) > 0 && Number(g.pay) <= Number(g.payda))) return y.code(400).send({ hata: 'Tevkifat oranını pay ve payda olarak girmenizi rica ederiz.' });
-    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Mali müşavir görüşü veya özelge olmadan profil kaydedilmez.' });
+    if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'Profili kaydetmek için mali müşavir görüşünü veya özelgeyi eklemenizi rica ederiz.' });
     const v = g.uygulama === 'KDV tevkifatlı';
     const r = await b.db.query(`INSERT INTO sigorta_vergi_profili (sigortaci_adi, kdv_uygulamasi, tevkifat_pay, tevkifat_payda, yururluk, dayanak_belge_ref, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (sigortaci_adi, yururluk) DO NOTHING RETURNING kimlik`, [g.sigortaci.trim(), g.uygulama, v ? g.pay : null, v ? g.payda : null, g.yururluk, g.belge, o.kullanici]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Bu yürürlük tarihiyle profil kayıtlıdır.' });
@@ -92,7 +92,7 @@ export function vergiYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     const d = (await b.db.query(`SELECT dosya_no, dosya_niteligi, yazisma_dili, dosya_sorumlusu_ref FROM dosya WHERE kimlik = $1`, [id])).rows[0];
     if (d.dosya_sorumlusu_ref !== o.kullanici && !(await rolVar(o.kullanici, TICARI))) return y.code(403).send({ hata: 'Keşif Teklifini Dosya Sorumlusu veya Ticari Sorumlu gönderir.' });
-    if (d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada yat sahibinden keşif onayı alınmaz.' });
+    if (d.dosya_niteligi === 'Sigorta bağlantılı') return y.code(409).send({ hata: 'Sigortalı dosyada yat sahibinden keşif onayı alınmasına gerek yoktur.' });
     if ((await b.db.query(`SELECT 1 FROM onay_talebi WHERE dosya_ref = $1 AND ony_kod = 'ONY-24' AND durum IN ('Bekliyor', 'Onaylandı') LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Bu dosyada Keşif Teklifi onayı bulunmaktadır.' });
     const t = (await b.db.query(`SELECT kimlik, kisi_adi_soyadi, telefon, eposta, kullanici_ref FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif ORDER BY (telefon IS NOT NULL OR eposta IS NOT NULL) DESC LIMIT 1`, [id])).rows[0];
     if (!t?.telefon && !t?.eposta) return y.code(409).send({ hata: 'Yat sahibinin iletişim bilgisi bulunamadı.' });

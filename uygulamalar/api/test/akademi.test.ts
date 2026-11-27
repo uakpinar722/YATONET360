@@ -59,3 +59,13 @@ describe('Neden? metinleri (YG-1387)', () => {
     expect((await o.ist('GET', '/api/neden?tur=Kalite%20Plan%C4%B1', ds)).json()).toEqual({ metin: 'Gerekçe deneme metni', belgeBolumu: 'Bölüm 1' });
   });
 });
+
+describe('Neden? metni görevleri (HG-2)', () => {
+  it('metni olmayan öncelikli iş türleri için Hukuk ve Uyum Direktörüne bir kez görev açılır; metin gönderilince görev kapanır', async () => {
+    const { nedenGorevleriAc } = await import('../src/neden_metni.js');
+    expect(await nedenGorevleriAc(o.db)).toBe(4); expect(await nedenGorevleriAc(o.db)).toBe(0);
+    expect((await o.kart('Neden? Metni Hazırlığı', 'Fiyat Teklifi')).durum).toBe('Bekliyor');
+    expect((await o.ist('POST', '/api/neden-metni', await o.gir('hd'), { tur: 'Fiyat Teklifi', metin: 'Gerekçe' })).statusCode).toBe(200);
+    expect((await o.kart('Neden? Metni Hazırlığı', 'Fiyat Teklifi')).durum).toBe('Tamamlandı');
+  });
+});

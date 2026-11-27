@@ -44,7 +44,7 @@ export function islemKataloguYollari(s: FastifyInstance, b: Baglam) {
     if (!g.kod?.trim() || !(g.duzey! in SIRA) || !g.ad?.trim()) return y.code(400).send({ hata: 'Kod, düzey ve ad zorunludur.' });
     const kod = g.kod.trim().toLocaleUpperCase('tr');
     const ust = g.duzey === 'Ana Branş' ? null : g.duzey === 'İşlem' ? kod.replace(/-I\d{2}$/, '') : kod.replace(/\.\d{2}$/, '');
-    if ((await b.db.query(`SELECT 1 FROM brans_kodu WHERE kod = $1`, [kod])).rowCount) return y.code(409).send({ hata: 'Bu kod kullanılmıştır; yürürlükten kalkmış olsa da yeniden verilemez.' });
+    if ((await b.db.query(`SELECT 1 FROM brans_kodu WHERE kod = $1`, [kod])).rowCount) return y.code(409).send({ hata: 'Bu kod daha önce kullanılmıştır; karışıklığı önlemek için yürürlükten kalkmış olsa da yeniden verilemez, yeni bir kod seçmenizi rica ederiz.' });
     if (ust && !(await b.db.query(`SELECT 1 FROM brans_kodu WHERE kod = $1 AND durum = 'Yürürlükte'`, [ust])).rowCount) return y.code(400).send({ hata: 'Üst kod katalogda yürürlükte değildir.' });
     try { await b.db.query(`INSERT INTO brans_kodu (kod, duzey, ad, ust_kod, kaynak) VALUES ($1,$2,$3,$4,'YATONET 360')`, [kod, g.duzey, g.ad.trim(), ust]); }
     catch { return y.code(400).send({ hata: 'Kod biçimi düzeye uymuyor (ANA-NN / .NN / .NN / -INN).' }); }
@@ -55,7 +55,7 @@ export function islemKataloguYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { kod } = i.params as { kod: string }; const g = (i.body ?? {}) as { gerekce?: string };
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2::text[])`, [o.kullanici, YONETIR])).rowCount) return yok(y);
     if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Kaldırma gerekçesi zorunludur.' });
-    if ((await b.db.query(`SELECT 1 FROM brans_kodu WHERE ust_kod = $1 AND durum = 'Yürürlükte'`, [kod])).rowCount) return y.code(409).send({ hata: 'Altında yürürlükte kod bulunan kod kaldırılamaz.' });
+    if ((await b.db.query(`SELECT 1 FROM brans_kodu WHERE ust_kod = $1 AND durum = 'Yürürlükte'`, [kod])).rowCount) return y.code(409).send({ hata: 'Altında yürürlükte kod bulunduğundan bu kodu kaldırmadan önce alt kodları kapatmanızı rica ederiz.' });
     const r = await b.db.query(`UPDATE brans_kodu SET durum = 'Yürürlükten Kalktı', kaldirma_gerekcesi = $2, kaldiran_ref = $3 WHERE kod = $1 AND durum = 'Yürürlükte'`, [kod, g.gerekce.trim(), o.kullanici]);
     if (!r.rowCount) return yok(y);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Branş Kodu Yürürlükten Kaldırıldı', nesneTuru: 'Branş Kodu', nesneKimligi: kod, gerekce: g.gerekce, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

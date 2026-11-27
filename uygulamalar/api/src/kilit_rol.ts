@@ -56,7 +56,7 @@ export function kilitRolYollari(s: FastifyInstance, b: Baglam) {
     if (!(await iclMi(g.aday)) || (g.vekil && !(await iclMi(g.vekil)))) return y.code(400).send({ hata: 'Aday ve vekil LGM personeli olmalıdır.' });
     if ((await b.db.query(`SELECT 1 FROM kilit_rol_talebi WHERE rol_ref = $1 AND durum = 'Onayda'`, [g.rol])).rowCount) return y.code(409).send({ hata: 'Bu rol için onayda bekleyen talep vardır.' });
     const bos = !(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.rol_ref = $1 AND a.atama_durumu = 'Aktif' AND (a.bitis_tarihi IS NULL OR a.bitis_tarihi >= current_date) AND h.hesap_durumu = 'Aktif'`, [g.rol])).rowCount;
-    if (g.vekil && !bos) return y.code(400).send({ hata: 'Rol dolu olduğundan geçici vekil atanmaz.' });
+    if (g.vekil && !bos) return y.code(400).send({ hata: 'Rol dolu olduğundan geçici vekil atamasına gerek yoktur.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

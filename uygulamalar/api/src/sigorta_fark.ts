@@ -40,7 +40,7 @@ export function sigortaFarkYollari(s: FastifyInstance, b: Baglam) {
     if (t.sigorta_odenecek_eur !== null) return y.code(409).send({ hata: 'Bu teklif için tutar girilmiştir.' });
     if (await isEmriVar(t.kimlik)) return y.code(409).send({ hata: 'İş emri açılmıştır; kapsam değişikliği değişiklik akışından yürütülür.' });
     const tutar = Number(g.tutar); const top = await onayli(t.kimlik);
-    if (!(tutar >= 0) || g.tutar === undefined || g.tutar === '' || tutar > top) return y.code(400).send({ hata: 'Tutar geçersizdir; onaylı toplamı aşamaz.' });
+    if (!(tutar >= 0) || g.tutar === undefined || g.tutar === '' || tutar > top) return y.code(400).send({ hata: 'Tutar geçersizdir; onaylı toplamı aşmayacak bir tutar girmenizi rica ederiz.' });
     const fark = R2(top - tutar);
     const c = await b.db.connect();
     try {
@@ -61,7 +61,7 @@ export function sigortaFarkYollari(s: FastifyInstance, b: Baglam) {
     const kap = g.kapsamdan ?? []; const ayri = g.ayri ?? [];
     // Muafiyet yat sahibinden alınmaz; tutar sigorta alacağı olarak kalır, kapsam değişmez.
     if (g.neden === 'Muafiyet' && (kap.length || ayri.length)) return y.code(400).send({ hata: 'Bu nedenle kalem seçilmez; tutar sigorta alacağı olarak izlenir.' });
-    if (new Set([...kap, ...ayri]).size !== kap.length + ayri.length) return y.code(400).send({ hata: 'Bir kalem iki kez seçilemez.' });
+    if (new Set([...kap, ...ayri]).size !== kap.length + ayri.length) return y.code(400).send({ hata: 'Bu kalem zaten seçilmiştir; her kalemi bir kez seçmenizi rica ederiz.' });
     const secili = kap.length + ayri.length ? (await b.db.query(`SELECT sira_no, tutar_eur FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND onay_durumu = 'Onaylandı' AND sira_no = ANY($2::int[])`, [t.kimlik, [...kap, ...ayri]])).rows : [];
     if (secili.length !== kap.length + ayri.length) return y.code(400).send({ hata: 'Seçilen kalem onaylı kalemler arasında değildir.' });
     const toplam = R2(secili.reduce((a, k) => a + Number(k.tutar_eur), 0)); const fark = Number(t.odeme_farki_eur);

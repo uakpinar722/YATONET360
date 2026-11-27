@@ -137,7 +137,7 @@ export function ilkGirisYollari(s: FastifyInstance, b: Baglam) {
   /** Rıza isteğe bağlıdır; boş seçim de geçerlidir ve hizmeti etkilemez (YG-1207, KVKK-10). */
   s.post('/ilk-giris/izinler', serbest, async (i, y) => {
     const o = i.oturum!; const h = await grubuAl(o.kullanici);
-    if (!izinAdimiVar(h.kullanici_grubu)) return y.code(409).send({ hata: 'Kurumsal kullanıcıdan açık rıza istenmez.' });
+    if (!izinAdimiVar(h.kullanici_grubu)) return y.code(409).send({ hata: 'Kurumsal kullanıcı için açık rıza adımı bulunmamaktadır.' });
     const g = (i.body ?? {}) as { amaclar?: string[]; kanallar?: string[]; ozelGunler?: string[] };
     const kayitlar: [string, string | null, string | null][] = [];
     if (rizaBicimi(h.kullanici_grubu) === 'pazarlama') {

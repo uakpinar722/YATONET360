@@ -84,7 +84,7 @@ export function teyitYollari(s: FastifyInstance, b: Baglam) {
     if (o.grup !== 'LGM İç Rolü' || !UUID.test(id)) return yok(y);
     const t = (await b.db.query(`SELECT * FROM dis_degisiklik_talebi WHERE kimlik = $1 AND durum = 'Teyit Bekliyor'`, [id])).rows[0];
     if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
-    if (t.kaydeden_ref === o.kullanici) return y.code(409).send({ hata: 'Talebi kaydeden kişi teyit veremez.' });
+    if (t.kaydeden_ref === o.kullanici) return y.code(409).send({ hata: 'Teyidin, talebi kaydeden dışında bir kişi tarafından verilmesini rica ederiz.' });
     if (!['Teyit Edildi', 'Teyit Edilmedi'].includes(g.sonuc ?? '') || !g.telefon?.trim() || !g.not?.trim()) return y.code(400).send({ hata: 'Aranan numara, sonuç ve görüşme notu zorunludur.' });
     const tel = g.telefon.replace(/\D/g, '');
     const kayitli = (await b.db.query(`SELECT telefon FROM dosya_tarafi WHERE dosya_ref = $1 AND telefon IS NOT NULL AND aktif`, [t.dosya_ref])).rows.map((r) => String(r.telefon).replace(/\D/g, ''));

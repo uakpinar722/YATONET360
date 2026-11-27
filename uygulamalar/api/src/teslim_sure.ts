@@ -73,7 +73,7 @@ export function teslimSureYollari(s: FastifyInstance, b: Baglam) {
     if (!['Uzama Yok', 'Uzama Var'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Değerlendirme sonucunu seçiniz.' });
     const ek = Number(g.ekGun); const uz = g.sonuc === 'Uzama Var';
     if (uz && (!Number.isInteger(ek) || ek <= 0 || !g.gerekce?.trim())) return y.code(400).send({ hata: 'Uzamada ek iş günü ve gerekçe zorunludur.' });
-    if (uz && (await b.db.query(`SELECT 1 FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND position(lower(k.ticari_unvan) in lower($2)) > 0 LIMIT 1`, [id, g.gerekce])).rowCount) return y.code(400).send({ hata: 'Gerekçe taraflara iletilir; firma adı yazılamaz.' });
+    if (uz && (await b.db.query(`SELECT 1 FROM is_emri e JOIN kurulus k ON k.kimlik = e.kurulus_ref WHERE e.dosya_ref = $1 AND position(lower(k.ticari_unvan) in lower($2)) > 0 LIMIT 1`, [id, g.gerekce])).rowCount) return y.code(400).send({ hata: 'Gerekçe taraflara iletilecektir; firma adını yazmamanızı rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');

@@ -284,7 +284,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     // YG-1261: ilçe bilgisi kaynağıyla teyit edilir; teyit tarihi ve teyit eden tutulur.
     if (g.ilceTeyitKaynagi?.trim()) {
       const r = await b.db.query(`UPDATE kurulus SET ilce_teyit_zamani = now(), ilce_teyit_kaynagi = $2, ilce_teyit_eden_ref = $3 WHERE kimlik = $1 AND ilce IS NOT NULL RETURNING ilce`, [id, g.ilceTeyitKaynagi.trim(), o.kullanici]);
-      if (!r.rowCount) return y.code(409).send({ hata: 'Firmanın ilçe bilgisi girilmeden teyit yapılamaz.' });
+      if (!r.rowCount) return y.code(409).send({ hata: 'Teyit için önce firmanın ilçe bilgisini girmenizi rica ederiz.' });
     }
     if (g.marka?.trim()) await b.db.query(`INSERT INTO yetkili_servis (kurulus_ref, marka) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [id, g.marka.trim()]);
     if (g.cikarTaraf?.trim()) {
@@ -650,9 +650,9 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (!DENETIM_TURLERI.includes(g.tur ?? '') || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih ?? '') || !g.denetci || !g.riskGerekcesi?.trim()) return y.code(400).send({ hata: 'Denetim türü, tarih, denetçi ve risk gerekçesi zorunludur.' });
     const d = (await b.db.query(`SELECT kullanici_grubu, hesap_durumu FROM kullanici_hesabi WHERE kimlik = $1`, [g.denetci])).rows[0];
     if (d?.kullanici_grubu !== 'LGM İç Rolü' || d.hesap_durumu !== 'Aktif') return y.code(400).send({ hata: 'Denetçi aktif LGM personeli olmalıdır.' });
-    if (!g.cikarYok) return y.code(409).send({ hata: 'Denetçinin firmayla çıkar çatışması olmadığı beyan edilmeden denetim planlanmaz.' });
+    if (!g.cikarYok) return y.code(409).send({ hata: 'Denetimi planlamak için önce denetçinin firmayla çıkar çatışması olmadığını beyan etmesini rica ederiz.' });
     // Başvuru kabulünü yapan veya firmanın karar önerisini hazırlayan kişi aynı firmanın denetçisi olmaz.
-    if ((await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND olusturan_ref = $2 UNION SELECT 1 FROM firma_karar_onerisi WHERE kurulus_ref = $1 AND hazirlayan_ref = $2 AND durum <> 'Reddedildi' LIMIT 1`, [id, g.denetci])).rowCount) return y.code(409).send({ hata: 'Firmanın başvurusunu kabul eden veya karar önerisini hazırlayan kişi denetçi olamaz.' });
+    if ((await b.db.query(`SELECT 1 FROM kurulus WHERE kimlik = $1 AND olusturan_ref = $2 UNION SELECT 1 FROM firma_karar_onerisi WHERE kurulus_ref = $1 AND hazirlayan_ref = $2 AND durum <> 'Reddedildi' LIMIT 1`, [id, g.denetci])).rowCount) return y.code(409).send({ hata: 'Görev ayrılığı gereği denetçinin, firmanın başvurusunu kabul eden veya karar önerisini hazırlayan kişi dışından seçilmesini rica ederiz.' });
     const f = (await b.db.query(`SELECT sicil_no, ticari_unvan FROM kurulus WHERE kimlik = $1`, [id])).rows[0]; if (!f) return yok(y);
     const r = (await b.db.query(`INSERT INTO firma_denetim_plani (kurulus_ref, tur, planlanan_tarih, denetci_ref, risk_gerekcesi, planlayan_ref) VALUES ($1,$2,$3,$4,$5,$6) RETURNING kimlik`, [id, g.tur, g.tarih, g.denetci, g.riskGerekcesi.trim(), o.kullanici])).rows[0].kimlik;
     await kartAc(b.db, { tur: 'Firma Denetimi', kategori: 'gorev', baslik: `${f.sicil_no} · ${f.ticari_unvan} · ${g.tur} Denetimi`, ozet: g.riskGerekcesi.trim().slice(0, 200), sahipKullanici: g.denetci, sonZaman: new Date(`${g.tarih}T17:00:00+03:00`), nesneTuru: 'Firma Denetimi', nesneKimligi: r });
@@ -664,7 +664,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await rolVar(o.kullanici, [FYMY, FYY]))) return yok(y);
     if (!g.gerekce?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(g.yeniTarih ?? '')) return y.code(400).send({ hata: 'Erteleme gerekçesi ve yeni tarih zorunludur.' });
     const r = await b.db.query(`UPDATE firma_denetim_plani SET planlanan_tarih = $2, son_erteleme_gerekcesi = $3, erteleme_sayisi = erteleme_sayisi + 1 WHERE kimlik = $1 AND durum = 'Planlandı' AND $2::date > planlanan_tarih RETURNING kimlik`, [id, g.yeniTarih, g.gerekce.trim()]);
-    if (!r.rowCount) return y.code(409).send({ hata: 'Yeni tarih planlanan tarihten sonra olmalı; tamamlanan denetim ertelenmez.' });
+    if (!r.rowCount) return y.code(409).send({ hata: 'Yeni tarih planlanan tarihten sonra olmalıdır; tamamlanan denetim için erteleme gerekmemektedir.' });
     await b.db.query(`UPDATE is_karti SET son_zaman = $2 WHERE tur = 'Firma Denetimi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id, new Date(`${g.yeniTarih}T17:00:00+03:00`)]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Firma Denetimi Ertelendi', nesneTuru: 'Firma Denetimi', nesneKimligi: id, gerekce: g.gerekce.trim(), yeni: { tarih: g.yeniTarih }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
@@ -716,9 +716,9 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (puanlar.some((x) => !Number.isInteger(x.puan) || x.puan < 1 || x.puan > 5 || !x.kanit)) return y.code(400).send({ hata: 'Her başlık için 1–5 puan ve dayandığı kanıt zorunludur.' });
     const kanitlar = puanlar.map((x) => x.kanit.toLocaleLowerCase('tr-TR'));
     if (new Set(kanitlar).size !== kanitlar.length) return y.code(409).send({ hata: 'Aynı gözlem iki başlıkta puanlanmaz; her başlığa ayrı kanıt yazınız.' });
-    if (new Set(puanlar.map((x) => x.baslik)).size !== puanlar.length) return y.code(409).send({ hata: 'Aynı başlık iki kez puanlanmaz.' });
+    if (new Set(puanlar.map((x) => x.baslik)).size !== puanlar.length) return y.code(409).send({ hata: 'Bu başlık daha önce puanlanmıştır; mevcut puanı güncellemenizi rica ederiz.' });
     // Görev ayrılığı: başvuru kabulü ve belge kontrolü yapan karar önerisini hazırlamaz.
-    if (f.olusturan_ref === o.kullanici || (await b.db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND kontrol_eden_ref = $2 LIMIT 1`, [id, o.kullanici])).rowCount) return y.code(409).send({ hata: 'Başvuru kabulü veya belge kontrolünü yaptığınız firmanın karar önerisini hazırlayamazsınız (görev ayrılığı).' });
+    if (f.olusturan_ref === o.kullanici || (await b.db.query(`SELECT 1 FROM sicil_belgesi WHERE kurulus_ref = $1 AND kontrol_eden_ref = $2 LIMIT 1`, [id, o.kullanici])).rowCount) return y.code(409).send({ hata: 'Görev ayrılığı gereği başvuru kabulü veya belge kontrolünü yaptığınız firmanın karar önerisini başka bir yetkilinin hazırlamasını rica ederiz.' });
     if ((g.oneri === 'Koşullu Onaylı' || g.oneri === 'Reddedildi') && !(await b.db.query(`SELECT 1 FROM firma_hukuk_gorusu WHERE kurulus_ref = $1 AND oneri = $2 AND durum = 'Verildi'`, [id, g.oneri])).rowCount) return y.code(409).send({ hata: 'Hukuk ve Uyum görüşü bekleniyor.' });
     if ((await b.db.query(`SELECT 1 FROM firma_karar_onerisi WHERE kurulus_ref = $1 AND durum = 'Onayda'`, [id])).rowCount) return y.code(409).send({ hata: 'Onayda bekleyen karar önerisi vardır.' });
     const c = await b.db.connect();
@@ -907,7 +907,7 @@ export function firmaEkYollari(s: FastifyInstance, b: Baglam) {
     if (!g) return yok(y);
     if (!son) return y.code(400).send({ hata: 'Yeni son tarihi girmenizi rica ederiz.' });
     if (g.uzatma_sayisi >= 2) return y.code(409).send({ hata: 'En çok 2 uzatma yapılır.' });
-    if ((new Date(son).getTime() - new Date(g.uygulama_tarihi).getTime()) / 86_400_000 > 60) return y.code(409).send({ hata: 'Toplam süre 60 günü aşamaz.' });
+    if ((new Date(son).getTime() - new Date(g.uygulama_tarihi).getTime()) / 86_400_000 > 60) return y.code(409).send({ hata: 'Toplam süreyi en çok 60 gün olarak girmenizi rica ederiz.' });
     await b.db.query(`UPDATE gecici_onarim SET son_gecerlilik = $2, uzatma_sayisi = uzatma_sayisi + 1, uzatma_onaylayan_ref = $3 WHERE kimlik = $1`, [id, son, o.kullanici]);
     return { tamam: true };
   });

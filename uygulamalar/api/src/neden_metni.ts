@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { Pool } from 'pg';
 import { izYaz } from './denetim.js';
 import { rolId } from './ihbar.js';
 import { kapanisKaydet } from './kapanis.js';
@@ -19,6 +20,18 @@ kapanisKaydet(KART, async (c, k, karar, yapan) => {
     await c.query(`UPDATE neden_metni SET durum = 'Yürürlükte', onaylayan_ref = $3, onay_zamani = now() WHERE kart_turu = $1 AND surum = $2 AND durum = 'Onayda'`, [tur, Number(surum), yapan]);
   } else if (karar === 'Reddet' || karar === 'Gerekçeyle İade Et') await c.query(`UPDATE neden_metni SET durum = 'Taslak' WHERE kart_turu = $1 AND surum = $2 AND durum = 'Onayda'`, [tur, Number(surum)]);
 });
+
+/** HG-2 (CEO 27.11.2026): Neden? metinleri en sık onay işlerinden başlayarak hazırlanır; metni olmayan öncelikli iş türü için Hukuk ve Uyum Direktörüne bir kez görev açılır. */
+export const NEDEN_ONCELIK = ['Fiyat Teklifi', 'İş Emri', 'Firma Ödeme Talimatı', 'İndirim Talebi'];
+export async function nedenGorevleriAc(db: Pool): Promise<number> {
+  let n = 0; const { birKez } = await import('./bildirim.js');
+  for (const tur of NEDEN_ONCELIK) {
+    if ((await db.query(`SELECT 1 FROM neden_metni WHERE kart_turu = $1`, [tur])).rowCount || !(await birKez(db, 'neden_metni_gorevi', tur))) continue;
+    await kartAc(db, { tur: 'Neden? Metni Hazırlığı', kategori: 'gorev', baslik: `Neden? Metnini Hazırla · ${tur}`, ozet: 'Bu onay işinin hukuki gerekçesini ve ilgili belge bölümünü yazıp CEO onayına gönderiniz.', sahipRol: await rolId(db, HAZIRLAR[0]!), sonZaman: new Date(Date.now() + 10 * 86_400_000), nesneTuru: 'Neden Metni', nesneKimligi: tur });
+    n++;
+  }
+  return n;
+}
 
 export function nedenMetniYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
@@ -48,6 +61,7 @@ export function nedenMetniYollari(s: FastifyInstance, b: Baglam) {
     if ((await b.db.query(`SELECT 1 FROM neden_metni WHERE kart_turu = $1 AND durum IN ('Onayda', 'Taslak')`, [g.tur.trim()])).rowCount) return y.code(409).send({ hata: 'Bu iş türünün sonuçlanmamış bir metni vardır.' });
     const surum = Number((await b.db.query(`SELECT coalesce(max(surum), 0) + 1 n FROM neden_metni WHERE kart_turu = $1`, [g.tur.trim()])).rows[0].n);
     await b.db.query(`INSERT INTO neden_metni (kart_turu, surum, metin, belge_bolumu, durum, hazirlayan_ref) VALUES ($1,$2,$3,$4,'Onayda',$5)`, [g.tur.trim(), surum, g.metin.trim(), g.belgeBolumu?.trim() || null, o.kullanici]);
+    await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Neden? Metni Hazırlığı' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [g.tur.trim()]);
     await kartAc(b.db, { tur: KART, baslik: `Neden? Metni · ${g.tur.trim()} · Sürüm ${surum}`, ozet: g.metin.trim().slice(0, 300), hazirlayan: o.kullanici, zincir: [await rolId(b.db, 'CEO')], nesneTuru: 'Neden Metni', nesneKimligi: `${g.tur.trim()}|${surum}` });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Neden Metni Onaya Gönderildi', nesneTuru: 'Neden Metni', nesneKimligi: `${g.tur.trim()}|${surum}`, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { surum, durum: 'Onayda' };

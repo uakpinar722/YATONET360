@@ -493,7 +493,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
     if (t.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Taraf ilişkisini Dosya Sorumlusu sonlandırır.' });
     if (!gerekce?.trim()) return y.code(400).send({ hata: 'Sonlandırma gerekçesini yazınız.' });
-    if (t.taraf_rolu === 'Yat Sahibi' && !(await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif AND kimlik <> $2`, [t.dosya_ref, id])).rowCount) return y.code(409).send({ hata: 'Dosyada etkin başka yat sahibi kaydı olmadan yat sahibi ilişkisi sonlandırılamaz.' });
+    if (t.taraf_rolu === 'Yat Sahibi' && !(await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE dosya_ref = $1 AND taraf_rolu = 'Yat Sahibi' AND aktif AND kimlik <> $2`, [t.dosya_ref, id])).rowCount) return y.code(409).send({ hata: 'Yat sahibi ilişkisini sonlandırmadan önce dosyaya etkin başka bir yat sahibi kaydı eklemenizi rica ederiz.' });
     await b.db.query(`UPDATE dosya_tarafi SET aktif = false, bitis_zamani = now(), bitis_gerekcesi = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, gerekce.trim()]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Taraf İlişkisi Sonlandırıldı', nesneTuru: 'Dosya', nesneKimligi: t.dosya_ref, yeni: { rol: t.taraf_rolu }, gerekce: gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };
@@ -576,7 +576,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
         if (g.rol === 'Yedek Kalite Kontrolör' && !diger) return dur(409, 'Önce dosyanın Kalite Kontrolörünü atayınız.');
         if (diger === g.kullanici) return dur(400, 'Yedek Kalite Kontrolör asıl Kalite Kontrolörden farklı olmalıdır.');
       }
-      if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') if (await boyGovdeEksik(c, id)) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Boy ve gövde malzemesi dolmadan Teknik Uzman atanamaz. Eksik bilgiyi tamamlayınız.', islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' }); } // YG-1386
+      if (g.rol === 'Teknik Uzman' || g.rol === 'Sorumlu Teknik Uzman (Koordinatör)') if (await boyGovdeEksik(c, id)) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Teknik Uzman ataması için önce boy ve gövde malzemesi bilgisini tamamlamanızı rica ederiz.', islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' }); } // YG-1386
       const sinir = KAPASITE[g.rol!]; let uyari: string | null = null;
       if (sinir) {
         const yuk = await kapasiteYuku(c, g.kullanici, g.rol!);
@@ -700,7 +700,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     const d = await dosyaGetir(id, o.kullanici);
     if (!d) return yok(y);
     if (!ONCELIK_SIRA.includes(g.oncelik ?? '') || g.oncelik === d.oncelik) return y.code(400).send({ hata: 'Önceliği listeden seçmenizi rica ederiz.' });
-    if (['Teknik Kapalı', 'Kapalı'].includes(d.statu)) return y.code(409).send({ hata: 'Kapanan dosyada öncelik değişmez.' });
+    if (['Teknik Kapalı', 'Kapalı'].includes(d.statu)) return y.code(409).send({ hata: 'Dosya kapandığından öncelik kilitlidir.' });
     const ekip = (await b.db.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL`, [id, o.kullanici])).rows.map((r) => r.rol as string);
     const DS = ekip.includes('Dosya Sorumlusu'); const TU = ekip.includes('Teknik Uzman') || ekip.includes('Sorumlu Teknik Uzman (Koordinatör)');
     const yukselt = ONCELIK_SIRA.indexOf(g.oncelik!) > ONCELIK_SIRA.indexOf(d.oncelik);
@@ -799,7 +799,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (o.grup !== 'LGM İç Rolü') return yok(y);
     if (!['E-posta', 'Telefon', 'SMS', 'WhatsApp', 'WhatsApp Grubu', 'Yüz Yüze', 'Diğer'].includes(g.kanal ?? '') || !['Talimat', 'Karar', 'Bilgi'].includes(g.tur ?? 'Talimat')) return y.code(400).send({ hata: 'Kanalı ve kayıt türünü seçiniz.' });
     if (!g.gonderen?.trim() || !g.zaman || !g.metin?.trim()) return y.code(400).send({ hata: 'Gönderen, alınma zamanı ve özgün ileti metni zorunludur.' });
-    if (new Date(g.zaman).getTime() > Date.now() + 60_000) return y.code(400).send({ hata: 'Alınma zamanı ileri bir tarih olamaz.' });
+    if (new Date(g.zaman).getTime() > Date.now() + 60_000) return y.code(400).send({ hata: 'Alınma zamanını bugün veya geçmiş bir tarih olarak girmenizi rica ederiz.' });
     if (g.belge && (!UUID.test(g.belge) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1 AND bag_turu = 'Dosya' AND bag_kimligi = $2`, [g.belge, id])).rowCount)) return y.code(400).send({ hata: 'Ekran görüntüsü veya ileti belgesi bu dosyaya yüklenmiş olmalıdır.' });
     // YG-158: kaynak Yat Sahibi ya da geçerli yetki kaydı olan taraf değilse kayıt yetkisiz kaynak sayılır.
     if (g.kaynakTaraf && (!UUID.test(g.kaynakTaraf) || !(await b.db.query(`SELECT 1 FROM dosya_tarafi WHERE kimlik = $1 AND dosya_ref = $2 AND aktif`, [g.kaynakTaraf, id])).rowCount)) return y.code(400).send({ hata: 'Gönderen taraf bu dosyada kayıtlı değildir.' });
@@ -938,7 +938,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
     if (!k || !(await dosyaErisimi(b.db, o.kullanici, k.dosya_ref))) return yok(y);
     if (k.dosya_sorumlusu_ref !== o.kullanici) return y.code(403).send({ hata: 'Hedef tarihi dosyanın Dosya Sorumlusu değiştirir.' });
     if (await surumCakismasi(b.db, y, 'acik_konu', id, g.surum)) return y; // YG-1382
-    if (['Kapalı', 'Geçersiz'].includes(k.statu)) return y.code(409).send({ hata: 'Kapanmış konunun hedef tarihi değiştirilemez.' });
+    if (['Kapalı', 'Geçersiz'].includes(k.statu)) return y.code(409).send({ hata: 'Konu kapandığından hedef tarihi kilitlidir; gerekirse konuyu yeniden açmanızı rica ederiz.' });
     if (!g.tarih || !/^\d{4}-\d{2}-\d{2}$/.test(g.tarih) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Yeni hedef tarih ve gerekçe zorunludur.' });
     const eski = (await b.db.query(`SELECT $1::date::text t`, [k.hedef_tarih])).rows[0].t as string;
     await b.db.query(`UPDATE acik_konu SET hedef_tarih = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [id, g.tarih]);

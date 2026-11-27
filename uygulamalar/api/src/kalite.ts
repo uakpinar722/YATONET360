@@ -305,7 +305,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!['Uygun', 'Koşullu uygun', 'Ek düzeltme', 'Ret'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Yeniden kontrol sonucunu seçiniz.' });
     if (g.sonuc !== 'Uygun') { await b.db.query(`UPDATE uygunsuzluk SET yeniden_kontrol_sonucu = $2, statu = 'İşlemde' WHERE kimlik = $1`, [n.kimlik, g.sonuc]); return { statu: 'İşlemde' }; }
     if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Kapanış kanıtı zorunludur.' });
-    if (g.kanit === n.kanit_belge_ref) return y.code(400).send({ hata: 'Tespit kanıtı kapanış kanıtı sayılmaz.' });
+    if (g.kanit === n.kanit_belge_ref) return y.code(400).send({ hata: 'Tespit kanıtı kapanış kanıtı yerine geçmemektedir; kapanış kanıtını ayrıca yüklemenizi rica ederiz.' });
     const tekrar = Boolean(n.sorumlu_firma_ref) && Boolean((await b.db.query(`SELECT 1 FROM uygunsuzluk WHERE sorumlu_firma_ref = $1 AND dayanak_olcut = $2 AND kimlik <> $3 LIMIT 1`, [n.sorumlu_firma_ref, n.dayanak_olcut, n.kimlik])).rowCount);
     if ((n.sinif === 'Kritik' || n.sinif === 'Majör' || n.yaygin_isareti || tekrar) && !n.kok_neden_ref) return y.code(409).send({ hata: 'Kapanış için Kök neden analizi bekleniyor.' });
     return islem(async (c) => {
@@ -374,7 +374,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     let vekaleten = false;
     if (gereken.includes(KK) && !benimRol.includes(KK)) { const yt = await kontrolYetkisi(o.kullanici, false, g.bagimsizlikTeyidi); if (yt.vekaleten) { if (yt.hata) return y.code(yt.kod!).send({ hata: yt.hata }); benimRol.push(KK); vekaleten = true; } }
     if (!benimRol.length) return y.code(403).send({ hata: `Bu noktayı ${gereken.join(' ve ')} serbest bırakır.` });
-    if ((await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND teknik_kabul_eden_ref = $2`, [k.is_emri_ref, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Görev ayrılığı gereği teknik kabulü veren kalite kontrolünü doğrulayamaz.' }); // YG-1037
+    if ((await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND teknik_kabul_eden_ref = $2`, [k.is_emri_ref, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Görev ayrılığı gereği kalite kontrolünün, teknik kabulü veren dışında bir kişi tarafından doğrulanmasını rica ederiz.' }); // YG-1037
     // YG-382: kanıt dosyaya bağlı olmalı; incelenen yürürlükteki sürüm ve kullanılan ölçüt sonuçla birlikte kaydedilir.
     const ks = (await b.db.query(`SELECT s.kimlik FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.kimlik = $1 AND e.bag_turu IN ('Dosya', 'İş Emri') AND (e.bag_kimligi = $2::text OR e.bag_kimligi = $3::text) AND s.durum NOT IN ('İptal', 'Karantina', 'Yerine Geçti', 'Arşiv') ORDER BY s.surum_no DESC LIMIT 1`, [g.kanit, k.dosya_ref, k.is_emri_ref])).rows[0];
     if (!ks) return y.code(400).send({ hata: 'Kanıt bu dosyaya veya iş emrine yüklenmiş geçerli bir belge olmalıdır.' });
@@ -582,7 +582,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1 AND dosya_sorumlusu_ref = $2`, [id, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Garanti kararını dosyanın Dosya Sorumlusu verir.' });
     if (typeof g.tanimli !== 'boolean') return y.code(400).send({ hata: 'Garanti tanımlı olup olmadığını seçiniz.' });
     if (g.tanimli && (!Number.isInteger(Number(g.sureAy)) || Number(g.sureAy) < 1 || Number(g.sureAy) > 120 || !g.kapsam?.trim())) return y.code(400).send({ hata: 'Garanti süresini (ay) ve kapsamını yazınız.' });
-    if ((await b.db.query(`SELECT 1 FROM kabul_kaydi WHERE dosya_ref = $1 AND kabul_turu = 'Nihai Kabul' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Nihai kabulden sonra garanti kararı değiştirilemez.' });
+    if ((await b.db.query(`SELECT 1 FROM kabul_kaydi WHERE dosya_ref = $1 AND kabul_turu = 'Nihai Kabul' LIMIT 1`, [id])).rowCount) return y.code(409).send({ hata: 'Nihai kabulden sonra garanti kararı kilitlidir.' });
     await b.db.query(`UPDATE dosya SET garanti_tanimli = $2, garanti_suresi_ay = $3, garanti_kapsami = $4, garanti_karar_veren_ref = $5, garanti_karar_zamani = now() WHERE kimlik = $1`, [id, g.tanimli, g.tanimli ? Number(g.sureAy) : null, g.tanimli ? g.kapsam!.trim() : null, o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: g.tanimli ? 'Garanti Tanımlandı' : 'Garanti Tanımlanmadı', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { sureAy: g.sureAy ?? null, kapsam: g.kapsam ?? null }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { tamam: true };

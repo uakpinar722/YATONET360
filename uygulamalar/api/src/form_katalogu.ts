@@ -113,7 +113,7 @@ export function formKataloguYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { kod } = i.params as { kod: string };
     if (o.grup !== 'LGM İç Rolü' || !KOD.test(kod)) return yok(y);
     const k = (await b.db.query(`SELECT kod, ad, surum, durum FROM form_katalogu WHERE kod = $1`, [kod])).rows[0]; if (!k) return yok(y);
-    if (k.durum === 'İptal') return y.code(409).send({ hata: 'İptal edilmiş aracın şablonu üretilmez.' });
+    if (k.durum === 'İptal') return y.code(409).send({ hata: 'İptal edilmiş aracın şablonu üretilmemektedir; yürürlükteki aracı seçmenizi rica ederiz.' });
     const ORTAK = new Set(['kimlik', 'kayit_no', 'dosya', 'sablon_surumu', 'statu', 'hazirlayan', 'onaylayan', 'onay_zamani', 'olusturma_zamani', 'olusturan', 'guncelleme_zamani']);
     const al = aracAlanlari(kod, k.ad).filter((x) => !ORTAK.has(x.teknik) && x.tip !== 'Sistem kimliği');
     if (!al.length) return y.code(409).send({ hata: 'Alan sözlüğünde bu araca bağlı alan yok.' });
@@ -156,7 +156,7 @@ export function formKataloguYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { kod } = i.params as { kod: string }; const g = (i.body ?? {}) as { durum?: string; gerekce?: string; yerine?: string };
     if (!KOD.test(kod) || !(await yonetir(o.kullanici))) return yok(y);
     const k = (await b.db.query(`SELECT durum, surum FROM form_katalogu WHERE kod = $1`, [kod])).rows[0]; if (!k) return yok(y);
-    if (k.durum === 'İptal') return y.code(409).send({ hata: 'İptal edilmiş araç yeniden yürürlüğe alınamaz; yeni kodla açılır.' });
+    if (k.durum === 'İptal') return y.code(409).send({ hata: 'İptal edilmiş araç yeni kodla açılmaktadır; yeni kayıt oluşturmanızı rica ederiz.' });
     if (g.durum === 'Yürürlükte') {
       if (k.durum !== 'Taslak') return y.code(409).send({ hata: 'Yalnız taslak araç yürürlüğe alınır; içerik değişikliği yeni sürümle yapılır.' });
       await b.db.query(`UPDATE form_katalogu SET durum = 'Yürürlükte', yururluk_tarihi = current_date, guncelleyen_ref = $2, zaman = now() WHERE kod = $1`, [kod, o.kullanici]);

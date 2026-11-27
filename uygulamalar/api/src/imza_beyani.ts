@@ -30,7 +30,7 @@ export function imzaBeyaniYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);
     const g = (i.body ?? {}) as { belgeTuru?: string; konu?: string; icerik?: string; kisi?: string; dosya?: string };
     if (!BELGE_TURLERI.includes(g.belgeTuru as (typeof BELGE_TURLERI)[number]) || !g.konu?.trim() || !g.icerik?.trim() || !g.kisi || g.kisi.length > 64) return y.code(400).send({ hata: 'Belge türü, konu, içerik ve onaylayacak kişi zorunludur.' });
-    if (g.kisi === o.kullanici) return y.code(400).send({ hata: 'Hazırladığınız belgeyi siz onaylayamazsınız; onaylayacak kişiyi seçiniz.' });
+    if (g.kisi === o.kullanici) return y.code(400).send({ hata: 'Hazırladığınız belgenin onayı başka bir kişiye aittir; onaylayacak kişiyi seçmenizi rica ederiz.' });
     const ks = (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1 AND kullanici_grubu = 'LGM İç Rolü'`, [g.kisi])).rows[0];
     if (!ks) return y.code(400).send({ hata: 'Onaylayacak LGM personeli bulunamadı.' });
     if (g.dosya && (!UUID.test(g.dosya) || !(await b.db.query(`SELECT 1 FROM dosya WHERE kimlik = $1`, [g.dosya])).rowCount)) return y.code(400).send({ hata: 'Dosya bulunamadı.' });

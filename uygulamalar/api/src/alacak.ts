@@ -162,7 +162,7 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
     if (!f.fatura_no) return y.code(409).send({ hata: 'İtiraz fatura bilgisi girilen kayda açılır.' });
     if (!g.kalem?.trim() || !g.gerekce?.trim() || !(Number(g.tutar) > 0)) return y.code(400).send({ hata: 'Kalem, tutar ve gerekçeyi girmenizi rica ederiz.' });
     const once = Number((await b.db.query(`SELECT coalesce(sum(tutar_eur), 0) t FROM fatura_itirazi WHERE fatura_ref = $1 AND durum <> 'Ret'`, [id])).rows[0].t);
-    if (R2(once + Number(g.tutar)) > R2(Number(f.toplam_eur) - Number(f.tahsil_edilen_eur))) return y.code(409).send({ hata: 'İtiraz tutarı faturanın açık tutarını aşamaz.' });
+    if (R2(once + Number(g.tutar)) > R2(Number(f.toplam_eur) - Number(f.tahsil_edilen_eur))) return y.code(409).send({ hata: 'İtiraz tutarını faturanın açık tutarını aşmayacak biçimde girmenizi rica ederiz.' });
     if (f.muhatap === 'Sigorta Şirketi' && (Date.now() - new Date(f.fatura_tarihi).getTime()) / 86_400_000 > 9) return y.code(409).send({ hata: 'Sekiz günlük itiraz süresi dolmuştur.' });
     const son = new Date(Date.now() + 48 * 3_600_000);
     return islem(async (c) => {
@@ -308,7 +308,7 @@ export function alacakYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id)) return yok(y);
     if (!(await rolVar(o.kullanici, ['Sicil Sorumlusu', 'Firma Yönetimi Müdürü', 'Firma Yönetimi Müdür Yardımcısı']))) return y.code(403).send({ hata: 'Bu işlem için yetkiniz bulunmamaktadır.' });
     if (!g.belge || !UUID.test(g.belge)) return y.code(400).send({ hata: 'İmzalı nüshayı yüklemenizi rica ederiz.' });
-    if (!g.birlikteImza) return y.code(409).send({ hata: 'Birlikte imza tamamlanmadan sözleşme yürürlüğe girmez.' });
+    if (!g.birlikteImza) return y.code(409).send({ hata: 'Birlikte imza tamamlandığında sözleşme yürürlüğe girecektir.' });
     const r = await b.db.query(`UPDATE sozlesme_kaydi SET imzali_nusha_ref = $2, birlikte_imza = true, durum = 'Yürürlükte' WHERE kimlik = $1 AND durum = 'Taslak' RETURNING kurulus_ref`, [id, g.belge]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Sözleşme taslak değildir.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sözleşme Yürürlüğe Girdi', nesneTuru: 'Sözleşme', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

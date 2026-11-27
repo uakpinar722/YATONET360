@@ -41,7 +41,7 @@ export function yatTakvimYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { tur?: string; baslangic?: string; bitis?: string; konum?: string; aciklama?: string };
     if (!UUID.test(id) || !(await b.db.query(`SELECT 1 FROM yat WHERE kimlik = $1`, [id])).rowCount) return yok(y);
     if (!TURLER.includes(g.tur ?? '') || !TARIH.test(g.baslangic ?? '') || !TARIH.test(g.bitis ?? '')) return y.code(400).send({ hata: 'Dönem türünü, başlangıç ve bitiş tarihini giriniz.' });
-    if (g.bitis! < g.baslangic!) return y.code(400).send({ hata: 'Bitiş tarihi başlangıçtan önce olamaz.' });
+    if (g.bitis! < g.baslangic!) return y.code(400).send({ hata: 'Bitiş tarihini başlangıç tarihinden sonra girmenizi rica ederiz.' });
     const r = (await b.db.query(`INSERT INTO yat_kullanim_donemi (yat_ref, tur, baslangic, bitis, konum, aciklama, giren_ref) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING kimlik`, [id, g.tur, g.baslangic, g.bitis, g.konum?.trim() || null, g.aciklama?.trim() || null, o.kullanici])).rows[0];
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Yat Kullanım Dönemi', nesneTuru: 'Yat', nesneKimligi: id, yeni: { tur: g.tur, baslangic: g.baslangic, bitis: g.bitis }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
     return { kimlik: r.kimlik };

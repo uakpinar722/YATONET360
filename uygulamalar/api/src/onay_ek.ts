@@ -120,7 +120,7 @@ export function onayEkYollari(s: FastifyInstance, b: Baglam) {
     if (!(await rolVar(o.kullanici, [TID]))) return y.code(403).send({ hata: 'Geri almayı Ticari İşler Direktörü yapar.' });
     if (!g) return y.code(400).send({ hata: 'Gerekçeyi yazmanızı rica ederiz.' });
     if (!(await b.db.query(`SELECT 1 FROM sigorta_onayi WHERE teklif_ref = $1 AND onay_kanali = 'Çerçeve Sözleşme Süresi'`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklif süre dolumuyla kabul edilmemiştir.' });
-    if ((await b.db.query(`SELECT 1 FROM is_emri WHERE teklif_ref = $1 AND statu NOT IN ('İptal', 'Yerine Geçti') LIMIT 1`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklife iş emri açılmıştır; geri alınamaz.' });
+    if ((await b.db.query(`SELECT 1 FROM is_emri WHERE teklif_ref = $1 AND statu NOT IN ('İptal', 'Yerine Geçti') LIMIT 1`, [t.kimlik])).rowCount) return y.code(409).send({ hata: 'Bu teklife iş emri açılmıştır; değişiklik için iş emri üzerinden ilerlemenizi rica ederiz.' });
     return islem(async (c) => {
       await c.query(`UPDATE fiyat_teklifi SET statu = 'Gönderildi', karar = NULL, karar_zamani = NULL, sigorta_karar_son = now() + interval '5 days' WHERE kimlik = $1`, [t.kimlik]);
       await c.query(`UPDATE fiyat_teklifi_kalemi SET onay_durumu = 'Bekliyor' WHERE teklif_ref = $1`, [t.kimlik]);

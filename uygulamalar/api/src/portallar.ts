@@ -83,7 +83,7 @@ export function tesisTedarikciYollari(s: FastifyInstance, b: Baglam) {
     if (!t || !(await dosyaErisimi(b.db, o.kullanici, t.dosya_ref))) return yok(y);
     const saha = (await b.db.query(`SELECT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [t.dosya_ref])).rows.map((x) => x.kullanici_ref as string);
     if (t.dosya_sorumlusu_ref !== o.kullanici && !saha.includes(o.kullanici)) return y.code(403).send({ hata: 'Yazışmayı Dosya Sorumlusu veya Saha Sorumlusu girer.' });
-    if (t.durum === 'Geri Çekildi') return y.code(409).send({ hata: 'Geri çekilen işleme yazışma girilmez.' });
+    if (t.durum === 'Geri Çekildi') return y.code(409).send({ hata: 'Bu işlem geri çekilmiştir; yazışmayı güncel işlem üzerinden yapmanızı rica ederiz.' });
     if (!['Firma', 'Tesis'].includes(g.kaynak ?? '') || !g.ozet?.trim()) return y.code(400).send({ hata: 'Yazışmanın kaynağını ve özetini yazınız.' });
     const durum = g.durum ?? t.durum;
     if (!['Yanıt Bekliyor', 'Onaylı', 'İzin Verilmedi'].includes(durum)) return y.code(400).send({ hata: 'Durumu seçiniz: Yanıt Bekliyor, Onaylı veya İzin Verilmedi.' });

@@ -216,7 +216,7 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const v = await ihlal((i.params as { id: string }).id); const g = (i.body ?? {}) as { veriKategorileri?: string[]; kisiGruplari?: string[]; kisiSayisi?: number; kayitSayisi?: number; baslangic?: string; bitis?: string; sistemAlici?: string; sonuclar?: string; tedbirler?: string; ozelNitelikli?: boolean };
     if (!v) return yok(y);
     if (!(await rolVar(o.kullanici, [HUD, HUU, BIM]))) return y.code(403).send({ hata: 'Bulguyu Hukuk ve Uyum veya Bilgi İşlem Müdürü girer.' });
-    if (v.durum !== 'Açık') return y.code(409).send({ hata: 'Kapalı olay güncellenemez.' });
+    if (v.durum !== 'Açık') return y.code(409).send({ hata: 'Olay kapanmıştır; yeni bilgi için yeni kayıt açmanızı rica ederiz.' });
     const n = v.bulgu_surumu + 1;
     await b.db.query(`UPDATE veri_ihlali SET veri_kategorileri = coalesce($2, veri_kategorileri), kisi_gruplari = coalesce($3, kisi_gruplari), etkilenen_kisi_sayisi = coalesce($4, etkilenen_kisi_sayisi), etkilenen_kayit_sayisi = coalesce($5, etkilenen_kayit_sayisi), ihlal_baslangic = coalesce($6, ihlal_baslangic), ihlal_bitis = coalesce($7, ihlal_bitis), etkilenen_sistem_alici = coalesce($8, etkilenen_sistem_alici), olasi_sonuclar = coalesce($9, olasi_sonuclar), sinirlama_tedbirleri = coalesce($10, sinirlama_tedbirleri), ozel_nitelikli_veri = coalesce($11, ozel_nitelikli_veri), bulgu_surumu = $12 WHERE kimlik = $1`, [v.kimlik, g.veriKategorileri ?? null, g.kisiGruplari ?? null, g.kisiSayisi ?? null, g.kayitSayisi ?? null, g.baslangic ?? null, g.bitis ?? null, g.sistemAlici ?? null, g.sonuclar ?? null, g.tedbirler ?? null, g.ozelNitelikli ?? null, n]);
     await b.db.query(`INSERT INTO veri_ihlali_surumu (ihlal_ref, surum, veri, guncelleyen_ref) VALUES ($1,$2,$3,$4)`, [v.kimlik, n, JSON.stringify(g), o.kullanici]);
@@ -253,7 +253,7 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const v = await ihlal((i.params as { id: string }).id); const g = (i.body ?? {}) as { kokNeden?: string; kanit?: string };
     if (!v) return yok(y);
     if (!(await hudMu(o.kullanici))) return y.code(403).send({ hata: 'Kapanışı Hukuk ve Uyum Direktörü yapar.' });
-    if (!g.kokNeden?.trim() || !g.kanit || !UUID.test(g.kanit) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1`, [g.kanit])).rowCount) return y.code(400).send({ hata: 'Kök neden ve düzeltme kanıtı olmadan kapatılamaz.' });
+    if (!g.kokNeden?.trim() || !g.kanit || !UUID.test(g.kanit) || !(await b.db.query(`SELECT 1 FROM belge WHERE kimlik = $1`, [g.kanit])).rowCount) return y.code(400).send({ hata: 'Kök neden ve düzeltme kanıtını ekledikten sonra kapatabilirsiniz.' });
     if (!v.bildirim_karari) return y.code(409).send({ hata: 'Bildirim kararı bekleniyor.' });
     if (v.bildirim_karari === 'Bildirilecek' && !v.kurul_bildirim_zamani) return y.code(409).send({ hata: 'Kurul bildirimi bekleniyor.' });
     await b.db.query(`UPDATE veri_ihlali SET kok_neden_faaliyet = $2, kapanis_kaniti_ref = $3, kapanis_zamani = now(), durum = 'Kapalı' WHERE kimlik = $1`, [v.kimlik, g.kokNeden.trim(), g.kanit]);
@@ -306,7 +306,7 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const a = await basvuru((i.params as { id: string }).id); const g = (i.body ?? {}) as { karar?: string; gerekce?: string };
     if (!a) return yok(y);
     if (!(await rolVar(o.kullanici, [HUU]))) return y.code(403).send({ hata: 'Kararı Hukuk ve Uyum Uzmanı hazırlar.' });
-    if (!a.kimlik_dogrulandi) return y.code(409).send({ hata: 'Kimlik doğrulanmadan karar hazırlanamaz.' });
+    if (!a.kimlik_dogrulandi) return y.code(409).send({ hata: 'Kimlik doğrulaması tamamlandıktan sonra karar hazırlanabilir.' });
     if (!a.arama_sonucu) return y.code(409).send({ hata: 'Veri araması bekleniyor.' });
     const eksik = (await elleGerekli()).filter((x) => !((a.arama_kapsami ?? []) as string[]).includes(`${x} (elle)`));
     if (eksik.length) return y.code(409).send({ hata: `Elle kontrolü kaydedilmemiş kaynak var: ${eksik.join(', ')}.`, eksik });
@@ -363,7 +363,7 @@ export function kvkkYollari(s: FastifyInstance, b: Baglam) {
     if (!(await rolVar(o.kullanici, KVKK_ROL))) return y.code(403).send({ hata: 'Listeyi Hukuk ve Uyum düzenler.' });
     if (!g) return y.code(400).send({ hata: 'Listeden çıkarma gerekçesi zorunludur.' });
     const r = await b.db.query(`UPDATE imha_kalemi k SET durum = 'Çıkarıldı', cikarma_gerekcesi = $2 FROM imha_listesi l WHERE k.kimlik = $1 AND l.kimlik = k.liste_ref AND l.durum IN ('Hazırlanıyor', 'Birim Kontrolünde') AND k.durum = 'Listede'`, [id, g]);
-    return r.rowCount ? { tamam: true } : y.code(409).send({ hata: 'Bu kalem çıkarılamaz.' });
+    return r.rowCount ? { tamam: true } : y.code(409).send({ hata: 'Bu kalem çıkarılmaya uygun değildir; değişiklik gerekiyorsa revizyon talebi açmanızı rica ederiz.' });
   });
   s.post('/imha-listesi/:id/birime-gonder', oturumlu, async (i, y) => {
     const o = i.oturum!; const l = await liste((i.params as { id: string }).id);

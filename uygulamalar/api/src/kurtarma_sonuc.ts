@@ -43,7 +43,7 @@ export function kurtarmaSonucYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { degerler?: Record<string, string> };
     if (!UUID.test(id)) return yok(y);
     const k = await firmam(o.kullanici, id); if (!k) return yok(y);
-    if (!k.baslama_zamani) return y.code(409).send({ hata: 'Operasyon başlamadan sonuç tutanağı girilemez.' });
+    if (!k.baslama_zamani) return y.code(409).send({ hata: 'Sonuç tutanağı, operasyon başladıktan sonra girilebilir.' });
     const eksik = SATIRLAR.filter((a) => !g.degerler?.[a]?.trim());
     if (eksik.length) return y.code(400).send({ hata: 'Tüm satırları doldurunuz; ilgili olmayan satıra "Yok" veya "Uygulanmaz" yazınız.', eksik });
     const veriler = Object.fromEntries(SATIRLAR.map((a) => [a, g.degerler![a]!.trim()]));

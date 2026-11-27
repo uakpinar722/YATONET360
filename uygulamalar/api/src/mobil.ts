@@ -71,7 +71,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { platform?: string; enAz?: string; guncel?: string; magaza?: string };
     if (!(await rolSahipleri(b.db, await rolId(b.db, 'Sistem Yöneticisi'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Mobil sürüm bilgisini Sistem Yöneticisi girer.' });
     const v = /^\d+\.\d+\.\d+$/; if (!v.test(g.enAz ?? '') || !v.test(g.guncel ?? '')) return y.code(400).send({ hata: 'Sürümleri 1.2.3 biçiminde yazınız.' });
-    if (surumKarsilastir(g.enAz!, g.guncel!) > 0) return y.code(400).send({ hata: 'En düşük sürüm güncel sürümden büyük olamaz.' });
+    if (surumKarsilastir(g.enAz!, g.guncel!) > 0) return y.code(400).send({ hata: 'En düşük sürümü güncel sürüme eşit veya ondan küçük girmenizi rica ederiz.' });
     const r = await b.db.query(`UPDATE mobil_surum SET en_az = $2, guncel = $3, magaza_baglantisi = $4, giren_ref = $5, guncelleme_zamani = now() WHERE platform = $1`, [g.platform, g.enAz, g.guncel, g.magaza?.trim() || null, o.kullanici]);
     if (!r.rowCount) return y.code(400).send({ hata: 'Platform geçersizdir.' });
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Mobil Sürüm Tanımı', nesneTuru: 'Mobil Sürüm', nesneKimligi: g.platform, yeni: { enAz: g.enAz, guncel: g.guncel }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
@@ -106,7 +106,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
       const once = (await b.db.query(`SELECT durum, yanit_kodu, yanit, kullanici_ref FROM mobil_esitleme WHERE istemci_kimlik = $1`, [k.kimlik])).rows[0];
       if (once) { if (once.kullanici_ref !== o.kullanici) return yok(y); sonuc.push({ kimlik: k.kimlik, durum: once.durum, yanitKodu: once.yanit_kodu, hata: once.durum === 'Uygulandı' ? undefined : once.yanit }); continue; }
       const t = ESITLEME.find((x) => x.yol.test(k.yol!));
-      if (!t) return y.code(400).send({ hata: 'Bu kayıt türü çevrimdışı alınamaz.' });
+      if (!t) return y.code(400).send({ hata: 'Bu kayıt türü için bağlantınızın sağlanmasını rica ederiz; çevrimdışı kaydedilmemektedir.' });
       const nid = t.yol.exec(k.yol)![1];
       let zaman: Date | null = null;
       if (t.nesne) zaman = (await b.db.query(`SELECT guncelleme_zamani z FROM ${t.nesne === 'is_emri' ? 'is_emri' : 'dosya'} WHERE kimlik = $1`, [nid])).rows[0]?.z ?? null;
@@ -215,7 +215,7 @@ export function mobilYollari(s: FastifyInstance, b: Baglam) {
   s.post('/yat-yetkilisi/:id/dogrula', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { islemler?: string[]; limit?: number; bitis?: string; odeme?: boolean; bilgi?: boolean };
     if (!(await rolSahipleri(b.db, await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Kontrolü Müşteri ve Paydaş İlişkileri Müdürü yapar.' });
-    if (!g.islemler?.length || !g.bitis || g.limit === undefined || !(Number(g.limit) >= 0) || !g.islemler.every((x) => /^ONY-\d{2}$/.test(x))) return y.code(400).send({ hata: 'Belgede yazılı işlem türleri, tek işlem limiti ve bitiş tarihini girmenizi rica ederiz; genel yetki verilmez.' }); // YG-1072
+    if (!g.islemler?.length || !g.bitis || g.limit === undefined || !(Number(g.limit) >= 0) || !g.islemler.every((x) => /^ONY-\d{2}$/.test(x))) return y.code(400).send({ hata: 'Belgede yazılı işlem türleri, tek işlem limiti ve bitiş tarihini girmenizi rica ederiz; yetki yalnız belgede yazılı kapsamla tanımlanır.' }); // YG-1072
     const r = await b.db.query(`UPDATE yat_yetkilisi_kaydi SET belge_durumu = 'Geçerli', islem_turleri = $2, ust_limit_eur = $3, bitis_tarihi = $4, odeme_yetkisi = $5, bilgi_paylasim_izni = $6, dogrulayan_ref = $7 WHERE kullanici_ref = $1 AND belge_durumu = 'Kontrolde'`, [id, g.islemler, g.limit ?? null, g.bitis, Boolean(g.odeme), Boolean(g.bilgi), o.kullanici]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Kontrol bekleyen belge bulunmamaktadır.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Yetki Belgesi Kontrolü' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);

@@ -441,7 +441,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const ekipte = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND bitis_zamani IS NULL AND rol IN ('Dosya Sorumlusu', 'Operasyon Yöneticisi', 'Teknik Yönetici')`, [id, o.kullanici])).rowCount;
     if (!ekipte && !(await rolSahipleri(b.db, await rolId(b.db, 'Operasyon Müdürü'))).includes(o.kullanici)) return y.code(403).send({ hata: 'Talebi dosya ekibi veya Operasyon Müdürü açar.' });
     const d = (await b.db.query(`SELECT dosya_no, oncelik, statu FROM dosya WHERE kimlik = $1`, [id])).rows[0];
-    if (d.statu === 'Kapalı') return y.code(409).send({ hata: 'Kapalı dosyada talep açılmaz.' });
+    if (d.statu === 'Kapalı') return y.code(409).send({ hata: 'Dosya kapalıdır; yeni talep için yeni dosya açılmasını rica ederiz.' });
     const saha = (await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Saha Sorumlusu' AND bitis_zamani IS NULL`, [id])).rowCount;
     if (tur === 'Atama' && d.oncelik === 'Kritik') return y.code(409).send({ hata: 'Kritik öncelikte Saha Sorumlusu zaten zorunludur; Teknik Müdür doğrudan atar.' });
     if (tur === 'Atama' && saha) return y.code(409).send({ hata: 'Dosyada Saha Sorumlusu atanmıştır.' });
@@ -879,7 +879,7 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     if (!k || k.sahip_kullanici_ref !== o.kullanici) return yok(y);
     if (k.durum !== 'Bekliyor') return y.code(409).send({ hata: 'İletim daha önce kaydedildi.' });
     const tz = g.teslimZamani ? new Date(g.teslimZamani) : null;
-    if (!['USB Bellek', 'CD/DVD', 'Hafıza Kartı', 'Basılı Belge', 'Diğer'].includes(g.saklayici ?? '') || !g.teslimAlan?.trim() || !tz || Number.isNaN(tz.getTime()) || tz.getTime() > Date.now() + 300_000) return y.code(400).send({ hata: 'Saklayıcı türü, teslim alan ve teslim zamanı zorunludur; teslim zamanı ileri bir tarih olamaz.' });
+    if (!['USB Bellek', 'CD/DVD', 'Hafıza Kartı', 'Basılı Belge', 'Diğer'].includes(g.saklayici ?? '') || !g.teslimAlan?.trim() || !tz || Number.isNaN(tz.getTime()) || tz.getTime() > Date.now() + 300_000) return y.code(400).send({ hata: 'Saklayıcı türü, teslim alan ve teslim zamanı zorunludur; teslim zamanını bugün veya geçmiş bir tarih olarak girmenizi rica ederiz.' });
     if (g.saklayici === 'Diğer' && !g.aciklama?.trim()) return y.code(400).send({ hata: 'Diğer saklayıcıda açıklama zorunludur.' });
     const c = await b.db.connect();
     try {

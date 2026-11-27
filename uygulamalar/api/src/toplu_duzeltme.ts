@@ -45,7 +45,7 @@ export function topluDuzeltmeYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerceklesen?: number; sonucKontrol?: string; farkAciklamasi?: string };
     if (!UUID.test(id) || !(await rolVar(o.kullanici, HAZIRLAR))) return yok(y);
     const k = await kayit(id); if (!k) return yok(y);
-    if (k.durum !== 'Onaylandı') return y.code(409).send({ hata: 'Düzeltme onaylanmadan uygulanmış sayılmaz.' });
+    if (k.durum !== 'Onaylandı') return y.code(409).send({ hata: 'Düzeltme, onaylandığında uygulanmış sayılacaktır.' });
     if (!(Number(g.gerceklesen) >= 0) || !g.sonucKontrol?.trim()) return y.code(400).send({ hata: 'Gerçekleşen kayıt sayısı ve sonuç kontrolü zorunludur.' });
     if (Number(g.gerceklesen) !== k.beklenen_kayit && !g.farkAciklamasi?.trim()) return y.code(409).send({ hata: 'Gerçekleşen kayıt sayısı beklenenden farklıdır; fark açıklaması yazınız.' });
     await b.db.query(`UPDATE toplu_duzeltme SET durum = 'Uygulandı', gerceklesen_kayit = $2, sonuc_kontrolu = $3, fark_aciklamasi = $4, uygulama_zamani = now() WHERE kimlik = $1`, [id, Number(g.gerceklesen), g.sonucKontrol.trim(), g.farkAciklamasi?.trim() || null]);

@@ -167,8 +167,8 @@ export function uyumYollari(s: FastifyInstance, b: Baglam) {
     const t = (await b.db.query(`SELECT dogrulayan_rol, sorumlu_rol, durum, yukleyen_ref FROM uyum_gorevi WHERE kimlik = $1`, [id])).rows[0];
     if (!t) return yok(y);
     if (!(await rolleri(o.kullanici)).includes(t.dogrulayan_rol)) return y.code(403).send({ hata: `Doğrulamayı ${t.dogrulayan_rol} yapar.` });
-    if (t.durum !== 'Kanıt Yüklendi') return y.code(409).send({ hata: 'Kanıt yüklenmeden görev kapanmaz.' });
-    if (t.yukleyen_ref === o.kullanici && t.sorumlu_rol !== t.dogrulayan_rol) return y.code(403).send({ hata: 'Kanıtı yükleyen doğrulayamaz.' });
+    if (t.durum !== 'Kanıt Yüklendi') return y.code(409).send({ hata: 'Görevi kapatmak için kanıt belgesini yüklemenizi rica ederiz.' });
+    if (t.yukleyen_ref === o.kullanici && t.sorumlu_rol !== t.dogrulayan_rol) return y.code(403).send({ hata: 'Kanıtın, yükleyen dışında bir kişi tarafından doğrulanmasını rica ederiz.' });
     await b.db.query(`UPDATE uyum_gorevi SET durum = 'Kapalı', dogrulayan_ref = $2, kapanis_zamani = now() WHERE kimlik = $1`, [id, o.kullanici]);
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Uyum Görevi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Uyum Görevi Kapandı', nesneTuru: 'Uyum Görevi', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
@@ -181,7 +181,7 @@ export function uyumYollari(s: FastifyInstance, b: Baglam) {
     // YG-1197: sertifika ve gizli değerin sahibi bilinir (rol); gizli değerin bitişi son yenileme + rotasyon süresidir. Değerin kendisi sistemde tutulmaz.
     let bitis = g.bitis;
     if (g.tur === 'Sertifika' || g.tur === 'Gizli Değer') {
-      if (!g.sahipRol?.trim() || !(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1`, [g.sahipRol.trim()])).rowCount) return y.code(400).send({ hata: 'Sertifika ve gizli değerin sahibi olan rolü seçiniz; sahibi bilinmeyen kayıt kullanılmaz.' });
+      if (!g.sahipRol?.trim() || !(await b.db.query(`SELECT 1 FROM rol WHERE rol_adi = $1`, [g.sahipRol.trim()])).rowCount) return y.code(400).send({ hata: 'Sertifika ve gizli değerin sahibi olan rolü seçmenizi rica ederiz; sahibi tanımlı olmayan kayıt kullanıma alınmamaktadır.' });
     }
     if (g.tur === 'Gizli Değer') {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(g.sonYenileme ?? '') || !(Number.isInteger(Number(g.rotasyonGun)) && Number(g.rotasyonGun) > 0)) return y.code(400).send({ hata: 'Gizli değerde son yenileme tarihi ve rotasyon süresi (gün) zorunludur.' });

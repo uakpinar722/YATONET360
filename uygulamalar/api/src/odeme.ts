@@ -172,7 +172,7 @@ export function odemeYollari(s: FastifyInstance, b: Baglam) {
     { const bl = await blokeEngeli(b.db, t.kurulus_ref); if (bl) return y.code(409).send({ hata: bl }); } // YG-915
     if (!referans) return y.code(400).send({ hata: 'Banka işlem referansını yazmanızı rica ederiz.' });
     const onay = [...await kartKararcilari(b.db, 'Firma Ödeme Talimatı', id), ...await kartKararcilari(b.db, 'Acil Ödeme İstisnası', id), ...(t.avans_ref ? await kartKararcilari(b.db, 'Malzeme Avansı', t.avans_ref) : [])];
-    if (o.kullanici === t.hazirlayan_ref || onay.includes(o.kullanici) || o.kullanici === t.teknik_kabul_eden_ref) return y.code(409).send({ hata: 'Talimatı hazırlayan, onaylayan veya teknik kabulü veren kişi ödemeyi kaydedemez; başka bir yetkiliden işlem bekleniyor.' });
+    if (o.kullanici === t.hazirlayan_ref || onay.includes(o.kullanici) || o.kullanici === t.teknik_kabul_eden_ref) return y.code(409).send({ hata: 'Görev ayrılığı gereği ödemenin, talimatı hazırlayan, onaylayan veya teknik kabulü veren dışında bir yetkili tarafından kaydedilmesi bekleniyor.' });
     if (!t.acil_onayli) { const le = await listeEngeli(b.db, o.kullanici, t.odeme_listesi_ref); if (le) return y.code(409).send({ hata: le }); }
     if (!(await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Geçerli'`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın teyitli banka hesabı bekleniyor.' }); // YG-928
     if ((await b.db.query(`SELECT 1 FROM banka_hesabi WHERE kurulus_ref = $1 AND durum = 'Karantina'`, [t.kurulus_ref])).rowCount) return y.code(409).send({ hata: 'Firmanın banka hesabı değişikliği bağımsız kanaldan doğrulanıyor; doğrulama sonuçlanana kadar ödeme durdurulmuştur.' }); // YG-1590

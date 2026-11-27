@@ -74,7 +74,7 @@ export function onDegerlendirmeYollari(s: FastifyInstance, b: Baglam) {
     if (!(await b.db.query(`SELECT 1 FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND kullanici_ref = $2 AND rol = $3 AND bitis_zamani IS NULL`, [id, o.kullanici, KONTROLCU])).rowCount) return yok(y);
     const r = (await b.db.query(`SELECT kimlik, hazirlayan_ref, kalite_kontrol_sonucu, surum = (SELECT max(surum) FROM on_degerlendirme WHERE dosya_ref = $1) AS son FROM on_degerlendirme WHERE dosya_ref = $1 AND surum = $2`, [id, Number(surum)])).rows[0];
     if (!r) return yok(y);
-    if (r.hazirlayan_ref === o.kullanici) return y.code(403).send({ hata: 'Hazırladığınız raporu kontrol edemezsiniz.' });
+    if (r.hazirlayan_ref === o.kullanici) return y.code(403).send({ hata: 'Hazırladığınız raporun kontrolünün başka bir yetkili tarafından yapılmasını rica ederiz.' });
     if (!r.son || r.kalite_kontrol_sonucu) return y.code(409).send({ hata: 'Yalnız son sürümün kontrolü bir kez yapılır.' });
     if (!['Uygun', 'Uygun Değil'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Kontrol sonucunu seçiniz.' });
     if (g.sonuc === 'Uygun Değil' && !g.not?.trim()) return y.code(400).send({ hata: 'Uygun bulunmama gerekçesini yazınız.' });

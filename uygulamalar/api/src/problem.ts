@@ -89,7 +89,7 @@ export function problemYollari(s: FastifyInstance, b: Baglam) {
     if (!UUID.test(id) || !(await yetkili(o.kullanici))) return yok(y);
     if (!g.dogrulama?.trim()) return y.code(400).send({ hata: 'Bağımsız test veya kaynak kanıt zorunludur.' });
     const k = (await b.db.query(`SELECT sorumlu_ref FROM sistem_bulgusu WHERE kimlik = $1`, [id])).rows[0]; if (!k) return yok(y);
-    if (k.sorumlu_ref === o.kullanici) return y.code(403).send({ hata: 'Düzeltmeyi yapan kapatamaz; doğrulama bağımsız olmalıdır.' });
+    if (k.sorumlu_ref === o.kullanici) return y.code(403).send({ hata: 'Doğrulamanın bağımsız olması için kapanışı düzeltmeyi yapan dışında bir kişinin yapmasını rica ederiz.' });
     const r = await b.db.query(`UPDATE sistem_bulgusu SET durum = 'Kapalı', dogrulama_kaniti = $2, dogrulayan_ref = $3, kapanis_zamani = now() WHERE kimlik = $1 AND durum IN ('Açık', 'İstisna')`, [id, g.dogrulama.trim(), o.kullanici]);
     if (!r.rowCount) return y.code(409).send({ hata: 'Bu kayıt kapanmıştır.' });
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Sistem Bulgusu' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id]);

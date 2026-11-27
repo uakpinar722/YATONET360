@@ -249,9 +249,9 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if (g.giris && g.cikis && g.cikis <= g.giris) return y.code(400).send({ hata: 'Çıkış saati girişten sonra olmalıdır.' });
     const var0 = (await b.db.query(`SELECT izin_ref, bordro_aktarim_zamani FROM puantaj_kaydi WHERE personel_ref = $1 AND tarih = $2`, [k, g.tarih])).rows[0];
     if (var0?.izin_ref) return y.code(409).send({ hata: 'Bu gün izin onayından işlenmiştir.' });
-    if (var0?.bordro_aktarim_zamani) return y.code(409).send({ hata: 'Bordroya aktarılan kayıt değiştirilemez.' });
+    if (var0?.bordro_aktarim_zamani) return y.code(409).send({ hata: 'Bordroya aktarılan kayıt kilitlidir; düzeltme için İnsan Kaynakları ile iletişime geçmenizi rica ederiz.' });
     const nobet = Math.max(0, Number(g.nobetFiili ?? 0)); const net = netDakika(g.giris, g.cikis, nobet);
-    if (net - nobet > GUNLUK_DK) return y.code(409).send({ hata: 'Günlük çalışma 11 saati aşamaz.' });
+    if (net - nobet > GUNLUK_DK) return y.code(409).send({ hata: 'Günlük çalışmayı 11 saati aşmayacak biçimde girmenizi rica ederiz.' });
     const onceki = (await b.db.query(`SELECT coalesce(sum(net_dakika), 0) n, coalesce(sum(fazla_dakika), 0) f FROM puantaj_kaydi WHERE personel_ref = $1 AND date_trunc('week', tarih) = date_trunc('week', $2::date) AND tarih <> $2`, [k, g.tarih])).rows[0];
     const fazla = Math.max(0, Number(onceki.n) + net - HAFTALIK_DK - Number(onceki.f)); let uyari: string | undefined;
     if (fazla > 0) {
@@ -260,7 +260,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
       if (kart?.ek3_yil !== yil && !ood) return y.code(409).send({ hata: `Haftalık 45 saati aşan çalışma için ${yil} yılı Ek-3 onayı bekleniyor.` });
       if (kart?.ek3_yil !== yil) uyari = 'Olağanüstü Olay Dönemi: Ek-3 onayı olmadan fazla çalışma kaydedildi.';
       const top = Number((await b.db.query(`SELECT coalesce(sum(fazla_dakika), 0) f FROM puantaj_kaydi WHERE personel_ref = $1 AND EXTRACT(YEAR FROM tarih) = $2 AND tarih <> $3`, [k, yil, g.tarih])).rows[0].f);
-      if (top + fazla > YILLIK_FAZLA_DK) return y.code(409).send({ hata: 'Yıllık fazla çalışma 270 saati aşamaz.' });
+      if (top + fazla > YILLIK_FAZLA_DK) return y.code(409).send({ hata: 'Yıllık fazla çalışmayı en çok 270 saat olarak girmenizi rica ederiz.' });
     }
     await b.db.query(`INSERT INTO puantaj_kaydi (personel_ref, tarih, gun_turu, giris_saati, cikis_saati, net_dakika, nobet_fiili_dakika, fazla_dakika, onaylayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (personel_ref, tarih) DO UPDATE SET gun_turu = EXCLUDED.gun_turu, giris_saati = EXCLUDED.giris_saati, cikis_saati = EXCLUDED.cikis_saati, net_dakika = EXCLUDED.net_dakika, nobet_fiili_dakika = EXCLUDED.nobet_fiili_dakika, fazla_dakika = EXCLUDED.fazla_dakika, onaylayan_ref = EXCLUDED.onaylayan_ref`, [k, g.tarih, g.gunTuru, g.giris ?? null, g.cikis ?? null, net, nobet, fazla, ik ? o.kullanici : null]);
     return { netDakika: net, fazlaDakika: fazla, uyari };
@@ -337,7 +337,7 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
     if (d.karar) return y.code(409).send({ hata: 'Karar kaydedilmiştir.' });
     if (!g.karar?.trim()) return y.code(400).send({ hata: 'Kararı yazmanızı rica ederiz.' });
     if (!d.savunma && new Date(d.savunma_son) >= new Date(gunStr(new Date()))) return y.code(409).send({ hata: 'Karar, savunma alındıktan veya savunma süresi dolduktan sonra kaydedilir.' });
-    if (d.kademe === 'Ücret Kesme' && !(Number(g.gundelik) > 0 && Number(g.gundelik) <= 2)) return y.code(409).send({ hata: 'Ücret kesme bir ayda iki gündeliği aşamaz.' });
+    if (d.kademe === 'Ücret Kesme' && !(Number(g.gundelik) > 0 && Number(g.gundelik) <= 2)) return y.code(409).send({ hata: 'Ücret kesmeyi bir ayda iki gündeliği aşmayacak biçimde girmenizi rica ederiz.' });
     if (d.hizli_yol) {
       const son = await isGunuSonu(b.db, new Date(d.ogrenme_tarihi), 6);
       if (new Date() > new Date(son.getTime() + 86_400_000)) return y.code(409).send({ hata: 'Fiilin öğrenilmesinden itibaren 6 iş günü geçmiştir.' });

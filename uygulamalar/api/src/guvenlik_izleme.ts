@@ -111,7 +111,7 @@ export function guvenlikIzlemeYollari(s: FastifyInstance, b: Baglam) {
     if (g.istisnaBitis) {
       if (new Date(g.istisnaBitis).getTime() - Date.now() > 30 * 86_400_000) return y.code(400).send({ hata: 'Güvenlik istisnası en fazla 30 gün verilir; uzatım yeni kararla yapılır.' });
       const mev = (await b.db.query(`SELECT istisna_veren_ref FROM guvenlik_kural WHERE kod = $1 AND istisna_bitis > now()`, [kod])).rows[0];
-      if (mev?.istisna_veren_ref === o.kullanici) return y.code(409).send({ hata: 'Kendi verdiğiniz istisnayı uzatamazsınız; uzatım başka bir yetkilinin kararıyla yapılır.' });
+      if (mev?.istisna_veren_ref === o.kullanici) return y.code(409).send({ hata: 'Kendi verdiğiniz istisnanın uzatımı başka bir yetkilinin kararıyla yapılmaktadır.' });
     }
     await b.db.query(`UPDATE guvenlik_kural SET esik = coalesce($2, esik), istisna_bitis = coalesce($3, istisna_bitis), istisna_gerekce = CASE WHEN $3::timestamptz IS NOT NULL THEN $4 ELSE istisna_gerekce END, istisna_veren_ref = CASE WHEN $3::timestamptz IS NOT NULL THEN $5 ELSE istisna_veren_ref END WHERE kod = $1`, [kod, esik, g.istisnaBitis ?? null, g.gerekce.trim(), o.kullanici]);
     await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Alarm Kuralı Değişikliği', nesneTuru: 'Güvenlik Kuralı', nesneKimligi: kod, eski: { esik: k.esik }, yeni: { esik, istisnaBitis: g.istisnaBitis }, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });

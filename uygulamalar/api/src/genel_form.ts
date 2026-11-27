@@ -161,7 +161,7 @@ export function genelFormYollari(s: FastifyInstance, b: Baglam) {
     const o = i.oturum!; const g = (i.body ?? {}) as { kod?: string; dosya?: string; isEmri?: string; veriler?: Record<string, unknown> };
     const k = g.kod && GENEL_FORMLAR.includes(g.kod) ? await katalog(g.kod) : undefined; if (!k) return yok(y);
     const bg = await baglam(o, k, g.dosya, g.isEmri); if (!bg) return yok(y);
-    if (!(await formSecilebilir(b.db, k.kod))) return y.code(409).send({ hata: 'Bu araç taslak veya iptal durumundadır; yeni kayıtta kullanılamaz.' });
+    if (!(await formSecilebilir(b.db, k.kod))) return y.code(409).send({ hata: 'Bu araç taslak veya iptal durumundadır; yeni kayıtta yürürlükteki bir aracı seçmenizi rica ederiz.' });
     if (!bg.dosya && k.kod !== 'FR-KLT-013') return y.code(400).send({ hata: 'Bu form dosyada doldurulur.' });
     const d = formDogrula(await formTanimi(b.db, k.kod, k.ad, bg.dosya), g.veriler ?? {}); if ('hata' in d) return y.code(400).send(d);
     const on = bg.dosya ? (await b.db.query(`SELECT dosya_no FROM dosya WHERE kimlik = $1`, [bg.dosya])).rows[0].dosya_no : 'LGM';
@@ -175,7 +175,7 @@ export function genelFormYollari(s: FastifyInstance, b: Baglam) {
   s.post('/form-kaydi/:id', oturumlu, async (i, y) => {
     const o = i.oturum!; const f = await kayit((i.params as { id: string }).id); if (!f) return yok(y);
     if (f.hazirlayan_ref !== o.kullanici) return y.code(403).send({ hata: 'Kaydı hazırlayan düzeltir.' });
-    if (f.durum !== 'Açık') return y.code(409).send({ hata: 'Kontroldeki veya onaylı kayıt değiştirilemez.' });
+    if (f.durum !== 'Açık') return y.code(409).send({ hata: 'Kayıt kontrolde veya onaylı olduğundan kilitlidir; değişiklik için yeni sürüm açmanızı rica ederiz.' });
     const d = formDogrula(await formTanimi(b.db, f.form_kodu, f.ad, f.dosya_ref), ((i.body ?? {}) as { veriler?: Record<string, unknown> }).veriler ?? {}); if ('hata' in d) return y.code(400).send(d);
     await b.db.query(`UPDATE form_kaydi SET veriler = $2, guncelleme_zamani = now() WHERE kimlik = $1`, [f.kimlik, JSON.stringify(d.veri)]);
     return { tamam: true };
