@@ -9,5 +9,7 @@ import './stil_ilk.css';
 import './stil_kabuk.css';
 import { Bekleme } from './Bekleme';
 import { EgitimSeridi, Uygulama } from './Uygulama';
+import { oneriBaslat } from './oneri';
 
+oneriBaslat(); // YG-1370: birleşik seçim alanı
 createRoot(document.getElementById('kok')!).render(<><EgitimSeridi /><Uygulama /><Bekleme /></>);

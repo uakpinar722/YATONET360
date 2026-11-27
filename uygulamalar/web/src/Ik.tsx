@@ -140,7 +140,7 @@ export function IkYonetimi({ yap }: { yap: Yap }) {
 
       <div className="bolum">Puantaj Özeti</div>
       <label htmlFor="po-a">Ay (YYYY-AA)</label><input required id="po-a" value={ay} onChange={(e) => setAy(e.target.value)} />
-      <div className="dugmeler"><button className="btn2" disabled={!ay} onClick={() => void yap(() => istek<typeof oz>(`/puantaj/ozet?ay=${ay}`).then(setOz))}>Getir</button><button className="btn2" disabled={!ay} onClick={() => void yap(() => istek<{ adet: number }>('/puantaj/bordro', { ay }).then((r) => ({ uyari: `${r.adet} kayıt bordroya aktarıldı.` })))}>Bordroya Aktar</button></div>
+      <div className="dugmeler"><button className="btn2" disabled={!ay} onClick={() => void yap(() => istek<typeof oz>(`/puantaj/ozet?ay=${ay}`).then(setOz))}>Getir</button><button className="btn2" disabled={!ay} onClick={() => void yap(() => istek<{ adet: number }>('/puantaj/bordro', { ay }).then((r) => ({ uyari: `${r.adet} kayıt bordroya aktarıldı.` })))}>Bordroya Aktar</button>{ay && <a className="btn2" href={`/api/puantaj/bordro.csv?ay=${ay}`}>Bordro Dosyasını İndir</a>}</div>
       {oz.map((x) => <div className="soru" key={x.kimlik}><span>{x.ad_soyad} · {saat(x.net)} · Fazla: {saat(x.fazla)} · İzin: {x.izin} · Devamsızlık: {x.devamsizlik}{x.serbestDakika ? ` · Serbest Zaman: ${saat(x.serbestDakika)}` : ''}{x.fazlaUcretTl ? ` · Fazla Ücret: ${tl(x.fazlaUcretTl)}` : ''}</span></div>)}
     </>}
     <div className="bolum">Eğitim Kaydı</div>

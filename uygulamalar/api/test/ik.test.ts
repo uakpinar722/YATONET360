@@ -101,7 +101,7 @@ describe('puantaj (YG-953, YG-957, YG-1492)', () => {
     expect((await o.ist('POST', '/api/puantaj', oy, P('2027-04-10'))).json().hata).toContain('270');
     expect((await o.ist('POST', '/api/puantaj/bordro', iks, { ay: '2027-03' })).json().adet).toBeGreaterThan(0);
     expect((await o.ist('POST', '/api/puantaj', oy, P('2027-03-01'))).json().hata).toContain('Bordroya');
-    expect((await o.ist('GET', '/api/puantaj/ozet?ay=2027-03', oy)).statusCode).toBe(403);
+    expect((await o.ist('GET', '/api/puantaj/ozet?ay=2027-03', oy)).statusCode).toBe(403); expect((await o.ist('GET', '/api/puantaj/bordro.csv?ay=2027-03', oy)).statusCode).toBe(403); { const cs = await o.ist('GET', '/api/puantaj/bordro.csv?ay=2027-03', iks); expect(cs.headers['content-type']).toContain('text/csv'); expect(cs.body).toContain('Fazla Çalışma (Saat)'); expect(cs.body.split('\r\n').length).toBeGreaterThan(2); } // YG-953 bordro dosyası
   });
 });
 
@@ -131,6 +131,7 @@ describe('ayrılış (YG-975, YG-979, YG-933)', () => {
   it('devir, beyan, onay, tazminat kapısı; son gün hesap kapanır, kalan amire düşer', async () => {
     const iks = await o.gir('iks'); const ikm = await o.gir('ikm');
     await o.sup.query(`INSERT INTO egitim_kaydi (personel_ref, tur, ad, tamamlanma_tarihi, kaydeden_ref) SELECT kimlik, 'İSG', 'Temel', '2026-01-01', kimlik FROM kullanici_hesabi`);
+    await o.sup.query(`UPDATE uyum_gorevi SET durum = 'Kapalı' WHERE mum_no = 'MUM-034'`); // YG-1548: işe giriş bildirgesi kanıtı alınmış sayılır
     const d = await o.dosyaAc({}, {}); await o.ekipKur(d.kimlik); await kart('ds2', { brut: 30000 });
     await o.sup.query(`UPDATE personel_karti SET ise_giris_tarihi = '2020-01-01' WHERE kullanici_ref = $1`, [o.K.ds2]);
     await o.sup.query(`INSERT INTO dosya_ekibi_atamasi (dosya_ref, kullanici_ref, rol, olusturan_ref) VALUES ($1,$2,'Yedek Sorumlu',$3)`, [d.kimlik, o.K.ds2, o.K.opm]);

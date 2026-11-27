@@ -566,6 +566,9 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       { const pd = (await c.query(`SELECT personel_durumu FROM personel_karti WHERE kullanici_ref = $1`, [g.kullanici])).rows[0]?.personel_durumu as string | undefined; // YG-1479: yoktaki kişiye yeni dosya rolü verilmez
         if (pd && ['İzinli', 'Raporlu', 'Ayrılıyor', 'Ayrıldı'].includes(pd)) return dur(409, `Seçilen kişi şu an ${pd}; vekilini veya başka birini seçiniz.`); }
       { const ek = await (await import('./egitim.js')).egitimKapisi(c, g.kullanici); if (ek) return dur(409, ek); } // YG-1399, V-1109
+      { // YG-1548, V-1121: engelleyici personel kuralında (işe giriş bildirgesi) kanıt kapanmadan dosya rolü verilmez.
+        const ug = (await c.query(`SELECT k.gerekli_kanit FROM uyum_gorevi u JOIN uyum_kurali k ON k.mum_no = u.mum_no WHERE k.engelleyici AND k.olay_kodu = 'personel_kaydi' AND u.nesne_turu = 'Personel' AND u.nesne = $1 AND (u.durum <> 'Kapalı' OR (u.kanit_bitis IS NOT NULL AND u.kanit_bitis < current_date)) LIMIT 1`, [g.kullanici])).rows[0];
+        if (ug) return dur(409, `Kişi için kanıt bekleniyor: ${ug.gerekli_kanit}. Kanıt kapanmadan dosya rolü verilemez.`); }
       if (g.rol === 'Yedek Sorumlu' && d.dosya_sorumlusu_ref === g.kullanici) return dur(400, 'Yedek sorumlu Dosya Sorumlusundan farklı olmalıdır.');
       if (g.rol === 'Dosya Sorumlusu' && d.yedek_sorumlu_ref === g.kullanici) return dur(400, 'Dosya Sorumlusu yedek sorumluyla aynı olamaz.');
       if (g.rol === 'Yedek Kalite Kontrolör' || g.rol === 'Kalite Kontrolör') { // YG-1687: yedek kontrolör asıl kontrolörden farklıdır

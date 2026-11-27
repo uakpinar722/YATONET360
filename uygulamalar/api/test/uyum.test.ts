@@ -85,3 +85,13 @@ describe('VERBİS eşik kontrolü (YG-1544)', () => {
     expect((await o.ist('GET', '/api/verbis-esik?yil=2020', await o.gir('hud'))).json().asildi).toBe(true);
   });
 });
+
+describe('engelleyici personel kuralı (YG-1548)', () => {
+  it('işe giriş bildirgesi kanıtı kapanmadan kişiye dosya rolü verilmez', async () => {
+    const d = await o.dosyaAc({}, {});
+    await uyumOlay(o.db, 'personel_kaydi', 'Personel', o.K.oy!);
+    const r = await o.ata(d.kimlik, 'oy', 'Operasyon Yöneticisi', 'opm'); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('Kanıt kapanmadan');
+    await o.sup.query(`UPDATE uyum_gorevi SET durum = 'Kapalı' WHERE nesne = $1 AND mum_no = 'MUM-034'`, [o.K.oy]);
+    expect((await o.ata(d.kimlik, 'oy', 'Operasyon Yöneticisi', 'opm')).statusCode).toBe(200);
+  });
+});

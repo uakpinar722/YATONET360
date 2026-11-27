@@ -268,9 +268,24 @@ export function ikYollari(s: FastifyInstance, b: Baglam) {
   s.get('/puantaj/ozet', oturumlu, async (i, y) => {
     if (!(await ikMi(i.oturum!.kullanici))) return y.code(403).send({ hata: 'Özeti İnsan Kaynakları görür.' });
     const ay = (i.query as { ay?: string }).ay; if (!/^\d{4}-\d{2}$/.test(ay ?? '')) return y.code(400).send({ hata: 'Ayı YYYY-AA biçiminde girmenizi rica ederiz.' });
+    return puantajOzeti(ay!);
+  });
+  const puantajOzeti = async (ay: string) => {
     const r = (await b.db.query(`SELECT h.kimlik, h.ad_soyad, sum(p.net_dakika)::int net, sum(p.fazla_dakika)::int fazla, count(*) FILTER (WHERE p.gun_turu = 'İzin')::int izin, count(*) FILTER (WHERE p.gun_turu = 'Devamsızlık')::int devamsizlik, bool_and(p.bordro_aktarim_zamani IS NOT NULL) aktarildi, k.brut_aylik_tl, coalesce(k.ek3_serbest_zaman, false) serbest FROM puantaj_kaydi p JOIN kullanici_hesabi h ON h.kimlik = p.personel_ref LEFT JOIN personel_karti k ON k.kullanici_ref = p.personel_ref WHERE to_char(p.tarih, 'YYYY-MM') = $1 GROUP BY h.kimlik, h.ad_soyad, k.brut_aylik_tl, k.ek3_serbest_zaman ORDER BY h.ad_soyad`, [ay])).rows;
     // YG-1492: %50 zamlı ücret veya her saat için 1,5 saat serbest zaman; saat ücreti aylık brüt / 225.
     return r.map((x) => ({ ...x, serbestDakika: x.serbest ? Math.round(x.fazla * 1.5) : 0, fazlaUcretTl: !x.serbest && x.brut_aylik_tl ? R2((x.fazla / 60) * (Number(x.brut_aylik_tl) / 225) * 1.5) : 0 }));
+  };
+  // YG-953, V-1123: bordro dış aktarım dosyası; aylık puantaj özeti noktalı virgüllü CSV (Excel uyumlu, tutarlar 1.234,56 biçiminde).
+  s.get('/puantaj/bordro.csv', oturumlu, async (i, y) => {
+    if (!(await ikMi(i.oturum!.kullanici))) return y.code(403).send({ hata: 'Aktarımı İnsan Kaynakları yapar.' });
+    const ay = (i.query as { ay?: string }).ay; if (!/^\d{4}-\d{2}$/.test(ay ?? '')) return y.code(400).send({ hata: 'Ayı YYYY-AA biçiminde girmenizi rica ederiz.' });
+    const oz = await puantajOzeti(ay!);
+    const sayi = (n: number, k = 2) => n.toLocaleString('tr-TR', { minimumFractionDigits: k, maximumFractionDigits: k });
+    const h = (x: string) => `"${String(x).replace(/"/g, '""')}"`;
+    const satir = [['Personel', 'Net Çalışma (Saat)', 'Fazla Çalışma (Saat)', 'Serbest Zaman (Saat)', 'Fazla Çalışma Ücreti (TL)', 'İzin (Gün)', 'Devamsızlık (Gün)'].map(h).join(';'),
+      ...oz.map((x) => [h(x.ad_soyad), sayi((x.net ?? 0) / 60), sayi((x.fazla ?? 0) / 60), sayi((x.serbestDakika ?? 0) / 60), sayi(x.fazlaUcretTl ?? 0), String(x.izin ?? 0), String(x.devamsizlik ?? 0)].join(';'))];
+    await izYaz(b.db, { aktor: i.oturum!.kullanici, oturum: i.oturum!.oturum, eylem: 'Bordro Dış Aktarım Dosyası', nesneTuru: 'Puantaj', nesneKimligi: ay!, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return y.header('content-type', 'text/csv; charset=utf-8').header('content-disposition', `attachment; filename="puantaj-${ay}.csv"`).send('﻿' + satir.join('\r\n') + '\r\n');
   });
   s.post('/puantaj/bordro', oturumlu, async (i, y) => {
     if (!(await ikMi(i.oturum!.kullanici))) return y.code(403).send({ hata: 'Aktarımı İnsan Kaynakları yapar.' });
