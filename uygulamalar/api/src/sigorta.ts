@@ -4,6 +4,7 @@ import type { Pool, PoolClient } from 'pg';
 import { bildir, disGonder } from './bildirim.js';
 import { sigortaAdresiBekleniyor, sigortayaHazirla } from './sigorta_gonderim.js';
 import { izYaz } from './denetim.js';
+import { kartAc } from './is_motoru.js';
 import { statuYaz } from './dosya.js';
 import { ihbarAlindiGonder, ihbarKaydet, rolId } from './ihbar.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
@@ -162,6 +163,10 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
       if (!t) return dur(404, 'Teklif bulunamadı.');
       if (t.statu !== 'Gönderildi') return dur(409, 'Bu teklif karara açık değildir.');
       if (g.surum !== undefined && g.surum !== t.surum_no) return dur(409, 'Teklifin yeni sürümü vardır; güncel sürümü onaylayınız.');
+      { // YG-446: görevlendirmede yazılı yetki sınırı aşılıyorsa karar şirketin yazılı onayıyla girilir.
+        const ys = (await c.query(`SELECT g.yetki_siniri_eur FROM sigorta_gorevlendirme g JOIN dosya d ON d.talep_ref = g.talep_ref WHERE d.kimlik = $1`, [t.dosya_ref])).rows[0]?.yetki_siniri_eur;
+        const top = (await c.query(`SELECT coalesce(sum(tutar_eur), 0)::float n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = ANY($2)`, [t.kimlik, g.siralar])).rows[0].n;
+        if (ys != null && top > Number(ys)) return dur(409, 'Onaylanan tutar görevlendirmedeki yetki sınırının üzerindedir; kararın şirketinizin yazılı onayıyla iletilmesini rica ederiz.'); }
       const h = (await c.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
       const r = await kararUygula(c, t, g.siralar, 'YATONET 360', h.ad_soyad, o.kullanici, new Date());
       if (t.dosya_sorumlusu_ref) await bildir(c, { olay: `sigorta-karar:${id}`, kullanicilar: [t.dosya_sorumlusu_ref, t.hazirlayan_ref], baslik: `Sigorta Kararı: ${t.teklif_no}`, ozet: r.karar, eposta: true });
@@ -171,12 +176,42 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
     } catch (e) { await c.query('ROLLBACK').catch(() => {}); throw e; } finally { c.release(); }
   });
 
+  // YG-446: talimat değişikliği portaldan Talimat ve Karar Kayıtlarına yetkili kaynak olarak düşer; Dosya Sorumlusu bilgilendirilir.
+  s.post('/sigorta/dosya/:id/talimat-degisikligi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const sir = await sirketim(o.kullanici); const { metin } = (i.body ?? {}) as { metin?: string };
+    if (!UUID.test(id) || !sir) return yok(y);
+    const d = (await b.db.query(`SELECT d.dosya_no, d.dosya_sorumlusu_ref, s.sigorta_taraf_ref FROM dosya d LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE d.kimlik = $3 AND ${dosyaKosul}`, [sir, o.kullanici, id])).rows[0];
+    if (!d) return yok(y);
+    if (!metin?.trim()) return y.code(400).send({ hata: 'Talimat değişikliğini yazmanızı rica ederiz.' });
+    const h = (await b.db.query(`SELECT ad_soyad FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
+    const r = (await b.db.query(`INSERT INTO talimat_kaydi (dosya_ref, kanal, tur, gonderen, alinma_zamani, ozgun_metin, aktaran_notu, kaydeden_ref, kaynak_taraf_ref, kaynak_yetkili, aktarim_siniri_saat) VALUES ($1,'Diğer','Talimat',$2,now(),$3,'Sigorta portalı talimat değişikliği',$4,$5,true,0) RETURNING kimlik`, [id, `${h.ad_soyad} (${sir})`, metin.trim(), o.kullanici, d.sigorta_taraf_ref ?? null])).rows[0];
+    if (d.dosya_sorumlusu_ref) await bildir(b.db, { olay: `sg-talimat:${r.kimlik}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Sigorta Talimat Değişikliği`, ozet: metin.trim().slice(0, 300), oncelik: 'Yüksek', eposta: true });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Talimat Değişikliği', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Sigorta Portalı' });
+    return { kimlik: r.kimlik };
+  });
+
+  s.get('/sigorta/kullanicilarim', oturumlu, async (i, y) => { const sir = await sirketim(i.oturum!.kullanici); if (!sir) return yok(y);
+    return { kullanicilar: (await b.db.query(`SELECT h.kimlik, h.ad_soyad FROM sigorta_kullanici s JOIN kullanici_hesabi h ON h.kimlik = s.kullanici_ref WHERE s.sigortaci_adi = $1 AND h.kimlik <> $2 AND h.hesap_durumu = 'Aktif' ORDER BY h.ad_soyad`, [sir, i.oturum!.kullanici])).rows }; });
+  // YG-446: şirket kullanıcısı, aynı şirketteki bir kullanıcının hesabının kapatılmasını talep eder; Müşteri ve Paydaş İlişkileri Müdürü değerlendirir.
+  s.post('/sigorta/kullanici-kapatma-talebi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const sir = await sirketim(o.kullanici); const g = (i.body ?? {}) as { kullanici?: string; gerekce?: string };
+    if (!sir) return yok(y);
+    if (!g.kullanici || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Kullanıcıyı ve gerekçeyi yazmanızı rica ederiz.' });
+    const k = (await b.db.query(`SELECT h.ad_soyad FROM sigorta_kullanici s JOIN kullanici_hesabi h ON h.kimlik = s.kullanici_ref WHERE s.kullanici_ref = $1 AND s.sigortaci_adi = $2`, [g.kullanici, sir])).rows[0];
+    if (!k) return y.code(404).send({ hata: 'Kullanıcı şirketinizde bulunamadı.' });
+    await kartAc(b.db, { tur: 'Sigorta Kullanıcısı Kapatma Talebi', kategori: 'islem', baslik: `${sir} · ${k.ad_soyad} Hesap Kapatma Talebi`, ozet: g.gerekce.trim().slice(0, 300), oncelik: 'Yüksek', sahipRol: await rolId(b.db, 'Müşteri ve Paydaş İlişkileri Müdürü'), nesneTuru: 'Kullanıcı', nesneKimligi: g.kullanici });
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Kullanıcı Kapatma Talebi', nesneTuru: 'Kullanıcı', nesneKimligi: g.kullanici, gerekce: g.gerekce.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Sigorta Portalı' });
+    return { tamam: true };
+  });
+
   // YG-446, YG-448: Sigorta Görevlendirmesi; hasar dosya no zorunlu, poliçe isteğe bağlı. İhbar dosya numarasıyla izlenir, ayrıca yazı gitmez.
   s.post('/sigorta/gorevlendirme', oturumlu, async (i, y) => {
-    const o = i.oturum!; const sir = await sirketim(o.kullanici); const g = (i.body ?? {}) as { hasarNo?: string; policeNo?: string; yatAdi?: string; konum?: string; ozet?: string; sahipAd?: string; sahipTel?: string; yetkili?: string; hizmet?: string };
+    const o = i.oturum!; const sir = await sirketim(o.kullanici); const g = (i.body ?? {}) as { hasarNo?: string; policeNo?: string; yatAdi?: string; konum?: string; ozet?: string; sahipAd?: string; sahipTel?: string; yetkili?: string; hizmet?: string; yetkiSiniri?: number; onayKanali?: string };
     if (!sir) return y.code(403).send({ hata: 'Bu işlem sigorta şirketi kullanıcılarına açıktır.' });
     if (!g.hasarNo?.trim()) return y.code(400).send({ hata: 'Hasar dosya numarası zorunludur.' });
     if (!g.yatAdi?.trim() || !g.konum?.trim() || !g.ozet?.trim()) return y.code(400).send({ hata: 'Yat, konum ve olay özeti zorunludur.' });
+    if (g.yetkiSiniri !== undefined && !(Number(g.yetkiSiniri) >= 0)) return y.code(400).send({ hata: 'Yetki sınırını EUR olarak girmenizi rica ederiz.' }); // YG-446
+    if (g.onayKanali && !['YATONET 360', 'Sözleşmede Tanımlı Kurumsal E-posta'].includes(g.onayKanali)) return y.code(400).send({ hata: 'Onay kanalını listeden seçmenizi rica ederiz.' });
     const c = await b.db.connect();
     try {
       await c.query('BEGIN');
@@ -184,6 +219,8 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
       const h = (await c.query(`SELECT ad_soyad, cep_telefonu, e_posta FROM kullanici_hesabi WHERE kimlik = $1`, [o.kullanici])).rows[0];
       const r = await ihbarKaydet(c, { kanal: 'Portal', sahibiAdi: h.ad_soyad, sahibiTuru: 'Sigorta Şirketi', yetkiDurumu: 'Doğrulandı', telefon: h.cep_telefonu ?? undefined, eposta: h.e_posta ?? undefined, konum: g.konum, yatDurumu: 'Sigorta bildirimi', ihtiyac: [g.ozet.trim(), g.hizmet?.trim() && `İstenen hizmet: ${g.hizmet.trim()}`, g.yetkili?.trim() && `Dosya yetkilisi: ${g.yetkili.trim()}`].filter(Boolean).join(' · '), yat: { adi: g.yatAdi, markaDiger: '', modelDiger: '' }, sigortaci: sir, policeNo: g.policeNo, hasarNo: g.hasarNo.trim(), yatSahibi: g.sahipAd ? { ad: g.sahipAd, telefon: g.sahipTel } : undefined, cevaplar: {} }, o.kullanici, { ilkSorumlu: ilk });
       if ('hata' in r) { await c.query('ROLLBACK'); return y.code(400).send({ hata: r.hata }); }
+      await c.query(`INSERT INTO sigorta_gorevlendirme (talep_ref, sigortaci_adi, hasar_no, police_no, dosya_yetkilisi, yetki_siniri_eur, onay_kanali, istenen_hizmet, kaydeden_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [r.kimlik, sir, g.hasarNo.trim(), g.policeNo?.trim() || null, g.yetkili?.trim() || null, g.yetkiSiniri ?? null, g.onayKanali || 'YATONET 360', g.hizmet?.trim() || null, o.kullanici]); // YG-446
       await ihbarAlindiGonder(c, r.kimlik, b.webAdresi);
       await c.query('COMMIT');
       return { talepNo: r.talepNo };

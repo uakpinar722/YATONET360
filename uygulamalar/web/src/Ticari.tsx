@@ -11,7 +11,7 @@ import { ArizaBildir } from './Broker';
 import { OdemeTakvimi } from './OdemeTakvimi';
 import { eur, tarih, tarih as gunBicim } from './bicim';
 import { TevkifatListesi } from './Tevkifat';
-import { SigortaIhbar, SigortaMutabakat } from './SigortaIhbar';
+import { SigortaIhbar, SigortaKullaniciKapatma, SigortaMutabakat, SigortaTalimat } from './SigortaIhbar';
 import { OdemeYatSahibine } from './OdemeYatSahibine';
 import { useEffect, useState, type ReactNode } from 'react';
 import { IkYonetimi, PersonelIslemlerim } from './Ik';
@@ -612,6 +612,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
     <>
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1><Mesaj />
       {ben.grup.startsWith('Sigorta') && <SigortaIhbar sonra={() => void yukle()} />}
+      {ben.grup.startsWith('Sigorta') && <><SigortaTalimat dosyalar={v.dosyalar.map((d) => ({ kimlik: d.kimlik, ad: `${d.dosyaNo}${(d as { hasarNo?: string }).hasarNo ? ` · ${(d as { hasarNo?: string }).hasarNo}` : ''}` }))} /><SigortaKullaniciKapatma /></>}{/* YG-446 */}
       {ben.grup.startsWith('Sigorta') && <SigortaMutabakat />}
       <SigortaKartela />
       <div className="bolum">İşleminizi Bekleyenler</div>

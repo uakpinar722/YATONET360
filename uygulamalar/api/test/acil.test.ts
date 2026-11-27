@@ -342,6 +342,14 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Fiyat Teklifi Hazırla' AND nesne_kimligi = $1`, [t])).rows[0].n).toBe(1); // YG-455
     expect((await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [2] })).statusCode).toBe(409);
   });
+  it('görevlendirmedeki yetki sınırını aşan portal kararı durur; talimat değişikliği kayda yetkili kaynak olarak düşer (YG-446)', async () => {
+    const { d, t } = await dosyaVeTeklif();
+    await o.sup.query(`INSERT INTO sigorta_gorevlendirme (talep_ref, sigortaci_adi, hasar_no, yetki_siniri_eur, kaydeden_ref) SELECT talep_ref, 'Deneme Sigorta', 'HS-Y', 100, $2 FROM dosya WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const r = await o.ist('POST', `/api/sigorta/teklif/${t}/karar`, sigortaC, { siralar: [1] }); expect(r.statusCode).toBe(409); expect(r.json().hata).toContain('yetki sınırı');
+    expect((await o.ist('POST', `/api/sigorta/dosya/${d.kimlik}/talimat-degisikligi`, baskaSigortaC, { metin: 'X' })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/sigorta/dosya/${d.kimlik}/talimat-degisikligi`, sigortaC, { metin: 'Onarım yeri değişti' })).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT tur, kaynak_yetkili, ozgun_metin FROM talimat_kaydi WHERE dosya_ref = $1 ORDER BY kayit_zamani DESC LIMIT 1`, [d.kimlik])).rows[0]).toEqual({ tur: 'Talimat', kaynak_yetkili: true, ozgun_metin: 'Onarım yeri değişti' });
+  });
   it('ek iş teklifinde 1. iş günü hatırlatma, 3. iş günü telefon görevi (YG-447)', async () => {
     const { d, t } = await dosyaVeTeklif();
     await o.sup.query(`UPDATE fiyat_teklifi SET teklif_turu = 'Ek Fiyat Teklifi', gonderim_zamani = now() - interval '10 days', sigorta_karar_son = now() + interval '5 days' WHERE kimlik = $1`, [t]);
@@ -376,6 +384,15 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     expect((await o.ist('POST', '/api/sigorta/gorevlendirme', await o.gir('ds'), { hasarNo: 'H', yatAdi: 'Y', konum: 'K', ozet: 'O' })).statusCode).toBe(403);
     const r = await o.ist('POST', '/api/sigorta/gorevlendirme', sigortaC, { hasarNo: 'HS-1', yatAdi: 'Y', konum: 'K', ozet: 'O' });
     expect(r.statusCode, r.body).toBe(200); expect(r.json().talepNo).toMatch(/^LGM-/);
+    // YG-446: yetki sınırı ve onay kanalı görevlendirmeyle kaydedilir; kullanıcı kapatma talebi Müşteri ve Paydaş İlişkileri Müdürüne düşer.
+    expect((await o.ist('POST', '/api/sigorta/gorevlendirme', sigortaC, { hasarNo: 'HS-2', yatAdi: 'Y', konum: 'K', ozet: 'O', onayKanali: 'Telefon' })).statusCode).toBe(400);
+    const r2 = await o.ist('POST', '/api/sigorta/gorevlendirme', sigortaC, { hasarNo: 'HS-2', yatAdi: 'Y', konum: 'K', ozet: 'O', yetkili: 'Hasar Uzmanı', yetkiSiniri: 5000, onayKanali: 'Sözleşmede Tanımlı Kurumsal E-posta' }); expect(r2.statusCode, r2.body).toBe(200);
+    expect((await o.sup.query(`SELECT yetki_siniri_eur::float y, onay_kanali FROM sigorta_gorevlendirme WHERE hasar_no = 'HS-2'`)).rows[0]).toEqual({ y: 5000, onay_kanali: 'Sözleşmede Tanımlı Kurumsal E-posta' });
+    const s2 = (await o.sup.query(`SELECT kullanici_ref FROM sigorta_kullanici WHERE sigortaci_adi = 'Başka Sigorta'`)).rows[0].kullanici_ref;
+    expect((await o.ist('POST', '/api/sigorta/kullanici-kapatma-talebi', sigortaC, { kullanici: s2, gerekce: 'Ayrıldı' })).statusCode).toBe(404);
+    const s1 = (await o.sup.query(`SELECT kullanici_ref FROM sigorta_kullanici WHERE sigortaci_adi = 'Deneme Sigorta'`)).rows[0].kullanici_ref;
+    expect((await o.ist('POST', '/api/sigorta/kullanici-kapatma-talebi', sigortaC, { kullanici: s1, gerekce: 'Görev değişikliği' })).statusCode).toBe(200);
+    expect((await o.kart('Sigorta Kullanıcısı Kapatma Talebi', s1)).durum).toBe('Bekliyor');
   });
 });
 
