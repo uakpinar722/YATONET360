@@ -350,7 +350,8 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
       // YG-553: tanıklık ve bekletme noktası daveti dosya ekibine ve firmaya sistem içi, SMS ve e-postayla gider.
       if (['Bekletme', 'Tanıklık'].includes(g.tur!)) {
         const al = [...(await c.query(`SELECT DISTINCT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [e.dosya_ref])).rows.map((x) => x.kullanici_ref as string),
-          ...(await c.query(`SELECT u.kullanici_ref FROM is_emri x JOIN kurulus_kullanici u ON u.kurulus_ref = x.kurulus_ref WHERE x.kimlik = $1`, [id])).rows.map((x) => x.kullanici_ref as string)].filter((x) => x !== o.kullanici);
+          ...(await c.query(`SELECT u.kullanici_ref FROM is_emri x JOIN kurulus_kullanici u ON u.kurulus_ref = x.kurulus_ref WHERE x.kimlik = $1`, [id])).rows.map((x) => x.kullanici_ref as string),
+          ...(g.eksperKlas ? await (await import('./eksper.js')).dosyaEksperleri(c, e.dosya_ref) : [])].filter((x) => x !== o.kullanici);
         const zm = new Date(g.zaman!).toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'Europe/Istanbul' });
         await bildir(c, { olay: `tanıklık-davet:${r.kimlik}`, kullanicilar: al, baslik: `${no} · ${g.tur} Noktası Daveti`, ozet: `${e.is_emri_no} · ${g.ozellik!.trim()} · ${zm}`, eposta: true, sms: true, oncelik: e.oncelik === 'Kritik' ? 'Kritik' : 'Yüksek' });
       }

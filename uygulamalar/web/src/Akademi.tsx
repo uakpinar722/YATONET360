@@ -1,6 +1,7 @@
 import { OnayaGonder } from './Dugme';
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { YardimIcerigi } from './Yardim';
 
 type D = { kimlik: string; ad: string; tur: string; icerik: string; surum: number; degisiklik_notu: string | null; beyan: boolean };
 type V = { ik: boolean; dersler: D[]; izleme: { kimlik: string; ad: string; surum: number; beyan: number; hedef: number }[] };
@@ -13,6 +14,7 @@ export function Akademi() {
   if (!v) return null;
   const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); return yk(); }).catch((e) => setM(e.message));
   return <><div className="bolum">Akademi</div>{m && <div className="not" role="status">{m}</div>}
+    <YardimIcerigi yalnizVideo videoBasligi="Rol Videoları" />{/* YG-1502: rol videoları Akademide de */}
     {v.dersler.map((d) => <details key={d.kimlik}><summary>{d.ad} · {d.tur}{d.beyan ? ' · Tamamlandı' : ''}</summary>{d.degisiklik_notu && <p><b>Ne Değişti:</b> {d.degisiklik_notu}</p>}<p>{d.icerik}</p>{!d.beyan && <button className="btn2 kucuk" onClick={() => is(istek(`/akademi/ders/${d.kimlik}/beyan`, {}), 'Beyanınız kaydedildi.')}>Okudum, Katıldım</button>}</details>)}
     {v.ik && <><div className="ozet">{v.izleme.map((x) => <div key={x.kimlik}>{x.ad} · Sürüm {x.surum} · {x.beyan} / {x.hedef}</div>)}</div>
       <label htmlFor="ak-a">Ders Adı</label><input required id="ak-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />

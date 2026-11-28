@@ -6,6 +6,7 @@
   "scripts": {
     "gelistir": "tsx watch src/calistir.ts",
     "kurulum": "tsx araclar/kurulum.ts",
+    "api-dokumani": "tsx araclar/api_dokumani.ts",
     "test": "vitest run",
     "denetle": "tsc --noEmit"
   },

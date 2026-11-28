@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { istek, type Ben } from './api';
 import { KodKutulari } from './Giris';
+import { YardimIcerigi } from './Yardim';
 
 type Dil = 'tr' | 'en';
 
@@ -211,6 +212,7 @@ export function IlkAdimlar({ ben, bitti }: { ben: Ben; bitti: () => void }) {
   if (adim === 'rehber') return ( // YG-1396, G2-7: yalnız Çözüm Ortağı
     <Kabuk adim={sira} toplam={toplam}>
       <h2>Portal Rehberi</h2>
+      <YardimIcerigi yalnizVideo videoBasligi="Portal Eğitim Videosu (İsteğe Bağlı)" />{/* YG-1502: izlemek zorunlu değil */}
       <div className="not">YATONET 360 portalına hoş geldiniz. Bu kısa rehber iş emri kabulü, parça girişi, yönlendirmeli fotoğraf, günlük kayıt, hakediş, fatura düzenleme bildirimi ve teslim adımlarını göstermektedir. İletişim yalnız LİMİT GLOBAL MARINE üzerinden yürütülür.</div>
       <label className="kutu"><input type="checkbox" checked={kabul} onChange={(e) => setKabul(e.target.checked)} /><span>Okudum, anladım.</span></label>
       {hata && <div className="hata" role="alert">{hata}</div>}

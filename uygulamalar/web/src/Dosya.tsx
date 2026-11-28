@@ -25,6 +25,7 @@ import { AcilDegerlendirme } from './AcilDegerlendirme';
 import { GarantiMali } from './GarantiMali';
 import { Yediemin } from './Yediemin';
 import { BulunduguTesis } from './BulunduguTesis';
+import { DosyaEksperi } from './Eksper';
 import { tarih as gunBicim } from './bicim';
 
 interface Secenek { kanallar: string[]; turler: string[]; yetki: string[]; sorular: string[]; tekneTuru: string[]; govde: string[]; klas: string[]; sifat: string[]; oncelikler: string[] }
@@ -131,6 +132,7 @@ function IhbarFormu({ bitti }: { bitti: (id?: string) => void }) {
     <form className="ozet" onSubmit={(e) => void gonder(e)}>
       <h1>Yeni İhbar</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
+      {kanal === 'Telefon' && <div className="not" role="note">İlk Telefon Kılavuzu: 1. Geçmiş olsun dileyiniz. 2. Herkesin güvende olup olmadığını, yaralı bulunup bulunmadığını sorunuz. 3. Yatın güvende olup olmadığını (su alma, yangın, sürüklenme) sorunuz. Ardından soruları sırayla sorunuz.</div>}{/* YG-1467 */}
       <label><input type="checkbox" checked={altForm} onChange={(e) => setAltForm(e.target.checked)} /> Sistem kesintisinde alternatif formla alındı</label>
       {altForm && <><label htmlFor="i-af">Alternatif Form No</label><input id="i-af" value={altNo} onChange={(e) => setAltNo(e.target.value)} />
         <label htmlFor="i-az">Formdaki Bildirim Zamanı</label><input id="i-az" type="datetime-local" value={altZaman} onChange={(e) => setAltZaman(e.target.value)} /></>}
@@ -529,6 +531,7 @@ function SahaBolumu({ id, d, belgeler, yenile }: { id: string; d: DosyaAyrinti; 
       </Blok>
       {d.statu === 'Kapalı' && <YenidenAc id={id} yap={yap} />}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <BelgeTalebi id={id} yap={yap} />}
+      {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <DosyaEksperi id={id} />}{/* YG-1570 */}
       {d.statu !== 'Kapalı' && d.yurt_disi && d.rollerim.includes('Dosya Sorumlusu') && <UlasimPlani id={id} yap={yap} mevcut={d.ulasim_plani_zamani ?? null} />}{/* YG-1486 */}
       {d.statu !== 'Kapalı' && d.rollerim.includes('Dosya Sorumlusu') && <>
         <Blok baslik="Kapanış Kontrolü">

@@ -179,7 +179,7 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
       if (!t) return dur(404, 'Teklif bulunamadı.');
       if (t.statu !== 'Gönderildi') return dur(409, 'Bu teklif karara açık değildir.');
       if (g.surum !== undefined && g.surum !== t.surum_no) return dur(409, 'Teklifin yeni sürümü vardır; güncel sürümü onaylayınız.');
-      { // YG-446: görevlendirmede yazılı yetki sınırı aşılıyorsa karar şirketin yazılı onayıyla girilir.
+      if (sir) { // YG-446: görevlendirmede yazılı yetki sınırı aşılıyorsa karar şirketin yazılı onayıyla girilir. YG-1570: eksperin onayında yazılı yetki veya sınır aranmaz.
         const ys = (await c.query(`SELECT g.yetki_siniri_eur FROM sigorta_gorevlendirme g JOIN dosya d ON d.talep_ref = g.talep_ref WHERE d.kimlik = $1`, [t.dosya_ref])).rows[0]?.yetki_siniri_eur;
         const top = (await c.query(`SELECT coalesce(sum(tutar_eur), 0)::float n FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 AND sira_no = ANY($2)`, [t.kimlik, g.siralar])).rows[0].n;
         if (ys != null && top > Number(ys)) return dur(409, 'Onaylanan tutar görevlendirmedeki yetki sınırının üzerindedir; kararın şirketinizin yazılı onayıyla iletilmesini rica ederiz.'); }

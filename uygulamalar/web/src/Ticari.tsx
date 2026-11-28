@@ -7,6 +7,7 @@ import { ArayuzMetni } from './ArayuzMetni';
 import { OnayaGonder } from './Dugme';
 import { DurumSayilari } from './DurumSayilari';
 import { SigortaPanel } from './SigortaPanel';
+import { EksperBolumu } from './Eksper';
 import { ArizaBildir } from './Broker';
 import { OdemeTakvimi } from './OdemeTakvimi';
 import { eur, tarih, tarih as gunBicim } from './bicim';
@@ -615,6 +616,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       {ben.grup.startsWith('Sigorta') && <SigortaIhbar sonra={() => void yukle()} />}
       {ben.grup.startsWith('Sigorta') && <><SigortaTalimat dosyalar={v.dosyalar.map((d) => ({ kimlik: d.kimlik, ad: `${d.dosyaNo}${(d as { hasarNo?: string }).hasarNo ? ` · ${(d as { hasarNo?: string }).hasarNo}` : ''}` }))} /><SigortaKullaniciKapatma /></>}{/* YG-446 */}
       <SigortaDosyaAyrinti dosyalar={v.dosyalar.map((d) => ({ kimlik: d.kimlik, ad: `${d.dosyaNo}${d.hasarNo ? ` · ${d.hasarNo}` : ''} · ${d.yat}` }))} />{/* YG-438 */}
+      <EksperBolumu dosyalar={v.dosyalar.map((d) => ({ kimlik: d.kimlik, ad: `${d.dosyaNo}${d.hasarNo ? ` · ${d.hasarNo}` : ''} · ${d.yat}` }))} />{/* YG-1570 */}
       {ben.grup.startsWith('Sigorta') && <SigortaMutabakat />}
       <SigortaKartela />
       <div className="bolum">İşleminizi Bekleyenler</div>

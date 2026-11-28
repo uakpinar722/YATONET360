@@ -122,10 +122,12 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     // YG-1440: yat sahibi belge yüklemez; belgeleri Dosya Sorumlusu girer, onarım kanıtını firma portalı yükler.
     // YG-1562: tek istisna, hasar bildirimine en fazla 5 fotoğraf.
     const bildirimFoto = q.bagTuru === 'Talep'; // YG-1562, YG-017: ihbara yalnız fotoğraf, en çok 5
+    // YG-1570: Sigorta Eksperi görevli olduğu dosyaya yalnız ekspertiz raporunu (isteğe bağlı) yükler.
+    const eksperRaporu = o.grup === 'Sigorta Şirketi / Eksper' && q.bagTuru === 'Dosya' && q.tur === 'Ekspertiz Raporu' && await (await import('./eksper.js')).eksperDosyasi(b.db, o.kullanici, q.bagKimligi ?? '');
     if (bildirimFoto) {
       if (!['jpg', 'jpeg', 'png', 'heic'].includes((q.dosya ?? '').split('.').pop()?.toLowerCase() ?? '')) return red(400, 'Yalnız fotoğraf eklenebilir.');
       if ((await b.db.query(`SELECT count(*)::int n FROM belge WHERE bag_turu = 'Talep' AND bag_kimligi = $1`, [q.bagKimligi])).rows[0].n >= 5) return red(409, 'En fazla 5 fotoğraf ekleyebilirsiniz.');
-    } else if (o.grup !== 'LGM İç Rolü' && o.grup !== 'İş Birliği Firması' && o.grup !== 'Tedarikçi' && !o.grup.startsWith('Tesis Yetkilisi')) return red(403, 'Belgeleriniz Dosya Sorumlunuz tarafından sisteme eklenir.');
+    } else if (!eksperRaporu && o.grup !== 'LGM İç Rolü' && o.grup !== 'İş Birliği Firması' && o.grup !== 'Tedarikçi' && !o.grup.startsWith('Tesis Yetkilisi')) return red(403, 'Belgeleriniz Dosya Sorumlunuz tarafından sisteme eklenir.');
     if (!akis || typeof akis.resume !== 'function') return y.code(400).send({ hata: 'Dosya gönderilmedi.' });
     const { ad, tur, bagTuru, bagKimligi, kaynak, kaynakKisi, sinif, belgeTarihi, gerekce, dosya } = q;
     if (!ad?.trim() || !tur?.trim() || !dosya?.trim()) return red(400, 'Belge adı, türü ve dosya zorunludur.');
@@ -133,7 +135,7 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
     if (!kaynak || !KANAL.includes(kaynak)) return red(400, 'Kaynak kanalı seçilmelidir.');
     if (sinif && !SINIF.includes(sinif)) return red(400, 'Geçersiz bilgi sınıfı.');
     const bag = BAGLAR.get(bagTuru);
-    const durum = bag ? await bag(b.db, o.kullanici, bagKimligi) : 'yok';
+    const durum = eksperRaporu ? 'tamam' : bag ? await bag(b.db, o.kullanici, bagKimligi) : 'yok';
     if (durum === 'yok') return red(400, 'Bağlanacak kayıt bulunamadı.');
     if (durum === 'yetkisiz') return red(403, 'Bu kayda belge ekleme yetkiniz yok.');
     { const ke = await kuralEksigi(b.db, tur.trim(), { belge_tarihi: belgeTarihi, kaynak_kisi: kaynakKisi }); if (ke) return red(400, ke); } // YG-603, YG-605
@@ -185,6 +187,10 @@ export function belgeYollari(s: FastifyInstance, b: Baglam) {
         const { rolSahipleri } = await import('./makam.js');
         await (await import('./bildirim.js')).bildir(c, { olay: `onay-dustu:${x.kart}`, kullanicilar: x.makam ? await rolSahipleri(c, x.makam) : [], baslik: `Onay Düştü: ${ad.trim()} ${x.surum_no}. sürüm`, ozet: `Belgenin ${no}. sürümü yüklendi; önceki sürüm için onay gerekmez. Yeni sürüm onaya gönderildiğinde listenize düşer.`, isRef: x.kart });
         onayDustu = true;
+      }
+      if (eksperRaporu) { // YG-1570: ekspertiz raporu Dosya Sorumlusuna bildirilir; tutarlar eksper karşılaştırmasına Dosya Sorumlusunca girilir (YG-203).
+        const d = (await c.query(`SELECT dosya_no, dosya_sorumlusu_ref FROM dosya WHERE kimlik::text = $1`, [bagKimligi])).rows[0];
+        if (d?.dosya_sorumlusu_ref) await (await import('./bildirim.js')).bildir(c, { olay: `ekspertiz-raporu:${r.kimlik}`, kullanicilar: [d.dosya_sorumlusu_ref], baslik: `${d.dosya_no} · Ekspertiz Raporu Yüklendi`, ozet: `${ad.trim()} · ${no}. sürüm`, eposta: true });
       }
       // YG-1656: acil talebe eklenen fotoğraf nöbetçiye (ilk sorumlu ve dosya sorumlusu) anında Kritik bildirimle gider.
       if (bildirimFoto) {
