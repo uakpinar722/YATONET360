@@ -30,10 +30,10 @@ export function YatSahibiAna({ ben }: { ben: Ben }) {
     <>
       <h1>Hoş Geldiniz, {ben.adSoyad}</h1>
       {hata && <div className="hata" role="alert">{hata}</div>}
+      {v?.onaylar.filter((o) => o.ony_kod === 'ONY-30').map((o) => <AcilErisimKarti key={o.kimlik} o={o} bitti={() => void yukle()} />)}{/* YG-1566: acil kart en üstte */}
       {v && <DurumSayilari ogeler={[['Açık Dosya', v.dosyalar.filter((k) => k.renk !== 'gri').length], ['Onayınızı Bekleyen', v.onaylar.length], ['İşlemdeki Bildirim', v.talepler.length], ['Tamamlanan Dosya', v.dosyalar.filter((k) => k.renk === 'gri').length]]} />}
       {v?.yetkili && <div className="not">{v.yetkili.rol} · {v.yetkili.sahip_ad}</div>}
       <KurumsalFilo />
-      {v?.onaylar.filter((o) => o.ony_kod === 'ONY-30').map((o) => <div className="hata" key={o.kimlik} role="alert"><b>⚠ Yata Erişim İzni</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}<div>Acil müdahale için ekibin yata erişmesine izin vermeniz istenmektedir.</div><button className="btn" onClick={() => setOnay(o.kimlik)}>İncele</button></div>)}
       <PazarlamaSorusu ben={ben} />
       {v?.yetkili && <Yetkilerim ben={ben} y={v.yetkili} yenile={() => void yukle()} />}
       {(v as { limitAsan?: { kimlik: string; belge_adi: string | null; dosya_no: string | null; tutar_eur: string }[] } | null)?.limitAsan?.map((x) => <div className="uyari" key={x.kimlik} role="note">⚠ {x.belge_adi ?? 'Onay'}{x.dosya_no ? ` · ${x.dosya_no}` : ''}: tek işlem limitinizi aşmaktadır; onay yat sahibince verilir.</div>)}{/* YG-1449 */}
@@ -299,6 +299,33 @@ export function OnayEkrani({ belirtec, gomulu, geri }: { belirtec: string; gomul
 }
 
 /** YG-1507: onaylı beyan metni yapılandırılmış gösterilir; "Onayınıza sunulan belgeler" bağlantılı liste, "Bilmeniz gereken önemli hususlar" numaralı maddeler. Metin değiştirilmez. */
+/** YG-1566: acil yata erişim izni kırmızı acil kartı; "İzin Ver" (yeşil) / "İzin Verme" (kırmızı), karar SMS koduyla verilir. */
+function AcilErisimKarti({ o, bitti }: { o: { kimlik: string; dosya_no: string | null }; bitti: () => void }) {
+  const [b, setB] = useState<string | null>(null); const [t, setT] = useState<OnayEkran | null>(null); const [karar, setKarar] = useState<'Onayla' | 'Reddet' | null>(null);
+  const [kod, setKod] = useState(''); const [kutu, setKutu] = useState<Record<string, boolean>>({}); const [not, setNot] = useState(''); const [hata, setHata] = useState('');
+  const sec = async (k: 'Onayla' | 'Reddet') => {
+    setHata('');
+    try {
+      const r = b ?? (await istek<{ belirtec: string }>(`/portal/onay/${o.kimlik}/ac`, {})).belirtec; setB(r);
+      const e = t ?? await istek<OnayEkran>(`/onay/${r}`); setT(e);
+      await istek(`/onay/${r}/kod`, { kanal: 'SMS' }); setKarar(k); setNot(`Doğrulama kodu ••${e.telefonSonu ?? ''} ile biten telefonunuza gönderilmiştir.`);
+    } catch (x) { setHata((x as Error).message); }
+  };
+  const gonder = async () => { setHata(''); try { await istek(`/onay/${b}/karar`, { kod, karar, kutular: kutu }); bitti(); } catch (x) { setHata((x as Error).message); } };
+  const eksik = karar === 'Onayla' && (t?.kutular ?? []).some((k) => k.zorunlu && !kutu[k.ad]);
+  return <div className="hata" role="alert"><b>⚠ Acil: Yata Erişim İzni</b>{o.dosya_no ? ` · ${o.dosya_no}` : ''}
+    <div>Acil müdahale için ekibin yata erişmesine izin vermeniz istenmektedir.</div>
+    {!karar ? <div className="dugmeler"><button className="btn evet" onClick={() => void sec('Onayla')}>İzin Ver</button><button className="btn hayir" onClick={() => void sec('Reddet')}>İzin Verme</button></div> : <>
+      {t && <OnayMetni metin={t.metin} />}
+      {karar === 'Onayla' && t?.kutular.map((k) => <label className="kutu" key={k.ad}><input type="checkbox" checked={Boolean(kutu[k.ad])} onChange={(e) => setKutu({ ...kutu, [k.ad]: e.target.checked })} /><span>{k.ad}</span></label>)}
+      {not && <div className="not" role="status">{not}</div>}
+      <label htmlFor={`ak-${o.kimlik}`}>Doğrulama Kodu</label><input id={`ak-${o.kimlik}`} inputMode="numeric" autoComplete="one-time-code" value={kod} onChange={(e) => setKod(e.target.value)} />
+      <div className="dugmeler"><button className={`btn ${karar === 'Onayla' ? 'evet' : 'hayir'}`} disabled={!kod.trim() || eksik} onClick={() => void gonder()}>{karar === 'Onayla' ? 'İzin Ver' : 'İzin Verme'}</button>
+        <button className="btn2" onClick={() => { setKarar(null); setKod(''); setNot(''); }}>Vazgeç</button></div></>}
+    {hata && <div>{hata}</div>}
+  </div>;
+}
+
 function OnayMetni({ metin }: { metin: string }) {
   const BAS_B = /Onayınıza sunulan belgeler:|Documents submitted for your approval:/i; const BAS_H = /Bilmeniz gereken önemli hususlar:|Important points you should know:/i;
   const baglanti = (s: string) => s.split(/(https?:\/\/\S+)/g).map((x, i) => (/^https?:\/\//.test(x) ? <a key={i} href={x.replace(/[.,;)]+$/, '')} target="_blank" rel="noopener noreferrer">Görüntüle</a> : x));

@@ -39,6 +39,18 @@ export async function konumPlani(db: Pool, kisiler: string[], bugun = new Date()
   }));
 }
 
+/** YG-1584: Dosya Sorumlusu atama kuyruğu; öncelik sınıfı, sonra hizmet süresinin dolmasına en az kalan, sonra geliş sırası. */
+const OP_KUYRUK = `SELECT d.kimlik, d.dosya_no, d.oncelik, y.yat_adi, d.olusturma_zamani, (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) son FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref
+        WHERE d.statu = 'Açılış Kontrolünde' AND NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Dosya Sorumlusu' AND a.bitis_zamani IS NULL)
+        ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`;
+/** YG-1588: teknik atama kuyruğu (Teknik Uzman veya Teknik Yönetici eksik dosyalar). */
+const TEK_KUYRUK = `SELECT d.kimlik, d.dosya_no, d.oncelik, y.yat_adi, (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) son,
+        array_remove(ARRAY[CASE WHEN NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) THEN 'Teknik Uzman' END,
+          CASE WHEN NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL) THEN 'Teknik Yönetici' END], NULL) eksik
+      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.statu = 'Açılış Kontrolünde'
+        AND (NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) OR NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL))
+      ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`;
+
 export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
   const oturumlu = { preHandler: tamOturumGerekli(b) };
   const yok = (y: FastifyReply) => y.code(404).send({ hata: 'Kayıt bulunamadı veya erişim yetkiniz yok.' });
@@ -98,12 +110,7 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     // YG-1588: Teknik Müdürde ciddi tehlikeyle durdurulan dosyalar (Karar Seviyesi: Siz) ve teknik atama kuyruğu (öncelik → kalan süre → geliş).
     const tm = l.some((r) => r.rol_adi === 'Teknik Müdür');
     const durdurulan = !tm ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, y.yat_adi, (SELECT e.durdurma_nedeni FROM is_emri e WHERE e.dosya_ref = d.kimlik AND e.statu = 'Durduruldu' LIMIT 1) neden FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.calisma_durduruldu AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')`)).rows;
-    const kuyruk = !mudur ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik, y.yat_adi, (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) son,
-        array_remove(ARRAY[CASE WHEN NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) THEN 'Teknik Uzman' END,
-          CASE WHEN NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL) THEN 'Teknik Yönetici' END], NULL) eksik
-      FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref WHERE d.statu = 'Açılış Kontrolünde'
-        AND (NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) OR NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL))
-      ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
+    const kuyruk = tm ? (await b.db.query(TEK_KUYRUK)).rows : undefined; // YG-1587: Müdür Yardımcısı atamayı yalnız vekâlette Atama sayfasında yapar
     await notEkle(dosyalar, 'Teknik Yönetici');
     // YG-1588: zorluk katsayısı bekleyen dosyalar (teklif onayından 8 saat) Teknik Müdür panosunda ayrı bölümde.
     const zorluk = !tm ? [] : (await b.db.query(`SELECT k.nesne_kimligi kimlik, d.dosya_no, y.yat_adi, k.son_zaman son FROM is_karti k JOIN dosya d ON d.kimlik::text = k.nesne_kimligi JOIN yat y ON y.kimlik = d.yat_ref WHERE k.tur = 'Zorluk Katsayısı Girişi' AND k.durum = 'Bekliyor' ORDER BY k.son_zaman NULLS LAST LIMIT 50`)).rows;
@@ -162,6 +169,32 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     return { tamam: true };
   });
   // YG-1582, YG-1583: Operasyon panosu. Operasyon Yöneticisi gözetimindeki dosyaları, Müdür ve Müdür Yardımcısı tüm aktif dosyaları kapsar.
+  /**
+   * YG-1583, YG-1587: Müdür Yardımcısının Atama sayfası yalnız vekâlette görünür: Operasyon Müdürü vekâletinde Dosya Sorumlusu, Teknik Müdür vekâletinde
+   * Teknik Uzman, Teknik Yönetici ve Saha Sorumlusu ataması. YATONET önerisi en düşük yüklü ve dolu olmayan kişidir; atama kabul adımı olmadan yürürlüğe girer.
+   */
+  s.get('/atama-sayfasi', oturumlu, async (i) => {
+    const o = i.oturum!;
+    const v = (await b.db.query(`SELECT r.rol_adi FROM vekalet v JOIN rol r ON r.kimlik = v.rol_ref WHERE v.vekil_ref = $1 AND v.durum = 'Aktif' AND NOT v.yalniz_hazirlik AND v.baslangic_tarihi <= current_date AND v.bitis_tarihi >= current_date`, [o.kullanici])).rows.map((r) => r.rol_adi as string);
+    if (!v.includes('Operasyon Müdürü') && !v.includes('Teknik Müdür')) return {};
+    const { kapasiteYuku, KAPASITE } = await import('./dosya.js');
+    const ekip = async (rol: string) => {
+      const l = (await b.db.query(`SELECT DISTINCT h.kimlik, h.ad_soyad ad FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref JOIN kullanici_hesabi h ON h.kimlik = a.kullanici_ref WHERE a.atama_durumu = 'Aktif' AND r.rol_adi = $1 AND h.hesap_durumu = 'Aktif' AND h.kimlik <> $2`, [rol, o.kullanici])).rows as { kimlik: string; ad: string; yuk: number; ust: number | null }[];
+      for (const e of l) { e.yuk = Number(await kapasiteYuku(b.db, e.kimlik, rol)); e.ust = KAPASITE[rol] ?? null; }
+      return l.sort((a, c) => a.yuk - c.yuk || a.ad.localeCompare(c.ad, 'tr'));
+    };
+    const oneri = (l: { kimlik: string; yuk: number; ust: number | null }[]) => l.find((e) => e.ust === null || e.yuk < e.ust)?.kimlik ?? null;
+    const sonuc: Record<string, unknown> = {};
+    if (v.includes('Operasyon Müdürü')) {
+      const ds = await ekip('Dosya Sorumlusu');
+      sonuc.operasyon = { vekaletRolu: 'Operasyon Müdürü', ekip: { 'Dosya Sorumlusu': ds }, kuyruk: (await b.db.query(OP_KUYRUK)).rows.map((k) => ({ ...k, eksik: ['Dosya Sorumlusu'], oneri: { 'Dosya Sorumlusu': oneri(ds) } })) };
+    }
+    if (v.includes('Teknik Müdür')) {
+      const e = { 'Teknik Uzman': await ekip('Teknik Uzman'), 'Teknik Yönetici': await ekip('Teknik Yönetici'), 'Saha Sorumlusu': await ekip('Saha Sorumlusu') };
+      sonuc.teknik = { vekaletRolu: 'Teknik Müdür', ekip: e, kuyruk: (await b.db.query(TEK_KUYRUK)).rows.map((k) => ({ ...k, oneri: Object.fromEntries((k.eksik as string[]).map((r) => [r, oneri(e[r as keyof typeof e] ?? [])])) })) };
+    }
+    return sonuc;
+  });
   s.get('/operasyon-pano', oturumlu, async (i, y) => {
     const o = i.oturum!; const l = await roller(b.db, o.kullanici);
     const mudur = l.some((r) => ['Operasyon Müdürü', 'Operasyon Müdür Yardımcısı'].includes(r.rol_adi)); const oy = l.some((r) => r.rol_adi === 'Operasyon Yöneticisi');
@@ -183,9 +216,7 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
     const dolu = ekip.filter((e) => e.yuk >= ust * 0.8); const bos = ekip.filter((e) => e.yuk <= ust * 0.5).sort((a, c) => a.yuk - c.yuk);
     const oneri = dolu.length && bos.length ? `${dolu.map((e) => e.ad_soyad).join(', ')} kapasitesinin %80'ine ulaştı; yeni dosyalar ${bos.slice(0, 2).map((e) => e.ad_soyad).join(', ')} üzerinden dengelenebilir (öneri Operasyon Müdürüne).` : null;
     // YG-1584: atama kuyruğu (yalnız Müdürlük); öncelik sınıfı, sonra hizmet süresinin dolmasına en az kalan, sonra geliş sırası; önerilen Dosya Sorumlusu en düşük yüklü ve %100 olmayan kişi.
-    const kuyruk = !mudur ? [] : (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.oncelik, y.yat_adi, d.olusturma_zamani, (SELECT min(s.bitis) FROM dosya_sure s WHERE s.dosya_ref = d.kimlik AND s.tamamlanma IS NULL) son FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref
-        WHERE d.statu = 'Açılış Kontrolünde' AND NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Dosya Sorumlusu' AND a.bitis_zamani IS NULL)
-        ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
+    const kuyruk = l.some((r) => r.rol_adi === 'Operasyon Müdürü') ? (await b.db.query(OP_KUYRUK)).rows : undefined; // YG-1583: Müdür Yardımcısı atamayı yalnız vekâlette Atama sayfasında yapar
     const onerilen = ekip.filter((e) => e.yuk < ust).sort((a, c) => a.yuk - c.yuk)[0]?.ad_soyad ?? null;
     await notEkle(dosyalar, 'Operasyon Yöneticisi');
     // YG-1583: Kapanış Bekleyenler (yalnız Müdürlük); nihai kapanış özeti onayda/iadede veya koşullu kabulde açık iş kalemi bulunan dosyalar, en yakın koşul bitişi önce.
@@ -193,7 +224,7 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
       FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN nihai_kapanis_ozeti n ON n.dosya_ref = d.kimlik AND n.durum IN ('Onayda', 'İade')
       LEFT JOIN LATERAL (SELECT a.kosul_bitis, (SELECT count(*)::int FROM acik_is_kalemi p WHERE p.kabul_ref = a.kimlik AND p.kapanis_zamani IS NULL) acik FROM kabul_kaydi a WHERE a.dosya_ref = d.kimlik AND a.kabul_turu = 'Koşullu Kabul' AND EXISTS (SELECT 1 FROM acik_is_kalemi p WHERE p.kabul_ref = a.kimlik AND p.kapanis_zamani IS NULL) ORDER BY a.kosul_bitis LIMIT 1) k ON true
       WHERE d.statu NOT IN ('Kapalı', 'Teknik Kapalı') AND (n.dosya_ref IS NOT NULL OR k.kosul_bitis IS NOT NULL) ORDER BY k.kosul_bitis NULLS LAST, d.dosya_no LIMIT 50`)).rows;
-    return { dosyalar, mudur, kapanis, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk.map((k) => ({ ...k, onerilen })) };
+    return { dosyalar, mudur, kapanis, mudahale, ekip: ekip.map((e) => ({ ad: e.ad_soyad, yuk: e.yuk, ust })), oneri, kuyruk: kuyruk?.map((k) => ({ ...k, onerilen })) };
   });
   s.get('/is-listeleri', oturumlu, async (i, y) => {
     const o = i.oturum!; if (o.grup !== 'LGM İç Rolü') return yok(y);

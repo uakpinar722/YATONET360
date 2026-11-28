@@ -554,7 +554,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-047: atama talimattır, kabul/ret adımı yoktur; önceki atama silinmez. Tekil rolde devir notu olmadan yeni sorumluya geçilmez.
   s.post('/dosya/:id/ekip', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kullanici?: string; rol?: string; devirNotu?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { kullanici?: string; rol?: string; devirNotu?: string; talimat?: string };
     const t = EKIP[g.rol ?? ''];
     if (!t || !g.kullanici) return y.code(400).send({ hata: 'Kişi ve rol seçiniz.' });
     const izinler = await kullaniciIzinleri(b.db, o.kullanici);
@@ -637,8 +637,8 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       const atananRoller = new Set((await c.query(`SELECT rol FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND bitis_zamani IS NULL`, [id])).rows.map((r) => r.rol as string));
       if (atananRoller.has('Dosya Sorumlusu') && atananRoller.has('Operasyon Yöneticisi')) await kartKapat(c, 'Dosya Ekibi Ataması', id);
       if ((atananRoller.has('Teknik Uzman') || atananRoller.has('Sorumlu Teknik Uzman (Koordinatör)')) && atananRoller.has('Teknik Yönetici')) await kartKapat(c, 'Teknik Ekip Ataması', id);
-      await bildir(c, { olay: `dosya-atama:${id}:${g.rol}:${g.kullanici}`, kullanicilar: [g.kullanici], baslik: `Dosyaya Atandınız: ${d.dosya_no}`, ozet: g.rol, oncelik: d.oncelik, eposta: true });
-      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dosya Ekibi Ataması', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { rol: g.rol, kullanici: g.kullanici }, gerekce: g.devirNotu, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await bildir(c, { olay: `dosya-atama:${id}:${g.rol}:${g.kullanici}`, kullanicilar: [g.kullanici], baslik: `Dosyaya Atandınız: ${d.dosya_no}`, ozet: g.talimat?.trim() ? `${g.rol} · Talimat: ${g.talimat.trim().slice(0, 500)}` : g.rol, oncelik: d.oncelik, eposta: true }); // YG-1583: atayanın talimatı bildirimle gider
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dosya Ekibi Ataması', nesneTuru: 'Dosya', nesneKimligi: id, yeni: { rol: g.rol, kullanici: g.kullanici, talimat: g.talimat?.trim() || undefined }, gerekce: g.devirNotu, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await aktifeGecir(c, id, o.kullanici);
       await c.query('COMMIT');
       return { tamam: true, uyari };

@@ -1,6 +1,6 @@
 # YATONET 360 API Dokümanı
 
-Kaynak koddan üretilmiştir (`npm run api-dokumani`); 201 modül, 1364 uç nokta. Elle düzeltilmez; kod değişince yeniden üretilir.
+Kaynak koddan üretilmiştir (`npm run api-dokumani`); 202 modül, 1369 uç nokta. Elle düzeltilmez; kod değişince yeniden üretilir.
 
 ## Genel Kurallar
 
@@ -923,7 +923,8 @@ Kaynak koddan üretilmiştir (`npm run api-dokumani`); 201 modül, 1364 uç nokt
 | POST | `/api/dosya/:id/kalite-eksikligi-bildir` | Oturum | — |
 | POST | `/api/dosya/:id/saha-sorumlusu-bildir` | Oturum | YG-1586: Teknik Yönetici Saha Sorumlusu ihtiyacını Teknik Müdüre bildirir; atama ayrı onay aranmadan Teknik Müdürdedir. |
 | POST | `/api/dosya/:id/gozetim-notu` | Oturum | — |
-| GET | `/api/operasyon-pano` | Oturum | YG-1582, YG-1583: Operasyon panosu. Operasyon Yöneticisi gözetimindeki dosyaları, Müdür ve Müdür Yardımcısı tüm aktif dosyaları kapsar. |
+| GET | `/api/atama-sayfasi` | Oturum | YG-1582, YG-1583: Operasyon panosu. Operasyon Yöneticisi gözetimindeki dosyaları, Müdür ve Müdür Yardımcısı tüm aktif dosyaları kapsar. YG-1583, YG-1587: Müdür Yardımcısının Atama sayfası yalnız vekâlette görünür: Operasyon Müdürü vekâletinde Dosya Sorumlusu, Teknik Müdür vekâletinde Teknik Uzman, Teknik Yönetici ve Saha Sorumlusu ataması. YATONET önerisi en düşük yüklü ve dolu olmayan kişidir; atama kabul adımı olmadan yürürlüğe girer. |
+| GET | `/api/operasyon-pano` | Oturum | — |
 | GET | `/api/is-listeleri` | Oturum | — |
 | GET | `/api/konum-plani/ben` | Oturum | YG-812: kişinin kendisi, amirleri (aynı birimde Müdür ve üstü), Operasyon ve Teknik Müdürlükleri, GMY ve CEO görür; dış kullanıcı göremez. YG-1631: kişinin kendi 7 günlük konum planı (Bugün şeridi). |
 | GET | `/api/konum-plani` | Oturum | — |
@@ -1054,6 +1055,10 @@ Kaynak koddan üretilmiştir (`npm run api-dokumani`); 201 modül, 1364 uç nokt
 | POST | `/api/firma-portal/uygunsuzluk/:id/yanit` | Oturum | — |
 | POST | `/api/is-emri/:id/kontrol-noktasi` | Oturum | YG-315, YG-383, YG-389: kontrol noktası KPnn; davet en az 24 saat, eksper veya klas 48 saat, Kritik dosyada süre aranmaz. |
 | POST | `/api/kontrol-noktasi/:id/sonuc` | Oturum | — |
+| POST | `/api/kontrol-noktasi/:id/onaya-gonder` | Oturum | — |
+| POST | `/api/kontrol-noktasi/:id/serbest-birak` | Oturum (ilk giriş adımlarında da) | — |
+| POST | `/api/kontrol-noktasi/:id/iade` | Oturum | — |
+| GET | `/api/serbest-birakma-onaylari` | Oturum (ilk giriş adımlarında da) | YG-1686: Teknik Yönetici ve Kalite Müdürü ekranındaki serbest bırakma kartları; diğer makamın onay durumu satırıyla. |
 | GET | `/api/test/:id/pdf` | Oturum | YG-1451: RP-RAP-003 Test Kaydı standart akışta dışa gitmez; sigorta şirketi istediğinde LGM personeli PDF'i üretir. |
 | POST | `/api/olcum-cihazi` | Oturum | — |
 | GET | `/api/olcum-cihazi` | Oturum | YG-1691: kalibrasyon envanteri; geçerlilik sonu = kalibrasyon tarihi + aralık; süresi geçen, 60 gün içinde dolan ve karantinadaki cihaz ayrıca işaretlenir. |
@@ -1651,6 +1656,12 @@ Kaynak koddan üretilmiştir (`npm run api-dokumani`); 201 modül, 1364 uç nokt
 |---|---|---|---|
 | GET | `/api/dosya/:id/risk-rezervi` | Oturum | Tutarlar yalnız maliyet görebilen rollere; rezerv maliyetin oranı olduğu için Dosya Sorumlusu yalnız kendi talebinin durumunu görür. |
 | POST | `/api/dosya/:id/risk-rezervi` | Oturum | — |
+
+### rol_tanimi
+
+| Yöntem | Yol | Erişim | Açıklama |
+|---|---|---|---|
+| POST | `/api/yetki/rol/:id/tanim` | Oturum + izin: rol_katalogu.duzenle | — |
 
 ### sablon_surum
 
@@ -2284,7 +2295,6 @@ Kaynak koddan üretilmiştir (`npm run api-dokumani`); 201 modül, 1364 uç nokt
 |---|---|---|---|
 | GET | `/api/ben` | Oturum (ilk giriş adımlarında da) | — |
 | GET | `/api/yetki/roller` | Oturum + izin: rol_katalogu.goruntule | — |
-| POST | `/api/yetki/rol/:id/tanim` | Oturum + izin: rol_katalogu.duzenle | YG-1007: rolün iş amacı, sahip rolü ve gözden geçirme dönemi. |
 | GET | `/api/denetim/izler` | Oturum + izin: denetim_izi.goruntule | YG-1187: izi görüntüleme de kayda geçer. |
 
 ### yetki_ek

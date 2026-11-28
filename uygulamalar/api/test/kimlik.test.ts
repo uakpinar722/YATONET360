@@ -219,7 +219,14 @@ describe('yetki (YG-987, YG-992)', () => {
     await expect(sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1, 'ROL-990')`, [rows[0].kimlik])).rejects.toThrow(/Sahibi/);
     expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-990', gozdenGecirmeAy: 12 })).statusCode).toBe(404);
     expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-001', gozdenGecirmeAy: 40 })).statusCode).toBe(400);
-    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-001', gozdenGecirmeAy: 12 })).statusCode).toBe(200);
+    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme', sahip: 'ROL-001', gozdenGecirmeAy: 12 })).json()).toEqual({ tamam: true, onayda: true });
+    // YG-1009: Sistem Yöneticisinin hazırladığı tanım, rolün biriminde Müdür yoksa Bilgi İşlem Müdürünün onayıyla uygulanır
+    expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', c, { amac: 'Deneme 2', sahip: 'ROL-001', gozdenGecirmeAy: 12 })).statusCode).toBe(409);
+    expect((await sup.query(`SELECT is_amaci FROM rol WHERE kimlik = 'ROL-990'`)).rows[0].is_amaci).toBeNull();
+    const rk = (await sup.query(`SELECT kimlik, zincir FROM is_karti WHERE tur = 'Rol Tanımı Değişikliği' ORDER BY olusturma_zamani DESC LIMIT 1`)).rows[0];
+    expect(rk.zincir).toEqual([(await sup.query(`SELECT kimlik FROM rol WHERE rol_adi = 'Bilgi İşlem Müdürü'`)).rows[0].kimlik]);
+    expect((await ist('POST', `/api/is/${rk.kimlik}/karar`, c, { karar: 'Onayla' })).statusCode).not.toBe(200);
+    const ok = await ist('POST', `/api/is/${rk.kimlik}/karar`, await tamGiris('bimuduru@deneme.yatonet.local'), { karar: 'Onayla' }); expect(ok.statusCode, ok.body).toBe(200);
     await sup.query(`INSERT INTO rol_atamasi (kullanici_ref, rol_ref) VALUES ($1, 'ROL-990')`, [rows[0].kimlik]);
     expect((await ist('GET', '/api/yetki/roller', c)).json().find((x: { kimlik: string }) => x.kimlik === 'ROL-990')).toMatchObject({ is_amaci: 'Deneme', sahip_rol_ref: 'ROL-001', gozden_gecirme_ay: 12 });
     expect((await ist('POST', '/api/yetki/rol/ROL-990/tanim', await tamGiris(DENETCI), { amac: 'X', sahip: 'ROL-001', gozdenGecirmeAy: 12 })).statusCode).toBe(403);

@@ -166,6 +166,7 @@ describe('düzeltme, yeniden başlatma, toplantı, eskalasyon (YG-380, YG-262, Y
       expect((await o.sup.query(`SELECT count(*)::int n FROM bildirim WHERE kullanici_ref = $1 AND baslik = 'Yeni Firma · Gözden Geçirme 14 Gün İçinde'`, [o.K.fym])).rows[0].n).toBeGreaterThanOrEqual(1);
       expect((await o.sup.query(`SELECT count(*)::int n FROM zamanlanmis_is WHERE ad = 'Firma Gözden Geçirme Hatırlatma' AND anahtar LIKE $1`, [`${a}:%`])).rows[0].n).toBe(1);
     }
+    await o.ist('POST', `/api/firma/${k}/statu-onerisi`, await o.gir('sc'), { risk: 'Standart', gerekce: 'Gözden geçirildi' }); // YG-360
     await o.ist('POST', `/api/firma/${k}/statu`, await o.gir('fym'), { risk: 'Standart', gerekce: 'Değerlendirildi' });
     expect((await o.sup.query(`SELECT sonraki_gozden_gecirme_tarihi t FROM kurulus WHERE kimlik = $1`, [k])).rows[0].t).toBeNull();
   });

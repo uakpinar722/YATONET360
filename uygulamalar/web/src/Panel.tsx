@@ -29,8 +29,9 @@ import { DuyuruYayimla, Mesajlar } from './Iletisim';
 import { HesapKurtarma } from './Kurtarma';
 import { Toplantilar } from './Toplanti';
 import { VekaletSayfasi } from './Vekalet';
+import { AtamaSayfasi } from './Atama';
 
-type Sayfa = 'belgelerim' | 'yenitalep' | 'yetkilerim' | 'teklifgecis' | 'eskalasyon' | 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
+type Sayfa = 'atama' | 'belgelerim' | 'yenitalep' | 'yetkilerim' | 'teklifgecis' | 'eskalasyon' | 'teklifperf' | 'kartela' | 'sozsure' | 'kvkk' | 'yetkibelge' | 'kullanicilarim' | 'gunluk' | 'karnepar' | 'firmaisemri' | 'ek2' | 'tedodeme' | 'tedsiparis' | 'tedteklif' | 'kurum' | 'ana' | 'bildirim' | 'roller' | 'iz' | 'profil' | 'mesaj' | 'idari' | 'yardim' | 'erisim' | 'erisimrol' | 'kurtarma' | 'vekalet' | 'duyuru' | 'toplanti' | 'dosya' | 'ara' | 'nobet' | 'sicil';
 interface Rol { kimlik: string; rol_adi: string; rol_sahibi_birim: string; kademe: string; ayricalikli_rol: boolean; is_amaci: string | null; sahip_rol: string | null; gozden_gecirme_ay: number | null }
 interface Iz { kimlik: string; olay_zamani: string; eylem: string; sonuc: string; gerekce: string | null; aktor: string | null }
 
@@ -72,6 +73,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
   const menu: { s: Sayfa; ad: string; ik: string; izin?: string }[] = [
     { s: 'ana', ad: lgm ? 'Bugün' : 'Ana Sayfa', ik: '☀' },
     ...(lgm ? [{ s: 'dosya' as Sayfa, ad: 'Dosyalar', ik: '▣' }, { s: 'nobet' as Sayfa, ad: 'Nöbet ve Acil', ik: '✚' }] : []),
+    ...(veri?.vekaletler.some((v) => ['Operasyon Müdürü', 'Teknik Müdür'].includes(v.rol)) ? [{ s: 'atama' as Sayfa, ad: 'Atama', ik: '⇢' }] : []), // YG-1583, YG-1587: yalnız vekâlette
     { s: 'sicil', ad: 'Firma Sicili', ik: '▦', izin: 'firma.kayit' },
     { s: 'roller', ad: 'Rol Kataloğu', ik: '▤', izin: 'rol_katalogu.goruntule' },
     { s: 'iz', ad: 'İşlem İzi', ik: '☰', izin: 'denetim_izi.goruntule' },
@@ -106,6 +108,7 @@ export function Panel({ ben, cikti }: { ben: Ben; cikti: () => void }) {
     erisimrol: <ErisimVeRol />,
     kurtarma: <HesapKurtarma />,
     vekalet: <VekaletSayfasi />,
+    atama: <AtamaSayfasi />,
     mesaj: <Mesajlar lgm={lgm} yenile={() => void yenile()} />,
     duyuru: <DuyuruYayimla />,
     toplanti: <Toplantilar />,

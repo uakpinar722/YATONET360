@@ -375,6 +375,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     let vekaleten = false;
     if (gereken.includes(KK) && !benimRol.includes(KK)) { const yt = await kontrolYetkisi(o.kullanici, false, g.bagimsizlikTeyidi); if (yt.vekaleten) { if (yt.hata) return y.code(yt.kod!).send({ hata: yt.hata }); benimRol.push(KK); vekaleten = true; } }
     if (!benimRol.length) return y.code(403).send({ hata: `Bu noktayı ${gereken.join(' ve ')} serbest bırakır.` });
+    if ((k.kabul_sinifi ?? p?.kabul_sinifi) === 'A' && (g.sonuc === 'Uygun' || g.sonuc === 'Koşullu uygun')) return y.code(409).send({ hata: 'A sınıfında serbest bırakma, Kalite Uzmanının "Onaya Gönder" adımından sonra Teknik Yönetici ve Kalite Müdürünün "Serbest Bırak" kararıyla verilir.' }); // YG-1686
     if ((await b.db.query(`SELECT 1 FROM is_emri WHERE kimlik = $1 AND teknik_kabul_eden_ref = $2`, [k.is_emri_ref, o.kullanici])).rowCount) return y.code(403).send({ hata: 'Görev ayrılığı gereği kalite kontrolünün, teknik kabulü veren dışında bir kişi tarafından doğrulanmasını rica ederiz.' }); // YG-1037
     // YG-382: kanıt dosyaya bağlı olmalı; incelenen yürürlükteki sürüm ve kullanılan ölçüt sonuçla birlikte kaydedilir.
     const ks = (await b.db.query(`SELECT s.kimlik FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.kimlik = $1 AND e.bag_turu IN ('Dosya', 'İş Emri') AND (e.bag_kimligi = $2::text OR e.bag_kimligi = $3::text) AND s.durum NOT IN ('İptal', 'Karantina', 'Yerine Geçti', 'Arşiv') ORDER BY s.surum_no DESC LIMIT 1`, [g.kanit, k.dosya_ref, k.is_emri_ref])).rows[0];
@@ -400,6 +401,87 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
     await b.db.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, katilim_durumu = $4, onaylar = $5, serbest_birakma_zamani = CASE WHEN $6::boolean THEN now() END WHERE kimlik = $1`, [id, g.sonuc, g.kanit, g.katilim ?? null, JSON.stringify(onay), tam]);
     if (vekaleten) { await b.db.query(`UPDATE kontrol_noktasi SET vekaleten = true WHERE kimlik = $1`, [id]); await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Kontrol Noktası Serbest Bırakma (Vekâleten)', nesneTuru: 'Kontrol Noktası', nesneKimligi: id, yeni: { sonuc: g.sonuc, bagimsizlikTeyidi: true }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id }); }
     return { sonuc: g.sonuc, serbest: tam, bekleyen: gereken.filter((r) => !onay.includes(r)), vekaleten };
+  });
+
+  // YG-1686: A sınıfında Kalite Uzmanı olumlu sonucu kanıtla "Onaya Gönder" ile Teknik Yönetici ve Kalite Müdürüne sunar; ikisi de "Serbest Bırak" deyince nokta serbest kalır,
+  // biri "Gerekçeyle İade Et" derse karar Kalite Uzmanına döner. Olumsuz sonuç (uygunsuzluk açan) /sonuc ile kaydedilir.
+  const aNoktasi = async (id: string, k: string) => {
+    if (!UUID.test(id)) return undefined;
+    const n = (await b.db.query(`SELECT n.*, e.dosya_ref, e.is_emri_no, e.teknik_kabul_eden_ref, d.dosya_no, coalesce(e.kabul_sinifi, (SELECT p.kabul_sinifi FROM kalite_plani p WHERE p.dosya_ref = e.dosya_ref AND p.durum = 'Onaylı' ORDER BY p.surum DESC LIMIT 1)) AS sinif
+      FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref WHERE n.kimlik = $1`, [id])).rows[0];
+    return n && await erisim(n.dosya_ref, k) ? n : undefined;
+  };
+  /** Dosyaya atanmış Teknik Yönetici (yoksa tüm Teknik Yöneticiler) ve Kalite Müdürü. */
+  const serbestMakamlari = async (c: Db, dosya: string) => {
+    const ty = (await c.query(`SELECT DISTINCT kullanici_ref FROM dosya_ekibi_atamasi WHERE dosya_ref = $1 AND rol = 'Teknik Yönetici' AND bitis_zamani IS NULL`, [dosya])).rows.map((x) => x.kullanici_ref as string);
+    return [...new Set([...(ty.length ? ty : await rolSahipleri(c, await rolId(c, 'Teknik Yönetici'))), ...await rolSahipleri(c, await rolId(c, KM))])];
+  };
+  const A_MAKAM = ['Teknik Yönetici', KM];
+  s.post('/kontrol-noktasi/:id/onaya-gonder', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { sonuc?: string; kanit?: string; katilim?: string; bagimsizlikTeyidi?: boolean };
+    const n = await aNoktasi((i.params as { id: string }).id, o.kullanici); if (!n) return yok(y);
+    let vekaleten = false;
+    if (!(await rolVar(o.kullanici, [KK]))) { const yt = await kontrolYetkisi(o.kullanici, false, g.bagimsizlikTeyidi); if (!yt.vekaleten || (yt.kod && !yt.hata)) return y.code(403).send({ hata: 'A sınıfı serbest bırakmayı Kalite Uzmanı onaya gönderir.' }); if (yt.hata) return y.code(yt.kod!).send({ hata: yt.hata }); vekaleten = true; }
+    if (n.sinif !== 'A') return y.code(409).send({ hata: 'Onaya gönderme A sınıfı işlerde kullanılır; bu noktada sonucu doğrudan kaydediniz.' });
+    if (n.serbest_birakma_zamani) return y.code(409).send({ hata: 'Kontrol noktası serbest bırakılmıştır.' });
+    if (n.onaya_gonderme_zamani) return y.code(409).send({ hata: 'Kontrol noktası onaydadır; Teknik Yönetici ve Kalite Müdürünün kararı bekleniyor.' });
+    if (!['Uygun', 'Koşullu uygun'].includes(g.sonuc ?? '')) return y.code(400).send({ hata: 'Onaya yalnız Uygun veya Koşullu uygun sonuç gönderilir; olumsuz sonuçta sonucu kaydediniz, uygunsuzluk kendiliğinden açılır.' });
+    if (!g.kanit || !UUID.test(g.kanit)) return y.code(400).send({ hata: 'Kanıt zorunludur.' });
+    if (g.katilim === 'Katılım Olmadı' && ['Bekletme', 'Tanıklık'].includes(n.nokta_turu) && Date.now() < new Date(n.planlanan_zaman).getTime() + 2 * 3_600_000) return y.code(409).send({ hata: 'Davetli katılmadığında planlanan zamandan 2 saat sonra fotoğraf ve video kanıtıyla ilerlenir.' });
+    if (n.teknik_kabul_eden_ref === o.kullanici) return y.code(403).send({ hata: 'Görev ayrılığı gereği kalite kontrolünün, teknik kabulü veren dışında bir kişi tarafından doğrulanmasını rica ederiz.' }); // YG-1037
+    const ks = (await b.db.query(`SELECT s.kimlik FROM belge e JOIN belge_surum s ON s.belge_ref = e.kimlik WHERE e.kimlik = $1 AND e.bag_turu IN ('Dosya', 'İş Emri') AND (e.bag_kimligi = $2::text OR e.bag_kimligi = $3::text) AND s.durum NOT IN ('İptal', 'Karantina', 'Yerine Geçti', 'Arşiv') ORDER BY s.surum_no DESC LIMIT 1`, [g.kanit, n.dosya_ref, n.is_emri_ref])).rows[0];
+    if (!ks) return y.code(400).send({ hata: 'Kanıt bu dosyaya veya iş emrine yüklenmiş geçerli bir belge olmalıdır.' });
+    return islem(async (c) => {
+      await c.query(`UPDATE kontrol_noktasi SET sonuc = $2, kanit_belge_ref = $3, kanit_surum_ref = $4, kullanilan_olcut = kabul_olcutu, katilim_durumu = $5, onaylar = '[]', onaya_gonderen_ref = $6, onaya_gonderme_zamani = now(),
+        iade_gerekcesi = NULL, iade_eden_ref = NULL, iade_zamani = NULL, vekaleten = vekaleten OR $7, dogrulayanlar = CASE WHEN $6 = ANY(dogrulayanlar) THEN dogrulayanlar ELSE array_append(dogrulayanlar, $6) END WHERE kimlik = $1`,
+        [n.kimlik, g.sonuc, g.kanit, ks.kimlik, g.katilim ?? null, o.kullanici, vekaleten]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: vekaleten ? 'A Sınıfı Serbest Bırakma Onaya Gönderildi (Vekâleten)' : 'A Sınıfı Serbest Bırakma Onaya Gönderildi', nesneTuru: 'Kontrol Noktası', nesneKimligi: n.kimlik, yeni: { sonuc: g.sonuc, kanit: g.kanit }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await bildir(c, { olay: `a-serbest:${n.kimlik}:${Date.now()}`, kullanicilar: (await serbestMakamlari(c, n.dosya_ref)).filter((x) => x !== o.kullanici), baslik: `${n.kontrol_noktasi_no} · A Sınıfı Serbest Bırakma Onayınızı Bekliyor`, ozet: `${n.dosya_no} · ${n.is_emri_no} · ${n.kontrol_ozelligi} · Sonuç: ${g.sonuc}`, eposta: true, oncelik: 'Yüksek' });
+      return { tamam: true, bekleyen: A_MAKAM, vekaleten };
+    });
+  });
+  s.post('/kontrol-noktasi/:id/serbest-birak', oturumlu, async (i, y) => {
+    const o = i.oturum!; const n = await aNoktasi((i.params as { id: string }).id, o.kullanici); if (!n) return yok(y);
+    const rol = (await b.db.query(`SELECT x.rol_adi FROM rol_atamasi a JOIN rol x ON x.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND x.rol_adi = ANY($2)`, [o.kullanici, A_MAKAM])).rows.map((r) => r.rol_adi as string);
+    if (!rol.length || n.sinif !== 'A') return y.code(403).send({ hata: 'A sınıfı kontrol noktasını Teknik Yönetici ve Kalite Müdürü serbest bırakır.' });
+    if (n.serbest_birakma_zamani) return y.code(409).send({ hata: 'Kontrol noktası serbest bırakılmıştır.' });
+    if (!n.onaya_gonderme_zamani) return y.code(409).send({ hata: 'Kalite Uzmanının "Onaya Gönder" adımı bekleniyor.' });
+    if (n.onaya_gonderen_ref === o.kullanici || n.teknik_kabul_eden_ref === o.kullanici) return y.code(403).send({ hata: 'Görev ayrılığı gereği onaya gönderen veya teknik kabulü veren kişi serbest bırakma kararı veremez.' });
+    const onay = n.onaylar as string[];
+    const yeni = rol.find((r) => !onay.includes(r));
+    if (!yeni) return y.code(409).send({ hata: 'Kararınız kaydedilmiştir; diğer makamın kararı bekleniyor.' });
+    const tum = [...onay, yeni]; const tam = A_MAKAM.every((r) => tum.includes(r));
+    return islem(async (c) => {
+      await c.query(`UPDATE kontrol_noktasi SET onaylar = $2, serbest_birakma_zamani = CASE WHEN $3::boolean THEN now() END, dogrulayanlar = CASE WHEN $4 = ANY(dogrulayanlar) THEN dogrulayanlar ELSE array_append(dogrulayanlar, $4) END WHERE kimlik = $1`, [n.kimlik, JSON.stringify(tum), tam, o.kullanici]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'A Sınıfı Serbest Bırak', nesneTuru: 'Kontrol Noktası', nesneKimligi: n.kimlik, yeni: { makam: yeni, serbest: tam }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      const al = [n.onaya_gonderen_ref, ...(tam ? await serbestMakamlari(c, n.dosya_ref) : [])].filter((x) => x && x !== o.kullanici);
+      await bildir(c, { olay: `a-serbest-karar:${n.kimlik}:${yeni}`, kullanicilar: al, baslik: tam ? `${n.kontrol_noktasi_no} · Serbest Bırakıldı` : `${n.kontrol_noktasi_no} · ${yeni} Serbest Bıraktı`, ozet: `${n.dosya_no} · ${n.is_emri_no}${tam ? '' : ` · Bekleyen: ${A_MAKAM.filter((r) => !tum.includes(r)).join(', ')}`}`, oncelik: 'Normal' });
+      return { serbest: tam, bekleyen: A_MAKAM.filter((r) => !tum.includes(r)) };
+    });
+  });
+  s.post('/kontrol-noktasi/:id/iade', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { gerekce?: string }; const n = await aNoktasi((i.params as { id: string }).id, o.kullanici); if (!n) return yok(y);
+    if (!(await rolVar(o.kullanici, A_MAKAM)) || n.sinif !== 'A') return y.code(403).send({ hata: 'A sınıfı kontrol noktasını Teknik Yönetici ve Kalite Müdürü iade eder.' });
+    if (n.serbest_birakma_zamani) return y.code(409).send({ hata: 'Kontrol noktası serbest bırakılmıştır.' });
+    if (!n.onaya_gonderme_zamani) return y.code(409).send({ hata: 'Onayda bekleyen bir serbest bırakma bulunmamaktadır.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'İade gerekçesini yazmanızı rica ederiz.' });
+    return islem(async (c) => {
+      await c.query(`UPDATE kontrol_noktasi SET onaya_gonderme_zamani = NULL, onaylar = '[]', iade_gerekcesi = $2, iade_eden_ref = $3, iade_zamani = now() WHERE kimlik = $1`, [n.kimlik, g.gerekce!.trim().slice(0, 2000), o.kullanici]);
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'A Sınıfı Serbest Bırakma Gerekçeyle İade', nesneTuru: 'Kontrol Noktası', nesneKimligi: n.kimlik, gerekce: g.gerekce!.trim(), sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      const al = [n.onaya_gonderen_ref, ...await serbestMakamlari(c, n.dosya_ref)].filter((x) => x && x !== o.kullanici);
+      await bildir(c, { olay: `a-serbest-iade:${n.kimlik}:${Date.now()}`, kullanicilar: [...new Set(al)], baslik: `${n.kontrol_noktasi_no} · Serbest Bırakma Gerekçeyle İade Edildi`, ozet: `${n.dosya_no} · ${g.gerekce!.trim().slice(0, 200)}`, oncelik: 'Yüksek' });
+      return { iade: true };
+    });
+  });
+  /** YG-1686: Teknik Yönetici ve Kalite Müdürü ekranındaki serbest bırakma kartları; diğer makamın onay durumu satırıyla. */
+  s.get('/serbest-birakma-onaylari', oturumlu, async (i) => {
+    const o = i.oturum!; const km = await rolVar(o.kullanici, [KM]); const ty = await rolVar(o.kullanici, ['Teknik Yönetici']);
+    if (!km && !ty) return {};
+    const r = (await b.db.query(`SELECT n.kimlik, n.kontrol_noktasi_no, n.nokta_turu, n.kontrol_ozelligi, n.kabul_olcutu, n.sonuc, n.kanit_belge_ref, (SELECT s.surum_no FROM belge_surum s WHERE s.kimlik = n.kanit_surum_ref) kanit_surum, n.onaylar, n.onaya_gonderme_zamani, h.ad_soyad gonderen, e.is_emri_no, d.dosya_no, d.kimlik dosya
+      FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref LEFT JOIN kullanici_hesabi h ON h.kimlik = n.onaya_gonderen_ref
+      WHERE n.onaya_gonderme_zamani IS NOT NULL AND n.serbest_birakma_zamani IS NULL AND ($2 OR NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL)
+        OR EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.kullanici_ref = $1 AND a.bitis_zamani IS NULL)) ORDER BY n.onaya_gonderme_zamani`, [o.kullanici, km])).rows;
+    return { kayitlar: r.map((x) => ({ ...x, onaylar: undefined, teknikYonetici: (x.onaylar as string[]).includes('Teknik Yönetici') ? 'Serbest Bıraktı' : 'Bekliyor', kaliteMuduru: (x.onaylar as string[]).includes(KM) ? 'Serbest Bıraktı' : 'Bekliyor' })) };
   });
 
   // YG-1451: RP-RAP-003 Test Kaydı standart akışta dışa gitmez; sigorta şirketi istediğinde LGM personeli PDF'i üretir.
@@ -647,7 +729,7 @@ export function kaliteYollari(s: FastifyInstance, b: Baglam) {
       planlar: await q(`SELECT kimlik, surum, kabul_sinifi, ozet, durum, risk_seviyesi, teknik_kaynak, sorumluluklar, kaynaklar, kontrol_duzeni, kayit_teslim, degisiklik_gerekcesi FROM kalite_plani WHERE dosya_ref = $1 ORDER BY surum DESC`),
       gereklilikler: await q(`SELECT g.kimlik, g.km_no, g.gereklilik, g.dogrulama, g.durum FROM gereklilik_satiri g JOIN kalite_plani p ON p.kimlik = g.plan_ref WHERE p.dosya_ref = $1 AND p.durum = 'Onaylı'`),
       uygunsuzluklar: await q(`SELECT kimlik, uygunsuzluk_no, sinif, emniyet_isareti, gercek_durum, tasarruf_karari, hedef_zamani, statu, firma_yaniti FROM uygunsuzluk WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
-      kontrolNoktalari: await q(`SELECT n.kimlik, n.kontrol_noktasi_no, n.nokta_turu, n.kontrol_ozelligi, n.planlanan_zaman, n.sonuc, n.serbest_birakma_zamani FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE e.dosya_ref = $1 ORDER BY n.planlanan_zaman`),
+      kontrolNoktalari: await q(`SELECT n.kimlik, n.kontrol_noktasi_no, n.nokta_turu, n.kontrol_ozelligi, n.planlanan_zaman, n.sonuc, n.serbest_birakma_zamani, n.onaya_gonderme_zamani, n.iade_gerekcesi, coalesce(e.kabul_sinifi, (SELECT p.kabul_sinifi FROM kalite_plani p WHERE p.dosya_ref = e.dosya_ref AND p.durum = 'Onaylı' ORDER BY p.surum DESC LIMIT 1)) AS sinif FROM kontrol_noktasi n JOIN is_emri e ON e.kimlik = n.is_emri_ref WHERE e.dosya_ref = $1 ORDER BY n.planlanan_zaman`),
       testler: await q(`SELECT kimlik, test_no, test_grubu, kabul_olcutu, sonuc, durum FROM test_kaydi WHERE dosya_ref = $1 ORDER BY olusturma_zamani DESC`),
       acikIsler: await q(`SELECT p.kimlik, p.tanim, p.hedef_tarih::text, p.kapanis_zamani FROM acik_is_kalemi p JOIN kabul_kaydi a ON a.kimlik = p.kabul_ref WHERE a.dosya_ref = $1`),
     };

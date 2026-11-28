@@ -289,7 +289,13 @@ export function firmaYollari(s: FastifyInstance, b: Baglam) {
     }
     // YG-357: Pasif yaptırım değildir; yalnız Aktif firmadan firma talebi veya hareketsizlikle geçilir, Pasif'ten Aktif'e dönülür.
     // YG-359: yaptırım basamakları risk oranında atlanabilir; yaptırımdan daha hafif statüye yükseltme doğrulanmış iyileştirme kanıtı ister.
-    const mevcut = (await b.db.query(`SELECT ag_statusu FROM kurulus WHERE kimlik = $1`, [id])).rows[0]?.ag_statusu as string | null | undefined;
+    const fk = (await b.db.query(`SELECT ag_statusu, risk_derecesi, kayit_asamasi FROM kurulus WHERE kimlik = $1`, [id])).rows[0] as { ag_statusu: string | null; risk_derecesi: string | null; kayit_asamasi: string } | undefined;
+    const mevcut = fk?.ag_statusu;
+    // YG-360 (K-178, K-228): kayıtlı firmada ağ statüsü ve risk derecesi değişikliğini Sicil Sorumlusu önerir, Firma Yönetimi Müdürü karar verir;
+    // geçici askıyı Firma Yönetimi Müdürü doğrudan uygular, kalıcı askı ve ağdan çıkarma Direktörün kendi öneri zinciriyle yürür.
+    if (fk && ['Onaylı', 'Koşullu Onaylı'].includes(fk.kayit_asamasi) && ((g.ag && g.ag !== mevcut && !['Geçici Askıda', 'Askıda', 'Çıkarıldı'].includes(g.ag)) || (g.risk && g.risk !== fk.risk_derecesi))
+      && !(await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Firma Statü Önerisi' AND nesne_kimligi = $1 AND durum = 'Bekliyor'`, [id])).rowCount)
+      return y.code(409).send({ hata: 'Ağ statüsü ve risk derecesi değişikliği Sicil Sorumlusunun önerisiyle yapılır; önce önerinin hazırlanmasını rica ederiz.' });
     if (g.ag && g.ag !== mevcut) {
       const SIRA = ['Aktif', 'Kısıtlı', 'Geçici Askıda', 'Askıda', 'Çıkarıldı'];
       if (g.ag === 'Pasif') {

@@ -325,8 +325,30 @@ describe('kontrol noktası (YG-383, YG-389)', () => {
     expect((await o.sup.query(`SELECT davet_edilenler, davet_kanali FROM kontrol_noktasi WHERE kimlik = $1`, [r.json().kimlik])).rows[0]).toEqual({ davet_edilenler: 'Firma ekip lideri', davet_kanali: ['YATONET 360 bildirimi', 'SMS', 'E-posta'] });
     const id = r.json().kimlik; const kanit = await o.belge(d.kimlik, 'ds'); const su = `/api/kontrol-noktasi/${id}/sonuc`;
     expect((await o.ist('POST', su, tu, { sonuc: 'Uygun', kanit })).statusCode).toBe(403);
-    expect((await o.ist('POST', su, await o.gir('ty'), { sonuc: 'Uygun', kanit })).json()).toMatchObject({ serbest: false, bekleyen: ['Kalite Müdürü'] });
-    expect((await o.ist('POST', su, await o.gir('km'), { sonuc: 'Uygun', kanit })).json().serbest).toBe(true);
+    { // T-YG1686: A sınıfında Kalite Uzmanı "Onaya Gönder" → Teknik Yönetici ve Kalite Müdürü "Serbest Bırak" / "Gerekçeyle İade Et"
+      const ty = await o.gir('ty'); const km = await o.gir('km'); const kk = await o.gir('kk'); const ou = `/api/kontrol-noktasi/${id}`;
+      const liste = async (x: string) => ((await o.ist('GET', '/api/serbest-birakma-onaylari', x)).json().kayitlar as { kimlik: string }[]).find((z) => z.kimlik === id);
+      expect((await o.ist('POST', su, ty, { sonuc: 'Uygun', kanit })).json().hata).toContain('Onaya Gönder');
+      expect((await o.ist('POST', `${ou}/serbest-birak`, ty, {})).json().hata).toContain('Onaya Gönder');
+      expect((await o.ist('POST', `${ou}/onaya-gonder`, ty, { sonuc: 'Uygun', kanit })).statusCode).toBe(403);
+      expect((await o.ist('POST', `${ou}/onaya-gonder`, kk, { sonuc: 'Reddedildi', kanit })).statusCode).toBe(400);
+      const g1 = await o.ist('POST', `${ou}/onaya-gonder`, kk, { sonuc: 'Uygun', kanit }); expect(g1.statusCode, g1.body).toBe(200);
+      expect((await o.ist('POST', `${ou}/onaya-gonder`, kk, { sonuc: 'Uygun', kanit })).statusCode).toBe(409);
+      expect(await liste(ty)).toMatchObject({ sonuc: 'Uygun', teknikYonetici: 'Bekliyor', kaliteMuduru: 'Bekliyor' });
+      expect((await o.ist('GET', '/api/serbest-birakma-onaylari', tu)).json()).toEqual({});
+      expect((await o.ist('POST', `${ou}/iade`, km, {})).statusCode).toBe(400);
+      expect((await o.ist('POST', `${ou}/iade`, km, { gerekce: 'Ölçüm fotoğrafı okunmuyor' })).statusCode).toBe(200);
+      expect(await liste(ty)).toBeUndefined();
+      expect((await o.sup.query(`SELECT iade_gerekcesi FROM kontrol_noktasi WHERE kimlik = $1`, [id])).rows[0].iade_gerekcesi).toBe('Ölçüm fotoğrafı okunmuyor');
+      expect((await o.ist('POST', `${ou}/serbest-birak`, ty, {})).statusCode).toBe(409);
+      expect((await o.ist('POST', `${ou}/onaya-gonder`, kk, { sonuc: 'Uygun', kanit })).statusCode).toBe(200);
+      expect((await o.ist('POST', `${ou}/serbest-birak`, ty, {})).json()).toMatchObject({ serbest: false, bekleyen: ['Kalite Müdürü'] });
+      expect((await o.ist('POST', `${ou}/serbest-birak`, ty, {})).statusCode).toBe(409);
+      expect(await liste(km)).toMatchObject({ teknikYonetici: 'Serbest Bıraktı', kaliteMuduru: 'Bekliyor' });
+      expect((await o.ist('POST', `${ou}/serbest-birak`, km, {})).json()).toMatchObject({ serbest: true, bekleyen: [] });
+      expect((await o.sup.query(`SELECT serbest_birakma_zamani IS NOT NULL s FROM kontrol_noktasi WHERE kimlik = $1`, [id])).rows[0].s).toBe(true);
+      const yz = await o.ist('POST', `/api/dosya/${d.kimlik}/yazisma`, kk, { metin: 'Kanıt yüklendi.' }); expect(yz.statusCode).toBe(400); expect(yz.json().hata).toContain('dış taraf'); // dosyaya atanmış Kalite Uzmanı yazışmaya yazar (403 değil; yalnız dış taraf seçilmedi)
+    }
     { // T-YG383-NCR: olumsuz sonuçta uygunsuzluk kendiliğinden açılır, ikinci olumsuz sonuçta yenisi açılmaz
       const r2 = await o.ist('POST', u, tu, K); const su2 = `/api/kontrol-noktasi/${r2.json().kimlik}/sonuc`;
       expect((await o.ist('POST', su2, await o.gir('ty'), { sonuc: 'Reddedildi', kanit })).statusCode).toBe(200);

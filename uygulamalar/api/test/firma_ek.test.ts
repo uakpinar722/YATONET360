@@ -183,10 +183,15 @@ describe('ağ statüsü geçişleri (YG-357, YG-359)', () => {
   it('Pasif yalnız Aktif firmadan nedenle; yaptırımdan yükseltme kanıt ister; basamak atlanabilir', async () => {
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, kayit_asamasi, ag_statusu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı','Onaylı','Aktif',$3) RETURNING kimlik`, [`S-AG${Date.now()}`, `Ağ Firma ${Date.now()}`, o.K.ds])).rows[0].kimlik;
     const c = await o.gir('fym'); const u = `/api/firma/${f}/statu`;
+    const oneri = async (ag: string) => expect((await o.ist('POST', `/api/firma/${f}/statu-onerisi`, await o.gir('sc'), { ag, gerekce: 'Sicil değerlendirmesi' })).statusCode).toBe(200);
+    expect((await o.ist('POST', u, c, { ag: 'Pasif', pasifNedeni: 'Firma Talebi', gerekce: 'Talep' })).json().hata).toContain('Sicil Sorumlusunun önerisiyle'); // T-YG360-ZORUNLU
+    await oneri('Pasif');
     expect((await o.ist('POST', u, c, { ag: 'Pasif', gerekce: 'G' })).statusCode).toBe(400);
     expect((await o.ist('POST', u, c, { ag: 'Pasif', pasifNedeni: 'Firma Talebi', gerekce: 'Talep' })).statusCode).toBe(200);
+    await oneri('Aktif');
     expect((await o.ist('POST', u, c, { ag: 'Aktif', gerekce: 'Döndü' })).statusCode).toBe(200);
     await o.sup.query(`UPDATE kurulus SET ag_statusu = 'Askıda' WHERE kimlik = $1`, [f]);
+    await oneri('Aktif');
     expect((await o.ist('POST', u, c, { ag: 'Pasif', pasifNedeni: 'Hareketsizlik', gerekce: 'G' })).statusCode).toBe(409);
     expect((await o.ist('POST', u, c, { ag: 'Aktif', gerekce: 'İyileşti' })).json().hata).toContain('iyileştirme kanıtı');
     const bl = (await o.sup.query(`INSERT INTO belge (ad, belge_turu, bilgi_sinifi, bag_turu, bag_kimligi, kaynak_kanali, olusturan_ref) VALUES ('DÖF Kapanış', 'Diğer', 'Kurumsal', 'Kuruluş', $1, 'Sistem', $2) RETURNING kimlik`, [f, o.K.ds])).rows[0].kimlik;

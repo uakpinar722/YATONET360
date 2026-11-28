@@ -51,8 +51,8 @@ function kalanYazi(ms: number, bitis?: Date, simdi = Date.now()): { yazi: string
 }
 
 const ONCELIK: Record<string, string> = { Kritik: 'kirmizi', 'Yüksek': 'sari', Normal: 'gri', 'Planlı': 'gri' };
-const Rozet = ({ s, c, y }: { s: string; c: string; y?: string }) => <em className={`rozet ${s}${y ? ` ${y}` : ''}`}>{c}</em>;
-const Bos = ({ m }: { m: string }) => <div className="ozet bos">{m}</div>;
+export const Rozet = ({ s, c, y }: { s: string; c: string; y?: string }) => <em className={`rozet ${s}${y ? ` ${y}` : ''}`}>{c}</em>;
+export const Bos = ({ m }: { m: string }) => <div className="ozet bos">{m}</div>;
 
 function KartUst({ k, sayac = true }: { k: Kart; sayac?: boolean }) {
   const kl = k.son_zaman ? kalan(k.son_zaman, Date.now(), k.olusturma_zamani) : null;
@@ -382,6 +382,7 @@ export function Bugun({ ben, veri, hata, yenile }: { ben: Ben; veri: BugunVeri |
       <div className="bolum">Görevler ve Periyodik İşler</div>
       {veri.gorev.length === 0 ? <Bos m="Bugün için görev bulunmamaktadır." /> : veri.gorev.map((k) => <IslemKarti key={k.kimlik} k={k} yenile={yenile} />)}
       {ben.roller.some((r) => ['Operasyon Yöneticisi', 'Operasyon Müdürü', 'Operasyon Müdür Yardımcısı'].includes(r.rol_adi)) && <OperasyonPano />}
+      {ben.roller.some((r) => ['Teknik Yönetici', 'Kalite Müdürü'].includes(r.rol_adi)) && <SerbestBirakmaOnaylari />}
       {ben.roller.some((r) => ['Teknik Yönetici', 'Teknik Müdür', 'Teknik Müdür Yardımcısı'].includes(r.rol_adi)) && <TeknikPano />}
       {ben.roller.some((r) => r.rol_adi === 'Teknik Uzman') && <Raporlarim />}
       {ben.roller.some((r) => r.rol_adi === 'Kalite Uzmanı (Kalite Kontrolör)') && <KalitePano />}
@@ -449,6 +450,26 @@ function KalitePano() {
     {v.kritik.map((u) => <div key={u.kimlik} className="hata kart-sol"><div className="ust2"><b>Kritik Uygunsuzluk · Kontrol Noktası Açık Kalır</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{u.dosya_no} · {u.uygunsuzluk_no} · {u.gercek_durum}</div><div className="not">Karar seviyesi: Kalite Müdürü ve Teknik Müdür.</div></div>)}
     <div className="bolum">Kontrol Noktalarım</div>
     {v.noktalar.length === 0 ? <Bos m="Açık kontrol noktanız bulunmamaktadır." /> : v.noktalar.map((n) => { const kl = kalan(n.planlanan_zaman); return <div key={n.kimlik} className="ozet kart-sol"><div className="ust2"><b>{n.kontrol_noktasi_no} · {n.nokta_turu}{kod[n.nokta_turu] ? ` (${kod[n.nokta_turu]})` : ''}</b><Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} /></div><div className="not">{n.dosya_no} · {n.is_emri_no}{n.kalem ? ` · ${n.kalem}` : ''} · {n.kontrol_ozelligi}{n.kabul_sinifi ? ` · Kabul Sınıfı ${n.kabul_sinifi}` : ''}{n.sonuc ? ` · ${n.sonuc}` : ''}</div></div>; })}
+  </>;
+}
+
+/** YG-1686: A sınıfı serbest bırakma kartı; diğer makamın onay durumu satırıyla "Serbest Bırak" / "Gerekçeyle İade Et". */
+function SerbestBirakmaOnaylari() {
+  type K = { kimlik: string; kontrol_noktasi_no: string; nokta_turu: string; kontrol_ozelligi: string; kabul_olcutu: string; sonuc: string; kanit_belge_ref: string | null; kanit_surum: number | null; gonderen: string | null; is_emri_no: string; dosya_no: string; teknikYonetici: string; kaliteMuduru: string };
+  const [v, setV] = useState<K[] | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState(''); const [n, setN] = useState(0);
+  useEffect(() => { void istek<{ kayitlar?: K[] }>('/serbest-birakma-onaylari').then((r) => setV(r.kayitlar ?? [])).catch(() => setV(null)); }, [n]);
+  if (!v || v.length === 0) return null;
+  const is = (id: string, yol: string, govde: object, mesaj: string) => void istek(`/kontrol-noktasi/${id}/${yol}`, govde).then(() => { setM(mesaj); setN(n + 1); }).catch((e) => setM(e.message));
+  return <>
+    <div className="bolum">A Sınıfı Serbest Bırakma Onayları</div>{m && <div className="not" role="status">{m}</div>}
+    {v.map((k) => <div key={k.kimlik} className="ozet kart-sol"><div className="ust2"><b>{k.dosya_no} · {k.kontrol_noktasi_no} · {k.nokta_turu}</b><Rozet s="sari" c="Onayınızı Bekliyor" /></div>
+      <div className="not">{k.is_emri_no} · {k.kontrol_ozelligi} · Kabul ölçütü: {k.kabul_olcutu}</div>
+      <div className="not">Kalite Uzmanı sonucu: {k.sonuc}{k.gonderen ? ` · Gönderen: ${k.gonderen}` : ''}{k.kanit_belge_ref && k.kanit_surum ? <> · <a href={`/api/belge/${k.kanit_belge_ref}/surum/${k.kanit_surum}/indir`} target="_blank" rel="noreferrer">Kanıtı Aç</a></> : null}</div>
+      <div className="not">Teknik Yönetici: {k.teknikYonetici} · Kalite Müdürü: {k.kaliteMuduru}</div>
+      <label htmlFor={`sb-${k.kimlik}`}>İade Gerekçesi</label><input id={`sb-${k.kimlik}`} value={g[k.kimlik] ?? ''} onChange={(e) => setG({ ...g, [k.kimlik]: e.target.value })} />
+      <div className="dugmeler"><button className="btn evet" onClick={() => is(k.kimlik, 'serbest-birak', {}, 'Serbest bırakma kararınız kaydedildi.')}>Serbest Bırak</button>
+        <button className="btn hayir" disabled={!(g[k.kimlik] ?? '').trim()} onClick={() => is(k.kimlik, 'iade', { gerekce: g[k.kimlik] }, 'Kalite Uzmanına gerekçeyle iade edildi.')}>Gerekçeyle İade Et</button></div>
+    </div>)}
   </>;
 }
 
