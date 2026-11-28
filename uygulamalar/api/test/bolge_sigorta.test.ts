@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { bolgeTuret, ilBaslik, telefonBicimi } from '../src/ana_veri.js';
-import { pazarlamaAdimi, sigortaPortalGorevi } from '../src/sigorta_kurum.js';
+import { paketAdi, pazarlamaAdimi, sigortaPortalGorevi } from '../src/sigorta_kurum.js';
 import { ortamKur, type Ortam } from './yardimci.js';
 
 const KADRO = { ds: 'Dosya Sorumlusu', mpm: 'Müşteri ve Paydaş İlişkileri Müdürü' };
@@ -35,8 +35,25 @@ describe('sigorta kurum kartı (YG-441, YG-442)', () => {
     const t = (await o.sup.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, hazirlayan_ref) VALUES ($1,1,$2) RETURNING kimlik`, [d, o.K.ds])).rows[0].kimlik;
     const f = (await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, cetvel_ref, teklif_muhatabi, teklif_dili, kdv_orani, odeme_vadesi, fatura_bilgisi, hazirlayan_ref, gonderim_zamani) VALUES ('T-P1',$1,$2,'Sigorta Şirketi','Türkçe',20,'30 gün','F',$3,now()) RETURNING kimlik`, [d, t, o.K.ds])).rows[0].kimlik as string;
     expect(await sigortaPortalGorevi(o.db)).toBe(1); expect(await sigortaPortalGorevi(o.db)).toBe(0);
+    { const kk = (await o.kart('Sigorta Portalına Yükleme', f)).kimlik; expect((await o.ist('GET', `/api/is/${kk}/sigorta-portal`, await o.gir('ds'))).json().teklif).toBe(f); expect((await o.ist("GET", `/api/is/${crypto.randomUUID()}/sigorta-portal`, m)).statusCode).toBe(404); } // YG-442
     const ds = await o.gir('ds'); const u = `/api/dosya/${d}/sigorta-portal-yukleme`; expect((await o.ist('POST', u, ds, { teklif: f })).statusCode).toBe(400); expect((await o.ist('POST', u, ds, { teklif: f, referans: 'R1' })).statusCode).toBe(200); expect((await o.ist('POST', u, ds, { teklif: f, referans: 'R1' })).statusCode).toBe(409);
     expect((await o.kart('Sigorta Portalına Yükleme', f)).durum).toBe('Tamamlandı');
+    // YG-442: paket şirketin biçimiyle; teklif belgesi üretilmeden hazırlanmaz
+    const pu = `/api/dosya/${d}/sigorta-portal-paketi?teklif=${f}`;
+    expect((await o.ist('GET', pu, ds)).json().hata).toMatch(/Teklif belgesi/);
+    const bel = await o.belge(d, 'ds'); const sv = (await o.sup.query(`SELECT kimlik FROM belge_surum WHERE belge_ref = $1`, [bel])).rows[0].kimlik;
+    await o.sup.query(`INSERT INTO belge_uretim (tur, nesne, dosya_ref, durum, belge_ref, surum_ref) VALUES ('Fiyat Teklifi',$1,$2,'Üretildi',$3,$4)`, [f, d, bel, sv]);
+    await o.ist('POST', '/api/sigorta-kurum', m, { ad: 'SgP', kanal: 'Kendi Portalı', portal: 'https://p.local', paket: '{HasarNo}-{Belge}{Sira}' });
+    const pk = await o.ist('GET', pu, ds); expect(pk.statusCode, pk.body.slice(0, 200)).toBe(200); expect(pk.headers['content-type']).toContain('zip');
+    expect(pk.rawPayload.subarray(0, 2).toString()).toBe('PK'); expect(pk.rawPayload.includes(Buffer.from('-Teklif01.pdf'))).toBe(true);
+    await o.ist('POST', '/api/sigorta-kurum', m, { ad: 'SgP', kanal: 'E-posta Şablonu' }); expect((await o.ist('GET', pu, ds)).statusCode).toBe(409);
+  });
+});
+
+describe('portal paket adı (YG-442)', () => {
+  it('biçim yer tutucularla, yoksa varsayılanla', () => {
+    const D = { hasarNo: 'H/12', dosyaNo: 'LGM-1', teklifNo: 'T-1-R2', belge: 'Rapor', sira: 3 };
+    expect(paketAdi('{HasarNo} {Belge}{Sira}', D, 'pdf')).toBe('H_12_Rapor03.pdf'); expect(paketAdi(null, D, 'pdf')).toBe('LGM-1_Rapor_03.pdf'); expect(paketAdi('PDF+ZIP', D, 'pdf')).toBe('LGM-1_Rapor_03.pdf');
   });
 });
 

@@ -86,6 +86,14 @@ function SiparisKontrolleri({ id }: { id: string }) {
   return <div className="not">{v.kontroller.map((x) => <div key={x.ad}>{x.sonuc ? '✓' : '⚠'} <b>{x.ad}:</b> {x.aciklama}</div>)}{v.sonMakam && <div>Son Onay Makamı (tutara göre): <b className="koyu">{v.sonMakam}</b></div>}</div>;
 }
 
+/** YG-1389: tek karar ekranında risk bazlı kısa kontrol listesi; yalnız ilgili maddeler gösterilir. */
+function KararKontrolleri({ id }: { id: string }) {
+  const [v, setV] = useState<{ kontroller: { ad: string; sonuc: boolean; aciklama: string }[] } | null>(null);
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/is/${id}/karar-kontrolleri`).then(setV).catch(() => setV(null)); }, [id]);
+  if (!v?.kontroller.length) return null;
+  return <div className="not" aria-label="Karar Kontrolleri">{v.kontroller.map((x) => <div key={x.ad}>{x.sonuc ? '✓' : '⚠'} <b>{x.ad}:</b> {x.aciklama}</div>)}</div>;
+}
+
 /** YG-1637: ara kademe Onaya Gönder, son makam Onayla / Reddet; iade ve ret gerekçelidir. */
 function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   const [gerekce, setGerekce] = useState(''); const [acik, setAcik] = useState<'iade' | 'ret' | null>(null); const [hata, setHata] = useState(''); const [mesgul, setMesgul] = useState(false);
@@ -105,7 +113,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
       <NedenBaglantisi tur={k.tur} />{/* YG-1387 */}
       <div className="not">Kademe {k.kademe + 1} / {k.kademe_sayisi}{k.hazirlayan_adi ? ` · Hazırlayan: ${k.hazirlayan_adi}` : ''}</div>
       {k.arz_notlari && <div className="not">Önceki Kademe Notları: {k.arz_notlari}</div>}
-      {k.tur === 'Tedarik Siparişi' && <SiparisKontrolleri id={k.kimlik} />}
+      {k.tur === 'Tedarik Siparişi' ? <SiparisKontrolleri id={k.kimlik} /> : <KararKontrolleri id={k.kimlik} />}
       {k.tur === 'Nöbet Çizelgesi' && <NobetCizelgesiAyrinti id={k.kimlik} />}
       {hata && <div className="hata" role="alert">{hata}</div>}
       {kodIste && <><label htmlFor={`kd-${k.kimlik}`}>Doğrulama Kodu</label><input id={`kd-${k.kimlik}`} inputMode="numeric" autoComplete="one-time-code" value={kod} onChange={(e) => setKod(e.target.value)} /></>}
@@ -136,12 +144,24 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
 }
 
 const INCELEME = ['Aylık İSG Göstergeleri', 'Aylık Destek İstatistiği', 'Haftalık Uygunsuzluk Süre Raporu']; // YG-1694: is_motoru.ts INCELEME_TURLERI
+/** YG-442: kendi portalını kullanan sigortacı için paket indirilir, yükleme referansı kaydedilince görev kapanır. */
+function SigortaPortalYukleme({ id, yenile }: { id: string; yenile: () => void }) {
+  const [v, setV] = useState<{ teklif: string; dosya: string; teklif_no: string; portal_adresi: string | null } | null>(null); const [ref, setRef] = useState(''); const [m, setM] = useState('');
+  useEffect(() => { void istek<NonNullable<typeof v>>(`/is/${id}/sigorta-portal`).then(setV).catch(() => setV(null)); }, [id]);
+  if (!v) return null;
+  return <div className="tam">{m && <div className="hata" role="alert">{m}</div>}
+    <div className="not"><a href={`/api/dosya/${v.dosya}/sigorta-portal-paketi?teklif=${v.teklif}`} target="_blank" rel="noreferrer">Portal Paketini İndir ({v.teklif_no})</a>{v.portal_adresi ? <> · <a href={v.portal_adresi} target="_blank" rel="noreferrer">Sigorta Portalı</a></> : null}</div>
+    <label htmlFor={`spy-${id}`}>Portal Kayıt Referansı</label><input required id={`spy-${id}`} value={ref} onChange={(e) => setRef(e.target.value)} />
+    <button className="btn2 kucuk" disabled={!ref.trim()} onClick={() => void istek(`/dosya/${v.dosya}/sigorta-portal-yukleme`, { teklif: v.teklif, referans: ref }).then(yenile).catch((e) => setM((e as Error).message))}>Yüklemeyi Kaydet</button></div>;
+}
+
 function IslemKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   const [hata, setHata] = useState(''); const [er, setEr] = useState<{ yeniSon: string; gerekce: string } | null>(null);
   return (
     <div className="ozet kart-sol">
       <KartUst k={k} />
       {hata && <div className="hata" role="alert">{hata}</div>}
+      {k.tur === 'Sigorta Portalına Yükleme' && <SigortaPortalYukleme id={k.kimlik} yenile={yenile} />}
       {INCELEME.includes(k.tur) && <div className="not">İncelediğiniz kayda geçer; gönderen kişiye bilgi gider.</div>}
       <div className="dugmeler">{INCELEME.includes(k.tur) ? <button className="btn2" title="İncelediğiniz kayda geçer; gönderen kişiye bilgi gider." onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'İncelendi' }).then(yenile).catch((e) => setHata(e.message))}>İncelendi Olarak Kaydet</button> : <button className="btn2" onClick={() => void istek(`/is/${k.kimlik}/karar`, { karar: 'Tamamlandı' }).then(yenile).catch((e) => setHata(e.message))}>Tamamlandı</button>}<button className="btn2" onClick={() => setEr(er ? null : { yeniSon: '', gerekce: '' })}>Ertele</button></div>
       {er && <div className="tam"><label htmlFor={`er-s-${k.kimlik}`}>Yeni Son Tarih</label><input required id={`er-s-${k.kimlik}`} type="datetime-local" value={er.yeniSon} onChange={(e) => setEr({ ...er, yeniSon: e.target.value })} /><label htmlFor={`er-g-${k.kimlik}`}>Gerekçe</label><input required id={`er-g-${k.kimlik}`} value={er.gerekce} onChange={(e) => setEr({ ...er, gerekce: e.target.value })} /><button className="btn2 kucuk" disabled={!er.yeniSon || !er.gerekce.trim()} onClick={() => void istek(`/is/${k.kimlik}/ertele`, { yeniSon: new Date(er.yeniSon).toISOString(), gerekce: er.gerekce }).then(yenile).catch((e) => setHata(e.message))}>Ertelemeyi Kaydet</button></div>}

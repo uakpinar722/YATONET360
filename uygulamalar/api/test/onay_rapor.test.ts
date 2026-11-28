@@ -124,3 +124,16 @@ describe('kart önerisi (YG-188)', () => {
     await expect(o.sup.query(`UPDATE kartela_kalemi SET kod = 'X-01' WHERE kod = $1`, [v.kod])).rejects.toThrow(/değiştirilemez/);
   });
 });
+describe('karar ekranı kontrol listesi (YG-1389)', () => {
+  it('risk bazlı kısa kontroller yalnız makama, ilgili maddelerle görünür', async () => {
+    const d = await o.dosyaAc(); await o.ekipKur(d.kimlik); const K = { ana: 'Acil', alt: 'Acil arıza ve hasar müdahalesi', tali: 'Çağrı sınıflandırması ve sevk', islem: 'Kontrol işlemi', birim: 'adet', maliyet: 10, gerekce: 'G' };
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, await o.gir('tu'), K); expect(r.statusCode, r.body).toBe(200);
+    const kart = (await o.kart('Kart Önerisi', r.json().kimlik)).kimlik;
+    expect((await o.ist('GET', `/api/is/${kart}/karar-kontrolleri`, await o.gir('tu'))).statusCode).toBe(404);
+    const al = async () => ((await o.ist('GET', `/api/is/${kart}/karar-kontrolleri`, await o.gir('tid'))).json().kontroller as { ad: string; sonuc: boolean }[]);
+    const k1 = await al(); expect(k1.find((x) => x.ad === 'Görev Ayrılığı')?.sonuc).toBe(true); expect(k1.some((x) => x.ad === 'Açık Garanti veya Şikâyet')).toBe(false);
+    await o.sup.query(`INSERT INTO garanti_sikayet (kayit_no, dosya_ref, kayit_turu, kanal, bildirim_zamani, oncelik, karar, statu, olusturan_ref) VALUES ($1,$2,'{Garanti bildirimi}','Telefon',now(),'Normal','Garanti','Uygulamada',$3)`, [`GS-KK${Date.now()}`, d.kimlik, o.K.ds]);
+    await o.sup.query(`UPDATE is_karti SET son_zaman = now() - interval '1 hour' WHERE kimlik = $1`, [kart]);
+    const k2 = await al(); expect(k2.find((x) => x.ad === 'Açık Garanti veya Şikâyet')?.sonuc).toBe(false); expect(k2.find((x) => x.ad === 'Hedef Süre')?.sonuc).toBe(false);
+  });
+});

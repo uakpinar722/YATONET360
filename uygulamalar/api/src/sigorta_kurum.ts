@@ -1,6 +1,8 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Pool } from 'pg';
 import { birKez } from './bildirim.js';
+import { Depo } from './depo.js';
+import { zip } from './docx.js';
 import { izYaz } from './denetim.js';
 import { dosyaErisimi } from './dosya.js';
 import { kartAc } from './is_motoru.js';
@@ -10,6 +12,13 @@ import { UUID } from './yat.js';
 const YETKILI = ['Müşteri ve Paydaş İlişkileri Müdürü', 'Ticari İşler Direktörü'];
 const KANAL = ['Kendi Portalı', 'E-posta Şablonu', 'YATONET 360 Portalı'];
 const KART = 'Sigorta Portalına Yükleme';
+
+/** YG-442 (V-1141): paket dosya adı şirket kartındaki paket biçiminden; {HasarNo} {DosyaNo} {TeklifNo} {Belge} {Sira} yer tutucuları kullanılır. */
+export const PAKET_VARSAYILAN = '{DosyaNo}_{Belge}_{Sira}';
+export function paketAdi(bicim: string | null, d: { hasarNo: string | null; dosyaNo: string; teklifNo: string; belge: string; sira: number }, uzanti: string) {
+  const ad = (bicim?.includes('{') ? bicim : PAKET_VARSAYILAN).replace(/\{HasarNo\}/g, d.hasarNo ?? d.dosyaNo).replace(/\{DosyaNo\}/g, d.dosyaNo).replace(/\{TeklifNo\}/g, d.teklifNo).replace(/\{Belge\}/g, d.belge).replace(/\{Sira\}/g, String(d.sira).padStart(2, '0'));
+  return `${ad.replace(/[\\/:*?"<>|\s]+/g, '_')}.${uzanti}`;
+}
 
 /** YG-442: kendi portalını kullanan sigortacıya giden teklifte Dosya Sorumlusuna 8 saatlik yükleme görevi. */
 export async function sigortaPortalGorevi(db: Pool, simdi = new Date()): Promise<number> {
@@ -37,6 +46,32 @@ export function sigortaKurumYollari(s: FastifyInstance, b: Baglam) {
     if (!g.ad?.trim() || !KANAL.includes(g.kanal ?? '') || (g.kanal === 'Kendi Portalı' && !g.portal?.trim())) return y.code(400).send({ hata: 'Şirket adı ve kanal zorunludur; kendi portalında adres de yazılır.' });
     await b.db.query(`INSERT INTO sigorta_kurum_karti (sigortaci_adi, kanal, portal_adresi, paket_bicimi, guncelleyen_ref) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (sigortaci_adi) DO UPDATE SET kanal = $2, portal_adresi = $3, paket_bicimi = $4, guncelleyen_ref = $5, zaman = now()`, [g.ad.trim(), g.kanal, g.portal?.trim() || null, g.paket?.trim() || null, o.kullanici]);
     return { tamam: true };
+  });
+  // YG-442: kendi portalını kullanan şirkete yüklenecek paket (teklif, onaylı teknik raporlar, portala açılmış fotoğraflar) şirketin biçimiyle tek ZIP olarak hazırlanır.
+  s.get('/dosya/:id/sigorta-portal-paketi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const { teklif } = i.query as { teklif?: string };
+    if (!UUID.test(id) || !teklif || !UUID.test(teklif) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    const k = (await b.db.query(`SELECT f.teklif_no, f.surum_no, d.dosya_no, s.sigorta_hasar_dosya_no, c.kanal, c.paket_bicimi FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik LEFT JOIN sigorta_kurum_karti c ON lower(c.sigortaci_adi) = lower(s.sigortaci_adi) WHERE f.kimlik = $1 AND f.dosya_ref = $2`, [teklif, id])).rows[0];
+    if (!k) return yok(y);
+    if (k.kanal !== 'Kendi Portalı') return y.code(409).send({ hata: 'Sigorta şirketi kendi portalını kullanmıyor; paket gerekmez.' });
+    const depo = b.depo ?? new Depo(); const oku = async (a: string) => Buffer.concat((await depo.bagla(a).toArray()) as Buffer[]);
+    const parca: { belge: string; anahtar: string; uzanti: string }[] = [];
+    const tp = (await b.db.query(`SELECT v.depo_anahtari FROM belge_uretim u JOIN belge_surum v ON v.kimlik = u.surum_ref WHERE u.tur = 'Fiyat Teklifi' AND u.nesne = $1 AND u.durum = 'Üretildi' ORDER BY u.olusturma_zamani DESC LIMIT 1`, [teklif])).rows[0];
+    if (!tp) return y.code(409).send({ hata: 'Teklif belgesi henüz üretilmedi; paket teklif belgesiyle hazırlanır.' });
+    parca.push({ belge: 'Teklif', anahtar: tp.depo_anahtari, uzanti: 'pdf' });
+    for (const r of (await b.db.query(`SELECT v.depo_anahtari FROM belge_uretim u JOIN teknik_rapor t ON t.kimlik::text = u.nesne JOIN belge_surum v ON v.kimlik = u.surum_ref WHERE u.dosya_ref = $1 AND u.tur = 'Teknik Rapor' AND u.durum = 'Üretildi' AND t.durum = 'Onaylı' ORDER BY u.olusturma_zamani`, [id])).rows) parca.push({ belge: 'Rapor', anahtar: r.depo_anahtari, uzanti: 'pdf' });
+    // Yalnız portala açılmış (onaylı) fotoğraflar; alanı kapatılmış görselde kapatılmış kopya (YG-1170).
+    for (const r of (await b.db.query(`SELECT coalesce(f.maskeli_anahtar, s.depo_anahtari) anahtar, s.dosya_adi FROM portal_ilerleme_fotografi f JOIN belge_surum s ON s.kimlik = f.surum_ref JOIN belge e ON e.kimlik = s.belge_ref WHERE f.dosya_ref = $1 AND f.kaldirma_zamani IS NULL AND e.imha_zamani IS NULL ORDER BY f.onay_zamani`, [id])).rows) parca.push({ belge: 'Fotograf', anahtar: r.anahtar, uzanti: (/\.([a-z0-9]{2,4})$/i.exec(r.dosya_adi ?? '')?.[1] ?? 'jpg').toLowerCase() });
+    const sayac: Record<string, number> = {}; const dosyalar: { ad: string; veri: Buffer }[] = [];
+    for (const x of parca) { sayac[x.belge] = (sayac[x.belge] ?? 0) + 1; dosyalar.push({ ad: paketAdi(k.paket_bicimi, { hasarNo: k.sigorta_hasar_dosya_no, dosyaNo: k.dosya_no, teklifNo: `${k.teklif_no}-R${k.surum_no}`, belge: x.belge, sira: sayac[x.belge]! }, x.uzanti), veri: await oku(x.anahtar) }); }
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Sigorta Portal Paketi Hazırlandı', nesneTuru: 'Teklif', nesneKimligi: teklif, yeni: { dosyalar: dosyalar.map((x) => x.ad) }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+    return y.header('content-type', 'application/zip').header('content-disposition', `attachment; filename="${paketAdi(k.paket_bicimi, { hasarNo: k.sigorta_hasar_dosya_no, dosyaNo: k.dosya_no, teklifNo: k.teklif_no, belge: 'Paket', sira: 1 }, 'zip')}"`).send(zip(dosyalar));
+  });
+  // YG-442: görev kartından paket ve yükleme kaydına geçiş; kart sahibine teklif ve dosya bilgisi verilir.
+  s.get('/is/:id/sigorta-portal', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; if (!UUID.test(id)) return yok(y);
+    const r = (await b.db.query(`SELECT f.kimlik teklif, f.dosya_ref::text dosya, f.teklif_no, c.portal_adresi FROM is_karti k JOIN fiyat_teklifi f ON f.kimlik::text = k.nesne_kimligi JOIN dosya_sigorta_kaydi s ON s.dosya_ref = f.dosya_ref LEFT JOIN sigorta_kurum_karti c ON lower(c.sigortaci_adi) = lower(s.sigortaci_adi) WHERE k.kimlik = $1 AND k.tur = $2`, [id, KART])).rows[0];
+    return r && (await dosyaErisimi(b.db, o.kullanici, r.dosya)) ? r : yok(y);
   });
   s.post('/dosya/:id/sigorta-portal-yukleme', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { teklif?: string; referans?: string };
