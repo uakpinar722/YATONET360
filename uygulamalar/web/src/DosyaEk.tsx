@@ -576,7 +576,23 @@ export function FirmaKapsamaRaporu() {
     <label className="kutu"><input type="checkbox" checked={aday} onChange={(e) => setAday(e.target.checked)} /><span>Aday firmalar</span></label>
     {l.length === 0 ? <div className="ozet"><div className="not">Kayıt bulunmamaktadır.</div></div> : <KapsamaTablosu l={l} />}
     <div className="not">Kırmızı: firma yok · Sarı: tek firma · Yeşil: iki ve üzeri firma</div>
-    <RaporAltbilgisi donem="Güncel" suzgec={aday ? 'Aday firmalar' : 'Kayıtlı firmalar'} veri={l} /></>;
+    <RaporAltbilgisi donem="Güncel" suzgec={aday ? 'Aday firmalar' : 'Kayıtlı firmalar'} veri={l} />
+    {!aday && <AgGelistirme l={l} />}</>;
+}
+
+/** YG-1662: firması olmayan veya tek firmaya bağlı branş-bölge için ağ geliştirme önerisi (Genel Müdür Yardımcısı onayına). Yalnız Direktörde yazılabilir. */
+function AgGelistirme({ l }: { l: { ana_brans: string; bolge: string; firma: number }[] }) {
+  const [v, setV] = useState<{ yazabilir: boolean; oneriler: { kimlik: string; ana_brans: string; bolge: string; mevcut_firma: number; durum: string }[] } | null>(null); const [f, setF] = useState({ s: '', oneri: '' }); const [m, setM] = useState('');
+  const yk = () => istek<NonNullable<typeof v>>('/ag-gelistirme-onerisi').then(setV).catch(() => setV(null));
+  useEffect(() => { void yk(); }, []);
+  if (!v) return null;
+  const adaylar = [...new Map(l.filter((x) => x.firma <= 1).map((x) => [`${x.ana_brans}|${x.bolge}`, x])).values()];
+  const [brans, bolge] = f.s.split('|');
+  return <><div className="bolum">Bölgesel Kapasite · Ağ Geliştirme Önerisi</div>{m && <div className="not" role="status">{m}</div>}
+    {v.yazabilir && <><label htmlFor="ag-s">Tek Kaynak veya Boş Kapasite</label><select id="ag-s" value={f.s} onChange={(e) => setF({ ...f, s: e.target.value })}><option value="">Seçiniz</option>{adaylar.map((x) => <option key={`${x.ana_brans}|${x.bolge}`} value={`${x.ana_brans}|${x.bolge}`}>{x.ana_brans} · {x.bolge} · {x.firma === 0 ? 'Firma yok' : 'Tek firma'}</option>)}</select>
+    <label htmlFor="ag-o">Öneri</label><textarea id="ag-o" rows={3} value={f.oneri} onChange={(e) => setF({ ...f, oneri: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.s || !f.oneri.trim()} title="Gönderilecek: Genel Müdür Yardımcısı" onClick={() => void istek('/ag-gelistirme-onerisi', { brans, bolge, oneri: f.oneri }).then(() => { setM('Öneri Genel Müdür Yardımcısı onayına gönderildi.'); setF({ s: '', oneri: '' }); return yk(); }).catch((e) => setM(e.message))}>Onaya Gönder</button></>}
+    {v.oneriler.map((x) => <div className="ozet" key={x.kimlik}><b>{x.ana_brans} · {x.bolge}</b><div className="not">Aktif firma: {x.mevcut_firma} · {x.durum}</div></div>)}</>;
 }
 
 /** YG-772: bölge × branş tablosu; hücre rengi firma sayısına göre (0 kırmızı, 1 sarı, 2+ yeşil). */

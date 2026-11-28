@@ -62,6 +62,11 @@ export async function sicilKaliteAylik(db: Pool, simdi = new Date()): Promise<nu
 const FYY = 'Firma Yönetimi Yöneticisi'; const FYMY = 'Firma Yönetimi Müdür Yardımcısı'; const KARAR_ONERI = 'Firma Karar Önerisi';
 const ONERILER = ['Onaylı', 'Koşullu Onaylı', 'İncelemede', 'Reddedildi']; const KAPSAMA = ['Bölge', 'Komşu', 'Mobil Ekip', 'Ulusal'];
 /** YG-1650: karar önerisi son makamda (Firma Yönetimi Müdürü) onaylanınca firmanın kayıt aşaması öneriye göre yazılır. */
+// YG-1662: Firma Yönetimi Müdürünün onayladığı üç aylık karne özeti Direktöre inceleme kartıyla gider.
+kapanisKaydet(KARNE_OZETI, async (c, k, karar) => {
+  if (karar !== 'Onayla') return;
+  await kartAc(c, { tur: 'Üç Aylık Karne Özeti Sonucu', kategori: 'gorev', baslik: `${String(k.nesne_kimligi ?? '').split('-').reverse().join('.')} · Firma Performans Karnesi Özeti`, ozet: k.ozet ?? undefined, sahipRol: await rolId(c, BTD), nesneTuru: 'Karne Dönemi', nesneKimligi: k.nesne_kimligi ?? undefined });
+});
 kapanisKaydet(KARAR_ONERI, async (c, k, karar, yapan) => {
   if (!['Onayla', 'Reddet', 'Gerekçeyle İade Et'].includes(karar)) return;
   const durum = karar === 'Onayla' ? 'Onaylandı' : karar === 'Reddet' ? 'Reddedildi' : 'İade Edildi';
@@ -209,7 +214,8 @@ export async function kapsamaRaporIsle(db: Pool, simdi = new Date()): Promise<nu
   if (!(await birKez(db, 'firma_kapsama_raporu', ay))) return 0;
   const r = await firmaKapsamaRaporu(db); const a = await firmaKapsamaRaporu(db, true);
   const bos = r.filter((x) => x.firma === 0).map((x) => `${x.ana_brans} (${x.bolge})`);
-  await bildir(db, { olay: `kapsama-raporu:${ay}`, kullanicilar: await rolSahipleri(db, await rolId(db, BTD)), baslik: `Firma Kapsama Raporu · ${ay}`, ozet: `${r.length} branş-bölge satırı; aktif firması olmayan: ${bos.length ? bos.slice(0, 10).join(', ') : 'yok'}.` });
+  // YG-1662: Direktöre İncelendi Olarak Kaydet kartıyla gider; rapor ekranda /rapor/firma-kapsama.
+  await kartAc(db, { tur: 'Firma Kapsama Raporu', kategori: 'gorev', baslik: `Firma Kapsama Raporu · ${ay}`, ozet: `${r.length} branş-bölge satırı; aktif firması olmayan: ${bos.length ? bos.slice(0, 10).join(', ') : 'yok'}.`, sahipRol: await rolId(db, BTD), nesneTuru: 'Kapsama Raporu', nesneKimligi: ay, simdi });
   await bildir(db, { olay: `aday-kapsama-raporu:${ay}`, kullanicilar: await rolSahipleri(db, await rolId(db, 'Genel Müdür Yardımcısı')), baslik: `Aday Firma Kapsama Raporu · ${ay}`, ozet: `Kayıt sürecindeki aday firmalar ${a.filter((x) => x.firma > 0).length} branş-bölge satırında.` });
   return 2;
 }

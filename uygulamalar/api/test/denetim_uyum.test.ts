@@ -44,7 +44,19 @@ describe('Resmî Gazete taraması (YG-807)', () => {
     expect((await o.ist('GET', '/api/resmi-gazete', await o.gir('ds'))).statusCode).toBe(404);
     const t = v.taramalar[0].kimlik; const mum = v.kurallar[0].mum_no;
     expect((await o.ist('POST', `/api/resmi-gazete/${t}`, hud, { sonuc: 'Değişiklik Var', mumlar: [mum] })).statusCode).toBe(400);
+    // YG-807: kural yapısal bağları; gözden geçirme görevi bağları listeler.
+    const ad = `Deneme Sözleşmesi ${Date.now()}`;
+    expect((await o.ist('POST', `/api/uyum-kurali/${mum}/bag`, await o.gir('ds'), { tur: 'Sözleşme Türü', kod: ad })).statusCode).toBe(404);
+    expect((await o.ist('POST', `/api/uyum-kurali/${mum}/bag`, hud, { tur: 'Şablon Metni', kod: 'YOK-KOD-0' })).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/uyum-kurali/${mum}/bag`, hud, { tur: 'Sözleşme Türü', kod: ad })).statusCode).toBe(200);
+    expect((await o.ist('POST', `/api/uyum-kurali/${mum}/bag`, hud, { tur: 'Sözleşme Türü', kod: ad })).statusCode).toBe(409);
+    const ib = (await o.ist('POST', `/api/uyum-kurali/${mum}/bag`, hud, { tur: 'İş Emri Adımı', kod: `Adım ${ad}` })).json().kimlik;
+    expect((await o.ist('POST', `/api/uyum-kurali-bagi/${ib}/kaldir`, hud, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/uyum-kurali-bagi/${ib}/kaldir`, hud, { gerekce: 'Adım kaldırıldı' })).statusCode).toBe(200);
+    expect((await o.ist('GET', '/api/resmi-gazete', hud)).json().baglar.some((x: { bag_kodu: string }) => x.bag_kodu === ad)).toBe(true);
     expect((await o.ist('POST', `/api/resmi-gazete/${t}`, hud, { sonuc: 'Değişiklik Var', aciklama: 'Yönetmelik değişti', mumlar: [mum] })).json().gorev).toBe(1);
+    const gk = (await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Uyum Kuralı Gözden Geçirme' AND nesne_kimligi = $1`, [`${t}:${mum}`])).rows[0].ozet as string;
+    expect(gk).toContain(`Sözleşme Türü: ${ad} (0 yürürlükte sözleşme)`); expect(gk).not.toContain(`Adım ${ad}`);
     expect((await o.kart('Resmî Gazete Taraması', t)).durum).toBe('Tamamlandı');
     expect(await o.kart('Uyum Kuralı Gözden Geçirme', `${t}:${mum}`)).toBeDefined();
     expect((await o.ist('POST', `/api/resmi-gazete/${t}`, hud, { sonuc: 'Değişiklik Yok' })).statusCode).toBe(409);

@@ -24,6 +24,12 @@ const R2 = (x: number) => Math.round(x * 100) / 100;
 const TIC = 'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)'; const TID = 'Ticari İşler Direktörü'; const MFM = 'Muhasebe ve Finans Müdürü'; const HUD = 'Hukuk ve Uyum Direktörü';
 
 /** YG-906: 20.000,00 EUR üzeri işte her dilim için ara ödeme = dilim − avans × dilim / toplam. Yalnız tamamlanan dilimler; ödenen ara ödemeler düşülür. */
+/** YG-1662: ağ geliştirme önerisinin kararı kayda işlenir. */
+kapanisKaydet('Ağ Geliştirme Önerisi', async (c, k, karar, yapan) => {
+  const d = karar === 'Onayla' ? 'Onaylandı' : karar === 'Reddet' ? 'Reddedildi' : karar === 'Gerekçeyle İade Et' ? 'İade Edildi' : null; if (!d) return;
+  await c.query(`UPDATE ag_gelistirme_onerisi SET durum = $2, karar_veren_ref = $3, karar_zamani = now() WHERE kimlik = $1::uuid AND durum = 'Onayda'`, [k.nesne_kimligi, d, yapan]);
+});
+
 export function araOdemeHesapla(g: { toplam: number; avans: number; ilerleme: number; onceki: number; dilim?: number }): number {
   const dilim = g.dilim ?? 20000; if (g.toplam <= dilim || g.ilerleme <= 0) return 0;
   const adet = Math.floor((g.toplam * Math.min(g.ilerleme, 100)) / 100 / dilim);
@@ -832,6 +838,32 @@ export function kalanYollari(s: FastifyInstance, b: Baglam) {
     const sirali = [...isler].sort((a, c) => Number(Boolean(c.engel)) - Number(Boolean(a.engel)) || (a.hedef ?? '9').localeCompare(c.hedef ?? '9'));
     const sonraki = sirali[0] ?? (onaylar[0] ? { is: `Onay: ${onaylar[0].baslik}`, sorumlu: onaylar[0].makam, hedef: onaylar[0].son_zaman } : null);
     return { isler, onaylar, durma, eksik, bagimliliklar, sonraki };
+  });
+
+  // YG-1662 (V-1146): firması olmayan veya tek firmaya bağlı branş-bölge için Direktörün ağ geliştirme önerisi Genel Müdür Yardımcısı onayına gider.
+  s.post('/ag-gelistirme-onerisi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const g = (i.body ?? {}) as { brans?: string; bolge?: string; oneri?: string };
+    if (!(await rolVar(o.kullanici, ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü']))) return yok(y);
+    if (!g.brans?.trim() || !g.bolge?.trim() || !g.oneri?.trim()) return y.code(400).send({ hata: 'Branş, bölge ve öneriyi giriniz.' });
+    const { firmaKapsamaRaporu } = await import('./firma_ek.js');
+    const satir = (await firmaKapsamaRaporu(b.db)).filter((x) => x.ana_brans === g.brans && x.bolge === g.bolge);
+    if (!satir.length) return y.code(400).send({ hata: 'Bu branş ve bölge kapsama raporunda bulunmamaktadır.' });
+    const n = Math.max(...satir.map((x) => x.firma));
+    if (n > 1) return y.code(409).send({ hata: 'Bu branş ve bölgede birden fazla aktif firma vardır; ağ geliştirme önerisi tek kaynak veya boş kapasite için yazılır.' });
+    const c = await b.db.connect();
+    try {
+      await c.query('BEGIN');
+      const r = (await c.query(`INSERT INTO ag_gelistirme_onerisi (ana_brans, bolge, mevcut_firma, oneri, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING RETURNING kimlik`, [g.brans, g.bolge, n, g.oneri.trim(), o.kullanici])).rows[0];
+      if (!r) { await c.query('ROLLBACK'); return y.code(409).send({ hata: 'Bu branş ve bölge için onayda bir öneri vardır.' }); }
+      await kartAc(c, { tur: 'Ağ Geliştirme Önerisi', baslik: `Ağ Geliştirme Önerisi · ${g.brans} · ${g.bolge}`, ozet: `Aktif firma: ${n} · ${g.oneri.trim()}`.slice(0, 1000), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Genel Müdür Yardımcısı')], nesneTuru: 'Ağ Geliştirme Önerisi', nesneKimligi: r.kimlik });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Ağ Geliştirme Önerisi Gönderildi', nesneTuru: 'Ağ Geliştirme Önerisi', nesneKimligi: r.kimlik, yeni: { brans: g.brans, bolge: g.bolge, firma: n }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
+      await c.query('COMMIT');
+      return { kimlik: r.kimlik, gonderilecek: 'Genel Müdür Yardımcısı' };
+    } catch (h) { await c.query('ROLLBACK').catch(() => {}); throw h; } finally { c.release(); }
+  });
+  s.get('/ag-gelistirme-onerisi', oturumlu, async (i, y) => {
+    if (!(await rolVar(i.oturum!.kullanici, ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü', 'Genel Müdür Yardımcısı', 'CEO']))) return yok(y);
+    return { yazabilir: await rolVar(i.oturum!.kullanici, ['Bilgi Teknolojileri ve Firma Yönetimi Direktörü']), oneriler: (await b.db.query(`SELECT kimlik, ana_brans, bolge, mevcut_firma, oneri, durum, olusturma_zamani FROM ag_gelistirme_onerisi ORDER BY olusturma_zamani DESC LIMIT 50`)).rows };
   });
 
   // YG-1660: Firma Kapsama Raporu ve aday raporu ekranda da görülür.

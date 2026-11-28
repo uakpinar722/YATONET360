@@ -3,7 +3,7 @@ import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
 
 /** Kayıt türünün bağlı olduğu dosya; kart nesnesinden bulunur. */
-const DOSYA_TABLOSU: Record<string, string> = { Teklif: 'fiyat_teklifi', 'Kapsam Cetveli': 'kapsam_cetveli', 'Teknik Rapor': 'teknik_rapor', 'İş Emri': 'is_emri', 'Kalite Planı': 'kalite_plani', 'Kart Önerisi': 'kart_onerisi', 'Garanti Kaydı': 'garanti_sikayet', Fatura: 'musteri_faturasi' };
+export const DOSYA_TABLOSU: Record<string, string> = { Teklif: 'fiyat_teklifi', 'Kapsam Cetveli': 'kapsam_cetveli', 'Teknik Rapor': 'teknik_rapor', 'İş Emri': 'is_emri', 'Kalite Planı': 'kalite_plani', 'Kart Önerisi': 'kart_onerisi', 'Garanti Kaydı': 'garanti_sikayet', 'Garanti Şikâyet': 'garanti_sikayet', Fatura: 'musteri_faturasi' };
 type Madde = { ad: string; sonuc: boolean; aciklama: string };
 
 /**

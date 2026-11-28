@@ -1,9 +1,27 @@
 import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { Pool } from 'pg';
+import { birKez } from './bildirim.js';
 import { izYaz } from './denetim.js';
+import { rolId } from './ihbar.js';
+import { kartAc } from './is_motoru.js';
 import { tamOturumGerekli, type Baglam } from './kimlik.js';
 import { UUID } from './yat.js';
 
 const OLCUTLER = ['oncelik', 'brans', 'kabulSinifi', 'tutarBandi', 'erisim', 'gizliHasar'] as const;
+export const ZORLUK_KARTI = 'Zorluk Katsayısı Girişi';
+
+/** YG-964, YG-1588 (V-1145): teklif onaylanan dosyada zorluk katsayısı girilmemişse Teknik Müdüre onay anından 8 saat süreli görev açılır; dosya başına bir kez. */
+export async function zorlukGoreviIsle(db: Pool, simdi = new Date()): Promise<number> {
+  let n = 0;
+  const l = (await db.query(`SELECT d.kimlik, d.dosya_no, min(f.karar_zamani) karar FROM dosya d JOIN fiyat_teklifi f ON f.dosya_ref = d.kimlik
+    WHERE f.karar IN ('Tam Onay', 'Kısmi Onay', 'Süre Dolumu Kabulü') AND f.karar_zamani > $1::timestamptz - interval '30 days' AND d.statu NOT IN ('Kapalı', 'Teknik Kapalı')
+      AND NOT EXISTS (SELECT 1 FROM dosya_zorluk_kaydi z WHERE z.dosya_ref = d.kimlik) GROUP BY d.kimlik, d.dosya_no LIMIT 200`, [simdi])).rows;
+  for (const d of l) {
+    if (!(await birKez(db, 'zorluk-katsayisi', d.kimlik))) continue;
+    await kartAc(db, { tur: ZORLUK_KARTI, kategori: 'gorev', baslik: `${d.dosya_no} · ${ZORLUK_KARTI}`, ozet: 'Teklif onaylandı; zorluk katsayısını altı ölçütle giriniz.', sahipRol: await rolId(db, 'Teknik Müdür'), sonZaman: new Date(new Date(d.karar).getTime() + 8 * 3_600_000), nesneTuru: 'Dosya', nesneKimligi: d.kimlik, simdi }); n++;
+  }
+  return n;
+}
 
 /** YG-964, YG-965: zorluk katsayısını Teknik Müdür ölçütlerle girer; gerekçeyle yalnız bir kez revize edilir. */
 export function zorlukYollari(s: FastifyInstance, b: Baglam) {
@@ -33,6 +51,7 @@ export function zorlukYollari(s: FastifyInstance, b: Baglam) {
       if (onceki && !g.gerekce?.trim()) { await c.query('ROLLBACK'); return y.code(400).send({ hata: 'Revize için gerekçe zorunludur.' }); }
       await c.query(`INSERT INTO dosya_zorluk_kaydi (dosya_ref, katsayi, olcutler, gerekce, giren_ref) VALUES ($1,$2,$3,$4,$5)`, [id, k, JSON.stringify(g.olcutler), g.gerekce?.trim() || null, o.kullanici]);
       await c.query(`UPDATE dosya SET zorluk_katsayisi = $2, zorluk_revize_edildi = $3 WHERE kimlik = $1`, [id, k, onceki > 0]);
+      await c.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = $1 AND nesne_kimligi = $2 AND durum = 'Bekliyor'`, [ZORLUK_KARTI, id]);
       await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: onceki ? 'Zorluk Katsayısı Revize' : 'Zorluk Katsayısı', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       await c.query('COMMIT');
       return { tamam: true };

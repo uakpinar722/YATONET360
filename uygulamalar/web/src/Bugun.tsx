@@ -143,7 +143,7 @@ function OnayKarti({ k, yenile }: { k: Kart; yenile: () => void }) {
   );
 }
 
-const INCELEME = ['Aylık İSG Göstergeleri', 'Aylık Destek İstatistiği', 'Haftalık Uygunsuzluk Süre Raporu']; // YG-1694: is_motoru.ts INCELEME_TURLERI
+const INCELEME = ['Aylık İSG Göstergeleri', 'Aylık Destek İstatistiği', 'Haftalık Uygunsuzluk Süre Raporu', 'Firma Kapsama Raporu', 'Örnek Geri Yükleme Testi Sonucu', 'Ayrıcalıklı Erişim İncelemesi Sonucu', 'Üç Aylık Karne Özeti Sonucu']; // YG-1694: is_motoru.ts INCELEME_TURLERI
 /** YG-442: kendi portalını kullanan sigortacı için paket indirilir, yükleme referansı kaydedilince görev kapanır. */
 function SigortaPortalYukleme({ id, yenile }: { id: string; yenile: () => void }) {
   const [v, setV] = useState<{ teklif: string; dosya: string; teklif_no: string; portal_adresi: string | null } | null>(null); const [ref, setRef] = useState(''); const [m, setM] = useState('');
@@ -454,13 +454,14 @@ function KalitePano() {
 
 /** YG-1586, YG-1587: Gözetim Uyarıları ve Gözetim / Müdürlük Dosyaları (teknik rapor durumu). */
 function TeknikPano() {
-  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; yat_adi: string; rapor: string | null; gozetim_notu: string | null }[]; uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[]; mudur: boolean; durdurulan?: { kimlik: string; dosya_no: string; yat_adi: string; neden: string | null }[]; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; eksik: string[] }[] } | null>(null); const [m, setM] = useState('');
+  const [v, setV] = useState<{ dosyalar: { kimlik: string; dosya_no: string; oncelik: string; statu: string; yat_adi: string; rapor: string | null; gozetim_notu: string | null }[]; uyarilar: { dosya: string; dosya_no: string; tur: string; ozet: string }[]; mudur: boolean; durdurulan?: { kimlik: string; dosya_no: string; yat_adi: string; neden: string | null }[]; zorluk?: { kimlik: string; dosya_no: string; yat_adi: string; son: string | null }[]; kuyruk?: { kimlik: string; dosya_no: string; oncelik: string; yat_adi: string; son: string | null; eksik: string[] }[] } | null>(null); const [m, setM] = useState('');
   const [gn, setGn] = useState(0);
   useEffect(() => { void istek<NonNullable<typeof v>>('/teknik-pano').then(setV).catch(() => setV(null)); }, [gn]);
   if (!v) return null;
   return <>
     {(v.durdurulan ?? []).map((d) => <div key={d.kimlik} className="hata kart-sol"><div className="ust2"><b>Karar Seviyesi: Siz · {d.dosya_no} · {d.yat_adi}</b><Rozet s="kirmizi" c="Acil" /></div><div className="not">{d.neden ?? 'İş durduruldu'} · GMY ve CEO bilgilendirildi; güvenli koşul doğrulanmadan iş yeniden başlatılmaz.</div></div>)}
     {v.kuyruk && v.mudur && <><div className="bolum">Atama Bekleyenler</div>{v.kuyruk.length === 0 ? <Bos m="Teknik atama bekleyen dosya bulunmamaktadır." /> : v.kuyruk.map((k) => { const kl = k.son ? kalan(k.son) : null; return <div key={k.kimlik} className={`ozet kart-sol${k.oncelik === 'Kritik' ? ' hata' : ''}`}><div className="ust2"><b>{k.dosya_no} · {k.yat_adi}</b>{kl && <Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} />}</div><div className="not">{k.oncelik} · Atanacak: {k.eksik.join(', ')}</div></div>; })}</>}
+    {v.zorluk && v.zorluk.length > 0 && <><div className="bolum">Zorluk Katsayısı Bekleyenler</div>{v.zorluk.map((k) => { const kl = k.son ? kalan(k.son) : null; return <div key={k.kimlik} className="ozet kart-sol"><div className="ust2"><b>{k.dosya_no} · {k.yat_adi}</b>{kl && <Rozet s={kl.sinif} y={kl.yanip} c={kl.yazi} />}</div><div className="not">Teklif onaylandı; katsayıyı dosya ekranındaki Zorluk Katsayısı bölümünden giriniz.</div></div>; })}</>}{/* YG-1588 */}
     <div className="bolum">{v.mudur ? 'Müdürlük Uyarıları' : 'Gözetim Uyarıları'}</div>{m && <div className="not" role="status">{m}</div>}
     {v.uyarilar.length === 0 ? <Bos m="Gözetim uyarısı bulunmamaktadır." /> : v.uyarilar.map((u, i) => <div key={i} className="ozet kart-sol"><div className="ust2"><b>{u.dosya_no} · {u.tur}</b></div><div className="not">{u.ozet}</div>
       {!v.mudur && u.tur === 'Saha Sorumlusu Gerekiyor' && <button className="btn2 kucuk" onClick={() => void istek(`/dosya/${u.dosya}/saha-sorumlusu-bildir`, {}).then(() => setM('Teknik Müdüre bildirildi.')).catch((e) => setM(e.message))}>Teknik Müdüre Bildir</button>}</div>)}

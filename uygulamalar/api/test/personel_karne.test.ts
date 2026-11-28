@@ -72,6 +72,12 @@ describe('Dosya Sorumlusu göstergeleri ve zorluk katsayısı (YG-964, YG-965)',
   const dosya = async () => { const d = await o.dosyaAc({}, {}); await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2 WHERE kimlik = $1`, [d.kimlik, o.K.ds]); return d.kimlik as string; };
   it('katsayıyı Teknik Müdür girer; ölçütler zorunlu; gerekçeyle yalnız bir kez revize edilir', async () => {
     const d = await dosya(); const tm = await o.gir('tm'); const u = `/api/dosya/${d}/zorluk`;
+    // YG-1588: teklif onaylanınca Teknik Müdüre 8 saat süreli görev; dosya başına bir kez, katsayı girilince kapanır.
+    await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, hazirlayan_ref, statu, gonderim_zamani, karar, karar_zamani) VALUES ($1,$2,'Yat Sahibi',20,$3,'Karar', now() - interval '1 hour', 'Tam Onay', now())`, [`T-ZK${Date.now()}`, d, o.K.ds]);
+    const { zorlukGoreviIsle } = await import('../src/zorluk.js');
+    expect(await zorlukGoreviIsle(o.db)).toBeGreaterThan(0); await zorlukGoreviIsle(o.db);
+    const zk = (await o.sup.query(`SELECT durum, son_zaman FROM is_karti WHERE tur = 'Zorluk Katsayısı Girişi' AND nesne_kimligi = $1`, [d])).rows; expect(zk.length).toBe(1); expect(zk[0].durum).toBe('Bekliyor');
+    expect((await o.ist('GET', '/api/teknik-pano', tm)).json().zorluk.some((x: { kimlik: string }) => x.kimlik === d)).toBe(true);
     expect((await o.ist('POST', u, await o.gir('ds'), { katsayi: 1.5, olcutler: O })).statusCode).toBe(404);
     expect((await o.ist('POST', u, tm, { katsayi: 2.5, olcutler: O })).statusCode).toBe(400);
     expect((await o.ist('POST', u, tm, { katsayi: 1.5, olcutler: { ...O, erisim: '' } })).statusCode).toBe(400);
@@ -80,6 +86,7 @@ describe('Dosya Sorumlusu göstergeleri ve zorluk katsayısı (YG-964, YG-965)',
     expect((await o.ist('POST', u, tm, { katsayi: 1.6, olcutler: O, gerekce: 'Gizli hasar çıktı' })).statusCode).toBe(200);
     expect((await o.ist('POST', u, tm, { katsayi: 1.7, olcutler: O, gerekce: 'Tekrar' })).statusCode).toBe(409);
     expect((await o.sup.query(`SELECT zorluk_katsayisi::float k, zorluk_revize_edildi r FROM dosya WHERE kimlik = $1`, [d])).rows[0]).toEqual({ k: 1.6, r: true });
+    expect((await o.sup.query(`SELECT durum FROM is_karti WHERE tur = 'Zorluk Katsayısı Girişi' AND nesne_kimligi = $1`, [d])).rows[0].durum).toBe('Tamamlandı');
   });
   it('süre uyumu ve kayıt bütünlüğü zorluk katsayısıyla ağırlıklı ölçülür; kapsam notu görünür', async () => {
     const [a, b] = [await dosya(), await dosya()]; const tm = await o.gir('tm'); const D2 = '2026-09';

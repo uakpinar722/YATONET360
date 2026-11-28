@@ -72,6 +72,11 @@ export async function muvafakatKilidi(db: Db, dosya: string): Promise<boolean> {
 
 /** YG-1468 sonrası kapı: mülkiyet beyanı olmadan da teklif hazırlanır, onay aşamasında kilit devreye girer. */
 kapiKaydet('Onay', async (db, d) => (await muvafakatKilidi(db, d.kimlik) ? 'Teklif onayı için Lehtar muvafakati bekleniyor.' : null));
+// YG-1439 (V-1147, K-170): zorunlu belgesi eksik dosya teklif onayı aşamasına geçmez; lehtar muvafakati yukarıdaki kapıyla durur.
+kapiKaydet('Onay', async (db, d) => {
+  const e = (await belgeListesi(db, d.kimlik)).filter((x) => x.durum === 'Eksik' && x.belge !== 'Lehtar Muvafakati').map((x) => x.belge);
+  return e.length ? `Teklif onayına geçmek için eksik belge: ${e.join(', ')}.` : null;
+});
 
 // YG-476, ONY-11: Mülkiyet ve Takyidat Beyanı; ıslak imzasız YATONET 360 beyanı.
 const MULKIYET = ['Malik', 'Finansal kiralama (leasing)', 'Kredi / ipotekli', 'Miras (elbirliği)', 'Paylı'];

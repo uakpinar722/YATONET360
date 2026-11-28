@@ -87,6 +87,7 @@ describe('yedek (YG-1274–1279)', () => {
     expect((await o.ist('POST', '/api/geri-yukleme-testi', c, { ...P, kayip: 300 })).json().sonuc).toBe('Başarısız');
     expect((await o.ist('POST', '/api/geri-yukleme-testi', c, { ...P, kayip: 300, surecSinifi: 'Önemli' })).json().sonuc).toBe('Başarılı'); // YG1279-HEDEF: Önemli sınıfta 24 saat
     expect((await o.ist('POST', '/api/geri-yukleme-testi', c, { ...P, ornekAkis: false })).json().sonuc).toBe('Başarısız');
+    expect((await o.sup.query(`SELECT count(*)::int n FROM is_karti WHERE tur = 'Örnek Geri Yükleme Testi Sonucu' AND kategori = 'gorev' AND olusturma_zamani > now() - interval '5 minutes'`)).rows[0].n).toBeGreaterThan(0); // YG-1662
     expect((await o.ist('GET', '/api/yedekler', c)).json().yedekler.length).toBeGreaterThan(0);
   });
 });

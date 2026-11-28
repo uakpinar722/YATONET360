@@ -305,6 +305,11 @@ describe('Süresi dolmuş zorunlu belge (YG-1648)', () => {
     const kz = (await o.ist('POST', '/api/firma/karne-ozeti', my, { donem: '2026-09-30', degerlendirme: 'Düşüş eğilimi izlenecek' })).json();
     expect(kz.gonderilecek).toBe('Firma Yönetimi Müdürü'); expect(kz.ozet.firma).toBeGreaterThan(0);
     expect((await o.ist('POST', '/api/firma/karne-ozeti', my, { donem: '2026-09-30', degerlendirme: 'x' })).statusCode).toBe(409);
+    // YG-1662: onaylanan özet Direktöre İncelendi Olarak Kaydet kartıyla gider; onay düğmesi yoktur.
+    const kk = (await o.sup.query(`SELECT kimlik FROM is_karti WHERE tur = 'Üç Aylık Karne Özeti' AND nesne_kimligi = '2026-09-30' AND durum = 'Bekliyor'`)).rows[0].kimlik;
+    expect((await o.ist('POST', `/api/is/${kk}/karar`, fym, { karar: 'Onayla' })).statusCode).toBe(200);
+    const ki = (await o.sup.query(`SELECT kimlik, kategori FROM is_karti WHERE tur = 'Üç Aylık Karne Özeti Sonucu' AND nesne_kimligi = '2026-09-30' AND durum = 'Bekliyor'`)).rows[0]; expect(ki.kategori).toBe('gorev');
+    expect((await o.ist('POST', `/api/is/${ki.kimlik}/karar`, await o.gir('btd'), { karar: 'İncelendi' })).statusCode).toBe(200);
     expect((await o.ist('POST', '/api/firma-denetim-programi', fym, { yil: 2026, aciklama: 'P' })).statusCode).toBe(404);
     const pr = (await o.ist('POST', '/api/firma-denetim-programi', my, { yil: 2026, aciklama: 'Risk esaslı program' })).json();
     expect(pr.gonderilecek).toBe('Firma Yönetimi Müdürü'); expect(Array.isArray(pr.cakisma)).toBe(true);

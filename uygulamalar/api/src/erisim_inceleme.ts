@@ -91,6 +91,9 @@ kapanisKaydet(PAKET, async (c, k, karar, yapan) => {
     await kararUygula(c, x, x.oneri, x.oneri_bitis ? new Date(x.oneri_bitis).toISOString().slice(0, 10) : null);
     if (daralt) await kartAc(c, { tur: 'Erişim Daraltma', kategori: 'islem', baslik: 'Erişim Daraltma Uygulaması', ozet: String(x.oneri_gerekce ?? '').slice(0, 200), sahipRol: await rolId(c, 'Sistem Yöneticisi'), nesneTuru: 'Erişim Kalemi', nesneKimligi: x.kimlik });
   }
+  // YG-1662: onaylanan ayrıcalıklı erişim incelemesinin sonucu Direktöre İncelendi Olarak Kaydet kartıyla gider.
+  const ks = (await c.query(`SELECT count(*)::int n, count(*) FILTER (WHERE karar IN ('Kapat', 'Askıya Al'))::int kapat, count(*) FILTER (WHERE karar = 'Daralt')::int daralt FROM erisim_inceleme_kalemi WHERE inceleme_ref = $1`, [e.kimlik])).rows[0];
+  await kartAc(c, { tur: 'Ayrıcalıklı Erişim İncelemesi Sonucu', kategori: 'gorev', baslik: `${e.donem} · Ayrıcalıklı Hesap Erişim İncelemesi Sonucu`, ozet: `${ks.n} erişim incelendi · kapatılan veya askıya alınan ${ks.kapat} · daraltılan ${ks.daralt}`, hazirlayan: yapan, sahipRol: await rolId(c, BTD), nesneTuru: 'Erişim İncelemesi', nesneKimligi: e.kimlik });
   await kapanisKontrol(c, e.kimlik);
 });
 

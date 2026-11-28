@@ -837,9 +837,18 @@ describe('firma kapsama raporu (YG-1660)', () => {
     expect(r.find((x) => x.ana_brans === 'Kapsama Boya')!.firma).toBe(1); expect(r.find((x) => x.ana_brans === 'Kapsama Elektrik')!.firma).toBe(0);
     expect((await firmaKapsamaRaporu(o.db, true)).find((x) => x.ana_brans === 'Kapsama Elektrik')!.firma).toBe(1);
     const z = new Date('2031-03-01T08:00:00Z'); expect(await kapsamaRaporIsle(o.db, z)).toBe(2); expect(await kapsamaRaporIsle(o.db, z)).toBe(0);
-    expect((await o.sup.query(`SELECT ozet FROM bildirim WHERE olay_anahtari = 'kapsama-raporu:2031-03' LIMIT 1`)).rows[0].ozet).toContain('Kapsama Elektrik (Ege)');
+    expect((await o.sup.query(`SELECT ozet FROM is_karti WHERE tur = 'Firma Kapsama Raporu' AND nesne_kimligi = '2031-03' LIMIT 1`)).rows[0].ozet).toContain('Kapsama Elektrik (Ege)'); // YG-1662 inceleme kartı
     expect((await o.ist('GET', '/api/rapor/firma-kapsama', await o.gir('gmy'))).statusCode).toBe(200);
     expect((await o.ist('GET', '/api/rapor/firma-kapsama?aday=1', await o.gir('ds'))).statusCode).toBe(404);
+    // YG-1662: boş veya tek firmalı branş-bölge için ağ geliştirme önerisi Genel Müdür Yardımcısı onayına gider.
+    const bos = r.find((x) => x.ana_brans === 'Kapsama Elektrik')!; const u = '/api/ag-gelistirme-onerisi'; const btd = await o.gir('btd');
+    expect((await o.ist('POST', u, await o.gir('ds'), { brans: bos.ana_brans, bolge: bos.bolge, oneri: 'Bölgede firma aranmalı' })).statusCode).toBe(404);
+    expect((await o.ist('POST', u, btd, { brans: bos.ana_brans, bolge: bos.bolge })).statusCode).toBe(400);
+    const ag = await o.ist('POST', u, btd, { brans: bos.ana_brans, bolge: bos.bolge, oneri: 'Bölgede firma aranmalı' }); expect(ag.statusCode, ag.body).toBe(200); expect(ag.json().gonderilecek).toBe('Genel Müdür Yardımcısı');
+    expect((await o.ist('POST', u, btd, { brans: bos.ana_brans, bolge: bos.bolge, oneri: 'Tekrar' })).statusCode).toBe(409);
+    expect((await o.ist('GET', u, await o.gir('gmy'))).json().yazabilir).toBe(false);
+    const agk = (await o.kart('Ağ Geliştirme Önerisi', ag.json().kimlik)).kimlik; expect((await o.karar(agk, 'gmy', 'Onayla')).statusCode).toBe(200);
+    expect((await o.sup.query(`SELECT durum FROM ag_gelistirme_onerisi WHERE kimlik = $1`, [ag.json().kimlik])).rows[0].durum).toBe('Onaylandı');
   });
 });
 
@@ -1469,6 +1478,11 @@ describe('istenecek belge listesi (YG-1439)', () => {
     await o.sup.query(`UPDATE belge SET ad = 'Ruhsat' WHERE kimlik = $1`, [await o.belge(d.kimlik, 'opm')]);
     const l2 = (await o.ist('GET', `/api/dosya/${d.kimlik}/belge-listesi`, c)).json() as { belge: string; durum: string }[];
     expect(l2.find((x) => x.belge.startsWith('Ruhsat'))?.durum).toBe('Alındı');
+    // K-170: zorunlu belgesi eksik dosya teklif onayı aşamasına geçmez; engel eksik belgeleri isteme düğmesine yönlendirir.
+    await o.sup.query(`UPDATE dosya SET dosya_sorumlusu_ref = $2, statu = 'Aktif', asama = 'Teklif' WHERE kimlik = $1`, [d.kimlik, o.K.ds]);
+    const eksik = l2.filter((x) => x.durum === 'Eksik' && x.belge !== 'Lehtar Muvafakati').map((x) => x.belge); expect(eksik.length).toBeGreaterThan(0);
+    const r = await o.ist('POST', `/api/dosya/${d.kimlik}/asama`, c, { asama: 'Onay', gerekce: 'Teklif hazır' }); expect(r.statusCode, r.body).toBe(409);
+    expect(r.json()).toMatchObject({ hata: `Teklif onayına geçmek için eksik belge: ${eksik.join(', ')}.`, islem: 'Eksik Belgeleri İste', hedef: 'bt-s' });
   });
   it('Saha Sorumlusu talebi Teknik Müdürde; ret T&O Direktörüne taşınır; geri çekme onayla ve devir notuyla (YG-051, YG-052)', async () => {
     const d = await o.dosyaAc({}, {}); const ds = await o.gir('opm');
@@ -1701,6 +1715,10 @@ describe('istenecek belge listesi (YG-1439)', () => {
     const ata = v.yapilacaklar.filter((x: { is: string }) => x.is === 'Dosya Sorumlusunu Ata' || x.is === 'Teknik Yöneticiyi Ata');
     expect(ata.length).toBeGreaterThan(0); for (const x of ata) expect(x.form).toEqual({ hedef: 'e-r', rol: x.is === 'Dosya Sorumlusunu Ata' ? 'Dosya Sorumlusu' : 'Teknik Yönetici' }); // sıradaki form
     const hn = v.yapilacaklar.find((x: { is: string }) => x.is.startsWith('Sigorta Hasar Dosya Numarasını Gir')); if (hn) expect(hn.form).toEqual({ hedef: 'de-hn' });
+    // YG-1351: dosyaya bağlı kaydın işlem kartı kimde olduğu ve hedef süresiyle listelenir.
+    const ko = (await o.sup.query(`INSERT INTO kart_onerisi (dosya_ref, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, gerekce, hazirlayan_ref) VALUES ($1,'Acil','A','T','İşlem','adet',10,'G',$2) RETURNING kimlik`, [d.kimlik, o.K.tu])).rows[0].kimlik;
+    await kartAc(o.db, { tur: 'Kart Önerisi', kategori: 'islem', baslik: 'Bağlı Kayıt İşlemi Deneme', sahipKullanici: o.K.tid, sonZaman: new Date(Date.now() + 86_400_000), nesneTuru: 'Kart Önerisi', nesneKimligi: ko });
+    const ob = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json().yapilacaklar.find((x: { is: string }) => x.is === 'Bağlı Kayıt İşlemi Deneme'); expect(ob?.hedef).toBeTruthy(); expect(ob?.sorumlu).not.toBe('—');
     // YG-064: Aktif dosyada eksik zorunlu formlar kodsuz listelenir.
     await o.sup.query(`UPDATE dosya SET statu = 'Aktif', asama = 'Keşif' WHERE kimlik = $1`, [d.kimlik]); await o.sup.query(`INSERT INTO fiyat_teklifi (teklif_no, dosya_ref, teklif_muhatabi, kdv_orani, statu, ara_toplam_eur, genel_toplam_eur, onay_limit_tutari_eur, hazirlayan_ref, gonderim_zamani) VALUES ($1,$2,'Yat Sahibi',20,'Gönderildi',300,360,300,$3,now())`, [`${d.dosyaNo}-YF`, d.kimlik, o.K.opm]);
     const fl = (await o.ist('GET', `/api/dosya/${d.kimlik}`, await o.gir('opm'))).json().yapilacaklar.filter((x: { is: string }) => x.is.startsWith('Form Bekleniyor: '));

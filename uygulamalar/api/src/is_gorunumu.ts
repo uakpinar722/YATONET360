@@ -105,7 +105,9 @@ export function isGorunumuYollari(s: FastifyInstance, b: Baglam) {
         AND (NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol IN ('Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)') AND a.bitis_zamani IS NULL) OR NOT EXISTS (SELECT 1 FROM dosya_ekibi_atamasi a WHERE a.dosya_ref = d.kimlik AND a.rol = 'Teknik Yönetici' AND a.bitis_zamani IS NULL))
       ORDER BY CASE d.oncelik WHEN 'Kritik' THEN 0 WHEN 'Yüksek' THEN 1 WHEN 'Normal' THEN 2 ELSE 3 END, son NULLS LAST, d.olusturma_zamani LIMIT 50`)).rows;
     await notEkle(dosyalar, 'Teknik Yönetici');
-    return { dosyalar, uyarilar, mudur, durdurulan, kuyruk };
+    // YG-1588: zorluk katsayısı bekleyen dosyalar (teklif onayından 8 saat) Teknik Müdür panosunda ayrı bölümde.
+    const zorluk = !tm ? [] : (await b.db.query(`SELECT k.nesne_kimligi kimlik, d.dosya_no, y.yat_adi, k.son_zaman son FROM is_karti k JOIN dosya d ON d.kimlik::text = k.nesne_kimligi JOIN yat y ON y.kimlik = d.yat_ref WHERE k.tur = 'Zorluk Katsayısı Girişi' AND k.durum = 'Bekliyor' ORDER BY k.son_zaman NULLS LAST LIMIT 50`)).rows;
+    return { dosyalar, uyarilar, mudur, durdurulan, kuyruk, zorluk };
   });
   // YG-1690: aktif iş emri olan dosyada eksik kalite planı (onaylı), kabul matrisi (gereklilik satırı) veya muayene ve test planı (kontrol noktası).
   const KALITE_MD = ['Kalite Müdür Yardımcısı', 'Kalite Müdürü'];

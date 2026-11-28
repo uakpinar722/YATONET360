@@ -106,7 +106,7 @@ const { zamanla } = isZamanlayici(db, (m) => s.log.error(m));
 zamanla('Zamanlanmış İş Denetimi', 'zamanlanmış iş gecikme ve çakışma uyarıları', 300_000, () => [zamanlanmisIsDenetimi(db)]);
 zamanla('Hizmet Hesabı Denetimi', 'kullanılmayan hizmet hesaplarının askıya alınması', 3_600_000, () => [hizmetHesabiIsle(db)]); // YG-1000
 zamanla('Bildirim Kuyruğu', 'giden e-posta, SMS ve WhatsApp bildirimleri', 30_000, () => [kuyrukIsle(baglam)]);
-zamanla('Onay Hatırlatmaları', 'bekleyen onay hatırlatmaları', 300_000, () => [onayHatirlat(db), import('./ihbar.js').then((m) => m.doganGorevIsle(db))]); // YG-1465: doğan görev yarı süre ve dolum uyarısı
+zamanla('Onay Hatırlatmaları', 'bekleyen onay hatırlatmaları', 300_000, () => [onayHatirlat(db), import('./ihbar.js').then((m) => m.doganGorevIsle(db)), import('./zorluk.js').then((m) => m.zorlukGoreviIsle(db))]); // YG-1588: zorluk katsayısı görevi // YG-1465: doğan görev yarı süre ve dolum uyarısı
 zamanla('Sistem Ölçümleri', 'sistem izleme ölçümleri ve kapasite uyarıları', 60_000, () => [olcumYaz(db)]);
 zamanla('Toplantı Hatırlatmaları', 'toplantı hatırlatmaları', 60_000, () => [toplantiHatirlat(db)]);
 zamanla('Saatlik Süreç Kontrolleri', 'muhafaza, periyodik iş, mutabakat, teslim, geçici onarım, personel durumu, masraf, İSG raporu, KVKK, yetki, güvenlik olayı, uyum, cayma ve görev ayrılığı görevleri', 3_600_000, () => [beklemeMuhafazaIsle(db, new Date(), baglam.webAdresi), periyodikIsle(db), mutabakatIsle(db), teslimIsle(db), geciciOnarimIsle(db), personelDurumIsle(db), masrafTaslakHatirlat(db), isgAylikRapor(db), konumTemizle(db), kvkkIsle(db), yetkiIsle(db), olayIsle(db), uyumIsle(db), caymaSureIsle(db), gorevAyriligiIsle(db), tesisTalepIsle(db)]);

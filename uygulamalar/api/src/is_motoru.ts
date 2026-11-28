@@ -13,7 +13,9 @@ import { MESLEKI } from './onay_sure.js';
 /** Buton standardı YG-1637: ara kademede Onaya Gönder, son makamda Onayla / Reddet, her kademede Gerekçeyle İade Et. */
 export type Karar = 'Onaya Gönder' | 'Onayla' | 'Reddet' | 'Gerekçeyle İade Et' | 'Yeniden Gönder' | 'Tamamlandı' | 'Geri Çek' | 'Kademe Atla' | 'İncelendi';
 /** YG-1694, A46-S5, A53-S4: bilgi amaçlı raporlar "İncelendi Olarak Kaydet" ile kapanır; gönderen bilgilendirilir (hazırlayan yoksa raporu hazırlayan rol). */
-export const INCELEME_TURLERI: Record<string, string | null> = { 'Aylık İSG Göstergeleri': 'İSG Sorumlusu', 'Aylık Destek İstatistiği': null, 'Haftalık Uygunsuzluk Süre Raporu': null };
+export const INCELEME_TURLERI: Record<string, string | null> = { 'Aylık İSG Göstergeleri': 'İSG Sorumlusu', 'Aylık Destek İstatistiği': null, 'Haftalık Uygunsuzluk Süre Raporu': null,
+  // YG-1662 (V-1143): Bilgi Teknolojileri ve Firma Yönetimi Direktörünün İncelemenizi Bekleyen Raporları; onay sayılmaz.
+  'Firma Kapsama Raporu': null, 'Örnek Geri Yükleme Testi Sonucu': 'Bilgi İşlem Müdür Yardımcısı', 'Ayrıcalıklı Erişim İncelemesi Sonucu': 'Bilgi İşlem Müdürü', 'Üç Aylık Karne Özeti Sonucu': 'Firma Yönetimi Müdürü' };
 export const INCELENDI_METNI = 'İncelediğiniz kayda geçer; gönderen kişiye bilgi gider.';
 
 export interface KartGirdisi {

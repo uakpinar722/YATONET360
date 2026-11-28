@@ -19,7 +19,7 @@ export function DenetimPlani() {
     {v.bulgular.map((x) => <div className="soru" key={x.kimlik}><span>{x.denetim_no} · {x.sinif} · {x.tanim} · {x.durum}{x.takip_sonucu ? ` · Takip: ${x.takip_sonucu}` : ''}</span>{x.durum === 'Açık' && <div className="tam"><label htmlFor={`bt-${x.kimlik}`}>Takip Notu</label><input id={`bt-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" onClick={() => is(istek(`/ic-denetim/bulgu/${x.kimlik}/takip`, { sonuc: 'Etkin', not: g[x.kimlik] }), 'Bulgu kapandı.')}>Etkin</button><button className="btn2 kucuk" onClick={() => is(istek(`/ic-denetim/bulgu/${x.kimlik}/takip`, { sonuc: 'Etkin Değil', not: g[x.kimlik] }), 'Takip kaydedildi.')}>Etkin Değil</button></div>}</div>)}</details>;
 }
 
-type Rg = { taramalar: { kimlik: string; donem: string; sonuc: string | null; aciklama: string | null; mum_listesi: string[] }[]; kurallar: { mum_no: string; mevzuat: string | null; yukumluluk: string }[] };
+type Rg = { taramalar: { kimlik: string; donem: string; sonuc: string | null; aciklama: string | null; mum_listesi: string[] }[]; kurallar: { mum_no: string; mevzuat: string | null; yukumluluk: string }[]; baglar?: { kimlik: string; mum_no: string; bag_turu: string; bag_kodu: string; aciklama: string | null }[]; bagTurleri?: string[] };
 /** YG-807: haftalık Resmî Gazete taraması; değişiklik uyum kuralına işlenir. */
 export function ResmiGazete() {
   const [v, setV] = useState<Rg | null>(null); const [g, setG] = useState<Record<string, string>>({}); const [sec, setSec] = useState<string[]>([]); const [m, setM] = useState('');
@@ -30,7 +30,20 @@ export function ResmiGazete() {
   return <details><summary>Resmî Gazete Taraması</summary>{m && <div className="not" role="status">{m}</div>}
     {v.taramalar.map((t) => <div className="soru" key={t.kimlik}><span>{t.donem} · {t.sonuc ?? 'Bekliyor'}{t.mum_listesi.length ? ` · ${t.mum_listesi.join(', ')}` : ''}{t.aciklama ? ` · ${t.aciklama}` : ''}</span>{!t.sonuc && <div className="tam"><label htmlFor={`rg-a-${t.kimlik}`}>Değişiklik</label><input id={`rg-a-${t.kimlik}`} value={g[t.kimlik] ?? ''} onChange={(e) => setG({ ...g, [t.kimlik]: e.target.value })} />
       <label htmlFor={`rg-m-${t.kimlik}`}>İlgili Uyum Kuralları</label><select id={`rg-m-${t.kimlik}`} multiple value={sec} onChange={(e) => setSec([...e.target.selectedOptions].map((o) => o.value))}>{v.kurallar.map((k) => <option key={k.mum_no} value={k.mum_no}>{k.mum_no} · {k.yukumluluk.slice(0, 60)}</option>)}</select>
-      <button className="btn2 kucuk" onClick={() => kaydet(t.kimlik, 'Değişiklik Yok')}>Değişiklik Yok</button><button className="btn2 kucuk" onClick={() => kaydet(t.kimlik, 'Değişiklik Var')}>Değişikliği İşle</button></div>}</div>)}</details>;
+      <button className="btn2 kucuk" onClick={() => kaydet(t.kimlik, 'Değişiklik Yok')}>Değişiklik Yok</button><button className="btn2 kucuk" onClick={() => kaydet(t.kimlik, 'Değişiklik Var')}>Değişikliği İşle</button></div>}</div>)}
+    <UyumBaglari v={v} yenile={() => void yk()} /></details>;
+}
+
+/** YG-807: kuralın bağlı olduğu şablon metni, eğitim, sözleşme türü, belge türü ve iş emri adımı; değişiklikte gözden geçirilecekler buradan çıkar. */
+function UyumBaglari({ v, yenile }: { v: Rg; yenile: () => void }) {
+  const [f, setF] = useState({ mum: '', tur: '', kod: '' }); const [g, setG] = useState<Record<string, string>>({}); const [m, setM] = useState('');
+  const is = (p: Promise<unknown>, t: string) => void p.then(() => { setM(t); setF({ ...f, kod: '' }); yenile(); }).catch((e) => setM(e.message));
+  return <><div className="bolum">Kural Bağları</div>{m && <div className="not" role="status">{m}</div>}
+    <label htmlFor="ub-m">Uyum Kuralı</label><select id="ub-m" value={f.mum} onChange={(e) => setF({ ...f, mum: e.target.value })}><option value="">Seçiniz</option>{v.kurallar.map((k) => <option key={k.mum_no} value={k.mum_no}>{k.mum_no} · {k.yukumluluk.slice(0, 60)}</option>)}</select>
+    <label htmlFor="ub-t">Bağ Türü</label><select id="ub-t" value={f.tur} onChange={(e) => setF({ ...f, tur: e.target.value })}><option value="">Seçiniz</option>{(v.bagTurleri ?? []).map((x) => <option key={x}>{x}</option>)}</select>
+    <label htmlFor="ub-k">{f.tur === 'Şablon Metni' ? 'Şablon Kodu' : f.tur === 'Eğitim' ? 'Eğitim Adı' : 'Ad'}</label><input id="ub-k" value={f.kod} onChange={(e) => setF({ ...f, kod: e.target.value })} />
+    <button className="btn2 kucuk" disabled={!f.mum || !f.tur || !f.kod.trim()} onClick={() => is(istek(`/uyum-kurali/${encodeURIComponent(f.mum)}/bag`, { tur: f.tur, kod: f.kod }), 'Bağ eklendi.')}>Bağı Ekle</button>
+    {(v.baglar ?? []).filter((x) => !f.mum || x.mum_no === f.mum).map((x) => <div className="soru" key={x.kimlik}><span>{x.mum_no} · {x.bag_turu}: {x.bag_kodu}</span><div className="tam"><label htmlFor={`ub-g-${x.kimlik}`}>Kaldırma Gerekçesi</label><input id={`ub-g-${x.kimlik}`} value={g[x.kimlik] ?? ''} onChange={(e) => setG({ ...g, [x.kimlik]: e.target.value })} /><button className="btn2 kucuk" disabled={!g[x.kimlik]?.trim()} onClick={() => is(istek(`/uyum-kurali-bagi/${x.kimlik}/kaldir`, { gerekce: g[x.kimlik] }), 'Bağ kaldırıldı.')}>Bağı Kaldır</button></div></div>)}</>;
 }
 
 type Sm = { kimlik: string; kayit_no: string; kaynak: string; platform: string; ozet: string; olumsuz: boolean; sonuc: string | null; gecikti: boolean; dosya_no?: string | null; sikayet_no?: string | null; yanit_varyant?: string | null; yanit_zamani?: string | null; yanitlar?: boolean };

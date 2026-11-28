@@ -146,7 +146,7 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
     const t = (await b.db.query(`SELECT f.kimlik, f.teklif_no, f.surum_no, f.teklif_turu, f.ara_toplam_eur, f.indirim_tutari_eur, f.kdv_tutari_eur, f.genel_toplam_eur, f.gecerlilik_bitis_tarihi::text, f.sigorta_karar_son, f.statu, f.karar, f.bildirilen_sure_gun, d.dosya_no FROM fiyat_teklifi f JOIN dosya d ON d.kimlik = f.dosya_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE f.kimlik = $3 AND f.teklif_muhatabi = 'Sigorta Şirketi' AND ${dosyaKosul}`, [sir ?? '', o.kullanici, id])).rows[0];
     if (!t) return yok(y);
     // YG-296: maliyet ve firma bağı yoktur; yalnız satış tutarları.
-    const kalemler = (await b.db.query(`SELECT sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [id])).rows;
+    const kalemler = (await b.db.query(`SELECT sira_no, aciklama, isin_niteligi, bedel_turu, miktar, birim, birim_satis_fiyati_eur, tutar_eur, onay_durumu, kartela_kodu, kartela_disi, opsiyon FROM fiyat_teklifi_kalemi WHERE teklif_ref = $1 ORDER BY sira_no`, [id])).rows;
     return { ...t, kalemler };
   });
 

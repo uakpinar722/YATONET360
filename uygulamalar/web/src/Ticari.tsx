@@ -574,7 +574,7 @@ export function FirmaAna({ ben, bolum = 'ana' }: { ben: Ben; bolum?: 'ana' | 'is
 
 interface SigortaDosya { kimlik: string; dosyaNo: string; hasarNo: string | null; yat: string; durum: string; renk: string; garanti: string | null; tahminiTeslim: string | null; ilerleme?: number; fotograflar?: { kimlik: string; aciklama: string }[]; raporlar?: { kimlik: string; rapor_no: string }[] }
 interface SigortaTeklif { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; genel_toplam_eur: string; sigorta_karar_son: string | null; dosya_no: string }
-interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | null; tahmini_teslim_tarihi: string | null; ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string }[] }
+interface TeklifAyrinti extends SigortaTeklif { bildirilen_sure_gun: number | null; tahmini_teslim_tarihi: string | null; ara_toplam_eur: string; kdv_tutari_eur: string; kalemler: { sira_no: number; aciklama: string; isin_niteligi: string; tutar_eur: string; bedel_turu?: string | null; miktar?: string | null; birim?: string | null; birim_satis_fiyati_eur?: string | null; kartela_kodu?: string | null; kartela_disi?: boolean; opsiyon?: boolean }[] }
 
 /** YG-854: yürürlükteki kartelanın birim fiyatları sigorta şirketine menü olarak sunulur (KDV hariç, EUR). */
 function SigortaKartela() {
@@ -603,7 +603,7 @@ export function SigortaAna({ ben }: { ben: Ben }) {
       <DurumSayilari ogeler={[['Açık Dosya', v.dosyalar.filter((k) => k.renk !== 'gri').length], ['Kararınızı Bekleyen Teklif', v.bekleyen.length], ['İhbar', v.ihbarlar?.length ?? 0], ['Tamamlanan Dosya', v.dosyalar.filter((k) => k.renk === 'gri').length]]} />
         {t.bildirilen_sure_gun && <div className="not">Tahmini Onarım Süresi: {t.bildirilen_sure_gun} iş günü</div>}
         <label className="kutu"><input type="checkbox" checked={sec.length === t.kalemler.length} onChange={(e) => setSec(e.target.checked ? t.kalemler.map((k) => k.sira_no) : [])} /><span>Tümünü Seç</span></label>
-        {t.kalemler.map((k) => <label className="kutu" key={k.sira_no}><input type="checkbox" checked={sec.includes(k.sira_no)} onChange={(e) => setSec(e.target.checked ? [...sec, k.sira_no] : sec.filter((x) => x !== k.sira_no))} /><span>{k.aciklama} · {k.isin_niteligi} · {eur(k.tutar_eur)}</span></label>)}
+        {t.kalemler.map((k) => <label className="kutu" key={k.sira_no}><input type="checkbox" checked={sec.includes(k.sira_no)} onChange={(e) => setSec(e.target.checked ? [...sec, k.sira_no] : sec.filter((x) => x !== k.sira_no))} /><span aria-label="Kalem Kartı"><b>{k.aciklama}</b><div>Nitelik: {k.isin_niteligi}{k.bedel_turu ? ` · Bedel Türü: ${k.bedel_turu}` : ''}{k.opsiyon ? ' · Opsiyonel' : ''}</div><div>{k.kartela_disi || !k.kartela_kodu ? 'Katalog Dışı Kalem' : `Kartela Kodu: ${k.kartela_kodu}`}</div>{k.miktar && k.birim_satis_fiyati_eur && <div>{Number(k.miktar).toLocaleString('tr-TR')} {k.birim ?? ''} × {eur(k.birim_satis_fiyati_eur)}</div>}<div><b>Tutar: {eur(k.tutar_eur)}</b></div></span></label>)}{/* YG-1568: kalem kartı (ad, nitelik, tutar) */}
         <div className="not">Seçilen Toplam (KDV Hariç): {eur(top)}</div>
         <button className="btn" disabled={!sec.length} onClick={() => void yap(() => istek(`/sigorta/teklif/${t.kimlik}/karar`, { siralar: sec, surum: t.surum_no }), 'Kararınız kaydedildi.').then(() => setT(null))}>Seçilen Kalemleri Onayla</button>
       </>

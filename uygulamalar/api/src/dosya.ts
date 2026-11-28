@@ -12,6 +12,7 @@ import { DURAK_SN, altNumara, sureBaslat, sureBitir, sureRengi } from './sure.js
 import { surumCakismasi } from './surum.js';
 import { UUID, maskeTckn } from './yat.js';
 import { izinGerekli, kullaniciIzinleri } from './yetki.js';
+import { DOSYA_TABLOSU } from './karar_kontrol.js';
 
 type Db = Pool | PoolClient;
 const AKTIF_STATU = ['Açılış Kontrolünde', 'Aktif', 'Kontrollü Askıda'];
@@ -167,6 +168,10 @@ export async function yapilacaklar(db: Db, d: { kimlik: string; statu: string; a
   // YG-1360: dosya ekranında formu bulunan görev kartları da formuyla gelir; adım tamamlanınca ekran sıradakini açar.
   const KART_FORMU: Record<string, string> = { 'İlerleme Özetini Gönder': 'io-s', 'Teslim Süresi Değerlendirmesi': 'ts-s', 'Teslim Süresi Değerlendirmesi Gecikti': 'ts-s' };
   for (const k of kartlar) l.push({ is: k.baslik, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null, ...(KART_FORMU[k.tur] ? { form: { hedef: KART_FORMU[k.tur]! } } : {}) });
+  // YG-1351 (V-1142): dosyadaki onay ve işlem kartları ile dosyaya bağlı kayıtların (teklif, cetvel, iş emri, rapor, kalite planı, garanti, fatura) açık kartları da sıradaki işlem olarak kimde olduğu ve hedef süresiyle görünür.
+  const alt = Object.entries(DOSYA_TABLOSU).map(([tur, tablo]) => `(k.nesne_turu = '${tur}' AND k.nesne_kimligi IN (SELECT kimlik::text FROM ${tablo} WHERE dosya_ref = $2))`).join(' OR ');
+  const bagli = (await db.query(`SELECT k.baslik, k.kategori, k.son_zaman, coalesce(h.ad_soyad, r.rol_adi, '—') sorumlu FROM is_karti k LEFT JOIN kullanici_hesabi h ON h.kimlik = k.sahip_kullanici_ref LEFT JOIN rol r ON r.kimlik = k.sahip_rol_ref WHERE k.durum = 'Bekliyor' AND ((k.nesne_turu = 'Dosya' AND k.nesne_kimligi = $1 AND k.kategori <> 'gorev') OR ${alt}) ORDER BY k.son_zaman NULLS LAST LIMIT 15`, [d.kimlik, d.kimlik])).rows;
+  for (const k of bagli) { const is = k.kategori === 'onay' ? `Onay Bekliyor: ${k.baslik}` : k.baslik; if (!l.some((x) => x.is === is)) l.push({ is, sorumlu: k.sorumlu, hedef: k.son_zaman ? new Date(k.son_zaman).toISOString() : null }); }
   return l;
 }
 
@@ -686,7 +691,7 @@ export function dosyaYollari(s: FastifyInstance, b: Baglam) {
       if (!(await b.db.query(`SELECT 1 FROM is_karti WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND ozet = $2 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id, h])).rowCount)
         await kartAc(b.db, { tur: 'Aşama Kapısı Eksiği', kategori: 'gorev', baslik: `${d.dosya_no} · ${g.asama} Aşamasına Geçiş İçin Eksik`, ozet: h, oncelik: d.oncelik === 'Kritik' ? 'Kritik' : 'Normal', sahipKullanici: sahip, nesneTuru: 'Dosya', nesneKimligi: id });
       // YG-067, YG-1386: engel mesajında eksiği tamamlatan düğme; yat bilgisi eksikse yat formu, diğerlerinde yapılacaklar listesindeki görev.
-      return y.code(409).send({ hata: h, ...(h.startsWith('Teklife geçmek için yat bilgisi eksik') ? { islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' } : h.includes('Lehtar muvafakati') ? { islem: 'Muvafakati Gir', hedef: 'lm-b' } : { islem: 'Eksiği Tamamla', hedef: 'yapilacaklar' }) });
+      return y.code(409).send({ hata: h, ...(h.startsWith('Teklife geçmek için yat bilgisi eksik') ? { islem: 'Yat Bilgisini Tamamla', hedef: 'y-b' } : h.includes('Lehtar muvafakati') ? { islem: 'Muvafakati Gir', hedef: 'lm-b' } : h.includes('eksik belge:') ? { islem: 'Eksik Belgeleri İste', hedef: 'bt-s' } : { islem: 'Eksiği Tamamla', hedef: 'yapilacaklar' }) });
     }
     await b.db.query(`UPDATE is_karti SET durum = 'Tamamlandı', kapanma_zamani = now() WHERE tur = 'Aşama Kapısı Eksiği' AND nesne_kimligi = $1 AND durum NOT IN ('Tamamlandı', 'İptal')`, [id]); // YG-158
     const c = await b.db.connect();
