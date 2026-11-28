@@ -150,6 +150,18 @@ describe('rol göstergeleri (Karne Gösterge Kataloğu)', () => {
     }
     expect(gostergePuani(2, '≤ %3')).toBe(100); expect(gostergePuani(6, '≤ %3')).toBe(50); expect(gostergePuani(0, '≤ %5')).toBe(100); expect(gostergePuani(90, '≥ %90 (başlangıç hedefi)')).toBe(100);
   });
+  it('Bilgi İşlem destek göstergeleri talep kayıtlarından ölçülür (YG-960)', async () => {
+    const E = (await import('../src/karne_olcumler.js')).EK_SORGU; const D = '2026-09';
+    const ek = async (no: string, yanit: string, yanitSon: string, cozum: string, cozumSon: string, ilgili: string | null = null) => (await o.sup.query(`INSERT INTO destek_talebi (talep_no, acan_ref, tur, belirti, seviye, yanit_son, yanit_zamani, cozum_son, cozum_zamani, atanan_ref, cozen_ref, ilgili_ref, olusturma_zamani, durum) VALUES ($1,$2,'Hata','B','D2',$3,$4,$5,$6,$7,$7,$8,'2026-09-05T08:00:00Z','Kapalı') RETURNING kimlik`, [no, o.K.ds, yanitSon, yanit, cozumSon, cozum, o.K.ds, ilgili])).rows[0].kimlik as string;
+    const t1 = await ek('KR-D1', '2026-09-05T08:10:00Z', '2026-09-05T08:30:00Z', '2026-09-05T09:00:00Z', '2026-09-05T10:00:00Z');
+    await ek('KR-D2', '2026-09-05T09:00:00Z', '2026-09-05T08:30:00Z', '2026-09-06T12:00:00Z', '2026-09-05T10:00:00Z');
+    await ek('KR-D3', '2026-09-05T08:10:00Z', '2026-09-05T08:30:00Z', '2026-09-05T09:30:00Z', '2026-09-05T10:00:00Z', t1);
+    const r = async (rol: string, g: string) => { const x = (await o.db.query(E[rol]![g]!.sql, [o.K.ds, D])).rows[0]; return [Number(x.pay), Number(x.payda)]; };
+    expect(await r('Bilgi İşlem Destek Sorumlusu', 'İlk yanıt süresi uyumu')).toEqual([2, 3]);
+    expect(await r('Bilgi İşlem Destek Sorumlusu', 'Çözüm süresi uyumu')).toEqual([2, 3]);
+    expect(await r('Bilgi İşlem Destek Sorumlusu', 'Yeniden açılma oranı')).toEqual([1, 3]);
+    expect(await r('Bilgi İşlem Müdürü', 'Destek hizmet seviyesi uyumu')).toEqual([2, 3]);
+  });
   it('tedarik seçim gerekçesi kayıttan ölçülür', async () => {
     const q = (await import('../src/karne_olcumler.js')).EK_SORGU['Tedarik Sorumlusu']!['Seçim gerekçesi tamlığı']!;
     const r = (await o.db.query(q.sql, [o.K.ds, '2026-10'])).rows[0]; expect(Number(r.payda)).toBe(0);
