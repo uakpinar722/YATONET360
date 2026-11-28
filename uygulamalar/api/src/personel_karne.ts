@@ -18,9 +18,9 @@ const DONEM = /^\d{4}-\d{2}$/; const IKS = 'İnsan Kaynakları Sorumlusu'; const
 const istanbulAy = (d = new Date()) => new Date(d.getTime() + 3 * 3_600_000).toISOString().slice(0, 7);
 const yuvarla = (x: number) => Math.round(x * 100) / 100;
 
-type Olcum = { pay: number; payda: number; kapsam?: string; dogrudan?: boolean };
+type Olcum = { pay: number; payda: number; kapsam?: string; dogrudan?: boolean; olcek?: number };
 type Gosterge = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: string };
-export type Satir = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: number; pay: number | null; payda: number | null; deger: number | null; puan: number | null; kapsam: string | null };
+export type Satir = { kimlik: string; gosterge: string; hesap: string; hedef: string; agirlik: number; pay: number | null; payda: number | null; deger: number | null; puan: number | null; kapsam: string | null; olcek?: number | null };
 
 /** Kayıt taramasıyla hesaplanan göstergeler; listede olmayan gösterge "Ölçüm Yok" kalır ve puana girmez. */
 const ONAY_GOSTERGE = new Set(['Onay süresi uyumu', 'Silsile işlem süresi', 'Kademe onay süresi uyumu']);
@@ -58,7 +58,7 @@ async function maliOlc(db: Db, kullanici: string, donem: string): Promise<Olcum 
   if (v === null) return null;
   return { pay: v, payda: 100, dogrudan: true, ...(marj === null ? { kapsam: 'Bu dönemde kapanan faturalı dosya yok; yalnız vadesinde tahsilat sayılıyor.' } : tahsil === null ? { kapsam: 'Bu dönemde vadesi gelen fatura yok; yalnız net marj sayılıyor.' } : {}) };
 }
-const ROL_SORGU: Record<string, Record<string, { sql: string; kapsam?: string }>> = {
+const ROL_SORGU: Record<string, Record<string, { sql: string; kapsam?: string; olcek?: number }>> = {
   'Dosya Sorumlusu': DS_SORGU,
   'Kalite Uzmanı (Kalite Kontrolör)': { 'FR-KLT-011 tamamlama': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM dosya_performans p WHERE p.dosya_ref = c.dosya_ref AND p.durum IN ('Onayda', 'Onaylandı'))) pay FROM kapanis_kontrolu c JOIN dosya_ekibi_atamasi e ON e.dosya_ref = c.dosya_ref AND e.kullanici_ref = $1 AND e.rol = 'Kalite Kontrolör' WHERE c.durum = 'Onaylandı' AND c.cikis_statusu = 'Teknik Kapalı' AND ${ay('c.kapanis_zamani')}` } },
 };
@@ -68,7 +68,7 @@ async function olc(db: Db, g: Gosterge, kullanici: string, rol: string, rolAdi: 
   if (rolAdi === 'Dosya Sorumlusu' && g.gosterge === MALI) return maliOlc(db, kullanici, donem);
   const q = ROL_SORGU[rolAdi]?.[g.gosterge]; if (!q) return null;
   const r = (await db.query(q.sql, [kullanici, donem])).rows[0]; const payda = Number(r.payda ?? 0);
-  return payda ? { pay: Number(r.pay), payda, kapsam: q.kapsam } : null;
+  return payda ? { pay: Number(r.pay), payda, kapsam: q.kapsam, olcek: q.olcek } : null;
 }
 
 /** Hedefi "≥ %N" olan göstergede hedefe ulaşan 100 alır; "≤ %N" olanda hedefin altı 100, üstünde hedef/değer oranı; diğerlerinde oran doğrudan puandır. */
@@ -76,6 +76,11 @@ export function gostergePuani(deger: number, hedef: string): number {
   const u = /≤\s*%\s*(\d+(?:[.,]\d+)?)/.exec(hedef);
   if (u && !/≥/.test(hedef)) { const h = Number(u[1]!.replace(',', '.')); return deger <= h ? 100 : yuvarla((h / deger) * 100); }
   const m = /≥\s*%\s*(\d+(?:[.,]\d+)?)/.exec(hedef); const h = m ? Number(m[1]!.replace(',', '.')) : 100;
+  return yuvarla(Math.min(100, (deger / h) * 100));
+}
+/** YG-960 (V-1136): hedefi "≥ 4,3 / 5" gibi puan ölçekli göstergede hedefe ulaşan 100, altında değer/hedef oranı alır. */
+export function olcekPuani(deger: number, hedef: string, olcek: number): number {
+  const m = /≥\s*(\d+(?:[.,]\d+)?)\s*\/\s*\d+/.exec(hedef); const h = m ? Number(m[1]!.replace(',', '.')) : olcek;
   return yuvarla(Math.min(100, (deger / h) * 100));
 }
 /** YG-960: %80 sistem, %20 yönetici; yönetici puanı girilmemişse sistem puanı esas alınır. */
@@ -90,8 +95,8 @@ export async function karneHesapla(db: Db, kullanici: string, rol: { ad: string;
   const gs = (await db.query(`SELECT kimlik, gosterge, hesap, hedef, agirlik FROM karne_gosterge WHERE rol_adi = $1 ORDER BY sira`, [rol.ad])).rows as Gosterge[];
   const satirlar: Satir[] = [];
   for (const g of gs) {
-    const o = await olc(db, g, kullanici, rol.kimlik, rol.ad, donem); const deger = o ? yuvarla((o.pay / o.payda) * 100) : null;
-    satirlar.push({ kimlik: g.kimlik, gosterge: g.gosterge, hesap: g.hesap, hedef: g.hedef, agirlik: Number(g.agirlik), pay: o?.pay ?? null, payda: o?.payda ?? null, deger, puan: deger === null ? null : o?.dogrudan ? deger : gostergePuani(deger, g.hedef), kapsam: o?.kapsam ?? null });
+    const o = await olc(db, g, kullanici, rol.kimlik, rol.ad, donem); const deger = o ? yuvarla((o.pay / o.payda) * (o.olcek ? 1 : 100)) : null;
+    satirlar.push({ kimlik: g.kimlik, gosterge: g.gosterge, hesap: g.hesap, hedef: g.hedef, agirlik: Number(g.agirlik), pay: o?.pay ?? null, payda: o?.payda ?? null, deger, olcek: o?.olcek ?? null, puan: deger === null ? null : o?.dogrudan ? deger : o?.olcek ? olcekPuani(deger, g.hedef, o.olcek) : gostergePuani(deger, g.hedef), kapsam: o?.kapsam ?? null });
   }
   const olcu = satirlar.filter((x) => x.puan !== null); const top = olcu.reduce((t, x) => t + x.agirlik, 0);
   return { satirlar, sistem: top ? yuvarla(olcu.reduce((t, x) => t + x.agirlik * x.puan!, 0) / top) : null };
@@ -166,7 +171,7 @@ export function personelKarneYollari(s: FastifyInstance, b: Baglam) {
     const degerlendirmeler = (await b.db.query(`SELECT tur, donem, gorusme_tarihi::text, notlar, egitim_ihtiyaci FROM personel_degerlendirme WHERE personel_ref = $1 ORDER BY zaman DESC LIMIT 12`, [kisi])).rows;
     const ortak = { rol: rol.ad, donem, kendisi: kisi === o.kullanici, ikYetkili: await rolVar(o.kullanici, IKS), itiraz, haftalik: hf, degerlendirmeler };
     if (k?.durum === 'Kapalı') {
-      const satirlar = (await b.db.query(`SELECT g.kimlik, g.gosterge, g.hesap, g.hedef, s.agirlik, s.pay, s.payda, s.deger, s.puan, s.kapsam FROM personel_karne_satir s JOIN karne_gosterge g ON g.kimlik = s.gosterge_ref WHERE s.donem_ref = $1 ORDER BY g.sira`, [k.kimlik])).rows;
+      const satirlar = (await b.db.query(`SELECT g.kimlik, g.gosterge, g.hesap, g.hedef, s.agirlik, s.pay, s.payda, s.deger, s.puan, s.kapsam, CASE WHEN g.hedef ~ '≥ *[0-9]+([.,][0-9]+)? */ *5' THEN 5 END olcek FROM personel_karne_satir s JOIN karne_gosterge g ON g.kimlik = s.gosterge_ref WHERE s.donem_ref = $1 ORDER BY g.sira`, [k.kimlik])).rows;
       return { ...ortak, durum: 'Kapalı', satirlar, sistem: num(k.sistem_puani), yonetici: num(k.yonetici_puani), nihai: num(k.nihai_puan) };
     }
     const h = await karneHesapla(b.db, kisi, rol, donem); const yon = num(k?.yonetici_puani);

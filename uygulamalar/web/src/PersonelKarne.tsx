@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
 
-type S = { kimlik: string; gosterge: string; hedef: string; agirlik: string | number; deger: string | number | null; puan: string | number | null; kapsam: string | null };
+type S = { kimlik: string; gosterge: string; hedef: string; agirlik: string | number; deger: string | number | null; puan: string | number | null; kapsam: string | null; olcek?: number | null };
 type K = { rol: string; donem: string; durum: string; kendisi: boolean; ikYetkili: boolean; satirlar: S[]; sistem: number | null; yonetici: number | null; nihai: number | null; itiraz: { durum: string; konu: string; karar_gerekce: string | null }[]; haftalik: { pay: number; payda: number }; degerlendirmeler: { tur: string; donem: string; gorusme_tarihi: string; notlar: string; egitim_ihtiyaci: string | null }[] };
 type I = { kimlik: string; konu: string; donem: string; nihai_puan: string | null; ad_soyad: string };
 const buAy = () => new Date(Date.now() + 3 * 3_600_000).toISOString().slice(0, 7);
@@ -20,7 +20,7 @@ export function PersonelKarne() {
     <label htmlFor="pk-d">Dönem</label><input id="pk-d" type="month" value={donem} onChange={(e) => setDonem(e.target.value)} />
     {bagli.length > 0 && <><label htmlFor="pk-k">Personel</label><select id="pk-k" value={kisi} onChange={(e) => setKisi(e.target.value)}><option value="">Kendi Karnem</option>{bagli.map((x) => <option key={x.kimlik} value={x.kimlik}>{x.ad_soyad}</option>)}</select></>}
     {k && <><div className="ozet"><div>{k.rol} · {k.durum}</div><div>Sistem Puanı: {p(k.sistem)} · Yönetici Puanı: {k.yonetici === null ? 'Girilmedi' : p(k.yonetici)} · Karne Puanı: {p(k.nihai)}</div>
-      {k.satirlar.map((x) => <div key={x.kimlik}>{x.gosterge} · Ağırlık %{p(x.agirlik)} · Hedef: {x.hedef} · {x.deger === null ? 'Ölçüm Yok' : `%${p(x.deger)} · Puan ${p(x.puan)}`}{x.kapsam ? ` · ${x.kapsam}` : ''}</div>)}
+      {k.satirlar.map((x) => <div key={x.kimlik}>{x.gosterge} · Ağırlık %{p(x.agirlik)} · Hedef: {x.hedef} · {x.deger === null ? 'Ölçüm Yok' : `${x.olcek ? `${p(x.deger)} / ${x.olcek}` : `%${p(x.deger)}`} · Puan ${p(x.puan)}`}{x.kapsam ? ` · ${x.kapsam}` : ''}</div>)}
       <div>Bu Hafta Süre Uyumu: {k.haftalik.payda ? `${k.haftalik.pay} / ${k.haftalik.payda}` : 'Vadesi gelen görev yok'}</div>
       {k.degerlendirmeler.map((x, n) => <div key={`d${n}`}>{x.tur} · {x.donem} · {x.gorusme_tarihi.split('-').reverse().join('.')} · {x.notlar}{x.egitim_ihtiyaci ? ` · Eğitim ve Gelişim İhtiyacı: ${x.egitim_ihtiyaci}` : ''}</div>)}
       {k.itiraz.map((x, n) => <div key={n}>İtiraz: {x.durum} · {x.konu}{x.karar_gerekce ? ` · ${x.karar_gerekce}` : ''}</div>)}

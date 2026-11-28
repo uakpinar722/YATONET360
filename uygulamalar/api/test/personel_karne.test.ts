@@ -162,6 +162,13 @@ describe('rol göstergeleri (Karne Gösterge Kataloğu)', () => {
     expect(await r('Bilgi İşlem Destek Sorumlusu', 'Yeniden açılma oranı')).toEqual([1, 3]);
     expect(await r('Bilgi İşlem Müdürü', 'Destek hizmet seviyesi uyumu')).toEqual([2, 3]);
   });
+  it('iş günü ve puan ölçekli göstergeler (YG-960, V-1136)', async () => {
+    expect((await o.db.query(`SELECT is_gunu_ekle('2026-11-27', 2)::text a, is_gunu_ekle('2026-10-27', 3)::text b`)).rows[0]).toEqual({ a: '2026-11-30', b: '2026-10-31' });
+    const { olcekPuani } = await import('../src/personel_karne.js'); expect(olcekPuani(4.3, '≥ 4,3 / 5 (başlangıç hedefi)', 5)).toBe(100); expect(olcekPuani(3.44, '≥ 4,3 / 5', 5)).toBe(80);
+    const E = (await import('../src/karne_olcumler.js')).EK_SORGU;
+    const dz = await o.dosyaAc(); await o.sup.query(`INSERT INTO memnuniyet_anketi (dosya_ref, belirtec_ozet, dil, gonderim_zamani, cevap_zamani, genel, iletisim, is_kalitesi, ortalama) VALUES ($1,'x','Türkçe','2026-08-03T08:00:00Z','2026-08-04T08:00:00Z',4,4,5,4.33)`, [dz.kimlik]);
+    const r = (await o.db.query(E['Müşteri ve Paydaş İlişkileri Müdürü']!['Müşteri memnuniyet puanı']!.sql, [o.K.ds, '2026-08'])).rows[0]; expect(Number(r.pay) / Number(r.payda)).toBeCloseTo(4.33);
+  });
   it('tedarik seçim gerekçesi kayıttan ölçülür', async () => {
     const q = (await import('../src/karne_olcumler.js')).EK_SORGU['Tedarik Sorumlusu']!['Seçim gerekçesi tamlığı']!;
     const r = (await o.db.query(q.sql, [o.K.ds, '2026-10'])).rows[0]; expect(Number(r.payda)).toBe(0);

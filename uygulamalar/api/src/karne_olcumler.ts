@@ -1,6 +1,6 @@
 import { DURAK_SN } from './sure.js';
 
-type Sorgu = { sql: string; kapsam?: string };
+type Sorgu = { sql: string; kapsam?: string; olcek?: number };
 const ONAY = `('Tam Onay', 'Kısmi Onay', 'Koşullu Onay', 'Süre Dolumu Kabulü')`;
 const ay = (alan: string) => `to_char(${alan} AT TIME ZONE 'Europe/Istanbul', 'YYYY-MM') = $2`;
 /** Dosya kapsamı: rolün ekip ataması veya müdürlük geneli. $1 kullanıcı, $2 dönem. */
@@ -27,8 +27,18 @@ const hizmetSeviyesi = (k: string): Sorgu => ({ sql: `SELECT count(*) payda, cou
 const yenidenAcilma = (k: string): Sorgu => ({ kapsam: 'Yeniden açılma, önceki talebe bağlanan yeni talep (ilgili talep) olarak sayılıyor.', sql: `SELECT count(*) payda, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM destek_talebi y WHERE y.ilgili_ref = t.kimlik AND y.olusturma_zamani <= t.cozum_zamani + interval '30 days')) pay FROM destek_talebi t WHERE ${k} AND t.cozum_zamani IS NOT NULL AND ${ay('t.cozum_zamani')}` });
 const aylikTest: Sorgu = { sql: `SELECT 1 payda, CASE WHEN EXISTS (SELECT 1 FROM geri_yukleme_testi g WHERE ${GENEL} AND g.tur = 'Örnek Kayıt' AND ${ay('g.zaman')}) THEN 1 ELSE 0 END pay` };
 const BI_DS = 't.atanan_ref = $1';
+// YG-960 (V-1136): iş günüyle tanımlı göstergeler is_gunu_ekle ile (pazar ve tam gün resmi tatil hariç).
+const AY_SONU = `(to_date($2, 'YYYY-MM') + interval '1 month' - interval '1 day')::date`;
+const karneKapanis: Sorgu = { sql: `SELECT count(*) payda, count(*) FILTER (WHERE k.kapanis_zamani IS NOT NULL AND (k.kapanis_zamani AT TIME ZONE 'Europe/Istanbul')::date <= is_gunu_ekle(${AY_SONU}, 5)) pay FROM personel_karne_donem k WHERE ${GENEL} AND k.donem = $2 AND (k.kapanis_zamani IS NOT NULL OR is_gunu_ekle(${AY_SONU}, 5) < current_date)` };
+const puantajAktarim: Sorgu = { sql: `SELECT CASE WHEN count(*) > 0 AND (bool_and(p.bordro_aktarim_zamani IS NOT NULL) OR is_gunu_ekle(${AY_SONU}, 3) < current_date) THEN 1 ELSE 0 END payda,
+  CASE WHEN count(*) > 0 AND bool_and(p.bordro_aktarim_zamani IS NOT NULL AND (p.bordro_aktarim_zamani AT TIME ZONE 'Europe/Istanbul')::date <= is_gunu_ekle(${AY_SONU}, 3)) THEN 1 ELSE 0 END pay FROM puantaj_kaydi p WHERE ${GENEL} AND to_char(p.tarih, 'YYYY-MM') = $2` };
+const raporSuresi = (k: string): Sorgu => ({ kapsam: 'Onaya sunma, raporun kaydedildiği an (onay kartı aynı anda açılır) olarak sayılıyor.', sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE r.ilk IS NOT NULL AND (r.ilk AT TIME ZONE 'Europe/Istanbul')::date <= is_gunu_ekle((e.saha_cikis_zamani AT TIME ZONE 'Europe/Istanbul')::date, 2)), 0) pay
+  FROM kesif e JOIN dosya d ON d.kimlik = e.dosya_ref LEFT JOIN LATERAL (SELECT min(t.olusturma_zamani) ilk FROM teknik_rapor t WHERE t.dosya_ref = e.dosya_ref AND t.rapor_turu = 'İlk Rapor' AND t.olusturma_zamani >= e.saha_cikis_zamani) r ON true
+  WHERE ${k} AND e.saha_cikis_zamani IS NOT NULL AND ${ay('e.saha_cikis_zamani')} AND (r.ilk IS NOT NULL OR is_gunu_ekle((e.saha_cikis_zamani AT TIME ZONE 'Europe/Istanbul')::date, 2) < current_date)` });
+const raporIlkKabul = (k: string): Sorgu => ({ sql: `SELECT sum(d.zorluk_katsayisi) payda, coalesce(sum(d.zorluk_katsayisi) FILTER (WHERE NOT EXISTS (SELECT 1 FROM teknik_rapor y WHERE y.onceki_surum_ref = t.kimlik)), 0) pay FROM teknik_rapor t JOIN dosya d ON d.kimlik = t.dosya_ref WHERE ${k} AND t.onceki_surum_ref IS NULL AND ${ay('t.olusturma_zamani')}` });
 // YG-960 (V-1135): müşteri ilişkileri ve İK göstergeleri şikâyet, memnuniyet anketi ve Akademi kayıtlarından.
 const sikayetYanit: Sorgu = { sql: `SELECT count(*) payda, count(*) FILTER (WHERE g.yanit_zamani IS NOT NULL AND g.yanit_zamani <= g.yanit_son) pay FROM garanti_sikayet g WHERE ${GENEL} AND 'Şikâyet' = ANY(g.kayit_turu) AND g.yanit_son IS NOT NULL AND ${ay('g.bildirim_zamani')} AND (g.yanit_zamani IS NOT NULL OR g.yanit_son < now())` };
+const memnuniyet: Sorgu = { olcek: 5, sql: `SELECT count(*) payda, coalesce(sum(a.ortalama), 0) pay FROM memnuniyet_anketi a WHERE ${GENEL} AND a.cevap_zamani IS NOT NULL AND a.ortalama IS NOT NULL AND ${ay('a.cevap_zamani')}` };
 const anketYanit: Sorgu = { sql: `SELECT count(*) payda, count(*) FILTER (WHERE a.cevap_zamani IS NOT NULL) pay FROM memnuniyet_anketi a WHERE ${GENEL} AND a.gonderim_zamani IS NOT NULL AND ${ay('a.gonderim_zamani')}` };
 const zorunluEgitim: Sorgu = { kapsam: 'Dönem sonu yerine güncel durum ölçülüyor; ders beyanı güncel sürüme göre aranıyor.', sql: `SELECT count(*) payda, count(*) FILTER (WHERE NOT EXISTS (SELECT 1 FROM akademi_ders d WHERE d.aktif AND d.tur = 'Zorunlu'
   AND (cardinality(d.roller) = 0 OR d.roller && (SELECT array_agg(r.rol_adi) FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = h.kimlik AND a.atama_durumu = 'Aktif'))
@@ -41,7 +51,7 @@ export const EK_SORGU: Record<string, Record<string, Sorgu>> = {
   'Operasyon Yöneticisi': { 'Gözetim dosyalarında süre uyumu': sure(OY, true), 'Gözetim dosyalarında kayıt bütünlüğü': kayit(OY), 'Yönetici nöbeti yanıt süresi': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE n.donus_zamani <= n.son_zaman) pay FROM nobet_cagrisi n WHERE (n.donen_ref = $1 OR n.sorumlu_ref = $1) AND ${ay('n.olusturma_zamani')}` } },
   'Teknik ve Operasyon Direktörü': { 'Garanti ve yeniden işlem oranı': garanti(GENEL) },
   'Teknik Müdür': { 'Müdürlük ilk seferde kabul oranı': ilkKabul(GENEL, true), 'Garanti ve yeniden işlem oranı': garanti(GENEL), 'Zorluk katsayısı disiplini': { sql: `SELECT count(DISTINCT f.dosya_ref) payda, count(DISTINCT f.dosya_ref) FILTER (WHERE EXISTS (SELECT 1 FROM dosya_zorluk_kaydi z WHERE z.dosya_ref = f.dosya_ref)) pay FROM fiyat_teklifi f WHERE ${GENEL} AND f.karar IN ${ONAY} AND ${ay('f.karar_zamani')}` } },
-  'Teknik Yönetici': { 'Gözetim dosyalarında ilk seferde kabul': ilkKabul(TY, true), 'Kritik kontrol tamlığı': kritik(TY) },
+  'Teknik Yönetici': { 'Gözetim dosyalarında teknik rapor süresi': raporSuresi(TY), 'Gözetim dosyalarında ilk seferde kabul': ilkKabul(TY, true), 'Kritik kontrol tamlığı': kritik(TY) },
   'Teknik Uzman': { 'Garanti ve yeniden işlem oranı': garanti(TU) },
   'Saha Sorumlusu': { 'Saha kilometre taşı uyumu': kmUyum(SS), 'Saha günlüğü kapanışı': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE (g.kapanis_zamani AT TIME ZONE 'Europe/Istanbul')::date = g.tarih) pay FROM firma_gunluk_kaydi g JOIN is_emri e ON e.kimlik = g.is_emri_ref JOIN dosya d ON d.kimlik = e.dosya_ref WHERE ${SS} AND to_char(g.tarih, 'YYYY-MM') = $2` } },
   'Muhasebe ve Finans Sorumlusu (Ticari Sorumlu)': { 'Tahsilat süresi (portföy)': tahsilat('d.ticari_sorumlu_ref = $1'), 'Teklif iade oranı': { kapsam: 'Tüm iadeler sayılıyor; hata nedeni ayrılmıyor.', sql: `SELECT count(*) payda, count(*) FILTER (WHERE EXISTS (SELECT 1 FROM is_karti_adim a WHERE a.is_ref = k.kimlik AND a.karar = 'Gerekçeyle İade Et')) pay FROM is_karti k WHERE k.tur = 'Fiyat Teklifi' AND k.hazirlayan_ref = $1 AND ${ay('k.olusturma_zamani')}` } },
@@ -54,9 +64,11 @@ export const EK_SORGU: Record<string, Record<string, Sorgu>> = {
     'Erişim incelemesi zamanlılığı': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE e.durum = 'Tamamlandı' AND coalesce((SELECT max(k.karar_zamani) FROM erisim_inceleme_kalemi k WHERE k.inceleme_ref = e.kimlik), e.olusturma_zamani) <= e.son_zaman) pay FROM erisim_inceleme e WHERE ${GENEL} AND ${ay('e.son_zaman')} AND (e.durum = 'Tamamlandı' OR e.son_zaman < now())` },
     'Destek hizmet seviyesi uyumu': hizmetSeviyesi(GENEL) },
   'Bilgi Teknolojileri ve Firma Yönetimi Direktörü': { 'D1–D2 destek çözüm uyumu': cozumUyum(GENEL, ['D1', 'D2']) },
-  'Müşteri ve Paydaş İlişkileri Müdürü': { 'Şikâyet ilk yanıt uyumu': sikayetYanit, 'Geri bildirim yanıt oranı': anketYanit },
+  'Müşteri ve Paydaş İlişkileri Müdürü': { 'Şikâyet ilk yanıt uyumu': sikayetYanit, 'Müşteri memnuniyet puanı': memnuniyet, 'Geri bildirim yanıt oranı': anketYanit },
   'Müşteri ve Paydaş İlişkileri Müdür Yardımcısı': { 'Şikâyet ilk yanıt uyumu': sikayetYanit },
-  'Strateji ve Kurumsal Gelişim Direktörü': { 'Şikâyet ilk yanıt uyumu': sikayetYanit },
-  'İnsan Kaynakları Müdürü': { 'Zorunlu eğitim tamamlama oranı': zorunluEgitim },
+  'Strateji ve Kurumsal Gelişim Direktörü': { 'Şikâyet ilk yanıt uyumu': sikayetYanit, 'Müşteri memnuniyet puanı': memnuniyet },
+  'İnsan Kaynakları Müdürü': { 'Karne dönem kapanış zamanlılığı': karneKapanis, 'Puantaj aktarım zamanlılığı': puantajAktarim, 'Zorunlu eğitim tamamlama oranı': zorunluEgitim },
+  'İnsan Kaynakları Sorumlusu': { 'Karne kapanış zamanlılığı': karneKapanis, 'Puantaj aktarım zamanlılığı': puantajAktarim },
+  'Teknik Müdür Yardımcısı': { 'Müdürlük teknik rapor süresi': raporSuresi(GENEL), 'Müdürlük teknik rapor ilk seferde kabul': raporIlkKabul(GENEL) },
   'Tedarik Sorumlusu': { 'Seçim gerekçesi tamlığı': { sql: `SELECT count(*) payda, count(*) FILTER (WHERE s.tedarikci_teklif_ref IS NOT NULL OR length(trim(coalesce(s.secim_gerekcesi, ''))) > 0) pay FROM tedarik_siparisi s WHERE s.hazirlayan_ref = $1 AND ${ay('s.olusturma_zamani')}` } },
 };
