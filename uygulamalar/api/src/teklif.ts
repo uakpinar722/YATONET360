@@ -514,8 +514,12 @@ export function teklifYollari(s: FastifyInstance, b: Baglam) {
       // YG-139: cetvelde yazılmadıysa onaylı İlk Kapsamın hariçleri ve varsayımları teklifin Kapsam Dışı ve Varsayımlar bölümüne aktarılır.
       const ik = (await c.query(`SELECT hariclar, varsayimlar FROM ilk_kapsam WHERE dosya_ref = $1 AND durum = 'Onaylı' ORDER BY surum DESC LIMIT 1`, [id])).rows[0];
       const t = (await c.query(`INSERT INTO kapsam_cetveli (dosya_ref, surum, durum, hazirlayan_ref, dahil_haric, varsayimlar) VALUES ($1,$2,'Onayda',$3,$4,$5) RETURNING kimlik`, [id, surum, o.kullanici, g.dahilHaric?.trim() || ik?.hariclar || null, g.varsayimlar?.trim() || ik?.varsayimlar || null])).rows[0];
-      for (const [n, x] of g.satirlar!.entries()) await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu, satir_turu, teknik_pay, olculemez) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim(), x.tur ?? 'Ana Kapsam', Number(x.teknikPay) || 0, x.olculemez === true]);
+      for (const [n, x] of g.satirlar!.entries()) {
+        const sr = (await c.query(`INSERT INTO kapsam_satiri (cetvel_ref, satir_kodu, bolge_kodu, kartela_kodu, kartela_disi, aciklama, isin_niteligi, bedel_turu, miktar, birim, kabul_sinifi, gecici_onarim, kabul_olcutu, satir_turu, teknik_pay, olculemez) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING kimlik`,
+        [t.kimlik, x.kod?.trim() || `S${String(n + 1).padStart(3, '0')}`, x.bolge ?? null, x.kartela ?? null, !x.kartela, x.aciklama!.trim(), x.nitelik, x.bedel, x.miktar, x.birim!.trim(), x.kabul ?? null, Boolean(x.gecici), x.olcut!.trim(), x.tur ?? 'Ana Kapsam', Number(x.teknikPay) || 0, x.olculemez === true])).rows[0];
+        // YG-662: katalogda bulunmayan geçici kalem katalog geliştirme kuyruğuna düşer; aynı dosyada aynı açıklama tek kayıttır.
+        if (!x.kartela) await c.query(`INSERT INTO katalog_gelistirme_kaydi (dosya_ref, kapsam_satiri_ref, anahtar, aciklama, birim) VALUES ($1,$2,lower(btrim($3)),btrim($3),$4) ON CONFLICT (dosya_ref, anahtar) DO NOTHING`, [id, sr.kimlik, x.aciklama!, x.birim!.trim()]);
+      }
       await kartAc(c, { tur: 'Kapsam Cetveli', baslik: `${d.dosya_no}-MT01 · Kapsam ve Metraj Cetveli Rev.${surum}`, ozet: `${g.satirlar!.length} satır`, hazirlayan: o.kullanici, zincir: [await rolId(c, 'Teknik Yönetici')], nesneTuru: 'Kapsam Cetveli', nesneKimligi: t.kimlik });
       return { kimlik: t.kimlik, surum };
     });

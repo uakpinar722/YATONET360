@@ -39,7 +39,7 @@ export async function bolgeYukle(c: PoolClient, g: { bolgeler: Satir[]; iller: S
 /** Bölgesi boş firma ve bağlama noktasını önce ilçeden, yoksa il varsayılanından bağlar. */
 export async function bolgeTuret(db: Pool): Promise<number> {
   let n = 0;
-  for (const t of ['kurulus', 'baglama_noktasi']) {
+  for (const t of ['kurulus', 'baglama_noktasi', 'firma_tesisi']) { // YG-348: tesis kaydı da
     const sm = t === 'kurulus' ? ', saha_merkezi = b.saha_merkezi' : '';
     n += (await db.query(`UPDATE ${t} x SET bolge = b.bolge, hizmet_kumesi = b.hizmet_kumesi${sm} FROM bolge_eslesme b WHERE x.bolge IS NULL AND lower(x.il) = lower(b.il) AND lower(x.ilce) = lower(b.ilce)`)).rowCount ?? 0;
     n += (await db.query(`UPDATE ${t} x SET bolge = v.bolge, hizmet_kumesi = v.hizmet_kumesi FROM il_varsayilan v WHERE x.bolge IS NULL AND lower(x.il) = lower(v.il)`)).rowCount ?? 0;

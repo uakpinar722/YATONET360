@@ -72,7 +72,7 @@ export function FirmaSicil({ ben }: { ben: Ben }) {
           <label htmlFor="fs-i">IBAN</label><input id="fs-i" value={iban} onChange={(e) => setIban(e.target.value)} />
           <button className="btn2" onClick={() => void yap(() => istek(`/firma/${secili}/iban`, { iban }), 'IBAN karantinaya alındı; teyit bekliyor.')}>IBAN Ekle</button>
           <FirmaSozlesme id={secili} yap={yap} />
-          <FirmaTesis id={secili} yap={yap} />
+          <FirmaTesis id={secili} yap={yap} tesisRolu={l.find((f) => f.kimlik === secili)?.kayit_rolu === 'Tesis'} />
           <FirmaEkipman id={secili} yap={yap} />
           <FirmaKapasite id={secili} yap={yap} />
           <FirmaBrans id={secili} yap={yap} />
@@ -238,17 +238,35 @@ function OnKayit({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: 
 }
 
 /** YG-533: firma ekipmanı bakım ve kalibrasyon geçerliliği; süresi geçen kullanılamaz görünür. */
-/** TSK-1, YG-010: firmaya bağlı tesis/şube; kod sicil numarasına -Tnn eki. */
-function FirmaTesis({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {
-  const [l, setL] = useState<{ kimlik: string; tesis_kodu: string; ad: string; il: string | null; ilce: string | null; aktif: boolean }[]>([]); const [f, setF] = useState({ ad: '', adres: '', il: '', ilce: '' });
+/** TSK-1, YG-010: firmaya bağlı tesis/şube; kod sicil numarasına -Tnn eki. YG-348: yerleşim türüne göre alanlar açılır ve zorunlu olur; bölge il-ilçeden türetilir. */
+type TesisSatiri = { kimlik: string; tesis_kodu: string; ad: string; adres: string | null; mahalle: string | null; il: string | null; ilce: string | null; bolge: string | null; hizmet_kumesi: string | null; yerlesim_turu: string | null; konum_turu: string | null; kullanim_dayanagi: string | null; tesis_sinifi: string | null; gecici_saha: boolean; mobil_ekip_cikis_noktasi: boolean; kapali_alan_m2: string | null; acik_alan_m2: string | null; malik_isletmeci: string | null; azami_boy_m: string | null; hassas_konum: boolean; enlem: number | null; boylam: number | null; konum_dogrulugu: string | null; aktif: boolean };
+const BOS_TESIS = { ad: '', yerlesim: '', konumTuru: '', adres: '', mahalle: '', il: '', ilce: '', kullanimDayanagi: '', tesisSinifi: '', kapaliAlan: '', acikAlan: '', enlem: '', boylam: '', konumDogrulugu: '', malikIsletmeci: '', azamiBoy: '', geciciSaha: false, mobilEkip: false, hassasKonum: false };
+const sayiYaz = (x: string) => (x.trim() === '' ? undefined : Number(x.replace(/\./g, '').replace(',', '.')));
+function FirmaTesis({ id, yap, tesisRolu }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void>; tesisRolu?: boolean }) {
+  const [l, setL] = useState<TesisSatiri[]>([]); const [f, setF] = useState(BOS_TESIS); const [duz, setDuz] = useState('');
+  const [sec, setSec] = useState<{ yerlesim: string[]; konum: string[]; dayanak: string[]; sinif: string[] }>({ yerlesim: [], konum: [], dayanak: [], sinif: [] });
   const yk = () => istek<typeof l>(`/firma/${id}/tesis`).then(setL).catch(() => setL([]));
-  useEffect(() => { void yk(); }, [id]);
-  return <><div className="bolum">Tesisler ve Şubeler</div><div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tesis_kodu} · {x.ad}{x.il ? ` · ${x.il}${x.ilce ? ` / ${x.ilce}` : ''}` : ''}{x.aktif ? '' : ' · Pasif'} <TesisBilgi kimlik={x.kimlik} /></div>)}</div>
-    <label htmlFor="ft-a">Tesis Adı</label><input required id="ft-a" value={f.ad} onChange={(e) => setF({ ...f, ad: e.target.value })} />
-    <label htmlFor="ft-d">Adres</label><input id="ft-d" value={f.adres} onChange={(e) => setF({ ...f, adres: e.target.value })} />
-    <label htmlFor="ft-i">İl</label><input id="ft-i" value={f.il} onChange={(e) => setF({ ...f, il: e.target.value })} />
-    <label htmlFor="ft-c">İlçe</label><input id="ft-c" value={f.ilce} onChange={(e) => setF({ ...f, ilce: e.target.value })} />
-    <button className="btn2" disabled={!f.ad.trim()} onClick={() => void yap(() => istek(`/firma/${id}/tesis`, f).then(() => { setF({ ad: '', adres: '', il: '', ilce: '' }); return yk(); }), 'Tesis kaydedildi.')}>Tesis Ekle</button></>;
+  useEffect(() => { void yk(); void istek<typeof sec>('/firma-tesis/secenekler').then(setSec).catch(() => {}); }, [id]);
+  const tt = f.yerlesim === 'Teknik Tesis'; const kap = ['Şube', 'Teknik Tesis', 'Depo/Sevk'].includes(f.yerlesim);
+  const A = (k: 'ad' | 'adres' | 'mahalle' | 'il' | 'ilce' | 'kapaliAlan' | 'acikAlan' | 'enlem' | 'boylam' | 'konumDogrulugu' | 'malikIsletmeci' | 'azamiBoy', et: string, zorunlu = true) => <><label htmlFor={`ft-${k}`}>{et}</label><input required={zorunlu} id={`ft-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} /></>;
+  const S = (k: 'yerlesim' | 'konumTuru' | 'kullanimDayanagi' | 'tesisSinifi', et: string, l2: string[]) => <><label htmlFor={`ft-${k}`}>{et}</label><select required id={`ft-${k}`} value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })}><option value="">Seçiniz</option>{l2.map((x) => <option key={x}>{x}</option>)}</select></>;
+  const K = (k: 'geciciSaha' | 'mobilEkip' | 'hassasKonum', et: string) => <label className="kutu"><input type="checkbox" checked={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.checked })} /><span>{et}</span></label>;
+  const govde = { ...f, kapaliAlan: sayiYaz(f.kapaliAlan), acikAlan: sayiYaz(f.acikAlan), enlem: sayiYaz(f.enlem), boylam: sayiYaz(f.boylam), azamiBoy: sayiYaz(f.azamiBoy) };
+  const duzenle = (x: TesisSatiri) => { setDuz(x.kimlik); const s = (v: unknown) => (v === null || v === undefined ? '' : String(v));
+    setF({ ad: x.ad, yerlesim: s(x.yerlesim_turu), konumTuru: s(x.konum_turu), adres: s(x.adres), mahalle: s(x.mahalle), il: s(x.il), ilce: s(x.ilce), kullanimDayanagi: s(x.kullanim_dayanagi), tesisSinifi: s(x.tesis_sinifi), kapaliAlan: s(x.kapali_alan_m2), acikAlan: s(x.acik_alan_m2), enlem: s(x.enlem), boylam: s(x.boylam), konumDogrulugu: s(x.konum_dogrulugu), malikIsletmeci: s(x.malik_isletmeci), azamiBoy: s(x.azami_boy_m), geciciSaha: x.gecici_saha, mobilEkip: x.mobil_ekip_cikis_noktasi, hassasKonum: x.hassas_konum }); };
+  const kaydet = () => void yap(() => (duz ? istek(`/firma-tesis/${duz}/yerlesim`, govde) : istek(`/firma/${id}/tesis`, govde)).then(() => { setF(BOS_TESIS); setDuz(''); return yk(); }), duz ? 'Tesis bilgisi güncellendi.' : 'Tesis kaydedildi.');
+  return <><div className="bolum">Tesisler ve Şubeler</div><div className="ozet">{l.length === 0 && <div className="not">Kayıt bulunmamaktadır.</div>}{l.map((x) => <div key={x.kimlik}>{x.tesis_kodu} · {x.ad}{x.yerlesim_turu ? ` · ${x.yerlesim_turu}` : ' · Yerleşim bilgisi eksik'}{x.il ? ` · ${x.il}${x.ilce ? ` / ${x.ilce}` : ''}` : ''}{x.bolge ? ` · Bölge: ${x.bolge}${x.hizmet_kumesi ? ` (${x.hizmet_kumesi})` : ''}` : ''}{x.hassas_konum ? ' · Hassas Konum' : ''}{x.aktif ? '' : ' · Pasif'} <button className="lnk" onClick={() => duzenle(x)}>Bilgileri Düzenle</button> <TesisBilgi kimlik={x.kimlik} /></div>)}</div>
+    {duz && <div className="not">Seçili tesisin bilgileri düzenleniyor. <button className="lnk" onClick={() => { setDuz(''); setF(BOS_TESIS); }}>Vazgeç</button></div>}
+    {!duz && A('ad', 'Tesis Adı')}
+    {S('yerlesim', 'Yerleşim Türü', sec.yerlesim)}{S('konumTuru', 'Konum Türü', sec.konum)}
+    {A('adres', 'Açık Adres')}{A('mahalle', 'Mahalle')}{A('il', 'İl')}{A('ilce', 'İlçe')}
+    {kap && S('kullanimDayanagi', 'Kullanım Dayanağı', sec.dayanak)}
+    {tt && <>{S('tesisSinifi', 'Tesis / Çalışma Ortamı Sınıfı', sec.sinif)}{A('kapaliAlan', 'Kapalı Alan (m²)')}{A('acikAlan', 'Açık Alan (m²)')}</>}
+    {K('geciciSaha', 'Geçici Saha')}{K('mobilEkip', 'Mobil Ekip Çıkış Noktası')}
+    {A('enlem', 'Enlem', tt || f.mobilEkip)}{A('boylam', 'Boylam', tt || f.mobilEkip)}{(f.enlem.trim() || f.boylam.trim()) ? A('konumDogrulugu', 'Konum Doğruluk Düzeyi') : null}
+    {K('hassasKonum', 'Hassas Güvenlik Konumu (genel kullanıcıya gösterilmez)')}
+    {tesisRolu && <>{A('malikIsletmeci', 'Malik / İşletmeci')}{A('azamiBoy', 'Yat Kabul Azami Boy (m)')}</>}
+    <button className="btn2" disabled={(!duz && !f.ad.trim()) || !f.yerlesim || !f.konumTuru} onClick={kaydet}>{duz ? 'Tesis Bilgisini Kaydet' : 'Tesis Ekle'}</button></>;
 }
 
 function FirmaEkipman({ id, yap }: { id: string; yap: (f: () => Promise<unknown>, t: string) => Promise<void> }) {

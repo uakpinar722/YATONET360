@@ -150,6 +150,22 @@ export function sigortaYollari(s: FastifyInstance, b: Baglam) {
     return { ...t, kalemler };
   });
 
+  // YG-438: dosyanın salt okunur ayrıntısı. Aşama tarihleri, sigortaya gönderilmiş teklifler (yalnız satış tutarı), onaylı raporlar ve ilerleme; firma adı ve maliyet yoktur (YG-296).
+  s.get('/sigorta/dosya/:id', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const sir = await sirketim(o.kullanici);
+    if (!UUID.test(id) || (!sir && !o.grup.startsWith('Sigorta'))) return yok(y);
+    const d = (await b.db.query(`SELECT d.kimlik, d.dosya_no, d.statu, d.asama, d.ilerleme_yuzdesi, coalesce(d.bildirim_tarihi, d.acilis_tarihi)::text ihbar, d.tahmini_teslim_tarihi::text tahmini_teslim, d.teslim_tarihi::text teslim, d.kapanis_zamani, y.yat_adi, s.sigorta_hasar_dosya_no, s.police_no FROM dosya d JOIN yat y ON y.kimlik = d.yat_ref LEFT JOIN dosya_sigorta_kaydi s ON s.dosya_ref = d.kimlik WHERE d.kimlik = $3 AND ${dosyaKosul}`, [sir ?? '', o.kullanici, id])).rows[0];
+    if (!d) return yok(y);
+    const m = await durum(d);
+    const kesif = (await b.db.query(`SELECT min(kesif_tarihi)::text t FROM kesif WHERE dosya_ref = $1 AND durum = 'Tamamlandı'`, [id])).rows[0]?.t ?? null;
+    const baslangic = (await b.db.query(`SELECT min(baslangic_tarihi)::text t FROM is_emri WHERE dosya_ref = $1 AND baslangic_tarihi IS NOT NULL`, [id])).rows[0]?.t ?? null;
+    const teklifler = (await b.db.query(`SELECT kimlik, teklif_no, surum_no, teklif_turu, statu, karar, genel_toplam_eur, sigorta_karar_son FROM fiyat_teklifi WHERE dosya_ref = $1 AND teklif_muhatabi = 'Sigorta Şirketi' AND statu <> 'Taslak' ORDER BY teklif_no, surum_no`, [id])).rows;
+    const raporlar = (await b.db.query(`SELECT u.kimlik, t.rapor_no, t.rapor_turu, u.olusturma_zamani FROM belge_uretim u JOIN teknik_rapor t ON t.kimlik::text = u.nesne WHERE u.dosya_ref = $1 AND u.tur = 'Teknik Rapor' AND u.durum = 'Üretildi' AND t.durum = 'Onaylı' ORDER BY u.olusturma_zamani`, [id])).rows;
+    await izYaz(b.db, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Dosya Görüntülendi', nesneTuru: 'Dosya', nesneKimligi: id, sonuc: 'Başarılı', adres: i.ip, iliski: i.id, kanal: 'Sigorta Portalı' });
+    return { kimlik: d.kimlik, dosyaNo: d.dosya_no, hasarNo: d.sigorta_hasar_dosya_no, policeNo: d.police_no, yat: d.yat_adi, durum: m.ad, renk: m.renk, ilerleme: Number(d.ilerleme_yuzdesi ?? 0),
+      asamalar: [['İhbar', d.ihbar], ['Keşif', kesif], ['Onarım Başlangıcı', baslangic], ['Tahmini Teslim', d.tahmini_teslim], ['Teslim', d.teslim]].map(([ad, tarih]) => ({ ad, tarih })), teklifler, raporlar };
+  });
+
   // YG-1568: seçilen kalemler onaylanır; seçilmeyen onaylanmamış sayılır; ret düğmesi yok. Sürüme bağlıdır (YG-455).
   s.post('/sigorta/teklif/:id/karar', oturumlu, async (i, y) => {
     const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { siralar?: number[]; surum?: number }; const sir = await sirketim(o.kullanici);

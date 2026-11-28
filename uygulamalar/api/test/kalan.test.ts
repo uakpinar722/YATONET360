@@ -1357,10 +1357,11 @@ describe('teslim süresi değerlendirmesi (SRE-1)', () => {
   });
 });
 
+const TESIS = { yerlesim: 'Merkez', konumTuru: 'Diğer adres', adres: 'Liman Cad. 1', mahalle: 'Merkez', il: 'Muğla', ilce: 'Bodrum', malikIsletmeci: 'İşletmeci', azamiBoy: 40 }; // YG-348
 describe('bağlama noktası ve tesis önerisi (YG-113, YG-114, YG-115, YG-333)', () => {
   const tesisKur = async (ad: string, x: object) => {
     const sc = await o.gir('sc'); const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, ag_statusu, olusturan_ref) VALUES ($1,$2,'Tesis','Aktif',$3) RETURNING kimlik`, [`S-BN${Math.random()}`, ad, o.K.ds])).rows[0].kimlik;
-    const r = await o.ist('POST', `/api/firma/${f}/tesis`, sc, { ad, il: 'Muğla' }); expect(r.statusCode, r.body).toBe(200);
+    const r = await o.ist('POST', `/api/firma/${f}/tesis`, sc, { ad, ...TESIS }); expect(r.statusCode, r.body).toBe(200);
     const b = await o.ist('POST', `/api/firma-tesis/${r.json().kimlik}/bilgi`, sc, { kural: 'Serbest', ...x }); expect(b.statusCode, b.body).toBe(200); return r.json().kimlik as string;
   };
   it('alan doğrulaması; yalnız sicil rolü girer; 12 ay geçen kural teyidi yılda bir görev açar', async () => {
@@ -1896,7 +1897,7 @@ describe('yatın bulunduğu tesis (YG-331)', () => {
   it('Dosya tesisi seçilir; konumdan öneri gelir; kural ve izin bilgisi görünür', async () => {
     const sc = await o.gir('sc'); const ad = `Kısıtlı Marina ${Math.random()}`;
     const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, ag_statusu, olusturan_ref) VALUES ($1,$2,'Tesis','Aktif',$3) RETURNING kimlik`, [`S-BT${Math.random()}`, ad, o.K.ds])).rows[0].kimlik;
-    const t = (await o.ist('POST', `/api/firma/${f}/tesis`, sc, { ad, il: 'Muğla' })).json().kimlik;
+    const t = (await o.ist('POST', `/api/firma/${f}/tesis`, sc, { ad, ...TESIS })).json().kimlik;
     expect((await o.ist('POST', `/api/firma-tesis/${t}/bilgi`, sc, { kural: 'Kısıtlı' })).statusCode).toBe(200);
     const d = await o.dosyaAc(); await o.sup.query(`UPDATE dosya SET konum = $2 WHERE kimlik = $1`, [d.kimlik, `${ad} iskele 3`]);
     const opm = await o.gir('opm'); const u = `/api/dosya/${d.kimlik}/bulundugu-tesis`;

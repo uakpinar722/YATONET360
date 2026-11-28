@@ -2,6 +2,7 @@ import { IsEmriSec } from './IsEmriBag';
 import { OnayaGonder } from './Dugme';
 import { useEffect, useState, type ReactNode } from 'react';
 import { istek } from './api';
+import type { KuyrukKalemi } from './KatalogKuyrugu';
 
 export async function belgeYukle(f: File, bagTuru: string, bagKimligi: string): Promise<string> {
   const q = new URLSearchParams({ ad: f.name, tur: bagTuru === 'İş Emri' ? 'İş Emri Kanıtı' : 'Dosya Belgesi', bagTuru, bagKimligi, kaynak: 'Elden', dosya: f.name });
@@ -320,7 +321,8 @@ const RAPOR_ALAN: [string, string][] = [['kapsam', 'Görevlendirme Kapsamı'], [
 /** YG-200, YG-280: firma girdisi forma kendiliğinden gelir; Teknik Uzman düzeltir. Firma raporu dışa giden rapora yazılmaz. */
 export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }) {
   const [v, setV] = useState<RaporV | null>(null); const [f, setF] = useState<Record<string, string>>({ tur: 'İlk Rapor' }); const [hata, setHata] = useState(''); const [not_, setNot] = useState('');
-  const [ko, setKo] = useState({ ana: '', alt: '', tali: '', islem: '', birim: 'adet', maliyet: '', gerekce: '' });
+  const [ko, setKo] = useState({ ana: '', alt: '', tali: '', islem: '', birim: 'adet', maliyet: '', gerekce: '', kuyruk: '' }); const [kuyruk, setKuyruk] = useState<KuyrukKalemi[]>([]);
+  useEffect(() => { void istek<KuyrukKalemi[]>(`/dosya/${id}/katalog-gelistirme`).then(setKuyruk).catch(() => setKuyruk([])); }, [id, v]); // YG-662
   const yukle = () => istek<RaporV>(`/dosya/${id}/teknik-rapor`).then((r) => { setV(r); if (r.oneri) setF((x) => ({ bulgular: r.oneri!.bulgular, oneriler: r.oneri!.oneriler, analiz: r.oneri!.analiz, ...(r.oneri!.incelenen ? { incelenen: r.oneri!.incelenen } : {}), ...x })); /* YG-427 */ });
   useEffect(() => { void yukle().catch((x) => setHata((x as Error).message)); }, [id]);
   if (!v) return hata ? <div className="hata" role="alert">{hata}</div> : null;
@@ -347,8 +349,9 @@ export function RaporBolumu({ id, rollerim }: { id: string; rollerim: string[] }
           <label htmlFor="rp-ra">Revizyon Açıklaması</label><textarea id="rp-ra" value={f.revizyonAciklamasi ?? ''} onChange={(e) => setF({ ...f, revizyonAciklamasi: e.target.value })} /></>}
         <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/teknik-rapor`, f), 'Rapor kontrole gönderildi.')}>Raporu Kontrole Gönder</button>
         <div className="bolum">Kartela Önerisi</div>
+        {kuyruk.some((x) => x.durum === 'Kuyrukta') && <><label htmlFor="ko-kuyruk">Geçici Kalem (Katalog Geliştirme Kuyruğu)</label><select id="ko-kuyruk" value={ko.kuyruk} onChange={(e) => { const q = kuyruk.find((x) => x.kimlik === e.target.value); setKo({ ...ko, kuyruk: e.target.value, ...(q ? { islem: ko.islem || q.aciklama, birim: q.birim } : {}) }); }}><option value="">Bağlamadan öner</option>{kuyruk.filter((x) => x.durum === 'Kuyrukta').map((x) => <option key={x.kimlik} value={x.kimlik}>{x.aciklama} ({x.birim})</option>)}</select></>}
         {([['ana', 'Ana Branş'], ['alt', 'Alt Branş'], ['tali', 'Tali Branş'], ['islem', 'İşlem'], ['birim', 'Birim'], ['maliyet', 'Maliyet (EUR)'], ['gerekce', 'Gerekçe']] as const).map(([k, ad]) => <div key={k}><label htmlFor={`ko-${k}`}>{ad}</label><input id={`ko-${k}`} value={ko[k]} onChange={(e) => setKo({ ...ko, [k]: e.target.value })} /></div>)}
-        <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/kart-onerisi`, { ...ko, maliyet: Number(ko.maliyet.replace(/\./g, '').replace(',', '.')) }), 'Öneri Ticari İşler Direktörüne gönderildi.')}>Kart Öner</button>
+        <button className="btn2" onClick={() => yap(istek(`/dosya/${id}/kart-onerisi`, { ...ko, kuyruk: ko.kuyruk || undefined, maliyet: Number(ko.maliyet.replace(/\./g, '').replace(',', '.')) }), 'Öneri Ticari İşler Direktörüne gönderildi.')}>Kart Öner</button>
       </>}
     </Blok>
   );

@@ -281,6 +281,7 @@ describe('firma personeli ve Görevli Ekip Kartı (YG-304, YG-424, YG-339)', () 
   });
 });
 
+const TS = { yerlesim: 'Merkez', konumTuru: 'Diğer adres', adres: 'Liman Cad. 1', mahalle: 'Merkez', il: 'Muğla', ilce: 'Bodrum' }; // YG-348
 describe('firma tesisi ve -Tnn kodu (TSK-1, YG-010)', () => {
   it('tesis kuruluşu T01 ile açılır; yeni şube sıradaki kodu alır; başka kurum göremez', async () => {
     { // YG-345: MERSİS mükerrerlik anahtarı; telefon/unvan benzerliği mükerrer kararına düşer
@@ -299,11 +300,24 @@ describe('firma tesisi ve -Tnn kodu (TSK-1, YG-010)', () => {
     const l = (await o.ist('GET', `/api/firma/${kimlik}/tesis`, await o.gir('sc'))).json(); expect(l[0].tesis_kodu).toBe(`${sicilNo}-T01`);
     expect((await o.ist('POST', `/api/firma/${fir}/tesis`, await o.gir('ds'), { ad: 'Şube' })).statusCode).toBe(404);
     expect((await o.ist('POST', `/api/firma/${fir}/tesis`, await o.gir('sc'), {})).statusCode).toBe(400);
-    const a = (await o.ist('POST', `/api/firma/${fir}/tesis`, await o.gir('sc'), { ad: 'Bodrum Atölyesi', il: 'Muğla' })).json();
-    const b2 = (await o.ist('POST', `/api/firma/${fir}/tesis`, await o.gir('sc'), { ad: 'Göcek Atölyesi', il: 'Muğla' })).json();
+    const a = (await o.ist('POST', `/api/firma/${fir}/tesis`, await o.gir('sc'), { ad: 'Bodrum Atölyesi', ...TS })).json();
+    const b2 = (await o.ist('POST', `/api/firma/${fir}/tesis`, await o.gir('sc'), { ad: 'Göcek Atölyesi', ...TS })).json();
     expect(b2.tesisKodu).toBe(a.tesisKodu.replace(/T\d\d$/, (x: string) => `T${String(Number(x.slice(1)) + 1).padStart(2, '0')}`));
     expect((await o.ist('GET', `/api/firma/${fir}/tesis`, firC)).json()).toHaveLength(2);
     expect((await o.ist('GET', `/api/firma/${fir}/tesis`, tedC)).statusCode).toBe(404);
+    { // YG-348: yerleşim türüne göre koşullu zorunlu alanlar; koordinat yalnız Firma Yönetimi ve kuruluşun kendisine
+      const sc = await o.gir('sc'); const T = { ...TS, ad: 'Ana Atölye', yerlesim: 'Teknik Tesis', kullanimDayanagi: 'Kira', tesisSinifi: 'Korunaklı atölye', kapaliAlan: 400, acikAlan: 1200 };
+      expect((await o.ist('POST', `/api/firma/${fir}/tesis`, sc, { ...TS, ad: 'X', yerlesim: 'Şube' })).json().hata).toMatch(/kullanım dayanağı/);
+      expect((await o.ist('POST', `/api/firma/${fir}/tesis`, sc, T)).json().hata).toMatch(/koordinat/);
+      expect((await o.ist('POST', `/api/firma/${fir}/tesis`, sc, { ...T, enlem: 37.03, boylam: 27.43 })).json().hata).toMatch(/doğruluk/);
+      const r = await o.ist('POST', `/api/firma/${fir}/tesis`, sc, { ...T, enlem: 37.0312, boylam: 27.4301, konumDogrulugu: 'GPS ±10 m', hassasKonum: true }); expect(r.statusCode, r.body).toBe(200);
+      const bul = async (c: string) => ((await o.ist('GET', `/api/firma/${fir}/tesis`, c)).json() as any[]).find((x) => x.kimlik === r.json().kimlik);
+      expect((await bul(sc)).enlem).toBe(37.0312); expect((await bul(firC)).enlem).toBe(37.0312); expect((await bul(await o.gir('ds'))).enlem).toBeNull();
+      expect((await bul(sc)).kullanim_dayanagi).toBe('Kira');
+      expect((await o.ist('POST', `/api/firma-tesis/${r.json().kimlik}/yerlesim`, await o.gir('ds'), { ...TS })).statusCode).toBe(404);
+      expect((await o.ist('POST', `/api/firma-tesis/${r.json().kimlik}/yerlesim`, sc, { ...TS, yerlesim: 'Merkez' })).statusCode).toBe(200);
+      const m = await bul(sc); expect(m.yerlesim_turu).toBe('Merkez'); expect(m.kapali_alan_m2).toBeNull(); expect(m.kullanim_dayanagi).toBeNull(); // kapasite yalnız teknik tesiste
+    }
   });
   it('dış tarafın e-posta ile bildirdiği ayrılışta hesap hemen kapanır (YG-1053)', async () => {
     const uc = await disGir(`kf9${Date.now()}`, 'İş Birliği Firması', 'Firma Yetkilisi', fir);

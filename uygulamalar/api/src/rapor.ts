@@ -41,7 +41,7 @@ kapanisKaydet('Teknik Rapor', async (c, k, karar) => {
 kapanisKaydet('Kart Önerisi', async (c, k, karar) => {
   const o = (await c.query(`SELECT * FROM kart_onerisi WHERE kimlik = $1`, [k.nesne_kimligi])).rows[0];
   if (!o) return;
-  if (karar === 'Reddet') { await c.query(`UPDATE kart_onerisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [o.kimlik]); return; }
+  if (karar === 'Reddet') { await c.query(`UPDATE kart_onerisi SET durum = 'Reddedildi' WHERE kimlik = $1`, [o.kimlik]); await c.query(`UPDATE katalog_gelistirme_kaydi SET durum = 'Kuyrukta', kart_onerisi_ref = NULL WHERE kart_onerisi_ref = $1`, [o.kimlik]); return; } // YG-662: kalem kuyruğa döner
   if (karar !== 'Onayla') return;
   // YG-857: kod tali branş koduna bağlıdır (<tali kod>-NN); NN tüm sürümlerde ve önerilerde verilmiş en büyük numaranın bir fazlası, kod yeniden kullanılmaz.
   const on = (await c.query(`SELECT regexp_replace(kod, '-[0-9]+$', '') onek FROM kartela_kalemi WHERE ana_brans = $1 AND alt_brans = $2 AND tali_brans = $3 ORDER BY kod LIMIT 1`, [o.ana_brans, o.alt_brans, o.tali_brans])).rows[0]?.onek as string | undefined;
@@ -51,6 +51,7 @@ kapanisKaydet('Kart Önerisi', async (c, k, karar) => {
   const sur = await yururlukSurumu(c);
   await c.query(`INSERT INTO kartela_kalemi (kod, surum, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, maliyet_tarihi, kaynak_norm) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,(now() AT TIME ZONE 'Europe/Istanbul')::date,'Kart önerisi')`, [kod, sur, o.ana_brans, o.alt_brans, o.tali_brans, o.islem, o.birim, o.maliyet_eur]);
   await c.query(`UPDATE kart_onerisi SET durum = 'Eklendi', kod = $2 WHERE kimlik = $1`, [o.kimlik, kod]);
+  await c.query(`UPDATE katalog_gelistirme_kaydi SET durum = 'Kataloğa Eklendi', kartela_kodu = $2, karar_zamani = now() WHERE kart_onerisi_ref = $1`, [o.kimlik, kod]); // YG-662
   await bildir(c, { olay: `kart-oneri:${o.kimlik}`, kullanicilar: [o.hazirlayan_ref], baslik: `Kartela Kodu Hazır: ${kod}` });
 });
 
@@ -179,15 +180,45 @@ export function raporYollari(s: FastifyInstance, b: Baglam) {
 
   // YG-188: kartelada kodu olmayan kalem için Teknik Uzman öneri hazırlar; Ticari İşler Direktörü onaylayınca kartelaya eklenir.
   s.post('/dosya/:id/kart-onerisi', oturumlu, async (i, y) => {
-    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ana?: string; alt?: string; tali?: string; islem?: string; birim?: string; maliyet?: number; gerekce?: string };
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { ana?: string; alt?: string; tali?: string; islem?: string; birim?: string; maliyet?: number; gerekce?: string; kuyruk?: string };
     if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
     if (!(await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2)`, [o.kullanici, ['Teknik Uzman', 'Sorumlu Teknik Uzman (Koordinatör)']])).rowCount) return y.code(403).send({ hata: 'Kart önerisini Teknik Uzman hazırlar.' });
     if (!g.ana?.trim() || !g.alt?.trim() || !g.tali?.trim() || !g.islem?.trim() || !g.birim?.trim() || !(Number(g.maliyet) > 0) || !g.gerekce?.trim()) return y.code(400).send({ hata: 'Branş, işlem, birim, pozitif maliyet ve gerekçeyi yazmanızı rica ederiz.' }); // YG-859
     // YG-857: yeni kalem LGM-2026-013 listesindeki bir tali branşa bağlanır; kod o tali koddan üretilir.
     if (!(await b.db.query(`SELECT 1 FROM kartela_kalemi WHERE ana_brans = $1 AND alt_brans = $2 AND tali_brans = $3 LIMIT 1`, [g.ana.trim(), g.alt.trim(), g.tali.trim()])).rowCount) return y.code(400).send({ hata: 'Ana, alt ve tali branşı kartelada tanımlı branş listesinden seçiniz; kalem kodu tali branş koduna bağlanır.' });
+    // YG-662: öneri katalog geliştirme kuyruğundaki geçici kaleme bağlanabilir; kalem aynı dosyada ve kuyrukta olmalıdır.
+    if (g.kuyruk !== undefined && !(UUID.test(String(g.kuyruk)) && (await b.db.query(`SELECT 1 FROM katalog_gelistirme_kaydi WHERE kimlik = $1 AND dosya_ref = $2 AND durum = 'Kuyrukta'`, [g.kuyruk, id])).rowCount)) return y.code(409).send({ hata: 'Seçilen geçici kalem bu dosyada kart önerisi bekleyen kalemler arasında değildir.' });
     return islem(async (c) => {
       const r = (await c.query(`INSERT INTO kart_onerisi (dosya_ref, ana_brans, alt_brans, tali_brans, islem, birim, maliyet_eur, gerekce, hazirlayan_ref) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING kimlik`, [id, g.ana!.trim(), g.alt!.trim(), g.tali!.trim(), g.islem!.trim(), g.birim!.trim(), g.maliyet, g.gerekce!.trim(), o.kullanici])).rows[0];
+      if (g.kuyruk) await c.query(`UPDATE katalog_gelistirme_kaydi SET durum = 'Öneri Hazırlandı', kart_onerisi_ref = $2 WHERE kimlik = $1`, [g.kuyruk, r.kimlik]);
       await kartAc(c, { tur: 'Kart Önerisi', baslik: `Kartela Önerisi · ${g.islem!.trim()}`, ozet: g.gerekce!.trim(), hazirlayan: o.kullanici, zincir: [await rolId(c, 'Ticari İşler Direktörü')], nesneTuru: 'Kart Önerisi', nesneKimligi: r.kimlik });
+      return { kimlik: r.kimlik };
+    });
+  });
+
+  // YG-662: katalog geliştirme kuyruğu. Ticari İşler Direktörü ve teknik yönetim tüm kuyruğu, dosya ekibi kendi dosyasının kalemlerini görür.
+  const KUYRUK_ROLLER = ['Ticari İşler Direktörü', 'Teknik Yönetici', 'Teknik Müdür Yardımcısı', 'Teknik Müdür'];
+  const rolVar = async (k: string, r: string[]) => Boolean((await b.db.query(`SELECT 1 FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif' AND r.rol_adi = ANY($2)`, [k, r])).rowCount);
+  const KUYRUK_SQL = `SELECT q.kimlik, q.dosya_ref, d.dosya_no, q.aciklama, q.birim, q.durum, q.kartela_kodu, q.karar_gerekcesi, q.olusturma_zamani, o.islem oneri_islem FROM katalog_gelistirme_kaydi q JOIN dosya d ON d.kimlik = q.dosya_ref LEFT JOIN kart_onerisi o ON o.kimlik = q.kart_onerisi_ref`;
+  s.get('/katalog-gelistirme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { durum } = i.query as { durum?: string };
+    if (!(await rolVar(o.kullanici, KUYRUK_ROLLER))) return y.code(403).send({ hata: 'Katalog geliştirme kuyruğunu Ticari İşler Direktörü ve teknik yönetim izler.' });
+    return (await b.db.query(`${KUYRUK_SQL} WHERE ($1::text IS NULL OR q.durum = $1) ORDER BY (q.durum IN ('Kuyrukta', 'Öneri Hazırlandı')) DESC, q.olusturma_zamani`, [durum || null])).rows;
+  });
+  s.get('/dosya/:id/katalog-gelistirme', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string };
+    if (!UUID.test(id) || !(await dosyaErisimi(b.db, o.kullanici, id))) return yok(y);
+    return (await b.db.query(`${KUYRUK_SQL} WHERE q.dosya_ref = $1 ORDER BY q.olusturma_zamani`, [id])).rows;
+  });
+  s.post('/katalog-gelistirme/:id/alinmadi', oturumlu, async (i, y) => {
+    const o = i.oturum!; const { id } = i.params as { id: string }; const g = (i.body ?? {}) as { gerekce?: string };
+    if (!(await rolVar(o.kullanici, ['Ticari İşler Direktörü']))) return y.code(403).send({ hata: 'Geçici kalemin kataloğa alınmamasına Ticari İşler Direktörü karar verir.' });
+    if (!g.gerekce?.trim()) return y.code(400).send({ hata: 'Gerekçeyi yazmanızı rica ederiz.' });
+    if (!UUID.test(id)) return yok(y);
+    return islem(async (c) => {
+      const r = (await c.query(`UPDATE katalog_gelistirme_kaydi SET durum = 'Kataloğa Alınmadı', karar_gerekcesi = $2, karar_veren_ref = $3, karar_zamani = now() WHERE kimlik = $1 AND durum = 'Kuyrukta' RETURNING kimlik, aciklama`, [id, g.gerekce!.trim(), o.kullanici])).rows[0];
+      if (!r) return y.code(409).send({ hata: 'Yalnız kart önerisi bekleyen kalem için karar verilebilir.' });
+      await izYaz(c, { aktor: o.kullanici, oturum: o.oturum, eylem: 'Geçici Kalem Kataloğa Alınmadı', nesneTuru: 'Katalog Geliştirme Kaydı', nesneKimligi: r.kimlik, yeni: { gerekce: g.gerekce!.trim() }, sonuc: 'Başarılı', adres: i.ip, iliski: i.id });
       return { kimlik: r.kimlik };
     });
   });

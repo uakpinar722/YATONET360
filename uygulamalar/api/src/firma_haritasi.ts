@@ -26,11 +26,13 @@ export function firmaHaritasiYollari(s: FastifyInstance, b: Baglam) {
     const roller = (await b.db.query(`SELECT r.rol_adi, r.kademe, r.rol_sahibi_birim FROM rol_atamasi a JOIN rol r ON r.kimlik = a.rol_ref WHERE a.kullanici_ref = $1 AND a.atama_durumu = 'Aktif'`, [o.kullanici])).rows as { rol_adi: string; kademe: string; rol_sahibi_birim: string }[];
     const adGorur = roller.some((r) => ['Firma Yönetimi Müdürlüğü', 'Operasyon Müdürlüğü', 'Üst Yönetim'].includes(r.rol_sahibi_birim) || r.kademe === 'Direktör' || r.rol_adi === 'Genel Müdür Yardımcısı' || r.rol_adi === 'CEO' || r.rol_adi === 'Bilgi Teknolojileri ve Firma Yönetimi Direktörü');
     const noktalar = (await b.db.query(`SELECT kimlik, tur, ad, il, enlem::float8 enlem, boylam::float8 boylam FROM baglama_noktasi WHERE enlem IS NOT NULL AND boylam IS NOT NULL AND (mukerrer_karari IS DISTINCT FROM 'Birleştirildi')`)).rows as { kimlik: string; tur: string; ad: string; il: string | null; enlem: number; boylam: number }[];
-    const tesisler = (await b.db.query(`SELECT t.kimlik, t.ad tesis, t.il, t.enlem::float8 enlem, t.boylam::float8 boylam, k.ticari_unvan, k.kayit_rolu, k.kayit_asamasi, k.ag_statusu, k.risk_derecesi FROM firma_tesisi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.enlem IS NOT NULL AND t.boylam IS NOT NULL AND k.kayit_rolu = 'Çözüm Ortağı'`)).rows;
-    const firmalar = tesisler.flatMap((t) => {
+    const tesisler = (await b.db.query(`SELECT t.kimlik, t.ad tesis, t.il, t.enlem::float8 enlem, t.boylam::float8 boylam, t.hassas_konum, k.ticari_unvan, k.kayit_rolu, k.kayit_asamasi, k.ag_statusu, k.risk_derecesi FROM firma_tesisi t JOIN kurulus k ON k.kimlik = t.kurulus_ref WHERE t.enlem IS NOT NULL AND t.boylam IS NOT NULL AND k.kayit_rolu = 'Çözüm Ortağı'`)).rows;
+    // YG-348 (V-1139): hassas güvenlik konumu genel kullanıcıya açılmaz; genel kullanıcı koordinatı yaklaşık (2 ondalık, ≈1 km) görür.
+    const yakl = (x: number) => (adGorur ? x : Math.round(x * 100) / 100);
+    const firmalar = tesisler.filter((t) => adGorur || !t.hassas_konum).flatMap((t) => {
       const r = firmaRengi(t); if (!r) return [];
       const yakin = noktalar.map((n) => ({ ad: n.ad, tur: n.tur, km: mesafeKm(t.enlem, t.boylam, n.enlem, n.boylam) })).sort((a, c) => a.km - c.km).slice(0, 3);
-      return [{ kimlik: t.kimlik, ad: adGorur ? t.ticari_unvan : null, il: t.il, enlem: t.enlem, boylam: t.boylam, ...r, yakin }];
+      return [{ kimlik: t.kimlik, ad: adGorur ? t.ticari_unvan : null, il: t.il, enlem: yakl(t.enlem), boylam: yakl(t.boylam), ...r, yakin }];
     });
     return { adGorur, firmalar, noktalar: noktalar.map((n) => ({ ad: n.ad, tur: n.tur, enlem: n.enlem, boylam: n.boylam })) };
   });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { istek } from './api';
+import { eur, tarih } from './bicim';
 
 const BOS = { hasarNo: '', policeNo: '', yatAdi: '', konum: '', ozet: '', sahipAd: '', sahipTel: '', yetkili: '', hizmet: '', yetkiSiniri: '', onayKanali: 'YATONET 360' };
 
@@ -40,6 +41,25 @@ export function SigortaTalimat({ dosyalar }: { dosyalar: { kimlik: string; ad: s
     <label htmlFor="st-d">Dosya</label><select id="st-d" value={d} onChange={(e) => setD(e.target.value)}><option value="">Seçiniz</option>{dosyalar.map((z) => <option key={z.kimlik} value={z.kimlik}>{z.ad}</option>)}</select>
     <label htmlFor="st-m">Talimat Değişikliği</label><textarea id="st-m" rows={2} value={x} onChange={(e) => setX(e.target.value)} />
     <button className="btn2 kucuk" disabled={!d || !x.trim()} onClick={() => void istek(`/sigorta/dosya/${d}/talimat-degisikligi`, { metin: x }).then(() => { setM('Talimat değişikliğiniz iletildi.'); setX(''); }).catch((e) => setM(e.message))}>Gönder</button></details>;
+}
+
+type DosyaAyrinti = { dosyaNo: string; hasarNo: string | null; policeNo: string | null; yat: string; durum: string; ilerleme: number; asamalar: { ad: string; tarih: string | null }[]; teklifler: { kimlik: string; teklif_no: string; surum_no: number; teklif_turu: string; statu: string; karar: string | null; genel_toplam_eur: string }[]; raporlar: { kimlik: string; rapor_no: string; rapor_turu: string }[] };
+/** YG-438: dosyanın salt okunur ayrıntısı; aşama tarihleri, gönderilmiş teklifler ve onaylı raporlar. Firma adı ve maliyet görünmez. */
+export function SigortaDosyaAyrinti({ dosyalar }: { dosyalar: { kimlik: string; ad: string }[] }) {
+  const [d, setD] = useState(''); const [v, setV] = useState<DosyaAyrinti | null>(null); const [m, setM] = useState('');
+  useEffect(() => { setV(null); setM(''); if (d) void istek<DosyaAyrinti>(`/sigorta/dosya/${d}`).then(setV).catch((e) => setM((e as Error).message)); }, [d]);
+  if (!dosyalar.length) return null;
+  return <details><summary>Dosya Ayrıntısı</summary>{m && <div className="hata" role="alert">{m}</div>}
+    <label htmlFor="sda-d">Dosya</label><select id="sda-d" value={d} onChange={(e) => setD(e.target.value)}><option value="">Seçiniz</option>{dosyalar.map((z) => <option key={z.kimlik} value={z.kimlik}>{z.ad}</option>)}</select>
+    {v && <>
+      <div className="soru"><span>{v.dosyaNo}{v.hasarNo ? ` · Hasar Dosya No: ${v.hasarNo}` : ''}{v.policeNo ? ` · Poliçe No: ${v.policeNo}` : ''} · {v.yat} · {v.durum} · İlerleme %{v.ilerleme}</span></div>
+      <div className="tablo"><table className="kartli"><thead><tr><th>Aşama</th><th>Tarih</th></tr></thead><tbody>{v.asamalar.map((a) => <tr key={a.ad}><td data-etiket="Aşama">{a.ad}</td><td data-etiket="Tarih">{a.tarih ? tarih(a.tarih) : '---'}</td></tr>)}</tbody></table></div>
+      <div className="bolum">Teklifler</div>
+      {v.teklifler.length === 0 ? <div className="ozet bos">Gönderilmiş teklif bulunmamaktadır.</div> : v.teklifler.map((x) => <div className="soru" key={x.kimlik}><span>{x.teklif_no} Rev.{x.surum_no} · {x.teklif_turu} · {x.statu}{x.karar ? ` · ${x.karar}` : ''} · {eur(x.genel_toplam_eur)}</span></div>)}
+      <div className="bolum">Raporlar</div>
+      {v.raporlar.length === 0 ? <div className="ozet bos">Onaylı rapor bulunmamaktadır.</div> : v.raporlar.map((x) => <div className="soru" key={x.kimlik}><span><a href={`/api/sigorta/rapor/${x.kimlik}`} target="_blank" rel="noreferrer">{x.rapor_no} · {x.rapor_turu}</a></span></div>)}
+    </>}
+  </details>;
 }
 
 /** YG-446: şirketteki bir kullanıcının hesabının kapatılması talebi; Müşteri ve Paydaş İlişkileri Müdürü değerlendirir. */

@@ -316,7 +316,13 @@ describe('sigorta portalı (YG-438, YG-1568, YG-444)', () => {
     // YG-1076: dosyada çalışan firmanın unvanı ve iş emri numarası sigorta portalına çıkmaz.
     const fu = `Gizli Onarım Firması ${Date.now()}`; const f = (await o.sup.query(`INSERT INTO kurulus (sicil_no, ticari_unvan, kayit_rolu, olusturan_ref) VALUES ($1,$2,'Çözüm Ortağı',$3) RETURNING kimlik`, [`S-GZ${Date.now()}`, fu, o.K.ds])).rows[0].kimlik;
     await o.sup.query(`INSERT INTO is_emri (is_emri_no, is_emri_turu, dosya_ref, kurulus_ref, uygulama_yeri, kapsam, statu, hazirlayan_ref) VALUES ($1,'ON',$2,$3,'M','K','Aktif',$4)`, [`${d.dosyaNo}-ON09`, d.kimlik, f, o.K.ds]);
-    for (const u of ['/api/sigorta/ana', `/api/sigorta/teklif/${t}`]) { const b = (await o.ist('GET', u, sigortaC)).body; expect(b).not.toContain(fu); expect(b).not.toContain('-ON09'); }
+    { // YG-438: salt okunur dosya ayrıntısı; yalnız taraf olunan dosya, gönderilmiş teklif ve aşama tarihleri
+      expect((await o.ist('GET', `/api/sigorta/dosya/${d.kimlik}`, baskaSigortaC)).statusCode).toBe(404);
+      const sd = await o.ist('GET', `/api/sigorta/dosya/${d.kimlik}`, sigortaC); expect(sd.statusCode, sd.body).toBe(200);
+      expect(sd.json().hasarNo).toMatch(/^H-/); expect(sd.json().teklifler.map((x: any) => x.kimlik)).toEqual([t]); expect(sd.json().asamalar.map((x: any) => x.ad)).toEqual(['İhbar', 'Keşif', 'Onarım Başlangıcı', 'Tahmini Teslim', 'Teslim']);
+      expect(sd.json().asamalar[0].tarih).toBeTruthy(); expect(sd.body).not.toContain('maliyet');
+    }
+    for (const u of ['/api/sigorta/ana', `/api/sigorta/teklif/${t}`, `/api/sigorta/dosya/${d.kimlik}`]) { const b = (await o.ist('GET', u, sigortaC)).body; expect(b).not.toContain(fu); expect(b).not.toContain('-ON09'); }
     // YG-1564 (T-YG1564): başlamış iş, ek bulguyla durdurma ve açık iş göstergeleri
     expect(await musteriGostergeleri(o.db, d.kimlik, [])).toMatchObject({ isBasladi: true, acikIs: true, ekBulgu: false, yasalBekleme: false });
     const ie = (await o.sup.query(`UPDATE is_emri SET statu = 'Durduruldu' WHERE is_emri_no = $1 RETURNING kimlik`, [`${d.dosyaNo}-ON09`])).rows[0].kimlik;

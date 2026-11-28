@@ -1038,3 +1038,31 @@ describe('sigorta onay tutarı kontrolü (YG-1608, TZ-6)', () => {
   });
 });
 
+describe('katalog geliştirme kuyruğu (YG-662)', () => {
+  it('geçici kalem kuyruğa düşer, kart önerisine bağlanır ve sonuçlanır', async () => {
+    const S = { nitelik: 'Onarım', bedel: 'İşçilik', miktar: 1, birim: 'saat' };
+    const d = await hazir({}, {}, [{ ...S, aciklama: 'İnceleme', kartela: KARTELA }, { ...S, aciklama: 'Özel kalıp işi' }, { ...S, aciklama: 'Dosyaya özgü iş' }]);
+    await cetvel(d.kimlik, [{ ...S, aciklama: 'özel kalıp işi ' }, { ...S, aciklama: 'Dosyaya özgü iş' }]); // yeni sürümde aynı kalem tekrar kuyruğa düşmez
+    const tu = await o.gir('tu'); const tid = await o.gir('tid');
+    expect((await o.ist('GET', '/api/katalog-gelistirme', tu)).statusCode).toBe(403);
+    const l = (await o.ist('GET', `/api/dosya/${d.kimlik}/katalog-gelistirme`, tu)).json() as { kimlik: string; aciklama: string; durum: string }[];
+    expect(l.map((x) => x.aciklama).sort()).toEqual(['Dosyaya özgü iş', 'Özel kalıp işi']);
+    expect(((await o.ist('GET', '/api/katalog-gelistirme?durum=Kuyrukta', tid)).json() as { kimlik: string }[]).some((x) => x.kimlik === l[0]!.kimlik)).toBe(true);
+    const q1 = l.find((x) => x.aciklama === 'Özel kalıp işi')!.kimlik; const q2 = l.find((x) => x.aciklama === 'Dosyaya özgü iş')!.kimlik;
+    const K = { ana: 'Acil', alt: 'Acil arıza ve hasar müdahalesi', tali: 'Çağrı sınıflandırması ve sevk', islem: 'Özel kalıp işi', birim: 'saat', maliyet: 10, gerekce: 'G' };
+    expect((await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, tu, { ...K, kuyruk: crypto.randomUUID() })).statusCode).toBe(409);
+    const durum = async (q: string) => (await o.sup.query(`SELECT durum, kartela_kodu FROM katalog_gelistirme_kaydi WHERE kimlik = $1`, [q])).rows[0];
+    const r1 = await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, tu, { ...K, kuyruk: q1 }); expect(r1.statusCode, r1.body).toBe(200);
+    expect((await durum(q1)).durum).toBe('Öneri Hazırlandı');
+    await o.karar((await o.kart('Kart Önerisi', r1.json().kimlik)).kimlik, 'tid', 'Reddet', 'Yetersiz tanım');
+    expect((await durum(q1)).durum).toBe('Kuyrukta');
+    const r2 = await o.ist('POST', `/api/dosya/${d.kimlik}/kart-onerisi`, tu, { ...K, kuyruk: q1 }); expect(r2.statusCode, r2.body).toBe(200);
+    await o.karar((await o.kart('Kart Önerisi', r2.json().kimlik)).kimlik, 'tid', 'Onayla');
+    const s1 = await durum(q1); expect(s1.durum).toBe('Kataloğa Eklendi'); expect(s1.kartela_kodu).toMatch(/^ACIL-01\.01\.01-\d{2}$/);
+    expect((await o.ist('POST', `/api/katalog-gelistirme/${q2}/alinmadi`, tu, { gerekce: 'Tek seferlik' })).statusCode).toBe(403);
+    expect((await o.ist('POST', `/api/katalog-gelistirme/${q2}/alinmadi`, tid, {})).statusCode).toBe(400);
+    expect((await o.ist('POST', `/api/katalog-gelistirme/${q2}/alinmadi`, tid, { gerekce: 'Tek seferlik iş' })).statusCode).toBe(200);
+    expect((await durum(q2)).durum).toBe('Kataloğa Alınmadı');
+    expect((await o.ist('POST', `/api/katalog-gelistirme/${q2}/alinmadi`, tid, { gerekce: 'Tekrar' })).statusCode).toBe(409);
+  });
+});
